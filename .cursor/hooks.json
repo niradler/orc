@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": "bun hooks/post-tool-use.ts",
+        "matcher": "Shell|Write|StrReplace|EditNotebook"
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "bun hooks/post-tool-use.ts"
+      }
+    ]
+  }
+}

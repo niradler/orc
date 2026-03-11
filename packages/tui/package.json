@@ -1,0 +1,32 @@
+{
+  "name": "@orc/tui",
+  "version": "0.0.1",
+  "type": "module",
+  "bin": {
+    "orc-tui": "./src/index.tsx"
+  },
+  "main": "./src/index.tsx",
+  "exports": {
+    ".": "./src/index.tsx",
+    "./dashboard": "./src/components/Dashboard.tsx",
+    "./task-board": "./src/components/TaskBoard.tsx",
+    "./job-monitor": "./src/components/JobMonitor.tsx",
+    "./mem-browser": "./src/components/MemBrowser.tsx"
+  },
+  "scripts": {
+    "dev": "bun --hot src/index.tsx",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@orc/core": "workspace:*",
+    "@orc/sdk": "workspace:*",
+    "@opentui/core": "^0.1.87",
+    "@opentui/react": "^0.1.87",
+    "react": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "typescript": "^5.9.3"
+  }
+}

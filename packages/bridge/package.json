@@ -1,0 +1,25 @@
+{
+  "name": "@orc/bridge",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "bun test",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@orc/core": "workspace:*",
+    "@orc/db": "workspace:*",
+    "@orc/runner": "workspace:*",
+    "drizzle-orm": "^0.41.0",
+    "grammy": "^1.36.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

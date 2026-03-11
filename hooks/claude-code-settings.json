@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|StrReplace|Bash|Shell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun hooks/post-tool-use.ts"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun hooks/pre-compact.ts"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun hooks/session-start.ts"
+          }
+        ]
+      }
+    ]
+  }
+}

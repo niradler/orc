@@ -1,0 +1,134 @@
+import { ulid } from "@orc/core/ids";
+import { createLogger } from "@orc/core/logger";
+import { getDb } from "@orc/db/client";
+import { job_run_logs, job_runs, jobs } from "@orc/db/schema";
+import { eq } from "drizzle-orm";
+
+const logger = createLogger("runner:executor");
+
+export type RunOptions = {
+  jobId: string;
+  runId?: string;
+  triggerBy?: string;
+  envOverrides?: Record<string, string>;
+};
+
+export async function executeJob(opts: RunOptions): Promise<string> {
+  const db = getDb();
+  const job = await db.query.jobs.findFirst({ where: eq(jobs.id, opts.jobId) });
+  if (!job) throw new Error(`Job not found: ${opts.jobId}`);
+
+  const runId = opts.runId ?? ulid();
+  const now = new Date();
+
+  if (opts.runId) {
+    await db
+      .update(job_runs)
+      .set({ status: "running", started_at: now })
+      .where(eq(job_runs.id, runId));
+  } else {
+    await db.insert(job_runs).values({
+      id: runId,
+      job_id: job.id,
+      status: "running",
+      trigger_by: opts.triggerBy ?? "manual",
+      started_at: now,
+      created_at: now,
+    });
+  }
+
+  await db
+    .update(jobs)
+    .set({ last_run_at: now, run_count: job.run_count + 1, updated_at: now })
+    .where(eq(jobs.id, job.id));
+
+  logger.info(`Starting job: ${job.name} [${runId}]`);
+
+  const env = {
+    ...process.env,
+    ...(job.env_vars ?? {}),
+    ...(opts.envOverrides ?? {}),
+  };
+
+  const timeout = (job.timeout_secs ?? 300) * 1000;
+
+  try {
+    const proc = Bun.spawn({
+      cmd: ["sh", "-c", job.command],
+      cwd: job.working_dir ?? process.cwd(),
+      env: env as Record<string, string>,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const stdoutLines: string[] = [];
+    const stderrLines: string[] = [];
+    const logEntries: Array<{
+      run_id: string;
+      ts: Date;
+      stream: "stdout" | "stderr";
+      line: string;
+    }> = [];
+
+    const timeoutHandle = setTimeout(() => proc.kill(), timeout);
+
+    const readStream = async (reader: ReadableStream<Uint8Array>, stream: "stdout" | "stderr") => {
+      const dec = new TextDecoder();
+      let buf = "";
+      for await (const chunk of reader) {
+        buf += dec.decode(chunk, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (stream === "stdout") stdoutLines.push(line);
+          else stderrLines.push(line);
+          logEntries.push({ run_id: runId, ts: new Date(), stream, line });
+        }
+      }
+    };
+
+    await Promise.all([
+      readStream(proc.stdout as ReadableStream<Uint8Array>, "stdout"),
+      readStream(proc.stderr as ReadableStream<Uint8Array>, "stderr"),
+      proc.exited,
+    ]);
+
+    clearTimeout(timeoutHandle);
+
+    const exitCode = proc.exitCode ?? -1;
+    const endedAt = new Date();
+    const success = exitCode === 0;
+
+    if (logEntries.length > 0) {
+      await db.insert(job_run_logs).values(logEntries);
+    }
+
+    await db
+      .update(job_runs)
+      .set({
+        status: success ? "success" : "failed",
+        exit_code: exitCode,
+        ended_at: endedAt,
+        stdout: stdoutLines.join("\n").slice(0, 65536),
+        stderr: stderrLines.join("\n").slice(0, 16384),
+      })
+      .where(eq(job_runs.id, runId));
+
+    logger.info(
+      `Job ${job.name} [${runId}] ${success ? "succeeded" : "failed"} (exit ${exitCode})`,
+    );
+    return runId;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await db
+      .update(job_runs)
+      .set({
+        status: "failed",
+        ended_at: new Date(),
+        error_msg: msg,
+      })
+      .where(eq(job_runs.id, runId));
+    logger.error(`Job ${job.name} [${runId}] crashed: ${msg}`);
+    throw err;
+  }
+}

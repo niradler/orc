@@ -1,0 +1,251 @@
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { createApp } from "./server.js";
+
+let app: ReturnType<typeof createApp>;
+
+const AUTH = "Bearer test-secret";
+
+async function req(method: string, path: string, body?: unknown) {
+  return app.request(path, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: AUTH,
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+}
+
+beforeAll(() => {
+  process.env.ORC_API_SECRET = "test-secret";
+  process.env.ORC_DB_PATH = ":memory:";
+  app = createApp();
+});
+
+afterAll(() => {
+  delete process.env.ORC_API_SECRET;
+  delete process.env.ORC_DB_PATH;
+});
+
+describe("Health", () => {
+  test("GET /health returns ok", async () => {
+    const res = await req("GET", "/health");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string };
+    expect(body.status).toBe("ok");
+  });
+});
+
+describe("Tasks", () => {
+  let taskId: string;
+
+  test("POST /tasks creates a task", async () => {
+    const res = await req("POST", "/tasks", {
+      title: "Implement auth",
+      body: "Add JWT middleware",
+      priority: "high",
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { id: string; status: string; title: string };
+    expect(body.title).toBe("Implement auth");
+    expect(body.status).toBe("todo");
+    taskId = body.id;
+  });
+
+  test("GET /tasks lists tasks", async () => {
+    const res = await req("GET", "/tasks");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { tasks: unknown[]; total: number };
+    expect(body.tasks.length).toBeGreaterThan(0);
+  });
+
+  test("GET /tasks/:id returns task", async () => {
+    const res = await req("GET", `/tasks/${taskId}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { id: string };
+    expect(body.id).toBe(taskId);
+  });
+
+  test("PATCH /tasks/:id updates task", async () => {
+    const res = await req("PATCH", `/tasks/${taskId}`, { status: "doing" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string };
+    expect(body.status).toBe("doing");
+  });
+
+  test("HITL review round-trip", async () => {
+    const submitRes = await req("POST", `/tasks/${taskId}/review`, {
+      summary: "Finished auth implementation",
+    });
+    expect(submitRes.status).toBe(200);
+    const submitted = (await submitRes.json()) as { status: string };
+    expect(submitted.status).toBe("review");
+
+    const pollRes = await req("GET", `/tasks/${taskId}/review`);
+    expect(pollRes.status).toBe(200);
+    const polled = (await pollRes.json()) as { status: string };
+    expect(polled.status).toBe("review");
+
+    const approveRes = await req("PATCH", `/tasks/${taskId}`, { status: "done" });
+    expect(approveRes.status).toBe(200);
+    const approved = (await approveRes.json()) as { status: string };
+    expect(approved.status).toBe("done");
+  });
+
+  test("POST /tasks/:id/notes adds a note", async () => {
+    const res = await req("POST", `/tasks/${taskId}/notes`, {
+      content: "Looks good to merge",
+      author: "human",
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { content: string };
+    expect(body.content).toBe("Looks good to merge");
+  });
+
+  test("Task links: create, list, delete", async () => {
+    const t2Res = await req("POST", "/tasks", { title: "Blocked task" });
+    const t2 = (await t2Res.json()) as { id: string };
+
+    const linkRes = await req("POST", `/tasks/${taskId}/links`, {
+      to_task_id: t2.id,
+      link_type: "blocks",
+    });
+    expect(linkRes.status).toBe(201);
+    const link = (await linkRes.json()) as { id: string; link_type: string };
+    expect(link.link_type).toBe("blocks");
+
+    const listRes = await req("GET", `/tasks/${taskId}/links`);
+    expect(listRes.status).toBe(200);
+    const listed = (await listRes.json()) as { links: unknown[] };
+    expect(listed.links.length).toBe(1);
+
+    const delRes = await req("DELETE", `/tasks/${taskId}/links/${link.id}`);
+    expect(delRes.status).toBe(204);
+  });
+
+  test("DELETE /tasks/:id deletes task", async () => {
+    const res = await req("DELETE", `/tasks/${taskId}`);
+    expect(res.status).toBe(204);
+  });
+});
+
+describe("Memories", () => {
+  let memId: string;
+
+  test("POST /memories stores a memory", async () => {
+    const res = await req("POST", "/memories", {
+      content: "Always use ULIDs for IDs in this project",
+      tags: ["convention", "ids"],
+      importance: "high",
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { id: string; content: string };
+    expect(body.content).toContain("ULIDs");
+    memId = body.id;
+  });
+
+  test("GET /memories lists memories", async () => {
+    const res = await req("GET", "/memories");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { memories: unknown[] };
+    expect(body.memories.length).toBeGreaterThan(0);
+  });
+
+  test("GET /memories/search finds by keyword", async () => {
+    const res = await req("GET", "/memories/search?q=ULID");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { results: { id: string }[] };
+    expect(body.results.some((r) => r.id === memId)).toBe(true);
+  });
+
+  test("DELETE /memories/:id removes memory", async () => {
+    const res = await req("DELETE", `/memories/${memId}`);
+    expect(res.status).toBe(204);
+  });
+});
+
+describe("Jobs", () => {
+  let jobId: string;
+  let runId: string;
+
+  test("POST /jobs creates a job", async () => {
+    const res = await req("POST", "/jobs", {
+      name: "test-echo",
+      command: "echo hello",
+      trigger_type: "manual",
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { id: string; name: string };
+    expect(body.name).toBe("test-echo");
+    jobId = body.id;
+  });
+
+  test("POST /jobs/:id/trigger starts a run", async () => {
+    const res = await req("POST", `/jobs/${jobId}/trigger`);
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { run_id: string };
+    expect(body.run_id).toBeTruthy();
+    runId = body.run_id;
+  });
+
+  test("GET /jobs/:id/runs lists runs", async () => {
+    const res = await req("GET", `/jobs/${jobId}/runs`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { runs: unknown[] };
+    expect(body.runs.length).toBeGreaterThan(0);
+  });
+
+  test("GET /jobs/:id/runs/:runId/logs returns logs (after run completes)", async () => {
+    await Bun.sleep(300);
+    const res = await req("GET", `/jobs/${jobId}/runs/${runId}/logs`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { logs: unknown[] };
+    expect(Array.isArray(body.logs)).toBe(true);
+  });
+});
+
+describe("Prompts", () => {
+  let promptId: string;
+
+  test("POST /prompts creates a prompt", async () => {
+    const res = await req("POST", "/prompts", {
+      name: "greet",
+      template: "Hello {{name}}, welcome to {{place}}!",
+      tags: ["greeting"],
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { id: string; version: number };
+    expect(body.version).toBe(1);
+    promptId = body.id;
+  });
+
+  test("POST /prompts/:id/render interpolates variables", async () => {
+    const res = await req("POST", `/prompts/${promptId}/render`, {
+      vars: { name: "Alice", place: "Orc" },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { rendered: string };
+    expect(body.rendered).toBe("Hello Alice, welcome to Orc!");
+  });
+
+  test("PATCH /prompts/:id bumps version and saves history", async () => {
+    const res = await req("PATCH", `/prompts/${promptId}`, {
+      template: "Hi {{name}}, welcome to {{place}}!",
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { version: number };
+    expect(body.version).toBe(2);
+
+    const histRes = await req("GET", `/prompts/${promptId}/history`);
+    expect(histRes.status).toBe(200);
+    const hist = (await histRes.json()) as { history: { version: number; template: string }[] };
+    expect(hist.history.length).toBe(1);
+    expect(hist.history[0]?.version).toBe(1);
+    expect(hist.history[0]?.template).toContain("Hello");
+  });
+
+  test("DELETE /prompts/:id removes prompt", async () => {
+    const res = await req("DELETE", `/prompts/${promptId}`);
+    expect(res.status).toBe(204);
+  });
+});
