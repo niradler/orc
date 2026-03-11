@@ -48,11 +48,14 @@ async function main() {
   const { type, priority, data } = classified;
   const sessionId = process.env.ORC_SESSION_ID ?? "default";
   const apiBase = process.env.ORC_API_BASE ?? "http://127.0.0.1:7700";
+  const secret = process.env.ORC_API_SECRET;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (secret) headers["Authorization"] = `Bearer ${secret}`;
 
   try {
     await fetch(`${apiBase}/mcp/tool`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({
         name: "session_event",
         args: { type, priority, data: { ...data, session_id: sessionId } },

@@ -4,7 +4,8 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./server": "./src/server.ts"
   },
   "scripts": {
     "dev": "bun run --hot src/index.ts",
@@ -19,6 +20,7 @@
     "@hono/zod-openapi": "^0.19.6",
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
+    "@orc/mcp": "workspace:*",
     "@orc/runner": "workspace:*",
     "drizzle-orm": "^0.41.0",
     "hono": "^4.7.4",

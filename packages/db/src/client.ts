@@ -58,6 +58,8 @@ function setupDb(sqlite: Database): void {
 
     CREATE TABLE IF NOT EXISTS memories (
       id TEXT PRIMARY KEY,
+      title TEXT,
+      type TEXT NOT NULL DEFAULT 'fact',
       content TEXT NOT NULL,
       source TEXT,
       scope TEXT,
@@ -216,24 +218,40 @@ function setupDb(sqlite: Database): void {
     CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
       id UNINDEXED,
       content,
+      title,
       tags,
       scope UNINDEXED,
       tokenize='porter ascii'
     );
 
+    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts_trigram USING fts5(
+      id UNINDEXED,
+      content,
+      title,
+      tags,
+      scope UNINDEXED,
+      tokenize='trigram'
+    );
+
     CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
-      INSERT INTO memories_fts(id, content, tags, scope)
-        VALUES (new.id, new.content, COALESCE(new.tags, ''), COALESCE(new.scope, ''));
+      INSERT INTO memories_fts(id, content, title, tags, scope)
+        VALUES (new.id, new.content, COALESCE(new.title, ''), COALESCE(new.tags, ''), COALESCE(new.scope, ''));
+      INSERT INTO memories_fts_trigram(id, content, title, tags, scope)
+        VALUES (new.id, new.content, COALESCE(new.title, ''), COALESCE(new.tags, ''), COALESCE(new.scope, ''));
     END;
 
     CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
       DELETE FROM memories_fts WHERE id = old.id;
+      DELETE FROM memories_fts_trigram WHERE id = old.id;
     END;
 
     CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
       DELETE FROM memories_fts WHERE id = old.id;
-      INSERT INTO memories_fts(id, content, tags, scope)
-        VALUES (new.id, new.content, COALESCE(new.tags, ''), COALESCE(new.scope, ''));
+      DELETE FROM memories_fts_trigram WHERE id = old.id;
+      INSERT INTO memories_fts(id, content, title, tags, scope)
+        VALUES (new.id, new.content, COALESCE(new.title, ''), COALESCE(new.tags, ''), COALESCE(new.scope, ''));
+      INSERT INTO memories_fts_trigram(id, content, title, tags, scope)
+        VALUES (new.id, new.content, COALESCE(new.title, ''), COALESCE(new.tags, ''), COALESCE(new.scope, ''));
     END;
 
     CREATE TABLE IF NOT EXISTS session_events (
@@ -242,6 +260,7 @@ function setupDb(sqlite: Database): void {
       type       TEXT NOT NULL,
       priority   INTEGER NOT NULL DEFAULT 3,
       data       TEXT NOT NULL,
+      data_hash  TEXT,
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
@@ -256,6 +275,17 @@ function setupDb(sqlite: Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_snapshots_session ON session_snapshots(session_id, created_at DESC);
   `);
+
+  const migrations = [
+    "ALTER TABLE memories ADD COLUMN title TEXT",
+    "ALTER TABLE memories ADD COLUMN type TEXT NOT NULL DEFAULT 'fact'",
+    "ALTER TABLE session_events ADD COLUMN data_hash TEXT",
+  ];
+  for (const sql of migrations) {
+    try {
+      sqlite.exec(sql);
+    } catch {}
+  }
 }
 
 export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof schema>> {

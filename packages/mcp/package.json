@@ -4,7 +4,8 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./tools": "./src/tools.ts"
   },
   "scripts": {
     "dev": "bun run --watch src/index.ts",
@@ -23,6 +24,7 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@orc/api": "workspace:*",
     "typescript": "^5.7.3"
   }
 }

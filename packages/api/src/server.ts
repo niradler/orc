@@ -6,6 +6,7 @@ import { createLogger } from "@orc/core/logger";
 import { bearerAuth } from "./middleware/auth.js";
 import { healthRouter } from "./routes/health.js";
 import { jobsRouter } from "./routes/jobs.js";
+import { mcpToolRouter } from "./routes/mcp-tool.js";
 import { memoriesRouter } from "./routes/memories.js";
 import { projectsRouter } from "./routes/projects.js";
 import { promptsRouter } from "./routes/prompts.js";
@@ -33,6 +34,7 @@ export function createApp() {
   });
 
   app.route("/", healthRouter);
+  app.route("/", mcpToolRouter);
   app.route("/", projectsRouter);
   app.route("/", promptsRouter);
   app.route("/", tasksRouter);

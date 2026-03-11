@@ -79,6 +79,10 @@ export const task_links = sqliteTable(
 
 export const memories = sqliteTable("memories", {
   id: text("id").primaryKey(),
+  title: text("title"),
+  type: text("type", { enum: ["fact", "decision", "event", "rule", "discovery"] })
+    .default("fact")
+    .notNull(),
   content: text("content").notNull(),
   source: text("source"),
   scope: text("scope"),
@@ -272,6 +276,7 @@ export type TaskLink = typeof task_links.$inferSelect;
 export type NewTaskLink = typeof task_links.$inferInsert;
 export type Memory = typeof memories.$inferSelect;
 export type NewMemory = typeof memories.$inferInsert;
+export type MemoryType = "fact" | "decision" | "event" | "rule" | "discovery";
 export type Prompt = typeof prompts.$inferSelect;
 export type NewPrompt = typeof prompts.$inferInsert;
 export type PromptHistory = typeof prompt_history.$inferSelect;

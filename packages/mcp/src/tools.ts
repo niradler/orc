@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
 import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import { getDb } from "@orc/db/client";
@@ -12,11 +13,15 @@ export const toolDefinitions = [
   {
     name: "memory_search",
     description:
-      "Search memories (BM25 FTS5, porter stemming). Returns compact layer-1 index: IDs + snippets. " +
-      "Use memory_timeline to get context around a result. Use memory_get for full content.",
+      "Search memories (3-layer BM25: porter → trigram → fallback). Returns compact index: IDs + snippets. " +
+      "Filter by type (fact|decision|event|rule|discovery) or scope. Use memory_timeline for context, memory_get for full content.",
     inputSchema: z.object({
       query: z.string().describe("Search query — keywords, phrases, or natural language"),
       scope: z.string().optional().describe("Scope filter (e.g. project name)"),
+      type: z
+        .enum(["fact", "decision", "event", "rule", "discovery"])
+        .optional()
+        .describe("Filter by memory type"),
       limit: z.number().int().min(1).max(20).optional().default(10),
     }),
   },
@@ -41,12 +46,24 @@ export const toolDefinitions = [
   },
   {
     name: "memory_store",
-    description: "Store a fact, decision, or context entry for future retrieval via FTS5 search.",
+    description:
+      "Store a fact, decision, or context entry. Use type to classify: " +
+      "'decision' for choices made, 'rule' for conventions/constraints, 'discovery' for findings, " +
+      "'event' for things that happened, 'fact' for general knowledge.",
     inputSchema: z.object({
       content: z.string().describe("Content to remember"),
+      title: z.string().optional().describe("Short label (≤60 chars) for quick scanning"),
+      type: z.enum(["fact", "decision", "event", "rule", "discovery"]).optional().default("fact"),
       scope: z.string().optional().describe("Scope (e.g. project name)"),
       tags: z.array(z.string()).optional(),
       importance: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
+    }),
+  },
+  {
+    name: "memory_delete",
+    description: "Delete a memory by ID. Irreversible.",
+    inputSchema: z.object({
+      id: z.string().describe("Memory ID to delete"),
     }),
   },
   {
@@ -128,7 +145,7 @@ export const toolDefinitions = [
   {
     name: "context_layer1",
     description:
-      "Compact context index — active tasks + recent memories. ~200 tokens. Call at session start. " +
+      "Compact context index — active tasks + important memories. ~200 tokens. Call at session start. " +
       "Use task_get or memory_get to drill into specific items.",
     inputSchema: z.object({
       project_id: z.string().optional(),
@@ -137,9 +154,21 @@ export const toolDefinitions = [
   {
     name: "session_event",
     description:
-      "Record a session event (file edit, decision, error, git op) for continuity across compaction.",
+      "Record a session event (file edit, decision, error, git op) for continuity across compaction. " +
+      "Duplicate events are silently deduped. Priority: 1=critical (file/task/rule), 2=high (git/env/error/decision), 3=normal, 4=low.",
     inputSchema: z.object({
-      type: z.enum(["file", "task", "decision", "error", "git", "env", "intent"]),
+      type: z.enum([
+        "file",
+        "task",
+        "decision",
+        "error",
+        "git",
+        "env",
+        "intent",
+        "rule",
+        "plan",
+        "subagent",
+      ]),
       priority: z.number().int().min(1).max(4).optional().default(3),
       data: z.record(z.string()).describe("Event payload — tool, path, content, etc."),
     }),
@@ -178,12 +207,20 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
 
   switch (name) {
     case "memory_search": {
-      const { query, scope, limit } = args as { query: string; scope?: string; limit?: number };
-      const results = searchLayer1(query, scope, limit);
+      const { query, scope, type, limit } = args as {
+        query: string;
+        scope?: string;
+        type?: "fact" | "decision" | "event" | "rule" | "discovery";
+        limit?: number;
+      };
+      const results = searchLayer1(query, scope, limit, type);
       if (results.length === 0) return "No memories found.";
-      const lines = [`Found ${results.length} results (BM25 ranked):`];
+      const lines = [`Found ${results.length} results:`];
       for (const m of results) {
-        lines.push(`[${m.rank}] ${m.id}  "${m.snippet}"  scope:${m.scope ?? "—"}  ${m.age}`);
+        const typeLabel = m.type !== "fact" ? ` [${m.type}]` : "";
+        lines.push(
+          `[${m.rank}] ${m.id}${typeLabel}  "${m.snippet}"  scope:${m.scope ?? "—"}  ${m.age}  (${m.matchLayer})`,
+        );
       }
       lines.push("\nUse memory_timeline(id) for context, memory_get([ids]) for full content.");
       return lines.join("\n");
@@ -200,7 +237,8 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           lines.push(`  · [${m.id}] ${m.snippet} (${m.age})`);
         lines.push("");
       }
-      lines.push(`▶ [${result.id}] ${result.full_content}`);
+      const titlePart = result.title ? ` "${result.title}"` : "";
+      lines.push(`▶ [${result.id}]${titlePart} [${result.type}]\n${result.full_content}`);
       if (result.after.length) {
         lines.push("");
         lines.push("After:");
@@ -213,12 +251,21 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const { ids } = args as { ids: string[] };
       const results = getLayer3(ids);
       if (results.length === 0) return "No memories found.";
-      return results.map((m) => `[${m.id}] (${m.importance})\n${m.content}`).join("\n\n---\n\n");
+      return results
+        .map((m) => {
+          const header = m.title
+            ? `[${m.id}] [${m.type}] "${m.title}" (${m.importance})`
+            : `[${m.id}] [${m.type}] (${m.importance})`;
+          return `${header}\n${m.content}`;
+        })
+        .join("\n\n---\n\n");
     }
 
     case "memory_store": {
-      const { content, scope, tags, importance } = args as {
+      const { content, title, type, scope, tags, importance } = args as {
         content: string;
+        title?: string;
+        type?: string;
         scope?: string;
         tags?: string[];
         importance?: string;
@@ -227,6 +274,8 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const now = new Date();
       await db.insert(memories).values({
         id,
+        title,
+        type: (type ?? "fact") as "fact" | "decision" | "event" | "rule" | "discovery",
         content,
         scope,
         tags,
@@ -234,7 +283,16 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         created_at: now,
         updated_at: now,
       });
-      return `Stored: ${id}`;
+      const label = title ? ` "${title}"` : "";
+      return `Stored: ${id}${label} [${type ?? "fact"}]`;
+    }
+
+    case "memory_delete": {
+      const { id } = args as { id: string };
+      const existing = await db.query.memories.findFirst({ where: eq(memories.id, id) });
+      if (!existing) return `Memory not found: ${id}`;
+      await db.delete(memories).where(eq(memories.id, id));
+      return `Deleted: ${id}`;
     }
 
     case "task_list": {
@@ -266,7 +324,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       );
       return rows
         .filter(Boolean)
-        .map((t) => `[${t!.id}] ${t!.status} — ${t!.title}\n${t!.body ?? ""}`)
+        .map((t) => `[${t?.id}] ${t?.status} — ${t?.title}\n${t?.body ?? ""}`)
         .join("\n\n");
     }
 
@@ -379,10 +437,39 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           !["done", "cancelled"].includes(t.status) && (!project_id || t.project_id === project_id),
       );
 
-      const recentMems = await db.query.memories.findMany({
-        limit: memLimit,
+      const allMems = await db.query.memories.findMany({
+        limit: memLimit * 3,
         orderBy: (m, { desc }) => [desc(m.created_at)],
       });
+
+      const importanceWeight: Record<string, number> = {
+        critical: 4,
+        high: 3,
+        normal: 2,
+        low: 1,
+      };
+
+      const typeWeight: Record<string, number> = {
+        rule: 3,
+        decision: 3,
+        discovery: 2,
+        fact: 1,
+        event: 1,
+      };
+
+      const nowMs = Date.now();
+      const scored = allMems.map((m) => {
+        const ageHours = (nowMs - m.created_at.getTime()) / 3_600_000;
+        const recency = Math.max(0, 1 - ageHours / (24 * 30));
+        const score =
+          (importanceWeight[m.importance] ?? 1) * 2 +
+          (typeWeight[m.type ?? "fact"] ?? 1) +
+          recency * 2;
+        return { m, score };
+      });
+
+      scored.sort((a, b) => b.score - a.score);
+      const recentMems = scored.slice(0, memLimit).map((s) => s.m);
 
       const lastSession = await db.query.sessions.findFirst({
         orderBy: [desc(sessions.created_at)],
@@ -394,10 +481,14 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         lines.push(`  [${t.id.slice(-6)}] ${t.status.padEnd(10)} ${t.title}`);
       }
 
-      lines.push("\n## Recent Memory");
+      lines.push("\n## Key Memory");
       if (recentMems.length === 0) lines.push("  (none)");
       for (const m of recentMems) {
-        lines.push(`  [${m.id.slice(-6)}] ${m.content.slice(0, 70)} (${timeAgo(m.created_at)})`);
+        const typeLabel = m.type !== "fact" ? ` [${m.type}]` : "";
+        const label = m.title ? ` "${m.title}"` : "";
+        lines.push(
+          `  [${m.id.slice(-6)}]${typeLabel}${label} ${m.content.slice(0, 60)} (${timeAgo(m.created_at)})`,
+        );
       }
 
       if (lastSession?.summary) {
@@ -415,14 +506,46 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         priority?: number;
         data: Record<string, string>;
       };
-      const sqlite = (db as unknown as { $client: Database }).$client;
+      const sqlite = getSqlite(db);
+      const sid = process.env.ORC_SESSION_ID ?? "default";
+      const dataJson = JSON.stringify(data);
+      const dataHash = createHash("sha256").update(dataJson).digest("hex").slice(0, 16);
+
+      type EventHashRow = { data_hash: string };
+      const recent = sqlite
+        .query<EventHashRow, [string, string, number]>(
+          `SELECT data_hash FROM session_events
+           WHERE session_id = ? AND type = ?
+           ORDER BY created_at DESC LIMIT ?`,
+        )
+        .all(sid, type, 5);
+
+      if (recent.some((r) => r.data_hash === dataHash)) {
+        return "Duplicate event skipped.";
+      }
+
+      type CountRow = { n: number };
+      const { n } = sqlite
+        .query<CountRow, string>("SELECT COUNT(*) as n FROM session_events WHERE session_id = ?")
+        .get(sid) ?? { n: 0 };
+
+      if (n >= 1000) {
+        sqlite
+          .query(
+            `DELETE FROM session_events WHERE id = (
+               SELECT id FROM session_events WHERE session_id = ?
+               ORDER BY priority ASC, created_at ASC LIMIT 1
+             )`,
+          )
+          .run(sid);
+      }
+
       const id = ulid();
-      const sessionId = process.env.ORC_SESSION_ID ?? "default";
       sqlite
         .query(
-          "INSERT INTO session_events(id, session_id, type, priority, data) VALUES (?,?,?,?,?)",
+          "INSERT INTO session_events(id, session_id, type, priority, data, data_hash) VALUES (?,?,?,?,?,?)",
         )
-        .run(id, sessionId, type, priority ?? 3, JSON.stringify(data));
+        .run(id, sid, type, priority ?? 3, dataJson, dataHash);
       return `Event recorded: ${id}`;
     }
 
@@ -430,24 +553,26 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const { session_id } = args as { session_id?: string };
       const config = loadConfig();
       const maxBytes = config.context.snapshot_max_bytes;
-
       const sid = session_id ?? process.env.ORC_SESSION_ID ?? "default";
 
       const activeTasks = await db.query.tasks.findMany({
         limit: 10,
         orderBy: (t, { desc }) => [desc(t.updated_at)],
       });
-      const filtered = activeTasks.filter((t) => !["done", "cancelled"].includes(t.status));
+      const filteredTasks = activeTasks.filter((t) => !["done", "cancelled"].includes(t.status));
 
-      const sqlite = (db as unknown as { $client: Database }).$client;
+      const sqlite = getSqlite(db);
 
+      type EventRow = { type: string; priority: number; data: string; data_hash?: string };
       const events = sqlite
-        .query(
-          "SELECT type, priority, data FROM session_events WHERE session_id = ? ORDER BY priority ASC, created_at DESC LIMIT 50",
+        .query<EventRow, string>(
+          `SELECT type, priority, data FROM session_events
+           WHERE session_id = ?
+           ORDER BY priority ASC, created_at DESC LIMIT 100`,
         )
-        .all(sid) as Array<{ type: string; priority: number; data: string }>;
+        .all(sid);
 
-      const xml = buildSnapshot(filtered, events, maxBytes);
+      const xml = buildSnapshot(filteredTasks, events, maxBytes);
 
       const snapId = ulid();
       sqlite
@@ -460,13 +585,13 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     case "session_restore": {
       const { session_id } = args as { session_id?: string };
       const sid = session_id ?? process.env.ORC_SESSION_ID ?? "default";
-      const sqlite = (db as unknown as { $client: Database }).$client;
+      const sqlite = getSqlite(db);
 
       const snap = sqlite
-        .query(
+        .query<{ xml: string }, string>(
           "SELECT xml FROM session_snapshots WHERE session_id = ? ORDER BY created_at DESC LIMIT 1",
         )
-        .get(sid) as { xml: string } | null;
+        .get(sid);
 
       if (!snap) return "No session snapshot found. Starting fresh.";
       return `## Session Restored\n\n${snap.xml}`;
@@ -488,8 +613,15 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
   }
 }
 
+function getSqlite(db: ReturnType<typeof getDb>): Database {
+  return (db as unknown as { $client: Database }).$client;
+}
+
 type TaskRow = { id: string; title: string; status: string; priority: string };
 type EventRow = { type: string; priority: number; data: string };
+
+const P1_TYPES = new Set(["file", "task", "rule"]);
+const P2_TYPES = new Set(["decision", "git", "env", "error", "plan"]);
 
 function buildSnapshot(tasks: TaskRow[], events: EventRow[], maxBytes: number): string {
   const taskXml = tasks
@@ -499,37 +631,62 @@ function buildSnapshot(tasks: TaskRow[], events: EventRow[], maxBytes: number): 
     )
     .join("\n");
 
-  const grouped: Record<string, string[]> = {};
-  for (const e of events) {
-    if (!grouped[e.type]) grouped[e.type] = [];
-    try {
-      const d = JSON.parse(e.data) as Record<string, string>;
-      grouped[e.type]?.push(
-        Object.entries(d)
-          .map(([k, v]) => `${k}=${v}`)
-          .join(" "),
-      );
-    } catch {
-      grouped[e.type]?.push(e.data);
+  const p1Events = events.filter((e) => P1_TYPES.has(e.type));
+  const p2Events = events.filter((e) => P2_TYPES.has(e.type));
+  const p3Events = events.filter((e) => !P1_TYPES.has(e.type) && !P2_TYPES.has(e.type));
+
+  function renderEvents(evs: EventRow[], max = 5): string {
+    const grouped: Record<string, string[]> = {};
+    for (const e of evs.slice(0, max * 3)) {
+      if (!grouped[e.type]) grouped[e.type] = [];
+      const items = grouped[e.type] ?? [];
+      if (items.length >= max) continue;
+      try {
+        const d = JSON.parse(e.data) as Record<string, string>;
+        items.push(
+          Object.entries(d)
+            .map(([k, v]) => `${k}=${String(v).slice(0, 80)}`)
+            .join(" "),
+        );
+      } catch {
+        items.push(String(e.data).slice(0, 120));
+      }
     }
+    return Object.entries(grouped)
+      .map(
+        ([type, items]) =>
+          `  <${type}s>${items.map((i) => `<item>${escapeXml(i)}</item>`).join("")}</${type}s>`,
+      )
+      .join("\n");
   }
 
-  const eventXml = Object.entries(grouped)
-    .map(
-      ([type, items]) =>
-        `  <${type}s>${items
-          .slice(0, 5)
-          .map((i) => `<item>${escapeXml(i)}</item>`)
-          .join("")}</${type}s>`,
-    )
-    .join("\n");
+  function assemble(includeP2: boolean, includeP3: boolean): string {
+    const parts = [`<tasks>\n${taskXml}\n</tasks>`];
+    const p1Xml = renderEvents(p1Events);
+    if (p1Xml) parts.push(`<context priority="high">\n${p1Xml}\n</context>`);
+    if (includeP2) {
+      const p2Xml = renderEvents(p2Events);
+      if (p2Xml) parts.push(`<context priority="normal">\n${p2Xml}\n</context>`);
+    }
+    if (includeP3) {
+      const p3Xml = renderEvents(p3Events, 3);
+      if (p3Xml) parts.push(`<context priority="low">\n${p3Xml}\n</context>`);
+    }
+    return `<session>\n${parts.join("\n")}\n</session>`;
+  }
 
-  const xml = `<session>\n<tasks>\n${taskXml}\n</tasks>\n<events>\n${eventXml}\n</events>\n</session>`;
+  const tiers: Array<[boolean, boolean]> = [
+    [true, true],
+    [true, false],
+    [false, false],
+  ];
 
-  if (Buffer.byteLength(xml) <= maxBytes) return xml;
+  for (const [incP2, incP3] of tiers) {
+    const xml = assemble(incP2, incP3);
+    if (Buffer.byteLength(xml) <= maxBytes) return xml;
+  }
 
-  const compact = `<session>\n<tasks>\n${taskXml}\n</tasks>\n</session>`;
-  return compact;
+  return `<session>\n<tasks>\n${taskXml}\n</tasks>\n</session>`;
 }
 
 function escapeXml(s: string): string {
