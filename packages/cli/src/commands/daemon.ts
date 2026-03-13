@@ -1,6 +1,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { loadConfig } from "@orc/core/config";
+import { startGateway, stopGateway } from "@orc/gateway";
+import { startScheduler, startWatchers, stopScheduler, stopWatchers } from "@orc/runner";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
 
@@ -52,31 +55,25 @@ export function daemonCommand() {
         }
       }
 
-      const { loadConfig } = await import("@orc/core/config" as string);
-      const { startGateway, stopGateway } = await import("@orc/gateway" as string);
-      const { startScheduler, stopScheduler, startWatchers, stopWatchers } = await import(
-        "@orc/runner" as string
-      );
-
-      const config = (loadConfig as typeof import("@orc/core/config").loadConfig)();
+      const config = loadConfig();
 
       writePid();
-      await import("@orc/api" as string);
+      await import("@orc/api");
       console.log(`[orc] home     ${ORC_HOME}`);
       console.log(`[orc] db       ${config.db.path}`);
       console.log(`[orc] API      http://${config.api.host}:${config.api.port}`);
       console.log(`[orc] pid      ${process.pid} -> ${ORC_PID}`);
 
-      await (startScheduler as () => Promise<void>)();
-      await (startWatchers as () => Promise<void>)();
-      await (startGateway as () => Promise<void>)();
+      await startScheduler();
+      await startWatchers();
+      await startGateway();
       console.log("[orc] Scheduler + watchers + gateway active. Ctrl+C to stop.\n");
 
       const shutdown = async (signal: string) => {
         process.stdout.write(`\n[orc] ${signal} - shutting down...\n`);
-        (stopScheduler as () => void)();
-        await (stopWatchers as () => Promise<void>)();
-        await (stopGateway as () => Promise<void>)();
+        stopScheduler();
+        await stopWatchers();
+        await stopGateway();
         removePid();
         process.stdout.write("[orc] Stopped.\n");
         process.exit(0);

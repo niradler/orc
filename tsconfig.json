@@ -16,11 +16,7 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "outDir": "./dist",
-    "baseUrl": ".",
-    "paths": {
-      "@orc/*": ["./packages/*/src/index.ts"]
-    }
+    "outDir": "./dist"
   },
   "exclude": ["node_modules", "dist", "**/dist"]
 }

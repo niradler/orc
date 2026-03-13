@@ -23,6 +23,8 @@
     "@orc/api": "workspace:*",
     "@orc/core": "workspace:*",
     "@orc/gateway": "workspace:*",
+    "@orc/mcp": "workspace:*",
+    "@orc/runner": "workspace:*",
     "@orc/sdk": "workspace:*",
     "commander": "^13.1.0",
     "typescript": "^5.7.3"

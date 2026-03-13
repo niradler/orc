@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { existsSync, statSync } from "node:fs";
 import { Command } from "commander";
+import { loadConfig } from "@orc/core/config";
 import { daemonCommand, ORC_HOME, ORC_PID, readDaemonPid } from "./commands/daemon.js";
 import { gatewayCommand } from "./commands/gateway.js";
 import { jobCommand } from "./commands/job.js";
@@ -63,16 +64,15 @@ program
   .command("api")
   .description("Start the API server (use --port / --host / --db / --secret to configure)")
   .action(async () => {
-    await import("@orc/api" as string);
+    await import("@orc/api");
     await new Promise(() => {});
   });
 
 program
   .command("home")
   .description("Show ~/.orc directory contents and daemon state")
-  .action(async () => {
-    const { loadConfig } = await import("@orc/core/config" as string);
-    const config = (loadConfig as typeof import("@orc/core/config").loadConfig)();
+  .action(() => {
+    const config = loadConfig();
 
     console.log(`ORC home: ${ORC_HOME}\n`);
 
@@ -114,8 +114,8 @@ program
   .command("mcp")
   .description("Start the MCP server (stdio)")
   .action(async () => {
-    const { startStdioServer } = await import("@orc/mcp" as string);
-    await (startStdioServer as () => Promise<void>)();
+    const { startStdioServer } = await import("@orc/mcp");
+    await startStdioServer();
   });
 
 program.parseAsync(process.argv).catch((err: unknown) => {
