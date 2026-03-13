@@ -7,6 +7,9 @@ export type TaskStatus =
   | "done"
   | "cancelled";
 export type TaskPriority = "low" | "normal" | "high" | "critical";
+export type TaskType = "feature" | "bug" | "research" | "ops" | "chore" | "coordination";
+export type TaskExecutionMode = "solo" | "pair" | "parallel" | "handoff";
+export type TaskNoteKind = "comment" | "checkpoint" | "handoff" | "review" | "claim" | "system";
 export type TaskLinkType =
   | "blocks"
   | "blocked_by"
@@ -15,14 +18,7 @@ export type TaskLinkType =
   | "clones"
   | "subtask_of"
   | "parent_of";
-export type JobTriggerType =
-  | "one-shot"
-  | "cron"
-  | "repeat"
-  | "watch"
-  | "webhook"
-  | "manual"
-  | "bridge-msg";
+export type JobTriggerType = "one-shot" | "cron" | "watch" | "webhook" | "manual" | "bridge-msg";
 export type JobStatus = "pending" | "running" | "success" | "failed" | "cancelled" | "skipped";
 export type JobOverlap = "skip" | "queue" | "kill";
 
@@ -33,11 +29,24 @@ export type Task = {
   body: string | null;
   status: TaskStatus;
   priority: TaskPriority;
+  progress: number;
   due_at: string | null;
   tags: string[] | null;
   author: string;
+  claimed_by: string | null;
+  claim_expires_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type TaskNote = {
+  id: string;
+  task_id: string;
+  content: string;
+  author: string;
+  kind: TaskNoteKind;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
 };
 
 export type Memory = {
@@ -59,7 +68,6 @@ export type Job = {
   command: string;
   trigger_type: JobTriggerType;
   cron_expr: string | null;
-  repeat_secs: number | null;
   enabled: boolean;
   timeout_secs: number;
   max_retries: number;
@@ -85,7 +93,19 @@ export type JobRun = {
   created_at: string;
 };
 
+export type Session = {
+  id: string;
+  agent: string;
+  agent_version: string | null;
+  project_id: string | null;
+  job_run_id: string | null;
+  summary: string | null;
+  tokens_used: number | null;
+  created_at: string;
+};
+
 export type ProjectStatus = "active" | "archived" | "paused";
+export type ProjectCoordinationMode = "solo" | "human_agent" | "multi_agent";
 
 export type Project = {
   id: string;
@@ -95,6 +115,10 @@ export type Project = {
   scope: string | null;
   tags: string[] | null;
   obsidian_path: string | null;
+  coordination_mode: ProjectCoordinationMode;
+  default_task_execution_mode: TaskExecutionMode;
+  working_agreement: string | null;
+  shared_context: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -107,22 +131,71 @@ export type CreateTaskInput = {
   project_id?: string;
   status?: "todo" | "doing" | "blocked";
   priority?: TaskPriority;
+  task_type?: TaskType;
+  execution_mode?: TaskExecutionMode;
+  progress?: number;
   due_at?: string;
   tags?: string[];
   author?: string;
+  assigned_to?: string;
+  active_branch?: string;
+  acceptance_criteria?: string[];
+  context_refs?: string[];
+  next_action?: string;
+  parallel_group?: string;
 };
 
 export type UpdateTaskInput = {
   title?: string;
-  body?: string;
+  body?: string | null;
   status?: TaskStatus;
   priority?: TaskPriority;
-  due_at?: string;
-  tags?: string[];
+  task_type?: TaskType;
+  execution_mode?: TaskExecutionMode;
+  progress?: number;
+  due_at?: string | null;
+  tags?: string[] | null;
+  assigned_to?: string | null;
+  active_branch?: string | null;
+  acceptance_criteria?: string[] | null;
+  context_refs?: string[] | null;
+  next_action?: string | null;
+  parallel_group?: string | null;
+};
+
+export type TaskClaimInput = {
+  actor: string;
+  ttl_minutes?: number;
+  branch?: string;
+  note?: string;
+  force?: boolean;
+};
+
+export type TaskCheckpointInput = {
+  author?: string;
+  summary: string;
+  progress?: number;
+  status?: "doing" | "blocked" | "review" | "changes_requested";
+  next_action?: string;
+  context_refs?: string[];
+  branch?: string;
+  release_claim?: boolean;
+};
+
+export type TaskHandoffInput = {
+  from_actor: string;
+  to_actor: string;
+  summary: string;
+  progress?: number;
+  next_action?: string;
+  context_refs?: string[];
+  branch?: string;
+  force?: boolean;
 };
 
 export type CreateMemoryInput = {
   content: string;
+  type?: "fact" | "decision" | "event" | "rule" | "discovery";
   source?: string;
   scope?: string;
   tags?: string[];
@@ -136,7 +209,6 @@ export type CreateJobInput = {
   command: string;
   trigger_type: JobTriggerType;
   cron_expr?: string;
-  repeat_secs?: number;
   watch_path?: string;
   timeout_secs?: number;
   max_retries?: number;
@@ -230,15 +302,23 @@ export type CreateProjectInput = {
   scope?: string;
   tags?: string[];
   obsidian_path?: string;
+  coordination_mode?: ProjectCoordinationMode;
+  default_task_execution_mode?: TaskExecutionMode;
+  working_agreement?: string;
+  shared_context?: string;
 };
 
 export type UpdateProjectInput = {
   name?: string;
-  description?: string;
+  description?: string | null;
   status?: ProjectStatus;
-  scope?: string;
-  tags?: string[];
-  obsidian_path?: string;
+  scope?: string | null;
+  tags?: string[] | null;
+  obsidian_path?: string | null;
+  coordination_mode?: ProjectCoordinationMode;
+  default_task_execution_mode?: TaskExecutionMode;
+  working_agreement?: string | null;
+  shared_context?: string | null;
 };
 
 export type ApiError = { error: string; code: string };

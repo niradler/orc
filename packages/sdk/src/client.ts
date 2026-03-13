@@ -16,6 +16,7 @@ import type {
   Prompt,
   PromptHistoryEntry,
   RenderedPrompt,
+  Session,
   Task,
   TaskLink,
   UpdateProjectInput,
@@ -47,7 +48,7 @@ async function call<T>(
   }
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (secret) headers["Authorization"] = `Bearer ${secret}`;
+  if (secret) headers.Authorization = `Bearer ${secret}`;
 
   try {
     const res = await fetch(url, {
@@ -208,8 +209,28 @@ export function createOrcClient(options?: OrcClientOptions) {
       delete: (id: string) => c<null>("DELETE", `/projects/${id}`),
     },
 
+    sessions: {
+      list: (params?: { agent?: string; job_run_id?: string; limit?: number }) =>
+        c<{ sessions: Session[] }>(
+          "GET",
+          "/sessions",
+          undefined,
+          params as Record<string, string | number | boolean | undefined>,
+        ),
+
+      get: (id: string) =>
+        c<Session & { events: unknown[]; snapshot: string | null }>("GET", `/sessions/${id}`),
+    },
+
     health: {
       check: () => c<HealthResponse>("GET", "/health"),
+    },
+
+    gateway: {
+      status: () => c<{ running: boolean; status: string }>("GET", "/gateway/status"),
+
+      send: (input: { platform: string; chat_id: string; text: string; thread_id?: string }) =>
+        c<null>("POST", "/gateway/send", input),
     },
   };
 }

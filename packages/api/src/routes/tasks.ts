@@ -16,9 +16,12 @@ const TaskSchema = z
     body: z.string().nullable(),
     status: TaskStatusSchema,
     priority: TaskPrioritySchema,
+    progress: z.number().int(),
     due_at: z.string().datetime().nullable(),
     tags: z.array(z.string()).nullable(),
     author: z.string(),
+    claimed_by: z.string().nullable(),
+    claim_expires_at: z.string().datetime().nullable(),
     created_at: z.string().datetime(),
     updated_at: z.string().datetime(),
   })
@@ -271,7 +274,8 @@ app.openapi(createRoute_, async (c) => {
   });
 
   const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
-  return c.json(toDto(task!), 201);
+  if (!task) throw new Error("Expected task to exist after write");
+  return c.json(toDto(task), 201);
 });
 
 app.openapi(updateRoute, async (c) => {
@@ -296,7 +300,8 @@ app.openapi(updateRoute, async (c) => {
     .where(eq(tasks.id, id));
 
   const updated = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
-  return c.json(toDto(updated!));
+  if (!updated) throw new Error("Expected updated to exist after write");
+  return c.json(toDto(updated));
 });
 
 app.openapi(deleteRoute, async (c) => {
@@ -337,7 +342,8 @@ app.openapi(reviewRoute, async (c) => {
   });
 
   const updated = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
-  return c.json(toDto(updated!));
+  if (!updated) throw new Error("Expected updated to exist after write");
+  return c.json(toDto(updated));
 });
 
 app.openapi(checkReviewRoute, async (c) => {
@@ -391,7 +397,8 @@ app.openapi(addNoteRoute, async (c) => {
   await db.insert(task_notes).values({ id: noteId, task_id: id, content, author, created_at: now });
 
   const note = await db.query.task_notes.findFirst({ where: eq(task_notes.id, noteId) });
-  return c.json(noteToDto(note!), 201);
+  if (!note) throw new Error("Expected note to exist after write");
+  return c.json(noteToDto(note), 201);
 });
 
 export { app as tasksRouter };

@@ -249,3 +249,114 @@ describe("Prompts", () => {
     expect(res.status).toBe(204);
   });
 });
+
+describe("Sessions", () => {
+  test("GET /sessions returns empty list initially", async () => {
+    const res = await req("GET", "/sessions");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { sessions: unknown[] };
+    expect(Array.isArray(body.sessions)).toBe(true);
+  });
+
+  test("POST /mcp/tool session_log writes a session with agent_version", async () => {
+    const res = await app.request("/mcp/tool", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: AUTH },
+      body: JSON.stringify({
+        name: "session_log",
+        args: {
+          agent: "cursor",
+          agent_version: "cursor/1.0",
+          summary: "CLI integration test session",
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { result: string };
+    expect(body.result).toMatch(/^Session logged:/);
+  });
+
+  test("GET /sessions shows the logged session with agent_version", async () => {
+    const res = await req("GET", "/sessions?agent=cursor&limit=5");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      sessions: { agent: string; agent_version: string | null; summary: string | null }[];
+    };
+    const s = body.sessions.find((s) => s.agent === "cursor");
+    expect(s).toBeDefined();
+    expect(s?.agent_version).toBe("cursor/1.0");
+  });
+});
+
+describe("Sessions — job_run_id filter", () => {
+  let runId: string;
+
+  test("POST /jobs/:id/trigger creates a run and auto-logs a session", async () => {
+    const jobRes = await req("POST", "/jobs", {
+      name: "session-link-test-job",
+      command: "echo session-link",
+      trigger_type: "manual",
+    });
+    expect(jobRes.status).toBe(201);
+    const job = (await jobRes.json()) as { id: string };
+
+    const triggerRes = await req("POST", `/jobs/${job.id}/trigger`);
+    expect(triggerRes.status).toBe(202);
+    const trig = (await triggerRes.json()) as { run_id: string };
+    runId = trig.run_id;
+
+    await Bun.sleep(600);
+  }, 10_000);
+
+  test("GET /sessions?job_run_id= returns auto-logged session from executor", async () => {
+    const res = await req("GET", `/sessions?job_run_id=${runId}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      sessions: { agent: string; job_run_id: string | null; summary: string | null }[];
+    };
+    expect(body.sessions.length).toBeGreaterThanOrEqual(1);
+    const sess = body.sessions[0];
+    expect(sess?.agent).toBe("runner");
+    expect(sess?.job_run_id).toBe(runId);
+    expect(sess?.summary).toContain("session-link-test-job");
+  });
+});
+
+describe("Jobs — cron trigger (no repeat_secs)", () => {
+  let jobId: string;
+
+  test("POST /jobs creates a cron job without repeat_secs", async () => {
+    const res = await req("POST", "/jobs", {
+      name: "cli-test-cron",
+      command: "echo hello",
+      trigger_type: "cron",
+      cron_expr: "0 * * * *",
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      id: string;
+      trigger_type: string;
+      cron_expr: string | null;
+    };
+    expect(body.trigger_type).toBe("cron");
+    expect(body.cron_expr).toBe("0 * * * *");
+    expect(body).not.toHaveProperty("repeat_secs");
+    jobId = body.id;
+  });
+
+  test("POST /jobs/:id/trigger runs the cron job manually", async () => {
+    const res = await req("POST", `/jobs/${jobId}/trigger`);
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as { run_id: string };
+    expect(body.run_id).toBeTruthy();
+
+    await Bun.sleep(600);
+
+    const runsRes = await req("GET", `/jobs/${jobId}/runs`);
+    expect(runsRes.status).toBe(200);
+    const runs = (await runsRes.json()) as { runs: { status: string }[] };
+    expect(runs.runs.length).toBeGreaterThanOrEqual(1);
+    const firstRunStatus = runs.runs[0]?.status ?? "none";
+    expect(["success", "running"]).toContain(firstRunStatus);
+  }, 10_000);
+});

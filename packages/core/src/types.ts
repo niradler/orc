@@ -13,7 +13,6 @@ export const TaskPrioritySchema = z.enum(["low", "normal", "high", "critical"]);
 export const JobTriggerTypeSchema = z.enum([
   "one-shot",
   "cron",
-  "repeat",
   "watch",
   "webhook",
   "manual",
@@ -29,9 +28,9 @@ export const JobStatusSchema = z.enum([
 ]);
 export const JobOverlapSchema = z.enum(["skip", "queue", "kill"]);
 export const MemoryImportanceSchema = z.enum(["low", "normal", "high", "critical"]);
-export const BridgePlatformSchema = z.enum(["telegram", "discord", "feishu"]);
+export const BridgePlatformSchema = z.enum(["telegram", "slack", "discord", "feishu"]);
 export const BridgeModeSchema = z
-  .enum(["direct", "agent:claude", "agent:codex"])
+  .enum(["direct", "agent:claude", "agent:codex", "agent:cursor", "multi"])
   .or(z.string().startsWith("job:"));
 
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
@@ -42,6 +41,8 @@ export type JobOverlap = z.infer<typeof JobOverlapSchema>;
 export type MemoryImportance = z.infer<typeof MemoryImportanceSchema>;
 export type BridgePlatform = z.infer<typeof BridgePlatformSchema>;
 export type BridgeMode = z.infer<typeof BridgeModeSchema>;
+export type GatewayPlatform = BridgePlatform;
+export type GatewayMode = BridgeMode;
 
 export const TaskLinkTypeSchema = z.enum([
   "blocks",
@@ -56,6 +57,12 @@ export type TaskLinkType = z.infer<typeof TaskLinkTypeSchema>;
 
 export const ProjectStatusSchema = z.enum(["active", "archived", "paused"]);
 export type ProjectStatus = z.infer<typeof ProjectStatusSchema>;
+
+export const TaskExecutionModeSchema = z.enum(["solo", "pair", "parallel", "handoff"]);
+export type TaskExecutionMode = z.infer<typeof TaskExecutionModeSchema>;
+
+export const ProjectCoordinationModeSchema = z.enum(["solo", "human_agent", "multi_agent"]);
+export type ProjectCoordinationMode = z.infer<typeof ProjectCoordinationModeSchema>;
 
 export const TASK_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   todo: ["doing", "cancelled"],

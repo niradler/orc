@@ -32,9 +32,12 @@ export const tasks = sqliteTable("tasks", {
   priority: text("priority", { enum: ["low", "normal", "high", "critical"] })
     .default("normal")
     .notNull(),
+  progress: integer("progress").default(0).notNull(),
   due_at: integer("due_at", { mode: "timestamp" }),
   tags: text("tags", { mode: "json" }).$type<string[]>(),
   author: text("author").default("human").notNull(),
+  claimed_by: text("claimed_by"),
+  claim_expires_at: integer("claim_expires_at", { mode: "timestamp" }),
   ...timestamps,
 });
 
@@ -143,10 +146,9 @@ export const jobs = sqliteTable(
     prompt_vars: text("prompt_vars", { mode: "json" }).$type<Record<string, string>>(),
     inject_context: integer("inject_context", { mode: "boolean" }).default(true).notNull(),
     trigger_type: text("trigger_type", {
-      enum: ["one-shot", "cron", "repeat", "watch", "webhook", "manual", "bridge-msg"],
+      enum: ["one-shot", "cron", "watch", "webhook", "manual", "bridge-msg"],
     }).notNull(),
     cron_expr: text("cron_expr"),
-    repeat_secs: integer("repeat_secs"),
     watch_path: text("watch_path"),
     run_at: integer("run_at", { mode: "timestamp" }),
     timeout_secs: integer("timeout_secs").default(300).notNull(),
@@ -210,6 +212,7 @@ export const job_run_logs = sqliteTable(
 export const sessions = sqliteTable("sessions", {
   id: text("id").primaryKey(),
   agent: text("agent").notNull(),
+  agent_version: text("agent_version"),
   project_id: text("project_id").references(() => projects.id),
   job_run_id: text("job_run_id").references(() => job_runs.id),
   summary: text("summary"),
@@ -223,12 +226,16 @@ export const bridge_chats = sqliteTable(
   "bridge_chats",
   {
     id: text("id").primaryKey(),
-    platform: text("platform", { enum: ["telegram", "discord", "feishu"] }).notNull(),
+    platform: text("platform", { enum: ["telegram", "slack", "discord", "feishu"] }).notNull(),
     chat_id: text("chat_id").notNull(),
     username: text("username"),
+    display_name: text("display_name"),
     mode: text("mode").default("direct").notNull(),
     authorized: integer("authorized", { mode: "boolean" }).default(false).notNull(),
     session_id: text("session_id"),
+    thread_id: text("thread_id"),
+    working_dir: text("working_dir"),
+    updated_at: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
     created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
   },
   (t) => [uniqueIndex("bridge_chats_platform_chat_idx").on(t.platform, t.chat_id)],
@@ -238,24 +245,62 @@ export const bridge_messages = sqliteTable("bridge_messages", {
   id: text("id").primaryKey(),
   chat_id: text("chat_id").references(() => bridge_chats.id),
   direction: text("direction", { enum: ["in", "out"] }).notNull(),
+  role: text("role", { enum: ["system", "user", "assistant"] })
+    .default("user")
+    .notNull(),
   text: text("text"),
   job_run_id: text("job_run_id").references(() => job_runs.id),
+  gateway_session_id: text("gateway_session_id").references(() => gateway_sessions.id),
   platform_msg_id: text("platform_msg_id"),
+  thread_id: text("thread_id"),
+  metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
   created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
 });
 
 export const bridge_permissions = sqliteTable("bridge_permissions", {
   id: text("id").primaryKey(),
   chat_id: text("chat_id"),
+  gateway_session_id: text("gateway_session_id").references(() => gateway_sessions.id),
   job_run_id: text("job_run_id").references(() => job_runs.id),
   tool: text("tool").notNull(),
   command: text("command"),
+  scope: text("scope", { enum: ["once", "session"] })
+    .default("once")
+    .notNull(),
+  message: text("message"),
   status: text("status", { enum: ["pending", "approved", "denied", "expired"] })
     .default("pending")
     .notNull(),
+  expires_at: integer("expires_at", { mode: "timestamp" }),
   created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
   resolved_at: integer("resolved_at", { mode: "timestamp" }),
 });
+
+export const gateway_sessions = sqliteTable(
+  "gateway_sessions",
+  {
+    id: text("id").primaryKey(),
+    chat_id: text("chat_id")
+      .notNull()
+      .references(() => bridge_chats.id, { onDelete: "cascade" }),
+    backend: text("backend", { enum: ["claude", "codex", "cursor"] }).notNull(),
+    mode: text("mode").notNull(),
+    runtime_session_id: text("runtime_session_id"),
+    cwd: text("cwd"),
+    title: text("title"),
+    model: text("model"),
+    status: text("status", { enum: ["idle", "running", "stopped", "error"] })
+      .default("idle")
+      .notNull(),
+    auto_approve: integer("auto_approve", { mode: "boolean" }).default(false).notNull(),
+    task_id: text("task_id").references(() => tasks.id, { onDelete: "set null" }),
+    last_error: text("last_error"),
+    last_activity_at: integer("last_activity_at", { mode: "timestamp" }),
+    created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+    updated_at: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+  },
+  (t) => [index("gateway_sessions_chat_idx").on(t.chat_id, t.updated_at)],
+);
 
 export const webhooks = sqliteTable("webhooks", {
   id: text("id").primaryKey(),
@@ -288,4 +333,5 @@ export type Session = typeof sessions.$inferSelect;
 export type BridgeChat = typeof bridge_chats.$inferSelect;
 export type BridgeMessage = typeof bridge_messages.$inferSelect;
 export type BridgePermission = typeof bridge_permissions.$inferSelect;
+export type GatewaySession = typeof gateway_sessions.$inferSelect;
 export type Webhook = typeof webhooks.$inferSelect;
