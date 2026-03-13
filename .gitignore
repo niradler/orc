@@ -9,3 +9,4 @@ drizzle/
 .orc/
 *.gen.ts
 bun.lockb
+.claude/settings.local.json
