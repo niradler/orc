@@ -479,6 +479,69 @@ Add to your Gemini CLI MCP config:
 
 ---
 
+## Claude Code Skills
+
+ORC ships with five Claude Code skills in `.claude/skills/`. Skills are reference guides that Claude loads on demand — they teach it the ORC-specific protocols so you don't have to re-explain them every session.
+
+| Skill | Triggers when... |
+|-------|-----------------|
+| `orc-agent-protocol` | Starting any ORC-backed session, initializing MCP, resuming after compaction |
+| `orc-task-workflow` | Creating tasks, submitting for HITL review, polling for approval |
+| `orc-memory-knowledge` | Storing decisions/rules, searching past context, cross-agent knowledge |
+| `orc-collab-gateway` | Gateway setup, live agent sessions, multi-agent coordination |
+| `orc-dev-contributing` | Contributing to the ORC codebase itself |
+
+### Installing the skills
+
+**Option A — register as a local plugin (recommended)**
+
+Add an entry to `~/.claude/plugins/installed_plugins.json`:
+
+```json
+{
+  "orc@local": [{
+    "scope": "user",
+    "installPath": "/path/to/orc/.claude",
+    "version": "0.1.0",
+    "installedAt": "2025-01-01T00:00:00.000Z",
+    "lastUpdated": "2025-01-01T00:00:00.000Z",
+    "gitCommitSha": "local"
+  }]
+}
+```
+
+Then enable it in `~/.claude/settings.json`:
+
+```json
+{
+  "enabledPlugins": {
+    "orc@local": true
+  }
+}
+```
+
+Replace `/path/to/orc` with the actual clone path (e.g. `/c/Projects/orc` on Windows, `~/src/orc` on macOS/Linux).
+
+**Option B — copy to your personal skills directory**
+
+```bash
+cp -r /path/to/orc/.claude/skills/orc-* ~/.claude/skills/
+```
+
+Claude Code picks up skills from `~/.claude/skills/` automatically.
+
+### How skills work
+
+Skills load automatically based on context — you don't invoke them manually. When you start a session in a project that uses ORC, `orc-agent-protocol` loads and tells Claude to call `context({})` first, record session events, and maintain continuity. When you ask about tasks, `orc-task-workflow` loads with the HITL flow. And so on.
+
+If you want to invoke a skill explicitly:
+
+```
+/orc-agent-protocol     # loads the session protocol skill
+```
+
+---
+
 ## MCP Tools Reference
 
 Connect any agent once; all tools below are available via MCP.
@@ -604,31 +667,222 @@ A task created by Claude Code appears in Cursor's `context`. A rule stored by Co
 
 ## Gateway
 
-The gateway connects messaging platforms to your ORC instance and to live agent sessions. It runs as part of `orc daemon`.
+The gateway connects Telegram and Slack to your ORC instance and to live AI agent sessions. Run it with `orc daemon start`.
 
-**Supported platforms:**
-- **Telegram** — full feature surface: inline keyboards, streaming message edits, voice STT/TTS, review cards
-- **Slack** — text-first: Socket Mode, thread replies, Block Kit buttons
+**What it enables:**
+- Approve or reject agent work from your phone (HITL review cards)
+- Start a live Claude / Codex session and chat with it from Telegram or Slack
+- Run jobs and search memory without opening a terminal
+- Voice notes → agent input (with reply as voice)
 
-**Routing modes per chat:**
-- `direct` — ORC-native commands (task create, memory search, job run)
-- `agent:claude` / `agent:codex` — live interactive agent session with streaming output and permission approval
-- `job:<name>` — feed messages into a `bridge-msg` triggered job
+---
 
-Configure in `~/.orc/config.json`:
+### Telegram setup
+
+**1. Create a bot** — talk to [@BotFather](https://t.me/BotFather), run `/newbot`, copy the token.
+
+**2. Find your Telegram user ID** — message [@userinfobot](https://t.me/userinfobot), it replies with your numeric ID.
+
+**3. Add to config:**
 
 ```json
 {
   "gateway": {
     "telegram": {
       "enabled": true,
-      "token": "your-bot-token",
+      "token": "7123456789:AAF...",
       "authorized_users": [123456789],
       "mode": "direct"
     }
   }
 }
 ```
+
+`authorized_users` is a whitelist — only these user IDs can interact with your bot. Start with `"mode": "direct"` for ORC commands; switch to an agent session per-chat later.
+
+**4. Start and verify:**
+
+```bash
+orc daemon start
+# Send /status to your bot in Telegram
+```
+
+---
+
+### Slack setup
+
+**1. Create a Slack app** at [api.slack.com/apps](https://api.slack.com/apps):
+- Enable **Socket Mode** → copy the App-Level Token (`xapp-...`)
+- Add Bot Token Scopes: `channels:history`, `chat:write`, `commands`
+- Install the app to your workspace → copy the Bot Token (`xoxb-...`)
+
+**2. Add to config:**
+
+```json
+{
+  "gateway": {
+    "slack": {
+      "enabled": true,
+      "bot_token": "xoxb-...",
+      "app_token": "xapp-..."
+    }
+  }
+}
+```
+
+---
+
+### Chat modes
+
+Each Telegram chat or Slack channel has its own mode. Switch with `/mode` or `/agent`:
+
+| Mode | What it does |
+|------|-------------|
+| `direct` | ORC commands — `/tasks`, `/mem`, `/jobs`, etc. |
+| `agent:claude` | Live Claude Code session — your messages go to Claude, replies stream back |
+| `agent:codex` | Live Codex session |
+| `agent:cursor` | Live Cursor session |
+| `job:<name>` | Messages trigger the named `bridge-msg` job |
+
+```
+# In Telegram or Slack
+/agent claude       → start a live Claude session in this chat
+/mode               → show current mode
+```
+
+---
+
+### Bot commands
+
+These work in `direct` mode:
+
+```
+/status             ORC health + task/memory counts
+/help               Full command list
+
+/tasks              List active tasks
+/task <id>          Show task details
+/approve <id>       Approve a HITL review
+/reject <id>        Reject with note
+/assign <id> <agent>  Assign task to an agent
+
+/jobs               List jobs with last run status
+/run <name>         Trigger a job immediately
+
+/mem <query>        Search memories
+
+/agent <claude|codex|cursor>   Start live session
+/sessions           List active sessions
+/session new        Create new session
+/session switch <id> Switch to existing session
+/session stop       Stop current session
+
+/cwd                Show current working directory
+```
+
+---
+
+### HITL review flow
+
+When an agent calls `task_submit_review(...)`, ORC sends a card to your Telegram:
+
+```
+📋 Review: Fix memory deduplication bug
+─────────────────────────────────────
+Implemented 3-layer search fallback. All tests pass.
+
+[✅ Approve]  [❌ Reject]
+```
+
+Tap **Approve** → task moves to `done`, agent receives `approved` on its next poll.
+
+Tap **Reject** → bot asks for a note → agent receives `changes_requested` + your note, task returns to `doing`.
+
+You can also approve from the CLI:
+
+```bash
+orc task approve task_01HXYZ
+orc task reject  task_01HXYZ   # prompts for note
+```
+
+---
+
+### Live agent sessions
+
+Start a Claude session directly from Telegram:
+
+```
+/agent claude
+→ Session started. Send your task.
+
+you: refactor the auth middleware to use JWT instead of sessions
+Claude: I'll start by reading the current auth middleware...
+        [streams output as it works]
+        Done. Modified: src/middleware/auth.ts, src/routes/login.ts
+        Should I submit this for review?
+```
+
+If Claude needs to run a potentially dangerous command, the gateway sends a permission prompt:
+
+```
+🔐 Permission request
+────────────────────
+rm -rf dist/
+
+[✅ Allow]  [❌ Deny]
+```
+
+All I/O is stored in the `bridge_messages` table for auditing.
+
+---
+
+### Voice integration
+
+Configure speech-to-text and text-to-speech for Telegram voice notes:
+
+```json
+{
+  "gateway": {
+    "speech": {
+      "enabled": true,
+      "provider": "openai",
+      "language": "en"
+    },
+    "tts": {
+      "enabled": true,
+      "provider": "openai",
+      "voice": "alloy"
+    }
+  }
+}
+```
+
+Supported STT providers: `openai` · `groq` · `qwen`
+Supported TTS providers: `openai` · `qwen`
+
+Send a voice note → transcribed → sent to agent. Agent response → synthesized → returned as voice.
+
+---
+
+### Bridge-msg jobs
+
+Route messages into a job for custom automation:
+
+```bash
+# Create a job triggered by bridge messages
+orc job add handle-request \
+  --command "bun /path/to/handler.ts" \
+  --trigger bridge-msg
+```
+
+```
+# In Telegram, switch to this job
+/mode job:handle-request
+
+# Now every message you send becomes stdin for the job
+```
+
+The job receives the message as stdin and can call the ORC API, create tasks, store memories, or respond back through the gateway.
 
 ---
 
