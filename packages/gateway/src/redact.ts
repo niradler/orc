@@ -13,10 +13,14 @@ const SENSITIVE_KEYS = new Set([
   "SLACK_APP_TOKEN",
 ]);
 
-const TOKEN_PREFIXES = /\b(sk-[A-Za-z0-9\-_]{20,}|xox[bpoa]-[A-Za-z0-9\-]+|ghp_[A-Za-z0-9]{36}|AIza[A-Za-z0-9\-_]{35}|[0-9]{8,10}:[A-Za-z0-9\-_]{35})\b/g;
+const TOKEN_PREFIXES =
+  /\b(sk-[A-Za-z0-9\-_]{20,}|xox[bpoa]-[A-Za-z0-9-]+|ghp_[A-Za-z0-9]{36}|AIza[A-Za-z0-9\-_]{35}|[0-9]{8,10}:[A-Za-z0-9\-_]{35})\b/g;
 
 export function redactSecrets(text: string): string {
-  return text.replace(TOKEN_PREFIXES, (match) => `${"*".repeat(match.length - 4)}${match.slice(-4)}`);
+  return text.replace(
+    TOKEN_PREFIXES,
+    (match) => `${"*".repeat(match.length - 4)}${match.slice(-4)}`,
+  );
 }
 
 export function redactObject(obj: unknown, depth = 0): unknown {

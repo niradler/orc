@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { existsSync, statSync } from "node:fs";
-import { Command } from "commander";
 import { loadConfig } from "@orc/core/config";
+import { Command } from "commander";
 import { daemonCommand, ORC_HOME, ORC_PID, readDaemonPid } from "./commands/daemon.js";
 import { gatewayCommand } from "./commands/gateway.js";
 import { jobCommand } from "./commands/job.js";

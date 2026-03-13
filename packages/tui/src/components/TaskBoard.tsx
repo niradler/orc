@@ -33,7 +33,7 @@ export function TaskBoard({ focused }: Props) {
     const result = await client.tasks.list({ limit: 50 });
     if (result.data) setTasks(result.data.tasks);
     setLoading(false);
-  }, []);
+  }, [client.tasks.list]);
 
   useEffect(() => {
     load();

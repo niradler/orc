@@ -10,7 +10,7 @@ import type {
   SessionOpts,
 } from "./types.js";
 
-const logger = createLogger("agent-runtime:codex");
+const _logger = createLogger("agent-runtime:codex");
 
 const GRACE_TIMEOUT_MS = 8_000;
 
@@ -217,12 +217,14 @@ export class CodexSession implements AgentSession {
 
   async *events(): AsyncIterable<AgentEvent> {
     while (true) {
+      // biome-ignore lint/style/noNonNullAssertion: array.shift() is safe inside while(length>0)
       while (this.eventQueue.length > 0) yield this.eventQueue.shift()!;
       if (this.done) break;
       await new Promise<void>((resolve) => {
         this.resolveNext = resolve;
       });
     }
+    // biome-ignore lint/style/noNonNullAssertion: array.shift() is safe inside while(length>0)
     while (this.eventQueue.length > 0) yield this.eventQueue.shift()!;
   }
 

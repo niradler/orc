@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { PermissionManager } from "./permission-manager.js";
 import { PreviewManager } from "./preview-manager.js";
 import { SessionLock } from "./session-lock.js";
@@ -174,7 +174,7 @@ describe("PreviewManager", () => {
     const pm = new PreviewManager(adapter);
     await pm.init("s1", "chat1", "chat1:1", "start");
     pm.freeze("s1");
-    await pm.update("s1", "while frozen " + "x".repeat(40));
+    await pm.update("s1", `while frozen ${"x".repeat(40)}`);
     expect(edits).toHaveLength(0);
     pm.unfreeze("s1");
     await new Promise((r) => setTimeout(r, 50));

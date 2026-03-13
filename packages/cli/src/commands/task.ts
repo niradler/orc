@@ -57,7 +57,7 @@ export function taskCommand() {
         priority: opts.priority,
       });
       if (error) return console.error("Error:", error);
-      console.log(`Created: [${data!.id.slice(-6)}] ${data!.title}`);
+      console.log(`Created: [${data?.id.slice(-6)}] ${data?.title}`);
     });
 
   cmd
@@ -69,7 +69,7 @@ export function taskCommand() {
       if (!full) return;
       const { data, error } = await client.tasks.update(full, { status: "done" });
       if (error) return console.error("Error:", error);
-      console.log(`Done: [${data!.id.slice(-6)}] ${data!.title}`);
+      console.log(`Done: [${data?.id.slice(-6)}] ${data?.title}`);
     });
 
   cmd
@@ -81,7 +81,7 @@ export function taskCommand() {
       if (!full) return;
       const { data, error } = await client.tasks.update(full, { status: "review" });
       if (error) return console.error("Error:", error);
-      console.log(`In review: [${data!.id.slice(-6)}] ${data!.title}`);
+      console.log(`In review: [${data?.id.slice(-6)}] ${data?.title}`);
     });
 
   cmd
@@ -94,13 +94,13 @@ export function taskCommand() {
       if (!full) return;
       const { data: task, error: getErr } = await client.tasks.get(full);
       if (getErr) return console.error("Error:", getErr);
-      if (task!.status !== "review") {
-        return console.error(`Task is not in review (current: ${task!.status})`);
+      if (task?.status !== "review") {
+        return console.error(`Task is not in review (current: ${task?.status})`);
       }
       const { data, error } = await client.tasks.update(full, { status: "done" });
       if (error) return console.error("Error:", error);
       if (opts.note) await client.tasks.addNote(full, opts.note, "human");
-      console.log(`Approved: [${data!.id.slice(-6)}] ${data!.title}`);
+      console.log(`Approved: [${data?.id.slice(-6)}] ${data?.title}`);
     });
 
   cmd
@@ -113,13 +113,13 @@ export function taskCommand() {
       if (!full) return;
       const { data: task, error: getErr } = await client.tasks.get(full);
       if (getErr) return console.error("Error:", getErr);
-      if (task!.status !== "review") {
-        return console.error(`Task is not in review (current: ${task!.status})`);
+      if (task?.status !== "review") {
+        return console.error(`Task is not in review (current: ${task?.status})`);
       }
       const { data, error } = await client.tasks.update(full, { status: "changes_requested" });
       if (error) return console.error("Error:", error);
       if (opts.reason) await client.tasks.addNote(full, opts.reason, "human");
-      console.log(`Changes requested: [${data!.id.slice(-6)}] ${data!.title}`);
+      console.log(`Changes requested: [${data?.id.slice(-6)}] ${data?.title}`);
     });
 
   return cmd;

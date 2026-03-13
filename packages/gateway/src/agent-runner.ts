@@ -4,7 +4,7 @@ import type { AgentSession } from "./agent-runtime/types.js";
 import type { PermissionManager } from "./permission-manager.js";
 import type { PreviewManager } from "./preview-manager.js";
 import { createPermission, updateGatewaySession } from "./store.js";
-import type { GatewayAdapter, SupportsInlineButtons, SupportsMessageUpdate } from "./types.js";
+import type { GatewayAdapter, SupportsInlineButtons } from "./types.js";
 
 const logger = createLogger("gateway:runner");
 

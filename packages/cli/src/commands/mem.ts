@@ -43,7 +43,7 @@ export function memCommand() {
           : {}),
       });
       if (error) return console.error("Error:", error);
-      console.log(`Stored: [${data!.id.slice(-6)}] [${opts.type}] ${data!.content.slice(0, 60)}`);
+      console.log(`Stored: [${data?.id.slice(-6)}] [${opts.type}] ${data?.content.slice(0, 60)}`);
     });
 
   cmd

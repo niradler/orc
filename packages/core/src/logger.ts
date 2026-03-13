@@ -10,7 +10,7 @@ const COLORS: Record<LogLevel, string> = {
 };
 const RESET = "\x1b[0m";
 
-let currentLevel: LogLevel = (process.env["ORC_LOG_LEVEL"] as LogLevel | undefined) ?? "info";
+let currentLevel: LogLevel = (process.env.ORC_LOG_LEVEL as LogLevel | undefined) ?? "info";
 
 export function setLogLevel(level: LogLevel): void {
   currentLevel = level;

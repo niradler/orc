@@ -2,10 +2,8 @@ import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
 import { registerAdapter } from "./adapter-registry.js";
 import type {
-  Button,
   GatewayAdapter,
   IncomingMessage,
-  SendOpts,
   SupportsInlineButtons,
   SupportsMessageUpdate,
 } from "./types.js";
@@ -233,7 +231,7 @@ export function createSlackAdapter(startTime: number): SlackAdapter {
       return `${String(body.channel ?? chatId)}:${String(body.ts ?? "")}`;
     },
 
-    async updateMessage(chatId, msgId, text, opts) {
+    async updateMessage(_chatId, msgId, text, opts) {
       const [channel, ts] = msgId.split(":");
       if (!channel || !ts) return;
       const blocks = buildBlocks(text, opts?.buttons);

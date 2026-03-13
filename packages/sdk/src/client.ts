@@ -48,7 +48,7 @@ async function call<T>(
   }
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (secret) headers["Authorization"] = `Bearer ${secret}`;
+  if (secret) headers.Authorization = `Bearer ${secret}`;
 
   try {
     const res = await fetch(url, {

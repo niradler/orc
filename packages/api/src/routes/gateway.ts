@@ -57,7 +57,12 @@ app.openapi(sendRoute, async (c) => {
     return c.json({ error: "Gateway is not running" }, 503);
   }
   const { platform, chat_id, text, thread_id } = c.req.valid("json");
-  await sendGatewayMessage(platform, chat_id, text, thread_id ? { threadId: thread_id } : undefined);
+  await sendGatewayMessage(
+    platform,
+    chat_id,
+    text,
+    thread_id ? { threadId: thread_id } : undefined,
+  );
   return c.body(null, 204);
 });
 

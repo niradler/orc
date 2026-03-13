@@ -228,7 +228,8 @@ app.openapi(createRoute_, async (c) => {
   });
 
   const job = await db.query.jobs.findFirst({ where: eq(jobs.id, id) });
-  return c.json(toDto(job!), 201);
+  if (!job) throw new Error("Expected job to exist after write");
+  return c.json(toDto(job), 201);
 });
 
 app.openapi(triggerRoute, async (c) => {

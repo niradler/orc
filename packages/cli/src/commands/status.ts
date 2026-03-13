@@ -9,7 +9,7 @@ export function statusCommand() {
       console.error("API unreachable — is `orc api` running?");
       return;
     }
-    console.log(`orc API  ● running  v${data!.version}  uptime: ${data!.uptime}s`);
+    console.log(`orc API  ● running  v${data?.version}  uptime: ${data?.uptime}s`);
 
     const { data: tasks } = await client.tasks.list({ limit: 100 });
     const { data: jobs } = await client.jobs.list();

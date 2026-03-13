@@ -1,6 +1,6 @@
 import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
-import { Bot, InlineKeyboard, InputFile } from "grammy";
+import { Bot, type Context, InlineKeyboard, InputFile } from "grammy";
 import { registerAdapter } from "./adapter-registry.js";
 import type {
   GatewayAdapter,
@@ -35,7 +35,7 @@ function buildKeyboard(buttons: NonNullable<SendOpts["buttons"]>): InlineKeyboar
   return kb;
 }
 
-function escapeMd(text: string): string {
+function _escapeMd(text: string): string {
   return text.replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, "\\$&");
 }
 
@@ -79,17 +79,18 @@ export function createTelegramAdapter(startTime: number): TelegramAdapter {
   }
 
   function makeIncoming(
-    ctx: any,
+    ctx: Context,
     text: string,
     attachments?: IncomingMessage["attachments"],
   ): IncomingMessage {
+    // biome-ignore lint/style/noNonNullAssertion: all callers guard `if (!ctx.from) return` first
+    const from = ctx.from!;
     return {
       platform: "telegram",
       chatId: String(ctx.chat?.id ?? ctx.callbackQuery?.message?.chat.id ?? ""),
-      userId: String(ctx.from.id),
-      username: ctx.from.username,
-      displayName:
-        [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ").trim() || undefined,
+      userId: String(from.id),
+      username: from.username,
+      displayName: [from.first_name, from.last_name].filter(Boolean).join(" ").trim() || undefined,
       text,
       platformMessageId: String(ctx.msg?.message_id ?? ctx.message?.message_id ?? ""),
       attachments,
@@ -121,7 +122,7 @@ export function createTelegramAdapter(startTime: number): TelegramAdapter {
         "session",
       ];
 
-      bot.command(allCommands, async (ctx: any) => {
+      bot.command(allCommands, async (ctx: Context) => {
         if (!ctx.from || !isAuthorized(ctx.from.id)) return;
         const msgId = String(ctx.message?.message_id ?? "");
         if (msgId && dedup(`cmd:${msgId}`)) return;
@@ -134,7 +135,7 @@ export function createTelegramAdapter(startTime: number): TelegramAdapter {
         await dispatch(makeIncoming(ctx, text));
       });
 
-      bot.on("message", async (ctx: any) => {
+      bot.on("message", async (ctx: Context) => {
         if (!ctx.from || !isAuthorized(ctx.from.id)) return;
         const msgId = String(ctx.message?.message_id ?? "");
         if (msgId && dedup(`msg:${msgId}`)) return;
@@ -176,8 +177,8 @@ export function createTelegramAdapter(startTime: number): TelegramAdapter {
         );
       });
 
-      bot.on("callback_query:data", async (ctx: any) => {
-        if (!ctx.from || !isAuthorized(ctx.from.id)) return;
+      bot.on("callback_query:data", async (ctx: Context) => {
+        if (!ctx.from || !isAuthorized(ctx.from.id) || !ctx.callbackQuery) return;
         const cbId = ctx.callbackQuery.id;
         if (dedup(`cb:${cbId}`)) {
           await ctx.answerCallbackQuery();
@@ -192,7 +193,7 @@ export function createTelegramAdapter(startTime: number): TelegramAdapter {
           username: ctx.from.username,
           displayName:
             [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ").trim() || undefined,
-          text: ctx.callbackQuery.data,
+          text: ctx.callbackQuery.data ?? "",
           platformMessageId,
         });
         await ctx.answerCallbackQuery();
@@ -212,6 +213,7 @@ export function createTelegramAdapter(startTime: number): TelegramAdapter {
       if (opts?.buttons?.length) params.reply_markup = buildKeyboard(opts.buttons);
 
       const safe = text.slice(0, 4096);
+      // biome-ignore lint/suspicious/noExplicitAny: grammy params type is too narrow for dynamic options
       const sent = await bot.api.sendMessage(chatId, safe, params as any);
       return `${sent.chat.id}:${sent.message_id}`;
     },
@@ -223,15 +225,18 @@ export function createTelegramAdapter(startTime: number): TelegramAdapter {
       if (opts?.parseMode === "html") params.parse_mode = "HTML";
       if (opts?.buttons?.length) params.reply_markup = buildKeyboard(opts.buttons);
       try {
+        // biome-ignore lint/suspicious/noExplicitAny: grammy params type is too narrow for dynamic options
         await bot.api.editMessageText(chatId, Number(rawId), text.slice(0, 4096), params as any);
-      } catch (err: any) {
-        if (!String(err?.message ?? "").includes("message is not modified")) throw err;
+      } catch (err: unknown) {
+        if (!String(err instanceof Error ? err.message : "").includes("message is not modified"))
+          throw err;
       }
     },
 
     async sendWithButtons(chatId, text, buttons, opts) {
       const params: Record<string, unknown> = { reply_markup: buildKeyboard(buttons) };
       if (opts?.parseMode === "html") params.parse_mode = "HTML";
+      // biome-ignore lint/suspicious/noExplicitAny: grammy params type is too narrow for dynamic options
       const sent = await bot.api.sendMessage(chatId, text.slice(0, 4096), params as any);
       return `${sent.chat.id}:${sent.message_id}`;
     },

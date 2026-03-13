@@ -4,9 +4,9 @@ import { createLogger } from "@orc/core/logger";
 import type { GatewayMode } from "@orc/core/types";
 import { executeJob } from "@orc/runner/executor";
 import { createAdapter } from "./adapter-registry.js";
+import { closeAgentSession, preflightBackends, runAgentTurn } from "./agent-runner.js";
 import { RateLimiter } from "./rate-limiter.js";
 import { redactSecrets } from "./redact.js";
-import { closeAgentSession, preflightBackends, runAgentTurn } from "./agent-runner.js";
 import "./agent-runtime/index.js";
 import { ensureAgentSession, handleDirectCommand } from "./direct.js";
 import { PermissionManager } from "./permission-manager.js";
@@ -20,7 +20,6 @@ import {
   findJobByName,
   getActiveGatewaySession,
   getOrCreateChat,
-  listRecentMessages,
   listReviewTargets,
   updateGatewaySession,
 } from "./store.js";
@@ -28,6 +27,7 @@ import type {
   GatewayAdapter,
   IncomingMessage,
   SendOpts,
+  SupportsCommandRegistration,
   SupportsInlineButtons,
   SupportsMessageUpdate,
   SupportsTyping,
@@ -69,8 +69,14 @@ class GatewayManager {
     const config = loadConfig();
 
     const enabledAdapters: string[] = [];
-    if (config.gateway.telegram.enabled && config.gateway.telegram.token) enabledAdapters.push("telegram");
-    if (config.gateway.slack.enabled && config.gateway.slack.bot_token && config.gateway.slack.app_token) enabledAdapters.push("slack");
+    if (config.gateway.telegram.enabled && config.gateway.telegram.token)
+      enabledAdapters.push("telegram");
+    if (
+      config.gateway.slack.enabled &&
+      config.gateway.slack.bot_token &&
+      config.gateway.slack.app_token
+    )
+      enabledAdapters.push("slack");
 
     for (const name of enabledAdapters) {
       try {
@@ -87,7 +93,7 @@ class GatewayManager {
     for (const [, adapter] of this.adapters) {
       if ("registerCommands" in adapter) {
         try {
-          await (adapter as any).registerCommands(BOT_COMMANDS);
+          await (adapter as SupportsCommandRegistration).registerCommands(BOT_COMMANDS);
         } catch (err) {
           logger.warn("Failed to register bot commands", { platform: adapter.platform, err });
         }

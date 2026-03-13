@@ -156,7 +156,8 @@ app.openapi(createRoute_, async (c) => {
   });
 
   const project = await db.query.projects.findFirst({ where: eq(projects.id, id) });
-  return c.json(toDto(project!), 201);
+  if (!project) throw new Error("Expected project to exist after write");
+  return c.json(toDto(project), 201);
 });
 
 app.openapi(updateRoute, async (c) => {
@@ -181,7 +182,8 @@ app.openapi(updateRoute, async (c) => {
     .where(eq(projects.id, id));
 
   const updated = await db.query.projects.findFirst({ where: eq(projects.id, id) });
-  return c.json(toDto(updated!));
+  if (!updated) throw new Error("Expected updated to exist after write");
+  return c.json(toDto(updated));
 });
 
 app.openapi(deleteRoute, async (c) => {
