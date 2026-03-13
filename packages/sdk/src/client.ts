@@ -225,6 +225,13 @@ export function createOrcClient(options?: OrcClientOptions) {
     health: {
       check: () => c<HealthResponse>("GET", "/health"),
     },
+
+    gateway: {
+      status: () => c<{ running: boolean; status: string }>("GET", "/gateway/status"),
+
+      send: (input: { platform: string; chat_id: string; text: string; thread_id?: string }) =>
+        c<null>("POST", "/gateway/send", input),
+    },
   };
 }
 

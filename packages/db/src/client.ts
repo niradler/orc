@@ -329,6 +329,9 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE bridge_permissions ADD COLUMN scope TEXT NOT NULL DEFAULT 'once'",
     "ALTER TABLE bridge_permissions ADD COLUMN message TEXT",
     "ALTER TABLE bridge_permissions ADD COLUMN expires_at INTEGER",
+    "ALTER TABLE gateway_sessions ADD COLUMN auto_approve INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE gateway_sessions ADD COLUMN task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL",
+    "UPDATE jobs SET enabled=0 WHERE trigger_type='repeat'",
   ];
   for (const statement of migrations) {
     try {

@@ -16,9 +16,12 @@ const TaskSchema = z
     body: z.string().nullable(),
     status: TaskStatusSchema,
     priority: TaskPrioritySchema,
+    progress: z.number().int(),
     due_at: z.string().datetime().nullable(),
     tags: z.array(z.string()).nullable(),
     author: z.string(),
+    claimed_by: z.string().nullable(),
+    claim_expires_at: z.string().datetime().nullable(),
     created_at: z.string().datetime(),
     updated_at: z.string().datetime(),
   })

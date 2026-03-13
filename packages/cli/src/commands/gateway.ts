@@ -1,4 +1,4 @@
-import { getGatewayStatus, sendGatewayMessage } from "@orc/gateway";
+import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
 
 export function gatewayCommand() {
@@ -8,7 +8,13 @@ export function gatewayCommand() {
     .command("status")
     .description("Show enabled adapters and active sessions")
     .action(async () => {
-      console.log(await getGatewayStatus());
+      const client = createOrcClient();
+      const { data, error } = await client.gateway.status();
+      if (error) {
+        console.error(`Error: ${error.error}`);
+        process.exit(1);
+      }
+      console.log(data.status);
     });
 
   cmd
@@ -19,7 +25,17 @@ export function gatewayCommand() {
     .requiredOption("--text <text>", "Message text")
     .option("--thread <id>", "Optional Telegram thread or Slack thread timestamp")
     .action(async (opts) => {
-      await sendGatewayMessage(opts.platform, opts.chat, opts.text, { threadId: opts.thread });
+      const client = createOrcClient();
+      const { error } = await client.gateway.send({
+        platform: opts.platform,
+        chat_id: opts.chat,
+        text: opts.text,
+        thread_id: opts.thread,
+      });
+      if (error) {
+        console.error(`Error: ${error.error}`);
+        process.exit(1);
+      }
       console.log(`Sent message to ${opts.platform}:${opts.chat}`);
     });
 

@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { z } from "zod";
 
 const ChannelDefaultModeSchema = z
-  .enum(["direct", "agent:claude", "agent:codex"])
+  .enum(["direct", "agent:claude", "agent:codex", "agent:cursor", "multi"])
+  .or(z.string().startsWith("job:"))
   .default("direct");
 
 export const GatewayPlatformConfigSchema = z.object({
@@ -209,6 +210,12 @@ export function loadConfig(overrides?: Partial<OrcConfig>): OrcConfig {
   if (existsSync(localConfigPath)) raw = deepMerge(raw, loadJsonFile(localConfigPath));
   raw = deepMerge(raw, fromEnv());
   if (overrides) raw = deepMerge(raw, overrides as Record<string, unknown>);
+
+  // Backwards compatibility: bridge: key was renamed to gateway: in v0.1.0
+  if (raw.bridge && !raw.gateway) {
+    raw.gateway = raw.bridge;
+  }
+  delete raw.bridge;
 
   const parsed = OrcConfigSchema.safeParse(raw);
   if (!parsed.success) {

@@ -16,6 +16,15 @@ export async function startScheduler(): Promise<void> {
     where: eq(jobs.enabled, true),
   });
 
+  const knownTriggers = new Set(["cron", "one-shot", "watch", "webhook", "manual", "bridge-msg"]);
+  const orphaned = allJobs.filter((j) => !knownTriggers.has(j.trigger_type));
+  if (orphaned.length > 0) {
+    logger.warn(
+      `${orphaned.length} job(s) have an unsupported trigger type and will not fire: ${orphaned.map((j) => `${j.name} (${j.trigger_type})`).join(", ")}. ` +
+        `Use 'cron' with a 6-field expression (e.g. '*/30 * * * * *') for sub-minute intervals.`,
+    );
+  }
+
   for (const job of allJobs) {
     if (job.trigger_type === "cron" && job.cron_expr) {
       scheduleCronJob(job.id, job.name, job.cron_expr);

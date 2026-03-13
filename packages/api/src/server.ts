@@ -4,6 +4,7 @@ import { loadConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
 import { bearerAuth } from "./middleware/auth.js";
+import { gatewayRouter } from "./routes/gateway.js";
 import { healthRouter } from "./routes/health.js";
 import { jobsRouter } from "./routes/jobs.js";
 import { mcpToolRouter } from "./routes/mcp-tool.js";
@@ -43,6 +44,7 @@ export function createApp() {
   app.route("/", memoriesRouter);
   app.route("/", sessionsRouter);
   app.route("/", jobsRouter);
+  app.route("/", gatewayRouter);
 
   app.doc("/openapi.json", {
     openapi: "3.1.0",
