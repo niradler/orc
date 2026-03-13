@@ -8,22 +8,25 @@ import { executeJob } from "./executor.js";
 const logger = createLogger("runner:scheduler");
 
 const activeCrons = new Map<string, Cron>();
+const activeTimers = new Map<string, Timer>();
 
 export async function startScheduler(): Promise<void> {
   const db = getDb();
-  const cronJobs = await db.query.jobs.findMany({
+  const allJobs = await db.query.jobs.findMany({
     where: eq(jobs.enabled, true),
   });
 
-  for (const job of cronJobs) {
+  for (const job of allJobs) {
     if (job.trigger_type === "cron" && job.cron_expr) {
       scheduleCronJob(job.id, job.name, job.cron_expr);
-    } else if (job.trigger_type === "repeat" && job.repeat_secs) {
-      scheduleRepeatJob(job.id, job.name, job.repeat_secs);
+    } else if (job.trigger_type === "one-shot" && job.run_at) {
+      scheduleOneShotJob(job.id, job.name, job.run_at, job.run_count);
     }
   }
 
-  logger.info(`Scheduler started. ${activeCrons.size} jobs scheduled.`);
+  logger.info(
+    `Scheduler started. ${activeCrons.size} cron + ${activeTimers.size} one-shot jobs scheduled.`,
+  );
 }
 
 export function scheduleCronJob(jobId: string, name: string, expr: string): void {
@@ -44,23 +47,34 @@ export function scheduleCronJob(jobId: string, name: string, expr: string): void
   logger.info(`Scheduled cron job: ${name} (${expr})`);
 }
 
-export function scheduleRepeatJob(jobId: string, name: string, secs: number): void {
-  if (activeCrons.has(jobId)) {
-    activeCrons.get(jobId)?.stop();
+export function scheduleOneShotJob(
+  jobId: string,
+  name: string,
+  runAt: Date,
+  runCount: number,
+): void {
+  if (runCount > 0) return;
+
+  if (activeTimers.has(jobId)) {
+    clearTimeout(activeTimers.get(jobId));
+    activeTimers.delete(jobId);
   }
 
-  const expr = `*/${secs < 60 ? secs : Math.floor(secs / 60)} * * * *`;
-  const cron = new Cron(expr, async () => {
-    logger.info(`Repeat trigger: ${name}`);
-    try {
-      await executeJob({ jobId, triggerBy: "repeat" });
-    } catch (err) {
-      logger.error(`Repeat job failed: ${name}`, err);
-    }
-  });
+  const delayMs = Math.max(0, runAt.getTime() - Date.now());
 
-  activeCrons.set(jobId, cron);
-  logger.info(`Scheduled repeat job: ${name} (every ${secs}s)`);
+  const timer = setTimeout(async () => {
+    activeTimers.delete(jobId);
+    logger.info(`One-shot trigger: ${name}`);
+    try {
+      await executeJob({ jobId, triggerBy: "one-shot" });
+    } catch (err) {
+      logger.error(`One-shot job failed: ${name}`, err);
+    }
+  }, delayMs);
+
+  activeTimers.set(jobId, timer);
+  const fireIn = delayMs < 1000 ? "now" : `in ${Math.round(delayMs / 1000)}s`;
+  logger.info(`Scheduled one-shot job: ${name} (${fireIn})`);
 }
 
 export function unscheduleJob(jobId: string): void {
@@ -69,10 +83,17 @@ export function unscheduleJob(jobId: string): void {
     cron.stop();
     activeCrons.delete(jobId);
   }
+  const timer = activeTimers.get(jobId);
+  if (timer) {
+    clearTimeout(timer);
+    activeTimers.delete(jobId);
+  }
 }
 
 export function stopScheduler(): void {
   for (const [, cron] of activeCrons) cron.stop();
   activeCrons.clear();
+  for (const [, timer] of activeTimers) clearTimeout(timer);
+  activeTimers.clear();
   logger.info("Scheduler stopped.");
 }

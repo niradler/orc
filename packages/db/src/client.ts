@@ -30,9 +30,12 @@ function setupDb(sqlite: Database): void {
       body TEXT,
       status TEXT NOT NULL DEFAULT 'todo',
       priority TEXT NOT NULL DEFAULT 'normal',
+      progress INTEGER NOT NULL DEFAULT 0,
       due_at INTEGER,
       tags TEXT,
       author TEXT NOT NULL DEFAULT 'human',
+      claimed_by TEXT,
+      claim_expires_at INTEGER,
       created_at INTEGER NOT NULL DEFAULT (unixepoch()),
       updated_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
@@ -113,7 +116,6 @@ function setupDb(sqlite: Database): void {
       inject_context INTEGER NOT NULL DEFAULT 1,
       trigger_type TEXT NOT NULL,
       cron_expr TEXT,
-      repeat_secs INTEGER,
       watch_path TEXT,
       run_at INTEGER,
       timeout_secs INTEGER NOT NULL DEFAULT 300,
@@ -164,6 +166,7 @@ function setupDb(sqlite: Database): void {
     CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY,
       agent TEXT NOT NULL,
+      agent_version TEXT,
       project_id TEXT REFERENCES projects(id),
       job_run_id TEXT REFERENCES job_runs(id),
       summary TEXT,
@@ -178,31 +181,61 @@ function setupDb(sqlite: Database): void {
       platform TEXT NOT NULL,
       chat_id TEXT NOT NULL,
       username TEXT,
+      display_name TEXT,
       mode TEXT NOT NULL DEFAULT 'direct',
       authorized INTEGER NOT NULL DEFAULT 0,
       session_id TEXT,
+      thread_id TEXT,
+      working_dir TEXT,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
     CREATE UNIQUE INDEX IF NOT EXISTS bridge_chats_platform_chat_idx ON bridge_chats(platform, chat_id);
 
+    CREATE TABLE IF NOT EXISTS gateway_sessions (
+      id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL REFERENCES bridge_chats(id) ON DELETE CASCADE,
+      backend TEXT NOT NULL,
+      mode TEXT NOT NULL,
+      runtime_session_id TEXT,
+      cwd TEXT,
+      title TEXT,
+      model TEXT,
+      status TEXT NOT NULL DEFAULT 'idle',
+      last_error TEXT,
+      last_activity_at INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS gateway_sessions_chat_idx ON gateway_sessions(chat_id, updated_at);
+
     CREATE TABLE IF NOT EXISTS bridge_messages (
       id TEXT PRIMARY KEY,
       chat_id TEXT REFERENCES bridge_chats(id),
       direction TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'user',
       text TEXT,
       job_run_id TEXT REFERENCES job_runs(id),
+      gateway_session_id TEXT REFERENCES gateway_sessions(id),
       platform_msg_id TEXT,
+      thread_id TEXT,
+      metadata TEXT,
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
     CREATE TABLE IF NOT EXISTS bridge_permissions (
       id TEXT PRIMARY KEY,
       chat_id TEXT,
+      gateway_session_id TEXT REFERENCES gateway_sessions(id),
       job_run_id TEXT REFERENCES job_runs(id),
       tool TEXT NOT NULL,
       command TEXT,
+      scope TEXT NOT NULL DEFAULT 'once',
+      message TEXT,
       status TEXT NOT NULL DEFAULT 'pending',
+      expires_at INTEGER,
       created_at INTEGER NOT NULL DEFAULT (unixepoch()),
       resolved_at INTEGER
     );
@@ -280,10 +313,26 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE memories ADD COLUMN title TEXT",
     "ALTER TABLE memories ADD COLUMN type TEXT NOT NULL DEFAULT 'fact'",
     "ALTER TABLE session_events ADD COLUMN data_hash TEXT",
+    "ALTER TABLE tasks ADD COLUMN progress INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE tasks ADD COLUMN claimed_by TEXT",
+    "ALTER TABLE tasks ADD COLUMN claim_expires_at INTEGER",
+    "ALTER TABLE sessions ADD COLUMN agent_version TEXT",
+    "ALTER TABLE bridge_chats ADD COLUMN display_name TEXT",
+    "ALTER TABLE bridge_chats ADD COLUMN thread_id TEXT",
+    "ALTER TABLE bridge_chats ADD COLUMN working_dir TEXT",
+    "ALTER TABLE bridge_chats ADD COLUMN updated_at INTEGER NOT NULL DEFAULT (unixepoch())",
+    "ALTER TABLE bridge_messages ADD COLUMN role TEXT NOT NULL DEFAULT 'user'",
+    "ALTER TABLE bridge_messages ADD COLUMN gateway_session_id TEXT REFERENCES gateway_sessions(id)",
+    "ALTER TABLE bridge_messages ADD COLUMN thread_id TEXT",
+    "ALTER TABLE bridge_messages ADD COLUMN metadata TEXT",
+    "ALTER TABLE bridge_permissions ADD COLUMN gateway_session_id TEXT REFERENCES gateway_sessions(id)",
+    "ALTER TABLE bridge_permissions ADD COLUMN scope TEXT NOT NULL DEFAULT 'once'",
+    "ALTER TABLE bridge_permissions ADD COLUMN message TEXT",
+    "ALTER TABLE bridge_permissions ADD COLUMN expires_at INTEGER",
   ];
-  for (const sql of migrations) {
+  for (const statement of migrations) {
     try {
-      sqlite.exec(sql);
+      sqlite.exec(statement);
     } catch {}
   }
 }
@@ -308,6 +357,11 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
 
 export function getDb(): OrcDb {
   if (!_db) _db = createDb();
+  return _db;
+}
+
+export function createTestDb(): OrcDb {
+  _db = createDb(":memory:");
   return _db;
 }
 

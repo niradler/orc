@@ -16,6 +16,7 @@ import type {
   Prompt,
   PromptHistoryEntry,
   RenderedPrompt,
+  Session,
   Task,
   TaskLink,
   UpdateProjectInput,
@@ -206,6 +207,19 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<Project>("PATCH", `/projects/${id}`, input),
 
       delete: (id: string) => c<null>("DELETE", `/projects/${id}`),
+    },
+
+    sessions: {
+      list: (params?: { agent?: string; job_run_id?: string; limit?: number }) =>
+        c<{ sessions: Session[] }>(
+          "GET",
+          "/sessions",
+          undefined,
+          params as Record<string, string | number | boolean | undefined>,
+        ),
+
+      get: (id: string) =>
+        c<Session & { events: unknown[]; snapshot: string | null }>("GET", `/sessions/${id}`),
     },
 
     health: {

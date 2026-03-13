@@ -26,6 +26,7 @@ export function memCommand() {
     .command("add <content>")
     .description("Store a memory")
     .option("-s, --scope <scope>", "Scope")
+    .option("--type <type>", "Type (fact/decision/event/rule/discovery)", "fact")
     .option("--source <source>", "Source reference")
     .option("--importance <level>", "Importance (low/normal/high/critical)", "normal")
     .option("-t, --tags <tags>", "Comma-separated tags")
@@ -33,6 +34,7 @@ export function memCommand() {
       const client = createOrcClient();
       const { data, error } = await client.memories.create({
         content,
+        type: opts.type,
         scope: opts.scope,
         source: opts.source,
         importance: opts.importance,
@@ -41,7 +43,7 @@ export function memCommand() {
           : {}),
       });
       if (error) return console.error("Error:", error);
-      console.log(`Stored: [${data!.id.slice(-6)}] ${data!.content.slice(0, 60)}`);
+      console.log(`Stored: [${data!.id.slice(-6)}] [${opts.type}] ${data!.content.slice(0, 60)}`);
     });
 
   cmd
