@@ -10,6 +10,7 @@ import { mcpToolRouter } from "./routes/mcp-tool.js";
 import { memoriesRouter } from "./routes/memories.js";
 import { projectsRouter } from "./routes/projects.js";
 import { promptsRouter } from "./routes/prompts.js";
+import { sessionsRouter } from "./routes/sessions.js";
 import { taskLinksRouter } from "./routes/task-links.js";
 import { tasksRouter } from "./routes/tasks.js";
 
@@ -40,6 +41,7 @@ export function createApp() {
   app.route("/", tasksRouter);
   app.route("/", taskLinksRouter);
   app.route("/", memoriesRouter);
+  app.route("/", sessionsRouter);
   app.route("/", jobsRouter);
 
   app.doc("/openapi.json", {

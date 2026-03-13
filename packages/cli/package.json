@@ -1,25 +1,61 @@
 {
-  "name": "@orc/cli",
-  "version": "0.0.1",
+  "name": "orcx",
+  "version": "0.1.0",
+  "description": "Human + AI Orchestration Hub — persistent memory, task management, session continuity and multi-agent collaboration for Cursor, Claude Code, and Codex",
   "type": "module",
   "bin": {
-    "orc": "./src/index.ts"
+    "orc": "./dist/index.js"
   },
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
-    "build": "bun build src/index.ts --compile --outfile dist/orc --target bun",
-    "build:all": "bun run build.ts",
+    "build": "bun build src/index.ts --outfile dist/index.js --target bun --minify && node -e \"const fs=require('fs');const f='dist/index.js';fs.writeFileSync(f,'#!/usr/bin/env bun\\n'+fs.readFileSync(f,'utf8'))\"",
+    "build:bin": "bun run build.ts",
+    "prepublishOnly": "bun run build",
     "test": "bun test",
     "clean": "rm -rf dist"
   },
-  "dependencies": {
-    "@orc/core": "workspace:*",
-    "@orc/sdk": "workspace:*",
-    "commander": "^13.1.0"
-  },
+  "files": [
+    "dist/index.js"
+  ],
   "devDependencies": {
+    "@orc/api": "workspace:*",
+    "@orc/core": "workspace:*",
+    "@orc/gateway": "workspace:*",
+    "@orc/sdk": "workspace:*",
+    "commander": "^13.1.0",
     "typescript": "^5.7.3"
+  },
+  "peerDependencies": {
+    "bun": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "bun": {
+      "optional": false
+    }
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "orchestration",
+    "mcp",
+    "claude",
+    "cursor",
+    "codex",
+    "memory",
+    "tasks",
+    "hitl",
+    "sessions"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/niradler/orc"
+  },
+  "homepage": "https://github.com/niradler/orc",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

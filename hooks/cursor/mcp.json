@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "orc": {
+      "command": "orc",
+      "args": ["mcp"],
+      "env": {
+        "ORC_API_BASE": "http://127.0.0.1:7700",
+        "ORC_SESSION_ID": "cursor"
+      }
+    }
+  }
+}

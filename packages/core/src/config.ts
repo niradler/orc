@@ -3,11 +3,46 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 
-export const BridgePlatformConfigSchema = z.object({
+const ChannelDefaultModeSchema = z
+  .enum(["direct", "agent:claude", "agent:codex"])
+  .default("direct");
+
+export const GatewayPlatformConfigSchema = z.object({
   enabled: z.boolean().default(false),
   token: z.string().optional(),
+  bot_token: z.string().optional(),
+  app_token: z.string().optional(),
   authorized_users: z.array(z.union([z.string(), z.number()])).default([]),
-  mode: z.enum(["direct", "agent:claude", "agent:codex"]).default("direct"),
+  default_chat_id: z.string().optional(),
+  mode: ChannelDefaultModeSchema,
+  allow_channel_mentions: z.boolean().default(true),
+  share_session_in_channel: z.boolean().default(false),
+  streaming_preview: z.boolean().default(true),
+});
+
+export const SpeechProviderConfigSchema = z.object({
+  api_key: z.string().optional(),
+  base_url: z.string().optional(),
+  model: z.string().optional(),
+});
+
+export const SpeechConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  provider: z.enum(["openai", "groq", "qwen"]).default("openai"),
+  language: z.string().default(""),
+  openai: SpeechProviderConfigSchema.default({}),
+  groq: SpeechProviderConfigSchema.default({}),
+  qwen: SpeechProviderConfigSchema.default({}),
+});
+
+export const TtsConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  provider: z.enum(["openai", "qwen"]).default("openai"),
+  voice: z.string().default("alloy"),
+  mode: z.enum(["voice_only", "always"]).default("voice_only"),
+  max_text_len: z.number().int().min(0).default(0),
+  openai: SpeechProviderConfigSchema.default({}),
+  qwen: SpeechProviderConfigSchema.default({}),
 });
 
 export const OrcConfigSchema = z.object({
@@ -32,10 +67,10 @@ export const OrcConfigSchema = z.object({
     })
     .default({}),
 
-  bridge: z
+  gateway: z
     .object({
-      telegram: BridgePlatformConfigSchema.default({}),
-      discord: BridgePlatformConfigSchema.default({}),
+      telegram: GatewayPlatformConfigSchema.default({}),
+      slack: GatewayPlatformConfigSchema.default({}),
     })
     .default({}),
 
@@ -54,10 +89,13 @@ export const OrcConfigSchema = z.object({
       layer1_memory_limit: z.number().int().default(5),
     })
     .default({}),
+
+  speech: SpeechConfigSchema.default({}),
+  tts: TtsConfigSchema.default({}),
 });
 
 export type OrcConfig = z.infer<typeof OrcConfigSchema>;
-export type BridgePlatformConfig = z.infer<typeof BridgePlatformConfigSchema>;
+export type GatewayPlatformConfig = z.infer<typeof GatewayPlatformConfigSchema>;
 
 function resolvePath(p: string): string {
   if (p.startsWith("~/")) return join(homedir(), p.slice(2));
@@ -95,13 +133,66 @@ function deepMerge(
 
 function fromEnv(): Record<string, unknown> {
   const env: Record<string, unknown> = {};
+
   if (process.env.ORC_DB_PATH) env.db = { path: process.env.ORC_DB_PATH };
-  if (process.env.ORC_API_PORT) env.api = { port: Number(process.env.ORC_API_PORT) };
-  if (process.env.ORC_API_SECRET)
-    env.api = { ...(env.api as object), secret: process.env.ORC_API_SECRET };
+
+  const api: Record<string, unknown> = {};
+  if (process.env.ORC_API_PORT) api.port = Number(process.env.ORC_API_PORT);
+  if (process.env.ORC_API_HOST) api.host = process.env.ORC_API_HOST;
+  if (process.env.ORC_API_SECRET) api.secret = process.env.ORC_API_SECRET;
+  if (Object.keys(api).length) env.api = api;
+
+  const runner: Record<string, unknown> = {};
+  if (process.env.ORC_RUNNER_TIMEOUT)
+    runner.default_timeout_secs = Number(process.env.ORC_RUNNER_TIMEOUT);
+  if (process.env.ORC_RUNNER_MAX_JOBS)
+    runner.max_concurrent_jobs = Number(process.env.ORC_RUNNER_MAX_JOBS);
+  if (process.env.ORC_RUNNER_LOG_DAYS)
+    runner.log_retention_days = Number(process.env.ORC_RUNNER_LOG_DAYS);
+  if (Object.keys(runner).length) env.runner = runner;
+
+  const context: Record<string, unknown> = {};
+  if (process.env.ORC_SNAPSHOT_MAX_BYTES)
+    context.snapshot_max_bytes = Number(process.env.ORC_SNAPSHOT_MAX_BYTES);
+  if (process.env.ORC_LAYER1_TASKS)
+    context.layer1_task_limit = Number(process.env.ORC_LAYER1_TASKS);
+  if (process.env.ORC_LAYER1_MEMORIES)
+    context.layer1_memory_limit = Number(process.env.ORC_LAYER1_MEMORIES);
+  if (Object.keys(context).length) env.context = context;
+
+  const gateway: Record<string, unknown> = {};
   if (process.env.ORC_TELEGRAM_TOKEN) {
-    env.bridge = { telegram: { token: process.env.ORC_TELEGRAM_TOKEN, enabled: true } };
+    gateway.telegram = { token: process.env.ORC_TELEGRAM_TOKEN, enabled: true };
   }
+  if (process.env.ORC_SLACK_BOT_TOKEN || process.env.ORC_SLACK_APP_TOKEN) {
+    gateway.slack = {
+      bot_token: process.env.ORC_SLACK_BOT_TOKEN,
+      app_token: process.env.ORC_SLACK_APP_TOKEN,
+      enabled: true,
+    };
+  }
+  if (Object.keys(gateway).length) env.gateway = gateway;
+
+  const speech: Record<string, unknown> = {};
+  if (process.env.ORC_SPEECH_PROVIDER) speech.provider = process.env.ORC_SPEECH_PROVIDER;
+  if (process.env.ORC_SPEECH_LANGUAGE) speech.language = process.env.ORC_SPEECH_LANGUAGE;
+  if (process.env.ORC_OPENAI_API_KEY) speech.openai = { api_key: process.env.ORC_OPENAI_API_KEY };
+  if (process.env.ORC_GROQ_API_KEY) speech.groq = { api_key: process.env.ORC_GROQ_API_KEY };
+  if (process.env.ORC_QWEN_API_KEY) speech.qwen = { api_key: process.env.ORC_QWEN_API_KEY };
+  if (Object.keys(speech).length) {
+    speech.enabled = true;
+    env.speech = speech;
+  }
+
+  const tts: Record<string, unknown> = {};
+  if (process.env.ORC_TTS_PROVIDER) tts.provider = process.env.ORC_TTS_PROVIDER;
+  if (process.env.ORC_TTS_VOICE) tts.voice = process.env.ORC_TTS_VOICE;
+  if (process.env.ORC_TTS_MODE) tts.mode = process.env.ORC_TTS_MODE;
+  if (Object.keys(tts).length) {
+    tts.enabled = true;
+    env.tts = tts;
+  }
+
   return env;
 }
 
