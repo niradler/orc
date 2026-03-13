@@ -1,4 +1,5 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { getGatewayManager, getGatewayStatus, sendGatewayMessage } from "@orc/gateway";
 
 const app = new OpenAPIHono();
 
@@ -46,30 +47,17 @@ const sendRoute = createRoute({
   },
 });
 
-type GatewayModule = {
-  getGatewayManager: () => unknown;
-  getGatewayStatus: () => string;
-  sendGatewayMessage: (
-    platform: string,
-    chatId: string,
-    text: string,
-    opts?: { threadId?: string },
-  ) => Promise<void>;
-};
-
 app.openapi(statusRoute, async (c) => {
-  const gw = (await import("@orc/gateway" as string)) as GatewayModule;
-  const running = gw.getGatewayManager() !== null;
-  return c.json({ running, status: gw.getGatewayStatus() });
+  const running = getGatewayManager() !== null;
+  return c.json({ running, status: getGatewayStatus() });
 });
 
 app.openapi(sendRoute, async (c) => {
-  const gw = (await import("@orc/gateway" as string)) as GatewayModule;
-  if (!gw.getGatewayManager()) {
+  if (!getGatewayManager()) {
     return c.json({ error: "Gateway is not running" }, 503);
   }
   const { platform, chat_id, text, thread_id } = c.req.valid("json");
-  await gw.sendGatewayMessage(platform, chat_id, text, thread_id ? { threadId: thread_id } : undefined);
+  await sendGatewayMessage(platform, chat_id, text, thread_id ? { threadId: thread_id } : undefined);
   return c.body(null, 204);
 });
 
