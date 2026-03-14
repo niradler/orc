@@ -1,16 +1,16 @@
 {
-  "name": "orcx",
-  "version": "0.1.0",
+  "name": "orc-ai",
+  "version": "0.1.1",
   "description": "Human + AI Orchestration Hub — persistent memory, task management, session continuity and multi-agent collaboration for Cursor, Claude Code, and Codex",
   "type": "module",
   "bin": {
-    "orc": "./dist/index.js"
+    "orc": "dist/index.js"
   },
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
-    "build": "bun build src/index.ts --outfile dist/index.js --target bun --minify && node -e \"const fs=require('fs');const f='dist/index.js';fs.writeFileSync(f,'#!/usr/bin/env bun\\n'+fs.readFileSync(f,'utf8'))\"",
+    "build": "bun build src/index.ts --outfile dist/index.js --target bun --minify",
     "build:bin": "bun run build.ts",
     "prepublishOnly": "bun run build",
     "test": "bun test",
@@ -53,7 +53,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/niradler/orc"
+    "url": "git+https://github.com/niradler/orc.git"
   },
   "homepage": "https://github.com/niradler/orc",
   "publishConfig": {
