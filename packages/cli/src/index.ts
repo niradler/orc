@@ -24,7 +24,7 @@ type GlobalOpts = {
 const program = new Command()
   .name("orc")
   .description("Human + AI Orchestration Hub")
-  .version("0.1.1")
+  .version("0.1.2")
   .option("--db <path>", "DB file path (overrides ORC_DB_PATH / config.json)")
   .option("--port <n>", "API port (overrides ORC_API_PORT / config.json)")
   .option("--host <host>", "API host (overrides ORC_API_HOST / config.json)")

@@ -493,24 +493,33 @@ ORC ships with five Claude Code skills in `.claude/skills/`. Skills are referenc
 
 ### Installing the skills
 
-**Option A — register as a local plugin (recommended)**
+**Option A — install from GitHub (recommended)**
 
-Add an entry to `~/.claude/plugins/installed_plugins.json`:
+Add the ORC repo as a marketplace source in `~/.claude/settings.json`:
 
 ```json
 {
-  "orc@local": [{
-    "scope": "user",
-    "installPath": "/path/to/orc/.claude",
-    "version": "0.1.0",
-    "installedAt": "2025-01-01T00:00:00.000Z",
-    "lastUpdated": "2025-01-01T00:00:00.000Z",
-    "gitCommitSha": "local"
-  }]
+  "extraKnownMarketplaces": {
+    "orc": {
+      "source": {
+        "source": "github",
+        "repo": "niradler/orc"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "orc@orc": true
+  }
 }
 ```
 
-Then enable it in `~/.claude/settings.json`:
+Claude Code will pull the skills directly from the GitHub repo — no local clone needed. Skills stay up to date as the repo is updated.
+
+> This uses the [vercel-labs/skills](https://github.com/vercel-labs/skills) plugin format supported by Claude Code.
+
+**Option B — register a local clone as a plugin**
+
+If you have the repo cloned locally, point Claude Code at it:
 
 ```json
 {
@@ -520,9 +529,24 @@ Then enable it in `~/.claude/settings.json`:
 }
 ```
 
-Replace `/path/to/orc` with the actual clone path (e.g. `/c/Projects/orc` on Windows, `~/src/orc` on macOS/Linux).
+Add the install entry to `~/.claude/plugins/installed_plugins.json`:
 
-**Option B — copy to your personal skills directory**
+```json
+{
+  "orc@local": [{
+    "scope": "user",
+    "installPath": "/path/to/orc/.claude",
+    "version": "0.1.2",
+    "installedAt": "2025-01-01T00:00:00.000Z",
+    "lastUpdated": "2025-01-01T00:00:00.000Z",
+    "gitCommitSha": "local"
+  }]
+}
+```
+
+Replace `/path/to/orc` with your clone path (e.g. `/c/Projects/orc` on Windows, `~/src/orc` on macOS/Linux).
+
+**Option C — copy to your personal skills directory**
 
 ```bash
 cp -r /path/to/orc/.claude/skills/orc-* ~/.claude/skills/
