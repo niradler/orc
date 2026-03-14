@@ -1,4 +1,4 @@
-import { randomBytes } from "crypto";
+import { randomBytes } from "node:crypto";
 
 const ENCODING = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const ENCODING_LEN = ENCODING.length;

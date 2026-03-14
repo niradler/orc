@@ -113,7 +113,8 @@ app.openapi(createLinkRoute, async (c) => {
   });
 
   const link = await db.query.task_links.findFirst({ where: eq(task_links.id, linkId) });
-  return c.json(linkToDto(link!), 201);
+  if (!link) throw new Error("Expected link to exist after write");
+  return c.json(linkToDto(link), 201);
 });
 
 app.openapi(deleteLinkRoute, async (c) => {

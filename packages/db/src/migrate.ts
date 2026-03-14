@@ -1,9 +1,9 @@
 import { Database } from "bun:sqlite";
+import { mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
-import { mkdirSync } from "fs";
-import { dirname, join } from "path";
 
 const config = loadConfig();
 const dbPath = config.db.path;

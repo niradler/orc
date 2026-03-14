@@ -1,0 +1,42 @@
+{
+  "_comment": "Replace /path/to/orc with your actual clone path, or use 'orc hook ...' after npm install -g orcx",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|StrReplace|EditNotebook|Bash|Shell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun /path/to/orc/hooks/post-tool-use.ts"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun /path/to/orc/hooks/pre-compact.ts"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun /path/to/orc/hooks/session-start.ts"
+          }
+        ]
+      }
+    ]
+  },
+  "env": {
+    "ORC_API_BASE": "http://127.0.0.1:7700",
+    "ORC_SESSION_ID": "$CLAUDE_SESSION_ID"
+  }
+}

@@ -143,7 +143,7 @@ export const toolDefinitions = [
     }),
   },
   {
-    name: "context_layer1",
+    name: "context",
     description:
       "Compact context index — active tasks + important memories. ~200 tokens. Call at session start. " +
       "Use task_get or memory_get to drill into specific items.",
@@ -157,6 +157,7 @@ export const toolDefinitions = [
       "Record a session event (file edit, decision, error, git op) for continuity across compaction. " +
       "Duplicate events are silently deduped. Priority: 1=critical (file/task/rule), 2=high (git/env/error/decision), 3=normal, 4=low.",
     inputSchema: z.object({
+      session_id: z.string().optional(),
       type: z.enum([
         "file",
         "task",
@@ -191,10 +192,14 @@ export const toolDefinitions = [
   },
   {
     name: "session_log",
-    description: "Log a session summary after completing a unit of work.",
+    description:
+      "Log a session summary after completing a unit of work. " +
+      "Auto-derives touched files, task changes, and stored memories from session events.",
     inputSchema: z.object({
       agent: z.string(),
+      agent_version: z.string().optional().describe("Agent version string, e.g. 'claude-code/1.x'"),
       summary: z.string(),
+      session_id: z.string().optional(),
       project_id: z.string().optional(),
     }),
   },
@@ -422,7 +427,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       return JSON.stringify({ status: run.status, exit_code: run.exit_code, error: run.error_msg });
     }
 
-    case "context_layer1": {
+    case "context": {
       const { project_id } = args as { project_id?: string };
       const config = loadConfig();
       const taskLimit = config.context.layer1_task_limit;
@@ -501,13 +506,14 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "session_event": {
-      const { type, priority, data } = args as {
+      const { session_id, type, priority, data } = args as {
+        session_id?: string;
         type: string;
         priority?: number;
         data: Record<string, string>;
       };
       const sqlite = getSqlite(db);
-      const sid = process.env.ORC_SESSION_ID ?? "default";
+      const sid = session_id ?? process.env.ORC_SESSION_ID ?? "default";
       const dataJson = JSON.stringify(data);
       const dataHash = createHash("sha256").update(dataJson).digest("hex").slice(0, 16);
 
@@ -598,13 +604,54 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "session_log": {
-      const { agent, summary, project_id } = args as {
+      const { agent, agent_version, summary, session_id, project_id } = args as {
         agent: string;
+        agent_version?: string;
         summary: string;
+        session_id?: string;
         project_id?: string;
       };
+
+      const sid = session_id ?? process.env.ORC_SESSION_ID ?? "default";
+      const jobRunId = process.env.ORC_JOB_RUN_ID;
+      const sqlite = getSqlite(db);
+
+      type EventRow = { type: string; data: string };
+      const events = sqlite
+        .query<EventRow, string>(
+          "SELECT type, data FROM session_events WHERE session_id = ? ORDER BY created_at ASC",
+        )
+        .all(sid);
+
+      const files = new Set<string>();
+      const taskIds = new Set<string>();
+      const memoryIds = new Set<string>();
+
+      for (const e of events) {
+        try {
+          const d = JSON.parse(e.data) as Record<string, string>;
+          if (e.type === "file" && d.path) files.add(d.path);
+          if (e.type === "task" && d.id) taskIds.add(d.id);
+          if (e.type === "memory" && d.id) memoryIds.add(d.id);
+        } catch {}
+      }
+
+      const parts = [summary];
+      if (files.size > 0) parts.push(`Files: ${[...files].join(", ")}`);
+      if (taskIds.size > 0) parts.push(`Tasks: ${[...taskIds].join(", ")}`);
+      if (memoryIds.size > 0) parts.push(`Memories: ${[...memoryIds].join(", ")}`);
+
+      const richSummary = parts.join("\n");
       const id = ulid();
-      await db.insert(sessions).values({ id, agent, summary, project_id, created_at: new Date() });
+      await db.insert(sessions).values({
+        id,
+        agent,
+        agent_version,
+        summary: richSummary,
+        project_id,
+        job_run_id: jobRunId,
+        created_at: new Date(),
+      });
       return `Session logged: ${id}`;
     }
 

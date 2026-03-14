@@ -1,7 +1,7 @@
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { getDb } from "@orc/db/client";
-import { job_run_logs, job_runs, jobs } from "@orc/db/schema";
+import { job_run_logs, job_runs, jobs, sessions } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
 
 const logger = createLogger("runner:executor");
@@ -46,6 +46,7 @@ export async function executeJob(opts: RunOptions): Promise<string> {
 
   const env = {
     ...process.env,
+    ORC_JOB_RUN_ID: runId,
     ...(job.env_vars ?? {}),
     ...(opts.envOverrides ?? {}),
   };
@@ -113,6 +114,15 @@ export async function executeJob(opts: RunOptions): Promise<string> {
         stderr: stderrLines.join("\n").slice(0, 16384),
       })
       .where(eq(job_runs.id, runId));
+
+    const durSecs = Math.round((endedAt.getTime() - now.getTime()) / 1000);
+    await db.insert(sessions).values({
+      id: ulid(),
+      agent: "runner",
+      summary: `Job "${job.name}" ${success ? "succeeded" : "failed"} in ${durSecs}s (exit ${exitCode})`,
+      job_run_id: runId,
+      created_at: endedAt,
+    });
 
     logger.info(
       `Job ${job.name} [${runId}] ${success ? "succeeded" : "failed"} (exit ${exitCode})`,

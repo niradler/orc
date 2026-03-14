@@ -1,7 +1,7 @@
 import { useKeyboard } from "@opentui/react";
 import { createOrcClient } from "@orc/sdk";
 import type { Memory } from "@orc/sdk/types";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 
 const IMPORTANCE_COLOR: Record<string, string> = {
   critical: "#FF3333",
@@ -23,18 +23,21 @@ export function MemBrowser({ focused }: Props) {
   const [loading, setLoading] = useState(false);
   const client = createOrcClient();
 
-  const search = useCallback(async (q: string) => {
-    if (!q.trim()) {
-      setResults([]);
-      return;
-    }
-    setLoading(true);
-    const result = await client.memories.search(q, undefined, 20);
-    if (result.data) setResults(result.data.results);
-    setLoading(false);
-    setLayer("list");
-    setCursor(0);
-  }, []);
+  const search = useCallback(
+    async (q: string) => {
+      if (!q.trim()) {
+        setResults([]);
+        return;
+      }
+      setLoading(true);
+      const result = await client.memories.search(q, undefined, 20);
+      if (result.data) setResults(result.data.results);
+      setLoading(false);
+      setLayer("list");
+      setCursor(0);
+    },
+    [client.memories.search],
+  );
 
   useKeyboard((key) => {
     if (!focused) return;
@@ -59,7 +62,7 @@ export function MemBrowser({ focused }: Props) {
   });
 
   const handleInput = useCallback((q: string) => setQuery(q), []);
-  const handleSubmit = useCallback(() => {
+  const _handleSubmit = useCallback(() => {
     search(query);
   }, [query, search]);
 

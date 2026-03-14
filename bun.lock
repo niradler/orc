@@ -12,12 +12,13 @@
     },
     "packages/api": {
       "name": "@orc/api",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@hono/swagger-ui": "^0.5.1",
         "@hono/zod-openapi": "^0.19.6",
         "@orc/core": "workspace:*",
         "@orc/db": "workspace:*",
+        "@orc/gateway": "workspace:*",
         "@orc/mcp": "workspace:*",
         "@orc/runner": "workspace:*",
         "drizzle-orm": "^0.41.0",
@@ -28,9 +29,51 @@
         "typescript": "^5.7.3",
       },
     },
-    "packages/bridge": {
-      "name": "@orc/bridge",
-      "version": "0.0.1",
+    "packages/cli": {
+      "name": "orcx",
+      "version": "0.1.0",
+      "bin": {
+        "orc": "./dist/index.js",
+      },
+      "devDependencies": {
+        "@orc/api": "workspace:*",
+        "@orc/core": "workspace:*",
+        "@orc/gateway": "workspace:*",
+        "@orc/mcp": "workspace:*",
+        "@orc/runner": "workspace:*",
+        "@orc/sdk": "workspace:*",
+        "commander": "^13.1.0",
+        "typescript": "^5.7.3",
+      },
+      "peerDependencies": {
+        "bun": ">=1.0.0",
+      },
+    },
+    "packages/core": {
+      "name": "@orc/core",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "^3.24.2",
+      },
+      "devDependencies": {
+        "typescript": "^5.7.3",
+      },
+    },
+    "packages/db": {
+      "name": "@orc/db",
+      "version": "0.1.0",
+      "dependencies": {
+        "@orc/core": "workspace:*",
+        "drizzle-orm": "^0.41.0",
+      },
+      "devDependencies": {
+        "drizzle-kit": "^0.30.4",
+        "typescript": "^5.7.3",
+      },
+    },
+    "packages/gateway": {
+      "name": "@orc/gateway",
+      "version": "0.1.0",
       "dependencies": {
         "@orc/core": "workspace:*",
         "@orc/db": "workspace:*",
@@ -42,46 +85,9 @@
         "typescript": "^5.7.3",
       },
     },
-    "packages/cli": {
-      "name": "@orc/cli",
-      "version": "0.0.1",
-      "bin": {
-        "orc": "./src/index.ts",
-      },
-      "dependencies": {
-        "@orc/core": "workspace:*",
-        "@orc/sdk": "workspace:*",
-        "commander": "^13.1.0",
-      },
-      "devDependencies": {
-        "typescript": "^5.7.3",
-      },
-    },
-    "packages/core": {
-      "name": "@orc/core",
-      "version": "0.0.1",
-      "dependencies": {
-        "zod": "^3.24.2",
-      },
-      "devDependencies": {
-        "typescript": "^5.7.3",
-      },
-    },
-    "packages/db": {
-      "name": "@orc/db",
-      "version": "0.0.1",
-      "dependencies": {
-        "@orc/core": "workspace:*",
-        "drizzle-orm": "^0.41.0",
-      },
-      "devDependencies": {
-        "drizzle-kit": "^0.30.4",
-        "typescript": "^5.7.3",
-      },
-    },
     "packages/mcp": {
       "name": "@orc/mcp",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.8.0",
         "@orc/core": "workspace:*",
@@ -97,7 +103,7 @@
     },
     "packages/runner": {
       "name": "@orc/runner",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@orc/core": "workspace:*",
         "@orc/db": "workspace:*",
@@ -111,7 +117,7 @@
     },
     "packages/sdk": {
       "name": "@orc/sdk",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@orc/core": "workspace:*",
       },
@@ -122,7 +128,7 @@
     },
     "packages/tui": {
       "name": "@orc/tui",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "bin": {
         "orc-tui": "./src/index.tsx",
       },
@@ -304,13 +310,11 @@
 
     "@orc/api": ["@orc/api@workspace:packages/api"],
 
-    "@orc/bridge": ["@orc/bridge@workspace:packages/bridge"],
-
-    "@orc/cli": ["@orc/cli@workspace:packages/cli"],
-
     "@orc/core": ["@orc/core@workspace:packages/core"],
 
     "@orc/db": ["@orc/db@workspace:packages/db"],
+
+    "@orc/gateway": ["@orc/gateway@workspace:packages/gateway"],
 
     "@orc/mcp": ["@orc/mcp@workspace:packages/mcp"],
 
@@ -319,6 +323,30 @@
     "@orc/sdk": ["@orc/sdk@workspace:packages/sdk"],
 
     "@orc/tui": ["@orc/tui@workspace:packages/tui"],
+
+    "@oven/bun-darwin-aarch64": ["@oven/bun-darwin-aarch64@1.3.10", "", { "os": "darwin", "cpu": "arm64" }, "sha512-PXgg5gqcS/rHwa1hF0JdM1y5TiyejVrMHoBmWY/DjtfYZoFTXie1RCFOkoG0b5diOOmUcuYarMpH7CSNTqwj+w=="],
+
+    "@oven/bun-darwin-x64": ["@oven/bun-darwin-x64@1.3.10", "", { "os": "darwin", "cpu": "x64" }, "sha512-Nhssuh7GBpP5PiDSOl3+qnoIG7PJo+ec2oomDevnl9pRY6x6aD2gRt0JE+uf+A8Om2D6gjeHCxjEdrw5ZHE8mA=="],
+
+    "@oven/bun-darwin-x64-baseline": ["@oven/bun-darwin-x64-baseline@1.3.10", "", { "os": "darwin", "cpu": "x64" }, "sha512-w1gaTlqU0IJCmJ1X+PGHkdNU1n8Gemx5YKkjhkJIguvFINXEBB5U1KG82QsT65Tk4KyNMfbLTlmy4giAvUoKfA=="],
+
+    "@oven/bun-linux-aarch64": ["@oven/bun-linux-aarch64@1.3.10", "", { "os": "linux", "cpu": "arm64" }, "sha512-OUgPHfL6+PM2Q+tFZjcaycN3D7gdQdYlWnwMI31DXZKY1r4HINWk9aEz9t/rNaHg65edwNrt7dsv9TF7xK8xIA=="],
+
+    "@oven/bun-linux-aarch64-musl": ["@oven/bun-linux-aarch64-musl@1.3.10", "", { "os": "linux", "cpu": "arm64" }, "sha512-Ui5pAgM7JE9MzHokF0VglRMkbak3lTisY4Mf1AZutPACXWgKJC5aGrgnHBfkl7QS6fEeYb0juy1q4eRznRHOsw=="],
+
+    "@oven/bun-linux-x64": ["@oven/bun-linux-x64@1.3.10", "", { "os": "linux", "cpu": "x64" }, "sha512-bzUgYj/PIZziB/ZesIP9HUyfvh6Vlf3od+TrbTTyVEuCSMKzDPQVW/yEbRp0tcHO3alwiEXwJDrWrHAguXlgiQ=="],
+
+    "@oven/bun-linux-x64-baseline": ["@oven/bun-linux-x64-baseline@1.3.10", "", { "os": "linux", "cpu": "x64" }, "sha512-oqvMDYpX6dGJO03HgO5bXuccEsH3qbdO3MaAiAlO4CfkBPLUXz3N0DDElg5hz0L6ktdDVKbQVE5lfe+LAUISQg=="],
+
+    "@oven/bun-linux-x64-musl": ["@oven/bun-linux-x64-musl@1.3.10", "", { "os": "linux", "cpu": "x64" }, "sha512-poVXvOShekbexHq45b4MH/mRjQKwACAC8lHp3Tz/hEDuz0/20oncqScnmKwzhBPEpqJvydXficXfBYuSim8opw=="],
+
+    "@oven/bun-linux-x64-musl-baseline": ["@oven/bun-linux-x64-musl-baseline@1.3.10", "", { "os": "linux", "cpu": "x64" }, "sha512-/hOZ6S1VsTX6vtbhWVL9aAnOrdpuO54mAGUWpTdMz7dFG5UBZ/VUEiK0pBkq9A1rlBk0GeD/6Y4NBFl8Ha7cRA=="],
+
+    "@oven/bun-windows-aarch64": ["@oven/bun-windows-aarch64@1.3.10", "", { "os": "win32", "cpu": "arm64" }, "sha512-GXbz2swvN2DLw2dXZFeedMxSJtI64xQ9xp9Eg7Hjejg6mS2E4dP1xoQ2yAo2aZPi/2OBPAVaGzppI2q20XumHA=="],
+
+    "@oven/bun-windows-x64": ["@oven/bun-windows-x64@1.3.10", "", { "os": "win32", "cpu": "x64" }, "sha512-qaS1In3yfC/Z/IGQriVmF8GWwKuNqiw7feTSJWaQhH5IbL6ENR+4wGNPniZSJFaM/SKUO0e/YCRdoVBvgU4C1g=="],
+
+    "@oven/bun-windows-x64-baseline": ["@oven/bun-windows-x64-baseline@1.3.10", "", { "os": "win32", "cpu": "x64" }, "sha512-gh3UAHbUdDUG6fhLc1Csa4IGdtghue6U8oAIXWnUqawp6lwb3gOCRvp25IUnLF5vUHtgfMxuEUYV7YA2WxVutw=="],
 
     "@petamoriken/float16": ["@petamoriken/float16@3.9.3", "", {}, "sha512-8awtpHXCx/bNpFt4mt2xdkgtgVvKqty8VbjHI/WWWQuEw+KLzFot3f4+LkQY9YmOtq7A5GdOnqoIC8Pdygjk2g=="],
 
@@ -367,6 +395,8 @@
     "buffer": ["buffer@6.0.3", "", { "dependencies": { "base64-js": "^1.3.1", "ieee754": "^1.2.1" } }, "sha512-FTiCpNxtwiZZHEZbcbTIcZjERVICn9yq/pDFkTl95/AxzD1naBctN7YO68riM/gLSDY7sdrMby8hofADYuuqOA=="],
 
     "buffer-from": ["buffer-from@1.1.2", "", {}, "sha512-E+XQCRwSbaaiChtv6k6Dwgc+bx+Bs6vuKJHHl5kox/BaKbhiXzqQOwK4cO22yElGp2OCmjwVhT3HmxgyPGnJfQ=="],
+
+    "bun": ["bun@1.3.10", "", { "optionalDependencies": { "@oven/bun-darwin-aarch64": "1.3.10", "@oven/bun-darwin-x64": "1.3.10", "@oven/bun-darwin-x64-baseline": "1.3.10", "@oven/bun-linux-aarch64": "1.3.10", "@oven/bun-linux-aarch64-musl": "1.3.10", "@oven/bun-linux-x64": "1.3.10", "@oven/bun-linux-x64-baseline": "1.3.10", "@oven/bun-linux-x64-musl": "1.3.10", "@oven/bun-linux-x64-musl-baseline": "1.3.10", "@oven/bun-windows-aarch64": "1.3.10", "@oven/bun-windows-x64": "1.3.10", "@oven/bun-windows-x64-baseline": "1.3.10" }, "os": [ "linux", "win32", "darwin", ], "cpu": [ "x64", "arm64", ], "bin": { "bun": "bin/bun.exe", "bunx": "bin/bunx.exe" } }, "sha512-S/CXaXXIyA4CMjdMkYQ4T2YMqnAn4s0ysD3mlsY4bUiOCqGlv28zck4Wd4H4kpvbekx15S9mUeLQ7Uxd0tYTLA=="],
 
     "bun-ffi-structs": ["bun-ffi-structs@0.1.2", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-Lh1oQAYHDcnesJauieA4UNkWGXY9hYck7OA5IaRwE3Bp6K2F2pJSNYqq+hIy7P3uOvo3km3oxS8304g5gDMl/w=="],
 
@@ -565,6 +595,8 @@
     "openapi-typescript": ["openapi-typescript@7.13.0", "", { "dependencies": { "@redocly/openapi-core": "^1.34.6", "ansi-colors": "^4.1.3", "change-case": "^5.4.4", "parse-json": "^8.3.0", "supports-color": "^10.2.2", "yargs-parser": "^21.1.1" }, "peerDependencies": { "typescript": "^5.x" }, "bin": { "openapi-typescript": "bin/cli.js" } }, "sha512-EFP392gcqXS7ntPvbhBzbF8TyBA+baIYEm791Hy5YkjDYKTnk/Tn5OQeKm5BIZvJihpp8Zzr4hzx0Irde1LNGQ=="],
 
     "openapi3-ts": ["openapi3-ts@4.5.0", "", { "dependencies": { "yaml": "^2.8.0" } }, "sha512-jaL+HgTq2Gj5jRcfdutgRGLosCy/hT8sQf6VOy+P+g36cZOjI1iukdPnijC+4CmeRzg/jEllJUboEic2FhxhtQ=="],
+
+    "orcx": ["orcx@workspace:packages/cli"],
 
     "pako": ["pako@1.0.11", "", {}, "sha512-4hLB8Py4zZce5s4yd9XzopqwVv/yGNhV1Bl8NTmCq1763HeK2+EwVTv+leGeL13Dnh2wfbqowVPXCIO0z4taYw=="],
 

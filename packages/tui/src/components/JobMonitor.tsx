@@ -16,7 +16,7 @@ export function JobMonitor({ focused }: Props) {
     const result = await client.jobs.list();
     if (result.data) setJobs(result.data.jobs);
     setLoading(false);
-  }, []);
+  }, [client.jobs.list]);
 
   useEffect(() => {
     load();

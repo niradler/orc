@@ -236,7 +236,8 @@ app.openapi(createRoute_, async (c) => {
   });
 
   const prompt = await db.query.prompts.findFirst({ where: eq(prompts.id, id) });
-  return c.json(toDto(prompt!), 201);
+  if (!prompt) throw new Error("Expected prompt to exist after write");
+  return c.json(toDto(prompt), 201);
 });
 
 app.openapi(updateRoute, async (c) => {
@@ -276,7 +277,8 @@ app.openapi(updateRoute, async (c) => {
     .where(eq(prompts.id, id));
 
   const updated = await db.query.prompts.findFirst({ where: eq(prompts.id, id) });
-  return c.json(toDto(updated!));
+  if (!updated) throw new Error("Expected updated to exist after write");
+  return c.json(toDto(updated));
 });
 
 app.openapi(deleteRoute, async (c) => {
