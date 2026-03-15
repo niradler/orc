@@ -2,49 +2,37 @@
 
 ## Completed (PR #2 — feature/project-management)
 
-- [x] **Agent onboarding friction** — MCP tools now accept `project: "name"` (readable) instead of `project_id: "ULID"`. Auto-resolves from `activeProject` in config when omitted.
-- [x] **No MCP tool to create/manage projects** — Added `project_create` and `project_update` MCP tools. Agents can fully manage projects without CLI.
-- [x] **context() doesn't say which project** — Now shows `## Project: <name>` header when scoped to a project.
-- [x] **Multi-agent delegation** — Added `task_delegate` MCP tool. Creates task + optionally triggers a job to launch another agent. Works for any delegation: Claude→Claude, Claude→Codex, Cursor→Claude, etc.
+### Core features
+- [x] **Projects as organizing hub** — `project_id` FK on tasks, memories, jobs. CLI `orc project` command with add/use/show/list/update/archive
+- [x] **Readable project names everywhere** — MCP tools accept `project: "name"` instead of `project_id: "ULID"`. Auto-resolves from `activeProject` in config
+- [x] **project_create + project_update MCP tools** — agents can manage projects without CLI
+- [x] **context() shows project header** — `## Project: <name>` when scoped
+- [x] **task_delegate MCP tool** — any-agent-to-any-agent delegation (Claude→Claude, Claude→Codex, etc.) with optional job trigger
 
-## Remaining — undocumented capabilities
+### Code review fixes
+- [x] **By-name lookup** — uses `COLLATE NOCASE` instead of full table scan
+- [x] **DB-level filtering** — job_list and context push project_id filter to SQL (was in-memory, truncating results)
+- [x] **UpdateProjectSchema** — regex/length parity with CreateProjectSchema
+- [x] **SDK type cleanup** — removed phantom fields (coordination_mode, working_agreement, etc.) not in DB schema
 
-These features exist in the codebase but are not documented in the README or skills:
+### Documentation
+- [x] **README** — project-oriented rewrite, 25 MCP tools with name-based params
+- [x] **Task links** — documented in README (blocks, subtask_of, etc.)
+- [x] **Task notes** — documented in README (collaboration trail, note kinds)
+- [x] **Prompt templates** — documented in README (versioning, skill mode, rendering)
+- [x] **Voice integration** — documented in README (STT/TTS, providers)
+- [x] **Terminal UI** — documented in README (WIP status, components)
+- [x] **Webhook triggers** — documented in Jobs section of README
+- [x] **Project dashboard** — documented in Project Management section
+- [x] **AGENTS.md** — updated to 25 tools, name-based project params
+- [x] **All 5 skills updated** — orc-agent-protocol, orc-task-workflow, orc-memory-knowledge, orc-collab-gateway, orc-dev-contributing
 
-### Task links (`blocks`, `subtask_of`, etc.)
-- Tables: `task_links` in schema.ts
-- API: `/tasks/{id}/links` routes exist
-- CLI: `orc task link` command exists
-- **What to document**: link types (blocks, blocked_by, relates_to, duplicates, clones, subtask_of, parent_of), how agents should use them for dependency tracking
+## Future improvements
 
-### Task notes/threads
-- Table: `task_notes` in schema.ts
-- API: `/tasks/{id}/notes` routes exist
-- **What to document**: how notes create a collaboration trail between agents and humans, note kinds (comment, checkpoint, handoff, review, claim, system)
-
-### Prompt/skill templates
-- Table: `prompts` in schema.ts
-- API: `/prompts` routes exist
-- CLI: `orc prompt` command exists
-- **What to document**: storing reusable prompt templates in DB, versioning, rendering with variables, skill_dir/skill_version fields
-
-### Webhook job triggers
-- Schema supports `trigger_type: "webhook"`
-- API: webhook trigger endpoint
-- **What to document**: how to set up a webhook-triggered job, use cases (GitHub webhooks, CI callbacks)
-
-### Voice integration (Telegram)
-- Gateway supports speech-to-text and TTS
-- Config: `speech` and `tts` sections in config schema
-- Providers: OpenAI, Groq, Qwen
-- **What to document**: setup, provider configuration, voice-only mode vs always mode
-
-### Terminal UI (TUI)
-- Package: `packages/tui/`
-- Components: TaskBoard, JobMonitor, MemBrowser, Dashboard
-- **What to document**: `orc tui` command, what each panel shows, current status (WIP)
-
-### `orc project show` dashboard
-- Shows task counts by status, memory count, job count
-- Color-coded task grouping in `orc task list`
-- **What to document**: project dashboard CLI usage, status grouping
+- [ ] Add MCP tools for task notes (currently API-only, no MCP tool)
+- [ ] Add MCP tools for task links (currently API-only, no MCP tool)
+- [ ] Add MCP tool for prompt rendering
+- [ ] `orc project show` in TUI dashboard
+- [ ] Webhook trigger setup documentation with examples (GitHub, CI)
+- [ ] End-to-end multi-agent delegation example (Claude→Claude with job trigger)
+- [ ] SDK `project` param support (currently SDK still uses `project_id` internally)
