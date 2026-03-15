@@ -131,8 +131,9 @@ export const toolDefinitions = [
   {
     name: "task_delegate",
     description:
-      "Create a task and optionally trigger a job to assign it to another agent. " +
-      "Use for multi-agent coordination — breaks work into subtasks that other agents can pick up.",
+      "Create a task and optionally trigger a job to hand it off to another agent session. " +
+      "Works for any agent-to-agent delegation: Claude→Claude, Claude→Codex, Cursor→Claude, etc. " +
+      "The receiving agent finds the task via context() or task_list().",
     inputSchema: z.object({
       title: z.string().describe("Task title"),
       body: z.string().optional().describe("Task body with acceptance criteria"),
@@ -141,11 +142,11 @@ export const toolDefinitions = [
       assign_to: z
         .string()
         .optional()
-        .describe("Agent name to assign (e.g. 'claude', 'codex'). Creates a claim."),
+        .describe("Agent/session name to assign (e.g. 'claude-code', 'claude-frontend', 'codex'). Creates a claim."),
       trigger_job: z
         .string()
         .optional()
-        .describe("Job name to trigger after task creation (e.g. to launch an agent)"),
+        .describe("Job name to trigger after task creation (e.g. to launch another agent session)"),
     }),
   },
   {

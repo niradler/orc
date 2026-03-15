@@ -159,10 +159,10 @@ The active project is stored in `~/.orc/config.json` under `activeProject`. When
 
 **Every agent session should:**
 
-1. **Start with `context`** — returns active tasks + importance-weighted memories in ~200 tokens
-2. **Use `project_list` / `project_get`** — discover and target the right project
-3. **Create tasks with `project_id`** — keeps work organized
-4. **Store knowledge with `memory_store`** — decisions, rules, and discoveries persist across sessions
+1. **Start with `context({ project: "my-app" })`** — returns active tasks + importance-weighted memories in ~200 tokens
+2. **Create tasks with `project: "my-app"`** — keeps work organized under the project
+3. **Store knowledge with `memory_store`** — decisions, rules, and discoveries persist across sessions
+4. **Delegate with `task_delegate`** — hand off work to another agent session (Claude→Claude, Claude→Codex, etc.)
 5. **Submit for review** — `task_submit_review` triggers HITL approval via Telegram/Slack
 6. **Record events** — `session_event` captures file edits, decisions, errors for context continuity
 7. **End with `session_log`** — summarizes what happened for the next session
@@ -241,26 +241,30 @@ Copy `hooks/codex/settings.json` to `~/.codex/settings.json` and replace the pat
 
 ## MCP Tools Reference
 
-**21 tools** available to any connected agent.
+**25 tools** available to any connected agent.
 
 **Start every session with `context` — it returns active tasks + key memories in ~200 tokens.**
+
+All tools that accept `project` take a **readable project name** (e.g. `"orc"`), not a ULID. If omitted, defaults to `activeProject` from config.
 
 ### Project tools
 
 | Tool | Description |
 |---|---|
-| `project_list` | List all projects with name, status, and ID |
-| `project_get` | Get a project by name (case-insensitive) — returns ID and details |
+| `project_list` | List all projects with name, status, and description |
+| `project_get` | Get a project by name (case-insensitive) |
+| `project_create` | Create a new project. Names: `[a-zA-Z0-9_-]`, unique. |
+| `project_update` | Update project description, status, scope, tags |
 
 ### Memory tools
 
 | Tool | Description |
 |---|---|
-| `context` | Compact session start: active tasks + importance-weighted memories |
-| `memory_search` | 3-layer BM25 search: porter stemming → trigram → LIKE. Filter by `type`, `scope`, `project_id` |
+| `context` | Compact session start: active tasks + importance-weighted memories. Pass `project` to scope. |
+| `memory_search` | 3-layer BM25 search: porter stemming → trigram → LIKE. Pass `project` to scope. |
 | `memory_timeline` | Chronological context around a memory ID |
 | `memory_get` | Fetch full content by IDs (batch up to 20) |
-| `memory_store` | Store a fact, decision, rule, event, or discovery. Pass `project_id` to scope |
+| `memory_store` | Store a fact, decision, rule, event, or discovery. Pass `project` to associate. |
 | `memory_delete` | Delete a memory by ID |
 
 **Memory types** — `rule` and `decision` are weighted higher in `context`:
@@ -277,12 +281,13 @@ Copy `hooks/codex/settings.json` to `~/.codex/settings.json` and replace the pat
 
 | Tool | Description |
 |---|---|
-| `task_list` | List active tasks — compact, no body. Filter by `project_id`, `status` |
+| `task_list` | List active tasks — compact, no body. Pass `project` to filter. |
 | `task_get` | Full task detail by IDs (batch up to 10) |
-| `task_create` | Create a task with title, body, priority, `project_id` |
+| `task_create` | Create a task with title, body, priority. Pass `project` to scope. |
 | `task_update` | Update status, priority, or body |
 | `task_submit_review` | HITL checkpoint — sets status to `review`, appends summary to body, sends Telegram card |
 | `task_check_review` | Poll review result: `pending` / `approved` / `changes_requested` |
+| `task_delegate` | Create task + optionally trigger job for multi-agent handoff (Claude→Claude, Claude→Codex, etc.) |
 
 **Task status flow:**
 
@@ -295,7 +300,7 @@ todo → doing → review → done
 
 | Tool | Description |
 |---|---|
-| `job_list` | All jobs with last run status. Filter by `project_id` |
+| `job_list` | All jobs with last run status. Pass `project` to filter. |
 | `job_run` | Trigger a job by name |
 | `job_status` | Status, exit code, and error for a run ID |
 
@@ -422,7 +427,7 @@ A task created by Claude Code appears in Cursor's `context`. A rule stored by Co
 **Best practices:**
 - Set `ORC_SESSION_ID` per agent (`cursor`, `codex`, `claude-code`) so sessions don't collide
 - Use `decision` and `rule` memory types — they surface automatically in `context` even when old
-- Always pass `project_id` when creating tasks/memories — keeps cross-agent work organized
+- Always pass `project: "name"` when creating tasks/memories — keeps cross-agent work organized
 - Use `task_submit_review` for any work that needs human sign-off before proceeding
 
 ---
@@ -519,6 +524,97 @@ The API runs on port 7700 with auto-generated OpenAPI spec.
 | `GET/POST/PATCH/DELETE` | `/prompts` | Prompt templates |
 | `GET` | `/sessions` | Agent session logs |
 | `POST` | `/mcp/tool` | Execute any MCP tool via HTTP |
+
+---
+
+## Task Links (Dependencies)
+
+Tasks can have typed relationships for dependency tracking:
+
+```bash
+orc task link <from-id> blocks <to-id>        # from must finish before to can start
+orc task link <from-id> subtask_of <to-id>     # from is part of to
+orc task link <from-id> relates_to <to-id>     # loose relationship
+orc task link <from-id> duplicates <to-id>     # mark as duplicate
+```
+
+Link types: `blocks` · `blocked_by` · `relates_to` · `duplicates` · `clones` · `subtask_of` · `parent_of`
+
+API: `GET/POST/DELETE /tasks/{id}/links`
+
+---
+
+## Task Notes (Collaboration Trail)
+
+Tasks support threaded notes — a conversation trail between agents and humans:
+
+```bash
+orc task note <id> "Found the root cause — it's a race condition in token refresh"
+```
+
+Note kinds: `comment` · `checkpoint` · `handoff` · `review` · `claim` · `system`
+
+Notes preserve reasoning across agent sessions. When Agent A hands off to Agent B, the notes explain what was done and what's left.
+
+API: `GET/POST /tasks/{id}/notes`
+
+---
+
+## Prompt Templates
+
+Store reusable prompt templates in the database with versioning:
+
+```bash
+orc prompt list                     # list all prompts
+orc prompt add my-prompt            # create from stdin or --template
+orc prompt show my-prompt           # show latest version
+orc prompt render my-prompt         # render with variable substitution
+```
+
+Prompts support:
+- **Versioning** — every update creates a new version, history is preserved
+- **Skill mode** — `is_skill: true` with `skill_dir` and `skill_version` for agent skill management
+- **Tags and pinning** — organize and quick-access frequently used prompts
+
+API: `GET/POST/PATCH/DELETE /prompts`, `POST /prompts/{id}/render`
+
+---
+
+## Voice Integration (Telegram)
+
+The gateway supports voice messages via speech-to-text and text-to-speech:
+
+```json
+{
+  "speech": {
+    "enabled": true,
+    "provider": "openai",
+    "language": "en"
+  },
+  "tts": {
+    "enabled": true,
+    "provider": "openai",
+    "voice": "alloy",
+    "mode": "voice_only"
+  }
+}
+```
+
+Providers: `openai` · `groq` · `qwen`. Voice notes are transcribed and sent to the agent. Responses can be returned as voice messages.
+
+---
+
+## Terminal UI (WIP)
+
+```bash
+orc tui
+```
+
+Interactive terminal dashboard with:
+- **TaskBoard** — kanban-style task view grouped by status
+- **JobMonitor** — live job status and run history
+- **MemBrowser** — search and browse memories
+- **Dashboard** — project overview with counts
 
 ---
 
