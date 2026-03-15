@@ -93,6 +93,8 @@ export const OrcConfigSchema = z.object({
 
   speech: SpeechConfigSchema.default({}),
   tts: TtsConfigSchema.default({}),
+
+  activeProject: z.string().optional(),
 });
 
 export type OrcConfig = z.infer<typeof OrcConfigSchema>;

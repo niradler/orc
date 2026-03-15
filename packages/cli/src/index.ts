@@ -6,6 +6,7 @@ import { daemonCommand, ORC_HOME, ORC_PID, readDaemonPid } from "./commands/daem
 import { gatewayCommand } from "./commands/gateway.js";
 import { jobCommand } from "./commands/job.js";
 import { memCommand } from "./commands/mem.js";
+import { projectCommand } from "./commands/project.js";
 import { sessionCommand } from "./commands/session.js";
 import { statusCommand } from "./commands/status.js";
 import { taskCommand } from "./commands/task.js";
@@ -53,6 +54,7 @@ const program = new Command()
   });
 
 program.addCommand(taskCommand());
+program.addCommand(projectCommand());
 program.addCommand(memCommand());
 program.addCommand(jobCommand());
 program.addCommand(sessionCommand());

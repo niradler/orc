@@ -51,6 +51,7 @@ export type TaskNote = {
 
 export type Memory = {
   id: string;
+  project_id: string | null;
   content: string;
   source: string | null;
   scope: string | null;
@@ -63,6 +64,7 @@ export type Memory = {
 
 export type Job = {
   id: string;
+  project_id: string | null;
   name: string;
   description: string | null;
   command: string;
@@ -121,6 +123,13 @@ export type Project = {
   shared_context: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type ProjectSummary = {
+  project: Project;
+  tasks: { total: number; by_status: Record<string, number> };
+  memories: number;
+  jobs: number;
 };
 
 export type HealthResponse = { status: "ok"; version: string; uptime: number };
@@ -195,6 +204,7 @@ export type TaskHandoffInput = {
 
 export type CreateMemoryInput = {
   content: string;
+  project_id?: string;
   type?: "fact" | "decision" | "event" | "rule" | "discovery";
   source?: string;
   scope?: string;
@@ -205,6 +215,7 @@ export type CreateMemoryInput = {
 
 export type CreateJobInput = {
   name: string;
+  project_id?: string;
   description?: string;
   command: string;
   trigger_type: JobTriggerType;

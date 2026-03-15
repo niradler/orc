@@ -13,6 +13,7 @@ import type {
   JobRunLog,
   Memory,
   Project,
+  ProjectSummary,
   Prompt,
   PromptHistoryEntry,
   RenderedPrompt,
@@ -119,7 +120,7 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     memories: {
-      list: (params?: { scope?: string; limit?: number }) =>
+      list: (params?: { scope?: string; project_id?: string; limit?: number }) =>
         c<{ memories: Memory[] }>(
           "GET",
           "/memories",
@@ -127,8 +128,13 @@ export function createOrcClient(options?: OrcClientOptions) {
           params as Record<string, string | number | boolean | undefined>,
         ),
 
-      search: (q: string, scope?: string, limit?: number) =>
-        c<{ results: Memory[] }>("GET", "/memories/search", undefined, { q, scope, limit }),
+      search: (q: string, opts?: { scope?: string; project_id?: string; limit?: number }) =>
+        c<{ results: Memory[] }>("GET", "/memories/search", undefined, {
+          q,
+          scope: opts?.scope,
+          project_id: opts?.project_id,
+          limit: opts?.limit,
+        }),
 
       create: (input: CreateMemoryInput) => c<Memory>("POST", "/memories", input),
 
@@ -136,7 +142,7 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     jobs: {
-      list: (params?: { enabled?: boolean; limit?: number }) =>
+      list: (params?: { enabled?: boolean; project_id?: string; limit?: number }) =>
         c<{ jobs: Job[] }>(
           "GET",
           "/jobs",
@@ -200,6 +206,11 @@ export function createOrcClient(options?: OrcClientOptions) {
         ),
 
       get: (id: string) => c<Project>("GET", `/projects/${id}`),
+
+      getByName: (name: string) =>
+        c<Project>("GET", `/projects/by-name/${encodeURIComponent(name)}`),
+
+      summary: (id: string) => c<ProjectSummary>("GET", `/projects/${id}/summary`),
 
       create: (input: CreateProjectInput) => c<Project>("POST", "/projects", input),
 

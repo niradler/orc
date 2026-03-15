@@ -22,6 +22,7 @@ export const toolDefinitions = [
         .enum(["fact", "decision", "event", "rule", "discovery"])
         .optional()
         .describe("Filter by memory type"),
+      project_id: z.string().optional().describe("Filter memories by project"),
       limit: z.number().int().min(1).max(20).optional().default(10),
     }),
   },
@@ -57,6 +58,7 @@ export const toolDefinitions = [
       scope: z.string().optional().describe("Scope (e.g. project name)"),
       tags: z.array(z.string()).optional(),
       importance: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
+      project_id: z.string().optional().describe("Associate this memory with a project"),
     }),
   },
   {
@@ -126,6 +128,7 @@ export const toolDefinitions = [
     description: "List all jobs with last run status.",
     inputSchema: z.object({
       limit: z.number().int().optional().default(20),
+      project_id: z.string().optional().describe("Filter jobs by project"),
     }),
   },
   {
@@ -212,13 +215,14 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
 
   switch (name) {
     case "memory_search": {
-      const { query, scope, type, limit } = args as {
+      const { query, scope, type, limit, project_id } = args as {
         query: string;
         scope?: string;
         type?: "fact" | "decision" | "event" | "rule" | "discovery";
         limit?: number;
+        project_id?: string;
       };
-      const results = searchLayer1(query, scope, limit, type);
+      const results = searchLayer1(query, scope, limit, type, project_id);
       if (results.length === 0) return "No memories found.";
       const lines = [`Found ${results.length} results:`];
       for (const m of results) {
@@ -267,13 +271,14 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "memory_store": {
-      const { content, title, type, scope, tags, importance } = args as {
+      const { content, title, type, scope, tags, importance, project_id } = args as {
         content: string;
         title?: string;
         type?: string;
         scope?: string;
         tags?: string[];
         importance?: string;
+        project_id?: string;
       };
       const id = ulid();
       const now = new Date();
@@ -285,6 +290,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         scope,
         tags,
         importance: (importance ?? "normal") as "low" | "normal" | "high" | "critical",
+        project_id,
         created_at: now,
         updated_at: now,
       });
@@ -393,10 +399,13 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "job_list": {
-      const { limit } = args as { limit?: number };
+      const { limit, project_id } = args as { limit?: number; project_id?: string };
       const rows = await db.query.jobs.findMany({ limit: limit ?? 20 });
-      if (rows.length === 0) return "No jobs defined.";
-      return rows
+      const filtered = project_id
+        ? rows.filter((j) => (j as Record<string, unknown>).project_id === project_id)
+        : rows;
+      if (filtered.length === 0) return "No jobs defined.";
+      return filtered
         .map(
           (j) =>
             `${j.enabled ? "●" : "○"} ${j.name.padEnd(24)} ${j.trigger_type.padEnd(12)} runs:${j.run_count}`,
@@ -442,10 +451,11 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           !["done", "cancelled"].includes(t.status) && (!project_id || t.project_id === project_id),
       );
 
-      const allMems = await db.query.memories.findMany({
+      let allMems = await db.query.memories.findMany({
         limit: memLimit * 3,
         orderBy: (m, { desc }) => [desc(m.created_at)],
       });
+      if (project_id) allMems = allMems.filter((m) => m.project_id === project_id);
 
       const importanceWeight: Record<string, number> = {
         critical: 4,

@@ -6,18 +6,22 @@ const timestamps = {
   updated_at: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
 };
 
-export const projects = sqliteTable("projects", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  description: text("description"),
-  status: text("status", { enum: ["active", "archived", "paused"] })
-    .default("active")
-    .notNull(),
-  scope: text("scope"),
-  tags: text("tags", { mode: "json" }).$type<string[]>(),
-  obsidian_path: text("obsidian_path"),
-  ...timestamps,
-});
+export const projects = sqliteTable(
+  "projects",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    description: text("description"),
+    status: text("status", { enum: ["active", "archived", "paused"] })
+      .default("active")
+      .notNull(),
+    scope: text("scope"),
+    tags: text("tags", { mode: "json" }).$type<string[]>(),
+    obsidian_path: text("obsidian_path"),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("projects_name_idx").on(t.name)],
+);
 
 export const tasks = sqliteTable("tasks", {
   id: text("id").primaryKey(),
@@ -82,6 +86,7 @@ export const task_links = sqliteTable(
 
 export const memories = sqliteTable("memories", {
   id: text("id").primaryKey(),
+  project_id: text("project_id").references(() => projects.id),
   title: text("title"),
   type: text("type", { enum: ["fact", "decision", "event", "rule", "discovery"] })
     .default("fact")
@@ -139,6 +144,7 @@ export const jobs = sqliteTable(
   "jobs",
   {
     id: text("id").primaryKey(),
+    project_id: text("project_id").references(() => projects.id),
     name: text("name").notNull(),
     description: text("description"),
     command: text("command").notNull(),

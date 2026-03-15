@@ -87,6 +87,7 @@ function getSqlite(): Database {
 function buildScopeTypeFilter(
   scope?: string,
   type?: string,
+  project_id?: string,
 ): { clause: string; params: (string | null)[] } {
   const conditions: string[] = [];
   const params: (string | null)[] = [];
@@ -97,6 +98,10 @@ function buildScopeTypeFilter(
   if (type) {
     conditions.push("m.type = ?");
     params.push(type);
+  }
+  if (project_id) {
+    conditions.push("m.project_id = ?");
+    params.push(project_id);
   }
   return {
     clause: conditions.length ? ` AND ${conditions.join(" AND ")}` : "",
@@ -111,8 +116,9 @@ function ftsQuery(
   scope: string | undefined,
   type: string | undefined,
   limit: number,
+  project_id?: string,
 ): RawMemRow[] {
-  const { clause, params } = buildScopeTypeFilter(scope, type);
+  const { clause, params } = buildScopeTypeFilter(scope, type, project_id);
   const sql = `SELECT ${SELECT_COLS}
     FROM ${table} f JOIN memories m ON m.id = f.id
     WHERE f.${table} MATCH ?${clause}
@@ -144,6 +150,7 @@ export function searchLayer1(
   scope?: string,
   limit = 10,
   type?: string,
+  project_id?: string,
 ): MemoryLayer1[] {
   const sqlite = getSqlite();
   const trimmed = query.trim();
@@ -171,6 +178,7 @@ export function searchLayer1(
     scope,
     type,
     limit,
+    project_id,
   );
   results.push(...dedupe(porterAnd, "porter"));
   if (results.length >= limit) return renumber(results.slice(0, limit));
@@ -182,6 +190,7 @@ export function searchLayer1(
     scope,
     type,
     limit,
+    project_id,
   );
   results.push(...dedupe(porterOr, "porter"));
   if (results.length >= limit) return renumber(results.slice(0, limit));
@@ -193,6 +202,7 @@ export function searchLayer1(
     scope,
     type,
     limit,
+    project_id,
   );
   results.push(...dedupe(trigramAnd, "trigram"));
   if (results.length >= limit) return renumber(results.slice(0, limit));
@@ -204,12 +214,13 @@ export function searchLayer1(
     scope,
     type,
     limit,
+    project_id,
   );
   results.push(...dedupe(trigramOr, "trigram"));
   if (results.length >= limit) return renumber(results.slice(0, limit));
 
   if (results.length === 0) {
-    const { clause, params } = buildScopeTypeFilter(scope, type);
+    const { clause, params } = buildScopeTypeFilter(scope, type, project_id);
     const allParams: (string | number | null)[] = [`%${trimmed.toLowerCase()}%`, ...params, limit];
     const fallbackRows = sqlite
       .query(

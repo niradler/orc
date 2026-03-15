@@ -332,6 +332,9 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE gateway_sessions ADD COLUMN auto_approve INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE gateway_sessions ADD COLUMN task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL",
     "UPDATE jobs SET enabled=0 WHERE trigger_type='repeat'",
+    "ALTER TABLE memories ADD COLUMN project_id TEXT REFERENCES projects(id)",
+    "ALTER TABLE jobs ADD COLUMN project_id TEXT REFERENCES projects(id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS projects_name_idx ON projects(name)",
   ];
   for (const statement of migrations) {
     try {
