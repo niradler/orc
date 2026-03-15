@@ -1,7 +1,7 @@
 import { useKeyboard } from "@opentui/react";
 import { createOrcClient } from "@orc/sdk";
 import type { Project, ProjectSummary } from "@orc/sdk/types";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { DetailPane } from "../components/detail-pane.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { useFilter } from "../hooks/use-filter.js";
@@ -67,16 +67,29 @@ export function ProjectsView({ onSelectProject }: Props) {
     }
   }, [filtered, cursor]);
 
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const filterActiveRef = useRef(filterActive);
+  filterActiveRef.current = filterActive;
+  const openDetailRef = useRef(openDetail);
+  openDetailRef.current = openDetail;
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  const filteredRef = useRef(filtered);
+  filteredRef.current = filtered;
+  const cursorRef = useRef(cursor);
+  cursorRef.current = cursor;
+
   useKeyboard((key) => {
-    if (mode === "list" && !filterActive) {
-      if (key.name === "return") openDetail();
-      if (key.name === "r") refresh();
+    if (modeRef.current === "list" && !filterActiveRef.current) {
+      if (key.name === "return") openDetailRef.current();
+      if (key.name === "r") refreshRef.current();
       if (key.name === "s") {
-        const p = filtered[cursor];
+        const p = filteredRef.current[cursorRef.current];
         if (p) onSelectProject(p.name);
       }
     }
-    if (mode === "detail" && key.name === "escape") {
+    if (modeRef.current === "detail" && key.name === "escape") {
       setMode("list");
       setDetail(null);
     }

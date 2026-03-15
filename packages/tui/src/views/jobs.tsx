@@ -1,7 +1,7 @@
 import { useKeyboard } from "@opentui/react";
 import { createOrcClient } from "@orc/sdk";
 import type { Job, JobRun } from "@orc/sdk/types";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { DetailPane } from "../components/detail-pane.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { useFilter } from "../hooks/use-filter.js";
@@ -99,13 +99,24 @@ export function JobsView({ projectId }: Props) {
     refresh();
   }, [filtered, cursor, refresh]);
 
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const filterActiveRef = useRef(filterActive);
+  filterActiveRef.current = filterActive;
+  const openDetailRef = useRef(openDetail);
+  openDetailRef.current = openDetail;
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  const triggerJobRef = useRef(triggerJob);
+  triggerJobRef.current = triggerJob;
+
   useKeyboard((key) => {
-    if (mode === "list" && !filterActive) {
-      if (key.name === "return") openDetail();
-      if (key.name === "r") refresh();
-      if (key.name === "t") triggerJob();
+    if (modeRef.current === "list" && !filterActiveRef.current) {
+      if (key.name === "return") openDetailRef.current();
+      if (key.name === "r") refreshRef.current();
+      if (key.name === "t") triggerJobRef.current();
     }
-    if (mode === "detail" && key.name === "escape") {
+    if (modeRef.current === "detail" && key.name === "escape") {
       setMode("list");
       setDetail(null);
     }

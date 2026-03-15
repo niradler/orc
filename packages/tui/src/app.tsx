@@ -1,6 +1,6 @@
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { createOrcClient } from "@orc/sdk";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { CommandPalette } from "./components/command-palette.js";
 import { Header } from "./components/header.js";
 import { StatusBar } from "./components/status-bar.js";
@@ -90,9 +90,11 @@ export function App() {
   );
 
   const { active: cmdActive, input: cmdInput } = useCommand(commands);
+  const cmdActiveRef = useRef(cmdActive);
+  cmdActiveRef.current = cmdActive;
 
   useKeyboard((key) => {
-    if (cmdActive) return;
+    if (cmdActiveRef.current) return;
     if (key.name === "1") setRoute("projects");
     if (key.name === "2") setRoute("tasks");
     if (key.name === "3") setRoute("jobs");
