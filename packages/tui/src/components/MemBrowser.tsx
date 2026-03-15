@@ -30,7 +30,7 @@ export function MemBrowser({ focused }: Props) {
         return;
       }
       setLoading(true);
-      const result = await client.memories.search(q, undefined, 20);
+      const result = await client.memories.search(q, { limit: 20 });
       if (result.data) setResults(result.data.results);
       setLoading(false);
       setLayer("list");

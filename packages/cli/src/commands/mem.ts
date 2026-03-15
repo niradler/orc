@@ -1,5 +1,6 @@
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
+import { resolveProject } from "./project.js";
 
 export function memCommand() {
   const cmd = new Command("mem").description("Manage memory");
@@ -9,9 +10,19 @@ export function memCommand() {
     .description("Search memories")
     .option("-s, --scope <scope>", "Scope filter")
     .option("-l, --limit <n>", "Max results", "10")
+    .option("-p, --project <name>", "Filter by project name")
+    .option("--no-project", "Search all memories")
     .action(async (query: string, opts) => {
       const client = createOrcClient();
-      const { data, error } = await client.memories.search(query, opts.scope, Number(opts.limit));
+      const noProject = opts.project === false;
+      const project = noProject
+        ? null
+        : await resolveProject(client, { project: opts.project, noProject });
+      const { data, error } = await client.memories.search(query, {
+        scope: opts.scope,
+        ...(project ? { project_id: project.id } : {}),
+        limit: Number(opts.limit),
+      });
       if (error) return console.error("Error:", error);
       const results = data?.results ?? [];
       if (results.length === 0) return console.log("No memories found.");
@@ -30,10 +41,17 @@ export function memCommand() {
     .option("--source <source>", "Source reference")
     .option("--importance <level>", "Importance (low/normal/high/critical)", "normal")
     .option("-t, --tags <tags>", "Comma-separated tags")
+    .option("-p, --project <name>", "Project name")
+    .option("--no-project", "Create without project")
     .action(async (content: string, opts) => {
       const client = createOrcClient();
+      const noProject = opts.project === false;
+      const project = noProject
+        ? null
+        : await resolveProject(client, { project: opts.project, noProject });
       const { data, error } = await client.memories.create({
         content,
+        ...(project ? { project_id: project.id } : {}),
         type: opts.type,
         scope: opts.scope,
         source: opts.source,
@@ -51,10 +69,17 @@ export function memCommand() {
     .description("List recent memories")
     .option("-s, --scope <scope>", "Scope filter")
     .option("-l, --limit <n>", "Max results", "20")
+    .option("-p, --project <name>", "Filter by project name")
+    .option("--no-project", "Show all memories")
     .action(async (opts) => {
       const client = createOrcClient();
+      const noProject = opts.project === false;
+      const project = noProject
+        ? null
+        : await resolveProject(client, { project: opts.project, noProject });
       const { data, error } = await client.memories.list({
         scope: opts.scope,
+        ...(project ? { project_id: project.id } : {}),
         limit: Number(opts.limit),
       });
       if (error) return console.error("Error:", error);

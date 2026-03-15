@@ -1,6 +1,6 @@
 # orc — Human + AI Orchestration Hub
 
-> Persistent memory · Task management with HITL review · Generic job runner ·
+> Project management · Persistent memory · Task board with HITL review · Job runner ·
 > MCP server for Claude Code, Cursor, Codex, and Gemini CLI.
 >
 > One SQLite file. Shared across every agent you use.
@@ -9,13 +9,14 @@
 
 ## What it does
 
-ORC is the shared brain between you and your AI agents. Every agent connects to the same store of tasks, memories, and jobs — so when you switch from Claude Code to Cursor, context doesn't evaporate.
+ORC is the shared brain between you and your AI agents. **Projects** are the organizing hub — every task, memory, and job belongs to a project, so work stays grouped and discoverable across agents.
 
-- **Shared memory** — store decisions, rules, discoveries once; any agent can search them
-- **Task board** — tasks move through `todo → doing → review → done`; agents submit for review, you approve
-- **Job runner** — schedule any command (cron, repeat, file-watch, manual); logs every run
-- **MCP server** — one config line connects any agent to all of the above
-- **Session continuity** — hooks capture what happened; snapshots survive context compaction
+- **Projects** — group tasks, memories, and jobs under a named project; set an active project and all commands auto-scope to it
+- **Shared memory** — store decisions, rules, discoveries; any agent can search them via BM25 full-text search
+- **Task board** — tasks move through `todo → doing → review → done`; agents submit for human review, you approve or request changes
+- **Job runner** — schedule any command (cron, file-watch, webhook, manual); logs every run with stdout/stderr
+- **MCP server** — one config line connects any AI agent to all of the above
+- **Session continuity** — hooks capture file edits, decisions, git ops; snapshots survive context compaction
 
 ---
 
@@ -70,71 +71,110 @@ Add `dist/` to your `PATH`, or run `bun orc <command>` from the repo root.
 # 1. Start the daemon (API + scheduler + gateway)
 orc daemon start
 
-# 2. In another terminal — try it
-orc status
+# 2. Create a project and set it as active
+orc project add my-app -d "My application"
+orc project use my-app
+
+# 3. Everything auto-scopes to the active project
 orc task add "Fix the auth bug" --priority high
-orc mem add "Use RWMutex for token refresh" --type decision --scope myproject
-orc job add nightly --command "echo hello" --trigger cron --cron "0 22 * * *"
+orc task add "Add caching layer" --priority normal
+orc mem add "Use RWMutex for token refresh" --type decision
+orc job add nightly --command "bun run test" --trigger cron --cron "0 22 * * *"
+
+# 4. See everything grouped under the project
+orc project show
+orc task list            # grouped by status with color
 ```
 
 The database is created automatically at `~/.orc/orc.db` on first run.
 
 ---
 
-## Running as a service
+## Project Management
 
-Use `orc daemon start` for production — it starts the API, scheduler, file-watchers, and gateway in one process.
+Projects are the organizing hub. Every task, memory, and job belongs to a project.
+
+### Creating and switching projects
 
 ```bash
-orc daemon start      # start all services
-orc daemon status     # show scheduler state + next run times per job
-orc daemon stop       # graceful shutdown
-orc home              # show ~/.orc directory state + daemon status
+orc project add my-app -d "Main application"
+orc project add infra -d "Infrastructure and DevOps"
+
+# Set active project — all commands auto-scope to it
+orc project use my-app
+
+# Now these all target my-app automatically:
+orc task list
+orc mem search "auth"
+orc job list
+
+# Explicitly target a different project:
+orc task list -p infra
+
+# See everything across all projects:
+orc task list --no-project
 ```
 
-**macOS — launchd**: set `ProgramArguments` to `["/usr/local/bin/orc", "daemon", "start"]` with `RunAtLoad` and `KeepAlive`.
+### Project names
 
-**Linux — systemd**: `ExecStart=/usr/local/bin/orc daemon start` with `Restart=on-failure`.
+- **Unique, case-insensitive** — `my-app` and `My-App` are the same project
+- **Characters**: letters, numbers, `-`, `_` only — human-readable, URL-safe
+- **Used everywhere in CLI** instead of internal IDs
 
-**Any platform — PM2**:
+### Project dashboard
+
 ```bash
-pm2 start "orc daemon start" --name orc
-pm2 save && pm2 startup
+orc project show           # active project
+orc project show my-app    # specific project
+orc project list           # all projects with task/memory/job counts
 ```
+
+### Active project
+
+```bash
+orc project use my-app       # set active project
+orc project use --clear      # unset active project
+```
+
+The active project is stored in `~/.orc/config.json` under `activeProject`. When set, all CLI commands (`task`, `mem`, `job`) auto-scope to it. Use `-p <name>` to override or `--no-project` to bypass.
+
+**Resolution order**: explicit `-p <name>` > `activeProject` from config > error
 
 ---
 
-## Configuration
+## How Agents Use ORC
 
-ORC merges config in this priority order (later wins):
+### The workflow
 
-1. `~/.orc/config.json` — user global
-2. `./.orc/config.json` — project-local
-3. Environment variables
-
-```json
-{
-  "db": { "path": "~/.orc/orc.db" },
-  "api": {
-    "port": 7700,
-    "host": "127.0.0.1",
-    "secret": "optional-bearer-token-for-auth"
-  },
-  "context": {
-    "task_limit": 10,
-    "memory_limit": 8
-  }
-}
+```
+1. Agent starts         → calls context() to get active tasks + key memories
+2. Agent works          → creates tasks, stores decisions, records events
+3. Agent submits work   → task_submit_review() for human approval
+4. Human reviews        → approves or requests changes via CLI/Telegram
+5. Agent continues      → checks review status, picks up next task
+6. Session ends         → session_log() records what happened
 ```
 
-| Variable | Default | Description |
-|---|---|---|
-| `ORC_DB_PATH` | `~/.orc/orc.db` | SQLite database path |
-| `ORC_API_PORT` | `7700` | API listen port |
-| `ORC_API_SECRET` | — | Bearer token for auth |
-| `ORC_SESSION_ID` | `default` | Per-agent session identifier |
-| `ORC_LOG_LEVEL` | `info` | `debug` · `info` · `warn` · `error` |
-| `ORC_RUNNER_TIMEOUT` | `300` | Default job timeout in seconds |
+### Agent session protocol
+
+**Every agent session should:**
+
+1. **Start with `context({ project: "my-app" })`** — returns active tasks + importance-weighted memories in ~200 tokens
+2. **Create tasks with `project: "my-app"`** — keeps work organized under the project
+3. **Store knowledge with `memory_store`** — decisions, rules, and discoveries persist across sessions
+4. **Delegate with `task_delegate`** — hand off work to another agent session (Claude→Claude, Claude→Codex, etc.)
+5. **Submit for review** — `task_submit_review` triggers HITL approval via Telegram/Slack
+6. **Record events** — `session_event` captures file edits, decisions, errors for context continuity
+7. **End with `session_log`** — summarizes what happened for the next session
+
+### Context survival
+
+When an agent's context window fills up:
+1. `PreCompact` hook calls `session_snapshot` → builds ≤2KB XML of current state
+2. Context compacts (old messages dropped)
+3. `SessionStart` hook calls `session_restore` → injects the snapshot back
+
+The snapshot includes active tasks, recent file edits, decisions, and git ops — prioritized to fit the 2KB budget.
 
 ---
 
@@ -142,7 +182,7 @@ ORC merges config in this priority order (later wins):
 
 ### Claude Code
 
-Copy `hooks/claude-code/settings.json` to `~/.claude/settings.json` and replace `/path/to/orc/` with your actual clone path:
+Add to `~/.claude/settings.json`:
 
 ```json
 {
@@ -155,15 +195,11 @@ Copy `hooks/claude-code/settings.json` to `~/.claude/settings.json` and replace 
 }
 ```
 
-| Hook | Fires when | What it does |
-|---|---|---|
-| `PostToolUse` | After Write / Edit / Bash / Shell | Records session events |
-| `PreCompact` | Context window fills | Builds + stores ≤2KB snapshot |
-| `SessionStart` | Session starts or restarts | Injects context or snapshot |
+Replace `/path/to/orc/` with your actual clone path. Hooks handle session events and snapshots automatically.
 
 ### Cursor
 
-Add to `.cursor/mcp.json` in your project (or the global Cursor MCP config):
+Add to `.cursor/mcp.json`:
 
 ```json
 {
@@ -205,17 +241,30 @@ Copy `hooks/codex/settings.json` to `~/.codex/settings.json` and replace the pat
 
 ## MCP Tools Reference
 
+**25 tools** available to any connected agent.
+
 **Start every session with `context` — it returns active tasks + key memories in ~200 tokens.**
+
+All tools that accept `project` take a **readable project name** (e.g. `"orc"`), not a ULID. If omitted, defaults to `activeProject` from config.
+
+### Project tools
+
+| Tool | Description |
+|---|---|
+| `project_list` | List all projects with name, status, and description |
+| `project_get` | Get a project by name (case-insensitive) |
+| `project_create` | Create a new project. Names: `[a-zA-Z0-9_-]`, unique. |
+| `project_update` | Update project description, status, scope, tags |
 
 ### Memory tools
 
 | Tool | Description |
 |---|---|
-| `context` | Compact session start: active tasks + key memories |
-| `memory_search` | 3-layer BM25 search: porter stemming → trigram → LIKE |
+| `context` | Compact session start: active tasks + importance-weighted memories. Pass `project` to scope. |
+| `memory_search` | 3-layer BM25 search: porter stemming → trigram → LIKE. Pass `project` to scope. |
 | `memory_timeline` | Chronological context around a memory ID |
-| `memory_get` | Fetch full content by IDs (batch) |
-| `memory_store` | Store a fact, decision, rule, event, or discovery |
+| `memory_get` | Fetch full content by IDs (batch up to 20) |
+| `memory_store` | Store a fact, decision, rule, event, or discovery. Pass `project` to associate. |
 | `memory_delete` | Delete a memory by ID |
 
 **Memory types** — `rule` and `decision` are weighted higher in `context`:
@@ -232,12 +281,13 @@ Copy `hooks/codex/settings.json` to `~/.codex/settings.json` and replace the pat
 
 | Tool | Description |
 |---|---|
-| `task_list` | List active tasks — compact, no body |
-| `task_get` | Full task detail by IDs |
-| `task_create` | Create a task with title, body, priority, project |
+| `task_list` | List active tasks — compact, no body. Pass `project` to filter. |
+| `task_get` | Full task detail by IDs (batch up to 10) |
+| `task_create` | Create a task with title, body, priority. Pass `project` to scope. |
 | `task_update` | Update status, priority, or body |
-| `task_submit_review` | HITL checkpoint — sets status to `review`, sends Telegram card |
-| `task_check_review` | Poll review result: `pending` · `approved` · `changes_requested` |
+| `task_submit_review` | HITL checkpoint — sets status to `review`, appends summary to body, sends Telegram card |
+| `task_check_review` | Poll review result: `pending` / `approved` / `changes_requested` |
+| `task_delegate` | Create task + optionally trigger job for multi-agent handoff (Claude→Claude, Claude→Codex, etc.) |
 
 **Task status flow:**
 
@@ -250,7 +300,7 @@ todo → doing → review → done
 
 | Tool | Description |
 |---|---|
-| `job_list` | All jobs with last run status |
+| `job_list` | All jobs with last run status. Pass `project` to filter. |
 | `job_run` | Trigger a job by name |
 | `job_status` | Status, exit code, and error for a run ID |
 
@@ -258,7 +308,7 @@ todo → doing → review → done
 
 | Tool | Description |
 |---|---|
-| `session_event` | Record a significant action (file, task, decision, error, git…) |
+| `session_event` | Record a significant action (file, task, decision, error, git…). Auto-deduped. |
 | `session_snapshot` | Build ≤2KB XML snapshot of current session state |
 | `session_restore` | Restore session state after compaction or restart |
 | `session_log` | Log a session summary after completing a unit of work |
@@ -268,6 +318,8 @@ todo → doing → review → done
 ## CLI Reference
 
 All commands accept global flags: `--port`, `--host`, `--secret`, `--db`, `--log-level`.
+
+All task/mem/job commands default to the active project. Use `-p <name>` to target a specific project or `--no-project` to see everything.
 
 ```
 orc daemon start             Start API + scheduler + file-watchers + gateway
@@ -279,26 +331,84 @@ orc api                      Start the API server only (no scheduler)
 orc mcp                      Start the MCP server in stdio mode
 orc status                   Show API health, task count, memory count
 
-orc task list [--status]     List tasks (default: active)
-orc task add <title>         Create a task (--priority, --body, --project)
-orc task done <id>           Mark a task done (accepts full ULID or 6-char suffix)
+orc project list             List projects with task/memory/job counts
+orc project add <name>       Create a project (-d, --scope, --tags)
+orc project show [name]      Project dashboard (defaults to active project)
+orc project use <name>       Set active project (--clear to unset)
+orc project update <name>    Update project fields
+orc project archive <name>   Archive a project
+
+orc task list                List tasks grouped by status (--flat, --status, -p)
+orc task add <title>         Create a task (--priority, --body)
+orc task done <id>           Mark a task done (6-char suffix or full ULID)
 orc task review <id>         Submit task for HITL review
 orc task approve <id>        Approve a review
 orc task reject <id>         Request changes (HITL)
 
-orc mem list                 List recent memories (--limit)
+orc mem list                 List recent memories (--limit, -p)
 orc mem add <content>        Store a memory (--type, --scope, --title)
-orc mem search <query>       Search memories via BM25 + trigram (--scope, --limit)
+orc mem search <query>       Search via BM25 + trigram (--scope, --limit, -p)
 
-orc job list                 List all jobs with trigger type and run count
+orc job list                 List jobs with trigger type and run count (-p)
 orc job add <name>           Create a job (--command, --trigger, --cron, --watch)
 orc job run <name>           Trigger a job immediately
 orc job runs <name>          Show run history (--logs, --sessions, --limit)
 
 orc session list             List recent agent sessions (--agent, --limit)
-orc session show <id>        Show session detail (--events, --snapshot, --limit)
+orc session show <id>        Show session detail (--events, --snapshot)
 orc session log <summary>    Log a session summary (--agent, --agent-version)
 ```
+
+---
+
+## Running as a service
+
+Use `orc daemon start` for production — it starts the API, scheduler, file-watchers, and gateway in one process.
+
+**macOS — launchd**: set `ProgramArguments` to `["/usr/local/bin/orc", "daemon", "start"]` with `RunAtLoad` and `KeepAlive`.
+
+**Linux — systemd**: `ExecStart=/usr/local/bin/orc daemon start` with `Restart=on-failure`.
+
+**Any platform — PM2**:
+```bash
+pm2 start "orc daemon start" --name orc
+pm2 save && pm2 startup
+```
+
+---
+
+## Configuration
+
+ORC merges config in this priority order (later wins):
+
+1. `~/.orc/config.json` — user global
+2. `./.orc/config.json` — project-local
+3. Environment variables
+
+```json
+{
+  "activeProject": "my-app",
+  "db": { "path": "~/.orc/orc.db" },
+  "api": {
+    "port": 7700,
+    "host": "127.0.0.1",
+    "secret": "optional-bearer-token-for-auth"
+  },
+  "context": {
+    "task_limit": 10,
+    "memory_limit": 8
+  }
+}
+```
+
+| Variable | Default | Description |
+|---|---|---|
+| `ORC_DB_PATH` | `~/.orc/orc.db` | SQLite database path |
+| `ORC_API_PORT` | `7700` | API listen port |
+| `ORC_API_SECRET` | — | Bearer token for auth |
+| `ORC_SESSION_ID` | `default` | Per-agent session identifier |
+| `ORC_LOG_LEVEL` | `info` | `debug` · `info` · `warn` · `error` |
+| `ORC_RUNNER_TIMEOUT` | `300` | Default job timeout in seconds |
 
 ---
 
@@ -309,12 +419,16 @@ All agents share one SQLite file. This is intentional.
 ```
 Claude Code  ──┐
 Cursor       ──┤──→  ~/.orc/orc.db  ←──  orc cli (you)
-Codex        ──┘
+Codex/Gemini ──┘
 ```
 
 A task created by Claude Code appears in Cursor's `context`. A rule stored by Codex shows up in Claude Code's `memory_search`. Session snapshots built by one agent are restorable by another.
 
-Set `ORC_SESSION_ID` per agent (`cursor`, `codex`, `claude-code`) so sessions don't collide. Use `decision` and `rule` memory types — they surface automatically in context even when old.
+**Best practices:**
+- Set `ORC_SESSION_ID` per agent (`cursor`, `codex`, `claude-code`) so sessions don't collide
+- Use `decision` and `rule` memory types — they surface automatically in `context` even when old
+- Always pass `project: "name"` when creating tasks/memories — keeps cross-agent work organized
+- Use `task_submit_review` for any work that needs human sign-off before proceeding
 
 ---
 
@@ -378,6 +492,129 @@ orc job add on-change --command "bun run lint" --trigger watch --watch "./src"
 # Webhook (triggered via HTTP POST to /webhooks/<token>)
 orc job add on-push --command "bun run ci" --trigger webhook
 ```
+
+---
+
+## REST API
+
+The API runs on port 7700 with auto-generated OpenAPI spec.
+
+- `GET /docs` — Swagger UI
+- `GET /openapi.json` — OpenAPI 3.1 spec
+
+### Endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/health` | Health check |
+| `GET/POST/PATCH/DELETE` | `/projects` | CRUD projects |
+| `GET` | `/projects/by-name/{name}` | Lookup by name (case-insensitive) |
+| `GET` | `/projects/{id}/summary` | Task/memory/job counts |
+| `GET/POST/PATCH/DELETE` | `/tasks` | CRUD tasks |
+| `POST` | `/tasks/{id}/review` | Submit for review |
+| `GET` | `/tasks/{id}/review` | Check review status |
+| `GET/POST` | `/tasks/{id}/notes` | Task notes |
+| `GET/POST/DELETE` | `/tasks/{id}/links` | Task dependencies |
+| `GET/POST/DELETE` | `/memories` | CRUD memories |
+| `GET` | `/memories/search` | BM25 search |
+| `GET/POST` | `/jobs` | CRUD jobs |
+| `POST` | `/jobs/{id}/trigger` | Trigger a job |
+| `GET` | `/jobs/{id}/runs` | Run history |
+| `GET` | `/jobs/{id}/runs/{runId}/logs` | Run logs |
+| `GET/POST/PATCH/DELETE` | `/prompts` | Prompt templates |
+| `GET` | `/sessions` | Agent session logs |
+| `POST` | `/mcp/tool` | Execute any MCP tool via HTTP |
+
+---
+
+## Task Links (Dependencies)
+
+Tasks can have typed relationships for dependency tracking:
+
+```bash
+orc task link <from-id> blocks <to-id>        # from must finish before to can start
+orc task link <from-id> subtask_of <to-id>     # from is part of to
+orc task link <from-id> relates_to <to-id>     # loose relationship
+orc task link <from-id> duplicates <to-id>     # mark as duplicate
+```
+
+Link types: `blocks` · `blocked_by` · `relates_to` · `duplicates` · `clones` · `subtask_of` · `parent_of`
+
+API: `GET/POST/DELETE /tasks/{id}/links`
+
+---
+
+## Task Notes (Collaboration Trail)
+
+Tasks support threaded notes — a conversation trail between agents and humans:
+
+```bash
+orc task note <id> "Found the root cause — it's a race condition in token refresh"
+```
+
+Note kinds: `comment` · `checkpoint` · `handoff` · `review` · `claim` · `system`
+
+Notes preserve reasoning across agent sessions. When Agent A hands off to Agent B, the notes explain what was done and what's left.
+
+API: `GET/POST /tasks/{id}/notes`
+
+---
+
+## Prompt Templates
+
+Store reusable prompt templates in the database with versioning:
+
+```bash
+orc prompt list                     # list all prompts
+orc prompt add my-prompt            # create from stdin or --template
+orc prompt show my-prompt           # show latest version
+orc prompt render my-prompt         # render with variable substitution
+```
+
+Prompts support:
+- **Versioning** — every update creates a new version, history is preserved
+- **Skill mode** — `is_skill: true` with `skill_dir` and `skill_version` for agent skill management
+- **Tags and pinning** — organize and quick-access frequently used prompts
+
+API: `GET/POST/PATCH/DELETE /prompts`, `POST /prompts/{id}/render`
+
+---
+
+## Voice Integration (Telegram)
+
+The gateway supports voice messages via speech-to-text and text-to-speech:
+
+```json
+{
+  "speech": {
+    "enabled": true,
+    "provider": "openai",
+    "language": "en"
+  },
+  "tts": {
+    "enabled": true,
+    "provider": "openai",
+    "voice": "alloy",
+    "mode": "voice_only"
+  }
+}
+```
+
+Providers: `openai` · `groq` · `qwen`. Voice notes are transcribed and sent to the agent. Responses can be returned as voice messages.
+
+---
+
+## Terminal UI (WIP)
+
+```bash
+orc tui
+```
+
+Interactive terminal dashboard with:
+- **TaskBoard** — kanban-style task view grouped by status
+- **JobMonitor** — live job status and run history
+- **MemBrowser** — search and browse memories
+- **Dashboard** — project overview with counts
 
 ---
 

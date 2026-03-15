@@ -1,5 +1,6 @@
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
+import { resolveProject } from "./project.js";
 
 export function jobCommand() {
   const cmd = new Command("job").description("Manage jobs");
@@ -7,12 +8,18 @@ export function jobCommand() {
   cmd
     .command("list")
     .description("List jobs")
-    .action(async () => {
+    .option("-p, --project <name>", "Filter by project name")
+    .option("--no-project", "Show all jobs")
+    .action(async (opts) => {
       const client = createOrcClient();
-      const { data, error } = await client.jobs.list();
+      const noProject = opts.project === false;
+      const project = noProject
+        ? null
+        : await resolveProject(client, { project: opts.project, noProject });
+      const { data, error } = await client.jobs.list(project ? { project_id: project.id } : {});
       if (error) return console.error("Error:", error);
       const rows = data?.jobs ?? [];
-      if (rows.length === 0) return console.log("No jobs defined.");
+      if (rows.length === 0) return console.log("No jobs found.");
       for (const j of rows) {
         const en = j.enabled ? "●" : "○";
         const trigger = j.cron_expr ? `cron(${j.cron_expr})` : j.trigger_type;
@@ -31,10 +38,17 @@ export function jobCommand() {
     .option("--retries <n>", "Max retries", "0")
     .option("--notify <when>", "Notify on: never/failure/always", "failure")
     .option("-d, --description <text>", "Description")
+    .option("-p, --project <name>", "Project name")
+    .option("--no-project", "Create without project")
     .action(async (name: string, opts) => {
       const client = createOrcClient();
+      const noProject = opts.project === false;
+      const project = noProject
+        ? null
+        : await resolveProject(client, { project: opts.project, noProject });
       const { data, error } = await client.jobs.create({
         name,
+        ...(project ? { project_id: project.id } : {}),
         description: opts.description,
         command: opts.command,
         trigger_type: opts.trigger as

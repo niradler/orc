@@ -1,3 +1,4 @@
+import type { Database } from "bun:sqlite";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
@@ -23,7 +24,11 @@ const ProjectSchema = z
 
 const CreateProjectSchema = z
   .object({
-    name: z.string().min(1).max(200),
+    name: z
+      .string()
+      .regex(/^[a-zA-Z0-9_-]+$/)
+      .min(1)
+      .max(100),
     description: z.string().optional(),
     status: z.enum(["active", "archived", "paused"]).optional().default("active"),
     scope: z.string().optional(),
@@ -34,7 +39,12 @@ const CreateProjectSchema = z
 
 const UpdateProjectSchema = z
   .object({
-    name: z.string().min(1).max(200).optional(),
+    name: z
+      .string()
+      .regex(/^[a-zA-Z0-9_-]+$/)
+      .min(1)
+      .max(100)
+      .optional(),
     description: z.string().optional(),
     status: z.enum(["active", "archived", "paused"]).optional(),
     scope: z.string().optional(),
@@ -109,6 +119,43 @@ const deleteRoute = createRoute({
   },
 });
 
+const getByNameRoute = createRoute({
+  method: "get",
+  path: "/projects/by-name/{name}",
+  tags: ["Projects"],
+  summary: "Get project by name (case-insensitive)",
+  request: { params: z.object({ name: z.string() }) },
+  responses: {
+    200: { description: "Project", content: { "application/json": { schema: ProjectSchema } } },
+  },
+});
+
+const summaryRoute = createRoute({
+  method: "get",
+  path: "/projects/{id}/summary",
+  tags: ["Projects"],
+  summary: "Get project summary with task/memory/job counts",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: "Project summary",
+      content: {
+        "application/json": {
+          schema: z.object({
+            project: ProjectSchema,
+            tasks: z.object({
+              total: z.number(),
+              by_status: z.record(z.number()),
+            }),
+            memories: z.number(),
+            jobs: z.number(),
+          }),
+        },
+      },
+    },
+  },
+});
+
 function toDto(p: typeof projects.$inferSelect) {
   return {
     ...p,
@@ -127,6 +174,59 @@ app.openapi(listRoute, async (c) => {
     orderBy: (p, { asc }) => [asc(p.name)],
   });
   return c.json({ projects: rows.map(toDto) });
+});
+
+app.openapi(getByNameRoute, async (c) => {
+  const db = getDb();
+  const { name } = c.req.valid("param");
+  const sqlite = (db as unknown as { $client: Database }).$client;
+  const row = sqlite
+    .query<typeof projects.$inferSelect, string>(
+      "SELECT * FROM projects WHERE name = ? COLLATE NOCASE LIMIT 1",
+    )
+    .get(name);
+  if (!row) throw new NotFoundError("Project", name);
+  return c.json(toDto(row));
+});
+
+app.openapi(summaryRoute, async (c) => {
+  const db = getDb();
+  const { id } = c.req.valid("param");
+  const project = await db.query.projects.findFirst({ where: eq(projects.id, id) });
+  if (!project) throw new NotFoundError("Project", id);
+
+  const sqlite = (db as unknown as { $client: Database }).$client;
+
+  const taskRows = sqlite
+    .query<{ status: string; count: number }, string>(
+      "SELECT status, COUNT(*) as count FROM tasks WHERE project_id = ? GROUP BY status",
+    )
+    .all(id);
+  const byStatus: Record<string, number> = {};
+  let total = 0;
+  for (const row of taskRows) {
+    byStatus[row.status] = row.count;
+    total += row.count;
+  }
+
+  const memCount =
+    sqlite
+      .query<{ count: number }, string>(
+        "SELECT COUNT(*) as count FROM memories WHERE project_id = ?",
+      )
+      .get(id)?.count ?? 0;
+
+  const jobCount =
+    sqlite
+      .query<{ count: number }, string>("SELECT COUNT(*) as count FROM jobs WHERE project_id = ?")
+      .get(id)?.count ?? 0;
+
+  return c.json({
+    project: toDto(project),
+    tasks: { total, by_status: byStatus },
+    memories: memCount,
+    jobs: jobCount,
+  });
 });
 
 app.openapi(getRoute, async (c) => {

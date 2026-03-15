@@ -25,6 +25,7 @@ const JobSchema = z
     max_retries: z.number(),
     overlap: JobOverlapSchema,
     notify_on: z.enum(["never", "failure", "always"]),
+    project_id: z.string().nullable(),
     run_count: z.number(),
     last_run_at: z.string().datetime().nullable(),
     next_run_at: z.string().datetime().nullable(),
@@ -47,6 +48,7 @@ const CreateJobSchema = z
     notify_on: z.enum(["never", "failure", "always"]).optional().default("failure"),
     env_vars: z.record(z.string()).optional(),
     working_dir: z.string().optional(),
+    project_id: z.string().optional(),
   })
   .openapi("CreateJob");
 
@@ -83,6 +85,7 @@ const listRoute = createRoute({
   request: {
     query: z.object({
       enabled: z.coerce.boolean().optional(),
+      project_id: z.string().optional(),
       limit: z.coerce.number().int().min(1).max(100).optional().default(50),
     }),
   },
@@ -172,6 +175,7 @@ const runLogsRoute = createRoute({
 function toDto(j: typeof jobs.$inferSelect) {
   return {
     ...j,
+    project_id: j.project_id ?? null,
     last_run_at: j.last_run_at?.toISOString() ?? null,
     next_run_at: j.next_run_at?.toISOString() ?? null,
     created_at: j.created_at.toISOString(),
@@ -190,8 +194,14 @@ function runToDto(r: typeof job_runs.$inferSelect) {
 
 app.openapi(listRoute, async (c) => {
   const db = getDb();
-  const { limit } = c.req.valid("query");
-  const rows = await db.query.jobs.findMany({ limit, orderBy: (j, { asc }) => [asc(j.name)] });
+  const { limit, project_id } = c.req.valid("query");
+  const conditions: ReturnType<typeof eq>[] = [];
+  if (project_id) conditions.push(eq(jobs.project_id, project_id));
+  const rows = await db.query.jobs.findMany({
+    where: conditions.length ? and(...conditions) : undefined,
+    limit,
+    orderBy: (j, { asc }) => [asc(j.name)],
+  });
   return c.json({ jobs: rows.map(toDto) });
 });
 
@@ -223,6 +233,7 @@ app.openapi(createRoute_, async (c) => {
     notify_on: body.notify_on,
     env_vars: body.env_vars,
     working_dir: body.working_dir,
+    project_id: body.project_id,
     created_at: now,
     updated_at: now,
   });

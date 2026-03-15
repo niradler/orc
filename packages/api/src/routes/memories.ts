@@ -18,6 +18,7 @@ const MemorySchema = z
     content: z.string(),
     source: z.string().nullable(),
     scope: z.string().nullable(),
+    project_id: z.string().nullable(),
     tags: z.array(z.string()).nullable(),
     importance: z.enum(["low", "normal", "high", "critical"]),
     expires_at: z.string().datetime().nullable(),
@@ -33,6 +34,7 @@ const CreateMemorySchema = z
     type: MemoryTypeSchema.optional().default("fact"),
     source: z.string().optional(),
     scope: z.string().optional(),
+    project_id: z.string().optional(),
     tags: z.array(z.string()).optional(),
     importance: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
     expires_at: z.string().datetime().optional(),
@@ -49,6 +51,7 @@ const searchRoute = createRoute({
       q: z.string().min(1),
       scope: z.string().optional(),
       type: MemoryTypeSchema.optional(),
+      project_id: z.string().optional(),
       limit: z.coerce.number().int().min(1).max(50).optional().default(10),
     }),
   },
@@ -69,6 +72,7 @@ const listRoute = createRoute({
     query: z.object({
       scope: z.string().optional(),
       type: MemoryTypeSchema.optional(),
+      project_id: z.string().optional(),
       limit: z.coerce.number().int().min(1).max(100).optional().default(20),
     }),
   },
@@ -109,6 +113,7 @@ type RawRow = {
   content: string;
   source: string | null;
   scope: string | null;
+  project_id: string | null;
   tags: string | null;
   importance: string;
   expires_at: number | null;
@@ -124,6 +129,7 @@ function rawToDto(r: RawRow) {
     content: r.content,
     source: r.source,
     scope: r.scope,
+    project_id: r.project_id ?? null,
     tags: r.tags ? (JSON.parse(r.tags) as string[]) : null,
     importance: r.importance as "low" | "normal" | "high" | "critical",
     expires_at: r.expires_at ? new Date(r.expires_at * 1000).toISOString() : null,
@@ -140,6 +146,7 @@ function toDto(m: typeof memories.$inferSelect) {
     content: m.content,
     source: m.source ?? null,
     scope: m.scope ?? null,
+    project_id: m.project_id ?? null,
     tags: m.tags ?? null,
     importance: m.importance,
     expires_at: m.expires_at?.toISOString() ?? null,
@@ -148,18 +155,23 @@ function toDto(m: typeof memories.$inferSelect) {
   };
 }
 
-const SELECT_COLS = `m.id, m.title, m.type, m.content, m.source, m.scope, m.tags,
+const SELECT_COLS = `m.id, m.title, m.type, m.content, m.source, m.scope, m.project_id, m.tags,
   m.importance, m.expires_at, m.created_at, m.updated_at`;
 
 app.openapi(searchRoute, async (c) => {
   const db = getDb();
-  const { q, scope, type, limit } = c.req.valid("query");
+  const { q, scope, type, project_id, limit } = c.req.valid("query");
   const sqlite = (db as unknown as { $client: Database }).$client;
   const safe = q.replace(/["]/g, " ").trim();
 
   const scopeClause = scope ? " AND m.scope = ?" : "";
   const typeClause = type ? " AND m.type = ?" : "";
-  const filterParams: (string | number)[] = [...(scope ? [scope] : []), ...(type ? [type] : [])];
+  const projectClause = project_id ? " AND m.project_id = ?" : "";
+  const filterParams: (string | number)[] = [
+    ...(scope ? [scope] : []),
+    ...(type ? [type] : []),
+    ...(project_id ? [project_id] : []),
+  ];
 
   let rows: RawRow[] = [];
 
@@ -168,7 +180,7 @@ app.openapi(searchRoute, async (c) => {
       return sqlite
         .query(
           `SELECT ${SELECT_COLS} FROM ${table} f JOIN memories m ON m.id = f.id
-           WHERE f.${table} MATCH ?${scopeClause}${typeClause} ORDER BY rank LIMIT ?`,
+           WHERE f.${table} MATCH ?${scopeClause}${typeClause}${projectClause} ORDER BY rank LIMIT ?`,
         )
         .all(expr, ...filterParams, limit) as RawRow[];
     } catch {
@@ -190,7 +202,7 @@ app.openapi(searchRoute, async (c) => {
     rows = sqlite
       .query(
         `SELECT ${SELECT_COLS} FROM memories m
-         WHERE m.content LIKE ?${scopeClause}${typeClause}
+         WHERE m.content LIKE ?${scopeClause}${typeClause}${projectClause}
          ORDER BY m.created_at DESC LIMIT ?`,
       )
       .all(...fallbackParams) as RawRow[];
@@ -201,7 +213,7 @@ app.openapi(searchRoute, async (c) => {
 
 app.openapi(listRoute, async (c) => {
   const db = getDb();
-  const { scope, type, limit } = c.req.valid("query");
+  const { scope, type, project_id, limit } = c.req.valid("query");
   const sqlite = (db as unknown as { $client: Database }).$client;
 
   const conditions: string[] = [];
@@ -213,6 +225,10 @@ app.openapi(listRoute, async (c) => {
   if (type) {
     conditions.push("type = ?");
     params.push(type);
+  }
+  if (project_id) {
+    conditions.push("project_id = ?");
+    params.push(project_id);
   }
   params.push(limit);
 
@@ -237,6 +253,7 @@ app.openapi(createRoute_, async (c) => {
     content: body.content,
     source: body.source,
     scope: body.scope,
+    project_id: body.project_id,
     tags: body.tags,
     importance: body.importance,
     expires_at: body.expires_at ? new Date(body.expires_at) : undefined,
