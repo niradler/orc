@@ -9,6 +9,11 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getLayer2, getLayer3, searchLayer1 } from "./search.js";
 
+const projectParam = z
+  .string()
+  .optional()
+  .describe("Project name (e.g. 'orc'). Defaults to activeProject from config if not set.");
+
 export const toolDefinitions = [
   {
     name: "memory_search",
@@ -17,12 +22,12 @@ export const toolDefinitions = [
       "Filter by type (fact|decision|event|rule|discovery) or scope. Use memory_timeline for context, memory_get for full content.",
     inputSchema: z.object({
       query: z.string().describe("Search query — keywords, phrases, or natural language"),
-      scope: z.string().optional().describe("Scope filter (e.g. project name)"),
+      scope: z.string().optional().describe("Scope filter (e.g. domain area)"),
       type: z
         .enum(["fact", "decision", "event", "rule", "discovery"])
         .optional()
         .describe("Filter by memory type"),
-      project_id: z.string().optional().describe("Filter memories by project"),
+      project: projectParam,
       limit: z.number().int().min(1).max(20).optional().default(10),
     }),
   },
@@ -55,10 +60,10 @@ export const toolDefinitions = [
       content: z.string().describe("Content to remember"),
       title: z.string().optional().describe("Short label (≤60 chars) for quick scanning"),
       type: z.enum(["fact", "decision", "event", "rule", "discovery"]).optional().default("fact"),
-      scope: z.string().optional().describe("Scope (e.g. project name)"),
+      scope: z.string().optional().describe("Scope (e.g. domain area)"),
       tags: z.array(z.string()).optional(),
       importance: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
-      project_id: z.string().optional().describe("Associate this memory with a project"),
+      project: projectParam,
     }),
   },
   {
@@ -72,7 +77,7 @@ export const toolDefinitions = [
     name: "task_list",
     description: "List active tasks — compact layer-1 index. Does NOT include body/notes.",
     inputSchema: z.object({
-      project_id: z.string().optional(),
+      project: projectParam,
       status: z.enum(["todo", "doing", "review", "changes_requested", "blocked"]).optional(),
       limit: z.number().int().min(1).max(50).optional().default(20),
     }),
@@ -90,7 +95,7 @@ export const toolDefinitions = [
     inputSchema: z.object({
       title: z.string(),
       body: z.string().optional(),
-      project_id: z.string().optional(),
+      project: projectParam,
       priority: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
       author: z.string().optional().default("agent"),
     }),
@@ -124,11 +129,31 @@ export const toolDefinitions = [
     }),
   },
   {
+    name: "task_delegate",
+    description:
+      "Create a task and optionally trigger a job to assign it to another agent. " +
+      "Use for multi-agent coordination — breaks work into subtasks that other agents can pick up.",
+    inputSchema: z.object({
+      title: z.string().describe("Task title"),
+      body: z.string().optional().describe("Task body with acceptance criteria"),
+      project: projectParam,
+      priority: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
+      assign_to: z
+        .string()
+        .optional()
+        .describe("Agent name to assign (e.g. 'claude', 'codex'). Creates a claim."),
+      trigger_job: z
+        .string()
+        .optional()
+        .describe("Job name to trigger after task creation (e.g. to launch an agent)"),
+    }),
+  },
+  {
     name: "job_list",
     description: "List all jobs with last run status.",
     inputSchema: z.object({
       limit: z.number().int().optional().default(20),
-      project_id: z.string().optional().describe("Filter jobs by project"),
+      project: projectParam,
     }),
   },
   {
@@ -149,9 +174,10 @@ export const toolDefinitions = [
     name: "context",
     description:
       "Compact context index — active tasks + important memories. ~200 tokens. Call at session start. " +
+      "Pass project name to scope, or omit to use activeProject from config. " +
       "Use task_get or memory_get to drill into specific items.",
     inputSchema: z.object({
-      project_id: z.string().optional(),
+      project: projectParam,
     }),
   },
   {
@@ -203,40 +229,82 @@ export const toolDefinitions = [
       agent_version: z.string().optional().describe("Agent version string, e.g. 'claude-code/1.x'"),
       summary: z.string(),
       session_id: z.string().optional(),
-      project_id: z.string().optional(),
+      project: projectParam,
     }),
   },
   {
     name: "project_list",
-    description: "List all projects. Returns name, status, and ID for each project.",
+    description: "List all projects. Returns name, status, and description for each.",
     inputSchema: z.object({
       status: z.enum(["active", "archived", "paused"]).optional(),
     }),
   },
   {
     name: "project_get",
-    description: "Get a project by name (case-insensitive). Returns full project details including ID.",
+    description:
+      "Get a project by name (case-insensitive). Returns full project details.",
     inputSchema: z.object({
       name: z.string().describe("Project name (case-insensitive)"),
+    }),
+  },
+  {
+    name: "project_create",
+    description: "Create a new project. Project names must be unique, [a-zA-Z0-9_-] only.",
+    inputSchema: z.object({
+      name: z
+        .string()
+        .regex(/^[a-zA-Z0-9_-]+$/)
+        .min(1)
+        .max(100)
+        .describe("Project name — unique, URL-safe (letters, numbers, - and _ only)"),
+      description: z.string().optional().describe("Human-readable project description"),
+      scope: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+    }),
+  },
+  {
+    name: "project_update",
+    description: "Update a project by name.",
+    inputSchema: z.object({
+      name: z.string().describe("Current project name"),
+      description: z.string().optional(),
+      status: z.enum(["active", "archived", "paused"]).optional(),
+      scope: z.string().optional(),
+      tags: z.array(z.string()).optional(),
     }),
   },
 ] as const;
 
 export type ToolName = (typeof toolDefinitions)[number]["name"];
 
+function resolveProjectId(
+  sqlite: Database,
+  projectName?: string,
+): { id: string; name: string } | null {
+  const name = projectName || loadConfig().activeProject;
+  if (!name) return null;
+  const row = sqlite
+    .query<{ id: string; name: string }, string>(
+      "SELECT id, name FROM projects WHERE name = ? COLLATE NOCASE LIMIT 1",
+    )
+    .get(name);
+  return row ?? null;
+}
+
 export async function executeTool(name: ToolName, args: unknown): Promise<string> {
   const db = getDb();
 
   switch (name) {
     case "memory_search": {
-      const { query, scope, type, limit, project_id } = args as {
+      const { query, scope, type, limit, project } = args as {
         query: string;
         scope?: string;
         type?: "fact" | "decision" | "event" | "rule" | "discovery";
         limit?: number;
-        project_id?: string;
+        project?: string;
       };
-      const results = searchLayer1(query, scope, limit, type, project_id);
+      const resolved = resolveProjectId(getSqlite(db), project);
+      const results = searchLayer1(query, scope, limit, type, resolved?.id);
       if (results.length === 0) return "No memories found.";
       const lines = [`Found ${results.length} results:`];
       for (const m of results) {
@@ -285,15 +353,16 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "memory_store": {
-      const { content, title, type, scope, tags, importance, project_id } = args as {
+      const { content, title, type, scope, tags, importance, project } = args as {
         content: string;
         title?: string;
         type?: string;
         scope?: string;
         tags?: string[];
         importance?: string;
-        project_id?: string;
+        project?: string;
       };
+      const resolved = resolveProjectId(getSqlite(db), project);
       const id = ulid();
       const now = new Date();
       await db.insert(memories).values({
@@ -304,12 +373,13 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         scope,
         tags,
         importance: (importance ?? "normal") as "low" | "normal" | "high" | "critical",
-        project_id,
+        project_id: resolved?.id,
         created_at: now,
         updated_at: now,
       });
       const label = title ? ` "${title}"` : "";
-      return `Stored: ${id}${label} [${type ?? "fact"}]`;
+      const proj = resolved ? ` (${resolved.name})` : "";
+      return `Stored: ${id}${label} [${type ?? "fact"}]${proj}`;
     }
 
     case "memory_delete": {
@@ -321,17 +391,18 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "task_list": {
-      const { project_id, status, limit } = args as {
-        project_id?: string;
+      const { project, status, limit } = args as {
+        project?: string;
         status?: string;
         limit?: number;
       };
+      const resolved = resolveProjectId(getSqlite(db), project);
       const conditions = [];
       if (status) {
         conditions.push(eq(tasks.status, status as "todo"));
       }
-      if (project_id) {
-        conditions.push(eq(tasks.project_id, project_id));
+      if (resolved) {
+        conditions.push(eq(tasks.project_id, resolved.id));
       }
       const rows = await db.query.tasks.findMany({
         where: conditions.length > 0 ? and(...conditions) : undefined,
@@ -357,27 +428,29 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "task_create": {
-      const { title, body, project_id, priority, author } = args as {
+      const { title, body, project, priority, author } = args as {
         title: string;
         body?: string;
-        project_id?: string;
+        project?: string;
         priority?: string;
         author?: string;
       };
+      const resolved = resolveProjectId(getSqlite(db), project);
       const id = ulid();
       const now = new Date();
       await db.insert(tasks).values({
         id,
         title,
         body,
-        project_id,
+        project_id: resolved?.id,
         priority: (priority ?? "normal") as "low" | "normal" | "high" | "critical",
         author: author ?? "agent",
         status: "todo",
         created_at: now,
         updated_at: now,
       });
-      return `Created: ${id} — ${title}`;
+      const proj = resolved ? ` (${resolved.name})` : "";
+      return `Created: ${id} — ${title}${proj}`;
     }
 
     case "task_update": {
@@ -425,9 +498,60 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       return `Review status: ${reviewStatus}\nTask: ${task.title} [${task.status}]`;
     }
 
+    case "task_delegate": {
+      const { title, body, project, priority, assign_to, trigger_job } = args as {
+        title: string;
+        body?: string;
+        project?: string;
+        priority?: string;
+        assign_to?: string;
+        trigger_job?: string;
+      };
+      const resolved = resolveProjectId(getSqlite(db), project);
+      const id = ulid();
+      const now = new Date();
+      await db.insert(tasks).values({
+        id,
+        title,
+        body,
+        project_id: resolved?.id,
+        priority: (priority ?? "normal") as "low" | "normal" | "high" | "critical",
+        author: "agent",
+        claimed_by: assign_to ?? null,
+        status: assign_to ? "doing" : "todo",
+        created_at: now,
+        updated_at: now,
+      });
+
+      const parts = [`Delegated: ${id} — ${title}`];
+      if (resolved) parts.push(`Project: ${resolved.name}`);
+      if (assign_to) parts.push(`Assigned to: ${assign_to}`);
+
+      if (trigger_job) {
+        const job = await db.query.jobs.findFirst({ where: eq(jobs.name, trigger_job) });
+        if (job) {
+          const runId = ulid();
+          await db.insert(job_runs).values({
+            id: runId,
+            job_id: job.id,
+            status: "pending",
+            trigger_by: "mcp:task_delegate",
+            created_at: new Date(),
+          });
+          executeJob({ jobId: job.id, runId, triggerBy: "mcp:task_delegate" }).catch(() => {});
+          parts.push(`Triggered job: ${trigger_job} → run_id: ${runId}`);
+        } else {
+          parts.push(`Warning: job '${trigger_job}' not found — task created but job not triggered`);
+        }
+      }
+
+      return parts.join("\n");
+    }
+
     case "job_list": {
-      const { limit, project_id } = args as { limit?: number; project_id?: string };
-      const conditions = project_id ? [eq(jobs.project_id, project_id)] : [];
+      const { limit, project } = args as { limit?: number; project?: string };
+      const resolved = resolveProjectId(getSqlite(db), project);
+      const conditions = resolved ? [eq(jobs.project_id, resolved.id)] : [];
       const rows = await db.query.jobs.findMany({
         where: conditions.length > 0 ? and(...conditions) : undefined,
         limit: limit ?? 20,
@@ -465,13 +589,14 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "context": {
-      const { project_id } = args as { project_id?: string };
+      const { project } = args as { project?: string };
       const config = loadConfig();
       const taskLimit = config.context.layer1_task_limit;
       const memLimit = config.context.layer1_memory_limit;
+      const resolved = resolveProjectId(getSqlite(db), project);
 
       const taskConditions = [];
-      if (project_id) taskConditions.push(eq(tasks.project_id, project_id));
+      if (resolved) taskConditions.push(eq(tasks.project_id, resolved.id));
       const activeTasks = await db.query.tasks.findMany({
         where: taskConditions.length > 0 ? and(...taskConditions) : undefined,
         limit: taskLimit,
@@ -482,7 +607,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       );
 
       const memConditions = [];
-      if (project_id) memConditions.push(eq(memories.project_id, project_id));
+      if (resolved) memConditions.push(eq(memories.project_id, resolved.id));
       const allMems = await db.query.memories.findMany({
         where: memConditions.length > 0 ? and(...memConditions) : undefined,
         limit: memLimit * 3,
@@ -522,7 +647,12 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         orderBy: [desc(sessions.created_at)],
       });
 
-      const lines = ["## Active Tasks"];
+      const lines: string[] = [];
+      if (resolved) {
+        lines.push(`## Project: ${resolved.name}`);
+      }
+
+      lines.push(resolved ? "\n## Active Tasks" : "## Active Tasks");
       if (filtered.length === 0) lines.push("  (none)");
       for (const t of filtered) {
         lines.push(`  [${t.id}] ${t.status.padEnd(10)} ${t.title}`);
@@ -646,14 +776,15 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "session_log": {
-      const { agent, agent_version, summary, session_id, project_id } = args as {
+      const { agent, agent_version, summary, session_id, project } = args as {
         agent: string;
         agent_version?: string;
         summary: string;
         session_id?: string;
-        project_id?: string;
+        project?: string;
       };
 
+      const resolved = resolveProjectId(getSqlite(db), project);
       const sid = session_id ?? process.env.ORC_SESSION_ID ?? "default";
       const jobRunId = process.env.ORC_JOB_RUN_ID;
       const sqlite = getSqlite(db);
@@ -690,7 +821,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         agent,
         agent_version,
         summary: richSummary,
-        project_id,
+        project_id: resolved?.id,
         job_run_id: jobRunId,
         created_at: new Date(),
       });
@@ -708,7 +839,10 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       });
       if (rows.length === 0) return "No projects found.";
       return rows
-        .map((p) => `[${p.id}] ${p.name.padEnd(24)} ${p.status}`)
+        .map((p) => {
+          const desc = p.description ? `  ${p.description.slice(0, 60)}` : "";
+          return `${p.name.padEnd(24)} ${p.status}${desc}`;
+        })
         .join("\n");
     }
 
@@ -722,7 +856,6 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         .get(name);
       if (!project) return `Project not found: ${name}`;
       const lines = [
-        `ID: ${project.id}`,
         `Name: ${project.name}`,
         `Status: ${project.status}`,
       ];
@@ -730,6 +863,56 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       if (project.scope) lines.push(`Scope: ${project.scope}`);
       if (project.tags?.length) lines.push(`Tags: ${project.tags.join(", ")}`);
       return lines.join("\n");
+    }
+
+    case "project_create": {
+      const { name, description, scope, tags } = args as {
+        name: string;
+        description?: string;
+        scope?: string;
+        tags?: string[];
+      };
+      const id = ulid();
+      const now = new Date();
+      await db.insert(projects).values({
+        id,
+        name,
+        description,
+        status: "active",
+        scope,
+        tags,
+        created_at: now,
+        updated_at: now,
+      });
+      return `Created project: ${name}`;
+    }
+
+    case "project_update": {
+      const { name, description, status, scope, tags } = args as {
+        name: string;
+        description?: string;
+        status?: string;
+        scope?: string;
+        tags?: string[];
+      };
+      const sqlite = getSqlite(db);
+      const existing = sqlite
+        .query<{ id: string }, string>(
+          "SELECT id FROM projects WHERE name = ? COLLATE NOCASE LIMIT 1",
+        )
+        .get(name);
+      if (!existing) return `Project not found: ${name}`;
+      await db
+        .update(projects)
+        .set({
+          ...(description !== undefined ? { description } : {}),
+          ...(status ? { status: status as "active" } : {}),
+          ...(scope !== undefined ? { scope } : {}),
+          ...(tags !== undefined ? { tags } : {}),
+          updated_at: new Date(),
+        })
+        .where(eq(projects.id, existing.id));
+      return `Updated project: ${name}`;
     }
 
     default:
