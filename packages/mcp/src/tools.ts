@@ -142,7 +142,9 @@ export const toolDefinitions = [
       assign_to: z
         .string()
         .optional()
-        .describe("Agent/session name to assign (e.g. 'claude-code', 'claude-frontend', 'codex'). Creates a claim."),
+        .describe(
+          "Agent/session name to assign (e.g. 'claude-code', 'claude-frontend', 'codex'). Creates a claim.",
+        ),
       trigger_job: z
         .string()
         .optional()
@@ -242,8 +244,7 @@ export const toolDefinitions = [
   },
   {
     name: "project_get",
-    description:
-      "Get a project by name (case-insensitive). Returns full project details.",
+    description: "Get a project by name (case-insensitive). Returns full project details.",
     inputSchema: z.object({
       name: z.string().describe("Project name (case-insensitive)"),
     }),
@@ -410,7 +411,9 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         limit: limit ?? 20,
         orderBy: (t, { desc }) => [desc(t.updated_at)],
       });
-      const filtered = status ? rows : rows.filter((t) => !["done", "cancelled"].includes(t.status));
+      const filtered = status
+        ? rows
+        : rows.filter((t) => !["done", "cancelled"].includes(t.status));
       if (filtered.length === 0) return "No active tasks.";
       return filtered
         .map((t) => `[${t.id}] ${t.status.padEnd(18)} ${t.priority.padEnd(8)} ${t.title}`)
@@ -542,7 +545,9 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           executeJob({ jobId: job.id, runId, triggerBy: "mcp:task_delegate" }).catch(() => {});
           parts.push(`Triggered job: ${trigger_job} → run_id: ${runId}`);
         } else {
-          parts.push(`Warning: job '${trigger_job}' not found — task created but job not triggered`);
+          parts.push(
+            `Warning: job '${trigger_job}' not found — task created but job not triggered`,
+          );
         }
       }
 
@@ -603,9 +608,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         limit: taskLimit,
         orderBy: (t, { desc }) => [desc(t.updated_at)],
       });
-      const filtered = activeTasks.filter(
-        (t) => !["done", "cancelled"].includes(t.status),
-      );
+      const filtered = activeTasks.filter((t) => !["done", "cancelled"].includes(t.status));
 
       const memConditions = [];
       if (resolved) memConditions.push(eq(memories.project_id, resolved.id));
@@ -856,10 +859,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         )
         .get(name);
       if (!project) return `Project not found: ${name}`;
-      const lines = [
-        `Name: ${project.name}`,
-        `Status: ${project.status}`,
-      ];
+      const lines = [`Name: ${project.name}`, `Status: ${project.status}`];
       if (project.description) lines.push(`Description: ${project.description}`);
       if (project.scope) lines.push(`Scope: ${project.scope}`);
       if (project.tags?.length) lines.push(`Tags: ${project.tags.join(", ")}`);
