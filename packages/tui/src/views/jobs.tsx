@@ -1,14 +1,13 @@
-import { useKeyboard } from "@opentui/react";
 import { createOrcClient } from "@orc/sdk";
 import type { Job, JobRun } from "@orc/sdk/types";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DetailPane } from "../components/detail-pane.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
 import { colors, statusIcon } from "../theme.js";
-import type { Column, ViewMode } from "../types.js";
+import type { Column, KeyEvent, ViewKeyHandler, ViewMode } from "../types.js";
 
 const client = createOrcClient();
 
@@ -35,12 +34,7 @@ const columns: Column<Job>[] = [
     render: (j) => j.cron_expr ?? "—",
     color: () => colors.textDim,
   },
-  {
-    key: "runs",
-    label: "Runs",
-    width: 8,
-    render: (j) => String(j.run_count),
-  },
+  { key: "runs", label: "Runs", width: 8, render: (j) => String(j.run_count) },
   {
     key: "last_run",
     label: "Last Run",
@@ -52,75 +46,89 @@ const columns: Column<Job>[] = [
 
 type Props = {
   projectId: string | null;
+  onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
 };
 
-export function JobsView({ projectId }: Props) {
+export function JobsView({ projectId, onRegisterKeyHandler }: Props) {
   const [mode, setMode] = useState<ViewMode>("list");
   const [detail, setDetail] = useState<{ job: Job; runs: JobRun[] } | null>(null);
 
   const { data, loading, refresh } = usePolling(
-    () =>
-      client.jobs.list({
-        ...(projectId ? { project_id: projectId } : {}),
-      }),
+    () => client.jobs.list({ ...(projectId ? { project_id: projectId } : {}) }),
     5000,
   );
-
   const jobs = data?.jobs ?? [];
 
   const {
     filtered,
     query,
     active: filterActive,
+    handleKey: filterHandleKey,
   } = useFilter(jobs, (j) => `${j.name} ${j.trigger_type} ${j.description ?? ""}`, mode === "list");
 
-  const { cursor } = useVimList(filtered.length, mode === "list" && !filterActive);
-
-  const openDetail = useCallback(async () => {
-    const job = filtered[cursor];
-    if (!job) return;
-    const [jobResult, runsResult] = await Promise.all([
-      client.jobs.get(job.id),
-      client.jobs.runs(job.id, 10),
-    ]);
-    if (jobResult.data) {
-      setDetail({
-        job: jobResult.data,
-        runs: runsResult.data?.runs ?? [],
-      });
-      setMode("detail");
-    }
-  }, [filtered, cursor]);
-
-  const triggerJob = useCallback(async () => {
-    const job = filtered[cursor];
-    if (!job) return;
-    await client.jobs.trigger(job.id);
-    refresh();
-  }, [filtered, cursor, refresh]);
+  const { cursor, handleKey: vimHandleKey } = useVimList(
+    filtered.length,
+    mode === "list" && !filterActive,
+  );
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const filterActiveRef = useRef(filterActive);
   filterActiveRef.current = filterActive;
-  const openDetailRef = useRef(openDetail);
-  openDetailRef.current = openDetail;
+  const filteredRef = useRef(filtered);
+  filteredRef.current = filtered;
+  const cursorRef = useRef(cursor);
+  cursorRef.current = cursor;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
-  const triggerJobRef = useRef(triggerJob);
-  triggerJobRef.current = triggerJob;
 
-  useKeyboard((key) => {
-    if (modeRef.current === "list" && !filterActiveRef.current) {
-      if (key.name === "return") openDetailRef.current();
-      if (key.name === "r") refreshRef.current();
-      if (key.name === "t") triggerJobRef.current();
-    }
-    if (modeRef.current === "detail" && key.name === "escape") {
-      setMode("list");
-      setDetail(null);
-    }
-  });
+  const handleKey = useCallback(
+    (key: KeyEvent): boolean => {
+      if (filterHandleKey(key)) return true;
+      if (modeRef.current === "list" && !filterActiveRef.current) {
+        if (vimHandleKey(key)) return true;
+        if (key.name === "return") {
+          const job = filteredRef.current[cursorRef.current];
+          if (job) {
+            Promise.all([client.jobs.get(job.id), client.jobs.runs(job.id, 10)]).then(
+              ([jobResult, runsResult]) => {
+                if (jobResult.data) {
+                  setDetail({
+                    job: jobResult.data,
+                    runs: runsResult.data?.runs ?? [],
+                  });
+                  setMode("detail");
+                }
+              },
+            );
+          }
+          return true;
+        }
+        if (key.name === "r") {
+          refreshRef.current();
+          return true;
+        }
+        if (key.name === "t") {
+          const job = filteredRef.current[cursorRef.current];
+          if (job) {
+            client.jobs.trigger(job.id).then(() => refreshRef.current());
+          }
+          return true;
+        }
+      }
+      if (modeRef.current === "detail" && key.name === "escape") {
+        setMode("list");
+        setDetail(null);
+        return true;
+      }
+      return false;
+    },
+    [filterHandleKey, vimHandleKey],
+  );
+
+  useEffect(() => {
+    onRegisterKeyHandler(handleKey);
+  }, [handleKey, onRegisterKeyHandler]);
 
   if (mode === "detail" && detail) {
     const j = detail.job;
@@ -142,7 +150,6 @@ export function JobsView({ projectId }: Props) {
       { label: "Last Run", value: j.last_run_at ?? "never" },
       { label: "Next Run", value: j.next_run_at ?? "—" },
     ];
-
     const runsText = detail.runs.length
       ? detail.runs
           .map(
@@ -151,7 +158,6 @@ export function JobsView({ projectId }: Props) {
           )
           .join("\n")
       : "No runs yet.";
-
     return (
       <DetailPane title={`Job: ${j.name}`} fields={fields} body={`Recent Runs:\n${runsText}`} />
     );

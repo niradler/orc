@@ -1,14 +1,13 @@
-import { useKeyboard } from "@opentui/react";
 import { createOrcClient } from "@orc/sdk";
 import type { Prompt } from "@orc/sdk/types";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DetailPane } from "../components/detail-pane.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
 import { colors } from "../theme.js";
-import type { Column, ViewMode } from "../types.js";
+import type { Column, KeyEvent, ViewKeyHandler, ViewMode } from "../types.js";
 
 const client = createOrcClient();
 
@@ -26,23 +25,13 @@ const columns: Column<Prompt>[] = [
     label: "Description",
     width: 40,
     render: (p) => {
-      const text = p.description ?? "—";
-      return text.length > 38 ? `${text.slice(0, 38)}…` : text;
+      const t = p.description ?? "—";
+      return t.length > 38 ? `${t.slice(0, 38)}…` : t;
     },
     color: () => colors.textDim,
   },
-  {
-    key: "version",
-    label: "Ver",
-    width: 6,
-    render: (p) => `v${p.version}`,
-  },
-  {
-    key: "pinned",
-    label: "Pin",
-    width: 5,
-    render: (p) => (p.pinned ? "📌" : ""),
-  },
+  { key: "version", label: "Ver", width: 6, render: (p) => `v${p.version}` },
+  { key: "pinned", label: "Pin", width: 5, render: (p) => (p.pinned ? "📌" : "") },
   {
     key: "tags",
     label: "Tags",
@@ -52,55 +41,76 @@ const columns: Column<Prompt>[] = [
   },
 ];
 
-export function PromptsView() {
+type Props = { onRegisterKeyHandler: (handler: ViewKeyHandler) => void };
+
+export function PromptsView({ onRegisterKeyHandler }: Props) {
   const [mode, setMode] = useState<ViewMode>("list");
   const [detail, setDetail] = useState<Prompt | null>(null);
 
   const { data, loading, refresh } = usePolling(() => client.prompts.list({ limit: 100 }), 10000);
-
   const prompts = data?.prompts ?? [];
 
   const {
     filtered,
     query,
     active: filterActive,
+    handleKey: filterHandleKey,
   } = useFilter(
     prompts,
     (p) => `${p.name} ${p.description ?? ""} ${p.tags?.join(" ") ?? ""}`,
     mode === "list",
   );
-
-  const { cursor } = useVimList(filtered.length, mode === "list" && !filterActive);
-
-  const openDetail = useCallback(async () => {
-    const prompt = filtered[cursor];
-    if (!prompt) return;
-    const result = await client.prompts.get(prompt.id);
-    if (result.data) {
-      setDetail(result.data);
-      setMode("detail");
-    }
-  }, [filtered, cursor]);
+  const { cursor, handleKey: vimHandleKey } = useVimList(
+    filtered.length,
+    mode === "list" && !filterActive,
+  );
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const filterActiveRef = useRef(filterActive);
   filterActiveRef.current = filterActive;
-  const openDetailRef = useRef(openDetail);
-  openDetailRef.current = openDetail;
+  const filteredRef = useRef(filtered);
+  filteredRef.current = filtered;
+  const cursorRef = useRef(cursor);
+  cursorRef.current = cursor;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
 
-  useKeyboard((key) => {
-    if (modeRef.current === "list" && !filterActiveRef.current) {
-      if (key.name === "return") openDetailRef.current();
-      if (key.name === "r") refreshRef.current();
-    }
-    if (modeRef.current === "detail" && key.name === "escape") {
-      setMode("list");
-      setDetail(null);
-    }
-  });
+  const handleKey = useCallback(
+    (key: KeyEvent): boolean => {
+      if (filterHandleKey(key)) return true;
+      if (modeRef.current === "list" && !filterActiveRef.current) {
+        if (vimHandleKey(key)) return true;
+        if (key.name === "return") {
+          const prompt = filteredRef.current[cursorRef.current];
+          if (prompt) {
+            client.prompts.get(prompt.id).then((result) => {
+              if (result.data) {
+                setDetail(result.data);
+                setMode("detail");
+              }
+            });
+          }
+          return true;
+        }
+        if (key.name === "r") {
+          refreshRef.current();
+          return true;
+        }
+      }
+      if (modeRef.current === "detail" && key.name === "escape") {
+        setMode("list");
+        setDetail(null);
+        return true;
+      }
+      return false;
+    },
+    [filterHandleKey, vimHandleKey],
+  );
+
+  useEffect(() => {
+    onRegisterKeyHandler(handleKey);
+  }, [handleKey, onRegisterKeyHandler]);
 
   if (mode === "detail" && detail) {
     const fields = [

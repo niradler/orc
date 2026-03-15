@@ -7,7 +7,7 @@ import { StatusBar } from "./components/status-bar.js";
 import { useCommand } from "./hooks/use-command.js";
 import { usePolling } from "./hooks/use-polling.js";
 import { colors } from "./theme.js";
-import type { Command, Route } from "./types.js";
+import type { Command, KeyEvent, Route, ViewKeyHandler } from "./types.js";
 import { JobsView } from "./views/jobs.js";
 import { MemoriesView } from "./views/memories.js";
 import { ProjectsView } from "./views/projects.js";
@@ -89,19 +89,27 @@ export function App() {
     [clearProject, renderer],
   );
 
-  const { active: cmdActive, input: cmdInput } = useCommand(commands);
-  const cmdActiveRef = useRef(cmdActive);
-  cmdActiveRef.current = cmdActive;
+  const { active: cmdActive, input: cmdInput, handleKey: cmdHandleKey } = useCommand(commands);
+
+  const viewKeyHandlerRef = useRef<ViewKeyHandler>(() => false);
+  const registerViewKeyHandler = useCallback((handler: ViewKeyHandler) => {
+    viewKeyHandlerRef.current = handler;
+  }, []);
 
   useKeyboard((key) => {
-    if (cmdActiveRef.current) return;
-    if (key.name === "1") setRoute("projects");
-    if (key.name === "2") setRoute("tasks");
-    if (key.name === "3") setRoute("jobs");
-    if (key.name === "4") setRoute("memories");
-    if (key.name === "5") setRoute("sessions");
-    if (key.name === "6") setRoute("prompts");
-    if (key.name === "q" && key.ctrl) renderer.destroy();
+    const k = key as unknown as KeyEvent;
+
+    if (cmdHandleKey(k)) return;
+
+    if (viewKeyHandlerRef.current(k)) return;
+
+    if (k.name === "1") setRoute("projects");
+    if (k.name === "2") setRoute("tasks");
+    if (k.name === "3") setRoute("jobs");
+    if (k.name === "4") setRoute("memories");
+    if (k.name === "5") setRoute("sessions");
+    if (k.name === "6") setRoute("prompts");
+    if (k.name === "q" && k.ctrl) renderer.destroy();
   });
 
   return (
@@ -129,12 +137,23 @@ export function App() {
       </box>
 
       <box flexGrow={1} flexDirection="column" paddingLeft={1} paddingRight={1} paddingTop={1}>
-        {route === "projects" && <ProjectsView onSelectProject={selectProject} />}
-        {route === "tasks" && <TasksView projectId={activeProjectId} />}
-        {route === "jobs" && <JobsView projectId={activeProjectId} />}
-        {route === "memories" && <MemoriesView projectId={activeProjectId} />}
-        {route === "sessions" && <SessionsView />}
-        {route === "prompts" && <PromptsView />}
+        {route === "projects" && (
+          <ProjectsView
+            onSelectProject={selectProject}
+            onRegisterKeyHandler={registerViewKeyHandler}
+          />
+        )}
+        {route === "tasks" && (
+          <TasksView projectId={activeProjectId} onRegisterKeyHandler={registerViewKeyHandler} />
+        )}
+        {route === "jobs" && (
+          <JobsView projectId={activeProjectId} onRegisterKeyHandler={registerViewKeyHandler} />
+        )}
+        {route === "memories" && (
+          <MemoriesView projectId={activeProjectId} onRegisterKeyHandler={registerViewKeyHandler} />
+        )}
+        {route === "sessions" && <SessionsView onRegisterKeyHandler={registerViewKeyHandler} />}
+        {route === "prompts" && <PromptsView onRegisterKeyHandler={registerViewKeyHandler} />}
       </box>
 
       <StatusBar mode="list" filterQuery="" filterActive={false} itemCount={0} filteredCount={0} />

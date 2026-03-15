@@ -1,39 +1,26 @@
-import { useKeyboard } from "@opentui/react";
 import { createOrcClient } from "@orc/sdk";
 import type { Session } from "@orc/sdk/types";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DetailPane } from "../components/detail-pane.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
 import { colors } from "../theme.js";
-import type { Column, ViewMode } from "../types.js";
+import type { Column, KeyEvent, ViewKeyHandler, ViewMode } from "../types.js";
 
 const client = createOrcClient();
 
 const columns: Column<Session>[] = [
-  {
-    key: "agent",
-    label: "Agent",
-    width: 16,
-    render: (s) => s.agent,
-    color: () => colors.accent,
-  },
-  {
-    key: "id",
-    label: "ID",
-    width: 10,
-    render: (s) => s.id.slice(-8),
-    color: () => colors.textDim,
-  },
+  { key: "agent", label: "Agent", width: 16, render: (s) => s.agent, color: () => colors.accent },
+  { key: "id", label: "ID", width: 10, render: (s) => s.id.slice(-8), color: () => colors.textDim },
   {
     key: "summary",
     label: "Summary",
     width: 50,
     render: (s) => {
-      const text = s.summary ?? "—";
-      return text.length > 48 ? `${text.slice(0, 48)}…` : text;
+      const t = s.summary ?? "—";
+      return t.length > 48 ? `${t.slice(0, 48)}…` : t;
     },
   },
   {
@@ -52,53 +39,74 @@ const columns: Column<Session>[] = [
   },
 ];
 
-export function SessionsView() {
+type Props = { onRegisterKeyHandler: (handler: ViewKeyHandler) => void };
+
+export function SessionsView({ onRegisterKeyHandler }: Props) {
   const [mode, setMode] = useState<ViewMode>("list");
   const [detail, setDetail] = useState<
     (Session & { events: unknown[]; snapshot: string | null }) | null
   >(null);
 
   const { data, loading, refresh } = usePolling(() => client.sessions.list({ limit: 50 }), 10000);
-
   const sessions = data?.sessions ?? [];
 
   const {
     filtered,
     query,
     active: filterActive,
+    handleKey: filterHandleKey,
   } = useFilter(sessions, (s) => `${s.agent} ${s.summary ?? ""} ${s.id}`, mode === "list");
-
-  const { cursor } = useVimList(filtered.length, mode === "list" && !filterActive);
-
-  const openDetail = useCallback(async () => {
-    const session = filtered[cursor];
-    if (!session) return;
-    const result = await client.sessions.get(session.id);
-    if (result.data) {
-      setDetail(result.data);
-      setMode("detail");
-    }
-  }, [filtered, cursor]);
+  const { cursor, handleKey: vimHandleKey } = useVimList(
+    filtered.length,
+    mode === "list" && !filterActive,
+  );
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const filterActiveRef = useRef(filterActive);
   filterActiveRef.current = filterActive;
-  const openDetailRef = useRef(openDetail);
-  openDetailRef.current = openDetail;
+  const filteredRef = useRef(filtered);
+  filteredRef.current = filtered;
+  const cursorRef = useRef(cursor);
+  cursorRef.current = cursor;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
 
-  useKeyboard((key) => {
-    if (modeRef.current === "list" && !filterActiveRef.current) {
-      if (key.name === "return") openDetailRef.current();
-      if (key.name === "r") refreshRef.current();
-    }
-    if (modeRef.current === "detail" && key.name === "escape") {
-      setMode("list");
-      setDetail(null);
-    }
-  });
+  const handleKey = useCallback(
+    (key: KeyEvent): boolean => {
+      if (filterHandleKey(key)) return true;
+      if (modeRef.current === "list" && !filterActiveRef.current) {
+        if (vimHandleKey(key)) return true;
+        if (key.name === "return") {
+          const session = filteredRef.current[cursorRef.current];
+          if (session) {
+            client.sessions.get(session.id).then((result) => {
+              if (result.data) {
+                setDetail(result.data);
+                setMode("detail");
+              }
+            });
+          }
+          return true;
+        }
+        if (key.name === "r") {
+          refreshRef.current();
+          return true;
+        }
+      }
+      if (modeRef.current === "detail" && key.name === "escape") {
+        setMode("list");
+        setDetail(null);
+        return true;
+      }
+      return false;
+    },
+    [filterHandleKey, vimHandleKey],
+  );
+
+  useEffect(() => {
+    onRegisterKeyHandler(handleKey);
+  }, [handleKey, onRegisterKeyHandler]);
 
   if (mode === "detail" && detail) {
     const fields = [

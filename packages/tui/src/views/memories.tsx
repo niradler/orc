@@ -1,14 +1,13 @@
-import { useKeyboard } from "@opentui/react";
 import { createOrcClient } from "@orc/sdk";
 import type { Memory } from "@orc/sdk/types";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DetailPane } from "../components/detail-pane.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
 import { colors, importanceColor } from "../theme.js";
-import type { Column, ViewMode } from "../types.js";
+import type { Column, KeyEvent, ViewKeyHandler, ViewMode } from "../types.js";
 
 const client = createOrcClient();
 
@@ -42,63 +41,75 @@ const columns: Column<Memory>[] = [
   },
 ];
 
-type Props = {
-  projectId: string | null;
-};
+type Props = { projectId: string | null; onRegisterKeyHandler: (handler: ViewKeyHandler) => void };
 
-export function MemoriesView({ projectId }: Props) {
+export function MemoriesView({ projectId, onRegisterKeyHandler }: Props) {
   const [mode, setMode] = useState<ViewMode>("list");
   const [detail, setDetail] = useState<Memory | null>(null);
 
   const { data, loading, refresh } = usePolling(
-    () =>
-      client.memories.list({
-        ...(projectId ? { project_id: projectId } : {}),
-        limit: 100,
-      }),
+    () => client.memories.list({ ...(projectId ? { project_id: projectId } : {}), limit: 100 }),
     5000,
   );
-
   const memories = data?.memories ?? [];
 
   const {
     filtered,
     query,
     active: filterActive,
+    handleKey: filterHandleKey,
   } = useFilter(
     memories,
     (m) => `${m.content} ${m.scope ?? ""} ${m.importance} ${m.tags?.join(" ") ?? ""}`,
     mode === "list",
   );
-
-  const { cursor } = useVimList(filtered.length, mode === "list" && !filterActive);
-
-  const openDetail = useCallback(() => {
-    const mem = filtered[cursor];
-    if (!mem) return;
-    setDetail(mem);
-    setMode("detail");
-  }, [filtered, cursor]);
+  const { cursor, handleKey: vimHandleKey } = useVimList(
+    filtered.length,
+    mode === "list" && !filterActive,
+  );
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const filterActiveRef = useRef(filterActive);
   filterActiveRef.current = filterActive;
-  const openDetailRef = useRef(openDetail);
-  openDetailRef.current = openDetail;
+  const filteredRef = useRef(filtered);
+  filteredRef.current = filtered;
+  const cursorRef = useRef(cursor);
+  cursorRef.current = cursor;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
 
-  useKeyboard((key) => {
-    if (modeRef.current === "list" && !filterActiveRef.current) {
-      if (key.name === "return") openDetailRef.current();
-      if (key.name === "r") refreshRef.current();
-    }
-    if (modeRef.current === "detail" && key.name === "escape") {
-      setMode("list");
-      setDetail(null);
-    }
-  });
+  const handleKey = useCallback(
+    (key: KeyEvent): boolean => {
+      if (filterHandleKey(key)) return true;
+      if (modeRef.current === "list" && !filterActiveRef.current) {
+        if (vimHandleKey(key)) return true;
+        if (key.name === "return") {
+          const mem = filteredRef.current[cursorRef.current];
+          if (mem) {
+            setDetail(mem);
+            setMode("detail");
+          }
+          return true;
+        }
+        if (key.name === "r") {
+          refreshRef.current();
+          return true;
+        }
+      }
+      if (modeRef.current === "detail" && key.name === "escape") {
+        setMode("list");
+        setDetail(null);
+        return true;
+      }
+      return false;
+    },
+    [filterHandleKey, vimHandleKey],
+  );
+
+  useEffect(() => {
+    onRegisterKeyHandler(handleKey);
+  }, [handleKey, onRegisterKeyHandler]);
 
   if (mode === "detail" && detail) {
     const fields = [

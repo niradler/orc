@@ -1,14 +1,13 @@
-import { useKeyboard } from "@opentui/react";
 import { createOrcClient } from "@orc/sdk";
 import type { Project, ProjectSummary } from "@orc/sdk/types";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DetailPane } from "../components/detail-pane.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
 import { colors, projectStatusColor, statusIcon } from "../theme.js";
-import type { Column, ViewMode } from "../types.js";
+import type { Column, KeyEvent, ViewKeyHandler, ViewMode } from "../types.js";
 
 const client = createOrcClient();
 
@@ -39,61 +38,79 @@ const columns: Column<Project>[] = [
 
 type Props = {
   onSelectProject: (name: string) => void;
+  onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
 };
 
-export function ProjectsView({ onSelectProject }: Props) {
+export function ProjectsView({ onSelectProject, onRegisterKeyHandler }: Props) {
   const [mode, setMode] = useState<ViewMode>("list");
   const [detail, setDetail] = useState<ProjectSummary | null>(null);
 
   const { data, loading, refresh } = usePolling(() => client.projects.list(), 5000);
-
   const projects = data?.projects ?? [];
 
   const {
     filtered,
     query,
     active: filterActive,
+    handleKey: filterHandleKey,
   } = useFilter(projects, (p) => `${p.name} ${p.description ?? ""} ${p.status}`, mode === "list");
 
-  const { cursor } = useVimList(filtered.length, mode === "list" && !filterActive);
-
-  const openDetail = useCallback(async () => {
-    const project = filtered[cursor];
-    if (!project) return;
-    const result = await client.projects.summary(project.id);
-    if (result.data) {
-      setDetail(result.data);
-      setMode("detail");
-    }
-  }, [filtered, cursor]);
+  const { cursor, handleKey: vimHandleKey } = useVimList(
+    filtered.length,
+    mode === "list" && !filterActive,
+  );
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const filterActiveRef = useRef(filterActive);
   filterActiveRef.current = filterActive;
-  const openDetailRef = useRef(openDetail);
-  openDetailRef.current = openDetail;
-  const refreshRef = useRef(refresh);
-  refreshRef.current = refresh;
   const filteredRef = useRef(filtered);
   filteredRef.current = filtered;
   const cursorRef = useRef(cursor);
   cursorRef.current = cursor;
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
 
-  useKeyboard((key) => {
-    if (modeRef.current === "list" && !filterActiveRef.current) {
-      if (key.name === "return") openDetailRef.current();
-      if (key.name === "r") refreshRef.current();
-      if (key.name === "s") {
-        const p = filteredRef.current[cursorRef.current];
-        if (p) onSelectProject(p.name);
+  const handleKey = useCallback(
+    (key: KeyEvent): boolean => {
+      if (filterHandleKey(key)) return true;
+      if (modeRef.current === "list" && !filterActiveRef.current) {
+        if (vimHandleKey(key)) return true;
+        if (key.name === "return") {
+          const project = filteredRef.current[cursorRef.current];
+          if (project) {
+            client.projects.summary(project.id).then((result) => {
+              if (result.data) {
+                setDetail(result.data);
+                setMode("detail");
+              }
+            });
+          }
+          return true;
+        }
+        if (key.name === "r") {
+          refreshRef.current();
+          return true;
+        }
+        if (key.name === "s") {
+          const p = filteredRef.current[cursorRef.current];
+          if (p) onSelectProject(p.name);
+          return true;
+        }
       }
-    }
-    if (modeRef.current === "detail" && key.name === "escape") {
-      setMode("list");
-      setDetail(null);
-    }
-  });
+      if (modeRef.current === "detail" && key.name === "escape") {
+        setMode("list");
+        setDetail(null);
+        return true;
+      }
+      return false;
+    },
+    [filterHandleKey, vimHandleKey, onSelectProject],
+  );
+
+  useEffect(() => {
+    onRegisterKeyHandler(handleKey);
+  }, [handleKey, onRegisterKeyHandler]);
 
   if (mode === "detail" && detail) {
     const p = detail.project;

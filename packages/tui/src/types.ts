@@ -18,3 +18,16 @@ export type Command = {
   description: string;
   action: () => void;
 };
+
+export type KeyEvent = {
+  name: string;
+  sequence: string;
+  ctrl: boolean;
+  shift: boolean;
+  meta: boolean;
+  option: boolean;
+  eventType: "press" | "release" | "repeat";
+  repeated: boolean;
+};
+
+export type ViewKeyHandler = (key: KeyEvent) => boolean;

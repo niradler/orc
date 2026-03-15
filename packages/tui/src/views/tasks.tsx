@@ -1,14 +1,13 @@
-import { useKeyboard } from "@opentui/react";
 import { createOrcClient } from "@orc/sdk";
 import type { Task } from "@orc/sdk/types";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DetailPane } from "../components/detail-pane.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
 import { colors, priorityColor, statusColor, statusIcon } from "../theme.js";
-import type { Column, ViewMode } from "../types.js";
+import type { Column, KeyEvent, ViewKeyHandler, ViewMode } from "../types.js";
 
 const client = createOrcClient();
 
@@ -39,9 +38,10 @@ const columns: Column<Task>[] = [
 
 type Props = {
   projectId: string | null;
+  onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
 };
 
-export function TasksView({ projectId }: Props) {
+export function TasksView({ projectId, onRegisterKeyHandler }: Props) {
   const [mode, setMode] = useState<ViewMode>("list");
   const [detail, setDetail] = useState<Task | null>(null);
 
@@ -60,43 +60,65 @@ export function TasksView({ projectId }: Props) {
     filtered,
     query,
     active: filterActive,
+    handleKey: filterHandleKey,
   } = useFilter(
     tasks,
     (t) => `${t.title} ${t.status} ${t.priority} ${t.id} ${t.author}`,
     mode === "list",
   );
 
-  const { cursor } = useVimList(filtered.length, mode === "list" && !filterActive);
-
-  const openDetail = useCallback(async () => {
-    const task = filtered[cursor];
-    if (!task) return;
-    const result = await client.tasks.get(task.id);
-    if (result.data) {
-      setDetail(result.data);
-      setMode("detail");
-    }
-  }, [filtered, cursor]);
+  const { cursor, handleKey: vimHandleKey } = useVimList(
+    filtered.length,
+    mode === "list" && !filterActive,
+  );
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
   const filterActiveRef = useRef(filterActive);
   filterActiveRef.current = filterActive;
-  const openDetailRef = useRef(openDetail);
-  openDetailRef.current = openDetail;
+  const filteredRef = useRef(filtered);
+  filteredRef.current = filtered;
+  const cursorRef = useRef(cursor);
+  cursorRef.current = cursor;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
 
-  useKeyboard((key) => {
-    if (modeRef.current === "list" && !filterActiveRef.current) {
-      if (key.name === "return") openDetailRef.current();
-      if (key.name === "r") refreshRef.current();
-    }
-    if (modeRef.current === "detail" && key.name === "escape") {
-      setMode("list");
-      setDetail(null);
-    }
-  });
+  const handleKey = useCallback(
+    (key: KeyEvent): boolean => {
+      if (filterHandleKey(key)) return true;
+
+      if (modeRef.current === "list" && !filterActiveRef.current) {
+        if (vimHandleKey(key)) return true;
+        if (key.name === "return") {
+          const task = filteredRef.current[cursorRef.current];
+          if (task) {
+            client.tasks.get(task.id).then((result) => {
+              if (result.data) {
+                setDetail(result.data);
+                setMode("detail");
+              }
+            });
+          }
+          return true;
+        }
+        if (key.name === "r") {
+          refreshRef.current();
+          return true;
+        }
+      }
+      if (modeRef.current === "detail" && key.name === "escape") {
+        setMode("list");
+        setDetail(null);
+        return true;
+      }
+      return false;
+    },
+    [filterHandleKey, vimHandleKey],
+  );
+
+  useEffect(() => {
+    onRegisterKeyHandler(handleKey);
+  }, [handleKey, onRegisterKeyHandler]);
 
   if (mode === "detail" && detail) {
     const fields = [
