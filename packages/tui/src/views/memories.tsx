@@ -31,8 +31,7 @@ const columns: Column<Memory>[] = [
     key: "content",
     label: "Content",
     width: 60,
-    render: (m) =>
-      m.content.length > 58 ? `${m.content.slice(0, 58)}…` : m.content,
+    render: (m) => (m.content.length > 58 ? `${m.content.slice(0, 58)}…` : m.content),
   },
   {
     key: "created",
@@ -62,7 +61,11 @@ export function MemoriesView({ projectId }: Props) {
 
   const memories = data?.memories ?? [];
 
-  const { filtered, query, active: filterActive } = useFilter(
+  const {
+    filtered,
+    query,
+    active: filterActive,
+  } = useFilter(
     memories,
     (m) => `${m.content} ${m.scope ?? ""} ${m.importance} ${m.tags?.join(" ") ?? ""}`,
     mode === "list",
@@ -94,7 +97,7 @@ export function MemoriesView({ projectId }: Props) {
       {
         label: "Importance",
         value: detail.importance,
-        color: importanceColor[detail.importance],
+        color: importanceColor[detail.importance] ?? colors.text,
       },
       { label: "Scope", value: detail.scope ?? "global" },
       { label: "Source", value: detail.source ?? "—" },
@@ -103,30 +106,17 @@ export function MemoriesView({ projectId }: Props) {
       { label: "Created", value: detail.created_at },
       { label: "Updated", value: detail.updated_at },
     ];
-    return (
-      <DetailPane
-        title={"Memory"}
-        fields={fields}
-        body={detail.content}
-      />
-    );
+    return <DetailPane title={"Memory"} fields={fields} body={detail.content} />;
   }
 
   return (
     <box flexDirection="column" flexGrow={1}>
       <box flexDirection="row" gap={2} marginBottom={0} paddingLeft={1}>
         <text fg={colors.text}>{"MEMORY"}</text>
-        <text fg={colors.textDim}>
-          {loading ? "loading…" : `${filtered.length} memories`}
-        </text>
+        <text fg={colors.textDim}>{loading ? "loading…" : `${filtered.length} memories`}</text>
         {query && <text fg={colors.accent}>{`/${query}`}</text>}
       </box>
-      <ResourceTable
-        columns={columns}
-        data={filtered}
-        cursor={cursor}
-        keyFn={(m) => m.id}
-      />
+      <ResourceTable columns={columns} data={filtered} cursor={cursor} keyFn={(m) => m.id} />
     </box>
   );
 }

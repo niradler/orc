@@ -1,15 +1,15 @@
 import { colors } from "../theme.js";
 
-type Field = {
+export type Field = {
   label: string;
   value: string;
-  color?: string;
+  color?: string | undefined;
 };
 
 type Props = {
   title: string;
   fields: Field[];
-  body?: string;
+  body?: string | undefined;
 };
 
 export function DetailPane({ title, fields, body }: Props) {

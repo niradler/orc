@@ -7,7 +7,7 @@ import { ResourceTable } from "../components/resource-table.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
-import { colors, jobStatusColor, statusIcon } from "../theme.js";
+import { colors, statusIcon } from "../theme.js";
 import type { Column, ViewMode } from "../types.js";
 
 const client = createOrcClient();
@@ -68,11 +68,11 @@ export function JobsView({ projectId }: Props) {
 
   const jobs = data?.jobs ?? [];
 
-  const { filtered, query, active: filterActive } = useFilter(
-    jobs,
-    (j) => `${j.name} ${j.trigger_type} ${j.description ?? ""}`,
-    mode === "list",
-  );
+  const {
+    filtered,
+    query,
+    active: filterActive,
+  } = useFilter(jobs, (j) => `${j.name} ${j.trigger_type} ${j.description ?? ""}`, mode === "list");
 
   const { cursor } = useVimList(filtered.length, mode === "list" && !filterActive);
 
@@ -116,7 +116,11 @@ export function JobsView({ projectId }: Props) {
     const fields = [
       { label: "ID", value: j.id, color: colors.textDim },
       { label: "Name", value: j.name },
-      { label: "Enabled", value: j.enabled ? "yes" : "no", color: j.enabled ? colors.success : colors.error },
+      {
+        label: "Enabled",
+        value: j.enabled ? "yes" : "no",
+        color: j.enabled ? colors.success : colors.error,
+      },
       { label: "Trigger", value: j.trigger_type },
       { label: "Schedule", value: j.cron_expr ?? "—" },
       { label: "Command", value: j.command },
@@ -138,11 +142,7 @@ export function JobsView({ projectId }: Props) {
       : "No runs yet.";
 
     return (
-      <DetailPane
-        title={`Job: ${j.name}`}
-        fields={fields}
-        body={`Recent Runs:\n${runsText}`}
-      />
+      <DetailPane title={`Job: ${j.name}`} fields={fields} body={`Recent Runs:\n${runsText}`} />
     );
   }
 
@@ -150,17 +150,10 @@ export function JobsView({ projectId }: Props) {
     <box flexDirection="column" flexGrow={1}>
       <box flexDirection="row" gap={2} marginBottom={0} paddingLeft={1}>
         <text fg={colors.text}>{"JOBS"}</text>
-        <text fg={colors.textDim}>
-          {loading ? "loading…" : `${filtered.length} jobs`}
-        </text>
+        <text fg={colors.textDim}>{loading ? "loading…" : `${filtered.length} jobs`}</text>
         {query && <text fg={colors.accent}>{`/${query}`}</text>}
       </box>
-      <ResourceTable
-        columns={columns}
-        data={filtered}
-        cursor={cursor}
-        keyFn={(j) => j.id}
-      />
+      <ResourceTable columns={columns} data={filtered} cursor={cursor} keyFn={(j) => j.id} />
     </box>
   );
 }

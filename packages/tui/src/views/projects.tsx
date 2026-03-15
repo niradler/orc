@@ -45,20 +45,17 @@ export function ProjectsView({ onSelectProject }: Props) {
   const [mode, setMode] = useState<ViewMode>("list");
   const [detail, setDetail] = useState<ProjectSummary | null>(null);
 
-  const { data, loading, refresh } = usePolling(
-    () => client.projects.list(),
-    5000,
-  );
+  const { data, loading, refresh } = usePolling(() => client.projects.list(), 5000);
 
   const projects = data?.projects ?? [];
 
-  const { filtered, query, active: filterActive, clear: clearFilter } = useFilter(
-    projects,
-    (p) => `${p.name} ${p.description ?? ""} ${p.status}`,
-    mode === "list",
-  );
+  const {
+    filtered,
+    query,
+    active: filterActive,
+  } = useFilter(projects, (p) => `${p.name} ${p.description ?? ""} ${p.status}`, mode === "list");
 
-  const { cursor, setCursor } = useVimList(filtered.length, mode === "list" && !filterActive);
+  const { cursor } = useVimList(filtered.length, mode === "list" && !filterActive);
 
   const openDetail = useCallback(async () => {
     const project = filtered[cursor];
@@ -93,7 +90,7 @@ export function ProjectsView({ onSelectProject }: Props) {
       {
         label: "Status",
         value: `${statusIcon(p.status)} ${p.status}`,
-        color: projectStatusColor[p.status],
+        color: projectStatusColor[p.status] ?? colors.text,
       },
       { label: "Description", value: p.description ?? "—" },
       { label: "Scope", value: p.scope ?? "—" },
@@ -115,19 +112,10 @@ export function ProjectsView({ onSelectProject }: Props) {
     <box flexDirection="column" flexGrow={1}>
       <box flexDirection="row" gap={2} marginBottom={0} paddingLeft={1}>
         <text fg={colors.text}>{"PROJECTS"}</text>
-        <text fg={colors.textDim}>
-          {loading ? "loading…" : `${filtered.length} projects`}
-        </text>
-        {query && (
-          <text fg={colors.accent}>{`/${query}`}</text>
-        )}
+        <text fg={colors.textDim}>{loading ? "loading…" : `${filtered.length} projects`}</text>
+        {query && <text fg={colors.accent}>{`/${query}`}</text>}
       </box>
-      <ResourceTable
-        columns={columns}
-        data={filtered}
-        cursor={cursor}
-        keyFn={(p) => p.id}
-      />
+      <ResourceTable columns={columns} data={filtered} cursor={cursor} keyFn={(p) => p.id} />
     </box>
   );
 }

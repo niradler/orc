@@ -24,10 +24,7 @@ export function App() {
   const [activeProject, setActiveProject] = useState<string | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
 
-  const { data: healthData } = usePolling(
-    () => client.health.check(),
-    10000,
-  );
+  const { data: healthData } = usePolling(() => client.health.check(), 10000);
   const connected = !!healthData;
 
   const selectProject = useCallback(async (name: string) => {
@@ -45,14 +42,49 @@ export function App() {
 
   const commands: Command[] = useMemo(
     () => [
-      { name: "tasks", aliases: ["t", "task"], description: "View tasks", action: () => setRoute("tasks") },
-      { name: "jobs", aliases: ["j", "job"], description: "View jobs", action: () => setRoute("jobs") },
-      { name: "memories", aliases: ["m", "mem", "memory"], description: "View memories", action: () => setRoute("memories") },
-      { name: "projects", aliases: ["p", "proj", "project"], description: "View projects", action: () => setRoute("projects") },
-      { name: "sessions", aliases: ["s", "sess", "session"], description: "View sessions", action: () => setRoute("sessions") },
-      { name: "prompts", aliases: ["pr", "prompt"], description: "View prompts", action: () => setRoute("prompts") },
+      {
+        name: "tasks",
+        aliases: ["t", "task"],
+        description: "View tasks",
+        action: () => setRoute("tasks"),
+      },
+      {
+        name: "jobs",
+        aliases: ["j", "job"],
+        description: "View jobs",
+        action: () => setRoute("jobs"),
+      },
+      {
+        name: "memories",
+        aliases: ["m", "mem", "memory"],
+        description: "View memories",
+        action: () => setRoute("memories"),
+      },
+      {
+        name: "projects",
+        aliases: ["p", "proj", "project"],
+        description: "View projects",
+        action: () => setRoute("projects"),
+      },
+      {
+        name: "sessions",
+        aliases: ["s", "sess", "session"],
+        description: "View sessions",
+        action: () => setRoute("sessions"),
+      },
+      {
+        name: "prompts",
+        aliases: ["pr", "prompt"],
+        description: "View prompts",
+        action: () => setRoute("prompts"),
+      },
       { name: "all", aliases: ["a"], description: "Clear project filter", action: clearProject },
-      { name: "quit", aliases: ["q", "exit"], description: "Exit TUI", action: () => renderer.destroy() },
+      {
+        name: "quit",
+        aliases: ["q", "exit"],
+        description: "Exit TUI",
+        action: () => renderer.destroy(),
+      },
     ],
     [clearProject, renderer],
   );
@@ -71,31 +103,20 @@ export function App() {
   });
 
   return (
-    <box
-      flexDirection="column"
-      width={width}
-      height={height}
-      backgroundColor={colors.bg}
-    >
-      <Header
-        route={route}
-        project={activeProject}
-        detailId={null}
-        connected={connected}
-      />
+    <box flexDirection="column" width={width} height={height} backgroundColor={colors.bg}>
+      <Header route={route} project={activeProject} detailId={null} connected={connected} />
 
       <box flexDirection="row" height={1} backgroundColor={colors.bgLight} paddingLeft={1} gap={1}>
         {(["projects", "tasks", "jobs", "memories", "sessions", "prompts"] as Route[]).map(
           (r, i) => (
-            <text
+            <box
               key={r}
-              fg={route === r ? colors.accent : colors.textDim}
-              backgroundColor={route === r ? colors.bgHighlight : undefined}
+              {...(route === r ? { backgroundColor: colors.bgHighlight } : {})}
               paddingLeft={1}
               paddingRight={1}
             >
-              {`${i + 1}:${r}`}
-            </text>
+              <text fg={route === r ? colors.accent : colors.textDim}>{`${i + 1}:${r}`}</text>
+            </box>
           ),
         )}
         {activeProject && (
@@ -114,19 +135,9 @@ export function App() {
         {route === "prompts" && <PromptsView />}
       </box>
 
-      <StatusBar
-        mode="list"
-        filterQuery=""
-        filterActive={false}
-        itemCount={0}
-        filteredCount={0}
-      />
+      <StatusBar mode="list" filterQuery="" filterActive={false} itemCount={0} filteredCount={0} />
 
-      <CommandPalette
-        active={cmdActive}
-        input={cmdInput}
-        commands={commands}
-      />
+      <CommandPalette active={cmdActive} input={cmdInput} commands={commands} />
     </box>
   );
 }

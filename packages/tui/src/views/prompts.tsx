@@ -56,14 +56,15 @@ export function PromptsView() {
   const [mode, setMode] = useState<ViewMode>("list");
   const [detail, setDetail] = useState<Prompt | null>(null);
 
-  const { data, loading, refresh } = usePolling(
-    () => client.prompts.list({ limit: 100 }),
-    10000,
-  );
+  const { data, loading, refresh } = usePolling(() => client.prompts.list({ limit: 100 }), 10000);
 
   const prompts = data?.prompts ?? [];
 
-  const { filtered, query, active: filterActive } = useFilter(
+  const {
+    filtered,
+    query,
+    active: filterActive,
+  } = useFilter(
     prompts,
     (p) => `${p.name} ${p.description ?? ""} ${p.tags?.join(" ") ?? ""}`,
     mode === "list",
@@ -97,36 +98,27 @@ export function PromptsView() {
       { label: "ID", value: detail.id, color: colors.textDim },
       { label: "Name", value: detail.name },
       { label: "Version", value: `v${detail.version}` },
-      { label: "Skill", value: detail.is_skill ? "yes" : "no", color: detail.is_skill ? colors.warning : colors.textDim },
+      {
+        label: "Skill",
+        value: detail.is_skill ? "yes" : "no",
+        color: detail.is_skill ? colors.warning : colors.textDim,
+      },
       { label: "Pinned", value: detail.pinned ? "yes" : "no" },
       { label: "Tags", value: detail.tags?.join(", ") ?? "—" },
       { label: "Last Used", value: detail.last_used_at ?? "never" },
       { label: "Created", value: detail.created_at },
     ];
-    return (
-      <DetailPane
-        title={`Prompt: ${detail.name}`}
-        fields={fields}
-        body={detail.template}
-      />
-    );
+    return <DetailPane title={`Prompt: ${detail.name}`} fields={fields} body={detail.template} />;
   }
 
   return (
     <box flexDirection="column" flexGrow={1}>
       <box flexDirection="row" gap={2} marginBottom={0} paddingLeft={1}>
         <text fg={colors.text}>{"PROMPTS"}</text>
-        <text fg={colors.textDim}>
-          {loading ? "loading…" : `${filtered.length} prompts`}
-        </text>
+        <text fg={colors.textDim}>{loading ? "loading…" : `${filtered.length} prompts`}</text>
         {query && <text fg={colors.accent}>{`/${query}`}</text>}
       </box>
-      <ResourceTable
-        columns={columns}
-        data={filtered}
-        cursor={cursor}
-        keyFn={(p) => p.id}
-      />
+      <ResourceTable columns={columns} data={filtered} cursor={cursor} keyFn={(p) => p.id} />
     </box>
   );
 }

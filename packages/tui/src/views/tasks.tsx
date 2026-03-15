@@ -63,7 +63,11 @@ export function TasksView({ projectId }: Props) {
 
   const tasks = data?.tasks ?? [];
 
-  const { filtered, query, active: filterActive } = useFilter(
+  const {
+    filtered,
+    query,
+    active: filterActive,
+  } = useFilter(
     tasks,
     (t) => `${t.title} ${t.status} ${t.priority} ${t.id} ${t.author}`,
     mode === "list",
@@ -98,12 +102,12 @@ export function TasksView({ projectId }: Props) {
       {
         label: "Status",
         value: `${statusIcon(detail.status)} ${detail.status}`,
-        color: statusColor[detail.status],
+        color: statusColor[detail.status] ?? colors.text,
       },
       {
         label: "Priority",
         value: detail.priority,
-        color: priorityColor[detail.priority],
+        color: priorityColor[detail.priority] ?? colors.text,
       },
       { label: "Progress", value: `${detail.progress}%` },
       { label: "Author", value: detail.author },
@@ -114,11 +118,7 @@ export function TasksView({ projectId }: Props) {
       { label: "Updated", value: detail.updated_at },
     ];
     return (
-      <DetailPane
-        title={`Task: ${detail.title}`}
-        fields={fields}
-        body={detail.body ?? undefined}
-      />
+      <DetailPane title={`Task: ${detail.title}`} fields={fields} body={detail.body ?? undefined} />
     );
   }
 
@@ -126,17 +126,10 @@ export function TasksView({ projectId }: Props) {
     <box flexDirection="column" flexGrow={1}>
       <box flexDirection="row" gap={2} marginBottom={0} paddingLeft={1}>
         <text fg={colors.text}>{"TASKS"}</text>
-        <text fg={colors.textDim}>
-          {loading ? "loading…" : `${filtered.length} tasks`}
-        </text>
+        <text fg={colors.textDim}>{loading ? "loading…" : `${filtered.length} tasks`}</text>
         {query && <text fg={colors.accent}>{`/${query}`}</text>}
       </box>
-      <ResourceTable
-        columns={columns}
-        data={filtered}
-        cursor={cursor}
-        keyFn={(t) => t.id}
-      />
+      <ResourceTable columns={columns} data={filtered} cursor={cursor} keyFn={(t) => t.id} />
     </box>
   );
 }

@@ -1,6 +1,6 @@
 import { useTerminalDimensions } from "@opentui/react";
-import type { Column } from "../types.js";
 import { colors } from "../theme.js";
+import type { Column } from "../types.js";
 
 type Props<T> = {
   columns: Column<T>[];
@@ -9,12 +9,7 @@ type Props<T> = {
   keyFn: (item: T) => string;
 };
 
-export function ResourceTable<T>({
-  columns,
-  data,
-  cursor,
-  keyFn,
-}: Props<T>) {
+export function ResourceTable<T>({ columns, data, cursor, keyFn }: Props<T>) {
   const { height } = useTerminalDimensions();
   const visibleRows = height - 5;
 
@@ -32,24 +27,13 @@ export function ResourceTable<T>({
     <box flexDirection="column" flexGrow={1}>
       <box flexDirection="row" gap={0} marginBottom={0}>
         {columns.map((col) => (
-          <text
-            key={col.key}
-            fg={colors.textDim}
-            width={col.width}
-            paddingLeft={1}
-          >
+          <text key={col.key} fg={colors.textDim} width={col.width} paddingLeft={1}>
             {col.label.toUpperCase()}
           </text>
         ))}
       </box>
-      <box
-        height={1}
-        flexDirection="row"
-        backgroundColor={colors.bgLight}
-      >
-        <text fg={colors.border}>
-          {"─".repeat(100)}
-        </text>
+      <box height={1} flexDirection="row" backgroundColor={colors.bgLight}>
+        <text fg={colors.border}>{"─".repeat(100)}</text>
       </box>
       {visible.map((item, vi) => {
         const realIdx = startIdx + vi;
@@ -59,18 +43,12 @@ export function ResourceTable<T>({
             key={keyFn(item)}
             flexDirection="row"
             gap={0}
-            backgroundColor={selected ? colors.bgHighlight : undefined}
+            {...(selected ? { backgroundColor: colors.bgHighlight } : {})}
           >
             {columns.map((col) => (
               <text
                 key={col.key}
-                fg={
-                  selected
-                    ? colors.accent
-                    : col.color
-                      ? col.color(item)
-                      : colors.text
-                }
+                fg={selected ? colors.accent : col.color ? col.color(item) : colors.text}
                 width={col.width}
                 paddingLeft={1}
               >

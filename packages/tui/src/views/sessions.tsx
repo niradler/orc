@@ -54,20 +54,19 @@ const columns: Column<Session>[] = [
 
 export function SessionsView() {
   const [mode, setMode] = useState<ViewMode>("list");
-  const [detail, setDetail] = useState<(Session & { events: unknown[]; snapshot: string | null }) | null>(null);
+  const [detail, setDetail] = useState<
+    (Session & { events: unknown[]; snapshot: string | null }) | null
+  >(null);
 
-  const { data, loading, refresh } = usePolling(
-    () => client.sessions.list({ limit: 50 }),
-    10000,
-  );
+  const { data, loading, refresh } = usePolling(() => client.sessions.list({ limit: 50 }), 10000);
 
   const sessions = data?.sessions ?? [];
 
-  const { filtered, query, active: filterActive } = useFilter(
-    sessions,
-    (s) => `${s.agent} ${s.summary ?? ""} ${s.id}`,
-    mode === "list",
-  );
+  const {
+    filtered,
+    query,
+    active: filterActive,
+  } = useFilter(sessions, (s) => `${s.agent} ${s.summary ?? ""} ${s.id}`, mode === "list");
 
   const { cursor } = useVimList(filtered.length, mode === "list" && !filterActive);
 
@@ -114,17 +113,10 @@ export function SessionsView() {
     <box flexDirection="column" flexGrow={1}>
       <box flexDirection="row" gap={2} marginBottom={0} paddingLeft={1}>
         <text fg={colors.text}>{"SESSIONS"}</text>
-        <text fg={colors.textDim}>
-          {loading ? "loading…" : `${filtered.length} sessions`}
-        </text>
+        <text fg={colors.textDim}>{loading ? "loading…" : `${filtered.length} sessions`}</text>
         {query && <text fg={colors.accent}>{`/${query}`}</text>}
       </box>
-      <ResourceTable
-        columns={columns}
-        data={filtered}
-        cursor={cursor}
-        keyFn={(s) => s.id}
-      />
+      <ResourceTable columns={columns} data={filtered} cursor={cursor} keyFn={(s) => s.id} />
     </box>
   );
 }

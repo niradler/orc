@@ -1,6 +1,6 @@
 import { useTerminalDimensions } from "@opentui/react";
-import type { Command } from "../types.js";
 import { colors } from "../theme.js";
+import type { Command } from "../types.js";
 
 type Props = {
   active: boolean;
@@ -15,11 +15,7 @@ export function CommandPalette({ active, input, commands }: Props) {
 
   const lower = input.toLowerCase();
   const matches = input
-    ? commands.filter(
-        (c) =>
-          c.name.startsWith(lower) ||
-          c.aliases.some((a) => a.startsWith(lower)),
-      )
+    ? commands.filter((c) => c.name.startsWith(lower) || c.aliases.some((a) => a.startsWith(lower)))
     : commands;
 
   const boxWidth = Math.min(50, width - 4);
