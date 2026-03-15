@@ -8,6 +8,7 @@ import { useCommand } from "./hooks/use-command.js";
 import { usePolling } from "./hooks/use-polling.js";
 import { colors } from "./theme.js";
 import type { Command, KeyEvent, Route, ViewKeyHandler } from "./types.js";
+import { ROUTES } from "./types.js";
 import { JobsView } from "./views/jobs.js";
 import { MemoriesView } from "./views/memories.js";
 import { ProjectsView } from "./views/projects.js";
@@ -109,6 +110,9 @@ export function App() {
     if (k.name === "4") setRoute("memories");
     if (k.name === "5") setRoute("sessions");
     if (k.name === "6") setRoute("prompts");
+    if (k.name === "left")
+      setRoute((r) => ROUTES[(ROUTES.indexOf(r) - 1 + ROUTES.length) % ROUTES.length] ?? r);
+    if (k.name === "right") setRoute((r) => ROUTES[(ROUTES.indexOf(r) + 1) % ROUTES.length] ?? r);
     if (k.name === "q" && k.ctrl) renderer.destroy();
   });
 
