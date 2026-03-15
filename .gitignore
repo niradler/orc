@@ -10,3 +10,4 @@ drizzle/
 *.gen.ts
 bun.lockb
 .claude/settings.local.json
+.worktrees/
