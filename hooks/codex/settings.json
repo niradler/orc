@@ -1,5 +1,5 @@
 {
-  "_comment": "Replace /path/to/orc with your actual clone path, or use 'orc hook ...' after npm install -g orcx",
+  "_comment": "Replace /path/to/orc with your actual clone path, or use 'orc hook ...' after npm install -g orc-ai",
   "hooks": {
     "PostToolUse": [
       {
