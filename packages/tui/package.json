@@ -10,7 +10,7 @@
     ".": "./src/index.tsx"
   },
   "scripts": {
-    "dev": "bun src/index.tsx",
+    "dev": "bun --hot src/index.tsx",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },

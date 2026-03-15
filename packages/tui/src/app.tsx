@@ -113,7 +113,7 @@ export function App() {
     if (k.name === "left")
       setRoute((r) => ROUTES[(ROUTES.indexOf(r) - 1 + ROUTES.length) % ROUTES.length] ?? r);
     if (k.name === "right") setRoute((r) => ROUTES[(ROUTES.indexOf(r) + 1) % ROUTES.length] ?? r);
-    if (k.name === "q" && k.ctrl) renderer.destroy();
+    if (k.name === "c" && k.ctrl) renderer.destroy();
   });
 
   return (

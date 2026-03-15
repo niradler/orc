@@ -10,8 +10,8 @@ type Props = {
   filteredCount: number;
 };
 
-const LIST_HINTS = "j/k nav  Enter detail  / filter  : command  q quit";
-const DETAIL_HINTS = "Esc back  j/k scroll  : command  q quit";
+const LIST_HINTS = "j/k nav  ←→ tabs  Enter detail  / filter  :command  Ctrl+C quit";
+const DETAIL_HINTS = "Esc back  :command  Ctrl+C quit";
 
 export function StatusBar({ mode, filterQuery, filterActive, itemCount, filteredCount }: Props) {
   const { width } = useTerminalDimensions();
