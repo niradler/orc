@@ -3,9 +3,9 @@ import { createHash } from "node:crypto";
 import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import { getDb } from "@orc/db/client";
-import { job_runs, jobs, memories, sessions, tasks } from "@orc/db/schema";
+import { job_runs, jobs, memories, projects, sessions, tasks } from "@orc/db/schema";
 import { executeJob } from "@orc/runner/executor";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getLayer2, getLayer3, searchLayer1 } from "./search.js";
 
@@ -206,6 +206,20 @@ export const toolDefinitions = [
       project_id: z.string().optional(),
     }),
   },
+  {
+    name: "project_list",
+    description: "List all projects. Returns name, status, and ID for each project.",
+    inputSchema: z.object({
+      status: z.enum(["active", "archived", "paused"]).optional(),
+    }),
+  },
+  {
+    name: "project_get",
+    description: "Get a project by name (case-insensitive). Returns full project details including ID.",
+    inputSchema: z.object({
+      name: z.string().describe("Project name (case-insensitive)"),
+    }),
+  },
 ] as const;
 
 export type ToolName = (typeof toolDefinitions)[number]["name"];
@@ -312,16 +326,19 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         status?: string;
         limit?: number;
       };
+      const conditions = [];
+      if (status) {
+        conditions.push(eq(tasks.status, status as "todo"));
+      }
+      if (project_id) {
+        conditions.push(eq(tasks.project_id, project_id));
+      }
       const rows = await db.query.tasks.findMany({
+        where: conditions.length > 0 ? and(...conditions) : undefined,
         limit: limit ?? 20,
         orderBy: (t, { desc }) => [desc(t.updated_at)],
       });
-      const filtered = rows.filter((t) => {
-        if (["done", "cancelled"].includes(t.status)) return false;
-        if (project_id && t.project_id !== project_id) return false;
-        if (status && t.status !== status) return false;
-        return true;
-      });
+      const filtered = status ? rows : rows.filter((t) => !["done", "cancelled"].includes(t.status));
       if (filtered.length === 0) return "No active tasks.";
       return filtered
         .map((t) => `[${t.id}] ${t.status.padEnd(18)} ${t.priority.padEnd(8)} ${t.title}`)
@@ -384,9 +401,13 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
 
     case "task_submit_review": {
       const { id, summary } = args as { id: string; summary: string };
+      const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
+      const newBody = existing?.body
+        ? `${existing.body}\n\n---\n## Review Summary\n${summary}`
+        : `## Review Summary\n${summary}`;
       await db
         .update(tasks)
-        .set({ status: "review", body: summary, updated_at: new Date() })
+        .set({ status: "review", body: newBody, updated_at: new Date() })
         .where(eq(tasks.id, id));
       return `Task ${id} in review. Reviewer notified if bridge configured.`;
     }
@@ -395,7 +416,13 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const { id } = args as { id: string };
       const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
       if (!task) return `Task not found: ${id}`;
-      return JSON.stringify({ status: task.status, title: task.title });
+      const statusMap: Record<string, string> = {
+        review: "pending",
+        done: "approved",
+        changes_requested: "changes_requested",
+      };
+      const reviewStatus = statusMap[task.status] ?? task.status;
+      return `Review status: ${reviewStatus}\nTask: ${task.title} [${task.status}]`;
     }
 
     case "job_list": {
@@ -493,7 +520,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const lines = ["## Active Tasks"];
       if (filtered.length === 0) lines.push("  (none)");
       for (const t of filtered) {
-        lines.push(`  [${t.id.slice(-6)}] ${t.status.padEnd(10)} ${t.title}`);
+        lines.push(`  [${t.id}] ${t.status.padEnd(10)} ${t.title}`);
       }
 
       lines.push("\n## Key Memory");
@@ -502,7 +529,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         const typeLabel = m.type !== "fact" ? ` [${m.type}]` : "";
         const label = m.title ? ` "${m.title}"` : "";
         lines.push(
-          `  [${m.id.slice(-6)}]${typeLabel}${label} ${m.content.slice(0, 60)} (${timeAgo(m.created_at)})`,
+          `  [${m.id}]${typeLabel}${label} ${m.content.slice(0, 60)} (${timeAgo(m.created_at)})`,
         );
       }
 
@@ -663,6 +690,37 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         created_at: new Date(),
       });
       return `Session logged: ${id}`;
+    }
+
+    case "project_list": {
+      const { status } = args as { status?: string };
+      const conditions = status
+        ? [eq(projects.status, status as "active" | "archived" | "paused")]
+        : [];
+      const rows = await db.query.projects.findMany({
+        where: conditions.length > 0 ? and(...conditions) : undefined,
+        orderBy: (p, { asc }) => [asc(p.name)],
+      });
+      if (rows.length === 0) return "No projects found.";
+      return rows
+        .map((p) => `[${p.id}] ${p.name.padEnd(24)} ${p.status}`)
+        .join("\n");
+    }
+
+    case "project_get": {
+      const { name } = args as { name: string };
+      const allProjects = await db.query.projects.findMany();
+      const project = allProjects.find((p) => p.name.toLowerCase() === name.toLowerCase());
+      if (!project) return `Project not found: ${name}`;
+      const lines = [
+        `ID: ${project.id}`,
+        `Name: ${project.name}`,
+        `Status: ${project.status}`,
+      ];
+      if (project.description) lines.push(`Description: ${project.description}`);
+      if (project.scope) lines.push(`Scope: ${project.scope}`);
+      if (project.tags?.length) lines.push(`Tags: ${project.tags.join(", ")}`);
+      return lines.join("\n");
     }
 
     default:

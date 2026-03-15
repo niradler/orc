@@ -260,8 +260,8 @@ describe("MCP task tools", () => {
 
   test("task_check_review reflects review status", async () => {
     const result = await executeTool("task_check_review", { id: taskId });
-    const parsed = JSON.parse(result) as { status: string };
-    expect(parsed.status).toBe("review");
+    expect(result).toContain("pending");
+    expect(result).toContain("review");
   });
 });
 
