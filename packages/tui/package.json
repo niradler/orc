@@ -7,14 +7,10 @@
   },
   "main": "./src/index.tsx",
   "exports": {
-    ".": "./src/index.tsx",
-    "./dashboard": "./src/components/Dashboard.tsx",
-    "./task-board": "./src/components/TaskBoard.tsx",
-    "./job-monitor": "./src/components/JobMonitor.tsx",
-    "./mem-browser": "./src/components/MemBrowser.tsx"
+    ".": "./src/index.tsx"
   },
   "scripts": {
-    "dev": "bun --hot src/index.tsx",
+    "dev": "bun src/index.tsx",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
