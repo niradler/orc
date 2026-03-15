@@ -427,12 +427,13 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
 
     case "job_list": {
       const { limit, project_id } = args as { limit?: number; project_id?: string };
-      const rows = await db.query.jobs.findMany({ limit: limit ?? 20 });
-      const filtered = project_id
-        ? rows.filter((j) => (j as Record<string, unknown>).project_id === project_id)
-        : rows;
-      if (filtered.length === 0) return "No jobs defined.";
-      return filtered
+      const conditions = project_id ? [eq(jobs.project_id, project_id)] : [];
+      const rows = await db.query.jobs.findMany({
+        where: conditions.length > 0 ? and(...conditions) : undefined,
+        limit: limit ?? 20,
+      });
+      if (rows.length === 0) return "No jobs defined.";
+      return rows
         .map(
           (j) =>
             `${j.enabled ? "●" : "○"} ${j.name.padEnd(24)} ${j.trigger_type.padEnd(12)} runs:${j.run_count}`,
@@ -469,20 +470,24 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const taskLimit = config.context.layer1_task_limit;
       const memLimit = config.context.layer1_memory_limit;
 
+      const taskConditions = [];
+      if (project_id) taskConditions.push(eq(tasks.project_id, project_id));
       const activeTasks = await db.query.tasks.findMany({
+        where: taskConditions.length > 0 ? and(...taskConditions) : undefined,
         limit: taskLimit,
         orderBy: (t, { desc }) => [desc(t.updated_at)],
       });
       const filtered = activeTasks.filter(
-        (t) =>
-          !["done", "cancelled"].includes(t.status) && (!project_id || t.project_id === project_id),
+        (t) => !["done", "cancelled"].includes(t.status),
       );
 
-      let allMems = await db.query.memories.findMany({
+      const memConditions = [];
+      if (project_id) memConditions.push(eq(memories.project_id, project_id));
+      const allMems = await db.query.memories.findMany({
+        where: memConditions.length > 0 ? and(...memConditions) : undefined,
         limit: memLimit * 3,
         orderBy: (m, { desc }) => [desc(m.created_at)],
       });
-      if (project_id) allMems = allMems.filter((m) => m.project_id === project_id);
 
       const importanceWeight: Record<string, number> = {
         critical: 4,
@@ -709,8 +714,12 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
 
     case "project_get": {
       const { name } = args as { name: string };
-      const allProjects = await db.query.projects.findMany();
-      const project = allProjects.find((p) => p.name.toLowerCase() === name.toLowerCase());
+      const sqlite = getSqlite(db);
+      const project = sqlite
+        .query<typeof projects.$inferSelect, string>(
+          "SELECT * FROM projects WHERE name = ? COLLATE NOCASE LIMIT 1",
+        )
+        .get(name);
       if (!project) return `Project not found: ${name}`;
       const lines = [
         `ID: ${project.id}`,

@@ -107,8 +107,6 @@ export type Session = {
 };
 
 export type ProjectStatus = "active" | "archived" | "paused";
-export type ProjectCoordinationMode = "solo" | "human_agent" | "multi_agent";
-
 export type Project = {
   id: string;
   name: string;
@@ -117,10 +115,6 @@ export type Project = {
   scope: string | null;
   tags: string[] | null;
   obsidian_path: string | null;
-  coordination_mode: ProjectCoordinationMode;
-  default_task_execution_mode: TaskExecutionMode;
-  working_agreement: string | null;
-  shared_context: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -313,10 +307,6 @@ export type CreateProjectInput = {
   scope?: string;
   tags?: string[];
   obsidian_path?: string;
-  coordination_mode?: ProjectCoordinationMode;
-  default_task_execution_mode?: TaskExecutionMode;
-  working_agreement?: string;
-  shared_context?: string;
 };
 
 export type UpdateProjectInput = {
@@ -326,10 +316,6 @@ export type UpdateProjectInput = {
   scope?: string | null;
   tags?: string[] | null;
   obsidian_path?: string | null;
-  coordination_mode?: ProjectCoordinationMode;
-  default_task_execution_mode?: TaskExecutionMode;
-  working_agreement?: string | null;
-  shared_context?: string | null;
 };
 
 export type ApiError = { error: string; code: string };

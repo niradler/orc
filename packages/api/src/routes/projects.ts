@@ -39,7 +39,12 @@ const CreateProjectSchema = z
 
 const UpdateProjectSchema = z
   .object({
-    name: z.string().min(1).max(200).optional(),
+    name: z
+      .string()
+      .regex(/^[a-zA-Z0-9_-]+$/)
+      .min(1)
+      .max(100)
+      .optional(),
     description: z.string().optional(),
     status: z.enum(["active", "archived", "paused"]).optional(),
     scope: z.string().optional(),
@@ -174,10 +179,14 @@ app.openapi(listRoute, async (c) => {
 app.openapi(getByNameRoute, async (c) => {
   const db = getDb();
   const { name } = c.req.valid("param");
-  const allProjects = await db.query.projects.findMany();
-  const project = allProjects.find((p) => p.name.toLowerCase() === name.toLowerCase());
-  if (!project) throw new NotFoundError("Project", name);
-  return c.json(toDto(project));
+  const sqlite = (db as unknown as { $client: Database }).$client;
+  const row = sqlite
+    .query<typeof projects.$inferSelect, string>(
+      "SELECT * FROM projects WHERE name = ? COLLATE NOCASE LIMIT 1",
+    )
+    .get(name);
+  if (!row) throw new NotFoundError("Project", name);
+  return c.json(toDto(row));
 });
 
 app.openapi(summaryRoute, async (c) => {
