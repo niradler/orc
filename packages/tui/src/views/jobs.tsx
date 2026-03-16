@@ -2,6 +2,7 @@ import { createOrcClient } from "@orc/sdk";
 import type { Job, JobRun } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DetailPane } from "../components/detail-pane.js";
+import { EditFormOverlay, type FormField, useEditForm } from "../components/edit-form.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
@@ -44,28 +45,39 @@ const columns: Column<Job>[] = [
   },
 ];
 
-type Props = {
-  projectId: string | null;
-  onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
-};
+function jobFields(): FormField[] {
+  return [
+    { key: "name", label: "Name", value: "" },
+    { key: "command", label: "Command", value: "" },
+    {
+      key: "trigger_type",
+      label: "Trigger",
+      value: "manual",
+      options: ["manual", "cron", "watch", "one-shot", "webhook", "bridge-msg"],
+    },
+    { key: "cron_expr", label: "Cron Expr", value: "" },
+    { key: "description", label: "Description", value: "" },
+  ];
+}
+
+type Props = { projectId: string | null; onRegisterKeyHandler: (handler: ViewKeyHandler) => void };
 
 export function JobsView({ projectId, onRegisterKeyHandler }: Props) {
   const [mode, setMode] = useState<ViewMode>("list");
   const [detail, setDetail] = useState<{ job: Job; runs: JobRun[] } | null>(null);
+  const editForm = useEditForm();
 
   const { data, loading, refresh } = usePolling(
     () => client.jobs.list({ ...(projectId ? { project_id: projectId } : {}) }),
     5000,
   );
   const jobs = data?.jobs ?? [];
-
   const {
     filtered,
     query,
     active: filterActive,
     handleKey: filterHandleKey,
   } = useFilter(jobs, (j) => `${j.name} ${j.trigger_type} ${j.description ?? ""}`, mode === "list");
-
   const { cursor, handleKey: vimHandleKey } = useVimList(
     filtered.length,
     mode === "list" && !filterActive,
@@ -81,27 +93,50 @@ export function JobsView({ projectId, onRegisterKeyHandler }: Props) {
   cursorRef.current = cursor;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
+  const editFormRef = useRef(editForm);
+  editFormRef.current = editForm;
+
+  const submitCreate = useCallback(
+    async (vals: Record<string, string>) => {
+      if (!vals.name || !vals.command) return;
+      await client.jobs.create({
+        name: vals.name,
+        command: vals.command,
+        trigger_type: (vals.trigger_type as Job["trigger_type"]) || "manual",
+        ...(vals.cron_expr ? { cron_expr: vals.cron_expr } : {}),
+        ...(vals.description ? { description: vals.description } : {}),
+        ...(projectId ? { project_id: projectId } : {}),
+      });
+      setMode("list");
+      refreshRef.current();
+    },
+    [projectId],
+  );
+
+  const submitCreateRef = useRef(submitCreate);
+  submitCreateRef.current = submitCreate;
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
+      if (modeRef.current === "create") {
+        editFormRef.current.handleKey(key, submitCreateRef.current);
+        if (!editFormRef.current.active) setMode("list");
+        return true;
+      }
       if (filterHandleKey(key)) return true;
       if (modeRef.current === "list" && !filterActiveRef.current) {
         if (vimHandleKey(key)) return true;
         if (key.name === "return") {
           const job = filteredRef.current[cursorRef.current];
-          if (job) {
+          if (job)
             Promise.all([client.jobs.get(job.id), client.jobs.runs(job.id, 10)]).then(
-              ([jobResult, runsResult]) => {
-                if (jobResult.data) {
-                  setDetail({
-                    job: jobResult.data,
-                    runs: runsResult.data?.runs ?? [],
-                  });
+              ([jr, rr]) => {
+                if (jr.data) {
+                  setDetail({ job: jr.data, runs: rr.data?.runs ?? [] });
                   setMode("detail");
                 }
               },
             );
-          }
           return true;
         }
         if (key.name === "r") {
@@ -110,9 +145,12 @@ export function JobsView({ projectId, onRegisterKeyHandler }: Props) {
         }
         if (key.name === "t") {
           const job = filteredRef.current[cursorRef.current];
-          if (job) {
-            client.jobs.trigger(job.id).then(() => refreshRef.current());
-          }
+          if (job) client.jobs.trigger(job.id).then(() => refreshRef.current());
+          return true;
+        }
+        if (key.name === "n") {
+          editFormRef.current.open(jobFields());
+          setMode("create");
           return true;
         }
       }
@@ -171,6 +209,13 @@ export function JobsView({ projectId, onRegisterKeyHandler }: Props) {
         {query && <text fg={colors.accent}>{`/${query}`}</text>}
       </box>
       <ResourceTable columns={columns} data={filtered} cursor={cursor} keyFn={(j) => j.id} />
+      <EditFormOverlay
+        title="New Job"
+        fields={editForm.fields}
+        focusIdx={editForm.focusIdx}
+        editing={editForm.editing}
+        active={mode === "create"}
+      />
     </box>
   );
 }

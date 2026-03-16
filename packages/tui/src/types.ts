@@ -2,7 +2,7 @@ export type Route = "projects" | "tasks" | "jobs" | "memories" | "sessions" | "p
 
 export const ROUTES: Route[] = ["projects", "tasks", "jobs", "memories", "sessions", "prompts"];
 
-export type ViewMode = "list" | "detail";
+export type ViewMode = "list" | "detail" | "edit" | "create" | "confirm";
 
 export type Column<T> = {
   key: string;

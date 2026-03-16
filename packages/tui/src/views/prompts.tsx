@@ -1,7 +1,9 @@
 import { createOrcClient } from "@orc/sdk";
 import type { Prompt } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ConfirmDialog } from "../components/confirm-dialog.js";
 import { DetailPane } from "../components/detail-pane.js";
+import { EditFormOverlay, type FormField, useEditForm } from "../components/edit-form.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
@@ -41,15 +43,31 @@ const columns: Column<Prompt>[] = [
   },
 ];
 
+function promptFields(p?: Prompt): FormField[] {
+  return [
+    { key: "name", label: "Name", value: p?.name ?? "" },
+    { key: "description", label: "Description", value: p?.description ?? "" },
+    { key: "template", label: "Template", value: p?.template ?? "" },
+    {
+      key: "is_skill",
+      label: "Is Skill",
+      value: p?.is_skill ? "yes" : "no",
+      options: ["no", "yes"],
+    },
+    { key: "tags", label: "Tags", value: p?.tags?.join(", ") ?? "" },
+  ];
+}
+
 type Props = { onRegisterKeyHandler: (handler: ViewKeyHandler) => void };
 
 export function PromptsView({ onRegisterKeyHandler }: Props) {
   const [mode, setMode] = useState<ViewMode>("list");
   const [detail, setDetail] = useState<Prompt | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Prompt | null>(null);
+  const editForm = useEditForm();
 
   const { data, loading, refresh } = usePolling(() => client.prompts.list({ limit: 100 }), 10000);
   const prompts = data?.prompts ?? [];
-
   const {
     filtered,
     query,
@@ -75,26 +93,116 @@ export function PromptsView({ onRegisterKeyHandler }: Props) {
   cursorRef.current = cursor;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
+  const editFormRef = useRef(editForm);
+  editFormRef.current = editForm;
+  const deleteTargetRef = useRef(deleteTarget);
+  deleteTargetRef.current = deleteTarget;
+
+  const submitCreate = useCallback(async (vals: Record<string, string>) => {
+    if (!vals.name || !vals.template) return;
+    const tags = vals.tags
+      ? vals.tags
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : undefined;
+    await client.prompts.create({
+      name: vals.name,
+      ...(vals.description ? { description: vals.description } : {}),
+      template: vals.template,
+      is_skill: vals.is_skill === "yes",
+      ...(tags ? { tags } : {}),
+    });
+    setMode("list");
+    refreshRef.current();
+  }, []);
+
+  const submitEdit = useCallback(async (vals: Record<string, string>) => {
+    const p = filteredRef.current[cursorRef.current];
+    if (!p) return;
+    const tags = vals.tags
+      ? vals.tags
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : undefined;
+    await client.prompts.update(p.id, {
+      ...(vals.name ? { name: vals.name } : {}),
+      ...(vals.description ? { description: vals.description } : {}),
+      ...(vals.template ? { template: vals.template } : {}),
+      is_skill: vals.is_skill === "yes",
+      ...(tags ? { tags } : {}),
+    });
+    setMode("list");
+    refreshRef.current();
+  }, []);
+
+  const submitCreateRef = useRef(submitCreate);
+  submitCreateRef.current = submitCreate;
+  const submitEditRef = useRef(submitEdit);
+  submitEditRef.current = submitEdit;
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
+      if (modeRef.current === "edit" || modeRef.current === "create") {
+        const onSubmit =
+          modeRef.current === "create" ? submitCreateRef.current : submitEditRef.current;
+        editFormRef.current.handleKey(key, onSubmit);
+        if (!editFormRef.current.active) setMode("list");
+        return true;
+      }
+      if (modeRef.current === "confirm") {
+        if (key.name === "y") {
+          const p = deleteTargetRef.current;
+          if (p) client.prompts.delete(p.id).then(() => refreshRef.current());
+          setDeleteTarget(null);
+          setMode("list");
+          return true;
+        }
+        if (key.name === "n" || key.name === "escape") {
+          setDeleteTarget(null);
+          setMode("list");
+          return true;
+        }
+        return true;
+      }
       if (filterHandleKey(key)) return true;
       if (modeRef.current === "list" && !filterActiveRef.current) {
         if (vimHandleKey(key)) return true;
         if (key.name === "return") {
-          const prompt = filteredRef.current[cursorRef.current];
-          if (prompt) {
-            client.prompts.get(prompt.id).then((result) => {
-              if (result.data) {
-                setDetail(result.data);
+          const p = filteredRef.current[cursorRef.current];
+          if (p)
+            client.prompts.get(p.id).then((r) => {
+              if (r.data) {
+                setDetail(r.data);
                 setMode("detail");
               }
             });
-          }
           return true;
         }
         if (key.name === "r") {
           refreshRef.current();
+          return true;
+        }
+        if (key.name === "n") {
+          editFormRef.current.open(promptFields());
+          setMode("create");
+          return true;
+        }
+        if (key.name === "e") {
+          const p = filteredRef.current[cursorRef.current];
+          if (p) {
+            editFormRef.current.open(promptFields(p));
+            setMode("edit");
+          }
+          return true;
+        }
+        if (key.name === "d") {
+          const p = filteredRef.current[cursorRef.current];
+          if (p) {
+            setDeleteTarget(p);
+            setMode("confirm");
+          }
           return true;
         }
       }
@@ -138,6 +246,17 @@ export function PromptsView({ onRegisterKeyHandler }: Props) {
         {query && <text fg={colors.accent}>{`/${query}`}</text>}
       </box>
       <ResourceTable columns={columns} data={filtered} cursor={cursor} keyFn={(p) => p.id} />
+      <EditFormOverlay
+        title={mode === "create" ? "New Prompt" : "Edit Prompt"}
+        fields={editForm.fields}
+        focusIdx={editForm.focusIdx}
+        editing={editForm.editing}
+        active={mode === "edit" || mode === "create"}
+      />
+      <ConfirmDialog
+        message={deleteTarget ? `Delete prompt "${deleteTarget.name}"?` : ""}
+        active={mode === "confirm"}
+      />
     </box>
   );
 }

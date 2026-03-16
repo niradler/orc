@@ -1,7 +1,9 @@
 import { createOrcClient } from "@orc/sdk";
 import type { Task } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ConfirmDialog } from "../components/confirm-dialog.js";
 import { DetailPane } from "../components/detail-pane.js";
+import { EditFormOverlay, type FormField, useEditForm } from "../components/edit-form.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
@@ -36,37 +38,45 @@ const columns: Column<Task>[] = [
   },
 ];
 
-type Props = {
-  projectId: string | null;
-  onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
-};
+function taskFields(t?: Task): FormField[] {
+  return [
+    { key: "title", label: "Title", value: t?.title ?? "" },
+    { key: "body", label: "Body", value: t?.body ?? "" },
+    {
+      key: "status",
+      label: "Status",
+      value: t?.status ?? "todo",
+      options: ["todo", "doing", "review", "blocked", "done", "cancelled"],
+    },
+    {
+      key: "priority",
+      label: "Priority",
+      value: t?.priority ?? "normal",
+      options: ["low", "normal", "high", "critical"],
+    },
+    { key: "tags", label: "Tags", value: t?.tags?.join(", ") ?? "" },
+  ];
+}
+
+type Props = { projectId: string | null; onRegisterKeyHandler: (handler: ViewKeyHandler) => void };
 
 export function TasksView({ projectId, onRegisterKeyHandler }: Props) {
   const [mode, setMode] = useState<ViewMode>("list");
   const [detail, setDetail] = useState<Task | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
+  const editForm = useEditForm();
 
   const { data, loading, refresh } = usePolling(
-    () =>
-      client.tasks.list({
-        ...(projectId ? { project_id: projectId } : {}),
-        limit: 100,
-      }),
+    () => client.tasks.list({ ...(projectId ? { project_id: projectId } : {}), limit: 100 }),
     5000,
   );
-
   const tasks = data?.tasks ?? [];
-
   const {
     filtered,
     query,
     active: filterActive,
     handleKey: filterHandleKey,
-  } = useFilter(
-    tasks,
-    (t) => `${t.title} ${t.status} ${t.priority} ${t.id} ${t.author}`,
-    mode === "list",
-  );
-
+  } = useFilter(tasks, (t) => `${t.title} ${t.status} ${t.priority} ${t.author}`, mode === "list");
   const { cursor, handleKey: vimHandleKey } = useVimList(
     filtered.length,
     mode === "list" && !filterActive,
@@ -82,27 +92,120 @@ export function TasksView({ projectId, onRegisterKeyHandler }: Props) {
   cursorRef.current = cursor;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
+  const editFormRef = useRef(editForm);
+  editFormRef.current = editForm;
+  const deleteTargetRef = useRef(deleteTarget);
+  deleteTargetRef.current = deleteTarget;
+
+  const submitCreate = useCallback(
+    async (vals: Record<string, string>) => {
+      if (!vals.title) return;
+      const tags = vals.tags
+        ? vals.tags
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : undefined;
+      await client.tasks.create({
+        title: vals.title,
+        ...(vals.body ? { body: vals.body } : {}),
+        status: (vals.status as "todo" | "doing" | "blocked") || "todo",
+        priority: (vals.priority as "low" | "normal" | "high" | "critical") || "normal",
+        ...(tags ? { tags } : {}),
+        ...(projectId ? { project_id: projectId } : {}),
+      });
+      setMode("list");
+      refreshRef.current();
+    },
+    [projectId],
+  );
+
+  const submitEdit = useCallback(async (vals: Record<string, string>) => {
+    const task = filteredRef.current[cursorRef.current];
+    if (!task) return;
+    const tags = vals.tags
+      ? vals.tags
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : null;
+    await client.tasks.update(task.id, {
+      ...(vals.title ? { title: vals.title } : {}),
+      body: vals.body || null,
+      ...(vals.status ? { status: vals.status as Task["status"] } : {}),
+      ...(vals.priority ? { priority: vals.priority as Task["priority"] } : {}),
+      tags,
+    });
+    setMode("list");
+    refreshRef.current();
+  }, []);
+
+  const submitCreateRef = useRef(submitCreate);
+  submitCreateRef.current = submitCreate;
+  const submitEditRef = useRef(submitEdit);
+  submitEditRef.current = submitEdit;
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
+      if (modeRef.current === "edit" || modeRef.current === "create") {
+        const onSubmit =
+          modeRef.current === "create" ? submitCreateRef.current : submitEditRef.current;
+        editFormRef.current.handleKey(key, onSubmit);
+        if (!editFormRef.current.active) setMode("list");
+        return true;
+      }
+      if (modeRef.current === "confirm") {
+        if (key.name === "y") {
+          const t = deleteTargetRef.current;
+          if (t) client.tasks.delete(t.id).then(() => refreshRef.current());
+          setDeleteTarget(null);
+          setMode("list");
+          return true;
+        }
+        if (key.name === "n" || key.name === "escape") {
+          setDeleteTarget(null);
+          setMode("list");
+          return true;
+        }
+        return true;
+      }
       if (filterHandleKey(key)) return true;
-
       if (modeRef.current === "list" && !filterActiveRef.current) {
         if (vimHandleKey(key)) return true;
         if (key.name === "return") {
           const task = filteredRef.current[cursorRef.current];
-          if (task) {
-            client.tasks.get(task.id).then((result) => {
-              if (result.data) {
-                setDetail(result.data);
+          if (task)
+            client.tasks.get(task.id).then((r) => {
+              if (r.data) {
+                setDetail(r.data);
                 setMode("detail");
               }
             });
-          }
           return true;
         }
         if (key.name === "r") {
           refreshRef.current();
+          return true;
+        }
+        if (key.name === "n") {
+          editFormRef.current.open(taskFields());
+          setMode("create");
+          return true;
+        }
+        if (key.name === "e") {
+          const t = filteredRef.current[cursorRef.current];
+          if (t) {
+            editFormRef.current.open(taskFields(t));
+            setMode("edit");
+          }
+          return true;
+        }
+        if (key.name === "d") {
+          const t = filteredRef.current[cursorRef.current];
+          if (t) {
+            setDeleteTarget(t);
+            setMode("confirm");
+          }
           return true;
         }
       }
@@ -154,6 +257,17 @@ export function TasksView({ projectId, onRegisterKeyHandler }: Props) {
         {query && <text fg={colors.accent}>{`/${query}`}</text>}
       </box>
       <ResourceTable columns={columns} data={filtered} cursor={cursor} keyFn={(t) => t.id} />
+      <EditFormOverlay
+        title={mode === "create" ? "New Task" : "Edit Task"}
+        fields={editForm.fields}
+        focusIdx={editForm.focusIdx}
+        editing={editForm.editing}
+        active={mode === "edit" || mode === "create"}
+      />
+      <ConfirmDialog
+        message={deleteTarget ? `Delete task "${deleteTarget.title}"?` : ""}
+        active={mode === "confirm"}
+      />
     </box>
   );
 }

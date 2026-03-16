@@ -54,7 +54,14 @@ export function useCommand(commands: Command[]): CommandState {
       return true;
     }
 
-    if (key.name.length === 1 && !key.ctrl && !key.meta && key.name !== ":" && key.name !== ";" && key.sequence !== ":") {
+    if (
+      key.name.length === 1 &&
+      !key.ctrl &&
+      !key.meta &&
+      key.name !== ":" &&
+      key.name !== ";" &&
+      key.sequence !== ":"
+    ) {
       inputRef.current += key.name;
       setInput(inputRef.current);
       return true;
