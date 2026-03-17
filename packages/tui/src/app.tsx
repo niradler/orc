@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { createOrcClient } from "@orc/sdk";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -7,7 +8,7 @@ import { StatusBar } from "./components/status-bar.js";
 import { useCommand } from "./hooks/use-command.js";
 import { usePolling } from "./hooks/use-polling.js";
 import { colors } from "./theme.js";
-import type { Command, KeyEvent, Route, ViewKeyHandler } from "./types.js";
+import type { Command, KeyEvent, Route, ViewKeyHandler, ViewMode } from "./types.js";
 import { ROUTES } from "./types.js";
 import { JobsView } from "./views/jobs.js";
 import { MemoriesView } from "./views/memories.js";
@@ -92,17 +93,31 @@ export function App() {
 
   const { active: cmdActive, input: cmdInput, handleKey: cmdHandleKey } = useCommand(commands);
 
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [filterQuery, setFilterQuery] = useState("");
+  const [filterActive, setFilterActive] = useState(false);
+
   const viewKeyHandlerRef = useRef<ViewKeyHandler>(() => false);
   const registerViewKeyHandler = useCallback((handler: ViewKeyHandler) => {
     viewKeyHandlerRef.current = handler;
   }, []);
 
+  const onViewStateChange = useCallback((mode: ViewMode, fQuery: string, fActive: boolean) => {
+    setViewMode(mode);
+    setFilterQuery(fQuery);
+    setFilterActive(fActive);
+  }, []);
+
   useKeyboard((key) => {
     const k = key as unknown as KeyEvent;
 
+    appendFileSync("tui-debug.log", `APP: key=${k.name}\n`);
+
     if (cmdHandleKey(k)) return;
 
-    if (viewKeyHandlerRef.current(k)) return;
+    const viewHandled = viewKeyHandlerRef.current(k);
+    appendFileSync("tui-debug.log", `VIEW: key=${k.name} handled=${viewHandled}\n`);
+    if (viewHandled) return;
 
     if (k.name === "1") setRoute("projects");
     if (k.name === "2") setRoute("tasks");
@@ -145,22 +160,45 @@ export function App() {
           <ProjectsView
             onSelectProject={selectProject}
             onRegisterKeyHandler={registerViewKeyHandler}
+            onStateChange={onViewStateChange}
           />
         )}
         {route === "tasks" && (
-          <TasksView projectId={activeProjectId} onRegisterKeyHandler={registerViewKeyHandler} />
+          <TasksView
+            projectId={activeProjectId}
+            onRegisterKeyHandler={registerViewKeyHandler}
+            onStateChange={onViewStateChange}
+          />
         )}
         {route === "jobs" && (
-          <JobsView projectId={activeProjectId} onRegisterKeyHandler={registerViewKeyHandler} />
+          <JobsView
+            projectId={activeProjectId}
+            onRegisterKeyHandler={registerViewKeyHandler}
+            onStateChange={onViewStateChange}
+          />
         )}
         {route === "memories" && (
-          <MemoriesView projectId={activeProjectId} onRegisterKeyHandler={registerViewKeyHandler} />
+          <MemoriesView
+            projectId={activeProjectId}
+            onRegisterKeyHandler={registerViewKeyHandler}
+            onStateChange={onViewStateChange}
+          />
         )}
-        {route === "sessions" && <SessionsView onRegisterKeyHandler={registerViewKeyHandler} />}
-        {route === "prompts" && <PromptsView onRegisterKeyHandler={registerViewKeyHandler} />}
+        {route === "sessions" && (
+          <SessionsView
+            onRegisterKeyHandler={registerViewKeyHandler}
+            onStateChange={onViewStateChange}
+          />
+        )}
+        {route === "prompts" && (
+          <PromptsView
+            onRegisterKeyHandler={registerViewKeyHandler}
+            onStateChange={onViewStateChange}
+          />
+        )}
       </box>
 
-      <StatusBar mode="list" filterQuery="" filterActive={false} itemCount={0} filteredCount={0} />
+      <StatusBar mode={viewMode} filterQuery={filterQuery} filterActive={filterActive} />
 
       <CommandPalette active={cmdActive} input={cmdInput} commands={commands} />
     </box>

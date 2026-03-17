@@ -6,16 +6,18 @@ type Props = {
   mode: ViewMode;
   filterQuery: string;
   filterActive: boolean;
-  itemCount: number;
-  filteredCount: number;
 };
 
-const LIST_HINTS = "j/k nav  ←→ tabs  Enter detail  / filter  :command  Ctrl+C quit";
-const DETAIL_HINTS = "Esc back  :command  Ctrl+C quit";
+const HINTS: Record<ViewMode, string> = {
+  list: "j/k nav  ←→ tabs  Enter view  e edit  n new  d del  / filter  :cmd  Ctrl+C quit",
+  detail: "Esc back  e edit  d delete  :cmd  Ctrl+C quit",
+  edit: "j/k fields  Enter edit  w save  Esc cancel",
+  create: "j/k fields  Enter edit  w save  Esc cancel",
+  confirm: "y confirm  n/Esc cancel",
+};
 
-export function StatusBar({ mode, filterQuery, filterActive, itemCount, filteredCount }: Props) {
+export function StatusBar({ mode, filterQuery, filterActive }: Props) {
   const { width } = useTerminalDimensions();
-  const hints = mode === "list" ? LIST_HINTS : DETAIL_HINTS;
 
   return (
     <box
@@ -31,12 +33,10 @@ export function StatusBar({ mode, filterQuery, filterActive, itemCount, filtered
         ) : filterQuery ? (
           <text fg={colors.textDim}>{`/${filterQuery}`}</text>
         ) : null}
-        <text fg={colors.textMuted}>{hints}</text>
+        <text fg={colors.textMuted}>{HINTS[mode] ?? ""}</text>
       </box>
       <box paddingRight={1}>
-        <text fg={colors.textDim}>
-          {filterQuery ? `${filteredCount}/${itemCount}` : `${itemCount} items`}
-        </text>
+        <text fg={colors.accentAlt}>{mode !== "list" ? `[${mode}]` : ""}</text>
       </box>
     </box>
   );

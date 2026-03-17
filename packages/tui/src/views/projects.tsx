@@ -3,7 +3,12 @@ import type { Project, ProjectSummary } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../components/confirm-dialog.js";
 import { DetailPane } from "../components/detail-pane.js";
-import { EditFormOverlay, type FormField, useEditForm } from "../components/edit-form.js";
+import {
+  EditFormOverlay,
+  type FormField,
+  type FormResult,
+  useEditForm,
+} from "../components/edit-form.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
@@ -55,9 +60,10 @@ function projectFields(p?: Project): FormField[] {
 type Props = {
   onSelectProject: (name: string) => void;
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
+  onStateChange: (mode: ViewMode, filterQuery: string, filterActive: boolean) => void;
 };
 
-export function ProjectsView({ onSelectProject, onRegisterKeyHandler }: Props) {
+export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateChange }: Props) {
   const [mode, setMode] = useState<ViewMode>("list");
   const [detail, setDetail] = useState<ProjectSummary | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
@@ -90,8 +96,14 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler }: Props) {
   editFormRef.current = editForm;
   const deleteTargetRef = useRef(deleteTarget);
   deleteTargetRef.current = deleteTarget;
+  const detailRef = useRef(detail);
+  detailRef.current = detail;
 
-  const submitCreate = useCallback(async (vals: Record<string, string>) => {
+  useEffect(() => {
+    onStateChange(mode, query, filterActive);
+  }, [mode, query, filterActive, onStateChange]);
+
+  const doCreate = useCallback((vals: Record<string, string>) => {
     if (!vals.name) return;
     const tags = vals.tags
       ? vals.tags
@@ -99,17 +111,17 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler }: Props) {
           .map((s) => s.trim())
           .filter(Boolean)
       : undefined;
-    await client.projects.create({
-      name: vals.name,
-      ...(vals.description ? { description: vals.description } : {}),
-      status: (vals.status as Project["status"]) || "active",
-      ...(tags ? { tags } : {}),
-    });
-    setMode("list");
-    refreshRef.current();
+    client.projects
+      .create({
+        name: vals.name,
+        ...(vals.description ? { description: vals.description } : {}),
+        status: (vals.status as Project["status"]) || "active",
+        ...(tags ? { tags } : {}),
+      })
+      .then(() => refreshRef.current());
   }, []);
 
-  const submitEdit = useCallback(async (vals: Record<string, string>) => {
+  const doEdit = useCallback((vals: Record<string, string>) => {
     const p = filteredRef.current[cursorRef.current];
     if (!p) return;
     const tags = vals.tags
@@ -118,27 +130,29 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler }: Props) {
           .map((s) => s.trim())
           .filter(Boolean)
       : null;
-    await client.projects.update(p.id, {
-      ...(vals.name ? { name: vals.name } : {}),
-      description: vals.description || null,
-      ...(vals.status ? { status: vals.status as Project["status"] } : {}),
-      tags,
-    });
-    setMode("list");
-    refreshRef.current();
+    client.projects
+      .update(p.id, {
+        ...(vals.name ? { name: vals.name } : {}),
+        description: vals.description || null,
+        ...(vals.status ? { status: vals.status as Project["status"] } : {}),
+        tags,
+      })
+      .then(() => refreshRef.current());
   }, []);
 
-  const submitCreateRef = useRef(submitCreate);
-  submitCreateRef.current = submitCreate;
-  const submitEditRef = useRef(submitEdit);
-  submitEditRef.current = submitEdit;
+  const doCreateRef = useRef(doCreate);
+  doCreateRef.current = doCreate;
+  const doEditRef = useRef(doEdit);
+  doEditRef.current = doEdit;
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
       if (modeRef.current === "edit" || modeRef.current === "create") {
-        const onSubmit =
-          modeRef.current === "create" ? submitCreateRef.current : submitEditRef.current;
-        editFormRef.current.handleKey(key, onSubmit);
+        const result: FormResult | null = editFormRef.current.handleKey(key);
+        if (result?.submitted) {
+          if (modeRef.current === "create") doCreateRef.current(result.values);
+          else doEditRef.current(result.values);
+        }
         if (!editFormRef.current.active) setMode("list");
         return true;
       }
@@ -202,10 +216,23 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler }: Props) {
           return true;
         }
       }
-      if (modeRef.current === "detail" && key.name === "escape") {
-        setMode("list");
-        setDetail(null);
-        return true;
+      if (modeRef.current === "detail") {
+        if (key.name === "escape") {
+          setMode("list");
+          setDetail(null);
+          return true;
+        }
+        if (key.name === "e" && detailRef.current) {
+          editFormRef.current.open(projectFields(detailRef.current.project));
+          setMode("edit");
+          return true;
+        }
+        if (key.name === "d" && detailRef.current) {
+          setDeleteTarget(detailRef.current.project);
+          setMode("confirm");
+          return true;
+        }
+        return false;
       }
       return false;
     },

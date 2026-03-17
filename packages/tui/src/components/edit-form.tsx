@@ -10,6 +10,11 @@ export type FormField = {
   options?: string[];
 };
 
+export type FormResult = {
+  submitted: boolean;
+  values: Record<string, string>;
+};
+
 export function useEditForm() {
   const [active, setActive] = useState(false);
   const [fields, setFields] = useState<FormField[]>([]);
@@ -19,6 +24,7 @@ export function useEditForm() {
   const fieldsRef = useRef<FormField[]>([]);
   const focusIdxRef = useRef(0);
   const editingRef = useRef(false);
+  const resultRef = useRef<FormResult>({ submitted: false, values: {} });
 
   const open = useCallback((newFields: FormField[]) => {
     setFields(newFields);
@@ -27,6 +33,7 @@ export function useEditForm() {
     focusIdxRef.current = 0;
     setEditing(false);
     editingRef.current = false;
+    resultRef.current = { submitted: false, values: {} };
     setActive(true);
     activeRef.current = true;
   }, []);
@@ -45,23 +52,25 @@ export function useEditForm() {
   }, []);
 
   const handleKey = useCallback(
-    (key: KeyEvent, onSubmit: (vals: Record<string, string>) => void): boolean => {
-      if (!activeRef.current) return false;
+    (key: KeyEvent): FormResult | null => {
+      if (!activeRef.current) return null;
 
       if (key.name === "escape") {
         if (editingRef.current) {
           setEditing(false);
           editingRef.current = false;
         } else {
+          resultRef.current = { submitted: false, values: {} };
           close();
         }
-        return true;
+        return null;
       }
 
-      if (key.name === "s" && key.ctrl) {
-        onSubmit(getValues());
+      if ((key.name === "s" && key.ctrl) || (key.name === "w" && !editingRef.current)) {
+        const result: FormResult = { submitted: true, values: getValues() };
+        resultRef.current = result;
         close();
-        return true;
+        return result;
       }
 
       if (!editingRef.current) {
@@ -69,14 +78,14 @@ export function useEditForm() {
           const next = (focusIdxRef.current + 1) % fieldsRef.current.length;
           setFocusIdx(next);
           focusIdxRef.current = next;
-          return true;
+          return null;
         }
         if (key.name === "k" || key.name === "up") {
           const prev =
             (focusIdxRef.current - 1 + fieldsRef.current.length) % fieldsRef.current.length;
           setFocusIdx(prev);
           focusIdxRef.current = prev;
-          return true;
+          return null;
         }
         if (key.name === "return" || key.name === "e") {
           const field = fieldsRef.current[focusIdxRef.current];
@@ -95,15 +104,15 @@ export function useEditForm() {
             setEditing(true);
             editingRef.current = true;
           }
-          return true;
+          return null;
         }
-        return true;
+        return null;
       }
 
       if (key.name === "return") {
         setEditing(false);
         editingRef.current = false;
-        return true;
+        return null;
       }
 
       if (key.name === "backspace") {
@@ -117,7 +126,7 @@ export function useEditForm() {
           setFields(updated);
           fieldsRef.current = updated;
         }
-        return true;
+        return null;
       }
 
       if (key.name === "space") {
@@ -128,7 +137,7 @@ export function useEditForm() {
           setFields(updated);
           fieldsRef.current = updated;
         }
-        return true;
+        return null;
       }
 
       if (key.name.length === 1 && !key.ctrl && !key.meta) {
@@ -142,10 +151,10 @@ export function useEditForm() {
           setFields(updated);
           fieldsRef.current = updated;
         }
-        return true;
+        return null;
       }
 
-      return true;
+      return null;
     },
     [close, getValues],
   );
@@ -211,7 +220,7 @@ export function EditFormOverlay({ title, fields, focusIdx, editing, active }: Re
         <text fg={colors.textMuted}>
           {editing
             ? "Type to edit  Enter confirm  Esc stop editing"
-            : "j/k move  Enter edit  ←→ cycle  Ctrl+S save  Esc cancel"}
+            : "j/k move  Enter edit  ←→ cycle  w save  Esc cancel"}
         </text>
       </box>
     </box>

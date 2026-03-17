@@ -2,7 +2,12 @@ import { createOrcClient } from "@orc/sdk";
 import type { Job, JobRun } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DetailPane } from "../components/detail-pane.js";
-import { EditFormOverlay, type FormField, useEditForm } from "../components/edit-form.js";
+import {
+  EditFormOverlay,
+  type FormField,
+  type FormResult,
+  useEditForm,
+} from "../components/edit-form.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
@@ -60,9 +65,13 @@ function jobFields(): FormField[] {
   ];
 }
 
-type Props = { projectId: string | null; onRegisterKeyHandler: (handler: ViewKeyHandler) => void };
+type Props = {
+  projectId: string | null;
+  onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
+  onStateChange: (mode: ViewMode, filterQuery: string, filterActive: boolean) => void;
+};
 
-export function JobsView({ projectId, onRegisterKeyHandler }: Props) {
+export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Props) {
   const [mode, setMode] = useState<ViewMode>("list");
   const [detail, setDetail] = useState<{ job: Job; runs: JobRun[] } | null>(null);
   const editForm = useEditForm();
@@ -95,31 +104,38 @@ export function JobsView({ projectId, onRegisterKeyHandler }: Props) {
   refreshRef.current = refresh;
   const editFormRef = useRef(editForm);
   editFormRef.current = editForm;
+  const detailRef = useRef(detail);
+  detailRef.current = detail;
 
-  const submitCreate = useCallback(
-    async (vals: Record<string, string>) => {
+  useEffect(() => {
+    onStateChange(mode, query, filterActive);
+  }, [mode, query, filterActive, onStateChange]);
+
+  const doCreate = useCallback(
+    (vals: Record<string, string>) => {
       if (!vals.name || !vals.command) return;
-      await client.jobs.create({
-        name: vals.name,
-        command: vals.command,
-        trigger_type: (vals.trigger_type as Job["trigger_type"]) || "manual",
-        ...(vals.cron_expr ? { cron_expr: vals.cron_expr } : {}),
-        ...(vals.description ? { description: vals.description } : {}),
-        ...(projectId ? { project_id: projectId } : {}),
-      });
-      setMode("list");
-      refreshRef.current();
+      client.jobs
+        .create({
+          name: vals.name,
+          command: vals.command,
+          trigger_type: (vals.trigger_type as Job["trigger_type"]) || "manual",
+          ...(vals.cron_expr ? { cron_expr: vals.cron_expr } : {}),
+          ...(vals.description ? { description: vals.description } : {}),
+          ...(projectId ? { project_id: projectId } : {}),
+        })
+        .then(() => refreshRef.current());
     },
     [projectId],
   );
 
-  const submitCreateRef = useRef(submitCreate);
-  submitCreateRef.current = submitCreate;
+  const doCreateRef = useRef(doCreate);
+  doCreateRef.current = doCreate;
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
       if (modeRef.current === "create") {
-        editFormRef.current.handleKey(key, submitCreateRef.current);
+        const result: FormResult | null = editFormRef.current.handleKey(key);
+        if (result?.submitted) doCreateRef.current(result.values);
         if (!editFormRef.current.active) setMode("list");
         return true;
       }

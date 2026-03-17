@@ -3,7 +3,12 @@ import type { Memory } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../components/confirm-dialog.js";
 import { DetailPane } from "../components/detail-pane.js";
-import { EditFormOverlay, type FormField, useEditForm } from "../components/edit-form.js";
+import {
+  EditFormOverlay,
+  type FormField,
+  type FormResult,
+  useEditForm,
+} from "../components/edit-form.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
@@ -63,9 +68,13 @@ function memoryFields(): FormField[] {
   ];
 }
 
-type Props = { projectId: string | null; onRegisterKeyHandler: (handler: ViewKeyHandler) => void };
+type Props = {
+  projectId: string | null;
+  onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
+  onStateChange: (mode: ViewMode, filterQuery: string, filterActive: boolean) => void;
+};
 
-export function MemoriesView({ projectId, onRegisterKeyHandler }: Props) {
+export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }: Props) {
   const [mode, setMode] = useState<ViewMode>("list");
   const [detail, setDetail] = useState<Memory | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Memory | null>(null);
@@ -101,9 +110,15 @@ export function MemoriesView({ projectId, onRegisterKeyHandler }: Props) {
   editFormRef.current = editForm;
   const deleteTargetRef = useRef(deleteTarget);
   deleteTargetRef.current = deleteTarget;
+  const detailRef = useRef(detail);
+  detailRef.current = detail;
 
-  const submitCreate = useCallback(
-    async (vals: Record<string, string>) => {
+  useEffect(() => {
+    onStateChange(mode, query, filterActive);
+  }, [mode, query, filterActive, onStateChange]);
+
+  const doCreate = useCallback(
+    (vals: Record<string, string>) => {
       if (!vals.content) return;
       const tags = vals.tags
         ? vals.tags
@@ -111,27 +126,28 @@ export function MemoriesView({ projectId, onRegisterKeyHandler }: Props) {
             .map((s) => s.trim())
             .filter(Boolean)
         : undefined;
-      await client.memories.create({
-        content: vals.content,
-        type: (vals.type as "fact" | "decision" | "event" | "rule" | "discovery") || "fact",
-        importance: (vals.importance as "low" | "normal" | "high" | "critical") || "normal",
-        ...(vals.scope ? { scope: vals.scope } : {}),
-        ...(tags ? { tags } : {}),
-        ...(projectId ? { project_id: projectId } : {}),
-      });
-      setMode("list");
-      refreshRef.current();
+      client.memories
+        .create({
+          content: vals.content,
+          type: (vals.type as "fact" | "decision" | "event" | "rule" | "discovery") || "fact",
+          importance: (vals.importance as "low" | "normal" | "high" | "critical") || "normal",
+          ...(vals.scope ? { scope: vals.scope } : {}),
+          ...(tags ? { tags } : {}),
+          ...(projectId ? { project_id: projectId } : {}),
+        })
+        .then(() => refreshRef.current());
     },
     [projectId],
   );
 
-  const submitCreateRef = useRef(submitCreate);
-  submitCreateRef.current = submitCreate;
+  const doCreateRef = useRef(doCreate);
+  doCreateRef.current = doCreate;
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
       if (modeRef.current === "create") {
-        editFormRef.current.handleKey(key, submitCreateRef.current);
+        const result: FormResult | null = editFormRef.current.handleKey(key);
+        if (result?.submitted) doCreateRef.current(result.values);
         if (!editFormRef.current.active) setMode("list");
         return true;
       }
@@ -179,10 +195,18 @@ export function MemoriesView({ projectId, onRegisterKeyHandler }: Props) {
           return true;
         }
       }
-      if (modeRef.current === "detail" && key.name === "escape") {
-        setMode("list");
-        setDetail(null);
-        return true;
+      if (modeRef.current === "detail") {
+        if (key.name === "escape") {
+          setMode("list");
+          setDetail(null);
+          return true;
+        }
+        if (key.name === "d" && detailRef.current) {
+          setDeleteTarget(detailRef.current);
+          setMode("confirm");
+          return true;
+        }
+        return false;
       }
       return false;
     },
@@ -208,7 +232,7 @@ export function MemoriesView({ projectId, onRegisterKeyHandler }: Props) {
       { label: "Created", value: detail.created_at },
       { label: "Updated", value: detail.updated_at },
     ];
-    return <DetailPane title={"Memory"} fields={fields} body={detail.content} />;
+    return <DetailPane title={"Memory"} fields={fields} body={detail.content} renderMarkdown />;
   }
 
   return (

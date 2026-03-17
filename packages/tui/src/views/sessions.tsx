@@ -39,9 +39,12 @@ const columns: Column<Session>[] = [
   },
 ];
 
-type Props = { onRegisterKeyHandler: (handler: ViewKeyHandler) => void };
+type Props = {
+  onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
+  onStateChange: (mode: ViewMode, filterQuery: string, filterActive: boolean) => void;
+};
 
-export function SessionsView({ onRegisterKeyHandler }: Props) {
+export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
   const [mode, setMode] = useState<ViewMode>("list");
   const [detail, setDetail] = useState<
     (Session & { events: unknown[]; snapshot: string | null }) | null
@@ -71,6 +74,10 @@ export function SessionsView({ onRegisterKeyHandler }: Props) {
   cursorRef.current = cursor;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
+
+  useEffect(() => {
+    onStateChange(mode, query, filterActive);
+  }, [mode, query, filterActive, onStateChange]);
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {

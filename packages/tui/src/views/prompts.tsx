@@ -3,7 +3,12 @@ import type { Prompt } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../components/confirm-dialog.js";
 import { DetailPane } from "../components/detail-pane.js";
-import { EditFormOverlay, type FormField, useEditForm } from "../components/edit-form.js";
+import {
+  EditFormOverlay,
+  type FormField,
+  type FormResult,
+  useEditForm,
+} from "../components/edit-form.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
@@ -58,9 +63,12 @@ function promptFields(p?: Prompt): FormField[] {
   ];
 }
 
-type Props = { onRegisterKeyHandler: (handler: ViewKeyHandler) => void };
+type Props = {
+  onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
+  onStateChange: (mode: ViewMode, filterQuery: string, filterActive: boolean) => void;
+};
 
-export function PromptsView({ onRegisterKeyHandler }: Props) {
+export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
   const [mode, setMode] = useState<ViewMode>("list");
   const [detail, setDetail] = useState<Prompt | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Prompt | null>(null);
@@ -97,8 +105,14 @@ export function PromptsView({ onRegisterKeyHandler }: Props) {
   editFormRef.current = editForm;
   const deleteTargetRef = useRef(deleteTarget);
   deleteTargetRef.current = deleteTarget;
+  const detailRef = useRef(detail);
+  detailRef.current = detail;
 
-  const submitCreate = useCallback(async (vals: Record<string, string>) => {
+  useEffect(() => {
+    onStateChange(mode, query, filterActive);
+  }, [mode, query, filterActive, onStateChange]);
+
+  const doCreate = useCallback((vals: Record<string, string>) => {
     if (!vals.name || !vals.template) return;
     const tags = vals.tags
       ? vals.tags
@@ -106,18 +120,18 @@ export function PromptsView({ onRegisterKeyHandler }: Props) {
           .map((s) => s.trim())
           .filter(Boolean)
       : undefined;
-    await client.prompts.create({
-      name: vals.name,
-      ...(vals.description ? { description: vals.description } : {}),
-      template: vals.template,
-      is_skill: vals.is_skill === "yes",
-      ...(tags ? { tags } : {}),
-    });
-    setMode("list");
-    refreshRef.current();
+    client.prompts
+      .create({
+        name: vals.name,
+        ...(vals.description ? { description: vals.description } : {}),
+        template: vals.template,
+        is_skill: vals.is_skill === "yes",
+        ...(tags ? { tags } : {}),
+      })
+      .then(() => refreshRef.current());
   }, []);
 
-  const submitEdit = useCallback(async (vals: Record<string, string>) => {
+  const doEdit = useCallback((vals: Record<string, string>) => {
     const p = filteredRef.current[cursorRef.current];
     if (!p) return;
     const tags = vals.tags
@@ -126,28 +140,30 @@ export function PromptsView({ onRegisterKeyHandler }: Props) {
           .map((s) => s.trim())
           .filter(Boolean)
       : undefined;
-    await client.prompts.update(p.id, {
-      ...(vals.name ? { name: vals.name } : {}),
-      ...(vals.description ? { description: vals.description } : {}),
-      ...(vals.template ? { template: vals.template } : {}),
-      is_skill: vals.is_skill === "yes",
-      ...(tags ? { tags } : {}),
-    });
-    setMode("list");
-    refreshRef.current();
+    client.prompts
+      .update(p.id, {
+        ...(vals.name ? { name: vals.name } : {}),
+        ...(vals.description ? { description: vals.description } : {}),
+        ...(vals.template ? { template: vals.template } : {}),
+        is_skill: vals.is_skill === "yes",
+        ...(tags ? { tags } : {}),
+      })
+      .then(() => refreshRef.current());
   }, []);
 
-  const submitCreateRef = useRef(submitCreate);
-  submitCreateRef.current = submitCreate;
-  const submitEditRef = useRef(submitEdit);
-  submitEditRef.current = submitEdit;
+  const doCreateRef = useRef(doCreate);
+  doCreateRef.current = doCreate;
+  const doEditRef = useRef(doEdit);
+  doEditRef.current = doEdit;
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
       if (modeRef.current === "edit" || modeRef.current === "create") {
-        const onSubmit =
-          modeRef.current === "create" ? submitCreateRef.current : submitEditRef.current;
-        editFormRef.current.handleKey(key, onSubmit);
+        const result: FormResult | null = editFormRef.current.handleKey(key);
+        if (result?.submitted) {
+          if (modeRef.current === "create") doCreateRef.current(result.values);
+          else doEditRef.current(result.values);
+        }
         if (!editFormRef.current.active) setMode("list");
         return true;
       }
@@ -206,10 +222,23 @@ export function PromptsView({ onRegisterKeyHandler }: Props) {
           return true;
         }
       }
-      if (modeRef.current === "detail" && key.name === "escape") {
-        setMode("list");
-        setDetail(null);
-        return true;
+      if (modeRef.current === "detail") {
+        if (key.name === "escape") {
+          setMode("list");
+          setDetail(null);
+          return true;
+        }
+        if (key.name === "e" && detailRef.current) {
+          editFormRef.current.open(promptFields(detailRef.current));
+          setMode("edit");
+          return true;
+        }
+        if (key.name === "d" && detailRef.current) {
+          setDeleteTarget(detailRef.current);
+          setMode("confirm");
+          return true;
+        }
+        return false;
       }
       return false;
     },
@@ -235,7 +264,14 @@ export function PromptsView({ onRegisterKeyHandler }: Props) {
       { label: "Last Used", value: detail.last_used_at ?? "never" },
       { label: "Created", value: detail.created_at },
     ];
-    return <DetailPane title={`Prompt: ${detail.name}`} fields={fields} body={detail.template} />;
+    return (
+      <DetailPane
+        title={`Prompt: ${detail.name}`}
+        fields={fields}
+        body={detail.template}
+        renderMarkdown
+      />
+    );
   }
 
   return (

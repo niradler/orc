@@ -1,4 +1,7 @@
+import { SyntaxStyle } from "@opentui/core";
 import { colors } from "../theme.js";
+
+const syntaxStyle = SyntaxStyle.create();
 
 export type Field = {
   label: string;
@@ -10,9 +13,10 @@ type Props = {
   title: string;
   fields: Field[];
   body?: string | undefined;
+  renderMarkdown?: boolean | undefined;
 };
 
-export function DetailPane({ title, fields, body }: Props) {
+export function DetailPane({ title, fields, body, renderMarkdown }: Props) {
   return (
     <box
       flexDirection="column"
@@ -36,7 +40,11 @@ export function DetailPane({ title, fields, body }: Props) {
       ))}
       {body && (
         <box marginTop={1} paddingTop={1}>
-          <text fg={colors.text}>{body}</text>
+          {renderMarkdown ? (
+            <markdown content={body} syntaxStyle={syntaxStyle} conceal />
+          ) : (
+            <text fg={colors.text}>{body}</text>
+          )}
         </box>
       )}
       <box marginTop={1}>
