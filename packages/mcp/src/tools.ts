@@ -3,11 +3,11 @@ import { createHash } from "node:crypto";
 import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import { getDb } from "@orc/db/client";
-import { job_runs, jobs, memories, projects, prompts, sessions, tasks } from "@orc/db/schema";
+import { job_runs, jobs, memories, projects, sessions, tasks } from "@orc/db/schema";
 import { executeJob } from "@orc/runner/executor";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
-import { getLayer2, getLayer3, searchLayer1 } from "./search.js";
+import { getLayer3, searchLayer1 } from "./search.js";
 
 const projectParam = z
   .string()
@@ -19,7 +19,7 @@ export const toolDefinitions = [
     name: "memory_search",
     description:
       "Search memories (3-layer BM25: porter → trigram → fallback). Returns compact index: IDs + snippets. " +
-      "Filter by type (fact|decision|event|rule|discovery) or scope. Use memory_timeline for context, memory_get for full content.",
+      "Filter by type (fact|decision|event|rule|discovery) or scope. Use memory_get for full content.",
     inputSchema: z.object({
       query: z.string().describe("Search query — keywords, phrases, or natural language"),
       scope: z.string().optional().describe("Scope filter (e.g. domain area)"),
@@ -29,16 +29,6 @@ export const toolDefinitions = [
         .describe("Filter by memory type"),
       project: projectParam,
       limit: z.number().int().min(1).max(20).optional().default(10),
-    }),
-  },
-  {
-    name: "memory_timeline",
-    description:
-      "Get a memory plus chronological context around it (what was stored before/after). " +
-      "Use after memory_search to understand surrounding context without fetching full content.",
-    inputSchema: z.object({
-      id: z.string().describe("Memory ID from memory_search results"),
-      window: z.number().int().min(1).max(5).optional().default(3),
     }),
   },
   {
@@ -67,15 +57,8 @@ export const toolDefinitions = [
     }),
   },
   {
-    name: "memory_delete",
-    description: "Delete a memory by ID. Irreversible.",
-    inputSchema: z.object({
-      id: z.string().describe("Memory ID to delete"),
-    }),
-  },
-  {
     name: "task_list",
-    description: "List active tasks — compact layer-1 index. Does NOT include body/notes.",
+    description: "List active tasks — compact layer-1 index. Does NOT include body/comments.",
     inputSchema: z.object({
       project: projectParam,
       status: z.enum(["todo", "doing", "review", "changes_requested", "blocked"]).optional(),
@@ -84,7 +67,7 @@ export const toolDefinitions = [
   },
   {
     name: "task_get",
-    description: "Fetch full details of specific tasks by IDs (body, notes, full history).",
+    description: "Fetch full details of specific tasks by IDs (body, comments, full history).",
     inputSchema: z.object({
       ids: z.array(z.string()).min(1).max(10),
     }),
@@ -123,32 +106,9 @@ export const toolDefinitions = [
   },
   {
     name: "task_check_review",
-    description: "Poll HITL review result. Returns: pending | approved | changes_requested + note.",
+    description: "Poll HITL review result. Returns: pending | approved | changes_requested + comment.",
     inputSchema: z.object({
       id: z.string(),
-    }),
-  },
-  {
-    name: "task_delegate",
-    description:
-      "Create a task and optionally trigger a job to hand it off to another agent session. " +
-      "Works for any agent-to-agent delegation: Claude→Claude, Claude→Codex, Cursor→Claude, etc. " +
-      "The receiving agent finds the task via context() or task_list().",
-    inputSchema: z.object({
-      title: z.string().describe("Task title"),
-      body: z.string().optional().describe("Task body with acceptance criteria"),
-      project: projectParam,
-      priority: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
-      assign_to: z
-        .string()
-        .optional()
-        .describe(
-          "Agent/session name to assign (e.g. 'claude-code', 'claude-frontend', 'codex'). Creates a claim.",
-        ),
-      trigger_job: z
-        .string()
-        .optional()
-        .describe("Job name to trigger after task creation (e.g. to launch another agent session)"),
     }),
   },
   {
@@ -175,19 +135,6 @@ export const toolDefinitions = [
         .max(100),
       project: projectParam,
       author: z.string().optional().default("agent"),
-    }),
-  },
-  {
-    name: "task_search",
-    description:
-      "Full-text search across task titles and bodies. Returns compact results with id, title, status, priority, and snippet.",
-    inputSchema: z.object({
-      query: z.string().describe("Search query — keywords or phrases"),
-      project: projectParam,
-      status: z
-        .enum(["todo", "doing", "review", "changes_requested", "blocked", "done", "cancelled"])
-        .optional(),
-      limit: z.number().int().min(1).max(50).optional().default(10),
     }),
   },
   {
@@ -296,151 +243,6 @@ export const toolDefinitions = [
       status: z.enum(["active", "archived", "paused"]).optional(),
     }),
   },
-  {
-    name: "project_get",
-    description: "Get a project by name (case-insensitive). Returns full project details.",
-    inputSchema: z.object({
-      name: z.string().describe("Project name (case-insensitive)"),
-    }),
-  },
-  {
-    name: "project_create",
-    description: "Create a new project. Project names must be unique, [a-zA-Z0-9_-] only.",
-    inputSchema: z.object({
-      name: z
-        .string()
-        .regex(/^[a-zA-Z0-9_-]+$/)
-        .min(1)
-        .max(100)
-        .describe("Project name — unique, URL-safe (letters, numbers, - and _ only)"),
-      description: z.string().optional().describe("Human-readable project description"),
-      scope: z.string().optional(),
-      tags: z.array(z.string()).optional(),
-    }),
-  },
-  {
-    name: "project_update",
-    description: "Update a project by name.",
-    inputSchema: z.object({
-      name: z.string().describe("Current project name"),
-      description: z.string().optional(),
-      status: z.enum(["active", "archived", "paused"]).optional(),
-      scope: z.string().optional(),
-      tags: z.array(z.string()).optional(),
-    }),
-  },
-  {
-    name: "task_delete",
-    description: "Delete a task by ID. Irreversible.",
-    inputSchema: z.object({
-      id: z.string().describe("Task ID to delete"),
-    }),
-  },
-  {
-    name: "job_create",
-    description: "Create a new job.",
-    inputSchema: z.object({
-      name: z.string().describe("Unique job name"),
-      command: z.string().describe("Shell command to execute"),
-      description: z.string().optional(),
-      trigger_type: z
-        .enum(["one-shot", "cron", "watch", "webhook", "manual", "bridge-msg"])
-        .optional()
-        .default("manual"),
-      cron_expr: z.string().optional(),
-      watch_path: z.string().optional(),
-      timeout_secs: z.number().int().optional().default(300),
-      max_retries: z.number().int().optional().default(0),
-      notify_on: z.enum(["never", "failure", "always"]).optional().default("failure"),
-      project: projectParam,
-    }),
-  },
-  {
-    name: "job_get",
-    description: "Get a job by name.",
-    inputSchema: z.object({
-      name: z.string().describe("Job name"),
-    }),
-  },
-  {
-    name: "job_update",
-    description: "Update a job by name.",
-    inputSchema: z.object({
-      name: z.string().describe("Current job name"),
-      description: z.string().optional(),
-      command: z.string().optional(),
-      trigger_type: z
-        .enum(["one-shot", "cron", "watch", "webhook", "manual", "bridge-msg"])
-        .optional(),
-      cron_expr: z.string().optional(),
-      watch_path: z.string().optional(),
-      timeout_secs: z.number().int().optional(),
-      max_retries: z.number().int().optional(),
-      notify_on: z.enum(["never", "failure", "always"]).optional(),
-      enabled: z.boolean().optional(),
-    }),
-  },
-  {
-    name: "job_delete",
-    description: "Delete a job by name. Irreversible.",
-    inputSchema: z.object({
-      name: z.string().describe("Job name to delete"),
-    }),
-  },
-  {
-    name: "project_delete",
-    description: "Delete a project by name (case-insensitive). Irreversible.",
-    inputSchema: z.object({
-      name: z.string().describe("Project name to delete"),
-    }),
-  },
-  {
-    name: "prompt_list",
-    description: "List prompts. Optionally filter by skill status.",
-    inputSchema: z.object({
-      is_skill: z.boolean().optional().describe("Filter by skill status"),
-      limit: z.number().int().min(1).max(100).optional().default(20),
-    }),
-  },
-  {
-    name: "prompt_get",
-    description: "Get a prompt by ID or name.",
-    inputSchema: z.object({
-      id: z.string().describe("Prompt ID or name"),
-    }),
-  },
-  {
-    name: "prompt_create",
-    description: "Create a new prompt.",
-    inputSchema: z.object({
-      name: z.string().describe("Unique prompt name"),
-      content: z.string().describe("Prompt template content"),
-      description: z.string().optional(),
-      is_skill: z.boolean().optional(),
-      tags: z.array(z.string()).optional(),
-      pinned: z.boolean().optional(),
-    }),
-  },
-  {
-    name: "prompt_update",
-    description: "Update a prompt by ID.",
-    inputSchema: z.object({
-      id: z.string().describe("Prompt ID"),
-      name: z.string().optional(),
-      content: z.string().optional(),
-      description: z.string().optional(),
-      is_skill: z.boolean().optional(),
-      tags: z.array(z.string()).optional(),
-      pinned: z.boolean().optional(),
-    }),
-  },
-  {
-    name: "prompt_delete",
-    description: "Delete a prompt by ID. Irreversible.",
-    inputSchema: z.object({
-      id: z.string().describe("Prompt ID to delete"),
-    }),
-  },
 ] as const;
 
 export type ToolName = (typeof toolDefinitions)[number]["name"];
@@ -482,27 +284,6 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         );
       }
       lines.push("\nUse memory_timeline(id) for context, memory_get([ids]) for full content.");
-      return lines.join("\n");
-    }
-
-    case "memory_timeline": {
-      const { id, window } = args as { id: string; window?: number };
-      const result = getLayer2(id, window);
-      if (!result) return `Memory not found: ${id}`;
-      const lines = ["## Timeline Context", ""];
-      if (result.before.length) {
-        lines.push("Before:");
-        for (const m of result.before.reverse())
-          lines.push(`  · [${m.id}] ${m.snippet} (${m.age})`);
-        lines.push("");
-      }
-      const titlePart = result.title ? ` "${result.title}"` : "";
-      lines.push(`▶ [${result.id}]${titlePart} [${result.type}]\n${result.full_content}`);
-      if (result.after.length) {
-        lines.push("");
-        lines.push("After:");
-        for (const m of result.after) lines.push(`  · [${m.id}] ${m.snippet} (${m.age})`);
-      }
       return lines.join("\n");
     }
 
@@ -548,14 +329,6 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const label = title ? ` "${title}"` : "";
       const proj = resolved ? ` (${resolved.name})` : "";
       return `Stored: ${id}${label} [${type ?? "fact"}]${proj}`;
-    }
-
-    case "memory_delete": {
-      const { id } = args as { id: string };
-      const existing = await db.query.memories.findFirst({ where: eq(memories.id, id) });
-      if (!existing) return `Memory not found: ${id}`;
-      await db.delete(memories).where(eq(memories.id, id));
-      return `Deleted: ${id}`;
     }
 
     case "task_list": {
@@ -746,58 +519,6 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       };
       const reviewStatus = statusMap[task.status] ?? task.status;
       return `Review status: ${reviewStatus}\nTask: ${task.title} [${task.status}]`;
-    }
-
-    case "task_delegate": {
-      const { title, body, project, priority, assign_to, trigger_job } = args as {
-        title: string;
-        body?: string;
-        project?: string;
-        priority?: string;
-        assign_to?: string;
-        trigger_job?: string;
-      };
-      const resolved = resolveProjectId(getSqlite(db), project);
-      const id = ulid();
-      const now = new Date();
-      await db.insert(tasks).values({
-        id,
-        title,
-        body,
-        project_id: resolved?.id,
-        priority: (priority ?? "normal") as "low" | "normal" | "high" | "critical",
-        author: "agent",
-        claimed_by: assign_to ?? null,
-        status: assign_to ? "doing" : "todo",
-        created_at: now,
-        updated_at: now,
-      });
-
-      const parts = [`Delegated: ${id} — ${title}`];
-      if (resolved) parts.push(`Project: ${resolved.name}`);
-      if (assign_to) parts.push(`Assigned to: ${assign_to}`);
-
-      if (trigger_job) {
-        const job = await db.query.jobs.findFirst({ where: eq(jobs.name, trigger_job) });
-        if (job) {
-          const runId = ulid();
-          await db.insert(job_runs).values({
-            id: runId,
-            job_id: job.id,
-            status: "pending",
-            trigger_by: "mcp:task_delegate",
-            created_at: new Date(),
-          });
-          executeJob({ jobId: job.id, runId, triggerBy: "mcp:task_delegate" }).catch(() => {});
-          parts.push(`Triggered job: ${trigger_job} → run_id: ${runId}`);
-        } else {
-          parts.push(
-            `Warning: job '${trigger_job}' not found — task created but job not triggered`,
-          );
-        }
-      }
-
-      return parts.join("\n");
     }
 
     case "job_list": {
@@ -1096,80 +817,6 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         .join("\n");
     }
 
-    case "project_get": {
-      const { name } = args as { name: string };
-      const sqlite = getSqlite(db);
-      const project = sqlite
-        .query<typeof projects.$inferSelect, string>(
-          "SELECT * FROM projects WHERE name = ? COLLATE NOCASE LIMIT 1",
-        )
-        .get(name);
-      if (!project) return `Project not found: ${name}`;
-      const lines = [`Name: ${project.name}`, `Status: ${project.status}`];
-      if (project.description) lines.push(`Description: ${project.description}`);
-      if (project.scope) lines.push(`Scope: ${project.scope}`);
-      if (project.tags?.length) lines.push(`Tags: ${project.tags.join(", ")}`);
-      return lines.join("\n");
-    }
-
-    case "project_create": {
-      const { name, description, scope, tags } = args as {
-        name: string;
-        description?: string;
-        scope?: string;
-        tags?: string[];
-      };
-      const id = ulid();
-      const now = new Date();
-      await db.insert(projects).values({
-        id,
-        name,
-        description,
-        status: "active",
-        scope,
-        tags,
-        created_at: now,
-        updated_at: now,
-      });
-      return `Created project: ${name}`;
-    }
-
-    case "project_update": {
-      const { name, description, status, scope, tags } = args as {
-        name: string;
-        description?: string;
-        status?: string;
-        scope?: string;
-        tags?: string[];
-      };
-      const sqlite = getSqlite(db);
-      const existing = sqlite
-        .query<{ id: string }, string>(
-          "SELECT id FROM projects WHERE name = ? COLLATE NOCASE LIMIT 1",
-        )
-        .get(name);
-      if (!existing) return `Project not found: ${name}`;
-      await db
-        .update(projects)
-        .set({
-          ...(description !== undefined ? { description } : {}),
-          ...(status ? { status: status as "active" } : {}),
-          ...(scope !== undefined ? { scope } : {}),
-          ...(tags !== undefined ? { tags } : {}),
-          updated_at: new Date(),
-        })
-        .where(eq(projects.id, existing.id));
-      return `Updated project: ${name}`;
-    }
-
-    case "task_delete": {
-      const { id } = args as { id: string };
-      const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
-      if (!existing) return `Task not found: ${id}`;
-      await db.delete(tasks).where(eq(tasks.id, id));
-      return `Deleted: ${id}`;
-    }
-
     case "task_batch_create": {
       const {
         tasks: items,
@@ -1242,70 +889,6 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       return `Created ${items.length} tasks:\n${lines.join("\n")}`;
     }
 
-    case "task_search": {
-      const { query, project, status, limit } = args as {
-        query: string;
-        project?: string;
-        status?: string;
-        limit?: number;
-      };
-      const resolved = resolveProjectId(getSqlite(db), project);
-      const sqlite = getSqlite(db);
-      const lim = limit ?? 10;
-
-      const words = query
-        .trim()
-        .split(/\s+/)
-        .filter((w) => w.length > 0);
-      if (words.length === 0) return "Empty query";
-
-      const ftsExpr = words.join(" AND ");
-      let sql = `SELECT t.id, t.title, t.status, t.priority, substr(t.body, 1, 100) as snippet
-        FROM tasks_fts f JOIN tasks t ON t.id = f.id
-        WHERE f.tasks_fts MATCH ?`;
-      const params: (string | number)[] = [ftsExpr];
-
-      if (resolved) {
-        sql += " AND t.project_id = ?";
-        params.push(resolved.id);
-      }
-      if (status) {
-        sql += " AND t.status = ?";
-        params.push(status);
-      }
-      sql += " ORDER BY rank LIMIT ?";
-      params.push(lim);
-
-      let rows: {
-        id: string;
-        title: string;
-        status: string;
-        priority: string;
-        snippet: string | null;
-      }[];
-      try {
-        rows = sqlite.query(sql).all(...params) as typeof rows;
-      } catch {
-        // FTS table may not exist yet, fall back to LIKE
-        const likeSql = `SELECT id, title, status, priority, substr(body, 1, 100) as snippet FROM tasks
-          WHERE (title LIKE ? OR body LIKE ?)${resolved ? " AND project_id = ?" : ""}${status ? " AND status = ?" : ""}
-          ORDER BY updated_at DESC LIMIT ?`;
-        const likeParams: (string | number)[] = [`%${query}%`, `%${query}%`];
-        if (resolved) likeParams.push(resolved.id);
-        if (status) likeParams.push(status);
-        likeParams.push(lim);
-        rows = sqlite.query(likeSql).all(...likeParams) as typeof rows;
-      }
-
-      if (rows.length === 0) return "No tasks found.";
-      return rows
-        .map((r, i) => {
-          const snip = r.snippet ? ` — ${r.snippet.replace(/\n/g, " ").slice(0, 60)}` : "";
-          return `${i + 1}. [${r.id}] ${r.status} ${r.priority} — ${r.title}${snip}`;
-        })
-        .join("\n");
-    }
-
     case "search": {
       const { query, resources, project, limit } = args as {
         query: string;
@@ -1372,238 +955,6 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       }
 
       return parts.length > 0 ? parts.join("\n") : "No results found.";
-    }
-
-    case "job_create": {
-      const {
-        name,
-        command,
-        description,
-        trigger_type,
-        cron_expr,
-        watch_path,
-        timeout_secs,
-        max_retries,
-        notify_on,
-        project,
-      } = args as {
-        name: string;
-        command: string;
-        description?: string;
-        trigger_type?: string;
-        cron_expr?: string;
-        watch_path?: string;
-        timeout_secs?: number;
-        max_retries?: number;
-        notify_on?: string;
-        project?: string;
-      };
-      const resolved = resolveProjectId(getSqlite(db), project);
-      const id = ulid();
-      const now = new Date();
-      await db.insert(jobs).values({
-        id,
-        name,
-        command,
-        description,
-        trigger_type: (trigger_type ?? "manual") as "manual",
-        cron_expr,
-        watch_path,
-        timeout_secs: timeout_secs ?? 300,
-        max_retries: max_retries ?? 0,
-        notify_on: (notify_on ?? "failure") as "failure",
-        project_id: resolved?.id,
-        created_at: now,
-        updated_at: now,
-      });
-      const proj = resolved ? ` (${resolved.name})` : "";
-      return `Created job: ${name}${proj}`;
-    }
-
-    case "job_get": {
-      const { name } = args as { name: string };
-      const job = await db.query.jobs.findFirst({ where: eq(jobs.name, name) });
-      if (!job) return `Job not found: ${name}`;
-      const lines = [
-        `Name: ${job.name}`,
-        `Command: ${job.command}`,
-        `Trigger: ${job.trigger_type}`,
-        `Enabled: ${job.enabled}`,
-        `Timeout: ${job.timeout_secs}s`,
-        `Max retries: ${job.max_retries}`,
-        `Notify on: ${job.notify_on}`,
-        `Run count: ${job.run_count}`,
-      ];
-      if (job.description) lines.push(`Description: ${job.description}`);
-      if (job.cron_expr) lines.push(`Cron: ${job.cron_expr}`);
-      if (job.watch_path) lines.push(`Watch: ${job.watch_path}`);
-      return lines.join("\n");
-    }
-
-    case "job_update": {
-      const {
-        name,
-        description,
-        command,
-        trigger_type,
-        cron_expr,
-        watch_path,
-        timeout_secs,
-        max_retries,
-        notify_on,
-        enabled,
-      } = args as {
-        name: string;
-        description?: string;
-        command?: string;
-        trigger_type?: string;
-        cron_expr?: string;
-        watch_path?: string;
-        timeout_secs?: number;
-        max_retries?: number;
-        notify_on?: string;
-        enabled?: boolean;
-      };
-      const job = await db.query.jobs.findFirst({ where: eq(jobs.name, name) });
-      if (!job) return `Job not found: ${name}`;
-      await db
-        .update(jobs)
-        .set({
-          ...(description !== undefined ? { description } : {}),
-          ...(command !== undefined ? { command } : {}),
-          ...(trigger_type ? { trigger_type: trigger_type as "manual" } : {}),
-          ...(cron_expr !== undefined ? { cron_expr } : {}),
-          ...(watch_path !== undefined ? { watch_path } : {}),
-          ...(timeout_secs !== undefined ? { timeout_secs } : {}),
-          ...(max_retries !== undefined ? { max_retries } : {}),
-          ...(notify_on ? { notify_on: notify_on as "failure" } : {}),
-          ...(enabled !== undefined ? { enabled } : {}),
-          updated_at: new Date(),
-        })
-        .where(eq(jobs.id, job.id));
-      return `Updated job: ${name}`;
-    }
-
-    case "job_delete": {
-      const { name } = args as { name: string };
-      const job = await db.query.jobs.findFirst({ where: eq(jobs.name, name) });
-      if (!job) return `Job not found: ${name}`;
-      await db.delete(jobs).where(eq(jobs.id, job.id));
-      return `Deleted job: ${name}`;
-    }
-
-    case "project_delete": {
-      const { name } = args as { name: string };
-      const sqlite = getSqlite(db);
-      const existing = sqlite
-        .query<{ id: string }, string>(
-          "SELECT id FROM projects WHERE name = ? COLLATE NOCASE LIMIT 1",
-        )
-        .get(name);
-      if (!existing) return `Project not found: ${name}`;
-      await db.delete(projects).where(eq(projects.id, existing.id));
-      return `Deleted project: ${name}`;
-    }
-
-    case "prompt_list": {
-      const { is_skill, limit } = args as { is_skill?: boolean; limit?: number };
-      const conditions = [];
-      if (is_skill !== undefined) {
-        conditions.push(eq(prompts.is_skill, is_skill));
-      }
-      const rows = await db.query.prompts.findMany({
-        where: conditions.length > 0 ? and(...conditions) : undefined,
-        limit: limit ?? 20,
-        orderBy: (p, { desc }) => [desc(p.updated_at)],
-      });
-      if (rows.length === 0) return "No prompts found.";
-      return rows
-        .map((p) => {
-          const skill = p.is_skill ? " [skill]" : "";
-          const pin = p.pinned ? " *" : "";
-          const desc = p.description ? `  ${p.description.slice(0, 60)}` : "";
-          return `[${p.id}] ${p.name}${skill}${pin}${desc}`;
-        })
-        .join("\n");
-    }
-
-    case "prompt_get": {
-      const { id } = args as { id: string };
-      const prompt =
-        (await db.query.prompts.findFirst({ where: eq(prompts.id, id) })) ??
-        (await db.query.prompts.findFirst({ where: eq(prompts.name, id) }));
-      if (!prompt) return `Prompt not found: ${id}`;
-      const lines = [
-        `ID: ${prompt.id}`,
-        `Name: ${prompt.name}`,
-        `Skill: ${prompt.is_skill}`,
-        `Pinned: ${prompt.pinned}`,
-        `Version: ${prompt.version}`,
-      ];
-      if (prompt.description) lines.push(`Description: ${prompt.description}`);
-      if (prompt.tags?.length) lines.push(`Tags: ${prompt.tags.join(", ")}`);
-      lines.push(`\n${prompt.template}`);
-      return lines.join("\n");
-    }
-
-    case "prompt_create": {
-      const { name, content, description, is_skill, tags, pinned } = args as {
-        name: string;
-        content: string;
-        description?: string;
-        is_skill?: boolean;
-        tags?: string[];
-        pinned?: boolean;
-      };
-      const id = ulid();
-      const now = new Date();
-      await db.insert(prompts).values({
-        id,
-        name,
-        template: content,
-        description,
-        is_skill: is_skill ?? false,
-        tags,
-        pinned: pinned ?? false,
-        created_at: now,
-        updated_at: now,
-      });
-      return `Created prompt: ${id} — ${name}`;
-    }
-
-    case "prompt_update": {
-      const { id, name, content, description, is_skill, tags, pinned } = args as {
-        id: string;
-        name?: string;
-        content?: string;
-        description?: string;
-        is_skill?: boolean;
-        tags?: string[];
-        pinned?: boolean;
-      };
-      const existing = await db.query.prompts.findFirst({ where: eq(prompts.id, id) });
-      if (!existing) return `Prompt not found: ${id}`;
-      await db
-        .update(prompts)
-        .set({
-          ...(name !== undefined ? { name } : {}),
-          ...(content !== undefined ? { template: content } : {}),
-          ...(description !== undefined ? { description } : {}),
-          ...(is_skill !== undefined ? { is_skill } : {}),
-          ...(tags !== undefined ? { tags } : {}),
-          ...(pinned !== undefined ? { pinned } : {}),
-          updated_at: new Date(),
-        })
-        .where(eq(prompts.id, id));
-      return `Updated prompt: ${id}`;
-    }
-
-    case "prompt_delete": {
-      const { id } = args as { id: string };
-      const existing = await db.query.prompts.findFirst({ where: eq(prompts.id, id) });
-      if (!existing) return `Prompt not found: ${id}`;
-      await db.delete(prompts).where(eq(prompts.id, id));
-      return `Deleted prompt: ${id}`;
     }
 
     default:

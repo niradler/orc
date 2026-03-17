@@ -62,34 +62,32 @@ bun build            # build all packages
 
 > `repeat` was removed — use `cron` with a 6-field expression for sub-minute intervals (e.g. `*/30 * * * * *` = every 30 s).
 
-## MCP Tools (packages/mcp/src/tools.ts)
+## MCP Tools (20 tools in packages/mcp/src/tools.ts)
 
 **Call `context` first in every session** — returns active tasks + key memories in ~200 tokens.
 
 All tools that accept `project` take a **readable project name** (e.g. `"orc"`), not a ULID. Omit to use `activeProject` from config.
 
+For CRUD operations not in MCP (delete, project management, job creation), use the `orc` CLI.
+
 | Tool | When to use |
 |---|---|
 | `context` | Session start — compact overview. Pass `project: "name"` to scope. |
-| `project_list` | Discover all projects (name, status, description) |
-| `project_get` | Get project details by name (case-insensitive) |
-| `project_create` | Create a new project. Names: `[a-zA-Z0-9_-]`, unique. |
-| `project_update` | Update project description, status, scope, tags |
 | `memory_search` | Find facts/decisions — 3-layer BM25. Pass `project` to scope. |
-| `memory_timeline` | Chronological context around a memory ID (what was stored before/after) |
 | `memory_get` | Fetch full content for specific IDs. Batch multiple IDs. Token-expensive — filter first. |
 | `memory_store` | Store a fact/decision/rule/event/discovery. Pass `project` to associate. |
-| `memory_delete` | Delete a memory by ID |
+| `search` | Unified search across tasks and memories. Use instead of separate calls. |
 | `task_list` | List active tasks (compact, no body). Pass `project` to filter. |
 | `task_get` | Fetch full task details by ID |
 | `task_create` | Create a task. Pass `project` to scope. |
 | `task_update` | Update status/priority/body |
+| `task_batch_create` | Create multiple tasks with dependency links atomically. |
 | `task_submit_review` | HITL checkpoint → sets status=review, pings Telegram if configured |
 | `task_check_review` | Poll review result: `pending \| approved \| changes_requested` |
-| `task_delegate` | Create task + optionally trigger job for multi-agent handoff |
 | `job_list` | List all jobs + last run status. Pass `project` to filter. |
 | `job_run` | Trigger a job by name |
 | `job_status` | Get run status/exit code/error for a run ID |
+| `project_list` | Discover all projects (name, status, description) |
 | `session_event` | Record significant action (file, task, decision, error, git, env, rule, plan). Deduped automatically. |
 | `session_snapshot` | Build ≤2KB XML snapshot — priority-tiered (P1: files/tasks, P2: decisions/git, P3: intent) |
 | `session_restore` | Restore session after compaction or agent restart |
