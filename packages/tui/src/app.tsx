@@ -1,4 +1,3 @@
-import { appendFileSync } from "node:fs";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { createOrcClient } from "@orc/sdk";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -111,13 +110,9 @@ export function App() {
   useKeyboard((key) => {
     const k = key as unknown as KeyEvent;
 
-    appendFileSync("tui-debug.log", `APP: key=${k.name}\n`);
-
     if (cmdHandleKey(k)) return;
 
-    const viewHandled = viewKeyHandlerRef.current(k);
-    appendFileSync("tui-debug.log", `VIEW: key=${k.name} handled=${viewHandled}\n`);
-    if (viewHandled) return;
+    if (viewKeyHandlerRef.current(k)) return;
 
     if (k.name === "1") setRoute("projects");
     if (k.name === "2") setRoute("tasks");

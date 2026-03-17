@@ -20,6 +20,7 @@ import type {
   Session,
   Task,
   TaskLink,
+  UpdateJobInput,
   UpdateProjectInput,
   UpdatePromptInput,
   UpdateTaskInput,
@@ -153,6 +154,10 @@ export function createOrcClient(options?: OrcClientOptions) {
       get: (id: string) => c<Job>("GET", `/jobs/${id}`),
 
       create: (input: CreateJobInput) => c<Job>("POST", "/jobs", input),
+
+      update: (id: string, input: UpdateJobInput) => c<Job>("PATCH", `/jobs/${id}`, input),
+
+      delete: (id: string) => c<null>("DELETE", `/jobs/${id}`),
 
       trigger: (id: string) => c<{ run_id: string }>("POST", `/jobs/${id}/trigger`),
 

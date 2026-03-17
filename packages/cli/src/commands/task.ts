@@ -174,6 +174,116 @@ export function taskCommand() {
       console.log(`Changes requested: [${data?.id.slice(-6)}] ${data?.title}`);
     });
 
+  cmd
+    .command("show <id>")
+    .description("Show task details")
+    .action(async (id: string) => {
+      const client = createOrcClient();
+      const full = await resolveTaskId(client, id);
+      if (!full) return;
+      const { data: task, error } = await client.tasks.get(full);
+      if (error) return console.error("Error:", error);
+      if (!task) return console.error("Task not found");
+
+      const label = (l: string, v: string | null | undefined) => {
+        if (v != null) console.log(`  ${color(l.padEnd(14), "2")} ${v}`);
+      };
+
+      console.log();
+      console.log(
+        `  ${colorStatus(statusIcon(task.status), task.status)} ${color(task.title, "1")}`,
+      );
+      console.log();
+      label("ID", task.id);
+      label("Status", `${statusIcon(task.status)} ${task.status}`);
+      label("Priority", `${priorityIcon(task.priority)} ${task.priority}`);
+      label("Progress", `${task.progress}%`);
+      label("Project", task.project_id ?? undefined);
+      label("Tags", task.tags?.join(", ") ?? undefined);
+      label("Due", task.due_at ?? undefined);
+      label("Author", task.author);
+      label("Claimed by", task.claimed_by ?? undefined);
+      label("Created", task.created_at);
+      label("Updated", task.updated_at);
+
+      if (task.body) {
+        console.log();
+        console.log(`  ${color("Body", "2")}`);
+        console.log(`  ${task.body}`);
+      }
+
+      // Show links if any
+      const { data: linkData } = await client.tasks.listLinks(full);
+      const links = linkData?.links ?? [];
+      if (links.length > 0) {
+        console.log();
+        console.log(`  ${color("Links", "2")}`);
+        for (const link of links) {
+          const target = link.from_task_id === full ? link.to_task_id : link.from_task_id;
+          console.log(`    ${link.link_type} → [${target.slice(-6)}]`);
+        }
+      }
+      console.log();
+    });
+
+  cmd
+    .command("update <id>")
+    .description("Update a task")
+    .option("--title <t>", "New title")
+    .option("--body <text>", "New body")
+    .option(
+      "--status <s>",
+      "New status (todo/doing/review/changes_requested/blocked/done/cancelled)",
+    )
+    .option("--priority <p>", "Priority (low/normal/high/critical)")
+    .option("--progress <n>", "Progress (0-100)")
+    .option("--tags <csv>", "Comma-separated tags")
+    .option("-p, --project <name>", "Move to project")
+    .option("--no-project", "Remove from project")
+    .action(async (id: string, opts) => {
+      const client = createOrcClient();
+      const full = await resolveTaskId(client, id);
+      if (!full) return;
+
+      const updates: Record<string, unknown> = {};
+      if (opts.title) updates.title = opts.title;
+      if (opts.body) updates.body = opts.body;
+      if (opts.status) updates.status = opts.status;
+      if (opts.priority) updates.priority = opts.priority;
+      if (opts.progress !== undefined && opts.progress !== true)
+        updates.progress = Number(opts.progress);
+      if (opts.tags) updates.tags = (opts.tags as string).split(",").map((t: string) => t.trim());
+
+      // Handle project option
+      const noProject = opts.project === false;
+      if (noProject) {
+        updates.project_id = null;
+      } else if (typeof opts.project === "string") {
+        const project = await resolveProject(client, { project: opts.project, noProject: false });
+        if (project) updates.project_id = project.id;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        return console.error("No updates specified. Use --help to see options.");
+      }
+
+      const { data, error } = await client.tasks.update(full, updates);
+      if (error) return console.error("Error:", error);
+      console.log(`Updated: [${data?.id.slice(-6)}] ${data?.title}`);
+    });
+
+  cmd
+    .command("delete <id>")
+    .description("Delete a task")
+    .action(async (id: string) => {
+      const client = createOrcClient();
+      const full = await resolveTaskId(client, id);
+      if (!full) return;
+      const { error } = await client.tasks.delete(full);
+      if (error) return console.error("Error:", error);
+      console.log(`Deleted: [${full.slice(-6)}]`);
+    });
+
   return cmd;
 }
 

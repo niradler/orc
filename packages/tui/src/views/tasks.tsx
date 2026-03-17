@@ -1,4 +1,3 @@
-import { appendFileSync } from "node:fs";
 import { createOrcClient } from "@orc/sdk";
 import type { Task } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -163,13 +162,10 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
-      appendFileSync("tui-debug.log", `TASK: key=${key.name} mode=${modeRef.current} formActive=${editFormRef.current.active}\n`);
       if (modeRef.current === "edit" || modeRef.current === "create") {
         const result: FormResult | null = editFormRef.current.handleKey(key);
-        appendFileSync("tui-debug.log", `FORM: key=${key.name} result=${JSON.stringify(result)} mode=${modeRef.current}\n`);
         if (result?.submitted) {
           const fn = modeRef.current === "create" ? doCreateRef.current : doEditRef.current;
-          appendFileSync("tui-debug.log", `SUBMIT: ${JSON.stringify(result.values)}\n`);
           fn(result.values);
         }
         if (!editFormRef.current.active) setMode("list");

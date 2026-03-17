@@ -260,5 +260,18 @@ export function projectCommand() {
       console.log(`Archived: ${data?.name} [${data?.id.slice(-6)}]`);
     });
 
+  cmd
+    .command("delete <name>")
+    .description("Delete a project")
+    .action(async (name: string) => {
+      const client = createOrcClient();
+      const { data: project, error: findErr } = await client.projects.getByName(name);
+      if (findErr || !project) return console.error(`Project not found: ${name}`);
+
+      const { error } = await client.projects.delete(project.id);
+      if (error) return console.error("Error:", error);
+      console.log(`Deleted project: ${name} [${project.id.slice(-6)}]`);
+    });
+
   return cmd;
 }

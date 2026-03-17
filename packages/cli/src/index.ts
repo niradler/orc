@@ -1,12 +1,19 @@
 #!/usr/bin/env bun
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadConfig } from "@orc/core/config";
 import { Command } from "commander";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
+
 import { daemonCommand, ORC_HOME, ORC_PID, readDaemonPid } from "./commands/daemon.js";
 import { gatewayCommand } from "./commands/gateway.js";
 import { jobCommand } from "./commands/job.js";
 import { memCommand } from "./commands/mem.js";
 import { projectCommand } from "./commands/project.js";
+import { promptCommand } from "./commands/prompt.js";
 import { sessionCommand } from "./commands/session.js";
 import { statusCommand } from "./commands/status.js";
 import { taskCommand } from "./commands/task.js";
@@ -25,7 +32,7 @@ type GlobalOpts = {
 const program = new Command()
   .name("orc")
   .description("Human + AI Orchestration Hub")
-  .version("0.1.2")
+  .version(pkg.version)
   .option("--db <path>", "DB file path (overrides ORC_DB_PATH / config.json)")
   .option("--port <n>", "API port (overrides ORC_API_PORT / config.json)")
   .option("--host <host>", "API host (overrides ORC_API_HOST / config.json)")
@@ -60,6 +67,7 @@ program.addCommand(jobCommand());
 program.addCommand(sessionCommand());
 program.addCommand(daemonCommand());
 program.addCommand(gatewayCommand());
+program.addCommand(promptCommand());
 program.addCommand(statusCommand());
 
 program

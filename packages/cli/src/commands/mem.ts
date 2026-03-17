@@ -92,6 +92,50 @@ export function memCommand() {
       }
     });
 
+  cmd
+    .command("show <id>")
+    .description("Show memory details")
+    .action(async (id: string) => {
+      const client = createOrcClient();
+      const { data, error } = await client.memories.list({ limit: 200 });
+      if (error) return console.error("Error:", error);
+      const mem = (data?.memories ?? []).find((m) => m.id === id || m.id.endsWith(id));
+      if (!mem) return console.error(`Memory not found: ${id}`);
+
+      const fields: [string, unknown][] = [
+        ["ID", mem.id],
+        ["Content", mem.content],
+        ["Scope", mem.scope],
+        ["Source", mem.source],
+        ["Importance", mem.importance],
+        ["Project ID", mem.project_id],
+        ["Tags", mem.tags?.join(", ")],
+        ["Expires", mem.expires_at],
+        ["Created", mem.created_at],
+        ["Updated", mem.updated_at],
+      ];
+
+      for (const [label, value] of fields) {
+        if (value !== undefined && value !== null && value !== "")
+          console.log(`${label.padEnd(14)} ${value}`);
+      }
+    });
+
+  cmd
+    .command("delete <id>")
+    .description("Delete a memory")
+    .action(async (id: string) => {
+      const client = createOrcClient();
+      const { data, error: listErr } = await client.memories.list({ limit: 200 });
+      if (listErr) return console.error("Error:", listErr);
+      const mem = (data?.memories ?? []).find((m) => m.id === id || m.id.endsWith(id));
+      if (!mem) return console.error(`Memory not found: ${id}`);
+
+      const { error } = await client.memories.delete(mem.id);
+      if (error) return console.error("Error:", error);
+      console.log(`Deleted memory: [${mem.id.slice(-6)}] ${mem.content.slice(0, 60)}`);
+    });
+
   return cmd;
 }
 
