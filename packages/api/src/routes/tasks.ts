@@ -4,7 +4,7 @@ import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import { TaskPrioritySchema, TaskStatusSchema } from "@orc/core/types";
 import { getDb } from "@orc/db/client";
-import { task_links, task_notes, tasks } from "@orc/db/schema";
+import { comments, task_links, tasks } from "@orc/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { checkBlockers, rollupParentProgress, unblockDependents } from "../lib/task-deps.js";
 
@@ -34,15 +34,16 @@ const TaskSchema = z
   })
   .openapi("Task");
 
-const NoteSchema = z
+const CommentSchema = z
   .object({
     id: z.string(),
-    task_id: z.string(),
+    resource_type: z.string(),
+    resource_id: z.string(),
     content: z.string(),
     author: z.string(),
     created_at: z.string().datetime(),
   })
-  .openapi("TaskNote");
+  .openapi("Comment");
 
 const CreateTaskSchema = z
   .object({
@@ -215,7 +216,7 @@ const checkReviewRoute = createRoute({
           schema: z
             .object({
               status: z.enum(["review", "approved", "changes_requested", "pending"]),
-              note: z.string().nullable(),
+              comment: z.string().nullable(),
             })
             .openapi("ReviewStatus"),
         },
@@ -224,25 +225,25 @@ const checkReviewRoute = createRoute({
   },
 });
 
-const listNotesRoute = createRoute({
+const listCommentsRoute = createRoute({
   method: "get",
-  path: "/tasks/{id}/notes",
+  path: "/tasks/{id}/comments",
   tags: ["Tasks"],
-  summary: "List task notes",
+  summary: "List task comments",
   request: { params: z.object({ id: z.string() }) },
   responses: {
     200: {
-      description: "Notes",
-      content: { "application/json": { schema: z.object({ notes: z.array(NoteSchema) }) } },
+      description: "Comments",
+      content: { "application/json": { schema: z.object({ comments: z.array(CommentSchema) }) } },
     },
   },
 });
 
-const addNoteRoute = createRoute({
+const addCommentRoute = createRoute({
   method: "post",
-  path: "/tasks/{id}/notes",
+  path: "/tasks/{id}/comments",
   tags: ["Tasks"],
-  summary: "Add a note to a task",
+  summary: "Add a comment to a task",
   request: {
     params: z.object({ id: z.string() }),
     body: {
@@ -253,13 +254,13 @@ const addNoteRoute = createRoute({
               content: z.string().min(1),
               author: z.string().optional().default("human"),
             })
-            .openapi("AddNote"),
+            .openapi("AddComment"),
         },
       },
     },
   },
   responses: {
-    201: { description: "Note added", content: { "application/json": { schema: NoteSchema } } },
+    201: { description: "Comment added", content: { "application/json": { schema: CommentSchema } } },
   },
 });
 
@@ -272,7 +273,7 @@ function toDto(t: typeof tasks.$inferSelect) {
   };
 }
 
-function noteToDto(n: typeof task_notes.$inferSelect) {
+function commentToDto(n: typeof comments.$inferSelect) {
   return {
     ...n,
     created_at: n.created_at.toISOString(),
@@ -398,9 +399,10 @@ app.openapi(reviewRoute, async (c) => {
     .set({ status: "review", body: summary, updated_at: now })
     .where(eq(tasks.id, id));
 
-  await db.insert(task_notes).values({
+  await db.insert(comments).values({
     id: ulid(),
-    task_id: id,
+    resource_type: "task",
+    resource_id: id,
     content: `[review submitted] ${summary}`,
     author: "agent",
     created_at: now,
@@ -418,9 +420,9 @@ app.openapi(checkReviewRoute, async (c) => {
   const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!task) throw new NotFoundError("Task", id);
 
-  const lastNote = await db.query.task_notes.findFirst({
-    where: and(eq(task_notes.task_id, id), eq(task_notes.author, "human")),
-    orderBy: [desc(task_notes.created_at)],
+  const lastComment = await db.query.comments.findFirst({
+    where: and(eq(comments.resource_type, "task"), eq(comments.resource_id, id), eq(comments.author, "human")),
+    orderBy: [desc(comments.created_at)],
   });
 
   type ReviewStatus = "review" | "approved" | "changes_requested" | "pending";
@@ -431,25 +433,25 @@ app.openapi(checkReviewRoute, async (c) => {
   };
   const status: ReviewStatus = statusMap[task.status] ?? "pending";
 
-  return c.json({ status, note: lastNote?.content ?? null });
+  return c.json({ status, comment: lastComment?.content ?? null });
 });
 
-app.openapi(listNotesRoute, async (c) => {
+app.openapi(listCommentsRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
 
   const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!task) throw new NotFoundError("Task", id);
 
-  const notes = await db.query.task_notes.findMany({
-    where: eq(task_notes.task_id, id),
-    orderBy: [desc(task_notes.created_at)],
+  const rows = await db.query.comments.findMany({
+    where: and(eq(comments.resource_type, "task"), eq(comments.resource_id, id)),
+    orderBy: [desc(comments.created_at)],
   });
 
-  return c.json({ notes: notes.map(noteToDto) });
+  return c.json({ comments: rows.map(commentToDto) });
 });
 
-app.openapi(addNoteRoute, async (c) => {
+app.openapi(addCommentRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
   const { content, author } = c.req.valid("json");
@@ -457,13 +459,13 @@ app.openapi(addNoteRoute, async (c) => {
   const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!task) throw new NotFoundError("Task", id);
 
-  const noteId = ulid();
+  const commentId = ulid();
   const now = new Date();
-  await db.insert(task_notes).values({ id: noteId, task_id: id, content, author, created_at: now });
+  await db.insert(comments).values({ id: commentId, resource_type: "task", resource_id: id, content, author, created_at: now });
 
-  const note = await db.query.task_notes.findFirst({ where: eq(task_notes.id, noteId) });
-  if (!note) throw new Error("Expected note to exist after write");
-  return c.json(noteToDto(note), 201);
+  const comment = await db.query.comments.findFirst({ where: eq(comments.id, commentId) });
+  if (!comment) throw new Error("Expected comment to exist after write");
+  return c.json(commentToDto(comment), 201);
 });
 
 app.openapi(batchCreateRoute, async (c) => {

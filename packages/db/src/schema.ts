@@ -45,15 +45,18 @@ export const tasks = sqliteTable("tasks", {
   ...timestamps,
 });
 
-export const task_notes = sqliteTable("task_notes", {
-  id: text("id").primaryKey(),
-  task_id: text("task_id")
-    .notNull()
-    .references(() => tasks.id, { onDelete: "cascade" }),
-  content: text("content").notNull(),
-  author: text("author").default("human").notNull(),
-  created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
-});
+export const comments = sqliteTable(
+  "comments",
+  {
+    id: text("id").primaryKey(),
+    resource_type: text("resource_type", { enum: ["task", "project", "job", "memory"] }).notNull(),
+    resource_id: text("resource_id").notNull(),
+    content: text("content").notNull(),
+    author: text("author").default("human").notNull(),
+    created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+  },
+  (t) => [index("comments_resource_idx").on(t.resource_type, t.resource_id)],
+);
 
 export const task_links = sqliteTable(
   "task_links",
@@ -324,7 +327,7 @@ export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
-export type TaskNote = typeof task_notes.$inferSelect;
+export type Comment = typeof comments.$inferSelect;
 export type TaskLink = typeof task_links.$inferSelect;
 export type NewTaskLink = typeof task_links.$inferInsert;
 export type Memory = typeof memories.$inferSelect;

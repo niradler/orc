@@ -105,11 +105,17 @@ export function createOrcClient(options?: OrcClientOptions) {
 
       delete: (id: string) => c<null>("DELETE", `/tasks/${id}`),
 
-      addNote: (id: string, content: string, author = "human") =>
-        c<{ id: string; task_id: string; content: string; author: string; created_at: string }>(
+      addComment: (id: string, content: string, author = "human") =>
+        c<{ id: string; resource_type: string; resource_id: string; content: string; author: string; created_at: string }>(
           "POST",
-          `/tasks/${id}/notes`,
+          `/tasks/${id}/comments`,
           { content, author },
+        ),
+
+      listComments: (id: string) =>
+        c<{ comments: { id: string; resource_type: string; resource_id: string; content: string; author: string; created_at: string }[] }>(
+          "GET",
+          `/tasks/${id}/comments`,
         ),
 
       listLinks: (id: string) => c<{ links: TaskLink[] }>("GET", `/tasks/${id}/links`),
@@ -223,6 +229,19 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<Project>("PATCH", `/projects/${id}`, input),
 
       delete: (id: string) => c<null>("DELETE", `/projects/${id}`),
+
+      addComment: (id: string, content: string, author = "human") =>
+        c<{ id: string; resource_type: string; resource_id: string; content: string; author: string; created_at: string }>(
+          "POST",
+          `/projects/${id}/comments`,
+          { content, author },
+        ),
+
+      listComments: (id: string) =>
+        c<{ comments: { id: string; resource_type: string; resource_id: string; content: string; author: string; created_at: string }[] }>(
+          "GET",
+          `/projects/${id}/comments`,
+        ),
     },
 
     sessions: {

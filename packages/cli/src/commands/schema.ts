@@ -28,7 +28,7 @@ function authHeaders(): Record<string, string> {
 }
 
 const SCHEMA_MAP: Record<string, string[]> = {
-  task: ["Task", "CreateTask", "UpdateTask", "TaskNote", "TaskLink"],
+  task: ["Task", "CreateTask", "UpdateTask", "Comment", "TaskLink"],
   memory: ["Memory", "CreateMemory"],
   job: ["Job", "CreateJob", "UpdateJob", "JobRun"],
   project: ["Project", "CreateProject", "UpdateProject"],

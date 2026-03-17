@@ -156,7 +156,7 @@ export function taskCommand() {
   cmd
     .command("approve <id>")
     .description("Approve a task in review (HITL)")
-    .option("-n, --note <text>", "Optional note to add")
+    .option("-c, --comment <text>", "Optional comment to add")
     .action(async (id: string, opts) => {
       const client = createOrcClient();
       const full = await resolveTaskId(client, id);
@@ -174,7 +174,7 @@ export function taskCommand() {
         if (isJson()) return jsonErr(String(error));
         return console.error("Error:", error);
       }
-      if (opts.note) await client.tasks.addNote(full, opts.note, "human");
+      if (opts.comment) await client.tasks.addComment(full, opts.comment, "human");
       if (isJson()) return jsonOut(data);
       console.log(`Approved: [${data?.id.slice(-6)}] ${data?.title}`);
     });
@@ -200,7 +200,7 @@ export function taskCommand() {
         if (isJson()) return jsonErr(String(error));
         return console.error("Error:", error);
       }
-      if (opts.reason) await client.tasks.addNote(full, opts.reason, "human");
+      if (opts.reason) await client.tasks.addComment(full, opts.reason, "human");
       if (isJson()) return jsonOut(data);
       console.log(`Changes requested: [${data?.id.slice(-6)}] ${data?.title}`);
     });

@@ -40,13 +40,16 @@ function setupDb(sqlite: Database): void {
       updated_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
-    CREATE TABLE IF NOT EXISTS task_notes (
+    CREATE TABLE IF NOT EXISTS comments (
       id TEXT PRIMARY KEY,
-      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      resource_type TEXT NOT NULL,
+      resource_id TEXT NOT NULL,
       content TEXT NOT NULL,
       author TEXT NOT NULL DEFAULT 'human',
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
+
+    CREATE INDEX IF NOT EXISTS comments_resource_idx ON comments(resource_type, resource_id);
 
     CREATE TABLE IF NOT EXISTS task_links (
       id TEXT PRIMARY KEY,
@@ -360,6 +363,10 @@ function setupDb(sqlite: Database): void {
     "CREATE UNIQUE INDEX IF NOT EXISTS projects_name_idx ON projects(name)",
     "ALTER TABLE memories ADD COLUMN access_count INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE memories ADD COLUMN last_accessed_at INTEGER",
+    "INSERT INTO comments (id, resource_type, resource_id, content, author, created_at) SELECT id, 'task', task_id, content, author, created_at FROM task_notes WHERE 1",
+    "DROP TABLE IF EXISTS task_notes",
+    "DROP TABLE IF EXISTS task_comments",
+    "DROP TABLE IF EXISTS project_comments",
   ];
   for (const statement of migrations) {
     try {

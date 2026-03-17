@@ -163,22 +163,23 @@ describe("Tasks CRUD", () => {
     });
   });
 
-  describe("POST /tasks/:id/notes", () => {
-    test("adds a note to a task", async () => {
-      const res = await req(app, "POST", `/tasks/${taskId}/notes`, {
-        content: "This is a note",
+  describe("POST /tasks/:id/comments", () => {
+    test("adds a comment to a task", async () => {
+      const res = await req(app, "POST", `/tasks/${taskId}/comments`, {
+        content: "This is a comment",
         author: "human",
       });
       expect(res.status).toBe(201);
       const body = await res.json();
-      expect(body.content).toBe("This is a note");
+      expect(body.content).toBe("This is a comment");
       expect(body.author).toBe("human");
-      expect(body.task_id).toBe(taskId);
+      expect(body.resource_id).toBe(taskId);
+      expect(body.resource_type).toBe("task");
     });
 
-    test("adds a note with default author", async () => {
-      const res = await req(app, "POST", `/tasks/${taskId}/notes`, {
-        content: "Default author note",
+    test("adds a comment with default author", async () => {
+      const res = await req(app, "POST", `/tasks/${taskId}/comments`, {
+        content: "Default author comment",
       });
       expect(res.status).toBe(201);
       const body = await res.json();
@@ -186,21 +187,22 @@ describe("Tasks CRUD", () => {
     });
 
     test("returns 404 for non-existent task", async () => {
-      const res = await req(app, "POST", "/tasks/nonexistent-id/notes", {
+      const res = await req(app, "POST", "/tasks/nonexistent-id/comments", {
         content: "nope",
       });
       expect(res.status).toBe(404);
     });
   });
 
-  describe("GET /tasks/:id/notes", () => {
-    test("lists notes for a task", async () => {
-      const res = await req(app, "GET", `/tasks/${taskId}/notes`);
+  describe("GET /tasks/:id/comments", () => {
+    test("lists comments for a task", async () => {
+      const res = await req(app, "GET", `/tasks/${taskId}/comments`);
       expect(res.status).toBe(200);
       const body = await res.json();
-      expect(body.notes.length).toBeGreaterThanOrEqual(2);
-      for (const n of body.notes) {
-        expect(n.task_id).toBe(taskId);
+      expect(body.comments.length).toBeGreaterThanOrEqual(2);
+      for (const n of body.comments) {
+        expect(n.resource_id).toBe(taskId);
+        expect(n.resource_type).toBe("task");
       }
     });
   });

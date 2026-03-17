@@ -9,7 +9,6 @@ export type TaskStatus =
 export type TaskPriority = "low" | "normal" | "high" | "critical";
 export type TaskType = "feature" | "bug" | "research" | "ops" | "chore" | "coordination";
 export type TaskExecutionMode = "solo" | "pair" | "parallel" | "handoff";
-export type TaskNoteKind = "comment" | "checkpoint" | "handoff" | "review" | "claim" | "system";
 export type TaskLinkType =
   | "blocks"
   | "blocked_by"
@@ -39,13 +38,12 @@ export type Task = {
   updated_at: string;
 };
 
-export type TaskNote = {
+export type Comment = {
   id: string;
-  task_id: string;
+  resource_type: string;
+  resource_id: string;
   content: string;
   author: string;
-  kind: TaskNoteKind;
-  metadata: Record<string, unknown> | null;
   created_at: string;
 };
 

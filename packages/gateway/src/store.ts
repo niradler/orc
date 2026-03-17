@@ -9,7 +9,7 @@ import {
   job_runs,
   jobs,
   memories,
-  task_notes,
+  comments,
   tasks,
 } from "@orc/db/schema";
 import { and, desc, eq, inArray } from "drizzle-orm";
@@ -259,8 +259,8 @@ export async function approveTask(
   await db.update(tasks).set({ status: "done", updated_at: now }).where(eq(tasks.id, taskId));
   if (note) {
     await db
-      .insert(task_notes)
-      .values({ id: ulid(), task_id: taskId, content: note, author: "human", created_at: now });
+      .insert(comments)
+      .values({ id: ulid(), resource_type: "task", resource_id: taskId, content: note, author: "human", created_at: now });
   }
   return (await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) })) ?? null;
 }
@@ -279,8 +279,8 @@ export async function rejectTask(
     .where(eq(tasks.id, taskId));
   if (note) {
     await db
-      .insert(task_notes)
-      .values({ id: ulid(), task_id: taskId, content: note, author: "human", created_at: now });
+      .insert(comments)
+      .values({ id: ulid(), resource_type: "task", resource_id: taskId, content: note, author: "human", created_at: now });
   }
   return (await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) })) ?? null;
 }
