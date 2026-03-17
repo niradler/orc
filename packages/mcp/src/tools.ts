@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import { getDb } from "@orc/db/client";
-import { job_runs, jobs, memories, projects, sessions, tasks } from "@orc/db/schema";
+import { job_runs, jobs, memories, projects, prompts, sessions, tasks } from "@orc/db/schema";
 import { executeJob } from "@orc/runner/executor";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -142,7 +142,9 @@ export const toolDefinitions = [
       assign_to: z
         .string()
         .optional()
-        .describe("Agent/session name to assign (e.g. 'claude-code', 'claude-frontend', 'codex'). Creates a claim."),
+        .describe(
+          "Agent/session name to assign (e.g. 'claude-code', 'claude-frontend', 'codex'). Creates a claim.",
+        ),
       trigger_job: z
         .string()
         .optional()
@@ -242,8 +244,7 @@ export const toolDefinitions = [
   },
   {
     name: "project_get",
-    description:
-      "Get a project by name (case-insensitive). Returns full project details.",
+    description: "Get a project by name (case-insensitive). Returns full project details.",
     inputSchema: z.object({
       name: z.string().describe("Project name (case-insensitive)"),
     }),
@@ -272,6 +273,118 @@ export const toolDefinitions = [
       status: z.enum(["active", "archived", "paused"]).optional(),
       scope: z.string().optional(),
       tags: z.array(z.string()).optional(),
+    }),
+  },
+  {
+    name: "task_delete",
+    description: "Delete a task by ID. Irreversible.",
+    inputSchema: z.object({
+      id: z.string().describe("Task ID to delete"),
+    }),
+  },
+  {
+    name: "job_create",
+    description: "Create a new job.",
+    inputSchema: z.object({
+      name: z.string().describe("Unique job name"),
+      command: z.string().describe("Shell command to execute"),
+      description: z.string().optional(),
+      trigger_type: z
+        .enum(["one-shot", "cron", "watch", "webhook", "manual", "bridge-msg"])
+        .optional()
+        .default("manual"),
+      cron_expr: z.string().optional(),
+      watch_path: z.string().optional(),
+      timeout_secs: z.number().int().optional().default(300),
+      max_retries: z.number().int().optional().default(0),
+      notify_on: z.enum(["never", "failure", "always"]).optional().default("failure"),
+      project: projectParam,
+    }),
+  },
+  {
+    name: "job_get",
+    description: "Get a job by name.",
+    inputSchema: z.object({
+      name: z.string().describe("Job name"),
+    }),
+  },
+  {
+    name: "job_update",
+    description: "Update a job by name.",
+    inputSchema: z.object({
+      name: z.string().describe("Current job name"),
+      description: z.string().optional(),
+      command: z.string().optional(),
+      trigger_type: z
+        .enum(["one-shot", "cron", "watch", "webhook", "manual", "bridge-msg"])
+        .optional(),
+      cron_expr: z.string().optional(),
+      watch_path: z.string().optional(),
+      timeout_secs: z.number().int().optional(),
+      max_retries: z.number().int().optional(),
+      notify_on: z.enum(["never", "failure", "always"]).optional(),
+      enabled: z.boolean().optional(),
+    }),
+  },
+  {
+    name: "job_delete",
+    description: "Delete a job by name. Irreversible.",
+    inputSchema: z.object({
+      name: z.string().describe("Job name to delete"),
+    }),
+  },
+  {
+    name: "project_delete",
+    description: "Delete a project by name (case-insensitive). Irreversible.",
+    inputSchema: z.object({
+      name: z.string().describe("Project name to delete"),
+    }),
+  },
+  {
+    name: "prompt_list",
+    description: "List prompts. Optionally filter by skill status.",
+    inputSchema: z.object({
+      is_skill: z.boolean().optional().describe("Filter by skill status"),
+      limit: z.number().int().min(1).max(100).optional().default(20),
+    }),
+  },
+  {
+    name: "prompt_get",
+    description: "Get a prompt by ID or name.",
+    inputSchema: z.object({
+      id: z.string().describe("Prompt ID or name"),
+    }),
+  },
+  {
+    name: "prompt_create",
+    description: "Create a new prompt.",
+    inputSchema: z.object({
+      name: z.string().describe("Unique prompt name"),
+      content: z.string().describe("Prompt template content"),
+      description: z.string().optional(),
+      is_skill: z.boolean().optional(),
+      tags: z.array(z.string()).optional(),
+      pinned: z.boolean().optional(),
+    }),
+  },
+  {
+    name: "prompt_update",
+    description: "Update a prompt by ID.",
+    inputSchema: z.object({
+      id: z.string().describe("Prompt ID"),
+      name: z.string().optional(),
+      content: z.string().optional(),
+      description: z.string().optional(),
+      is_skill: z.boolean().optional(),
+      tags: z.array(z.string()).optional(),
+      pinned: z.boolean().optional(),
+    }),
+  },
+  {
+    name: "prompt_delete",
+    description: "Delete a prompt by ID. Irreversible.",
+    inputSchema: z.object({
+      id: z.string().describe("Prompt ID to delete"),
     }),
   },
 ] as const;
@@ -410,7 +523,9 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         limit: limit ?? 20,
         orderBy: (t, { desc }) => [desc(t.updated_at)],
       });
-      const filtered = status ? rows : rows.filter((t) => !["done", "cancelled"].includes(t.status));
+      const filtered = status
+        ? rows
+        : rows.filter((t) => !["done", "cancelled"].includes(t.status));
       if (filtered.length === 0) return "No active tasks.";
       return filtered
         .map((t) => `[${t.id}] ${t.status.padEnd(18)} ${t.priority.padEnd(8)} ${t.title}`)
@@ -542,7 +657,9 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           executeJob({ jobId: job.id, runId, triggerBy: "mcp:task_delegate" }).catch(() => {});
           parts.push(`Triggered job: ${trigger_job} → run_id: ${runId}`);
         } else {
-          parts.push(`Warning: job '${trigger_job}' not found — task created but job not triggered`);
+          parts.push(
+            `Warning: job '${trigger_job}' not found — task created but job not triggered`,
+          );
         }
       }
 
@@ -603,9 +720,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         limit: taskLimit,
         orderBy: (t, { desc }) => [desc(t.updated_at)],
       });
-      const filtered = activeTasks.filter(
-        (t) => !["done", "cancelled"].includes(t.status),
-      );
+      const filtered = activeTasks.filter((t) => !["done", "cancelled"].includes(t.status));
 
       const memConditions = [];
       if (resolved) memConditions.push(eq(memories.project_id, resolved.id));
@@ -856,10 +971,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         )
         .get(name);
       if (!project) return `Project not found: ${name}`;
-      const lines = [
-        `Name: ${project.name}`,
-        `Status: ${project.status}`,
-      ];
+      const lines = [`Name: ${project.name}`, `Status: ${project.status}`];
       if (project.description) lines.push(`Description: ${project.description}`);
       if (project.scope) lines.push(`Scope: ${project.scope}`);
       if (project.tags?.length) lines.push(`Tags: ${project.tags.join(", ")}`);
@@ -914,6 +1026,224 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         })
         .where(eq(projects.id, existing.id));
       return `Updated project: ${name}`;
+    }
+
+    case "task_delete": {
+      const { id } = args as { id: string };
+      const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
+      if (!existing) return `Task not found: ${id}`;
+      await db.delete(tasks).where(eq(tasks.id, id));
+      return `Deleted: ${id}`;
+    }
+
+    case "job_create": {
+      const { name, command, description, trigger_type, cron_expr, watch_path, timeout_secs, max_retries, notify_on, project } = args as {
+        name: string;
+        command: string;
+        description?: string;
+        trigger_type?: string;
+        cron_expr?: string;
+        watch_path?: string;
+        timeout_secs?: number;
+        max_retries?: number;
+        notify_on?: string;
+        project?: string;
+      };
+      const resolved = resolveProjectId(getSqlite(db), project);
+      const id = ulid();
+      const now = new Date();
+      await db.insert(jobs).values({
+        id,
+        name,
+        command,
+        description,
+        trigger_type: (trigger_type ?? "manual") as "manual",
+        cron_expr,
+        watch_path,
+        timeout_secs: timeout_secs ?? 300,
+        max_retries: max_retries ?? 0,
+        notify_on: (notify_on ?? "failure") as "failure",
+        project_id: resolved?.id,
+        created_at: now,
+        updated_at: now,
+      });
+      const proj = resolved ? ` (${resolved.name})` : "";
+      return `Created job: ${name}${proj}`;
+    }
+
+    case "job_get": {
+      const { name } = args as { name: string };
+      const job = await db.query.jobs.findFirst({ where: eq(jobs.name, name) });
+      if (!job) return `Job not found: ${name}`;
+      const lines = [
+        `Name: ${job.name}`,
+        `Command: ${job.command}`,
+        `Trigger: ${job.trigger_type}`,
+        `Enabled: ${job.enabled}`,
+        `Timeout: ${job.timeout_secs}s`,
+        `Max retries: ${job.max_retries}`,
+        `Notify on: ${job.notify_on}`,
+        `Run count: ${job.run_count}`,
+      ];
+      if (job.description) lines.push(`Description: ${job.description}`);
+      if (job.cron_expr) lines.push(`Cron: ${job.cron_expr}`);
+      if (job.watch_path) lines.push(`Watch: ${job.watch_path}`);
+      return lines.join("\n");
+    }
+
+    case "job_update": {
+      const { name, description, command, trigger_type, cron_expr, watch_path, timeout_secs, max_retries, notify_on, enabled } = args as {
+        name: string;
+        description?: string;
+        command?: string;
+        trigger_type?: string;
+        cron_expr?: string;
+        watch_path?: string;
+        timeout_secs?: number;
+        max_retries?: number;
+        notify_on?: string;
+        enabled?: boolean;
+      };
+      const job = await db.query.jobs.findFirst({ where: eq(jobs.name, name) });
+      if (!job) return `Job not found: ${name}`;
+      await db
+        .update(jobs)
+        .set({
+          ...(description !== undefined ? { description } : {}),
+          ...(command !== undefined ? { command } : {}),
+          ...(trigger_type ? { trigger_type: trigger_type as "manual" } : {}),
+          ...(cron_expr !== undefined ? { cron_expr } : {}),
+          ...(watch_path !== undefined ? { watch_path } : {}),
+          ...(timeout_secs !== undefined ? { timeout_secs } : {}),
+          ...(max_retries !== undefined ? { max_retries } : {}),
+          ...(notify_on ? { notify_on: notify_on as "failure" } : {}),
+          ...(enabled !== undefined ? { enabled } : {}),
+          updated_at: new Date(),
+        })
+        .where(eq(jobs.id, job.id));
+      return `Updated job: ${name}`;
+    }
+
+    case "job_delete": {
+      const { name } = args as { name: string };
+      const job = await db.query.jobs.findFirst({ where: eq(jobs.name, name) });
+      if (!job) return `Job not found: ${name}`;
+      await db.delete(jobs).where(eq(jobs.id, job.id));
+      return `Deleted job: ${name}`;
+    }
+
+    case "project_delete": {
+      const { name } = args as { name: string };
+      const sqlite = getSqlite(db);
+      const existing = sqlite
+        .query<{ id: string }, string>(
+          "SELECT id FROM projects WHERE name = ? COLLATE NOCASE LIMIT 1",
+        )
+        .get(name);
+      if (!existing) return `Project not found: ${name}`;
+      await db.delete(projects).where(eq(projects.id, existing.id));
+      return `Deleted project: ${name}`;
+    }
+
+    case "prompt_list": {
+      const { is_skill, limit } = args as { is_skill?: boolean; limit?: number };
+      const conditions = [];
+      if (is_skill !== undefined) {
+        conditions.push(eq(prompts.is_skill, is_skill));
+      }
+      const rows = await db.query.prompts.findMany({
+        where: conditions.length > 0 ? and(...conditions) : undefined,
+        limit: limit ?? 20,
+        orderBy: (p, { desc }) => [desc(p.updated_at)],
+      });
+      if (rows.length === 0) return "No prompts found.";
+      return rows
+        .map((p) => {
+          const skill = p.is_skill ? " [skill]" : "";
+          const pin = p.pinned ? " *" : "";
+          const desc = p.description ? `  ${p.description.slice(0, 60)}` : "";
+          return `[${p.id}] ${p.name}${skill}${pin}${desc}`;
+        })
+        .join("\n");
+    }
+
+    case "prompt_get": {
+      const { id } = args as { id: string };
+      const prompt =
+        (await db.query.prompts.findFirst({ where: eq(prompts.id, id) })) ??
+        (await db.query.prompts.findFirst({ where: eq(prompts.name, id) }));
+      if (!prompt) return `Prompt not found: ${id}`;
+      const lines = [
+        `ID: ${prompt.id}`,
+        `Name: ${prompt.name}`,
+        `Skill: ${prompt.is_skill}`,
+        `Pinned: ${prompt.pinned}`,
+        `Version: ${prompt.version}`,
+      ];
+      if (prompt.description) lines.push(`Description: ${prompt.description}`);
+      if (prompt.tags?.length) lines.push(`Tags: ${prompt.tags.join(", ")}`);
+      lines.push(`\n${prompt.template}`);
+      return lines.join("\n");
+    }
+
+    case "prompt_create": {
+      const { name, content, description, is_skill, tags, pinned } = args as {
+        name: string;
+        content: string;
+        description?: string;
+        is_skill?: boolean;
+        tags?: string[];
+        pinned?: boolean;
+      };
+      const id = ulid();
+      const now = new Date();
+      await db.insert(prompts).values({
+        id,
+        name,
+        template: content,
+        description,
+        is_skill: is_skill ?? false,
+        tags,
+        pinned: pinned ?? false,
+        created_at: now,
+        updated_at: now,
+      });
+      return `Created prompt: ${id} — ${name}`;
+    }
+
+    case "prompt_update": {
+      const { id, name, content, description, is_skill, tags, pinned } = args as {
+        id: string;
+        name?: string;
+        content?: string;
+        description?: string;
+        is_skill?: boolean;
+        tags?: string[];
+        pinned?: boolean;
+      };
+      const existing = await db.query.prompts.findFirst({ where: eq(prompts.id, id) });
+      if (!existing) return `Prompt not found: ${id}`;
+      await db
+        .update(prompts)
+        .set({
+          ...(name !== undefined ? { name } : {}),
+          ...(content !== undefined ? { template: content } : {}),
+          ...(description !== undefined ? { description } : {}),
+          ...(is_skill !== undefined ? { is_skill } : {}),
+          ...(tags !== undefined ? { tags } : {}),
+          ...(pinned !== undefined ? { pinned } : {}),
+          updated_at: new Date(),
+        })
+        .where(eq(prompts.id, id));
+      return `Updated prompt: ${id}`;
+    }
+
+    case "prompt_delete": {
+      const { id } = args as { id: string };
+      const existing = await db.query.prompts.findFirst({ where: eq(prompts.id, id) });
+      if (!existing) return `Prompt not found: ${id}`;
+      await db.delete(prompts).where(eq(prompts.id, id));
+      return `Deleted prompt: ${id}`;
     }
 
     default:

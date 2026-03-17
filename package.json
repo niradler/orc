@@ -17,7 +17,7 @@
     "db:push": "bun run --filter @orc/db push",
     "db:studio": "bun run --filter @orc/db studio",
     "sdk:generate": "bun run --filter @orc/sdk generate",
-    "tui": "bun run --filter @orc/tui dev",
+    "tui": "bun --hot packages/tui/src/index.tsx",
     "test": "bun run --filter '*' test",
     "clean": "bun run --filter '*' clean"
   },

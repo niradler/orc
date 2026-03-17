@@ -84,6 +84,96 @@ export function jobCommand() {
     });
 
   cmd
+    .command("show <name-or-id>")
+    .description("Show job details")
+    .action(async (nameOrId: string) => {
+      const client = createOrcClient();
+      const { data: list, error: listErr } = await client.jobs.list();
+      if (listErr) return console.error("Error:", listErr);
+      const job = list?.jobs.find((j) => j.name === nameOrId || j.id === nameOrId);
+      if (!job) return console.error(`Job not found: ${nameOrId}`);
+
+      const { data, error } = await client.jobs.get(job.id);
+      if (error || !data) return console.error("Error:", error);
+
+      const fields: [string, unknown][] = [
+        ["Name", data.name],
+        ["ID", data.id],
+        ["Description", data.description],
+        ["Command", data.command],
+        ["Trigger", data.trigger_type],
+        ["Cron", data.cron_expr],
+        ["Enabled", data.enabled],
+        ["Timeout (s)", data.timeout_secs],
+        ["Max retries", data.max_retries],
+        ["Overlap", data.overlap],
+        ["Notify on", data.notify_on],
+        ["Project ID", data.project_id],
+        ["Run count", data.run_count],
+        ["Last run", data.last_run_at],
+        ["Created", data.created_at],
+        ["Updated", data.updated_at],
+      ];
+
+      for (const [label, value] of fields) {
+        if (value !== undefined && value !== null && value !== "")
+          console.log(`${label.padEnd(14)} ${value}`);
+      }
+    });
+
+  cmd
+    .command("delete <name-or-id>")
+    .description("Delete a job")
+    .action(async (nameOrId: string) => {
+      const client = createOrcClient();
+      const { data: list, error: listErr } = await client.jobs.list();
+      if (listErr) return console.error("Error:", listErr);
+      const job = list?.jobs.find((j) => j.name === nameOrId || j.id === nameOrId);
+      if (!job) return console.error(`Job not found: ${nameOrId}`);
+
+      const { error } = await client.jobs.delete(job.id);
+      if (error) return console.error("Error:", error);
+      console.log(`Deleted job: ${job.name} [${job.id.slice(-6)}]`);
+    });
+
+  cmd
+    .command("update <name-or-id>")
+    .description("Update a job")
+    .option("--name <n>", "New name")
+    .option("-d, --description <text>", "Description")
+    .option("-c, --command <cmd>", "Shell command")
+    .option("--trigger <type>", "Trigger type")
+    .option("--cron <expr>", "Cron expression")
+    .option("--timeout <secs>", "Timeout in seconds")
+    .option("--retries <n>", "Max retries")
+    .option("--notify <when>", "Notify on: never/failure/always")
+    .option("--enabled", "Enable the job")
+    .option("--disabled", "Disable the job")
+    .action(async (nameOrId: string, opts) => {
+      const client = createOrcClient();
+      const { data: list, error: listErr } = await client.jobs.list();
+      if (listErr) return console.error("Error:", listErr);
+      const job = list?.jobs.find((j) => j.name === nameOrId || j.id === nameOrId);
+      if (!job) return console.error(`Job not found: ${nameOrId}`);
+
+      const input: Record<string, unknown> = {};
+      if (opts.name) input.name = opts.name;
+      if (opts.description) input.description = opts.description;
+      if (opts.command) input.command = opts.command;
+      if (opts.trigger) input.trigger_type = opts.trigger;
+      if (opts.cron) input.cron_expr = opts.cron;
+      if (opts.timeout) input.timeout_secs = Number(opts.timeout);
+      if (opts.retries) input.max_retries = Number(opts.retries);
+      if (opts.notify) input.notify_on = opts.notify;
+      if (opts.enabled) input.enabled = true;
+      if (opts.disabled) input.enabled = false;
+
+      const { data, error } = await client.jobs.update(job.id, input as never);
+      if (error || !data) return console.error("Error:", error);
+      console.log(`Updated job: ${data.name} [${data.id.slice(-6)}]`);
+    });
+
+  cmd
     .command("runs <name-or-id>")
     .description("Show recent runs for a job")
     .option("-l, --limit <n>", "Max results", "10")

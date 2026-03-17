@@ -119,6 +119,50 @@ const createRoute_ = createRoute({
   },
 });
 
+const UpdateJobSchema = z
+  .object({
+    name: z.string().min(1).max(100).optional(),
+    description: z.string().optional(),
+    command: z.string().min(1).optional(),
+    trigger_type: JobTriggerTypeSchema.optional(),
+    cron_expr: z.string().optional(),
+    watch_path: z.string().optional(),
+    timeout_secs: z.number().int().positive().optional(),
+    max_retries: z.number().int().min(0).optional(),
+    overlap: JobOverlapSchema.optional(),
+    notify_on: z.enum(["never", "failure", "always"]).optional(),
+    enabled: z.boolean().optional(),
+    env_vars: z.record(z.string()).optional(),
+    working_dir: z.string().optional(),
+    project_id: z.string().optional(),
+  })
+  .openapi("UpdateJob");
+
+const updateRoute = createRoute({
+  method: "patch",
+  path: "/jobs/{id}",
+  tags: ["Jobs"],
+  summary: "Update job",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { "application/json": { schema: UpdateJobSchema } } },
+  },
+  responses: {
+    200: { description: "Updated", content: { "application/json": { schema: JobSchema } } },
+  },
+});
+
+const deleteRoute = createRoute({
+  method: "delete",
+  path: "/jobs/{id}",
+  tags: ["Jobs"],
+  summary: "Delete job",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    204: { description: "Deleted" },
+  },
+});
+
 const triggerRoute = createRoute({
   method: "post",
   path: "/jobs/{id}/trigger",
@@ -241,6 +285,49 @@ app.openapi(createRoute_, async (c) => {
   const job = await db.query.jobs.findFirst({ where: eq(jobs.id, id) });
   if (!job) throw new Error("Expected job to exist after write");
   return c.json(toDto(job), 201);
+});
+
+app.openapi(updateRoute, async (c) => {
+  const db = getDb();
+  const { id } = c.req.valid("param");
+  const body = c.req.valid("json");
+
+  const existing = await db.query.jobs.findFirst({ where: eq(jobs.id, id) });
+  if (!existing) throw new NotFoundError("Job", id);
+
+  await db
+    .update(jobs)
+    .set({
+      ...(body.name !== undefined ? { name: body.name } : {}),
+      ...(body.description !== undefined ? { description: body.description } : {}),
+      ...(body.command !== undefined ? { command: body.command } : {}),
+      ...(body.trigger_type !== undefined ? { trigger_type: body.trigger_type } : {}),
+      ...(body.cron_expr !== undefined ? { cron_expr: body.cron_expr } : {}),
+      ...(body.watch_path !== undefined ? { watch_path: body.watch_path } : {}),
+      ...(body.timeout_secs !== undefined ? { timeout_secs: body.timeout_secs } : {}),
+      ...(body.max_retries !== undefined ? { max_retries: body.max_retries } : {}),
+      ...(body.overlap !== undefined ? { overlap: body.overlap } : {}),
+      ...(body.notify_on !== undefined ? { notify_on: body.notify_on } : {}),
+      ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+      ...(body.env_vars !== undefined ? { env_vars: body.env_vars } : {}),
+      ...(body.working_dir !== undefined ? { working_dir: body.working_dir } : {}),
+      ...(body.project_id !== undefined ? { project_id: body.project_id } : {}),
+      updated_at: new Date(),
+    })
+    .where(eq(jobs.id, id));
+
+  const updated = await db.query.jobs.findFirst({ where: eq(jobs.id, id) });
+  if (!updated) throw new Error("Expected job to exist after write");
+  return c.json(toDto(updated));
+});
+
+app.openapi(deleteRoute, async (c) => {
+  const db = getDb();
+  const { id } = c.req.valid("param");
+  const existing = await db.query.jobs.findFirst({ where: eq(jobs.id, id) });
+  if (!existing) throw new NotFoundError("Job", id);
+  await db.delete(jobs).where(eq(jobs.id, id));
+  return new Response(null, { status: 204 });
 });
 
 app.openapi(triggerRoute, async (c) => {

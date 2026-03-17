@@ -223,6 +223,23 @@ export type CreateJobInput = {
   working_dir?: string;
 };
 
+export type UpdateJobInput = {
+  name?: string;
+  description?: string;
+  command?: string;
+  trigger_type?: JobTriggerType;
+  cron_expr?: string;
+  watch_path?: string;
+  timeout_secs?: number;
+  max_retries?: number;
+  overlap?: "skip" | "queue" | "kill";
+  notify_on?: "never" | "failure" | "always";
+  enabled?: boolean;
+  env_vars?: Record<string, string>;
+  working_dir?: string;
+  project_id?: string;
+};
+
 export type Prompt = {
   id: string;
   name: string;
