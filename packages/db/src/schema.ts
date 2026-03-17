@@ -99,6 +99,8 @@ export const memories = sqliteTable("memories", {
     .default("normal")
     .notNull(),
   expires_at: integer("expires_at", { mode: "timestamp" }),
+  access_count: integer("access_count").notNull().default(0),
+  last_accessed_at: integer("last_accessed_at", { mode: "timestamp" }),
   ...timestamps,
 });
 

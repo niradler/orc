@@ -1,5 +1,6 @@
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
+import { dryRunMsg, isDryRun, isJson, jsonErr, jsonOut } from "../output.js";
 import { resolveProject } from "./project.js";
 
 export function jobCommand() {
@@ -19,6 +20,7 @@ export function jobCommand() {
       const { data, error } = await client.jobs.list(project ? { project_id: project.id } : {});
       if (error) return console.error("Error:", error);
       const rows = data?.jobs ?? [];
+      if (isJson()) return jsonOut({ jobs: rows });
       if (rows.length === 0) return console.log("No jobs found.");
       for (const j of rows) {
         const en = j.enabled ? "●" : "○";
@@ -65,6 +67,7 @@ export function jobCommand() {
         notify_on: opts.notify as "never" | "failure" | "always",
       });
       if (error || !data) return console.error("Error:", error);
+      if (isJson()) return jsonOut(data);
       console.log(`Created job: ${data.name} [${data.id.slice(-6)}]`);
     });
 
@@ -80,6 +83,7 @@ export function jobCommand() {
 
       const { data, error } = await client.jobs.trigger(job.id);
       if (error || !data) return console.error("Error:", error);
+      if (isJson()) return jsonOut(data);
       console.log(`Triggered job ${job.name} → run: ${data.run_id}`);
     });
 
@@ -95,6 +99,7 @@ export function jobCommand() {
 
       const { data, error } = await client.jobs.get(job.id);
       if (error || !data) return console.error("Error:", error);
+      if (isJson()) return jsonOut(data);
 
       const fields: [string, unknown][] = [
         ["Name", data.name],
@@ -131,8 +136,10 @@ export function jobCommand() {
       const job = list?.jobs.find((j) => j.name === nameOrId || j.id === nameOrId);
       if (!job) return console.error(`Job not found: ${nameOrId}`);
 
+      if (isDryRun()) return dryRunMsg("delete", `job ${job.name}`);
       const { error } = await client.jobs.delete(job.id);
       if (error) return console.error("Error:", error);
+      if (isJson()) return jsonOut({ deleted: job.id, name: job.name });
       console.log(`Deleted job: ${job.name} [${job.id.slice(-6)}]`);
     });
 
@@ -168,8 +175,10 @@ export function jobCommand() {
       if (opts.enabled) input.enabled = true;
       if (opts.disabled) input.enabled = false;
 
+      if (isDryRun()) return dryRunMsg("update", `job ${job.name}`, input);
       const { data, error } = await client.jobs.update(job.id, input as never);
       if (error || !data) return console.error("Error:", error);
+      if (isJson()) return jsonOut(data);
       console.log(`Updated job: ${data.name} [${data.id.slice(-6)}]`);
     });
 
@@ -189,6 +198,7 @@ export function jobCommand() {
       const { data, error } = await client.jobs.runs(job.id, Number(opts.limit));
       if (error) return console.error("Error:", error);
       const runs = data?.runs ?? [];
+      if (isJson()) return jsonOut({ runs });
       if (runs.length === 0) return console.log("No runs yet.");
 
       for (const r of runs) {

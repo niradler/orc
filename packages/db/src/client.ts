@@ -287,6 +287,29 @@ function setupDb(sqlite: Database): void {
         VALUES (new.id, new.content, COALESCE(new.title, ''), COALESCE(new.tags, ''), COALESCE(new.scope, ''));
     END;
 
+    CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
+      id UNINDEXED,
+      title,
+      body,
+      tags,
+      tokenize='porter ascii'
+    );
+
+    CREATE TRIGGER IF NOT EXISTS tasks_ai AFTER INSERT ON tasks BEGIN
+      INSERT INTO tasks_fts(id, title, body, tags)
+        VALUES (new.id, COALESCE(new.title, ''), COALESCE(new.body, ''), COALESCE(new.tags, ''));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS tasks_ad AFTER DELETE ON tasks BEGIN
+      DELETE FROM tasks_fts WHERE id = old.id;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS tasks_au AFTER UPDATE ON tasks BEGIN
+      DELETE FROM tasks_fts WHERE id = old.id;
+      INSERT INTO tasks_fts(id, title, body, tags)
+        VALUES (new.id, COALESCE(new.title, ''), COALESCE(new.body, ''), COALESCE(new.tags, ''));
+    END;
+
     CREATE TABLE IF NOT EXISTS session_events (
       id         TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
@@ -335,6 +358,8 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE memories ADD COLUMN project_id TEXT REFERENCES projects(id)",
     "ALTER TABLE jobs ADD COLUMN project_id TEXT REFERENCES projects(id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS projects_name_idx ON projects(name)",
+    "ALTER TABLE memories ADD COLUMN access_count INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE memories ADD COLUMN last_accessed_at INTEGER",
   ];
   for (const statement of migrations) {
     try {

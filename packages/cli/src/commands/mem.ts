@@ -1,5 +1,6 @@
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
+import { dryRunMsg, isDryRun, isJson, jsonErr, jsonOut } from "../output.js";
 import { resolveProject } from "./project.js";
 
 export function memCommand() {
@@ -25,6 +26,7 @@ export function memCommand() {
       });
       if (error) return console.error("Error:", error);
       const results = data?.results ?? [];
+      if (isJson()) return jsonOut({ results });
       if (results.length === 0) return console.log("No memories found.");
       for (const m of results) {
         const age = formatAge(m.created_at);
@@ -61,6 +63,7 @@ export function memCommand() {
           : {}),
       });
       if (error) return console.error("Error:", error);
+      if (isJson()) return jsonOut(data);
       console.log(`Stored: [${data?.id.slice(-6)}] [${opts.type}] ${data?.content.slice(0, 60)}`);
     });
 
@@ -84,6 +87,7 @@ export function memCommand() {
       });
       if (error) return console.error("Error:", error);
       const mems = data?.memories ?? [];
+      if (isJson()) return jsonOut({ memories: mems });
       if (mems.length === 0) return console.log("No memories found.");
       for (const m of mems) {
         const age = formatAge(m.created_at);
@@ -101,6 +105,7 @@ export function memCommand() {
       if (error) return console.error("Error:", error);
       const mem = (data?.memories ?? []).find((m) => m.id === id || m.id.endsWith(id));
       if (!mem) return console.error(`Memory not found: ${id}`);
+      if (isJson()) return jsonOut(mem);
 
       const fields: [string, unknown][] = [
         ["ID", mem.id],
@@ -130,9 +135,14 @@ export function memCommand() {
       if (listErr) return console.error("Error:", listErr);
       const mem = (data?.memories ?? []).find((m) => m.id === id || m.id.endsWith(id));
       if (!mem) return console.error(`Memory not found: ${id}`);
+      if (isDryRun())
+        return dryRunMsg("delete", `memory [${mem.id.slice(-6)}]`, {
+          content: mem.content.slice(0, 80),
+        });
 
       const { error } = await client.memories.delete(mem.id);
       if (error) return console.error("Error:", error);
+      if (isJson()) return jsonOut({ deleted: mem.id });
       console.log(`Deleted memory: [${mem.id.slice(-6)}] ${mem.content.slice(0, 60)}`);
     });
 

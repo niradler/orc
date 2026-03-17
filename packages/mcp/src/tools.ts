@@ -152,6 +152,60 @@ export const toolDefinitions = [
     }),
   },
   {
+    name: "task_batch_create",
+    description:
+      "Create multiple tasks with dependency links atomically. Use for PRD-to-task workflows. " +
+      "Each task has a 'ref' (temporary ID like 'T1') used to express dependencies between tasks in the batch.",
+    inputSchema: z.object({
+      tasks: z
+        .array(
+          z.object({
+            ref: z.string().describe("Temporary reference ID, e.g. 'T1'"),
+            title: z.string(),
+            body: z.string().optional(),
+            priority: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
+            depends_on: z
+              .array(z.string())
+              .optional()
+              .describe("Refs of tasks that block this one"),
+            subtask_of: z.string().optional().describe("Ref of parent task"),
+          }),
+        )
+        .min(1)
+        .max(100),
+      project: projectParam,
+      author: z.string().optional().default("agent"),
+    }),
+  },
+  {
+    name: "task_search",
+    description:
+      "Full-text search across task titles and bodies. Returns compact results with id, title, status, priority, and snippet.",
+    inputSchema: z.object({
+      query: z.string().describe("Search query — keywords or phrases"),
+      project: projectParam,
+      status: z
+        .enum(["todo", "doing", "review", "changes_requested", "blocked", "done", "cancelled"])
+        .optional(),
+      limit: z.number().int().min(1).max(50).optional().default(10),
+    }),
+  },
+  {
+    name: "search",
+    description:
+      "Unified search across tasks and memories. Returns mixed results with resource_type indicator. " +
+      "Use instead of separate memory_search + task_search calls.",
+    inputSchema: z.object({
+      query: z.string().describe("Search query"),
+      resources: z
+        .array(z.enum(["tasks", "memories"]))
+        .optional()
+        .default(["tasks", "memories"]),
+      project: projectParam,
+      limit: z.number().int().min(1).max(20).optional().default(10),
+    }),
+  },
+  {
     name: "job_list",
     description: "List all jobs with last run status.",
     inputSchema: z.object({
@@ -576,6 +630,24 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         body?: string;
         priority?: string;
       };
+
+      if (status === "doing") {
+        const sqlite = getSqlite(db);
+        const blockers = sqlite
+          .query(
+            `SELECT t.id, t.title FROM task_links tl JOIN tasks t ON t.id = tl.from_task_id
+           WHERE tl.to_task_id = ? AND tl.link_type = 'blocks' AND t.status NOT IN ('done', 'cancelled')
+           UNION
+           SELECT t.id, t.title FROM task_links tl JOIN tasks t ON t.id = tl.to_task_id
+           WHERE tl.from_task_id = ? AND tl.link_type = 'blocked_by' AND t.status NOT IN ('done', 'cancelled')`,
+          )
+          .all(id, id) as { id: string; title: string }[];
+        if (blockers.length > 0) {
+          const names = blockers.map((b) => `[${b.id.slice(-6)}] ${b.title}`).join(", ");
+          return `Cannot start: blocked by ${names}`;
+        }
+      }
+
       await db
         .update(tasks)
         .set({
@@ -585,6 +657,68 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           updated_at: new Date(),
         })
         .where(eq(tasks.id, id));
+
+      if (status && ["done", "cancelled"].includes(status)) {
+        const sqlite = getSqlite(db);
+        // Unblock dependents
+        const dependents = sqlite
+          .query(
+            `SELECT DISTINCT dependent_id AS id FROM (
+             SELECT tl.to_task_id AS dependent_id FROM task_links tl WHERE tl.from_task_id = ? AND tl.link_type = 'blocks'
+             UNION SELECT tl.from_task_id AS dependent_id FROM task_links tl WHERE tl.to_task_id = ? AND tl.link_type = 'blocked_by'
+           )`,
+          )
+          .all(id, id) as { id: string }[];
+        for (const dep of dependents) {
+          const remaining = sqlite
+            .query(
+              `SELECT 1 FROM task_links tl JOIN tasks t ON t.id = tl.from_task_id
+             WHERE tl.to_task_id = ? AND tl.link_type = 'blocks' AND t.status NOT IN ('done','cancelled')
+             LIMIT 1`,
+            )
+            .get(dep.id);
+          if (!remaining) {
+            const task = sqlite.query("SELECT status FROM tasks WHERE id = ?").get(dep.id) as {
+              status: string;
+            } | null;
+            if (task?.status === "blocked") {
+              sqlite
+                .query("UPDATE tasks SET status = 'todo', updated_at = unixepoch() WHERE id = ?")
+                .run(dep.id);
+            }
+          }
+        }
+        // Rollup parent progress
+        const parentLink = sqlite
+          .query(
+            "SELECT tl.to_task_id FROM task_links tl WHERE tl.from_task_id = ? AND tl.link_type = 'subtask_of' LIMIT 1",
+          )
+          .get(id) as { to_task_id: string } | null;
+        if (parentLink) {
+          const stats = sqlite
+            .query(
+              `SELECT COUNT(*) as total, SUM(CASE WHEN t.status IN ('done','cancelled') THEN 1 ELSE 0 END) as done
+             FROM task_links tl JOIN tasks t ON t.id = tl.from_task_id
+             WHERE tl.to_task_id = ? AND tl.link_type = 'subtask_of'`,
+            )
+            .get(parentLink.to_task_id) as { total: number; done: number };
+          const progress = Math.round((stats.done / stats.total) * 100);
+          sqlite
+            .query("UPDATE tasks SET progress = ?, updated_at = unixepoch() WHERE id = ?")
+            .run(progress, parentLink.to_task_id);
+          if (stats.done === stats.total) {
+            const parent = sqlite
+              .query("SELECT status FROM tasks WHERE id = ?")
+              .get(parentLink.to_task_id) as { status: string } | null;
+            if (parent && !["done", "cancelled", "review"].includes(parent.status)) {
+              sqlite
+                .query("UPDATE tasks SET status = 'review', updated_at = unixepoch() WHERE id = ?")
+                .run(parentLink.to_task_id);
+            }
+          }
+        }
+      }
+
       return `Updated: ${id}`;
     }
 
@@ -1036,8 +1170,223 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       return `Deleted: ${id}`;
     }
 
+    case "task_batch_create": {
+      const {
+        tasks: items,
+        project,
+        author,
+      } = args as {
+        tasks: {
+          ref: string;
+          title: string;
+          body?: string;
+          priority?: string;
+          depends_on?: string[];
+          subtask_of?: string;
+        }[];
+        project?: string;
+        author?: string;
+      };
+      const resolved = resolveProjectId(getSqlite(db), project);
+      const now = new Date();
+      const mapping: Record<string, string> = {};
+
+      for (const item of items) {
+        const id = ulid();
+        mapping[item.ref] = id;
+        await db.insert(tasks).values({
+          id,
+          title: item.title,
+          body: item.body,
+          project_id: resolved?.id,
+          priority: (item.priority ?? "normal") as "low" | "normal" | "high" | "critical",
+          author: author ?? "agent",
+          status: "todo",
+          created_at: now,
+          updated_at: now,
+        });
+      }
+
+      const sqlite = getSqlite(db);
+      for (const item of items) {
+        const taskId = mapping[item.ref] as string;
+        if (item.depends_on) {
+          for (const dep of item.depends_on) {
+            const blockerId = mapping[dep];
+            if (!blockerId) continue;
+            sqlite
+              .query(
+                "INSERT INTO task_links (id, from_task_id, to_task_id, link_type, created_at) VALUES (?, ?, ?, 'blocks', unixepoch())",
+              )
+              .run(ulid(), blockerId, taskId);
+          }
+        }
+        if (item.subtask_of) {
+          const parentId = mapping[item.subtask_of];
+          if (parentId) {
+            sqlite
+              .query(
+                "INSERT INTO task_links (id, from_task_id, to_task_id, link_type, created_at) VALUES (?, ?, ?, 'subtask_of', unixepoch())",
+              )
+              .run(ulid(), taskId, parentId);
+            sqlite
+              .query(
+                "INSERT INTO task_links (id, from_task_id, to_task_id, link_type, created_at) VALUES (?, ?, ?, 'parent_of', unixepoch())",
+              )
+              .run(ulid(), parentId, taskId);
+          }
+        }
+      }
+
+      const lines = items.map((item) => `  ${item.ref} → ${mapping[item.ref]} — ${item.title}`);
+      return `Created ${items.length} tasks:\n${lines.join("\n")}`;
+    }
+
+    case "task_search": {
+      const { query, project, status, limit } = args as {
+        query: string;
+        project?: string;
+        status?: string;
+        limit?: number;
+      };
+      const resolved = resolveProjectId(getSqlite(db), project);
+      const sqlite = getSqlite(db);
+      const lim = limit ?? 10;
+
+      const words = query
+        .trim()
+        .split(/\s+/)
+        .filter((w) => w.length > 0);
+      if (words.length === 0) return "Empty query";
+
+      const ftsExpr = words.join(" AND ");
+      let sql = `SELECT t.id, t.title, t.status, t.priority, substr(t.body, 1, 100) as snippet
+        FROM tasks_fts f JOIN tasks t ON t.id = f.id
+        WHERE f.tasks_fts MATCH ?`;
+      const params: (string | number)[] = [ftsExpr];
+
+      if (resolved) {
+        sql += " AND t.project_id = ?";
+        params.push(resolved.id);
+      }
+      if (status) {
+        sql += " AND t.status = ?";
+        params.push(status);
+      }
+      sql += " ORDER BY rank LIMIT ?";
+      params.push(lim);
+
+      let rows: {
+        id: string;
+        title: string;
+        status: string;
+        priority: string;
+        snippet: string | null;
+      }[];
+      try {
+        rows = sqlite.query(sql).all(...params) as typeof rows;
+      } catch {
+        // FTS table may not exist yet, fall back to LIKE
+        const likeSql = `SELECT id, title, status, priority, substr(body, 1, 100) as snippet FROM tasks
+          WHERE (title LIKE ? OR body LIKE ?)${resolved ? " AND project_id = ?" : ""}${status ? " AND status = ?" : ""}
+          ORDER BY updated_at DESC LIMIT ?`;
+        const likeParams: (string | number)[] = [`%${query}%`, `%${query}%`];
+        if (resolved) likeParams.push(resolved.id);
+        if (status) likeParams.push(status);
+        likeParams.push(lim);
+        rows = sqlite.query(likeSql).all(...likeParams) as typeof rows;
+      }
+
+      if (rows.length === 0) return "No tasks found.";
+      return rows
+        .map((r, i) => {
+          const snip = r.snippet ? ` — ${r.snippet.replace(/\n/g, " ").slice(0, 60)}` : "";
+          return `${i + 1}. [${r.id}] ${r.status} ${r.priority} — ${r.title}${snip}`;
+        })
+        .join("\n");
+    }
+
+    case "search": {
+      const { query, resources, project, limit } = args as {
+        query: string;
+        resources?: string[];
+        project?: string;
+        limit?: number;
+      };
+      const resolved = resolveProjectId(getSqlite(db), project);
+      const lim = limit ?? 10;
+      const parts: string[] = [];
+
+      if (!resources || resources.includes("memories")) {
+        const memResults = searchLayer1(
+          query,
+          undefined,
+          Math.ceil(lim / 2),
+          undefined,
+          resolved?.id,
+        );
+        if (memResults.length > 0) {
+          parts.push("## Memories");
+          for (const m of memResults) {
+            parts.push(`  [memory] ${m.id} [${m.type}] ${m.snippet} (${m.age})`);
+          }
+        }
+      }
+
+      if (!resources || resources.includes("tasks")) {
+        const sqlite = getSqlite(db);
+        const words = query
+          .trim()
+          .split(/\s+/)
+          .filter((w) => w.length > 0);
+        const taskLim = Math.ceil(lim / 2);
+        let taskRows: { id: string; title: string; status: string }[] = [];
+
+        if (words.length > 0) {
+          try {
+            const ftsExpr = words.join(" AND ");
+            let sql = `SELECT t.id, t.title, t.status FROM tasks_fts f JOIN tasks t ON t.id = f.id WHERE f.tasks_fts MATCH ?`;
+            const params: (string | number)[] = [ftsExpr];
+            if (resolved) {
+              sql += " AND t.project_id = ?";
+              params.push(resolved.id);
+            }
+            sql += " ORDER BY rank LIMIT ?";
+            params.push(taskLim);
+            taskRows = sqlite.query(sql).all(...params) as typeof taskRows;
+          } catch {
+            const likeSql = `SELECT id, title, status FROM tasks WHERE (title LIKE ? OR body LIKE ?)${resolved ? " AND project_id = ?" : ""} ORDER BY updated_at DESC LIMIT ?`;
+            const likeParams: (string | number)[] = [`%${query}%`, `%${query}%`];
+            if (resolved) likeParams.push(resolved.id);
+            likeParams.push(taskLim);
+            taskRows = sqlite.query(likeSql).all(...likeParams) as typeof taskRows;
+          }
+        }
+
+        if (taskRows.length > 0) {
+          parts.push("## Tasks");
+          for (const t of taskRows) {
+            parts.push(`  [task] ${t.id} ${t.status} — ${t.title}`);
+          }
+        }
+      }
+
+      return parts.length > 0 ? parts.join("\n") : "No results found.";
+    }
+
     case "job_create": {
-      const { name, command, description, trigger_type, cron_expr, watch_path, timeout_secs, max_retries, notify_on, project } = args as {
+      const {
+        name,
+        command,
+        description,
+        trigger_type,
+        cron_expr,
+        watch_path,
+        timeout_secs,
+        max_retries,
+        notify_on,
+        project,
+      } = args as {
         name: string;
         command: string;
         description?: string;
@@ -1092,7 +1441,18 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "job_update": {
-      const { name, description, command, trigger_type, cron_expr, watch_path, timeout_secs, max_retries, notify_on, enabled } = args as {
+      const {
+        name,
+        description,
+        command,
+        trigger_type,
+        cron_expr,
+        watch_path,
+        timeout_secs,
+        max_retries,
+        notify_on,
+        enabled,
+      } = args as {
         name: string;
         description?: string;
         command?: string;

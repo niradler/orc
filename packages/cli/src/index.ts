@@ -14,6 +14,7 @@ import { jobCommand } from "./commands/job.js";
 import { memCommand } from "./commands/mem.js";
 import { projectCommand } from "./commands/project.js";
 import { promptCommand } from "./commands/prompt.js";
+import { schemaCommand } from "./commands/schema.js";
 import { sessionCommand } from "./commands/session.js";
 import { statusCommand } from "./commands/status.js";
 import { taskCommand } from "./commands/task.js";
@@ -27,6 +28,8 @@ type GlobalOpts = {
   runnerTimeout?: string;
   runnerMaxJobs?: string;
   snapshotMaxBytes?: string;
+  json?: boolean;
+  dryRun?: boolean;
 };
 
 const program = new Command()
@@ -47,6 +50,8 @@ const program = new Command()
     "--snapshot-max-bytes <n>",
     "Session snapshot budget bytes (overrides ORC_SNAPSHOT_MAX_BYTES)",
   )
+  .option("--json", "Machine-readable JSON output")
+  .option("--dry-run", "Preview changes without executing")
   .hook("preSubcommand", (_thisCmd, subCmd) => {
     void subCmd;
     const opts = program.opts<GlobalOpts>();
@@ -69,6 +74,7 @@ program.addCommand(daemonCommand());
 program.addCommand(gatewayCommand());
 program.addCommand(promptCommand());
 program.addCommand(statusCommand());
+program.addCommand(schemaCommand());
 
 program
   .command("api")

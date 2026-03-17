@@ -1,10 +1,17 @@
+import type { Database } from "bun:sqlite";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import { TaskPrioritySchema, TaskStatusSchema } from "@orc/core/types";
 import { getDb } from "@orc/db/client";
-import { task_notes, tasks } from "@orc/db/schema";
+import { task_links, task_notes, tasks } from "@orc/db/schema";
 import { and, desc, eq } from "drizzle-orm";
+import { checkBlockers, rollupParentProgress, unblockDependents } from "../lib/task-deps.js";
+
+function getSqlite(): Database {
+  const db = getDb();
+  return (db as unknown as { $client: Database }).$client;
+}
 
 const app = new OpenAPIHono();
 
@@ -127,6 +134,50 @@ const deleteRoute = createRoute({
   request: { params: z.object({ id: z.string() }) },
   responses: {
     204: { description: "Deleted" },
+  },
+});
+
+const BatchTaskItem = z.object({
+  ref: z.string().describe("Temporary reference ID for dependency linking, e.g. 'T1'"),
+  title: z.string().min(1).max(500),
+  body: z.string().optional(),
+  priority: TaskPrioritySchema.optional().default("normal"),
+  depends_on: z.array(z.string()).optional().describe("Refs of tasks that block this one"),
+  subtask_of: z.string().optional().describe("Ref of parent task"),
+});
+
+const batchCreateRoute = createRoute({
+  method: "post",
+  path: "/tasks/batch",
+  tags: ["Tasks"],
+  summary: "Create multiple tasks with dependency links atomically",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z
+            .object({
+              tasks: z.array(BatchTaskItem).min(1).max(100),
+              project_id: z.string().optional(),
+              author: z.string().optional().default("agent"),
+            })
+            .openapi("BatchCreateTasks"),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Created tasks with ref→id mapping",
+      content: {
+        "application/json": {
+          schema: z.object({
+            created: z.number(),
+            mapping: z.record(z.string(), z.string()),
+          }),
+        },
+      },
+    },
   },
 });
 
@@ -286,6 +337,14 @@ app.openapi(updateRoute, async (c) => {
   const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!existing) throw new NotFoundError("Task", id);
 
+  if (body.status === "doing" && existing.status !== "doing") {
+    const blockers = checkBlockers(getSqlite(), id);
+    if (blockers.length > 0) {
+      const names = blockers.map((b) => `[${b.id.slice(-6)}] ${b.title}`).join(", ");
+      throw new ValidationError(`Cannot start: blocked by ${names}`);
+    }
+  }
+
   await db
     .update(tasks)
     .set({
@@ -298,6 +357,12 @@ app.openapi(updateRoute, async (c) => {
       updated_at: new Date(),
     })
     .where(eq(tasks.id, id));
+
+  if (body.status && ["done", "cancelled"].includes(body.status)) {
+    const sqlite = getSqlite();
+    unblockDependents(sqlite, id);
+    rollupParentProgress(sqlite, id);
+  }
 
   const updated = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!updated) throw new Error("Expected updated to exist after write");
@@ -399,6 +464,69 @@ app.openapi(addNoteRoute, async (c) => {
   const note = await db.query.task_notes.findFirst({ where: eq(task_notes.id, noteId) });
   if (!note) throw new Error("Expected note to exist after write");
   return c.json(noteToDto(note), 201);
+});
+
+app.openapi(batchCreateRoute, async (c) => {
+  const db = getDb();
+  const { tasks: items, project_id, author } = c.req.valid("json");
+  const now = new Date();
+  const mapping: Record<string, string> = {};
+
+  for (const item of items) {
+    const id = ulid();
+    mapping[item.ref] = id;
+    await db.insert(tasks).values({
+      id,
+      title: item.title,
+      body: item.body,
+      project_id,
+      priority: item.priority,
+      author,
+      status: "todo",
+      created_at: now,
+      updated_at: now,
+    });
+  }
+
+  for (const item of items) {
+    const taskId = mapping[item.ref] as string;
+
+    if (item.depends_on) {
+      for (const dep of item.depends_on) {
+        const blockerId = mapping[dep];
+        if (!blockerId) continue;
+        await db.insert(task_links).values({
+          id: ulid(),
+          from_task_id: blockerId,
+          to_task_id: taskId,
+          link_type: "blocks",
+          created_at: now,
+        });
+      }
+    }
+
+    if (item.subtask_of) {
+      const parentId = mapping[item.subtask_of];
+      if (parentId) {
+        await db.insert(task_links).values({
+          id: ulid(),
+          from_task_id: taskId,
+          to_task_id: parentId,
+          link_type: "subtask_of",
+          created_at: now,
+        });
+        await db.insert(task_links).values({
+          id: ulid(),
+          from_task_id: parentId,
+          to_task_id: taskId,
+          link_type: "parent_of",
+          created_at: now,
+        });
+      }
+    }
+  }
+
+  return c.json({ created: items.length, mapping }, 201);
 });
 
 export { app as tasksRouter };
