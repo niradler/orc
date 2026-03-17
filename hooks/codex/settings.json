@@ -3,7 +3,7 @@
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "shell|str_replace|write_file|create_file|apply_patch",
+        "matcher": "shell|str_replace|write_file|create_file|apply_patch|mcp__orc__task_|mcp__orc__memory_store|mcp__orc__memory_delete|mcp__orc__job_run|mcp__orc__job_create|mcp__orc__job_update",
         "hooks": [
           {
             "type": "command",
@@ -37,6 +37,7 @@
   },
   "env": {
     "ORC_API_BASE": "http://127.0.0.1:7700",
-    "ORC_SESSION_ID": "$CODEX_SESSION_ID"
+    "ORC_SESSION_ID": "$CODEX_SESSION_ID",
+    "ORC_PROJECT": ""
   }
 }

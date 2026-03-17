@@ -129,9 +129,9 @@ Key env vars: `ORC_DB_PATH`, `ORC_API_PORT` (default 7700), `ORC_API_SECRET`, `O
 
 ## Session Protocol for Agents
 
-**Claude Code** (hooks handle steps 3–4 automatically via `hooks/claude-code/settings.json`):
-1. `context({})` — at session start
-2. `session_event(...)` — after significant file edits, decisions, git ops
+**Claude Code** (hooks handle steps 2–4 automatically via `hooks/claude-code/settings.json`):
+1. `context({})` — at session start (injected by SessionStart hook, scoped to `ORC_PROJECT` if set)
+2. *(PostToolUse hook)* — automatically records file edits, git ops, MCP tool calls, subagent launches, plan mode changes
 3. *(PreCompact hook)* — automatically calls `session_snapshot`, stores to DB
 4. *(SessionStart hook, source=compact)* — automatically calls `session_restore`, injects into context
 5. `session_log({ agent: "claude-code", agent_version, summary })` — at end of work unit

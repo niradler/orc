@@ -22,6 +22,8 @@ async function main() {
   if (secret) headers.Authorization = `Bearer ${secret}`;
 
   try {
+    const project = process.env.ORC_PROJECT;
+
     if (event.source === "compact") {
       const res = await fetch(`${apiBase}/mcp/tool`, {
         method: "POST",
@@ -39,10 +41,13 @@ async function main() {
         );
       }
     } else {
+      const contextArgs: Record<string, string> = {};
+      if (project) contextArgs.project = project;
+
       const res = await fetch(`${apiBase}/mcp/tool`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ name: "context", args: {} }),
+        body: JSON.stringify({ name: "context", args: contextArgs }),
       });
 
       if (res.ok) {
