@@ -249,11 +249,14 @@ export function searchLayer1(
   const final = renumber(results.slice(0, limit));
   // Increment access count for returned memories
   if (final.length > 0) {
-    const ids = final.map((m) => `'${m.id}'`).join(",");
+    const ids = final.map((m) => m.id);
+    const placeholders = ids.map(() => "?").join(",");
     try {
-      sqlite.exec(
-        `UPDATE memories SET access_count = access_count + 1, last_accessed_at = unixepoch() WHERE id IN (${ids})`,
-      );
+      sqlite
+        .query(
+          `UPDATE memories SET access_count = access_count + 1, last_accessed_at = unixepoch() WHERE id IN (${placeholders})`,
+        )
+        .run(...ids);
     } catch {}
   }
   return final;

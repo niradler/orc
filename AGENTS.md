@@ -47,6 +47,7 @@ bun build            # build all packages
 | Table | Purpose |
 |---|---|
 | `tasks` | Work items with HITL review flow |
+| `comments` | Polymorphic comments (`resource_type` + `resource_id`) for tasks, projects, etc. |
 | `memories` | FTS5-indexed key/value knowledge store |
 | `jobs` / `job_runs` | Scheduled/triggered command execution |
 | `sessions` | Agent session logs + snapshots (`agent_version`, `job_run_id`) |
@@ -54,7 +55,7 @@ bun build            # build all packages
 | `prompts` | Prompt/skill templates |
 | `bridge_chats/messages/permissions` | Gateway HITL (Telegram/Slack) |
 
-**Task status flow**: `todo → doing → review → done/changes_requested → doing → …`
+**Task status flow**: `todo → doing → blocked → review → done/changes_requested → doing → …`
 
 **Task priorities**: `low | normal | high | critical`
 

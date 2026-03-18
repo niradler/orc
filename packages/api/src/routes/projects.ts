@@ -165,6 +165,15 @@ function toDto(p: typeof projects.$inferSelect) {
   };
 }
 
+function rawToDto(row: Record<string, unknown>) {
+  return {
+    ...row,
+    tags: typeof row.tags === "string" ? JSON.parse(row.tags) : row.tags,
+    created_at: new Date((row.created_at as number) * 1000).toISOString(),
+    updated_at: new Date((row.updated_at as number) * 1000).toISOString(),
+  };
+}
+
 app.openapi(listRoute, async (c) => {
   const db = getDb();
   const { status, tag, limit } = c.req.valid("query");
@@ -179,8 +188,8 @@ app.openapi(listRoute, async (c) => {
     }
     sql += " ORDER BY p.name ASC LIMIT ?";
     params.push(limit);
-    const rows = sqlite.query(sql).all(...params) as (typeof projects.$inferSelect)[];
-    return c.json({ projects: rows.map(toDto) });
+    const rows = sqlite.query(sql).all(...params) as Record<string, unknown>[];
+    return c.json({ projects: rows.map(rawToDto) });
   }
 
   const conditions = status ? [eq(projects.status, status)] : [];

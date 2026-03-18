@@ -475,7 +475,8 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
              FROM task_links tl JOIN tasks t ON t.id = tl.from_task_id
              WHERE tl.to_task_id = ? AND tl.link_type = 'subtask_of'`,
             )
-            .get(parentLink.to_task_id) as { total: number; done: number };
+            .get(parentLink.to_task_id) as { total: number; done: number } | null;
+          if (!stats || stats.total === 0) return `Updated: ${id}`;
           const progress = Math.round((stats.done / stats.total) * 100);
           sqlite
             .query("UPDATE tasks SET progress = ?, updated_at = unixepoch() WHERE id = ?")

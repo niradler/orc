@@ -132,18 +132,9 @@ export type CreateTaskInput = {
   project_id?: string;
   status?: "todo" | "doing" | "blocked";
   priority?: TaskPriority;
-  task_type?: TaskType;
-  execution_mode?: TaskExecutionMode;
-  progress?: number;
   due_at?: string;
   tags?: string[];
   author?: string;
-  assigned_to?: string;
-  active_branch?: string;
-  acceptance_criteria?: string[];
-  context_refs?: string[];
-  next_action?: string;
-  parallel_group?: string;
 };
 
 export type UpdateTaskInput = {
@@ -151,17 +142,8 @@ export type UpdateTaskInput = {
   body?: string | null;
   status?: TaskStatus;
   priority?: TaskPriority;
-  task_type?: TaskType;
-  execution_mode?: TaskExecutionMode;
-  progress?: number;
   due_at?: string | null;
   tags?: string[] | null;
-  assigned_to?: string | null;
-  active_branch?: string | null;
-  acceptance_criteria?: string[] | null;
-  context_refs?: string[] | null;
-  next_action?: string | null;
-  parallel_group?: string | null;
 };
 
 export type TaskClaimInput = {

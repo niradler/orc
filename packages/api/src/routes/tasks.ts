@@ -272,8 +272,22 @@ function toDto(t: typeof tasks.$inferSelect) {
   return {
     ...t,
     due_at: t.due_at?.toISOString() ?? null,
+    claim_expires_at: t.claim_expires_at?.toISOString() ?? null,
     created_at: t.created_at.toISOString(),
     updated_at: t.updated_at.toISOString(),
+  };
+}
+
+function rawToDto(row: Record<string, unknown>) {
+  return {
+    ...row,
+    tags: typeof row.tags === "string" ? JSON.parse(row.tags) : row.tags,
+    due_at: row.due_at ? new Date((row.due_at as number) * 1000).toISOString() : null,
+    claim_expires_at: row.claim_expires_at
+      ? new Date((row.claim_expires_at as number) * 1000).toISOString()
+      : null,
+    created_at: new Date((row.created_at as number) * 1000).toISOString(),
+    updated_at: new Date((row.updated_at as number) * 1000).toISOString(),
   };
 }
 
@@ -289,7 +303,6 @@ app.openapi(listRoute, async (c) => {
   const { project_id, status, tag, limit } = c.req.valid("query");
 
   if (tag) {
-    // Use raw SQL with json_each for tag filtering
     const sqlite = getSqlite();
     let sql = `SELECT DISTINCT t.* FROM tasks t, json_each(t.tags) AS j WHERE j.value = ?`;
     const params: (string | number)[] = [tag];
@@ -303,8 +316,8 @@ app.openapi(listRoute, async (c) => {
     }
     sql += " ORDER BY t.updated_at DESC LIMIT ?";
     params.push(limit);
-    const rows = sqlite.query(sql).all(...params) as (typeof tasks.$inferSelect)[];
-    return c.json({ tasks: rows.map(toDto), total: rows.length });
+    const rows = sqlite.query(sql).all(...params) as Record<string, unknown>[];
+    return c.json({ tasks: rows.map(rawToDto), total: rows.length });
   }
 
   const conditions = [];
@@ -508,58 +521,66 @@ app.openapi(batchCreateRoute, async (c) => {
   const now = new Date();
   const mapping: Record<string, string> = {};
 
-  for (const item of items) {
-    const id = ulid();
-    mapping[item.ref] = id;
-    await db.insert(tasks).values({
-      id,
-      title: item.title,
-      body: item.body,
-      project_id,
-      priority: item.priority,
-      author,
-      status: "todo",
-      created_at: now,
-      updated_at: now,
-    });
-  }
-
-  for (const item of items) {
-    const taskId = mapping[item.ref] as string;
-
-    if (item.depends_on) {
-      for (const dep of item.depends_on) {
-        const blockerId = mapping[dep];
-        if (!blockerId) continue;
-        await db.insert(task_links).values({
-          id: ulid(),
-          from_task_id: blockerId,
-          to_task_id: taskId,
-          link_type: "blocks",
-          created_at: now,
-        });
-      }
+  const sqlite = getSqlite();
+  sqlite.exec("BEGIN");
+  try {
+    for (const item of items) {
+      const id = ulid();
+      mapping[item.ref] = id;
+      await db.insert(tasks).values({
+        id,
+        title: item.title,
+        body: item.body,
+        project_id,
+        priority: item.priority,
+        author,
+        status: "todo",
+        created_at: now,
+        updated_at: now,
+      });
     }
 
-    if (item.subtask_of) {
-      const parentId = mapping[item.subtask_of];
-      if (parentId) {
-        await db.insert(task_links).values({
-          id: ulid(),
-          from_task_id: taskId,
-          to_task_id: parentId,
-          link_type: "subtask_of",
-          created_at: now,
-        });
-        await db.insert(task_links).values({
-          id: ulid(),
-          from_task_id: parentId,
-          to_task_id: taskId,
-          link_type: "parent_of",
-          created_at: now,
-        });
+    for (const item of items) {
+      const taskId = mapping[item.ref] as string;
+
+      if (item.depends_on) {
+        for (const dep of item.depends_on) {
+          const blockerId = mapping[dep];
+          if (!blockerId) continue;
+          await db.insert(task_links).values({
+            id: ulid(),
+            from_task_id: blockerId,
+            to_task_id: taskId,
+            link_type: "blocks",
+            created_at: now,
+          });
+        }
+      }
+
+      if (item.subtask_of) {
+        const parentId = mapping[item.subtask_of];
+        if (parentId) {
+          await db.insert(task_links).values({
+            id: ulid(),
+            from_task_id: taskId,
+            to_task_id: parentId,
+            link_type: "subtask_of",
+            created_at: now,
+          });
+          await db.insert(task_links).values({
+            id: ulid(),
+            from_task_id: parentId,
+            to_task_id: taskId,
+            link_type: "parent_of",
+            created_at: now,
+          });
+        }
       }
     }
+    sqlite.exec("COMMIT");
+  } catch (err) {
+    sqlite.exec("ROLLBACK");
+    throw err;
   }
 
   return c.json({ created: items.length, mapping }, 201);
