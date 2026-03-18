@@ -26,6 +26,7 @@ export function taskCommand() {
     .option("-p, --project <name>", "Filter by project name")
     .option("--no-project", "Show all tasks across projects")
     .option("-s, --status <status>", "Filter by status")
+    .option("-t, --tag <tag>", "Filter by tag")
     .option("-l, --limit <n>", "Max results", "20")
     .option("--flat", "Disable status grouping")
     .action(async (opts) => {
@@ -40,6 +41,7 @@ export function taskCommand() {
       const { data, error } = await client.tasks.list({
         ...(project ? { project_id: project.id } : {}),
         status: opts.status,
+        tag: opts.tag,
         limit: Number(opts.limit),
       });
       if (error) {
@@ -386,7 +388,7 @@ function formatTask(
   const si = statusIcon(t.status);
   const pi = priorityIcon(t.priority);
   const id = t.id.slice(-6);
-  const title = t.title.length > 40 ? t.title.slice(0, 39) + "…" : t.title;
+  const title = t.title.length > 40 ? `${t.title.slice(0, 39)}…` : t.title;
   let line = `  ${colorStatus(si, t.status)} ${pi} [${id}] ${title.padEnd(40)}`;
   if (projectNames && t.project_id) {
     line += `  ${color(projectNames.get(t.project_id) ?? t.project_id.slice(-6), "2")}`;

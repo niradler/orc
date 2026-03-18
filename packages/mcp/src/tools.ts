@@ -106,7 +106,8 @@ export const toolDefinitions = [
   },
   {
     name: "task_check_review",
-    description: "Poll HITL review result. Returns: pending | approved | changes_requested + comment.",
+    description:
+      "Poll HITL review result. Returns: pending | approved | changes_requested + comment.",
     inputSchema: z.object({
       id: z.string(),
     }),

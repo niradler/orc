@@ -78,6 +78,7 @@ const listRoute = createRoute({
     query: z.object({
       project_id: z.string().optional(),
       status: TaskStatusSchema.optional(),
+      tag: z.string().optional(),
       limit: z.coerce.number().int().min(1).max(100).optional().default(50),
     }),
   },
@@ -260,7 +261,10 @@ const addCommentRoute = createRoute({
     },
   },
   responses: {
-    201: { description: "Comment added", content: { "application/json": { schema: CommentSchema } } },
+    201: {
+      description: "Comment added",
+      content: { "application/json": { schema: CommentSchema } },
+    },
   },
 });
 
@@ -282,7 +286,26 @@ function commentToDto(n: typeof comments.$inferSelect) {
 
 app.openapi(listRoute, async (c) => {
   const db = getDb();
-  const { project_id, status, limit } = c.req.valid("query");
+  const { project_id, status, tag, limit } = c.req.valid("query");
+
+  if (tag) {
+    // Use raw SQL with json_each for tag filtering
+    const sqlite = getSqlite();
+    let sql = `SELECT DISTINCT t.* FROM tasks t, json_each(t.tags) AS j WHERE j.value = ?`;
+    const params: (string | number)[] = [tag];
+    if (project_id) {
+      sql += " AND t.project_id = ?";
+      params.push(project_id);
+    }
+    if (status) {
+      sql += " AND t.status = ?";
+      params.push(status);
+    }
+    sql += " ORDER BY t.updated_at DESC LIMIT ?";
+    params.push(limit);
+    const rows = sqlite.query(sql).all(...params) as (typeof tasks.$inferSelect)[];
+    return c.json({ tasks: rows.map(toDto), total: rows.length });
+  }
 
   const conditions = [];
   if (project_id) conditions.push(eq(tasks.project_id, project_id));
@@ -421,7 +444,11 @@ app.openapi(checkReviewRoute, async (c) => {
   if (!task) throw new NotFoundError("Task", id);
 
   const lastComment = await db.query.comments.findFirst({
-    where: and(eq(comments.resource_type, "task"), eq(comments.resource_id, id), eq(comments.author, "human")),
+    where: and(
+      eq(comments.resource_type, "task"),
+      eq(comments.resource_id, id),
+      eq(comments.author, "human"),
+    ),
     orderBy: [desc(comments.created_at)],
   });
 
@@ -461,7 +488,14 @@ app.openapi(addCommentRoute, async (c) => {
 
   const commentId = ulid();
   const now = new Date();
-  await db.insert(comments).values({ id: commentId, resource_type: "task", resource_id: id, content, author, created_at: now });
+  await db.insert(comments).values({
+    id: commentId,
+    resource_type: "task",
+    resource_id: id,
+    content,
+    author,
+    created_at: now,
+  });
 
   const comment = await db.query.comments.findFirst({ where: eq(comments.id, commentId) });
   if (!comment) throw new Error("Expected comment to exist after write");

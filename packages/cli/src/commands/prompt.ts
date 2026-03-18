@@ -1,6 +1,6 @@
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
-import { dryRunMsg, isDryRun, isJson, jsonErr, jsonOut } from "../output.js";
+import { dryRunMsg, isDryRun, isJson, jsonOut } from "../output.js";
 
 export function promptCommand() {
   const cmd = new Command("prompt").description("Manage prompts and skills");
@@ -25,7 +25,7 @@ export function promptCommand() {
         const id = p.id.slice(-6);
         const skill = p.is_skill ? color(" [skill]", "36") : "";
         const ver = color(`v${p.version}`, "2");
-        const name = p.name.length > 40 ? p.name.slice(0, 39) + "…" : p.name;
+        const name = p.name.length > 40 ? `${p.name.slice(0, 39)}…` : p.name;
         console.log(`  [${id}] ${name.padEnd(42)} ${ver}${skill}`);
       }
     });

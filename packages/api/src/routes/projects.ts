@@ -61,6 +61,7 @@ const listRoute = createRoute({
   request: {
     query: z.object({
       status: z.enum(["active", "archived", "paused"]).optional(),
+      tag: z.string().optional(),
       limit: z.coerce.number().int().min(1).max(100).optional().default(50),
     }),
   },
@@ -166,7 +167,22 @@ function toDto(p: typeof projects.$inferSelect) {
 
 app.openapi(listRoute, async (c) => {
   const db = getDb();
-  const { status, limit } = c.req.valid("query");
+  const { status, tag, limit } = c.req.valid("query");
+
+  if (tag) {
+    const sqlite = (db as unknown as { $client: Database }).$client;
+    let sql = `SELECT DISTINCT p.* FROM projects p, json_each(p.tags) AS j WHERE j.value = ?`;
+    const params: (string | number)[] = [tag];
+    if (status) {
+      sql += " AND p.status = ?";
+      params.push(status);
+    }
+    sql += " ORDER BY p.name ASC LIMIT ?";
+    params.push(limit);
+    const rows = sqlite.query(sql).all(...params) as (typeof projects.$inferSelect)[];
+    return c.json({ projects: rows.map(toDto) });
+  }
+
   const conditions = status ? [eq(projects.status, status)] : [];
   const rows = await db.query.projects.findMany({
     where: conditions.length > 0 ? and(...conditions) : undefined,
@@ -378,7 +394,14 @@ app.openapi(addCommentRoute, async (c) => {
   if (!project) throw new NotFoundError("Project", id);
   const commentId = ulid();
   const now = new Date();
-  await db.insert(comments).values({ id: commentId, resource_type: "project", resource_id: id, content, author, created_at: now });
+  await db.insert(comments).values({
+    id: commentId,
+    resource_type: "project",
+    resource_id: id,
+    content,
+    author,
+    created_at: now,
+  });
   const row = await db.query.comments.findFirst({ where: eq(comments.id, commentId) });
   if (!row) throw new Error("Expected comment to exist after write");
   return c.json(commentToDto(row), 201);

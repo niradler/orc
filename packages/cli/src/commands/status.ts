@@ -1,6 +1,6 @@
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
-import { dryRunMsg, isDryRun, isJson, jsonErr, jsonOut } from "../output.js";
+import { isJson, jsonOut } from "../output.js";
 
 export function statusCommand() {
   return new Command("status").description("Show system status").action(async () => {

@@ -1,6 +1,6 @@
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
-import { dryRunMsg, isDryRun, isJson, jsonErr, jsonOut } from "../output.js";
+import { dryRunMsg, isDryRun, isJson, jsonOut } from "../output.js";
 import { resolveProject } from "./project.js";
 
 export function jobCommand() {

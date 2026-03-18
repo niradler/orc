@@ -1,6 +1,6 @@
 import { loadConfig } from "@orc/core/config";
 import { Command } from "commander";
-import { dryRunMsg, isDryRun, isJson, jsonErr, jsonOut } from "../output.js";
+import { isJson, jsonOut } from "../output.js";
 
 type SessionRow = {
   id: string;

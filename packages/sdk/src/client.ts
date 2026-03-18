@@ -89,7 +89,7 @@ export function createOrcClient(options?: OrcClientOptions) {
 
   return {
     tasks: {
-      list: (params?: { project_id?: string; status?: string; limit?: number }) =>
+      list: (params?: { project_id?: string; status?: string; tag?: string; limit?: number }) =>
         c<{ tasks: Task[]; total: number }>(
           "GET",
           "/tasks",
@@ -106,17 +106,26 @@ export function createOrcClient(options?: OrcClientOptions) {
       delete: (id: string) => c<null>("DELETE", `/tasks/${id}`),
 
       addComment: (id: string, content: string, author = "human") =>
-        c<{ id: string; resource_type: string; resource_id: string; content: string; author: string; created_at: string }>(
-          "POST",
-          `/tasks/${id}/comments`,
-          { content, author },
-        ),
+        c<{
+          id: string;
+          resource_type: string;
+          resource_id: string;
+          content: string;
+          author: string;
+          created_at: string;
+        }>("POST", `/tasks/${id}/comments`, { content, author }),
 
       listComments: (id: string) =>
-        c<{ comments: { id: string; resource_type: string; resource_id: string; content: string; author: string; created_at: string }[] }>(
-          "GET",
-          `/tasks/${id}/comments`,
-        ),
+        c<{
+          comments: {
+            id: string;
+            resource_type: string;
+            resource_id: string;
+            content: string;
+            author: string;
+            created_at: string;
+          }[];
+        }>("GET", `/tasks/${id}/comments`),
 
       listLinks: (id: string) => c<{ links: TaskLink[] }>("GET", `/tasks/${id}/links`),
 
@@ -208,7 +217,7 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     projects: {
-      list: (params?: { status?: string; limit?: number }) =>
+      list: (params?: { status?: string; tag?: string; limit?: number }) =>
         c<{ projects: Project[] }>(
           "GET",
           "/projects",
@@ -231,17 +240,26 @@ export function createOrcClient(options?: OrcClientOptions) {
       delete: (id: string) => c<null>("DELETE", `/projects/${id}`),
 
       addComment: (id: string, content: string, author = "human") =>
-        c<{ id: string; resource_type: string; resource_id: string; content: string; author: string; created_at: string }>(
-          "POST",
-          `/projects/${id}/comments`,
-          { content, author },
-        ),
+        c<{
+          id: string;
+          resource_type: string;
+          resource_id: string;
+          content: string;
+          author: string;
+          created_at: string;
+        }>("POST", `/projects/${id}/comments`, { content, author }),
 
       listComments: (id: string) =>
-        c<{ comments: { id: string; resource_type: string; resource_id: string; content: string; author: string; created_at: string }[] }>(
-          "GET",
-          `/projects/${id}/comments`,
-        ),
+        c<{
+          comments: {
+            id: string;
+            resource_type: string;
+            resource_id: string;
+            content: string;
+            author: string;
+            created_at: string;
+          }[];
+        }>("GET", `/projects/${id}/comments`),
     },
 
     sessions: {

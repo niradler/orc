@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
-import { dryRunMsg, isDryRun, isJson, jsonErr, jsonOut } from "../output.js";
+import { dryRunMsg, isDryRun, isJson, jsonOut } from "../output.js";
 
 export async function resolveProject(
   client: ReturnType<typeof createOrcClient>,
@@ -69,7 +69,7 @@ function readConfigFile(): Record<string, unknown> {
 }
 
 function writeConfigFile(cfg: Record<string, unknown>): void {
-  writeFileSync(configPath(), JSON.stringify(cfg, null, 2) + "\n");
+  writeFileSync(configPath(), `${JSON.stringify(cfg, null, 2)}\n`);
 }
 
 export function projectCommand() {
@@ -79,11 +79,13 @@ export function projectCommand() {
     .command("list")
     .description("List projects")
     .option("--status <s>", "Filter by status")
+    .option("-t, --tag <tag>", "Filter by tag")
     .option("-l, --limit <n>", "Max results", "20")
     .action(async (opts) => {
       const client = createOrcClient();
       const { data, error } = await client.projects.list({
         status: opts.status,
+        tag: opts.tag,
         limit: Number(opts.limit),
       });
       if (error) return console.error("Error:", error);
