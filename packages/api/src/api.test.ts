@@ -92,8 +92,8 @@ describe("Tasks", () => {
     expect(approved.status).toBe("done");
   });
 
-  test("POST /tasks/:id/notes adds a note", async () => {
-    const res = await req("POST", `/tasks/${taskId}/notes`, {
+  test("POST /tasks/:id/comments adds a comment", async () => {
+    const res = await req("POST", `/tasks/${taskId}/comments`, {
       content: "Looks good to merge",
       author: "human",
     });

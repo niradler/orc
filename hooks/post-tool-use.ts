@@ -8,10 +8,27 @@ type HookEvent = {
   tool_response?: { content?: string; error?: string };
 };
 
-const CLAUDE_FILE_TOOLS = new Set(["Write", "Edit", "StrReplace", "EditNotebook"]);
+const CLAUDE_FILE_TOOLS = new Set(["Write", "Edit", "MultiEdit", "StrReplace", "EditNotebook"]);
 const CODEX_FILE_TOOLS = new Set(["write_file", "create_file", "str_replace", "apply_patch"]);
 const SHELL_TOOLS = new Set(["Shell", "Bash", "shell"]);
 const TODO_TOOLS = new Set(["TodoWrite", "todo_write"]);
+const AGENT_TOOLS = new Set(["Agent", "agent"]);
+const PLAN_TOOLS = new Set(["EnterPlanMode", "ExitPlanMode"]);
+
+const ORC_TASK_TOOLS = new Set([
+  "mcp__orc__task_create",
+  "mcp__orc__task_update",
+  "mcp__orc__task_submit_review",
+  "mcp__orc__task_check_review",
+  "mcp__orc__task_delegate",
+  "mcp__orc__task_delete",
+]);
+const ORC_MEMORY_TOOLS = new Set(["mcp__orc__memory_store", "mcp__orc__memory_delete"]);
+const ORC_JOB_TOOLS = new Set([
+  "mcp__orc__job_run",
+  "mcp__orc__job_create",
+  "mcp__orc__job_update",
+]);
 
 function classify(
   event: HookEvent,
@@ -53,6 +70,35 @@ function classify(
 
   if (TODO_TOOLS.has(tool)) {
     return { type: "task", priority: 1, data: { raw: JSON.stringify(input).slice(0, 200) } };
+  }
+
+  if (ORC_TASK_TOOLS.has(tool)) {
+    const action = tool.replace("mcp__orc__task_", "");
+    const title = String(input.title ?? input.summary ?? input.id ?? "").slice(0, 80);
+    return { type: "task", priority: 1, data: { action, title, tool } };
+  }
+
+  if (ORC_MEMORY_TOOLS.has(tool)) {
+    const action = tool.replace("mcp__orc__memory_", "");
+    const content = String(input.content ?? input.title ?? input.id ?? "").slice(0, 80);
+    const memType = String(input.type ?? "fact");
+    return { type: "decision", priority: 2, data: { action, content, memType, tool } };
+  }
+
+  if (ORC_JOB_TOOLS.has(tool)) {
+    const action = tool.replace("mcp__orc__job_", "");
+    const name = String(input.name ?? input.id ?? "").slice(0, 80);
+    return { type: "env", priority: 2, data: { action, name, tool } };
+  }
+
+  if (AGENT_TOOLS.has(tool)) {
+    const desc = String(input.description ?? input.prompt ?? "").slice(0, 120);
+    return { type: "subagent", priority: 3, data: { description: desc } };
+  }
+
+  if (PLAN_TOOLS.has(tool)) {
+    const action = tool === "EnterPlanMode" ? "enter" : "exit";
+    return { type: "plan", priority: 2, data: { action } };
   }
 
   return null;

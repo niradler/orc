@@ -1,5 +1,6 @@
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
+import { isJson, jsonOut } from "../output.js";
 
 export function statusCommand() {
   return new Command("status").description("Show system status").action(async () => {
@@ -14,6 +15,14 @@ export function statusCommand() {
     const { data: tasks } = await client.tasks.list({ limit: 100 });
     const { data: jobs } = await client.jobs.list();
     const { data: mems } = await client.memories.list();
+
+    if (isJson())
+      return jsonOut({
+        api: data,
+        tasks: tasks?.tasks ?? [],
+        jobs: jobs?.jobs ?? [],
+        memories: mems?.memories ?? [],
+      });
 
     const taskCounts = countBy(tasks?.tasks ?? [], "status");
     console.log(`\nTasks:`);

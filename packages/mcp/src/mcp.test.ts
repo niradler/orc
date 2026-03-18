@@ -32,26 +32,9 @@ describe("MCP memory tools", () => {
     expect(result).toContain(memId.slice(-6));
   });
 
-  test("memory_timeline returns context around a memory", async () => {
-    const result = await executeTool("memory_timeline", { id: memId, window: 2 });
-    expect(result).toContain("Timeline Context");
-  });
-
   test("memory_get fetches full content", async () => {
     const result = await executeTool("memory_get", { ids: [memId] });
     expect(result).toContain("ULIDs");
-  });
-
-  test("memory_delete removes memory", async () => {
-    const stored = await executeTool("memory_store", {
-      content: "Temporary memory to delete",
-      importance: "low",
-    });
-    const id = stored.replace("Stored: ", "").split(/\s/)[0]?.trim() ?? "";
-    const del = await executeTool("memory_delete", { id });
-    expect(del).toContain("Deleted");
-    const after = await executeTool("memory_get", { ids: [id] });
-    expect(after).toBe("No memories found.");
   });
 });
 

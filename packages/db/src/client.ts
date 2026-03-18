@@ -40,13 +40,16 @@ function setupDb(sqlite: Database): void {
       updated_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
-    CREATE TABLE IF NOT EXISTS task_notes (
+    CREATE TABLE IF NOT EXISTS comments (
       id TEXT PRIMARY KEY,
-      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      resource_type TEXT NOT NULL,
+      resource_id TEXT NOT NULL,
       content TEXT NOT NULL,
       author TEXT NOT NULL DEFAULT 'human',
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
+
+    CREATE INDEX IF NOT EXISTS comments_resource_idx ON comments(resource_type, resource_id);
 
     CREATE TABLE IF NOT EXISTS task_links (
       id TEXT PRIMARY KEY,
@@ -287,6 +290,33 @@ function setupDb(sqlite: Database): void {
         VALUES (new.id, new.content, COALESCE(new.title, ''), COALESCE(new.tags, ''), COALESCE(new.scope, ''));
     END;
 
+    CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
+      id UNINDEXED,
+      title,
+      body,
+      tags,
+      tokenize='porter ascii'
+    );
+
+    CREATE TRIGGER IF NOT EXISTS tasks_ai AFTER INSERT ON tasks BEGIN
+      INSERT INTO tasks_fts(id, title, body, tags)
+        VALUES (new.id, COALESCE(new.title, ''), COALESCE(new.body, ''), COALESCE(new.tags, ''));
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS tasks_ad AFTER DELETE ON tasks BEGIN
+      DELETE FROM tasks_fts WHERE id = old.id;
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS tasks_au AFTER UPDATE ON tasks BEGIN
+      DELETE FROM tasks_fts WHERE id = old.id;
+      INSERT INTO tasks_fts(id, title, body, tags)
+        VALUES (new.id, COALESCE(new.title, ''), COALESCE(new.body, ''), COALESCE(new.tags, ''));
+    END;
+
+    INSERT OR IGNORE INTO tasks_fts(id, title, body, tags)
+      SELECT id, COALESCE(title, ''), COALESCE(body, ''), COALESCE(tags, '')
+      FROM tasks;
+
     CREATE TABLE IF NOT EXISTS session_events (
       id         TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
@@ -335,6 +365,12 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE memories ADD COLUMN project_id TEXT REFERENCES projects(id)",
     "ALTER TABLE jobs ADD COLUMN project_id TEXT REFERENCES projects(id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS projects_name_idx ON projects(name)",
+    "ALTER TABLE memories ADD COLUMN access_count INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE memories ADD COLUMN last_accessed_at INTEGER",
+    "INSERT INTO comments (id, resource_type, resource_id, content, author, created_at) SELECT id, 'task', task_id, content, author, created_at FROM task_notes WHERE 1",
+    "DROP TABLE IF EXISTS task_notes",
+    "DROP TABLE IF EXISTS task_comments",
+    "DROP TABLE IF EXISTS project_comments",
   ];
   for (const statement of migrations) {
     try {

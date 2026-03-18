@@ -5,11 +5,11 @@ import {
   bridge_chats,
   bridge_messages,
   bridge_permissions,
+  comments,
   gateway_sessions,
   job_runs,
   jobs,
   memories,
-  task_notes,
   tasks,
 } from "@orc/db/schema";
 import { and, desc, eq, inArray } from "drizzle-orm";
@@ -258,9 +258,14 @@ export async function approveTask(
   const now = new Date();
   await db.update(tasks).set({ status: "done", updated_at: now }).where(eq(tasks.id, taskId));
   if (note) {
-    await db
-      .insert(task_notes)
-      .values({ id: ulid(), task_id: taskId, content: note, author: "human", created_at: now });
+    await db.insert(comments).values({
+      id: ulid(),
+      resource_type: "task",
+      resource_id: taskId,
+      content: note,
+      author: "human",
+      created_at: now,
+    });
   }
   return (await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) })) ?? null;
 }
@@ -278,9 +283,14 @@ export async function rejectTask(
     .set({ status: "changes_requested", updated_at: now })
     .where(eq(tasks.id, taskId));
   if (note) {
-    await db
-      .insert(task_notes)
-      .values({ id: ulid(), task_id: taskId, content: note, author: "human", created_at: now });
+    await db.insert(comments).values({
+      id: ulid(),
+      resource_type: "task",
+      resource_id: taskId,
+      content: note,
+      author: "human",
+      created_at: now,
+    });
   }
   return (await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) })) ?? null;
 }

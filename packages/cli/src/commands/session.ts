@@ -1,5 +1,6 @@
 import { loadConfig } from "@orc/core/config";
 import { Command } from "commander";
+import { isJson, jsonOut } from "../output.js";
 
 type SessionRow = {
   id: string;
@@ -79,6 +80,7 @@ export function sessionCommand() {
       const body = (await res.json()) as { sessions: SessionRow[] };
       const rows = body.sessions;
 
+      if (isJson()) return jsonOut({ sessions: rows });
       if (rows.length === 0) return console.log("No sessions recorded yet.");
 
       console.log(`${"ID".padEnd(8)}  ${"AGENT".padEnd(16)}  ${"WHEN".padEnd(10)}  SUMMARY`);
@@ -123,6 +125,7 @@ export function sessionCommand() {
 
       const s = (await res.json()) as SessionDetail;
 
+      if (isJson()) return jsonOut(s);
       console.log(`Session: ${s.id}`);
       console.log(`Agent:   ${s.agent}`);
       console.log(
@@ -202,6 +205,7 @@ export function sessionCommand() {
 
       const body = (await res.json()) as { result?: string; error?: string };
       if (!res.ok) return console.error("Error:", body.error);
+      if (isJson()) return jsonOut(body);
       console.log(body.result);
     });
 

@@ -9,7 +9,6 @@ export type TaskStatus =
 export type TaskPriority = "low" | "normal" | "high" | "critical";
 export type TaskType = "feature" | "bug" | "research" | "ops" | "chore" | "coordination";
 export type TaskExecutionMode = "solo" | "pair" | "parallel" | "handoff";
-export type TaskNoteKind = "comment" | "checkpoint" | "handoff" | "review" | "claim" | "system";
 export type TaskLinkType =
   | "blocks"
   | "blocked_by"
@@ -39,13 +38,12 @@ export type Task = {
   updated_at: string;
 };
 
-export type TaskNote = {
+export type Comment = {
   id: string;
-  task_id: string;
+  resource_type: "task" | "project" | "job" | "memory";
+  resource_id: string;
   content: string;
   author: string;
-  kind: TaskNoteKind;
-  metadata: Record<string, unknown> | null;
   created_at: string;
 };
 
@@ -134,18 +132,9 @@ export type CreateTaskInput = {
   project_id?: string;
   status?: "todo" | "doing" | "blocked";
   priority?: TaskPriority;
-  task_type?: TaskType;
-  execution_mode?: TaskExecutionMode;
-  progress?: number;
   due_at?: string;
   tags?: string[];
   author?: string;
-  assigned_to?: string;
-  active_branch?: string;
-  acceptance_criteria?: string[];
-  context_refs?: string[];
-  next_action?: string;
-  parallel_group?: string;
 };
 
 export type UpdateTaskInput = {
@@ -153,17 +142,8 @@ export type UpdateTaskInput = {
   body?: string | null;
   status?: TaskStatus;
   priority?: TaskPriority;
-  task_type?: TaskType;
-  execution_mode?: TaskExecutionMode;
-  progress?: number;
   due_at?: string | null;
   tags?: string[] | null;
-  assigned_to?: string | null;
-  active_branch?: string | null;
-  acceptance_criteria?: string[] | null;
-  context_refs?: string[] | null;
-  next_action?: string | null;
-  parallel_group?: string | null;
 };
 
 export type TaskClaimInput = {

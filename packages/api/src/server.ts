@@ -12,6 +12,7 @@ import { memoriesRouter } from "./routes/memories.js";
 import { projectsRouter } from "./routes/projects.js";
 import { promptsRouter } from "./routes/prompts.js";
 import { sessionsRouter } from "./routes/sessions.js";
+import { tagsRouter } from "./routes/tags.js";
 import { taskLinksRouter } from "./routes/task-links.js";
 import { tasksRouter } from "./routes/tasks.js";
 
@@ -45,6 +46,7 @@ export function createApp() {
   app.route("/", sessionsRouter);
   app.route("/", jobsRouter);
   app.route("/", gatewayRouter);
+  app.route("/", tagsRouter);
 
   app.doc("/openapi.json", {
     openapi: "3.1.0",

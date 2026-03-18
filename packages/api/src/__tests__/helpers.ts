@@ -1,4 +1,4 @@
-import { createTestDb, closeDb } from "@orc/db/client";
+import { closeDb, createTestDb } from "@orc/db/client";
 import { createApp } from "../server.js";
 
 export function setupTestApp() {

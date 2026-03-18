@@ -1,5 +1,6 @@
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
+import { dryRunMsg, isDryRun, isJson, jsonOut } from "../output.js";
 
 export function promptCommand() {
   const cmd = new Command("prompt").description("Manage prompts and skills");
@@ -17,13 +18,14 @@ export function promptCommand() {
       if (error) return console.error("Error:", error);
       let prompts = data?.prompts ?? [];
       if (opts.skill) prompts = prompts.filter((p) => p.is_skill);
+      if (isJson()) return jsonOut({ prompts });
       if (prompts.length === 0) return console.log("No prompts found.");
 
       for (const p of prompts) {
         const id = p.id.slice(-6);
         const skill = p.is_skill ? color(" [skill]", "36") : "";
         const ver = color(`v${p.version}`, "2");
-        const name = p.name.length > 40 ? p.name.slice(0, 39) + "…" : p.name;
+        const name = p.name.length > 40 ? `${p.name.slice(0, 39)}…` : p.name;
         console.log(`  [${id}] ${name.padEnd(42)} ${ver}${skill}`);
       }
     });
@@ -38,6 +40,7 @@ export function promptCommand() {
       const { data, error } = await client.prompts.get(full);
       if (error) return console.error("Error:", error);
       if (!data) return console.error("Prompt not found.");
+      if (isJson()) return jsonOut(data);
 
       console.log(color(data.name, "1"));
       console.log();
@@ -80,6 +83,7 @@ export function promptCommand() {
         pinned: opts.pinned ?? false,
       });
       if (error) return console.error("Error:", error);
+      if (isJson()) return jsonOut(data);
       console.log(`Created: [${data?.id.slice(-6)}] ${data?.name}`);
     });
 
@@ -110,8 +114,10 @@ export function promptCommand() {
       if (opts.tags) input.tags = opts.tags.split(",").map((s: string) => s.trim());
       if (opts.pinned !== undefined) input.pinned = opts.pinned;
 
+      if (isDryRun()) return dryRunMsg("update", `prompt [${full.slice(-6)}]`, input);
       const { data, error } = await client.prompts.update(full, input);
       if (error) return console.error("Error:", error);
+      if (isJson()) return jsonOut(data);
       console.log(`Updated: [${data?.id.slice(-6)}] ${data?.name}`);
     });
 
@@ -122,8 +128,10 @@ export function promptCommand() {
       const client = createOrcClient();
       const full = await resolvePromptId(client, id);
       if (!full) return;
+      if (isDryRun()) return dryRunMsg("delete", `prompt ${full}`);
       const { error } = await client.prompts.delete(full);
       if (error) return console.error("Error:", error);
+      if (isJson()) return jsonOut({ deleted: full });
       console.log(`Deleted: ${full}`);
     });
 
@@ -147,6 +155,7 @@ export function promptCommand() {
 
       const { data, error } = await client.prompts.render(full, vars);
       if (error) return console.error("Error:", error);
+      if (isJson()) return jsonOut(data);
       console.log(data?.rendered);
     });
 
@@ -161,6 +170,7 @@ export function promptCommand() {
       const { data, error } = await client.prompts.history(full, Number(opts.limit));
       if (error) return console.error("Error:", error);
       const history = data?.history ?? [];
+      if (isJson()) return jsonOut({ history });
       if (history.length === 0) return console.log("No history found.");
 
       for (const h of history) {

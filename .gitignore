@@ -12,3 +12,4 @@ bun.lockb
 .claude/settings.local.json
 .worktrees/
 tui-debug.log
+.examples

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
+import { dryRunMsg, isDryRun, isJson, jsonOut } from "../output.js";
 
 export async function resolveProject(
   client: ReturnType<typeof createOrcClient>,
@@ -68,7 +69,7 @@ function readConfigFile(): Record<string, unknown> {
 }
 
 function writeConfigFile(cfg: Record<string, unknown>): void {
-  writeFileSync(configPath(), JSON.stringify(cfg, null, 2) + "\n");
+  writeFileSync(configPath(), `${JSON.stringify(cfg, null, 2)}\n`);
 }
 
 export function projectCommand() {
@@ -78,15 +79,18 @@ export function projectCommand() {
     .command("list")
     .description("List projects")
     .option("--status <s>", "Filter by status")
+    .option("-t, --tag <tag>", "Filter by tag")
     .option("-l, --limit <n>", "Max results", "20")
     .action(async (opts) => {
       const client = createOrcClient();
       const { data, error } = await client.projects.list({
         status: opts.status,
+        tag: opts.tag,
         limit: Number(opts.limit),
       });
       if (error) return console.error("Error:", error);
       const projects = data?.projects ?? [];
+      if (isJson()) return jsonOut({ projects });
       if (projects.length === 0) return console.log("No projects found.");
 
       for (const p of projects) {
@@ -124,6 +128,7 @@ export function projectCommand() {
         tags,
       });
       if (error) return console.error("Error:", error);
+      if (isJson()) return jsonOut(data);
 
       const config = loadConfig();
       if (!config.activeProject) {
@@ -159,6 +164,8 @@ export function projectCommand() {
       const tasks = tasksRes.data?.tasks ?? [];
       const jobs = jobsRes.data?.jobs ?? [];
       const memories = memoriesRes.data?.memories ?? [];
+
+      if (isJson()) return jsonOut({ project, summary: summary ?? null, tasks, jobs, memories });
 
       console.log(`${project.name} (${project.status})`);
       if (project.description) console.log(`  ${project.description}`);
@@ -219,6 +226,7 @@ export function projectCommand() {
 
       cfg.activeProject = name;
       writeConfigFile(cfg);
+      if (isJson()) return jsonOut({ activeProject: name });
       console.log(`Active project: ${name}`);
     });
 
@@ -235,6 +243,7 @@ export function projectCommand() {
       const { data: project, error: findErr } = await client.projects.getByName(name);
       if (findErr || !project) return console.error(`Project not found: ${name}`);
 
+      if (isDryRun()) return dryRunMsg("update", `project ${name}`);
       const tags = opts.tags ? opts.tags.split(",").map((t: string) => t.trim()) : undefined;
       const { data, error } = await client.projects.update(project.id, {
         name: opts.name,
@@ -244,6 +253,7 @@ export function projectCommand() {
         tags,
       });
       if (error) return console.error("Error:", error);
+      if (isJson()) return jsonOut(data);
       console.log(`Updated: ${data?.name} [${data?.id.slice(-6)}]`);
     });
 
@@ -255,8 +265,10 @@ export function projectCommand() {
       const { data: project, error: findErr } = await client.projects.getByName(name);
       if (findErr || !project) return console.error(`Project not found: ${name}`);
 
+      if (isDryRun()) return dryRunMsg("archive", `project ${name}`);
       const { data, error } = await client.projects.update(project.id, { status: "archived" });
       if (error) return console.error("Error:", error);
+      if (isJson()) return jsonOut(data);
       console.log(`Archived: ${data?.name} [${data?.id.slice(-6)}]`);
     });
 
@@ -268,8 +280,10 @@ export function projectCommand() {
       const { data: project, error: findErr } = await client.projects.getByName(name);
       if (findErr || !project) return console.error(`Project not found: ${name}`);
 
+      if (isDryRun()) return dryRunMsg("delete", `project ${name}`);
       const { error } = await client.projects.delete(project.id);
       if (error) return console.error("Error:", error);
+      if (isJson()) return jsonOut({ deleted: project.id, name });
       console.log(`Deleted project: ${name} [${project.id.slice(-6)}]`);
     });
 

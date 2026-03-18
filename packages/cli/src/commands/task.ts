@@ -1,5 +1,6 @@
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
+import { dryRunMsg, isDryRun, isJson, jsonErr, jsonOut } from "../output.js";
 import { resolveProject } from "./project.js";
 
 async function resolveTaskId(
@@ -25,6 +26,7 @@ export function taskCommand() {
     .option("-p, --project <name>", "Filter by project name")
     .option("--no-project", "Show all tasks across projects")
     .option("-s, --status <status>", "Filter by status")
+    .option("-t, --tag <tag>", "Filter by tag")
     .option("-l, --limit <n>", "Max results", "20")
     .option("--flat", "Disable status grouping")
     .action(async (opts) => {
@@ -39,10 +41,15 @@ export function taskCommand() {
       const { data, error } = await client.tasks.list({
         ...(project ? { project_id: project.id } : {}),
         status: opts.status,
+        tag: opts.tag,
         limit: Number(opts.limit),
       });
-      if (error) return console.error("Error:", error);
+      if (error) {
+        if (isJson()) return jsonErr(String(error));
+        return console.error("Error:", error);
+      }
       const tasks = data?.tasks ?? [];
+      if (isJson()) return jsonOut({ tasks, project: project?.name ?? null });
       if (tasks.length === 0) return console.log("No tasks found.");
 
       // Build project name map for cross-project view
@@ -108,7 +115,11 @@ export function taskCommand() {
         ...(project ? { project_id: project.id } : {}),
         priority: opts.priority,
       });
-      if (error) return console.error("Error:", error);
+      if (error) {
+        if (isJson()) return jsonErr(String(error));
+        return console.error("Error:", error);
+      }
+      if (isJson()) return jsonOut(data);
       console.log(`Created: [${data?.id.slice(-6)}] ${data?.title}`);
     });
 
@@ -120,7 +131,11 @@ export function taskCommand() {
       const full = await resolveTaskId(client, id);
       if (!full) return;
       const { data, error } = await client.tasks.update(full, { status: "done" });
-      if (error) return console.error("Error:", error);
+      if (error) {
+        if (isJson()) return jsonErr(String(error));
+        return console.error("Error:", error);
+      }
+      if (isJson()) return jsonOut(data);
       console.log(`Done: [${data?.id.slice(-6)}] ${data?.title}`);
     });
 
@@ -132,26 +147,37 @@ export function taskCommand() {
       const full = await resolveTaskId(client, id);
       if (!full) return;
       const { data, error } = await client.tasks.update(full, { status: "review" });
-      if (error) return console.error("Error:", error);
+      if (error) {
+        if (isJson()) return jsonErr(String(error));
+        return console.error("Error:", error);
+      }
+      if (isJson()) return jsonOut(data);
       console.log(`In review: [${data?.id.slice(-6)}] ${data?.title}`);
     });
 
   cmd
     .command("approve <id>")
     .description("Approve a task in review (HITL)")
-    .option("-n, --note <text>", "Optional note to add")
+    .option("-c, --comment <text>", "Optional comment to add")
     .action(async (id: string, opts) => {
       const client = createOrcClient();
       const full = await resolveTaskId(client, id);
       if (!full) return;
       const { data: task, error: getErr } = await client.tasks.get(full);
-      if (getErr) return console.error("Error:", getErr);
+      if (getErr) {
+        if (isJson()) return jsonErr(String(getErr));
+        return console.error("Error:", getErr);
+      }
       if (task?.status !== "review") {
         return console.error(`Task is not in review (current: ${task?.status})`);
       }
       const { data, error } = await client.tasks.update(full, { status: "done" });
-      if (error) return console.error("Error:", error);
-      if (opts.note) await client.tasks.addNote(full, opts.note, "human");
+      if (error) {
+        if (isJson()) return jsonErr(String(error));
+        return console.error("Error:", error);
+      }
+      if (opts.comment) await client.tasks.addComment(full, opts.comment, "human");
+      if (isJson()) return jsonOut(data);
       console.log(`Approved: [${data?.id.slice(-6)}] ${data?.title}`);
     });
 
@@ -164,13 +190,20 @@ export function taskCommand() {
       const full = await resolveTaskId(client, id);
       if (!full) return;
       const { data: task, error: getErr } = await client.tasks.get(full);
-      if (getErr) return console.error("Error:", getErr);
+      if (getErr) {
+        if (isJson()) return jsonErr(String(getErr));
+        return console.error("Error:", getErr);
+      }
       if (task?.status !== "review") {
         return console.error(`Task is not in review (current: ${task?.status})`);
       }
       const { data, error } = await client.tasks.update(full, { status: "changes_requested" });
-      if (error) return console.error("Error:", error);
-      if (opts.reason) await client.tasks.addNote(full, opts.reason, "human");
+      if (error) {
+        if (isJson()) return jsonErr(String(error));
+        return console.error("Error:", error);
+      }
+      if (opts.reason) await client.tasks.addComment(full, opts.reason, "human");
+      if (isJson()) return jsonOut(data);
       console.log(`Changes requested: [${data?.id.slice(-6)}] ${data?.title}`);
     });
 
@@ -182,8 +215,18 @@ export function taskCommand() {
       const full = await resolveTaskId(client, id);
       if (!full) return;
       const { data: task, error } = await client.tasks.get(full);
-      if (error) return console.error("Error:", error);
+      if (error) {
+        if (isJson()) return jsonErr(String(error));
+        return console.error("Error:", error);
+      }
       if (!task) return console.error("Task not found");
+
+      // Early JSON return with links
+      if (isJson()) {
+        const { data: linkData } = await client.tasks.listLinks(full);
+        const links = linkData?.links ?? [];
+        return jsonOut({ ...task, links });
+      }
 
       const label = (l: string, v: string | null | undefined) => {
         if (v != null) console.log(`  ${color(l.padEnd(14), "2")} ${v}`);
@@ -267,8 +310,13 @@ export function taskCommand() {
         return console.error("No updates specified. Use --help to see options.");
       }
 
+      if (isDryRun()) return dryRunMsg("update", `task [${full.slice(-6)}]`, updates);
       const { data, error } = await client.tasks.update(full, updates);
-      if (error) return console.error("Error:", error);
+      if (error) {
+        if (isJson()) return jsonErr(String(error));
+        return console.error("Error:", error);
+      }
+      if (isJson()) return jsonOut(data);
       console.log(`Updated: [${data?.id.slice(-6)}] ${data?.title}`);
     });
 
@@ -279,8 +327,13 @@ export function taskCommand() {
       const client = createOrcClient();
       const full = await resolveTaskId(client, id);
       if (!full) return;
+      if (isDryRun()) return dryRunMsg("delete", `task [${full.slice(-6)}]`);
       const { error } = await client.tasks.delete(full);
-      if (error) return console.error("Error:", error);
+      if (error) {
+        if (isJson()) return jsonErr(String(error));
+        return console.error("Error:", error);
+      }
+      if (isJson()) return jsonOut({ deleted: full });
       console.log(`Deleted: [${full.slice(-6)}]`);
     });
 
@@ -335,7 +388,7 @@ function formatTask(
   const si = statusIcon(t.status);
   const pi = priorityIcon(t.priority);
   const id = t.id.slice(-6);
-  const title = t.title.length > 40 ? t.title.slice(0, 39) + "…" : t.title;
+  const title = t.title.length > 40 ? `${t.title.slice(0, 39)}…` : t.title;
   let line = `  ${colorStatus(si, t.status)} ${pi} [${id}] ${title.padEnd(40)}`;
   if (projectNames && t.project_id) {
     line += `  ${color(projectNames.get(t.project_id) ?? t.project_id.slice(-6), "2")}`;

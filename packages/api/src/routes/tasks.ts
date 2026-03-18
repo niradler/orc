@@ -1,10 +1,17 @@
+import type { Database } from "bun:sqlite";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import { TaskPrioritySchema, TaskStatusSchema } from "@orc/core/types";
 import { getDb } from "@orc/db/client";
-import { task_notes, tasks } from "@orc/db/schema";
+import { comments, task_links, tasks } from "@orc/db/schema";
 import { and, desc, eq } from "drizzle-orm";
+import { checkBlockers, rollupParentProgress, unblockDependents } from "../lib/task-deps.js";
+
+function getSqlite(): Database {
+  const db = getDb();
+  return (db as unknown as { $client: Database }).$client;
+}
 
 const app = new OpenAPIHono();
 
@@ -27,15 +34,16 @@ const TaskSchema = z
   })
   .openapi("Task");
 
-const NoteSchema = z
+const CommentSchema = z
   .object({
     id: z.string(),
-    task_id: z.string(),
+    resource_type: z.string(),
+    resource_id: z.string(),
     content: z.string(),
     author: z.string(),
     created_at: z.string().datetime(),
   })
-  .openapi("TaskNote");
+  .openapi("Comment");
 
 const CreateTaskSchema = z
   .object({
@@ -70,6 +78,7 @@ const listRoute = createRoute({
     query: z.object({
       project_id: z.string().optional(),
       status: TaskStatusSchema.optional(),
+      tag: z.string().optional(),
       limit: z.coerce.number().int().min(1).max(100).optional().default(50),
     }),
   },
@@ -130,6 +139,50 @@ const deleteRoute = createRoute({
   },
 });
 
+const BatchTaskItem = z.object({
+  ref: z.string().describe("Temporary reference ID for dependency linking, e.g. 'T1'"),
+  title: z.string().min(1).max(500),
+  body: z.string().optional(),
+  priority: TaskPrioritySchema.optional().default("normal"),
+  depends_on: z.array(z.string()).optional().describe("Refs of tasks that block this one"),
+  subtask_of: z.string().optional().describe("Ref of parent task"),
+});
+
+const batchCreateRoute = createRoute({
+  method: "post",
+  path: "/tasks/batch",
+  tags: ["Tasks"],
+  summary: "Create multiple tasks with dependency links atomically",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z
+            .object({
+              tasks: z.array(BatchTaskItem).min(1).max(100),
+              project_id: z.string().optional(),
+              author: z.string().optional().default("agent"),
+            })
+            .openapi("BatchCreateTasks"),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Created tasks with ref→id mapping",
+      content: {
+        "application/json": {
+          schema: z.object({
+            created: z.number(),
+            mapping: z.record(z.string(), z.string()),
+          }),
+        },
+      },
+    },
+  },
+});
+
 const reviewRoute = createRoute({
   method: "post",
   path: "/tasks/{id}/review",
@@ -164,7 +217,7 @@ const checkReviewRoute = createRoute({
           schema: z
             .object({
               status: z.enum(["review", "approved", "changes_requested", "pending"]),
-              note: z.string().nullable(),
+              comment: z.string().nullable(),
             })
             .openapi("ReviewStatus"),
         },
@@ -173,25 +226,25 @@ const checkReviewRoute = createRoute({
   },
 });
 
-const listNotesRoute = createRoute({
+const listCommentsRoute = createRoute({
   method: "get",
-  path: "/tasks/{id}/notes",
+  path: "/tasks/{id}/comments",
   tags: ["Tasks"],
-  summary: "List task notes",
+  summary: "List task comments",
   request: { params: z.object({ id: z.string() }) },
   responses: {
     200: {
-      description: "Notes",
-      content: { "application/json": { schema: z.object({ notes: z.array(NoteSchema) }) } },
+      description: "Comments",
+      content: { "application/json": { schema: z.object({ comments: z.array(CommentSchema) }) } },
     },
   },
 });
 
-const addNoteRoute = createRoute({
+const addCommentRoute = createRoute({
   method: "post",
-  path: "/tasks/{id}/notes",
+  path: "/tasks/{id}/comments",
   tags: ["Tasks"],
-  summary: "Add a note to a task",
+  summary: "Add a comment to a task",
   request: {
     params: z.object({ id: z.string() }),
     body: {
@@ -202,13 +255,16 @@ const addNoteRoute = createRoute({
               content: z.string().min(1),
               author: z.string().optional().default("human"),
             })
-            .openapi("AddNote"),
+            .openapi("AddComment"),
         },
       },
     },
   },
   responses: {
-    201: { description: "Note added", content: { "application/json": { schema: NoteSchema } } },
+    201: {
+      description: "Comment added",
+      content: { "application/json": { schema: CommentSchema } },
+    },
   },
 });
 
@@ -216,12 +272,26 @@ function toDto(t: typeof tasks.$inferSelect) {
   return {
     ...t,
     due_at: t.due_at?.toISOString() ?? null,
+    claim_expires_at: t.claim_expires_at?.toISOString() ?? null,
     created_at: t.created_at.toISOString(),
     updated_at: t.updated_at.toISOString(),
   };
 }
 
-function noteToDto(n: typeof task_notes.$inferSelect) {
+function rawToDto(row: Record<string, unknown>) {
+  return {
+    ...row,
+    tags: typeof row.tags === "string" ? JSON.parse(row.tags) : row.tags,
+    due_at: row.due_at ? new Date((row.due_at as number) * 1000).toISOString() : null,
+    claim_expires_at: row.claim_expires_at
+      ? new Date((row.claim_expires_at as number) * 1000).toISOString()
+      : null,
+    created_at: new Date((row.created_at as number) * 1000).toISOString(),
+    updated_at: new Date((row.updated_at as number) * 1000).toISOString(),
+  };
+}
+
+function commentToDto(n: typeof comments.$inferSelect) {
   return {
     ...n,
     created_at: n.created_at.toISOString(),
@@ -230,7 +300,26 @@ function noteToDto(n: typeof task_notes.$inferSelect) {
 
 app.openapi(listRoute, async (c) => {
   const db = getDb();
-  const { project_id, status, limit } = c.req.valid("query");
+  const { project_id, status, tag, limit } = c.req.valid("query");
+
+  if (tag) {
+    const sqlite = getSqlite();
+    let sql = `SELECT DISTINCT t.* FROM tasks t, json_each(t.tags) AS j WHERE j.value = ?`;
+    const params: (string | number)[] = [tag];
+    if (project_id) {
+      sql += " AND t.project_id = ?";
+      params.push(project_id);
+    }
+    if (status) {
+      sql += " AND t.status = ?";
+      params.push(status);
+    }
+    sql += " ORDER BY t.updated_at DESC LIMIT ?";
+    params.push(limit);
+    const rows = sqlite.query(sql).all(...params) as Record<string, unknown>[];
+    const mapped = rows.map(rawToDto) as ReturnType<typeof toDto>[];
+    return c.json({ tasks: mapped, total: rows.length });
+  }
 
   const conditions = [];
   if (project_id) conditions.push(eq(tasks.project_id, project_id));
@@ -286,6 +375,14 @@ app.openapi(updateRoute, async (c) => {
   const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!existing) throw new NotFoundError("Task", id);
 
+  if (body.status === "doing" && existing.status !== "doing") {
+    const blockers = checkBlockers(getSqlite(), id);
+    if (blockers.length > 0) {
+      const names = blockers.map((b) => `[${b.id.slice(-6)}] ${b.title}`).join(", ");
+      throw new ValidationError(`Cannot start: blocked by ${names}`);
+    }
+  }
+
   await db
     .update(tasks)
     .set({
@@ -298,6 +395,12 @@ app.openapi(updateRoute, async (c) => {
       updated_at: new Date(),
     })
     .where(eq(tasks.id, id));
+
+  if (body.status && ["done", "cancelled"].includes(body.status)) {
+    const sqlite = getSqlite();
+    unblockDependents(sqlite, id);
+    rollupParentProgress(sqlite, id);
+  }
 
   const updated = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!updated) throw new Error("Expected updated to exist after write");
@@ -333,9 +436,10 @@ app.openapi(reviewRoute, async (c) => {
     .set({ status: "review", body: summary, updated_at: now })
     .where(eq(tasks.id, id));
 
-  await db.insert(task_notes).values({
+  await db.insert(comments).values({
     id: ulid(),
-    task_id: id,
+    resource_type: "task",
+    resource_id: id,
     content: `[review submitted] ${summary}`,
     author: "agent",
     created_at: now,
@@ -353,9 +457,13 @@ app.openapi(checkReviewRoute, async (c) => {
   const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!task) throw new NotFoundError("Task", id);
 
-  const lastNote = await db.query.task_notes.findFirst({
-    where: and(eq(task_notes.task_id, id), eq(task_notes.author, "human")),
-    orderBy: [desc(task_notes.created_at)],
+  const lastComment = await db.query.comments.findFirst({
+    where: and(
+      eq(comments.resource_type, "task"),
+      eq(comments.resource_id, id),
+      eq(comments.author, "human"),
+    ),
+    orderBy: [desc(comments.created_at)],
   });
 
   type ReviewStatus = "review" | "approved" | "changes_requested" | "pending";
@@ -366,25 +474,25 @@ app.openapi(checkReviewRoute, async (c) => {
   };
   const status: ReviewStatus = statusMap[task.status] ?? "pending";
 
-  return c.json({ status, note: lastNote?.content ?? null });
+  return c.json({ status, comment: lastComment?.content ?? null });
 });
 
-app.openapi(listNotesRoute, async (c) => {
+app.openapi(listCommentsRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
 
   const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!task) throw new NotFoundError("Task", id);
 
-  const notes = await db.query.task_notes.findMany({
-    where: eq(task_notes.task_id, id),
-    orderBy: [desc(task_notes.created_at)],
+  const rows = await db.query.comments.findMany({
+    where: and(eq(comments.resource_type, "task"), eq(comments.resource_id, id)),
+    orderBy: [desc(comments.created_at)],
   });
 
-  return c.json({ notes: notes.map(noteToDto) });
+  return c.json({ comments: rows.map(commentToDto) });
 });
 
-app.openapi(addNoteRoute, async (c) => {
+app.openapi(addCommentRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
   const { content, author } = c.req.valid("json");
@@ -392,13 +500,91 @@ app.openapi(addNoteRoute, async (c) => {
   const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!task) throw new NotFoundError("Task", id);
 
-  const noteId = ulid();
+  const commentId = ulid();
   const now = new Date();
-  await db.insert(task_notes).values({ id: noteId, task_id: id, content, author, created_at: now });
+  await db.insert(comments).values({
+    id: commentId,
+    resource_type: "task",
+    resource_id: id,
+    content,
+    author,
+    created_at: now,
+  });
 
-  const note = await db.query.task_notes.findFirst({ where: eq(task_notes.id, noteId) });
-  if (!note) throw new Error("Expected note to exist after write");
-  return c.json(noteToDto(note), 201);
+  const comment = await db.query.comments.findFirst({ where: eq(comments.id, commentId) });
+  if (!comment) throw new Error("Expected comment to exist after write");
+  return c.json(commentToDto(comment), 201);
+});
+
+app.openapi(batchCreateRoute, async (c) => {
+  const db = getDb();
+  const { tasks: items, project_id, author } = c.req.valid("json");
+  const now = new Date();
+  const mapping: Record<string, string> = {};
+
+  const sqlite = getSqlite();
+  sqlite.exec("BEGIN");
+  try {
+    for (const item of items) {
+      const id = ulid();
+      mapping[item.ref] = id;
+      await db.insert(tasks).values({
+        id,
+        title: item.title,
+        body: item.body,
+        project_id,
+        priority: item.priority,
+        author,
+        status: "todo",
+        created_at: now,
+        updated_at: now,
+      });
+    }
+
+    for (const item of items) {
+      const taskId = mapping[item.ref] as string;
+
+      if (item.depends_on) {
+        for (const dep of item.depends_on) {
+          const blockerId = mapping[dep];
+          if (!blockerId) continue;
+          await db.insert(task_links).values({
+            id: ulid(),
+            from_task_id: blockerId,
+            to_task_id: taskId,
+            link_type: "blocks",
+            created_at: now,
+          });
+        }
+      }
+
+      if (item.subtask_of) {
+        const parentId = mapping[item.subtask_of];
+        if (parentId) {
+          await db.insert(task_links).values({
+            id: ulid(),
+            from_task_id: taskId,
+            to_task_id: parentId,
+            link_type: "subtask_of",
+            created_at: now,
+          });
+          await db.insert(task_links).values({
+            id: ulid(),
+            from_task_id: parentId,
+            to_task_id: taskId,
+            link_type: "parent_of",
+            created_at: now,
+          });
+        }
+      }
+    }
+    sqlite.exec("COMMIT");
+  } catch (err) {
+    sqlite.exec("ROLLBACK");
+    throw err;
+  }
+
+  return c.json({ created: items.length, mapping }, 201);
 });
 
 export { app as tasksRouter };

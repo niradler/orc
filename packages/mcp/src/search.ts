@@ -122,7 +122,7 @@ function ftsQuery(
   const sql = `SELECT ${SELECT_COLS}
     FROM ${table} f JOIN memories m ON m.id = f.id
     WHERE f.${table} MATCH ?${clause}
-    ORDER BY rank LIMIT ?`;
+    ORDER BY bm25(${table}, 0, 1.0, 3.0, 1.5, 0) LIMIT ?`;
   try {
     return sqlite.query(sql).all(matchExpr, ...params, limit) as RawMemRow[];
   } catch {
@@ -130,19 +130,33 @@ function ftsQuery(
   }
 }
 
-function buildPorterExpr(query: string, mode: "AND" | "OR"): string {
-  const words = query
-    .replace(/["]/g, " ")
-    .trim()
-    .split(/\s+/)
-    .filter((w) => w.length > 0);
-  if (words.length === 0) return "";
-  if (words.length === 1) return words[0] as string;
-  return words.join(` ${mode} `);
+function buildFtsExpr(query: string, mode: "AND" | "OR"): string {
+  const phrases: string[] = [];
+  const negated: string[] = [];
+  const words: string[] = [];
+
+  let remaining = query.replace(/"([^"]+)"/g, (_, p) => {
+    phrases.push(`"${p}"`);
+    return "";
+  });
+  remaining = remaining.replace(/-(\S+)/g, (_, w) => {
+    negated.push(w);
+    return "";
+  });
+  words.push(
+    ...remaining
+      .trim()
+      .split(/\s+/)
+      .filter((w) => w.length > 0),
+  );
+
+  const positive = [...phrases, ...words].join(` ${mode} `);
+  const neg = negated.map((w) => `NOT ${w}`).join(" ");
+  return [positive, neg].filter(Boolean).join(" ");
 }
 
 function buildTrigramExpr(query: string, mode: "AND" | "OR"): string {
-  return buildPorterExpr(query, mode);
+  return buildFtsExpr(query, mode);
 }
 
 export function searchLayer1(
@@ -174,7 +188,7 @@ export function searchLayer1(
   const porterAnd = ftsQuery(
     sqlite,
     "memories_fts",
-    buildPorterExpr(trimmed, "AND"),
+    buildFtsExpr(trimmed, "AND"),
     scope,
     type,
     limit,
@@ -186,7 +200,7 @@ export function searchLayer1(
   const porterOr = ftsQuery(
     sqlite,
     "memories_fts",
-    buildPorterExpr(trimmed, "OR"),
+    buildFtsExpr(trimmed, "OR"),
     scope,
     type,
     limit,
@@ -232,7 +246,20 @@ export function searchLayer1(
     results.push(...dedupe(fallbackRows, "fallback"));
   }
 
-  return renumber(results.slice(0, limit));
+  const final = renumber(results.slice(0, limit));
+  // Increment access count for returned memories
+  if (final.length > 0) {
+    const ids = final.map((m) => m.id);
+    const placeholders = ids.map(() => "?").join(",");
+    try {
+      sqlite
+        .query(
+          `UPDATE memories SET access_count = access_count + 1, last_accessed_at = unixepoch() WHERE id IN (${placeholders})`,
+        )
+        .run(...ids);
+    } catch {}
+  }
+  return final;
 }
 
 function renumber(items: MemoryLayer1[]): MemoryLayer1[] {
@@ -291,4 +318,80 @@ export function getLayer3(ids: string[]): MemoryLayer3[] {
     created_at: new Date(r.created_at * 1000).toISOString(),
     updated_at: new Date(r.updated_at * 1000).toISOString(),
   }));
+}
+
+export type TaskSearchResult = {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  snippet: string | null;
+  matchLayer: "porter" | "fallback";
+};
+
+export function searchTasks(
+  query: string,
+  project_id?: string,
+  status?: string,
+  limit = 10,
+): TaskSearchResult[] {
+  const sqlite = getSqlite();
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const words = trimmed.split(/\s+/).filter((w) => w.length > 0);
+  if (words.length === 0) return [];
+
+  const params: (string | number)[] = [];
+
+  // Try FTS5 first (porter AND)
+  const ftsExpr = buildFtsExpr(trimmed, "AND");
+  let sql = `SELECT t.id, t.title, t.status, t.priority, substr(t.body, 1, 100) as snippet
+    FROM tasks_fts f JOIN tasks t ON t.id = f.id
+    WHERE f.tasks_fts MATCH ?`;
+  params.push(ftsExpr);
+
+  if (project_id) {
+    sql += " AND t.project_id = ?";
+    params.push(project_id);
+  }
+  if (status) {
+    sql += " AND t.status = ?";
+    params.push(status);
+  }
+  sql += " ORDER BY bm25(tasks_fts, 0, 3.0, 1.0, 1.5) LIMIT ?";
+  params.push(limit);
+
+  try {
+    const rows = sqlite.query(sql).all(...params) as {
+      id: string;
+      title: string;
+      status: string;
+      priority: string;
+      snippet: string | null;
+    }[];
+    if (rows.length > 0) {
+      return rows.map((r) => ({ ...r, matchLayer: "porter" as const }));
+    }
+  } catch {
+    // tasks_fts may not exist
+  }
+
+  // Fallback: LIKE
+  const likeSql = `SELECT id, title, status, priority, substr(body, 1, 100) as snippet FROM tasks
+    WHERE (title LIKE ? OR body LIKE ?)${project_id ? " AND project_id = ?" : ""}${status ? " AND status = ?" : ""}
+    ORDER BY updated_at DESC LIMIT ?`;
+  const likeParams: (string | number)[] = [`%${trimmed}%`, `%${trimmed}%`];
+  if (project_id) likeParams.push(project_id);
+  if (status) likeParams.push(status);
+  likeParams.push(limit);
+
+  const fallbackRows = sqlite.query(likeSql).all(...likeParams) as {
+    id: string;
+    title: string;
+    status: string;
+    priority: string;
+    snippet: string | null;
+  }[];
+  return fallbackRows.map((r) => ({ ...r, matchLayer: "fallback" as const }));
 }
