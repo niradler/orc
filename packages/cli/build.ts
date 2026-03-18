@@ -25,7 +25,7 @@ for (const { target, out } of targets) {
     "--outfile",
     out,
     "--define",
-    `process.env.ORC_VERSION=${JSON.stringify(JSON.stringify(pkg.version))}`,
+    `process.env.ORC_VERSION=${JSON.stringify(pkg.version)}`,
   ]);
   if (proc.exitCode !== 0) {
     console.error(proc.stderr.toString());
