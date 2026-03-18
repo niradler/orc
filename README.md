@@ -187,13 +187,14 @@ When an agent's context window fills up, `session_snapshot` captures current sta
 
 ## MCP tools
 
-**25 tools** available to any connected agent. Start every session with `context` — it returns active tasks + key memories in ~200 tokens.
+**20 tools** available to any connected agent. Start every session with `context` — it returns active tasks + key memories in ~200 tokens.
 
 | Category | Tools |
 |---|---|
-| **Project** | `project_list`, `project_get`, `project_create`, `project_update` |
-| **Memory** | `context`, `memory_search`, `memory_timeline`, `memory_get`, `memory_store`, `memory_delete` |
-| **Task** | `task_list`, `task_get`, `task_create`, `task_update`, `task_submit_review`, `task_check_review`, `task_delegate` |
+| **Project** | `project_list` |
+| **Memory** | `context`, `memory_search`, `memory_get`, `memory_store` |
+| **Task** | `task_list`, `task_get`, `task_create`, `task_update`, `task_batch_create`, `task_submit_review`, `task_check_review` |
+| **Search** | `search` |
 | **Job** | `job_list`, `job_run`, `job_status` |
 | **Session** | `session_event`, `session_snapshot`, `session_restore`, `session_log` |
 
@@ -210,8 +211,8 @@ When an agent's context window fills up, `session_snapshot` captures current sta
 ### Task status flow
 
 ```
-todo → doing → review → done
-                     ↘ changes_requested → doing
+todo → doing → blocked → doing → review → done
+                                       ↘ changes_requested → doing
 ```
 
 ## CLI reference
@@ -224,7 +225,7 @@ orc home                         Show ~/.orc directory and config
 orc status                       Show API health and counts
 
 orc project list|add|show|use|update|archive
-orc task list|add|done|review|approve|reject|link|note
+orc task list|add|show|update|done|review|approve|reject|delete
 orc mem list|add|search
 orc job list|add|run|runs
 orc session list|show|log

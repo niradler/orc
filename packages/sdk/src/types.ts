@@ -40,7 +40,7 @@ export type Task = {
 
 export type Comment = {
   id: string;
-  resource_type: string;
+  resource_type: "task" | "project" | "job" | "memory";
   resource_id: string;
   content: string;
   author: string;

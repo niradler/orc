@@ -317,7 +317,8 @@ app.openapi(listRoute, async (c) => {
     sql += " ORDER BY t.updated_at DESC LIMIT ?";
     params.push(limit);
     const rows = sqlite.query(sql).all(...params) as Record<string, unknown>[];
-    return c.json({ tasks: rows.map(rawToDto), total: rows.length });
+    const mapped = rows.map(rawToDto) as ReturnType<typeof toDto>[];
+    return c.json({ tasks: mapped, total: rows.length });
   }
 
   const conditions = [];

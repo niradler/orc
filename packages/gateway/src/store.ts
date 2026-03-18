@@ -5,11 +5,11 @@ import {
   bridge_chats,
   bridge_messages,
   bridge_permissions,
+  comments,
   gateway_sessions,
   job_runs,
   jobs,
   memories,
-  comments,
   tasks,
 } from "@orc/db/schema";
 import { and, desc, eq, inArray } from "drizzle-orm";

@@ -189,7 +189,8 @@ app.openapi(listRoute, async (c) => {
     sql += " ORDER BY p.name ASC LIMIT ?";
     params.push(limit);
     const rows = sqlite.query(sql).all(...params) as Record<string, unknown>[];
-    return c.json({ projects: rows.map(rawToDto) });
+    const mapped = rows.map(rawToDto) as ReturnType<typeof toDto>[];
+    return c.json({ projects: mapped });
   }
 
   const conditions = status ? [eq(projects.status, status)] : [];
@@ -211,7 +212,7 @@ app.openapi(getByNameRoute, async (c) => {
     )
     .get(name);
   if (!row) throw new NotFoundError("Project", name);
-  return c.json(toDto(row));
+  return c.json(rawToDto(row as unknown as Record<string, unknown>) as ReturnType<typeof toDto>);
 });
 
 app.openapi(summaryRoute, async (c) => {
