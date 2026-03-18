@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 
 const pkg = JSON.parse(readFileSync("./package.json", "utf-8"));
+mkdirSync("dist", { recursive: true });
 
 const targets = [
   { target: "bun-linux-x64", out: "dist/orc-linux-x64" },
@@ -12,16 +14,24 @@ const targets = [
 
 for (const { target, out } of targets) {
   console.log(`Building ${out}...`);
-  await Bun.build({
-    entrypoints: ["./src/index.ts"],
-    outfile: out,
-    target: target as Parameters<typeof Bun.build>[0]["target"],
-    compile: true,
-    minify: true,
-    define: {
-      "process.env.ORC_VERSION": JSON.stringify(pkg.version),
-    },
-  });
+  const proc = Bun.spawnSync([
+    "bun",
+    "build",
+    "./src/index.ts",
+    "--compile",
+    "--minify",
+    "--target",
+    target,
+    "--outfile",
+    out,
+    "--define",
+    `process.env.ORC_VERSION=${JSON.stringify(JSON.stringify(pkg.version))}`,
+  ]);
+  if (proc.exitCode !== 0) {
+    console.error(proc.stderr.toString());
+    process.exit(1);
+  }
+  console.log(proc.stdout.toString());
 }
 
 console.log("All builds complete.");
