@@ -1,9 +1,13 @@
+import { readFileSync } from "node:fs";
+
+const pkg = JSON.parse(readFileSync("./package.json", "utf-8"));
+
 const targets = [
   { target: "bun-linux-x64", out: "dist/orc-linux-x64" },
   { target: "bun-linux-arm64", out: "dist/orc-linux-arm64" },
   { target: "bun-darwin-arm64", out: "dist/orc-mac-arm64" },
   { target: "bun-darwin-x64", out: "dist/orc-mac-x64" },
-  { target: "bun-windows-x64", out: "dist/orc.exe" },
+  { target: "bun-windows-x64", out: "dist/orc-windows-x64.exe" },
 ] as const;
 
 for (const { target, out } of targets) {
@@ -14,6 +18,9 @@ for (const { target, out } of targets) {
     target: target as Parameters<typeof Bun.build>[0]["target"],
     compile: true,
     minify: true,
+    define: {
+      "process.env.ORC_VERSION": JSON.stringify(pkg.version),
+    },
   });
 }
 

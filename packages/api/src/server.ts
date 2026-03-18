@@ -3,6 +3,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
+import { ORC_VERSION } from "@orc/core/version";
 import { bearerAuth } from "./middleware/auth.js";
 import { gatewayRouter } from "./routes/gateway.js";
 import { healthRouter } from "./routes/health.js";
@@ -52,7 +53,7 @@ export function createApp() {
     openapi: "3.1.0",
     info: {
       title: "Orc API",
-      version: "0.0.1",
+      version: ORC_VERSION,
       description: "Human + AI Orchestration Hub API",
     },
     servers: [{ url: `http://${config.api.host}:${config.api.port}`, description: "Local" }],

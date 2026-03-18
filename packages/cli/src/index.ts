@@ -1,12 +1,8 @@
 #!/usr/bin/env bun
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { existsSync, statSync } from "node:fs";
 import { loadConfig } from "@orc/core/config";
+import { ORC_VERSION } from "@orc/core/version";
 import { Command } from "commander";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
 
 import { daemonCommand, ORC_HOME, ORC_PID, readDaemonPid } from "./commands/daemon.js";
 import { gatewayCommand } from "./commands/gateway.js";
@@ -35,7 +31,7 @@ type GlobalOpts = {
 const program = new Command()
   .name("orc")
   .description("Human + AI Orchestration Hub")
-  .version(pkg.version)
+  .version(ORC_VERSION)
   .option("--db <path>", "DB file path (overrides ORC_DB_PATH / config.json)")
   .option("--port <n>", "API port (overrides ORC_API_PORT / config.json)")
   .option("--host <host>", "API host (overrides ORC_API_HOST / config.json)")

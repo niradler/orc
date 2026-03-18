@@ -1,3 +1,4 @@
+import { ORC_VERSION } from "@orc/core/version";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 
 const app = new OpenAPIHono();
@@ -28,7 +29,7 @@ const startTime = Date.now();
 app.openapi(healthRoute, (c) => {
   return c.json({
     status: "ok" as const,
-    version: "0.0.1",
+    version: ORC_VERSION,
     uptime: Math.floor((Date.now() - startTime) / 1000),
   });
 });
