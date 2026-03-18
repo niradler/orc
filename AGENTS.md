@@ -120,6 +120,7 @@ Key env vars: `ORC_DB_PATH`, `ORC_API_PORT` (default 7700), `ORC_API_SECRET`, `O
 - **IDs are ULIDs** — use `ulid()` from `@orc/core/ids`
 - **No comments** unless explaining non-obvious intent
 - **Biome** for all linting/formatting — run `bun check` before committing
+- **Aligned versions** — all `package.json` files (root + every package) must share the same version. Always patch bump all together.
 
 ## Adding a New MCP Tool
 
