@@ -21,12 +21,9 @@ import {
 } from "./store.js";
 import type { DirectCommandResult } from "./types.js";
 
-type Backend = "claude" | "codex" | "cursor";
-
-function backendFromMode(mode: GatewayMode): Backend {
-  if (mode.endsWith("codex")) return "codex";
-  if (mode.endsWith("cursor")) return "cursor";
-  return "claude";
+function backendFromMode(mode: GatewayMode): string {
+  const parts = mode.split(":");
+  return parts[1] ?? "claude";
 }
 
 function statusEmoji(status: string): string {
@@ -60,7 +57,7 @@ function helpText(mode: GatewayMode): string {
     "<b>Navigation</b>",
     "/help — this message",
     "/status — system overview",
-    "/mode [direct|agent:claude|agent:codex|agent:cursor|multi|job:&lt;name&gt;] — switch mode",
+    "/mode [direct|agent:&lt;name&gt;|multi|job:&lt;name&gt;] — switch mode",
     "/cwd &lt;path&gt; — set working directory",
     "",
     "<b>Tasks</b>",
@@ -78,7 +75,7 @@ function helpText(mode: GatewayMode): string {
     "/mem &lt;query&gt; — search memories",
     "",
     "<b>Agents</b>",
-    "/agent claude|codex|cursor — switch active agent",
+    "/agent &lt;name&gt; — switch active agent (claude, codex, gemini, copilot, a2a, ...)",
     "/sessions — list all agent sessions",
     "/session new|list|switch &lt;id&gt;|stop — session lifecycle",
   ];
@@ -129,8 +126,7 @@ export async function handleDirectCommand(input: {
   }
 
   if (command === "/mode") {
-    if (!argText)
-      return { text: "Usage: /mode <direct|agent:claude|agent:codex|agent:cursor|multi|job:name>" };
+    if (!argText) return { text: "Usage: /mode <direct|agent:<name>|multi|job:<name>>" };
     const mode = argText as GatewayMode;
     await updateChatMode(input.chatKey, mode);
     return { text: `Mode updated to ${mode}`, mode };
@@ -145,8 +141,8 @@ export async function handleDirectCommand(input: {
   }
 
   if (command === "/agent") {
-    if (argText !== "claude" && argText !== "codex" && argText !== "cursor") {
-      return { text: "Usage: /agent <claude|codex|cursor>" };
+    if (!argText) {
+      return { text: "Usage: /agent <name> (e.g. claude, codex, gemini, copilot, a2a)" };
     }
     const mode = `agent:${argText}` as GatewayMode;
     await updateChatMode(input.chatKey, mode);
@@ -229,8 +225,8 @@ export async function handleDirectCommand(input: {
   if (command === "/assign") {
     const [taskId, agent] = argText.split(/\s+/);
     if (!taskId || !agent) return { text: "Usage: /assign <task-id> <agent>" };
-    if (agent !== "claude" && agent !== "codex" && agent !== "cursor") {
-      return { text: "Agent must be: claude, codex, or cursor" };
+    if (!agent) {
+      return { text: "Usage: /assign <task-id> <agent>" };
     }
     const task = await findTask(taskId);
     if (!task) return { text: `Task not found: ${taskId}` };

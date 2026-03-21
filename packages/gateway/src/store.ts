@@ -114,7 +114,7 @@ export async function listRecentMessages(chatKey: string, gatewaySessionId?: str
 
 export async function createGatewaySession(input: {
   chatKey: string;
-  backend: "claude" | "codex" | "cursor";
+  backend: string;
   cwd?: string | undefined;
   mode: GatewayMode;
   title?: string | undefined;

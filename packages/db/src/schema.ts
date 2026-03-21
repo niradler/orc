@@ -55,7 +55,7 @@ export const tasks = sqliteTable("tasks", {
   claim_expires_at: integer("claim_expires_at", { mode: "timestamp" }),
   prompt_id: text("prompt_id").references(() => prompts.id, { onDelete: "set null" }),
   required_review: integer("required_review", { mode: "boolean" }).default(true).notNull(),
-  agent_backend: text("agent_backend", { enum: ["claude", "codex", "cursor"] }),
+  agent_backend: text("agent_backend"),
   max_review_rounds: integer("max_review_rounds").default(3).notNull(),
   ...timestamps,
 });
@@ -308,10 +308,12 @@ export const gateway_sessions = sqliteTable(
   {
     id: text("id").primaryKey(),
     chat_id: text("chat_id").references(() => bridge_chats.id, { onDelete: "cascade" }),
-    backend: text("backend", { enum: ["claude", "codex", "cursor"] }).notNull(),
+    backend: text("backend").notNull(),
     mode: text("mode").notNull(),
     runtime_session_id: text("runtime_session_id"),
     cwd: text("cwd"),
+    acpx_agent: text("acpx_agent"),
+    a2a_url: text("a2a_url"),
     title: text("title"),
     model: text("model"),
     status: text("status", { enum: ["idle", "running", "stopped", "error"] })

@@ -18,12 +18,14 @@ export type RunnerContext = {
   permissionManager: PermissionManager;
   session: {
     id: string;
-    backend: "claude" | "codex" | "cursor";
+    backend: string;
     cwd: string;
     model: string | null;
     runtime_session_id: string | null;
     auto_approve: boolean;
     task_id: string | null;
+    acpx_agent: string | null;
+    a2a_url: string | null;
   };
   threadId?: string | undefined;
 };
@@ -47,11 +49,7 @@ export async function runAgentTurn(
     agentSession = await createAgentSession(ctx, prompt);
     activeSessions.set(ctx.session.id, agentSession);
   } else {
-    if (ctx.session.backend === "codex") {
-      await agentSession.send(prompt);
-    } else {
-      await agentSession.send(prompt);
-    }
+    await agentSession.send(prompt);
   }
 
   return await driveEventLoop(ctx, agentSession, previewMsgId, preview);
@@ -64,29 +62,72 @@ async function createAgentSession(
   const backend = ctx.session.backend;
   const runtimeId = ctx.session.runtime_session_id ?? undefined;
 
-  if (backend === "codex") {
-    const { startCodexSession } = await import("./agent-runtime/codex.js");
-    return await startCodexSession(
-      { cwd: ctx.session.cwd, model: ctx.session.model ?? undefined, runtimeSessionId: runtimeId },
-      initialPrompt,
-    );
+  if (backend === "a2a") {
+    const a2aBackend = createBackend("a2a");
+    const session = await a2aBackend.startSession({
+      cwd: ctx.session.cwd,
+      a2aUrl: ctx.session.a2a_url ?? undefined,
+      runtimeSessionId: runtimeId,
+    });
+    await session.send(initialPrompt);
+    return session;
   }
 
-  const backendImpl = createBackend(backend as "claude" | "cursor");
+  if (backend === "claude") {
+    try {
+      return await startNativeClaudeSession(ctx, initialPrompt, runtimeId);
+    } catch (err) {
+      logger.warn("Native claude backend failed, falling back to ACPX", { err });
+    }
+  }
+
+  const acpxBackend = createBackend("acpx");
+  const acpxAgent = ctx.session.acpx_agent ?? backend;
+  if (runtimeId) {
+    try {
+      return await acpxBackend.resumeSession(runtimeId, {
+        cwd: ctx.session.cwd,
+        model: ctx.session.model ?? undefined,
+        acpxAgent,
+        autoApprove: ctx.session.auto_approve,
+        runtimeSessionId: runtimeId,
+      });
+    } catch (err) {
+      logger.warn(`Failed to resume ACPX session for ${acpxAgent}, starting fresh`, { err });
+    }
+  }
+  const session = await acpxBackend.startSession({
+    cwd: ctx.session.cwd,
+    model: ctx.session.model ?? undefined,
+    acpxAgent,
+    autoApprove: ctx.session.auto_approve,
+  });
+  await session.send(initialPrompt);
+  return session;
+}
+
+async function startNativeClaudeSession(
+  ctx: RunnerContext,
+  initialPrompt: string,
+  runtimeId: string | undefined,
+): Promise<AgentSession> {
+  const backendImpl = createBackend("claude");
   if (runtimeId) {
     try {
       return await backendImpl.resumeSession(runtimeId, {
         cwd: ctx.session.cwd,
         model: ctx.session.model ?? undefined,
         runtimeSessionId: runtimeId,
+        autoApprove: ctx.session.auto_approve,
       });
     } catch (err) {
-      logger.warn(`Failed to resume ${backend} session, starting fresh`, { err });
+      logger.warn("Failed to resume native claude session, starting fresh", { err });
     }
   }
   const session = await backendImpl.startSession({
     cwd: ctx.session.cwd,
     model: ctx.session.model ?? undefined,
+    autoApprove: ctx.session.auto_approve,
   });
   await session.send(initialPrompt);
   return session;

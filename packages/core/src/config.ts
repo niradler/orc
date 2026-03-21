@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { z } from "zod";
 
 const ChannelDefaultModeSchema = z
-  .enum(["direct", "agent:claude", "agent:codex", "agent:cursor", "multi"])
+  .enum(["direct", "multi"])
+  .or(z.string().startsWith("agent:"))
   .or(z.string().startsWith("job:"))
   .default("direct");
 
@@ -96,7 +97,7 @@ export const OrcConfigSchema = z.object({
       enabled: z.boolean().default(false),
       poll_interval_minutes: z.number().int().min(1).default(5),
       max_workers: z.number().int().min(1).default(1),
-      default_backend: z.enum(["claude", "codex", "cursor"]).default("claude"),
+      default_backend: z.string().default("claude"),
       session_idle_timeout_minutes: z.number().int().min(1).default(20),
       worker_auto_approve: z.boolean().default(true),
     })

@@ -1,10 +1,12 @@
-export type AgentBackendName = "claude" | "codex" | "cursor";
+export type AgentBackendName = "claude" | "acpx" | "a2a" | (string & {});
 
 export type SessionOpts = {
   cwd: string;
   model?: string | undefined;
   runtimeSessionId?: string | undefined;
   autoApprove?: boolean | undefined;
+  acpxAgent?: string | undefined;
+  a2aUrl?: string | undefined;
 };
 
 export type ImageAttachment = {

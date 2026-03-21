@@ -47,7 +47,7 @@ const BOT_COMMANDS = [
   { command: "jobs", description: "List jobs" },
   { command: "run", description: "Run a job: /run <name>" },
   { command: "mem", description: "Search memories: /mem <query>" },
-  { command: "agent", description: "Switch agent: /agent claude|codex|cursor" },
+  { command: "agent", description: "Switch agent: /agent <name>" },
   { command: "sessions", description: "List agent sessions" },
   { command: "session", description: "Session lifecycle: new|list|switch|stop" },
   { command: "mode", description: "Switch routing mode" },
@@ -330,6 +330,8 @@ class GatewayManager {
       runtime_session_id: string | null;
       auto_approve: boolean;
       task_id: string | null;
+      acpx_agent: string | null;
+      a2a_url: string | null;
     },
     text: string,
   ): Promise<void> {
@@ -372,12 +374,14 @@ class GatewayManager {
           permissionManager: this.permissionManager,
           session: {
             id: session.id,
-            backend: session.backend as "claude" | "codex" | "cursor",
+            backend: session.backend,
             cwd: session.cwd,
             model: session.model,
             runtime_session_id: session.runtime_session_id,
             auto_approve: session.auto_approve,
             task_id: session.task_id,
+            acpx_agent: session.acpx_agent,
+            a2a_url: session.a2a_url,
           },
           threadId: message.threadId,
         },

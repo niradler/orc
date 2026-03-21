@@ -67,7 +67,7 @@ export interface SupportsCommandRegistration {
 }
 
 export type GatewaySessionRuntime = {
-  backend: "claude" | "codex" | "cursor";
+  backend: string;
   run(input: {
     cwd: string;
     prompt: string;
@@ -78,7 +78,7 @@ export type GatewaySessionRuntime = {
 
 export type SessionSummary = {
   id: string;
-  backend: "claude" | "codex" | "cursor";
+  backend: string;
   title: string | null;
   cwd: string | null;
   status: string;

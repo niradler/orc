@@ -101,9 +101,9 @@ export const toolDefinitions = [
         .default(true)
         .describe("Require human review before done"),
       agent_backend: z
-        .enum(["claude", "codex", "cursor"])
+        .string()
         .optional()
-        .describe("Agent backend for task execution"),
+        .describe("Agent backend for task execution (e.g. claude, codex, gemini, a2a)"),
       max_review_rounds: z
         .number()
         .int()
@@ -153,7 +153,7 @@ export const toolDefinitions = [
             tags: z.array(z.string()).optional(),
             prompt_id: z.string().optional(),
             required_review: z.boolean().optional().default(true),
-            agent_backend: z.enum(["claude", "codex", "cursor"]).optional(),
+            agent_backend: z.string().optional(),
             max_review_rounds: z.number().int().min(1).optional().default(3),
             depends_on: z
               .array(z.string())
@@ -453,7 +453,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         tags,
         prompt_id,
         required_review: required_review ?? true,
-        agent_backend: agent_backend as "claude" | "codex" | "cursor" | undefined,
+        agent_backend: agent_backend as string | undefined,
         max_review_rounds: max_review_rounds ?? 3,
         created_at: now,
         updated_at: now,
@@ -840,7 +840,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           tags: item.tags,
           prompt_id: item.prompt_id,
           required_review: item.required_review ?? true,
-          agent_backend: item.agent_backend as "claude" | "codex" | "cursor" | undefined,
+          agent_backend: item.agent_backend as string | undefined,
           max_review_rounds: item.max_review_rounds ?? 3,
           created_at: now,
           updated_at: now,
