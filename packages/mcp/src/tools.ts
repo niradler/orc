@@ -470,16 +470,6 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         priority?: string;
         comment?: string;
       };
-      if (body !== undefined || priority) {
-        await db
-          .update(tasks)
-          .set({
-            ...(body !== undefined ? { body } : {}),
-            ...(priority ? { priority: priority as "low" } : {}),
-            updated_at: new Date(),
-          })
-          .where(eq(tasks.id, id));
-      }
       if (status) {
         const result = await updateTaskStatus({
           taskId: id,
@@ -490,6 +480,16 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         if (!result.ok) return result.error ?? "Transition failed";
       } else if (comment) {
         await addTaskComment(id, comment, "agent");
+      }
+      if (body !== undefined || priority) {
+        await db
+          .update(tasks)
+          .set({
+            ...(body !== undefined ? { body } : {}),
+            ...(priority ? { priority: priority as "low" } : {}),
+            updated_at: new Date(),
+          })
+          .where(eq(tasks.id, id));
       }
       return `Updated: ${id}`;
     }
@@ -993,7 +993,6 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       return `Unknown tool: ${name}`;
   }
 }
-
 
 type TaskRow = { id: string; title: string; status: string; priority: string };
 type EventRow = { type: string; priority: number; data: string };

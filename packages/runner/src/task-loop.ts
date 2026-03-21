@@ -33,9 +33,12 @@ function pickNextTask(): PickedTask | null {
          AND (t.prompt_id IS NOT NULL OR t.agent_backend IS NOT NULL
               OR EXISTS (SELECT 1 FROM json_each(t.tags) j WHERE j.value = 'agent'))
          AND NOT EXISTS (
-           SELECT 1 FROM task_links tl JOIN tasks blocker ON blocker.id = tl.from_task_id
-           WHERE tl.to_task_id = t.id AND tl.link_type = 'blocks'
-             AND blocker.status NOT IN ('done', 'cancelled')
+           SELECT 1 FROM (
+             SELECT tl.from_task_id AS blocker_id FROM task_links tl WHERE tl.to_task_id = t.id AND tl.link_type = 'blocks'
+             UNION
+             SELECT tl.to_task_id AS blocker_id FROM task_links tl WHERE tl.from_task_id = t.id AND tl.link_type = 'blocked_by'
+           ) b JOIN tasks blocker ON blocker.id = b.blocker_id
+           WHERE blocker.status NOT IN ('done', 'cancelled')
          )
        ORDER BY
          CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
@@ -146,7 +149,7 @@ async function spawnWorker(task: PickedTask): Promise<void> {
   const isResume = task.status === "changes_requested";
   const prevSession = isResume ? findPreviousSession(task.id) : null;
 
-  await updateTaskStatus({
+  const claimResult = await updateTaskStatus({
     taskId: task.id,
     status: "queued",
     claimedBy: sessionId,
@@ -155,6 +158,10 @@ async function spawnWorker(task: PickedTask): Promise<void> {
       : `Claimed by task loop (backend: ${backendName})`,
     author: "system",
   });
+  if (!claimResult.ok) {
+    logger.warn(`Failed to claim task ${task.id}: ${claimResult.error}`);
+    return;
+  }
 
   const prompt = await buildPrompt(task);
   let cwd = prevSession?.cwd ?? process.cwd();
@@ -204,12 +211,19 @@ async function driveWorkerLoop(
   let session: AgentSession | null = null;
 
   try {
-    await updateTaskStatus({
+    const doingResult = await updateTaskStatus({
       taskId: task.id,
       status: "doing",
       claimedBy: sessionId,
       author: "system",
     });
+    if (!doingResult.ok) {
+      logger.warn(`Failed to start task ${task.id}: ${doingResult.error}`);
+      sqlite
+        .query("UPDATE gateway_sessions SET status = 'error', last_error = ? WHERE id = ?")
+        .run(doingResult.error ?? "transition failed", sessionId);
+      return;
+    }
 
     const backend = createBackend(backendName);
 
@@ -336,6 +350,13 @@ async function spawnReviewer(task: PickedTask): Promise<void> {
   const sessionId = ulid();
   const backendName = (task.agent_backend ?? config.agent_loop.default_backend) as AgentBackendName;
 
+  const current = await db.query.tasks.findFirst({ where: eq(tasks.id, task.id) });
+  if (!current || current.status !== "review" || current.claimed_by) {
+    logger.warn(
+      `Reviewer skipped: task ${task.id} no longer eligible (status=${current?.status}, claimed=${current?.claimed_by})`,
+    );
+    return;
+  }
   await db
     .update(tasks)
     .set({ claimed_by: sessionId, updated_at: new Date() })
@@ -540,7 +561,10 @@ export async function ensureSystemJob(): Promise<string> {
     const config = loadConfig();
     const expectedCron = `*/${config.agent_loop.poll_interval_minutes} * * * *`;
     if (existing.cron_expr !== expectedCron) {
-      await db.update(jobs).set({ cron_expr: expectedCron, updated_at: new Date() }).where(eq(jobs.id, existing.id));
+      await db
+        .update(jobs)
+        .set({ cron_expr: expectedCron, updated_at: new Date() })
+        .where(eq(jobs.id, existing.id));
       logger.info(`Updated task loop cron: ${existing.cron_expr} → ${expectedCron}`);
     }
     return existing.id;

@@ -199,6 +199,10 @@ export class CodexSession implements AgentSession {
   }
 
   async send(prompt: string): Promise<void> {
+    if (!this.proc) {
+      await this.start({ cwd: this.cwd, runtimeSessionId: this.runtimeSessionId }, prompt);
+      return;
+    }
     const msg = JSON.stringify({ type: "user_message", content: prompt });
     writeToStdin(this.proc?.stdin, new TextEncoder().encode(`${msg}\n`));
   }
@@ -258,10 +262,9 @@ function createCodexBackend(): AgentBackend {
       return { ok: true };
     },
 
-    async startSession(_opts) {
-      throw new Error(
-        "Codex sessions require an initial prompt — use startCodexSession() directly",
-      );
+    async startSession(opts) {
+      const session = new CodexSession(opts);
+      return session;
     },
 
     async resumeSession(runtimeSessionId, opts) {

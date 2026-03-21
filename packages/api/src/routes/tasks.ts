@@ -350,6 +350,18 @@ app.openapi(updateRoute, async (c) => {
   const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!existing) throw new NotFoundError("Task", id);
 
+  if (body.status) {
+    const result = await updateTaskStatus({
+      taskId: id,
+      status: body.status as TaskStatus,
+      comment: body.comment,
+      author: "api",
+    });
+    if (!result.ok) throw new ValidationError(result.error ?? "Transition failed");
+  } else if (body.comment) {
+    await addTaskComment(id, body.comment, "api");
+  }
+
   const nonStatusFields = {
     ...(body.title !== undefined ? { title: body.title } : {}),
     ...(body.body !== undefined ? { body: body.body } : {}),
@@ -362,18 +374,6 @@ app.openapi(updateRoute, async (c) => {
       .update(tasks)
       .set({ ...nonStatusFields, updated_at: new Date() })
       .where(eq(tasks.id, id));
-  }
-
-  if (body.status) {
-    const result = await updateTaskStatus({
-      taskId: id,
-      status: body.status as TaskStatus,
-      comment: body.comment,
-      author: "api",
-    });
-    if (!result.ok) throw new ValidationError(result.error ?? "Transition failed");
-  } else if (body.comment) {
-    await addTaskComment(id, body.comment, "api");
   }
 
   const updated = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });

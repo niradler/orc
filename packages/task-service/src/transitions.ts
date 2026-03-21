@@ -74,7 +74,7 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
   if (opts.status === "todo" && (currentStatus === "doing" || currentStatus === "queued")) {
     updates.claimed_by = null;
   }
-  if (opts.status === "paused") {
+  if (opts.status === "paused" || opts.status === "blocked") {
     updates.claimed_by = null;
   }
 
@@ -106,10 +106,13 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
     for (const dep of dependents) {
       const remaining = sqlite
         .query(
-          `SELECT 1 FROM task_links tl JOIN tasks t ON t.id = tl.from_task_id
-         WHERE tl.to_task_id = ? AND tl.link_type = 'blocks' AND t.status NOT IN ('done','cancelled') LIMIT 1`,
+          `SELECT 1 FROM (
+            SELECT tl.from_task_id AS blocker_id FROM task_links tl WHERE tl.to_task_id = ? AND tl.link_type = 'blocks'
+            UNION
+            SELECT tl.to_task_id AS blocker_id FROM task_links tl WHERE tl.from_task_id = ? AND tl.link_type = 'blocked_by'
+          ) b JOIN tasks t ON t.id = b.blocker_id WHERE t.status NOT IN ('done','cancelled') LIMIT 1`,
         )
-        .get(dep.id);
+        .get(dep.id, dep.id);
       if (!remaining) {
         const depTask = sqlite.query("SELECT status FROM tasks WHERE id = ?").get(dep.id) as {
           status: string;
@@ -144,8 +147,15 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
             .get(parentLink.to_task_id) as { status: string } | null;
           if (parent && !["done", "cancelled", "review"].includes(parent.status)) {
             sqlite
-              .query("UPDATE tasks SET status = 'review', updated_at = unixepoch() WHERE id = ?")
+              .query(
+                "UPDATE tasks SET status = 'review', claimed_by = NULL, updated_at = unixepoch() WHERE id = ?",
+              )
               .run(parentLink.to_task_id);
+            await addTaskComment(
+              parentLink.to_task_id,
+              "All subtasks complete — auto-promoted to review",
+              "system",
+            );
           }
         }
       }
