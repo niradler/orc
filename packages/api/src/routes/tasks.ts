@@ -194,49 +194,6 @@ const batchCreateRoute = createRoute({
   },
 });
 
-const reviewRoute = createRoute({
-  method: "post",
-  path: "/tasks/{id}/review",
-  tags: ["Tasks"],
-  summary: "Submit task for human review (HITL checkpoint)",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: {
-      content: {
-        "application/json": {
-          schema: z.object({ summary: z.string().min(1) }).openapi("SubmitReview"),
-        },
-      },
-    },
-  },
-  responses: {
-    200: { description: "Submitted", content: { "application/json": { schema: TaskSchema } } },
-  },
-});
-
-const checkReviewRoute = createRoute({
-  method: "get",
-  path: "/tasks/{id}/review",
-  tags: ["Tasks"],
-  summary: "Poll HITL review result",
-  request: { params: z.object({ id: z.string() }) },
-  responses: {
-    200: {
-      description: "Review status",
-      content: {
-        "application/json": {
-          schema: z
-            .object({
-              status: z.enum(["review", "approved", "changes_requested", "pending"]),
-              comment: z.string().nullable(),
-            })
-            .openapi("ReviewStatus"),
-        },
-      },
-    },
-  },
-});
-
 const listCommentsRoute = createRoute({
   method: "get",
   path: "/tasks/{id}/comments",
@@ -432,67 +389,6 @@ app.openapi(deleteRoute, async (c) => {
   if (!existing) throw new NotFoundError("Task", id);
   await db.delete(tasks).where(eq(tasks.id, id));
   return new Response(null, { status: 204 });
-});
-
-app.openapi(reviewRoute, async (c) => {
-  const db = getDb();
-  const { id } = c.req.valid("param");
-  const { summary } = c.req.valid("json");
-
-  const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
-  if (!existing) throw new NotFoundError("Task", id);
-  if (!["doing", "blocked"].includes(existing.status)) {
-    throw new ValidationError(
-      `Task must be in doing/blocked to submit for review (current: ${existing.status})`,
-    );
-  }
-
-  const now = new Date();
-
-  await db
-    .update(tasks)
-    .set({ status: "review", body: summary, updated_at: now })
-    .where(eq(tasks.id, id));
-
-  await db.insert(comments).values({
-    id: ulid(),
-    resource_type: "task",
-    resource_id: id,
-    content: `[review submitted] ${summary}`,
-    author: "agent",
-    created_at: now,
-  });
-
-  const updated = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
-  if (!updated) throw new Error("Expected updated to exist after write");
-  return c.json(toDto(updated));
-});
-
-app.openapi(checkReviewRoute, async (c) => {
-  const db = getDb();
-  const { id } = c.req.valid("param");
-
-  const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
-  if (!task) throw new NotFoundError("Task", id);
-
-  const lastComment = await db.query.comments.findFirst({
-    where: and(
-      eq(comments.resource_type, "task"),
-      eq(comments.resource_id, id),
-      eq(comments.author, "human"),
-    ),
-    orderBy: [desc(comments.created_at)],
-  });
-
-  type ReviewStatus = "review" | "approved" | "changes_requested" | "pending";
-  const statusMap: Record<string, ReviewStatus> = {
-    review: "review",
-    done: "approved",
-    changes_requested: "changes_requested",
-  };
-  const status: ReviewStatus = statusMap[task.status] ?? "pending";
-
-  return c.json({ status, comment: lastComment?.content ?? null });
 });
 
 app.openapi(listCommentsRoute, async (c) => {

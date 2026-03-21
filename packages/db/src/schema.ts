@@ -18,6 +18,7 @@ export const projects = sqliteTable(
     scope: text("scope"),
     tags: text("tags", { mode: "json" }).$type<string[]>(),
     obsidian_path: text("obsidian_path"),
+    max_workers: integer("max_workers"),
     ...timestamps,
   },
   (t) => [uniqueIndex("projects_name_idx").on(t.name)],

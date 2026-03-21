@@ -139,23 +139,6 @@ export const toolDefinitions = [
     }),
   },
   {
-    name: "task_submit_review",
-    description:
-      "Submit task for human review (HITL checkpoint). Sets status=review, sends Telegram card if configured.",
-    inputSchema: z.object({
-      id: z.string(),
-      summary: z.string().describe("Summary of work done for the reviewer"),
-    }),
-  },
-  {
-    name: "task_check_review",
-    description:
-      "Poll HITL review result. Returns: pending | approved | changes_requested + comment.",
-    inputSchema: z.object({
-      id: z.string(),
-    }),
-  },
-  {
     name: "task_batch_create",
     description:
       "Create multiple tasks with dependency links atomically. Use for PRD-to-task workflows. " +
@@ -512,31 +495,6 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         await addTaskComment(id, comment, "agent");
       }
       return `Updated: ${id}`;
-    }
-
-    case "task_submit_review": {
-      const { id, summary } = args as { id: string; summary: string };
-      const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
-      const newBody = existing?.body
-        ? `${existing.body}\n\n---\n## Review Summary\n${summary}`
-        : `## Review Summary\n${summary}`;
-      await db.update(tasks).set({ body: newBody, updated_at: new Date() }).where(eq(tasks.id, id));
-      const result = await updateTaskStatus({ taskId: id, status: "review", author: "agent" });
-      if (!result.ok) return result.error ?? "Transition failed";
-      return `[DEPRECATED: use task_update with status='review'] Task ${id} in review.`;
-    }
-
-    case "task_check_review": {
-      const { id } = args as { id: string };
-      const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
-      if (!task) return `Task not found: ${id}`;
-      const statusMap: Record<string, string> = {
-        review: "pending",
-        done: "approved",
-        changes_requested: "changes_requested",
-      };
-      const reviewStatus = statusMap[task.status] ?? task.status;
-      return `[DEPRECATED: use task_get] Review status: ${reviewStatus}\nTask: ${task.title} [${task.status}]`;
     }
 
     case "job_list": {

@@ -67,7 +67,7 @@ Additional statuses: `queued` (claimed by task loop, waiting to start), `paused`
 
 > `repeat` was removed — use `cron` with a 6-field expression for sub-minute intervals (e.g. `*/30 * * * * *` = every 30 s).
 
-## MCP Tools (22 tools in packages/mcp/src/tools.ts)
+## MCP Tools (20 tools in packages/mcp/src/tools.ts)
 
 **Call `context` first in every session** — returns active tasks + key memories in ~200 tokens.
 
@@ -87,8 +87,6 @@ For CRUD operations not in MCP (delete, project management, job creation), use t
 | `task_create` | Create a task. Pass `project` to scope. |
 | `task_update` | Update status/priority/body |
 | `task_batch_create` | Create multiple tasks with dependency links atomically. |
-| `task_submit_review` | **DEPRECATED** — use `task_update` with `status: "review"` instead |
-| `task_check_review` | **DEPRECATED** — use `task_get` instead |
 | `job_list` | List all jobs + last run status. Pass `project` to filter. |
 | `job_run` | Trigger a job by name |
 | `job_status` | Get run status/exit code/error for a run ID |

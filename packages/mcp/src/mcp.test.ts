@@ -233,18 +233,13 @@ describe("MCP task tools", () => {
     expect(result).toBe(`Updated: ${taskId}`);
   });
 
-  test("task_submit_review sets status to review", async () => {
-    const result = await executeTool("task_submit_review", {
+  test("task_update to review with comment", async () => {
+    const result = await executeTool("task_update", {
       id: taskId,
-      summary: "Tests written and passing",
+      status: "review",
+      comment: "Tests written and passing",
     });
-    expect(result).toContain("review");
-  });
-
-  test("task_check_review reflects review status", async () => {
-    const result = await executeTool("task_check_review", { id: taskId });
-    expect(result).toContain("pending");
-    expect(result).toContain("review");
+    expect(result).toBe(`Updated: ${taskId}`);
   });
 });
 

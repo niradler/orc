@@ -69,14 +69,30 @@ function pickReviewTask(): PickedTask | null {
   return row;
 }
 
-function getActiveWorkerCount(): number {
+function getActiveWorkerCount(projectId?: string | null): number {
   const sqlite = getSqlite();
+  if (projectId) {
+    const row = sqlite
+      .query(
+        "SELECT COUNT(*) as count FROM gateway_sessions WHERE role = 'worker' AND status = 'running' AND project_id = ?",
+      )
+      .get(projectId) as { count: number } | null;
+    return row?.count ?? 0;
+  }
   const row = sqlite
     .query(
       "SELECT COUNT(*) as count FROM gateway_sessions WHERE role = 'worker' AND status = 'running'",
     )
     .get() as { count: number } | null;
   return row?.count ?? 0;
+}
+
+function getProjectMaxWorkers(projectId: string): number | null {
+  const sqlite = getSqlite();
+  const row = sqlite.query("SELECT max_workers FROM projects WHERE id = ?").get(projectId) as {
+    max_workers: number | null;
+  } | null;
+  return row?.max_workers ?? null;
 }
 
 async function buildPrompt(task: PickedTask): Promise<string> {
@@ -410,18 +426,32 @@ async function driveReviewerLoop(
   }
 }
 
+function isAtCapacity(task: PickedTask): boolean {
+  const config = loadConfig();
+  const globalMax = config.agent_loop.max_workers;
+  const globalActive = getActiveWorkerCount();
+  if (globalActive >= globalMax) return true;
+
+  if (task.project_id) {
+    const projectMax = getProjectMaxWorkers(task.project_id);
+    if (projectMax !== null) {
+      const projectActive = getActiveWorkerCount(task.project_id);
+      if (projectActive >= projectMax) return true;
+    }
+  }
+  return false;
+}
+
 async function runCycle(): Promise<void> {
   const config = loadConfig();
-  const maxWorkers = config.agent_loop.max_workers;
-  const activeCount = getActiveWorkerCount();
-
-  if (activeCount >= maxWorkers) {
-    logger.debug(`At capacity: ${activeCount}/${maxWorkers} workers`);
+  const globalActive = getActiveWorkerCount();
+  if (globalActive >= config.agent_loop.max_workers) {
+    logger.debug(`At global capacity: ${globalActive}/${config.agent_loop.max_workers} workers`);
     return;
   }
 
   const reviewTask = pickReviewTask();
-  if (reviewTask) {
+  if (reviewTask && !isAtCapacity(reviewTask)) {
     logger.info(`Spawning reviewer for task ${reviewTask.id}: "${reviewTask.title}"`);
     await spawnReviewer(reviewTask);
     return;
@@ -430,6 +460,11 @@ async function runCycle(): Promise<void> {
   const task = pickNextTask();
   if (!task) {
     logger.debug("No eligible tasks");
+    return;
+  }
+
+  if (isAtCapacity(task)) {
+    logger.debug(`At capacity for task ${task.id} (project: ${task.project_id ?? "global"})`);
     return;
   }
 
