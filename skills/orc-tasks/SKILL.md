@@ -99,3 +99,12 @@ orc task delete <id>          # Delete task
 | Creating tasks with no body | Include acceptance criteria |
 | Skipping `session_event` for transitions | Without it, transitions are lost on compaction |
 | Not setting `prompt_id` on tasks for the agent loop | Workers need a workflow to follow |
+
+---
+
+## Related
+
+- **orc-session** skill — session start protocol, event recording, snapshot/restore
+- **orc-knowledge** skill — when to store decisions and rules in memory
+- **orc-gateway** skill — remote task approval via Telegram/Slack
+- Built-in prompts: `orc-coder`, `orc-planner`, `orc-reviewer`, `orc-bugfix` — use `prompt_list` to discover, assign via `prompt_id`

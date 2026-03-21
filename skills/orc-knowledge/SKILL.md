@@ -86,3 +86,11 @@ orc mem list --limit 20
 | Storing duplicates | Search first |
 | Missing rationale in decisions | Future agents need the *why*, not just the *what* |
 | Skipping scopes | Scopes make search faster |
+
+---
+
+## Related
+
+- **orc-session** skill — session start protocol, recording events
+- **orc-tasks** skill — task lifecycle and HITL review
+- Built-in prompts: `orc-requirements` (skill) gathers requirements and stores in task body, `orc-report` (skill) builds status summaries from memories and tasks

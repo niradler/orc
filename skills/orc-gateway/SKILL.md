@@ -81,3 +81,11 @@ Telegram voice messages are transcribed and sent to the agent. Responses are con
 | No review notifications arriving | Check `authorized_users` includes your Telegram ID |
 | Agent session won't start | Need `orc daemon start`, not just `orc api` |
 | Messages going nowhere | Check `/mode` — may be `direct` when you need `agent:claude` |
+
+---
+
+## Related
+
+- **orc-tasks** skill — task lifecycle, HITL review patterns
+- **orc-session** skill — session management for live agent sessions
+- Built-in prompts: workers spawned via `/agent` or the task loop follow prompts like `orc-worker-base` and `orc-coder` — use `prompt_list` to discover

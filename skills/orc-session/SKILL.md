@@ -84,3 +84,11 @@ orc job add <name> --command "..." # Create a job
 | Using `context()` as a search | Use `memory_search` for targeted queries |
 | Not recording decisions | Decisions lost on compaction = re-making the same choices |
 | One giant `session_log` at end | Log per work unit so partial progress is preserved |
+
+---
+
+## Related
+
+- **orc-tasks** skill — task lifecycle, HITL review, agent loop patterns
+- **orc-knowledge** skill — when and how to store decisions and rules
+- Built-in prompts: use `prompt_list` to discover available workflows, `prompt_get` to load them

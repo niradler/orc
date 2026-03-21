@@ -90,6 +90,100 @@ orc task list
 
 The database is created automatically at `~/.orc/orc.db` on first run.
 
+## Skills
+
+ORC ships with **agent workflow skills** that teach AI agents how to use ORC effectively, and **built-in prompt templates** that the task loop assigns to worker agents.
+
+### Installing skills
+
+Install ORC skills into your agent with one command:
+
+```bash
+# Using npx skills (https://skills.sh)
+npx skills add niradler/orc --all
+npx skills add niradler/orc --skill orc-session orc-tasks  # specific skills
+npx skills add niradler/orc --all -g                       # global install
+
+# Using agent-skills-cli
+npx agent-skills-cli install niradler/orc
+npx agent-skills-cli install niradler/orc --agent claude-code
+
+# List installed skills
+npx skills list
+```
+
+Once installed, skills are discovered automatically by your agent. They trigger on relevant contexts (e.g. "create a task", "store this decision", "set up Telegram").
+
+<details>
+<summary>Manual installation</summary>
+
+Copy skill directories into your agent's skills folder:
+
+```bash
+# Claude Code (user-wide)
+cp -r /path/to/orc/skills/orc-session ~/.claude/skills/
+cp -r /path/to/orc/skills/orc-tasks   ~/.claude/skills/
+cp -r /path/to/orc/skills/orc-knowledge ~/.claude/skills/
+cp -r /path/to/orc/skills/orc-gateway  ~/.claude/skills/
+
+# Or project-specific
+cp -r /path/to/orc/skills/orc-* .claude/skills/
+```
+
+</details>
+
+### Agent workflow skills
+
+| Skill | Triggers on |
+|---|---|
+| `orc-session` | Session start, context compaction, resuming work |
+| `orc-tasks` | Task creation, status updates, HITL review, breaking down work |
+| `orc-knowledge` | Storing decisions, searching memory, "remember this", "what did we decide" |
+| `orc-gateway` | Telegram/Slack setup, remote approval, live agent sessions |
+
+### Built-in prompt templates
+
+Prompt templates live in `skills/prompts/*/SKILL.md` and are seeded to the database on API startup. Agents discover them via `prompt_list` and load content with `prompt_get`. Assign to tasks via `prompt_id` for the agent loop to use.
+
+```bash
+# List available prompts
+orc prompt list
+
+# View a specific prompt
+orc prompt show orc-coder
+
+# Render a prompt (with variable substitution)
+orc prompt render orc-worker-base
+```
+
+Via MCP tools:
+```
+prompt_list()                    # discover all prompts/skills
+prompt_list({ tags: ["workflow"] })  # filter by tag
+prompt_get({ name: "orc-coder" })    # load full content
+```
+
+| Prompt | Type | Purpose |
+|---|---|---|
+| `orc-worker-base` | Base | Default worker behavior — ORC awareness, status updates, deliverable format |
+| `orc-main-base` | Base | Orchestration agent — planning, decomposition, monitoring |
+| `orc-coder` | Workflow | Implementation — understand, plan, implement, verify, submit |
+| `orc-planner` | Workflow | Task decomposition with dependencies and workflow assignment |
+| `orc-reviewer` | Workflow | Structured evaluation — correctness, tests, security, conventions |
+| `orc-bugfix` | Workflow | Bug investigation — reproduce, root-cause, fix, regression test |
+| `orc-requirements` | Skill | Requirements interview — outcome, criteria, constraints, scope |
+| `orc-report` | Skill | Project status report — health summary, blockers, active work |
+
+### Custom prompts
+
+Add your own prompts via CLI or API:
+
+```bash
+orc prompt add my-workflow --body "## My Workflow\n1. Do this\n2. Do that" --tags workflow,custom
+```
+
+Then assign to tasks: `orc task add "Do the thing" --prompt my-workflow`
+
 ## Agent setup
 
 ### Claude Code
@@ -220,18 +314,7 @@ Per-project concurrency: set `max_workers` on the project to limit how many work
 
 ### Built-in prompts
 
-Discover with `orc prompt list` or MCP `prompt_list`. Prompts live in `skills/prompts/*/SKILL.md` and are seeded to the database on startup.
-
-| Prompt | Type | Purpose |
-|---|---|---|
-| `orc-worker-base` | Base | Default worker behavior — ORC awareness, status updates |
-| `orc-main-base` | Base | Orchestration agent — planning, delegation |
-| `orc-coder` | Workflow | Implementation — code, test, verify, submit |
-| `orc-planner` | Workflow | Task decomposition with dependencies |
-| `orc-reviewer` | Workflow | Structured code/work review |
-| `orc-bugfix` | Workflow | Bug investigation and fix |
-| `orc-requirements` | Skill | Requirements gathering interview |
-| `orc-report` | Skill | Project status report |
+See [Skills](#skills) section for the full list of built-in prompts. Workers automatically use the prompt assigned via `prompt_id` on the task.
 
 ## MCP tools
 
