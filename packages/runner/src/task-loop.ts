@@ -536,7 +536,15 @@ async function runCycle(): Promise<string> {
 export async function ensureSystemJob(): Promise<string> {
   const db = getDb();
   const existing = await db.query.jobs.findFirst({ where: eq(jobs.name, SYSTEM_JOB_NAME) });
-  if (existing) return existing.id;
+  if (existing) {
+    const config = loadConfig();
+    const expectedCron = `*/${config.agent_loop.poll_interval_minutes} * * * *`;
+    if (existing.cron_expr !== expectedCron) {
+      await db.update(jobs).set({ cron_expr: expectedCron, updated_at: new Date() }).where(eq(jobs.id, existing.id));
+      logger.info(`Updated task loop cron: ${existing.cron_expr} → ${expectedCron}`);
+    }
+    return existing.id;
+  }
 
   const config = loadConfig();
   const id = ulid();
