@@ -74,7 +74,9 @@ function buildClaudeEnv(): Record<string, string> {
 }
 
 function findClaudeCli(): string | null {
-  return Bun.which("claude") ?? null;
+  const found = Bun.which("claude");
+  if (!found) return null;
+  return found.replaceAll("\\", "/");
 }
 
 function isAuthError(text: string): boolean {
@@ -104,25 +106,38 @@ class ClaudeSession implements AgentSession {
   private cwd: string;
   private runtimeSessionId: string | undefined;
   private readonly claudePath: string;
+  private readonly autoApprove: boolean;
 
   constructor(opts: SessionOpts, claudePath: string) {
     this.cwd = opts.cwd;
     this.runtimeSessionId = opts.runtimeSessionId;
     this.claudePath = claudePath;
+    this.autoApprove = opts.autoApprove ?? false;
   }
 
-  private spawn(extraArgs: string[] = []): void {
-    const args = [
-      this.claudePath,
-      "--output-format",
-      "stream-json",
-      "--input-format",
-      "stream-json",
-      "--permission-prompt-tool",
-      "stdio",
-      "--no-color",
-      ...extraArgs,
-    ];
+  private spawn(extraArgs: string[] = [], printPrompt?: string | undefined): void {
+    const args = this.autoApprove
+      ? [
+          this.claudePath,
+          "-p",
+          printPrompt ?? "",
+          "--output-format",
+          "stream-json",
+          "--verbose",
+          "--dangerously-skip-permissions",
+          ...extraArgs,
+        ]
+      : [
+          this.claudePath,
+          "--output-format",
+          "stream-json",
+          "--input-format",
+          "stream-json",
+          "--permission-prompt-tool",
+          "stdio",
+          "--no-color",
+          ...extraArgs,
+        ];
 
     this.proc = Bun.spawn({
       cmd: args,
@@ -166,6 +181,7 @@ class ClaudeSession implements AgentSession {
   }
 
   async start(opts: SessionOpts): Promise<void> {
+    if (this.autoApprove) return;
     const extraArgs = opts.runtimeSessionId ? ["--resume", opts.runtimeSessionId] : [];
     this.spawn(extraArgs);
   }
@@ -262,6 +278,13 @@ class ClaudeSession implements AgentSession {
   }
 
   async send(prompt: string): Promise<void> {
+    if (this.autoApprove) {
+      if (this.proc) {
+        await this.close().catch(() => {});
+      }
+      this.spawn([], prompt);
+      return;
+    }
     const msg: ClaudeStdinMsg = {
       type: "user",
       message: { role: "user", content: prompt },

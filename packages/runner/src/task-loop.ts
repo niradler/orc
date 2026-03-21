@@ -157,7 +157,13 @@ async function spawnWorker(task: PickedTask): Promise<void> {
   });
 
   const prompt = await buildPrompt(task);
-  const cwd = prevSession?.cwd ?? process.cwd();
+  let cwd = prevSession?.cwd ?? process.cwd();
+  if (task.project_id) {
+    const proj = getSqlite()
+      .query("SELECT scope FROM projects WHERE id = ?")
+      .get(task.project_id) as { scope: string | null } | null;
+    if (proj?.scope) cwd = proj.scope;
+  }
 
   const now = new Date();
   await db.insert(gateway_sessions).values({
