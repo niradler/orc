@@ -17,6 +17,7 @@ const ProjectSchema = z
     scope: z.string().nullable(),
     tags: z.array(z.string()).nullable(),
     obsidian_path: z.string().nullable(),
+    max_workers: z.number().int().nullable(),
     created_at: z.string().datetime(),
     updated_at: z.string().datetime(),
   })
@@ -34,6 +35,7 @@ const CreateProjectSchema = z
     scope: z.string().optional(),
     tags: z.array(z.string()).optional(),
     obsidian_path: z.string().optional(),
+    max_workers: z.number().int().min(1).optional(),
   })
   .openapi("CreateProject");
 
@@ -50,6 +52,7 @@ const UpdateProjectSchema = z
     scope: z.string().optional(),
     tags: z.array(z.string()).optional(),
     obsidian_path: z.string().optional(),
+    max_workers: z.number().int().min(1).nullable().optional(),
   })
   .openapi("UpdateProject");
 
@@ -160,6 +163,7 @@ const summaryRoute = createRoute({
 function toDto(p: typeof projects.$inferSelect) {
   return {
     ...p,
+    max_workers: p.max_workers ?? null,
     created_at: p.created_at.toISOString(),
     updated_at: p.updated_at.toISOString(),
   };
@@ -277,6 +281,7 @@ app.openapi(createRoute_, async (c) => {
     scope: body.scope,
     tags: body.tags,
     obsidian_path: body.obsidian_path,
+    max_workers: body.max_workers,
     created_at: now,
     updated_at: now,
   });
@@ -303,6 +308,7 @@ app.openapi(updateRoute, async (c) => {
       ...(body.scope !== undefined ? { scope: body.scope } : {}),
       ...(body.tags !== undefined ? { tags: body.tags } : {}),
       ...(body.obsidian_path !== undefined ? { obsidian_path: body.obsidian_path } : {}),
+      ...(body.max_workers !== undefined ? { max_workers: body.max_workers } : {}),
       updated_at: new Date(),
     })
     .where(eq(projects.id, id));

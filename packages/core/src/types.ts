@@ -2,11 +2,13 @@ import { z } from "zod";
 
 export const TaskStatusSchema = z.enum([
   "todo",
+  "queued",
   "doing",
   "review",
   "changes_requested",
   "blocked",
   "done",
+  "paused",
   "cancelled",
 ]);
 export const TaskPrioritySchema = z.enum(["low", "normal", "high", "critical"]);
@@ -65,11 +67,13 @@ export const ProjectCoordinationModeSchema = z.enum(["solo", "human_agent", "mul
 export type ProjectCoordinationMode = z.infer<typeof ProjectCoordinationModeSchema>;
 
 export const TASK_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
-  todo: ["doing", "cancelled"],
-  doing: ["review", "blocked", "cancelled"],
-  blocked: ["doing", "cancelled"],
+  todo: ["doing", "queued", "paused", "cancelled"],
+  queued: ["doing", "todo", "cancelled"],
+  doing: ["review", "blocked", "paused", "cancelled"],
+  blocked: ["doing", "todo", "cancelled"],
   review: ["done", "changes_requested"],
-  changes_requested: ["doing"],
+  changes_requested: ["doing", "queued", "paused"],
   done: [],
+  paused: ["todo"],
   cancelled: [],
 };

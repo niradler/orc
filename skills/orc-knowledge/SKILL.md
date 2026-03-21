@@ -37,7 +37,7 @@ CLAUDE.md is for static conventions. ORC memory is for living knowledge — deci
 - When the user asks "what did we decide about X"
 - When you encounter something that might have been solved before
 
-The 3-layer cascade (porter stemming → trigram → LIKE) finds things even when wording varies. Use keywords, not exact phrases.
+The 3-layer cascade (porter stemming, trigram, LIKE) finds things even when wording varies. Use keywords, not exact phrases.
 
 The unified `search` tool searches across both memories and tasks in one call — use it when you're not sure where the information lives.
 
@@ -46,6 +46,12 @@ The unified `search` tool searches across both memories and tasks in one call �
 ## Scopes
 
 Use scopes to organize: `architecture`, `code-style`, `api`, `security`, `database`, `gateway`, `mcp`, `ops`, `bugs`. Scopes make search faster on large stores.
+
+---
+
+## Prompts as Knowledge
+
+Built-in prompts (`prompt_list`) encode workflow knowledge — how to do code review, planning, bug fixing. Use `prompt_get` to load a specific workflow when you need structured guidance. Store project-specific workflow tweaks as `rule` memories.
 
 ---
 
@@ -80,3 +86,11 @@ orc mem list --limit 20
 | Storing duplicates | Search first |
 | Missing rationale in decisions | Future agents need the *why*, not just the *what* |
 | Skipping scopes | Scopes make search faster |
+
+---
+
+## Related
+
+- **orc-session** skill — session start protocol, recording events
+- **orc-tasks** skill — task lifecycle and HITL review
+- Built-in prompts: `orc-requirements` (skill) gathers requirements and stores in task body, `orc-report` (skill) builds status summaries from memories and tasks

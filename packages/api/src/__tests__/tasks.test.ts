@@ -207,27 +207,23 @@ describe("Tasks CRUD", () => {
     });
   });
 
-  describe("HITL Review", () => {
-    test("submit and check review", async () => {
-      const submitRes = await req(app, "POST", `/tasks/${taskId}/review`, {
-        summary: "Ready for review",
+  describe("Review via task_update", () => {
+    test("transition to review with comment", async () => {
+      const res = await req(app, "PATCH", `/tasks/${taskId}`, {
+        status: "review",
+        comment: "Ready for review",
       });
-      expect(submitRes.status).toBe(200);
-      const submitted = await submitRes.json();
-      expect(submitted.status).toBe("review");
-
-      const checkRes = await req(app, "GET", `/tasks/${taskId}/review`);
-      expect(checkRes.status).toBe(200);
-      const checked = await checkRes.json();
-      expect(checked.status).toBe("review");
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.status).toBe("review");
     });
 
-    test("rejects review for task not in doing/blocked", async () => {
+    test("rejects invalid transition (todo → review)", async () => {
       const newRes = await req(app, "POST", "/tasks", { title: "Todo task" });
       const newTask = await newRes.json();
 
-      const res = await req(app, "POST", `/tasks/${newTask.id}/review`, {
-        summary: "Trying review from todo",
+      const res = await req(app, "PATCH", `/tasks/${newTask.id}`, {
+        status: "review",
       });
       expect(res.status).toBe(400);
     });

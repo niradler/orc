@@ -1,17 +1,13 @@
-import type { Database } from "bun:sqlite";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
+import type { TaskStatus } from "@orc/core/types";
 import { TaskPrioritySchema, TaskStatusSchema } from "@orc/core/types";
-import { getDb } from "@orc/db/client";
+import { getDb, getSqlite } from "@orc/db/client";
 import { comments, task_links, tasks } from "@orc/db/schema";
+import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 import { and, desc, eq } from "drizzle-orm";
 import { checkBlockers, rollupParentProgress, unblockDependents } from "../lib/task-deps.js";
-
-function getSqlite(): Database {
-  const db = getDb();
-  return (db as unknown as { $client: Database }).$client;
-}
 
 const app = new OpenAPIHono();
 
@@ -29,6 +25,10 @@ const TaskSchema = z
     author: z.string(),
     claimed_by: z.string().nullable(),
     claim_expires_at: z.string().datetime().nullable(),
+    prompt_id: z.string().nullable(),
+    required_review: z.boolean(),
+    agent_backend: z.string().nullable(),
+    max_review_rounds: z.number().int(),
     created_at: z.string().datetime(),
     updated_at: z.string().datetime(),
   })
@@ -55,6 +55,10 @@ const CreateTaskSchema = z
     due_at: z.string().datetime().optional(),
     tags: z.array(z.string()).optional(),
     author: z.string().optional().default("human"),
+    prompt_id: z.string().optional(),
+    required_review: z.boolean().optional().default(true),
+    agent_backend: z.enum(["claude", "codex", "cursor"]).optional(),
+    max_review_rounds: z.number().int().min(1).optional().default(3),
   })
   .openapi("CreateTask");
 
@@ -66,6 +70,7 @@ const UpdateTaskSchema = z
     priority: TaskPrioritySchema.optional(),
     due_at: z.string().datetime().optional(),
     tags: z.array(z.string()).optional(),
+    comment: z.string().optional(),
   })
   .openapi("UpdateTask");
 
@@ -144,6 +149,11 @@ const BatchTaskItem = z.object({
   title: z.string().min(1).max(500),
   body: z.string().optional(),
   priority: TaskPrioritySchema.optional().default("normal"),
+  tags: z.array(z.string()).optional(),
+  prompt_id: z.string().optional(),
+  required_review: z.boolean().optional().default(true),
+  agent_backend: z.enum(["claude", "codex", "cursor"]).optional(),
+  max_review_rounds: z.number().int().min(1).optional().default(3),
   depends_on: z.array(z.string()).optional().describe("Refs of tasks that block this one"),
   subtask_of: z.string().optional().describe("Ref of parent task"),
 });
@@ -177,49 +187,6 @@ const batchCreateRoute = createRoute({
             created: z.number(),
             mapping: z.record(z.string(), z.string()),
           }),
-        },
-      },
-    },
-  },
-});
-
-const reviewRoute = createRoute({
-  method: "post",
-  path: "/tasks/{id}/review",
-  tags: ["Tasks"],
-  summary: "Submit task for human review (HITL checkpoint)",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: {
-      content: {
-        "application/json": {
-          schema: z.object({ summary: z.string().min(1) }).openapi("SubmitReview"),
-        },
-      },
-    },
-  },
-  responses: {
-    200: { description: "Submitted", content: { "application/json": { schema: TaskSchema } } },
-  },
-});
-
-const checkReviewRoute = createRoute({
-  method: "get",
-  path: "/tasks/{id}/review",
-  tags: ["Tasks"],
-  summary: "Poll HITL review result",
-  request: { params: z.object({ id: z.string() }) },
-  responses: {
-    200: {
-      description: "Review status",
-      content: {
-        "application/json": {
-          schema: z
-            .object({
-              status: z.enum(["review", "approved", "changes_requested", "pending"]),
-              comment: z.string().nullable(),
-            })
-            .openapi("ReviewStatus"),
         },
       },
     },
@@ -273,6 +240,10 @@ function toDto(t: typeof tasks.$inferSelect) {
     ...t,
     due_at: t.due_at?.toISOString() ?? null,
     claim_expires_at: t.claim_expires_at?.toISOString() ?? null,
+    prompt_id: t.prompt_id ?? null,
+    required_review: t.required_review,
+    agent_backend: t.agent_backend ?? null,
+    max_review_rounds: t.max_review_rounds,
     created_at: t.created_at.toISOString(),
     updated_at: t.updated_at.toISOString(),
   };
@@ -358,6 +329,10 @@ app.openapi(createRoute_, async (c) => {
     ...(body.due_at ? { due_at: new Date(body.due_at) } : {}),
     tags: body.tags,
     author: body.author,
+    prompt_id: body.prompt_id,
+    required_review: body.required_review ?? true,
+    agent_backend: body.agent_backend as "claude" | "codex" | "cursor" | undefined,
+    max_review_rounds: body.max_review_rounds ?? 3,
     created_at: now,
     updated_at: now,
   });
@@ -375,31 +350,30 @@ app.openapi(updateRoute, async (c) => {
   const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!existing) throw new NotFoundError("Task", id);
 
-  if (body.status === "doing" && existing.status !== "doing") {
-    const blockers = checkBlockers(getSqlite(), id);
-    if (blockers.length > 0) {
-      const names = blockers.map((b) => `[${b.id.slice(-6)}] ${b.title}`).join(", ");
-      throw new ValidationError(`Cannot start: blocked by ${names}`);
-    }
+  if (body.status) {
+    const result = await updateTaskStatus({
+      taskId: id,
+      status: body.status as TaskStatus,
+      comment: body.comment,
+      author: "api",
+    });
+    if (!result.ok) throw new ValidationError(result.error ?? "Transition failed");
+  } else if (body.comment) {
+    await addTaskComment(id, body.comment, "api");
   }
 
-  await db
-    .update(tasks)
-    .set({
-      ...(body.title !== undefined ? { title: body.title } : {}),
-      ...(body.body !== undefined ? { body: body.body } : {}),
-      ...(body.status !== undefined ? { status: body.status } : {}),
-      ...(body.priority !== undefined ? { priority: body.priority } : {}),
-      ...(body.due_at !== undefined ? { due_at: new Date(body.due_at) } : {}),
-      ...(body.tags !== undefined ? { tags: body.tags } : {}),
-      updated_at: new Date(),
-    })
-    .where(eq(tasks.id, id));
-
-  if (body.status && ["done", "cancelled"].includes(body.status)) {
-    const sqlite = getSqlite();
-    unblockDependents(sqlite, id);
-    rollupParentProgress(sqlite, id);
+  const nonStatusFields = {
+    ...(body.title !== undefined ? { title: body.title } : {}),
+    ...(body.body !== undefined ? { body: body.body } : {}),
+    ...(body.priority !== undefined ? { priority: body.priority } : {}),
+    ...(body.due_at !== undefined ? { due_at: new Date(body.due_at) } : {}),
+    ...(body.tags !== undefined ? { tags: body.tags } : {}),
+  };
+  if (Object.keys(nonStatusFields).length > 0) {
+    await db
+      .update(tasks)
+      .set({ ...nonStatusFields, updated_at: new Date() })
+      .where(eq(tasks.id, id));
   }
 
   const updated = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
@@ -414,67 +388,6 @@ app.openapi(deleteRoute, async (c) => {
   if (!existing) throw new NotFoundError("Task", id);
   await db.delete(tasks).where(eq(tasks.id, id));
   return new Response(null, { status: 204 });
-});
-
-app.openapi(reviewRoute, async (c) => {
-  const db = getDb();
-  const { id } = c.req.valid("param");
-  const { summary } = c.req.valid("json");
-
-  const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
-  if (!existing) throw new NotFoundError("Task", id);
-  if (!["doing", "blocked"].includes(existing.status)) {
-    throw new ValidationError(
-      `Task must be in doing/blocked to submit for review (current: ${existing.status})`,
-    );
-  }
-
-  const now = new Date();
-
-  await db
-    .update(tasks)
-    .set({ status: "review", body: summary, updated_at: now })
-    .where(eq(tasks.id, id));
-
-  await db.insert(comments).values({
-    id: ulid(),
-    resource_type: "task",
-    resource_id: id,
-    content: `[review submitted] ${summary}`,
-    author: "agent",
-    created_at: now,
-  });
-
-  const updated = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
-  if (!updated) throw new Error("Expected updated to exist after write");
-  return c.json(toDto(updated));
-});
-
-app.openapi(checkReviewRoute, async (c) => {
-  const db = getDb();
-  const { id } = c.req.valid("param");
-
-  const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
-  if (!task) throw new NotFoundError("Task", id);
-
-  const lastComment = await db.query.comments.findFirst({
-    where: and(
-      eq(comments.resource_type, "task"),
-      eq(comments.resource_id, id),
-      eq(comments.author, "human"),
-    ),
-    orderBy: [desc(comments.created_at)],
-  });
-
-  type ReviewStatus = "review" | "approved" | "changes_requested" | "pending";
-  const statusMap: Record<string, ReviewStatus> = {
-    review: "review",
-    done: "approved",
-    changes_requested: "changes_requested",
-  };
-  const status: ReviewStatus = statusMap[task.status] ?? "pending";
-
-  return c.json({ status, comment: lastComment?.content ?? null });
 });
 
 app.openapi(listCommentsRoute, async (c) => {
@@ -536,6 +449,11 @@ app.openapi(batchCreateRoute, async (c) => {
         priority: item.priority,
         author,
         status: "todo",
+        tags: item.tags,
+        prompt_id: item.prompt_id,
+        required_review: item.required_review ?? true,
+        agent_backend: item.agent_backend as "claude" | "codex" | "cursor" | undefined,
+        max_review_rounds: item.max_review_rounds ?? 3,
         created_at: now,
         updated_at: now,
       });

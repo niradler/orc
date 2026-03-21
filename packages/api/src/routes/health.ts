@@ -1,5 +1,5 @@
-import { ORC_VERSION } from "@orc/core/version";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { ORC_VERSION } from "@orc/core/version";
 
 const app = new OpenAPIHono();
 

@@ -1,5 +1,4 @@
-import { readFileSync } from "node:fs";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 
 const pkg = JSON.parse(readFileSync("./package.json", "utf-8"));
 mkdirSync("dist", { recursive: true });

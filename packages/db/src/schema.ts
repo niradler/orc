@@ -18,6 +18,7 @@ export const projects = sqliteTable(
     scope: text("scope"),
     tags: text("tags", { mode: "json" }).$type<string[]>(),
     obsidian_path: text("obsidian_path"),
+    max_workers: integer("max_workers"),
     ...timestamps,
   },
   (t) => [uniqueIndex("projects_name_idx").on(t.name)],
@@ -29,7 +30,17 @@ export const tasks = sqliteTable("tasks", {
   title: text("title").notNull(),
   body: text("body"),
   status: text("status", {
-    enum: ["todo", "doing", "review", "changes_requested", "blocked", "done", "cancelled"],
+    enum: [
+      "todo",
+      "queued",
+      "doing",
+      "review",
+      "changes_requested",
+      "blocked",
+      "done",
+      "paused",
+      "cancelled",
+    ],
   })
     .default("todo")
     .notNull(),
@@ -42,6 +53,10 @@ export const tasks = sqliteTable("tasks", {
   author: text("author").default("human").notNull(),
   claimed_by: text("claimed_by"),
   claim_expires_at: integer("claim_expires_at", { mode: "timestamp" }),
+  prompt_id: text("prompt_id").references(() => prompts.id, { onDelete: "set null" }),
+  required_review: integer("required_review", { mode: "boolean" }).default(true).notNull(),
+  agent_backend: text("agent_backend", { enum: ["claude", "codex", "cursor"] }),
+  max_review_rounds: integer("max_review_rounds").default(3).notNull(),
   ...timestamps,
 });
 
@@ -291,9 +306,7 @@ export const gateway_sessions = sqliteTable(
   "gateway_sessions",
   {
     id: text("id").primaryKey(),
-    chat_id: text("chat_id")
-      .notNull()
-      .references(() => bridge_chats.id, { onDelete: "cascade" }),
+    chat_id: text("chat_id").references(() => bridge_chats.id, { onDelete: "cascade" }),
     backend: text("backend", { enum: ["claude", "codex", "cursor"] }).notNull(),
     mode: text("mode").notNull(),
     runtime_session_id: text("runtime_session_id"),
@@ -306,6 +319,10 @@ export const gateway_sessions = sqliteTable(
     auto_approve: integer("auto_approve", { mode: "boolean" }).default(false).notNull(),
     task_id: text("task_id").references(() => tasks.id, { onDelete: "set null" }),
     last_error: text("last_error"),
+    role: text("role", { enum: ["main", "worker"] }),
+    pid: integer("pid"),
+    project_id: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    review_rounds: integer("review_rounds").default(0).notNull(),
     last_activity_at: integer("last_activity_at", { mode: "timestamp" }),
     created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
     updated_at: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
@@ -345,4 +362,5 @@ export type BridgeChat = typeof bridge_chats.$inferSelect;
 export type BridgeMessage = typeof bridge_messages.$inferSelect;
 export type BridgePermission = typeof bridge_permissions.$inferSelect;
 export type GatewaySession = typeof gateway_sessions.$inferSelect;
+export type GatewaySessionNew = typeof gateway_sessions.$inferInsert;
 export type Webhook = typeof webhooks.$inferSelect;

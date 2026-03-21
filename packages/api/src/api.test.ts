@@ -73,18 +73,14 @@ describe("Tasks", () => {
     expect(body.status).toBe("doing");
   });
 
-  test("HITL review round-trip", async () => {
-    const submitRes = await req("POST", `/tasks/${taskId}/review`, {
-      summary: "Finished auth implementation",
+  test("review round-trip via task_update", async () => {
+    const reviewRes = await req("PATCH", `/tasks/${taskId}`, {
+      status: "review",
+      comment: "Finished auth implementation",
     });
-    expect(submitRes.status).toBe(200);
-    const submitted = (await submitRes.json()) as { status: string };
-    expect(submitted.status).toBe("review");
-
-    const pollRes = await req("GET", `/tasks/${taskId}/review`);
-    expect(pollRes.status).toBe(200);
-    const polled = (await pollRes.json()) as { status: string };
-    expect(polled.status).toBe("review");
+    expect(reviewRes.status).toBe(200);
+    const reviewed = (await reviewRes.json()) as { status: string };
+    expect(reviewed.status).toBe("review");
 
     const approveRes = await req("PATCH", `/tasks/${taskId}`, { status: "done" });
     expect(approveRes.status).toBe(200);

@@ -1,10 +1,20 @@
-import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
-import { getDb } from "@orc/db/client";
-import { job_runs, jobs, memories, projects, sessions, tasks } from "@orc/db/schema";
+import type { TaskStatus } from "@orc/core/types";
+import { getDb, getSqlite } from "@orc/db/client";
+import {
+  comments,
+  job_runs,
+  jobs,
+  memories,
+  projects,
+  prompts,
+  sessions,
+  tasks,
+} from "@orc/db/schema";
 import { executeJob } from "@orc/runner/executor";
+import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getLayer3, searchLayer1 } from "./search.js";
@@ -61,7 +71,9 @@ export const toolDefinitions = [
     description: "List active tasks — compact layer-1 index. Does NOT include body/comments.",
     inputSchema: z.object({
       project: projectParam,
-      status: z.enum(["todo", "doing", "review", "changes_requested", "blocked"]).optional(),
+      status: z
+        .enum(["todo", "queued", "doing", "review", "changes_requested", "blocked", "paused"])
+        .optional(),
       limit: z.number().int().min(1).max(50).optional().default(20),
     }),
   },
@@ -81,35 +93,48 @@ export const toolDefinitions = [
       project: projectParam,
       priority: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
       author: z.string().optional().default("agent"),
+      tags: z.array(z.string()).optional(),
+      prompt_id: z.string().optional().describe("Prompt template to use for agent execution"),
+      required_review: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe("Require human review before done"),
+      agent_backend: z
+        .enum(["claude", "codex", "cursor"])
+        .optional()
+        .describe("Agent backend for task execution"),
+      max_review_rounds: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .default(3)
+        .describe("Max review iterations before pausing"),
     }),
   },
   {
     name: "task_update",
-    description: "Update task status, priority, or body.",
+    description:
+      "Update task status, priority, body, or add a comment. Status transitions are validated.",
     inputSchema: z.object({
       id: z.string(),
       status: z
-        .enum(["todo", "doing", "review", "changes_requested", "blocked", "done", "cancelled"])
+        .enum([
+          "todo",
+          "queued",
+          "doing",
+          "review",
+          "changes_requested",
+          "blocked",
+          "done",
+          "paused",
+          "cancelled",
+        ])
         .optional(),
       body: z.string().optional(),
       priority: z.enum(["low", "normal", "high", "critical"]).optional(),
-    }),
-  },
-  {
-    name: "task_submit_review",
-    description:
-      "Submit task for human review (HITL checkpoint). Sets status=review, sends Telegram card if configured.",
-    inputSchema: z.object({
-      id: z.string(),
-      summary: z.string().describe("Summary of work done for the reviewer"),
-    }),
-  },
-  {
-    name: "task_check_review",
-    description:
-      "Poll HITL review result. Returns: pending | approved | changes_requested + comment.",
-    inputSchema: z.object({
-      id: z.string(),
+      comment: z.string().optional().describe("Add a comment to the task"),
     }),
   },
   {
@@ -125,6 +150,11 @@ export const toolDefinitions = [
             title: z.string(),
             body: z.string().optional(),
             priority: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
+            tags: z.array(z.string()).optional(),
+            prompt_id: z.string().optional(),
+            required_review: z.boolean().optional().default(true),
+            agent_backend: z.enum(["claude", "codex", "cursor"]).optional(),
+            max_review_rounds: z.number().int().min(1).optional().default(3),
             depends_on: z
               .array(z.string())
               .optional()
@@ -244,16 +274,30 @@ export const toolDefinitions = [
       status: z.enum(["active", "archived", "paused"]).optional(),
     }),
   },
+  {
+    name: "prompt_list",
+    description: "Discover available prompts and skills. Returns name + description for each.",
+    inputSchema: z.object({
+      tags: z.array(z.string()).optional().describe("Filter by tags"),
+      is_skill: z.boolean().optional().describe("Filter by skill flag"),
+    }),
+  },
+  {
+    name: "prompt_get",
+    description: "Load full prompt content by name or ID.",
+    inputSchema: z.object({
+      name: z.string().optional().describe("Prompt name"),
+      id: z.string().optional().describe("Prompt ID (alternative to name)"),
+    }),
+  },
 ] as const;
 
 export type ToolName = (typeof toolDefinitions)[number]["name"];
 
-function resolveProjectId(
-  sqlite: Database,
-  projectName?: string,
-): { id: string; name: string } | null {
+function resolveProjectId(projectName?: string): { id: string; name: string } | null {
   const name = projectName || loadConfig().activeProject;
   if (!name) return null;
+  const sqlite = getSqlite();
   const row = sqlite
     .query<{ id: string; name: string }, string>(
       "SELECT id, name FROM projects WHERE name = ? COLLATE NOCASE LIMIT 1",
@@ -274,7 +318,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         limit?: number;
         project?: string;
       };
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
       const results = searchLayer1(query, scope, limit, type, resolved?.id);
       if (results.length === 0) return "No memories found.";
       const lines = [`Found ${results.length} results:`];
@@ -312,7 +356,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         importance?: string;
         project?: string;
       };
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
       const id = ulid();
       const now = new Date();
       await db.insert(memories).values({
@@ -338,7 +382,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         status?: string;
         limit?: number;
       };
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
       const conditions = [];
       if (status) {
         conditions.push(eq(tasks.status, status as "todo"));
@@ -372,14 +416,30 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "task_create": {
-      const { title, body, project, priority, author } = args as {
+      const {
+        title,
+        body,
+        project,
+        priority,
+        author,
+        tags,
+        prompt_id,
+        required_review,
+        agent_backend,
+        max_review_rounds,
+      } = args as {
         title: string;
         body?: string;
         project?: string;
         priority?: string;
         author?: string;
+        tags?: string[];
+        prompt_id?: string;
+        required_review?: boolean;
+        agent_backend?: string;
+        max_review_rounds?: number;
       };
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
       const id = ulid();
       const now = new Date();
       await db.insert(tasks).values({
@@ -390,6 +450,11 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         priority: (priority ?? "normal") as "low" | "normal" | "high" | "critical",
         author: author ?? "agent",
         status: "todo",
+        tags,
+        prompt_id,
+        required_review: required_review ?? true,
+        agent_backend: agent_backend as "claude" | "codex" | "cursor" | undefined,
+        max_review_rounds: max_review_rounds ?? 3,
         created_at: now,
         updated_at: now,
       });
@@ -398,134 +463,40 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "task_update": {
-      const { id, status, body, priority } = args as {
+      const { id, status, body, priority, comment } = args as {
         id: string;
         status?: string;
         body?: string;
         priority?: string;
+        comment?: string;
       };
-
-      if (status === "doing") {
-        const sqlite = getSqlite(db);
-        const blockers = sqlite
-          .query(
-            `SELECT t.id, t.title FROM task_links tl JOIN tasks t ON t.id = tl.from_task_id
-           WHERE tl.to_task_id = ? AND tl.link_type = 'blocks' AND t.status NOT IN ('done', 'cancelled')
-           UNION
-           SELECT t.id, t.title FROM task_links tl JOIN tasks t ON t.id = tl.to_task_id
-           WHERE tl.from_task_id = ? AND tl.link_type = 'blocked_by' AND t.status NOT IN ('done', 'cancelled')`,
-          )
-          .all(id, id) as { id: string; title: string }[];
-        if (blockers.length > 0) {
-          const names = blockers.map((b) => `[${b.id.slice(-6)}] ${b.title}`).join(", ");
-          return `Cannot start: blocked by ${names}`;
-        }
+      if (status) {
+        const result = await updateTaskStatus({
+          taskId: id,
+          status: status as TaskStatus,
+          comment,
+          author: "agent",
+        });
+        if (!result.ok) return result.error ?? "Transition failed";
+      } else if (comment) {
+        await addTaskComment(id, comment, "agent");
       }
-
-      await db
-        .update(tasks)
-        .set({
-          ...(status ? { status: status as "todo" } : {}),
-          ...(body !== undefined ? { body } : {}),
-          ...(priority ? { priority: priority as "low" } : {}),
-          updated_at: new Date(),
-        })
-        .where(eq(tasks.id, id));
-
-      if (status && ["done", "cancelled"].includes(status)) {
-        const sqlite = getSqlite(db);
-        // Unblock dependents
-        const dependents = sqlite
-          .query(
-            `SELECT DISTINCT dependent_id AS id FROM (
-             SELECT tl.to_task_id AS dependent_id FROM task_links tl WHERE tl.from_task_id = ? AND tl.link_type = 'blocks'
-             UNION SELECT tl.from_task_id AS dependent_id FROM task_links tl WHERE tl.to_task_id = ? AND tl.link_type = 'blocked_by'
-           )`,
-          )
-          .all(id, id) as { id: string }[];
-        for (const dep of dependents) {
-          const remaining = sqlite
-            .query(
-              `SELECT 1 FROM task_links tl JOIN tasks t ON t.id = tl.from_task_id
-             WHERE tl.to_task_id = ? AND tl.link_type = 'blocks' AND t.status NOT IN ('done','cancelled')
-             LIMIT 1`,
-            )
-            .get(dep.id);
-          if (!remaining) {
-            const task = sqlite.query("SELECT status FROM tasks WHERE id = ?").get(dep.id) as {
-              status: string;
-            } | null;
-            if (task?.status === "blocked") {
-              sqlite
-                .query("UPDATE tasks SET status = 'todo', updated_at = unixepoch() WHERE id = ?")
-                .run(dep.id);
-            }
-          }
-        }
-        // Rollup parent progress
-        const parentLink = sqlite
-          .query(
-            "SELECT tl.to_task_id FROM task_links tl WHERE tl.from_task_id = ? AND tl.link_type = 'subtask_of' LIMIT 1",
-          )
-          .get(id) as { to_task_id: string } | null;
-        if (parentLink) {
-          const stats = sqlite
-            .query(
-              `SELECT COUNT(*) as total, SUM(CASE WHEN t.status IN ('done','cancelled') THEN 1 ELSE 0 END) as done
-             FROM task_links tl JOIN tasks t ON t.id = tl.from_task_id
-             WHERE tl.to_task_id = ? AND tl.link_type = 'subtask_of'`,
-            )
-            .get(parentLink.to_task_id) as { total: number; done: number } | null;
-          if (!stats || stats.total === 0) return `Updated: ${id}`;
-          const progress = Math.round((stats.done / stats.total) * 100);
-          sqlite
-            .query("UPDATE tasks SET progress = ?, updated_at = unixepoch() WHERE id = ?")
-            .run(progress, parentLink.to_task_id);
-          if (stats.done === stats.total) {
-            const parent = sqlite
-              .query("SELECT status FROM tasks WHERE id = ?")
-              .get(parentLink.to_task_id) as { status: string } | null;
-            if (parent && !["done", "cancelled", "review"].includes(parent.status)) {
-              sqlite
-                .query("UPDATE tasks SET status = 'review', updated_at = unixepoch() WHERE id = ?")
-                .run(parentLink.to_task_id);
-            }
-          }
-        }
+      if (body !== undefined || priority) {
+        await db
+          .update(tasks)
+          .set({
+            ...(body !== undefined ? { body } : {}),
+            ...(priority ? { priority: priority as "low" } : {}),
+            updated_at: new Date(),
+          })
+          .where(eq(tasks.id, id));
       }
-
       return `Updated: ${id}`;
-    }
-
-    case "task_submit_review": {
-      const { id, summary } = args as { id: string; summary: string };
-      const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
-      const newBody = existing?.body
-        ? `${existing.body}\n\n---\n## Review Summary\n${summary}`
-        : `## Review Summary\n${summary}`;
-      await db
-        .update(tasks)
-        .set({ status: "review", body: newBody, updated_at: new Date() })
-        .where(eq(tasks.id, id));
-      return `Task ${id} in review. Reviewer notified if bridge configured.`;
-    }
-
-    case "task_check_review": {
-      const { id } = args as { id: string };
-      const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
-      if (!task) return `Task not found: ${id}`;
-      const statusMap: Record<string, string> = {
-        review: "pending",
-        done: "approved",
-        changes_requested: "changes_requested",
-      };
-      const reviewStatus = statusMap[task.status] ?? task.status;
-      return `Review status: ${reviewStatus}\nTask: ${task.title} [${task.status}]`;
     }
 
     case "job_list": {
       const { limit, project } = args as { limit?: number; project?: string };
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
       const conditions = resolved ? [eq(jobs.project_id, resolved.id)] : [];
       const rows = await db.query.jobs.findMany({
         where: conditions.length > 0 ? and(...conditions) : undefined,
@@ -568,7 +539,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const config = loadConfig();
       const taskLimit = config.context.layer1_task_limit;
       const memLimit = config.context.layer1_memory_limit;
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
 
       const taskConditions = [];
       if (resolved) taskConditions.push(eq(tasks.project_id, resolved.id));
@@ -646,6 +617,16 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         lines.push(`  ${lastSession.summary}`);
       }
 
+      const sqlite = getSqlite();
+      const activeCount = sqlite
+        .query(
+          "SELECT COUNT(*) as count FROM gateway_sessions WHERE role = 'worker' AND status = 'running'",
+        )
+        .get() as { count: number } | null;
+      if (activeCount && activeCount.count > 0) {
+        lines.push(`\n## Agent Loop: ${activeCount.count} active worker(s)`);
+      }
+
       lines.push("\nUse task_get([ids]) or memory_get([ids]) for full content.");
       return lines.join("\n");
     }
@@ -657,7 +638,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         priority?: number;
         data: Record<string, string>;
       };
-      const sqlite = getSqlite(db);
+      const sqlite = getSqlite();
       const sid = session_id ?? process.env.ORC_SESSION_ID ?? "default";
       const dataJson = JSON.stringify(data);
       const dataHash = createHash("sha256").update(dataJson).digest("hex").slice(0, 16);
@@ -712,7 +693,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       });
       const filteredTasks = activeTasks.filter((t) => !["done", "cancelled"].includes(t.status));
 
-      const sqlite = getSqlite(db);
+      const sqlite = getSqlite();
 
       type EventRow = { type: string; priority: number; data: string; data_hash?: string };
       const events = sqlite
@@ -736,7 +717,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     case "session_restore": {
       const { session_id } = args as { session_id?: string };
       const sid = session_id ?? process.env.ORC_SESSION_ID ?? "default";
-      const sqlite = getSqlite(db);
+      const sqlite = getSqlite();
 
       const snap = sqlite
         .query<{ xml: string }, string>(
@@ -757,10 +738,10 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         project?: string;
       };
 
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
       const sid = session_id ?? process.env.ORC_SESSION_ID ?? "default";
       const jobRunId = process.env.ORC_JOB_RUN_ID;
-      const sqlite = getSqlite(db);
+      const sqlite = getSqlite();
 
       type EventRow = { type: string; data: string };
       const events = sqlite
@@ -830,13 +811,18 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           title: string;
           body?: string;
           priority?: string;
+          tags?: string[];
+          prompt_id?: string;
+          required_review?: boolean;
+          agent_backend?: string;
+          max_review_rounds?: number;
           depends_on?: string[];
           subtask_of?: string;
         }[];
         project?: string;
         author?: string;
       };
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
       const now = new Date();
       const mapping: Record<string, string> = {};
 
@@ -851,12 +837,17 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           priority: (item.priority ?? "normal") as "low" | "normal" | "high" | "critical",
           author: author ?? "agent",
           status: "todo",
+          tags: item.tags,
+          prompt_id: item.prompt_id,
+          required_review: item.required_review ?? true,
+          agent_backend: item.agent_backend as "claude" | "codex" | "cursor" | undefined,
+          max_review_rounds: item.max_review_rounds ?? 3,
           created_at: now,
           updated_at: now,
         });
       }
 
-      const sqlite = getSqlite(db);
+      const sqlite = getSqlite();
       for (const item of items) {
         const taskId = mapping[item.ref] as string;
         if (item.depends_on) {
@@ -898,7 +889,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         project?: string;
         limit?: number;
       };
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
       const lim = limit ?? 10;
       const parts: string[] = [];
 
@@ -919,7 +910,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       }
 
       if (!resources || resources.includes("tasks")) {
-        const sqlite = getSqlite(db);
+        const sqlite = getSqlite();
         const words = query
           .trim()
           .split(/\s+/)
@@ -959,13 +950,48 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       return parts.length > 0 ? parts.join("\n") : "No results found.";
     }
 
+    case "prompt_list": {
+      const { tags, is_skill } = args as { tags?: string[]; is_skill?: boolean };
+      const conditions = [];
+      if (is_skill !== undefined) conditions.push(eq(prompts.is_skill, is_skill));
+      const rows = await db.query.prompts.findMany({
+        where: conditions.length > 0 ? and(...conditions) : undefined,
+        orderBy: (p, { asc }) => [asc(p.name)],
+      });
+      let filtered = rows;
+      if (tags && tags.length > 0) {
+        filtered = rows.filter((p) => {
+          const pTags = p.tags ?? [];
+          return tags.some((t) => pTags.includes(t));
+        });
+      }
+      if (filtered.length === 0) return "No prompts found.";
+      return filtered
+        .map((p) => {
+          const skill = p.is_skill ? " [skill]" : "";
+          const desc = p.description ? ` — ${p.description.slice(0, 60)}` : "";
+          return `${p.name.padEnd(28)}${skill}${desc}`;
+        })
+        .join("\n");
+    }
+
+    case "prompt_get": {
+      const { name: pName, id: pId } = args as { name?: string; id?: string };
+      let row: typeof prompts.$inferSelect | undefined;
+      if (pId) {
+        row = await db.query.prompts.findFirst({ where: eq(prompts.id, pId) });
+      } else if (pName) {
+        row = await db.query.prompts.findFirst({ where: eq(prompts.name, pName) });
+      } else {
+        return "Provide either name or id.";
+      }
+      if (!row) return `Prompt not found: ${pName ?? pId}`;
+      return `# ${row.name}\n${row.description ?? ""}\n\n${row.template}`;
+    }
+
     default:
       return `Unknown tool: ${name}`;
   }
-}
-
-function getSqlite(db: ReturnType<typeof getDb>): Database {
-  return (db as unknown as { $client: Database }).$client;
 }
 
 type TaskRow = { id: string; title: string; status: string; priority: string };

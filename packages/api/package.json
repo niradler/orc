@@ -23,6 +23,7 @@
     "@orc/gateway": "workspace:*",
     "@orc/mcp": "workspace:*",
     "@orc/runner": "workspace:*",
+    "@orc/task-service": "workspace:*",
     "drizzle-orm": "^0.41.0",
     "hono": "^4.7.4",
     "zod": "^3.24.2"

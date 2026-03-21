@@ -18,7 +18,8 @@ Session 4 (Codex)        ──┘
 
 - **Projects** — group tasks, memories, and jobs under a named project; set an active project and all commands auto-scope to it
 - **Shared memory** — store decisions, rules, and discoveries; any session can search them via BM25 full-text search
-- **Task board** — tasks flow through `todo → doing → review → done`; agents submit for human review, you approve or request changes
+- **Task board** — tasks flow through `todo → queued → doing → review → done`; agents submit for human review, you approve or request changes
+- **Agent orchestration** — task loop automatically picks up queued tasks, spawns worker agents, manages concurrency and review cycles
 - **Job runner** — schedule commands with cron, file-watch, webhook, or manual triggers; logs every run
 - **MCP server** — one config line connects any AI agent (Claude Code, Cursor, Codex, Gemini CLI) to all of the above
 - **Session continuity** — snapshots survive context compaction so agents pick up where they left off
@@ -88,6 +89,100 @@ orc task list
 ```
 
 The database is created automatically at `~/.orc/orc.db` on first run.
+
+## Skills
+
+ORC ships with **agent workflow skills** that teach AI agents how to use ORC effectively, and **built-in prompt templates** that the task loop assigns to worker agents.
+
+### Installing skills
+
+Install ORC skills into your agent with one command:
+
+```bash
+# Using npx skills (https://skills.sh)
+npx skills add niradler/orc --all
+npx skills add niradler/orc --skill orc-session orc-tasks  # specific skills
+npx skills add niradler/orc --all -g                       # global install
+
+# Using agent-skills-cli
+npx agent-skills-cli install niradler/orc
+npx agent-skills-cli install niradler/orc --agent claude-code
+
+# List installed skills
+npx skills list
+```
+
+Once installed, skills are discovered automatically by your agent. They trigger on relevant contexts (e.g. "create a task", "store this decision", "set up Telegram").
+
+<details>
+<summary>Manual installation</summary>
+
+Copy skill directories into your agent's skills folder:
+
+```bash
+# Claude Code (user-wide)
+cp -r /path/to/orc/skills/orc-session ~/.claude/skills/
+cp -r /path/to/orc/skills/orc-tasks   ~/.claude/skills/
+cp -r /path/to/orc/skills/orc-knowledge ~/.claude/skills/
+cp -r /path/to/orc/skills/orc-gateway  ~/.claude/skills/
+
+# Or project-specific
+cp -r /path/to/orc/skills/orc-* .claude/skills/
+```
+
+</details>
+
+### Agent workflow skills
+
+| Skill | Triggers on |
+|---|---|
+| `orc-session` | Session start, context compaction, resuming work |
+| `orc-tasks` | Task creation, status updates, HITL review, breaking down work |
+| `orc-knowledge` | Storing decisions, searching memory, "remember this", "what did we decide" |
+| `orc-gateway` | Telegram/Slack setup, remote approval, live agent sessions |
+
+### Built-in prompt templates
+
+Prompt templates live in `skills/prompts/*/SKILL.md` and are seeded to the database on API startup. Agents discover them via `prompt_list` and load content with `prompt_get`. Assign to tasks via `prompt_id` for the agent loop to use.
+
+```bash
+# List available prompts
+orc prompt list
+
+# View a specific prompt
+orc prompt show orc-coder
+
+# Render a prompt (with variable substitution)
+orc prompt render orc-worker-base
+```
+
+Via MCP tools:
+```
+prompt_list()                    # discover all prompts/skills
+prompt_list({ tags: ["workflow"] })  # filter by tag
+prompt_get({ name: "orc-coder" })    # load full content
+```
+
+| Prompt | Type | Purpose |
+|---|---|---|
+| `orc-worker-base` | Base | Default worker behavior — ORC awareness, status updates, deliverable format |
+| `orc-main-base` | Base | Orchestration agent — planning, decomposition, monitoring |
+| `orc-coder` | Workflow | Implementation — understand, plan, implement, verify, submit |
+| `orc-planner` | Workflow | Task decomposition with dependencies and workflow assignment |
+| `orc-reviewer` | Workflow | Structured evaluation — correctness, tests, security, conventions |
+| `orc-bugfix` | Workflow | Bug investigation — reproduce, root-cause, fix, regression test |
+| `orc-requirements` | Skill | Requirements interview — outcome, criteria, constraints, scope |
+| `orc-report` | Skill | Project status report — health summary, blockers, active work |
+
+### Custom prompts
+
+Add your own prompts via CLI or API:
+
+```bash
+orc prompt add my-workflow --body "## My Workflow\n1. Do this\n2. Do that" --tags workflow,custom
+```
+
+Then assign to tasks: `orc task add "Do the thing" --prompt my-workflow`
 
 ## Agent setup
 
@@ -177,13 +272,49 @@ MCP tools follow the same logic — pass `project: "name"` to scope, or omit to 
 ```
 1. Agent starts         → calls context() for active tasks + key memories
 2. Agent works          → creates tasks, stores decisions, records events
-3. Agent submits work   → task_submit_review() for human approval
+3. Agent submits work   → task_update(status: "review", comment: "summary")
 4. Human reviews        → approves or requests changes via CLI / Telegram
-5. Agent continues      → checks review status, picks up next task
+5. Agent continues      → picks up next task or resumes with feedback
 6. Session ends         → session_log() records what happened
 ```
 
 When an agent's context window fills up, `session_snapshot` captures current state into a compact 2KB XML blob that `session_restore` injects back after compaction.
+
+## Agent orchestration
+
+The task loop automatically picks up `queued` tasks and spawns worker agents to execute them.
+
+### How it works
+
+1. Create tasks with `task_create` or `task_batch_create`
+2. Set `prompt_id` to assign a workflow (e.g. `orc-coder`, `orc-bugfix`)
+3. Set `agent_backend` to choose which agent executes (`claude`, `codex`)
+4. Task loop polls for queued tasks, spawns workers, manages concurrency
+5. Workers follow the assigned prompt, submit for review when done
+6. Human approves or requests changes — loop continues automatically
+
+### Configuration
+
+Add to `~/.orc/config.json`:
+
+```json
+{
+  "agent_loop": {
+    "enabled": false,
+    "poll_interval_minutes": 5,
+    "max_workers": 1,
+    "default_backend": "claude",
+    "session_idle_timeout_minutes": 20,
+    "worker_auto_approve": true
+  }
+}
+```
+
+Per-project concurrency: set `max_workers` on the project to limit how many workers run simultaneously for that project.
+
+### Built-in prompts
+
+See [Skills](#skills) section for the full list of built-in prompts. Workers automatically use the prompt assigned via `prompt_id` on the task.
 
 ## MCP tools
 
@@ -193,7 +324,8 @@ When an agent's context window fills up, `session_snapshot` captures current sta
 |---|---|
 | **Project** | `project_list` |
 | **Memory** | `context`, `memory_search`, `memory_get`, `memory_store` |
-| **Task** | `task_list`, `task_get`, `task_create`, `task_update`, `task_batch_create`, `task_submit_review`, `task_check_review` |
+| **Task** | `task_list`, `task_get`, `task_create`, `task_update`, `task_batch_create` |
+| **Prompt** | `prompt_list`, `prompt_get` |
 | **Search** | `search` |
 | **Job** | `job_list`, `job_run`, `job_status` |
 | **Session** | `session_event`, `session_snapshot`, `session_restore`, `session_log` |
@@ -211,8 +343,13 @@ When an agent's context window fills up, `session_snapshot` captures current sta
 ### Task status flow
 
 ```
-todo → doing → blocked → doing → review → done
-                                       ↘ changes_requested → doing
+todo → queued → doing → review → done
+                  │         │
+                  ▼         ▼
+               blocked    changes_requested → doing
+                  │
+                  ▼
+                paused
 ```
 
 ## CLI reference
@@ -284,8 +421,6 @@ Runs on port 7700 with auto-generated OpenAPI spec.
 | `GET` | `/projects/by-name/{name}` | Lookup by name |
 | `GET` | `/projects/{id}/summary` | Task/memory/job counts |
 | `GET/POST/PATCH/DELETE` | `/tasks` | CRUD tasks |
-| `POST` | `/tasks/{id}/review` | Submit for review |
-| `GET` | `/tasks/{id}/review` | Check review status |
 | `GET/POST` | `/tasks/{id}/notes` | Task notes |
 | `GET/POST/DELETE` | `/tasks/{id}/links` | Task dependencies |
 | `GET/POST/DELETE` | `/memories` | CRUD memories |
@@ -316,6 +451,12 @@ ORC merges config in priority order (later wins):
 | `ORC_SESSION_ID` | `default` | Per-agent session identifier |
 | `ORC_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 | `ORC_RUNNER_TIMEOUT` | `300` | Default job timeout (seconds) |
+| `ORC_AGENT_LOOP_ENABLED` | `false` | Enable the agent task loop |
+| `ORC_AGENT_LOOP_POLL_INTERVAL` | `5` | Task loop poll interval (minutes) |
+| `ORC_AGENT_LOOP_MAX_WORKERS` | `1` | Max concurrent worker agents |
+| `ORC_AGENT_LOOP_DEFAULT_BACKEND` | `claude` | Default agent backend |
+| `ORC_AGENT_LOOP_IDLE_TIMEOUT` | `20` | Session idle timeout (minutes) |
+| `ORC_AGENT_LOOP_AUTO_APPROVE` | `true` | Auto-approve worker tool permissions |
 
 ## Running as a service
 
@@ -333,15 +474,17 @@ pm2 save && pm2 startup
 
 ```
 packages/
-  core/      Config (Zod), types, logger, ULID IDs
-  db/        Drizzle ORM + SQLite (~/.orc/orc.db)
-  api/       Hono REST API + OpenAPI spec (:7700)
-  sdk/       Typed HTTP client from OpenAPI
-  cli/       Commander CLI (the `orc` binary)
-  mcp/       MCP server (stdio)
-  runner/    Job executor + cron/watch scheduler
-  gateway/   Telegram + Slack bridge + agent sessions
-  tui/       Terminal UI (WIP)
+  core/           Config (Zod), types, logger, ULID IDs
+  db/             Drizzle ORM + SQLite (~/.orc/orc.db)
+  api/            Hono REST API + OpenAPI spec (:7700)
+  sdk/            Typed HTTP client from OpenAPI
+  cli/            Commander CLI (the `orc` binary)
+  mcp/            MCP server (stdio)
+  runner/         Job executor + cron/watch scheduler + task loop
+  gateway/        Telegram + Slack bridge + agent sessions
+  agent-runtime/  Shared agent backend registry (claude, codex)
+  task-service/   Task status transitions, side-effects, comments
+  tui/            Terminal UI (WIP)
 ```
 
 Data flow: `Agent → MCP → API → DB` / `CLI → SDK → API → DB`
