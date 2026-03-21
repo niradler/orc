@@ -421,6 +421,11 @@ export function createTestDb(): OrcDb {
   return _db;
 }
 
+export function getSqlite(db?: OrcDb): Database {
+  const d = db ?? getDb();
+  return (d as unknown as { $client: Database }).$client;
+}
+
 export function closeDb(): void {
   _db = null;
 }

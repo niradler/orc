@@ -1,9 +1,8 @@
-import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import type { TaskStatus } from "@orc/core/types";
-import { getDb } from "@orc/db/client";
+import { getDb, getSqlite } from "@orc/db/client";
 import {
   comments,
   job_runs,
@@ -295,12 +294,10 @@ export const toolDefinitions = [
 
 export type ToolName = (typeof toolDefinitions)[number]["name"];
 
-function resolveProjectId(
-  sqlite: Database,
-  projectName?: string,
-): { id: string; name: string } | null {
+function resolveProjectId(projectName?: string): { id: string; name: string } | null {
   const name = projectName || loadConfig().activeProject;
   if (!name) return null;
+  const sqlite = getSqlite();
   const row = sqlite
     .query<{ id: string; name: string }, string>(
       "SELECT id, name FROM projects WHERE name = ? COLLATE NOCASE LIMIT 1",
@@ -321,7 +318,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         limit?: number;
         project?: string;
       };
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
       const results = searchLayer1(query, scope, limit, type, resolved?.id);
       if (results.length === 0) return "No memories found.";
       const lines = [`Found ${results.length} results:`];
@@ -359,7 +356,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         importance?: string;
         project?: string;
       };
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
       const id = ulid();
       const now = new Date();
       await db.insert(memories).values({
@@ -385,7 +382,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         status?: string;
         limit?: number;
       };
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
       const conditions = [];
       if (status) {
         conditions.push(eq(tasks.status, status as "todo"));
@@ -442,7 +439,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         agent_backend?: string;
         max_review_rounds?: number;
       };
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
       const id = ulid();
       const now = new Date();
       await db.insert(tasks).values({
@@ -499,7 +496,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
 
     case "job_list": {
       const { limit, project } = args as { limit?: number; project?: string };
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
       const conditions = resolved ? [eq(jobs.project_id, resolved.id)] : [];
       const rows = await db.query.jobs.findMany({
         where: conditions.length > 0 ? and(...conditions) : undefined,
@@ -542,7 +539,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const config = loadConfig();
       const taskLimit = config.context.layer1_task_limit;
       const memLimit = config.context.layer1_memory_limit;
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
 
       const taskConditions = [];
       if (resolved) taskConditions.push(eq(tasks.project_id, resolved.id));
@@ -620,7 +617,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         lines.push(`  ${lastSession.summary}`);
       }
 
-      const sqlite = getSqlite(db);
+      const sqlite = getSqlite();
       const activeCount = sqlite
         .query(
           "SELECT COUNT(*) as count FROM gateway_sessions WHERE role = 'worker' AND status = 'running'",
@@ -641,7 +638,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         priority?: number;
         data: Record<string, string>;
       };
-      const sqlite = getSqlite(db);
+      const sqlite = getSqlite();
       const sid = session_id ?? process.env.ORC_SESSION_ID ?? "default";
       const dataJson = JSON.stringify(data);
       const dataHash = createHash("sha256").update(dataJson).digest("hex").slice(0, 16);
@@ -696,7 +693,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       });
       const filteredTasks = activeTasks.filter((t) => !["done", "cancelled"].includes(t.status));
 
-      const sqlite = getSqlite(db);
+      const sqlite = getSqlite();
 
       type EventRow = { type: string; priority: number; data: string; data_hash?: string };
       const events = sqlite
@@ -720,7 +717,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     case "session_restore": {
       const { session_id } = args as { session_id?: string };
       const sid = session_id ?? process.env.ORC_SESSION_ID ?? "default";
-      const sqlite = getSqlite(db);
+      const sqlite = getSqlite();
 
       const snap = sqlite
         .query<{ xml: string }, string>(
@@ -741,10 +738,10 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         project?: string;
       };
 
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
       const sid = session_id ?? process.env.ORC_SESSION_ID ?? "default";
       const jobRunId = process.env.ORC_JOB_RUN_ID;
-      const sqlite = getSqlite(db);
+      const sqlite = getSqlite();
 
       type EventRow = { type: string; data: string };
       const events = sqlite
@@ -825,7 +822,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         project?: string;
         author?: string;
       };
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
       const now = new Date();
       const mapping: Record<string, string> = {};
 
@@ -850,7 +847,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         });
       }
 
-      const sqlite = getSqlite(db);
+      const sqlite = getSqlite();
       for (const item of items) {
         const taskId = mapping[item.ref] as string;
         if (item.depends_on) {
@@ -892,7 +889,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         project?: string;
         limit?: number;
       };
-      const resolved = resolveProjectId(getSqlite(db), project);
+      const resolved = resolveProjectId(project);
       const lim = limit ?? 10;
       const parts: string[] = [];
 
@@ -913,7 +910,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       }
 
       if (!resources || resources.includes("tasks")) {
-        const sqlite = getSqlite(db);
+        const sqlite = getSqlite();
         const words = query
           .trim()
           .split(/\s+/)
@@ -997,9 +994,6 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
   }
 }
 
-function getSqlite(db: ReturnType<typeof getDb>): Database {
-  return (db as unknown as { $client: Database }).$client;
-}
 
 type TaskRow = { id: string; title: string; status: string; priority: string };
 type EventRow = { type: string; priority: number; data: string };

@@ -1,20 +1,15 @@
-import type { Database } from "bun:sqlite";
 import type { AgentBackendName, AgentSession } from "@orc/agent-runtime";
 import { createBackend } from "@orc/agent-runtime";
 import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
-import { getDb } from "@orc/db/client";
-import { gateway_sessions, prompts, tasks } from "@orc/db/schema";
+import { getDb, getSqlite } from "@orc/db/client";
+import { gateway_sessions, job_runs, jobs, prompts, tasks } from "@orc/db/schema";
 import { updateTaskStatus } from "@orc/task-service";
+import { Cron } from "croner";
 import { eq } from "drizzle-orm";
 
 const logger = createLogger("runner:task-loop");
-
-function getSqlite(): Database {
-  const db = getDb();
-  return (db as unknown as { $client: Database }).$client;
-}
 
 type PickedTask = {
   id: string;
@@ -332,10 +327,10 @@ async function spawnReviewer(task: PickedTask): Promise<void> {
   const sessionId = ulid();
   const backendName = (task.agent_backend ?? config.agent_loop.default_backend) as AgentBackendName;
 
-  const sqlite = getSqlite();
-  sqlite
-    .query("UPDATE tasks SET claimed_by = ?, updated_at = unixepoch() WHERE id = ?")
-    .run(sessionId, task.id);
+  await db
+    .update(tasks)
+    .set({ claimed_by: sessionId, updated_at: new Date() })
+    .where(eq(tasks.id, task.id));
 
   const prompt = await buildReviewPrompt(task);
   const cwd = process.cwd();
@@ -395,9 +390,11 @@ async function driveReviewerLoop(
         sqlite
           .query("UPDATE gateway_sessions SET last_error = ?, status = 'error' WHERE id = ?")
           .run(event.data, sessionId);
-        sqlite
-          .query("UPDATE tasks SET claimed_by = NULL, updated_at = unixepoch() WHERE id = ?")
-          .run(task.id);
+        const reviewDb = getDb();
+        await reviewDb
+          .update(tasks)
+          .set({ claimed_by: null, updated_at: new Date() })
+          .where(eq(tasks.id, task.id));
         return;
       }
     }
@@ -416,9 +413,11 @@ async function driveReviewerLoop(
         "UPDATE gateway_sessions SET status = 'error', last_error = ?, updated_at = unixepoch() WHERE id = ?",
       )
       .run(errMsg, sessionId);
-    sqlite
-      .query("UPDATE tasks SET claimed_by = NULL, updated_at = unixepoch() WHERE id = ?")
-      .run(task.id);
+    const reviewDb = getDb();
+    await reviewDb
+      .update(tasks)
+      .set({ claimed_by: null, updated_at: new Date() })
+      .where(eq(tasks.id, task.id));
   } finally {
     if (session?.alive()) {
       await session.close().catch(() => {});
@@ -442,60 +441,170 @@ function isAtCapacity(task: PickedTask): boolean {
   return false;
 }
 
-async function runCycle(): Promise<void> {
+export const SYSTEM_JOB_NAME = "orc-task-loop";
+
+export function cleanupStaleSessions(): number {
   const config = loadConfig();
+  const timeoutMinutes = config.agent_loop.session_idle_timeout_minutes;
+  const sqlite = getSqlite();
+  const cutoff = Math.floor(Date.now() / 1000) - timeoutMinutes * 60;
+  const stale = sqlite
+    .query(
+      `SELECT id, task_id FROM gateway_sessions
+       WHERE role = 'worker' AND status = 'running'
+         AND (last_activity_at IS NOT NULL AND last_activity_at < ?
+              OR last_activity_at IS NULL AND updated_at < ?)`,
+    )
+    .all(cutoff, cutoff) as { id: string; task_id: string | null }[];
+
+  for (const s of stale) {
+    sqlite
+      .query(
+        "UPDATE gateway_sessions SET status = 'error', last_error = 'idle timeout', updated_at = unixepoch() WHERE id = ?",
+      )
+      .run(s.id);
+    if (s.task_id) {
+      sqlite
+        .query(
+          "UPDATE tasks SET claimed_by = NULL, status = CASE WHEN status IN ('doing','queued') THEN 'todo' ELSE status END, updated_at = unixepoch() WHERE id = ?",
+        )
+        .run(s.task_id);
+    }
+    logger.warn(`Cleaned up stale worker session ${s.id} (idle > ${timeoutMinutes}m)`);
+  }
+  return stale.length;
+}
+
+async function runCycle(): Promise<string> {
+  const config = loadConfig();
+  const lines: string[] = [];
+
+  const cleaned = cleanupStaleSessions();
+  if (cleaned > 0) lines.push(`Cleaned ${cleaned} stale session(s)`);
+
   const globalActive = getActiveWorkerCount();
+  lines.push(`Active workers: ${globalActive}/${config.agent_loop.max_workers}`);
+
   if (globalActive >= config.agent_loop.max_workers) {
-    logger.debug(`At global capacity: ${globalActive}/${config.agent_loop.max_workers} workers`);
-    return;
+    lines.push("At global capacity — skipping");
+    return lines.join("\n");
   }
 
   const reviewTask = pickReviewTask();
   if (reviewTask && !isAtCapacity(reviewTask)) {
     logger.info(`Spawning reviewer for task ${reviewTask.id}: "${reviewTask.title}"`);
     await spawnReviewer(reviewTask);
-    return;
+    lines.push(`Spawned reviewer for: [${reviewTask.id}] ${reviewTask.title}`);
+    return lines.join("\n");
   }
 
   const task = pickNextTask();
   if (!task) {
-    logger.debug("No eligible tasks");
-    return;
+    lines.push("No eligible tasks");
+    return lines.join("\n");
   }
 
   if (isAtCapacity(task)) {
-    logger.debug(`At capacity for task ${task.id} (project: ${task.project_id ?? "global"})`);
-    return;
+    lines.push(`At capacity for task ${task.id} (project: ${task.project_id ?? "global"})`);
+    return lines.join("\n");
   }
 
   logger.info(`Spawning worker for task ${task.id}: "${task.title}"`);
   await spawnWorker(task);
+  lines.push(`Spawned worker for: [${task.id}] ${task.title}`);
+  return lines.join("\n");
 }
 
-let loopInterval: ReturnType<typeof setInterval> | null = null;
+export async function ensureSystemJob(): Promise<string> {
+  const db = getDb();
+  const existing = await db.query.jobs.findFirst({ where: eq(jobs.name, SYSTEM_JOB_NAME) });
+  if (existing) return existing.id;
 
-export function startTaskLoop(): void {
+  const config = loadConfig();
+  const id = ulid();
+  const now = new Date();
+  const cronExpr = `*/${config.agent_loop.poll_interval_minutes} * * * *`;
+  await db.insert(jobs).values({
+    id,
+    name: SYSTEM_JOB_NAME,
+    description: "Agent task loop — polls for tasks, spawns workers, cleans stale sessions",
+    command: "__internal:task-loop-cycle__",
+    trigger_type: "cron",
+    cron_expr: cronExpr,
+    timeout_secs: 120,
+    enabled: true,
+    created_at: now,
+    updated_at: now,
+  });
+  logger.info(`Seeded system job: ${SYSTEM_JOB_NAME} (${cronExpr})`);
+  return id;
+}
+
+export async function recordedCycle(): Promise<void> {
+  const db = getDb();
+  const job = await db.query.jobs.findFirst({ where: eq(jobs.name, SYSTEM_JOB_NAME) });
+  if (!job) return;
+
+  const runId = ulid();
+  const now = new Date();
+  await db.insert(job_runs).values({
+    id: runId,
+    job_id: job.id,
+    status: "running",
+    trigger_by: "cron",
+    started_at: now,
+    created_at: now,
+  });
+
+  try {
+    const summary = await runCycle();
+    const endedAt = new Date();
+    await db
+      .update(job_runs)
+      .set({ status: "success", exit_code: 0, ended_at: endedAt, stdout: summary })
+      .where(eq(job_runs.id, runId));
+    await db
+      .update(jobs)
+      .set({ last_run_at: endedAt, run_count: (job.run_count ?? 0) + 1, updated_at: endedAt })
+      .where(eq(jobs.id, job.id));
+  } catch (err) {
+    const errMsg = String(err);
+    logger.error(`Task loop cycle failed: ${errMsg}`);
+    await db
+      .update(job_runs)
+      .set({ status: "failed", ended_at: new Date(), error_msg: errMsg })
+      .where(eq(job_runs.id, runId));
+  }
+}
+
+let loopCron: Cron | null = null;
+
+export async function startTaskLoop(): Promise<void> {
   const config = loadConfig();
   if (!config.agent_loop.enabled) {
     logger.info("Agent loop disabled");
     return;
   }
 
-  const intervalMs = config.agent_loop.poll_interval_minutes * 60_000;
+  const jobId = await ensureSystemJob();
+  const cronExpr = `*/${config.agent_loop.poll_interval_minutes} * * * *`;
+
   logger.info(
-    `Task loop started (poll every ${config.agent_loop.poll_interval_minutes}m, max ${config.agent_loop.max_workers} workers)`,
+    `Task loop started (cron: ${cronExpr}, max ${config.agent_loop.max_workers} workers, idle timeout: ${config.agent_loop.session_idle_timeout_minutes}m)`,
   );
 
-  runCycle().catch((err) => logger.error(`Cycle error: ${String(err)}`));
-  loopInterval = setInterval(() => {
-    runCycle().catch((err) => logger.error(`Cycle error: ${String(err)}`));
-  }, intervalMs);
+  // Run first cycle immediately
+  recordedCycle().catch((err) => logger.error(`Cycle error: ${String(err)}`));
+
+  loopCron = new Cron(cronExpr, async () => {
+    recordedCycle().catch((err) => logger.error(`Cycle error: ${String(err)}`));
+  });
 }
 
 export function stopTaskLoop(): void {
-  if (loopInterval) {
-    clearInterval(loopInterval);
-    loopInterval = null;
+  if (loopCron) {
+    loopCron.stop();
+    loopCron = null;
     logger.info("Task loop stopped");
   }
 }

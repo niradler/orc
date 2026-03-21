@@ -1,19 +1,13 @@
-import type { Database } from "bun:sqlite";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import type { TaskStatus } from "@orc/core/types";
 import { TaskPrioritySchema, TaskStatusSchema } from "@orc/core/types";
-import { getDb } from "@orc/db/client";
+import { getDb, getSqlite } from "@orc/db/client";
 import { comments, task_links, tasks } from "@orc/db/schema";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 import { and, desc, eq } from "drizzle-orm";
 import { checkBlockers, rollupParentProgress, unblockDependents } from "../lib/task-deps.js";
-
-function getSqlite(): Database {
-  const db = getDb();
-  return (db as unknown as { $client: Database }).$client;
-}
 
 const app = new OpenAPIHono();
 

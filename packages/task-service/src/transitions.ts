@@ -1,7 +1,6 @@
-import type { Database } from "bun:sqlite";
 import { ulid } from "@orc/core/ids";
 import { TASK_STATUS_TRANSITIONS, type TaskStatus } from "@orc/core/types";
-import { getDb } from "@orc/db/client";
+import { getDb, getSqlite } from "@orc/db/client";
 import { comments, tasks } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
 import { notifyReview } from "./notifications.js";
@@ -19,10 +18,6 @@ export type TransitionResult = {
   error?: string | undefined;
   task?: typeof tasks.$inferSelect | undefined;
 };
-
-function getSqlite(db: ReturnType<typeof getDb>): Database {
-  return (db as unknown as { $client: Database }).$client;
-}
 
 export async function addTaskComment(
   taskId: string,
@@ -54,7 +49,7 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
   }
 
   if (opts.status === "doing") {
-    const sqlite = getSqlite(db);
+    const sqlite = getSqlite();
     const blockers = sqlite
       .query(
         `SELECT t.id, t.title FROM task_links tl JOIN tasks t ON t.id = tl.from_task_id
@@ -91,13 +86,15 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
 
   if (opts.status === "review") {
     const refreshed = await db.query.tasks.findFirst({ where: eq(tasks.id, opts.taskId) });
-    if (refreshed && (refreshed as Record<string, unknown>).required_review) {
-      notifyReview(opts.taskId, task.title).catch(() => {});
+    if (refreshed?.required_review) {
+      notifyReview(opts.taskId, task.title).catch((err) => {
+        console.error(`notifyReview failed for task ${opts.taskId}: ${String(err)}`);
+      });
     }
   }
 
   if (["done", "cancelled"].includes(opts.status)) {
-    const sqlite = getSqlite(db);
+    const sqlite = getSqlite();
     const dependents = sqlite
       .query(
         `SELECT DISTINCT dependent_id AS id FROM (
@@ -156,8 +153,8 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
   }
 
   if (opts.status === "changes_requested") {
-    const sqlite = getSqlite(db);
-    const maxRounds = ((task as Record<string, unknown>).max_review_rounds as number) ?? 3;
+    const sqlite = getSqlite();
+    const maxRounds = task.max_review_rounds ?? 3;
     const session = sqlite
       .query(
         "SELECT id, review_rounds FROM gateway_sessions WHERE task_id = ? ORDER BY updated_at DESC LIMIT 1",
