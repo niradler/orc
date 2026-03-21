@@ -125,12 +125,17 @@ Key env vars: `ORC_DB_PATH`, `ORC_API_PORT` (default 7700), `ORC_API_SECRET`, `O
     "poll_interval_minutes": 5,
     "max_workers": 1,
     "default_backend": "claude",
-    "session_idle_timeout_minutes": 20
+    "session_idle_timeout_minutes": 20,
+    "worker_auto_approve": true
   }
 }
 ```
 
-Env vars: `ORC_AGENT_LOOP_ENABLED`, `ORC_AGENT_LOOP_POLL_INTERVAL`, `ORC_AGENT_LOOP_MAX_WORKERS`, `ORC_AGENT_LOOP_DEFAULT_BACKEND`, `ORC_AGENT_LOOP_IDLE_TIMEOUT`.
+Env vars: `ORC_AGENT_LOOP_ENABLED`, `ORC_AGENT_LOOP_POLL_INTERVAL`, `ORC_AGENT_LOOP_MAX_WORKERS`, `ORC_AGENT_LOOP_DEFAULT_BACKEND`, `ORC_AGENT_LOOP_IDLE_TIMEOUT`, `ORC_AGENT_LOOP_AUTO_APPROVE`.
+
+### Built-in Prompts
+
+Prompt templates live in `skills/prompts/*/SKILL.md` and are seeded to the database on API startup. Use `prompt_list` to discover them, `prompt_get` to load content. Assign to tasks via `prompt_id`.
 
 ## Coding Conventions
 

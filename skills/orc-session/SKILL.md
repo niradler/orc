@@ -22,7 +22,11 @@ Returns ~200 tokens: active tasks, key memories, last session summary. Pass `pro
 - **Empty response**: Fresh ORC. Store project rules with `memory_store`, create tasks for planned work.
 - **Has `session_id`**: You're resuming after compaction. Call `session_restore` to get your previous snapshot.
 
-### 2. Record events as you work
+### 2. Discover available workflows
+
+Use `prompt_list` to see available prompts and skills. Use `prompt_get` to load specific prompt content when you need a structured workflow (e.g. for code review, planning, or bug fixes).
+
+### 3. Record events as you work
 
 Call `session_event` after anything worth surviving compaction. Events are deduplicated automatically.
 
@@ -36,11 +40,11 @@ Call `session_event` after anything worth surviving compaction. Events are dedup
 
 Rules and decisions get highest priority in snapshots and future `context()` calls.
 
-### 3. Snapshot before compaction
+### 4. Snapshot before compaction
 
 `session_snapshot` builds a priority-tiered XML blob (<=2KB). Claude Code's `PreCompact` hook calls this automatically. Cursor/Gemini agents should call it manually when context is near limit.
 
-### 4. Log completed work
+### 5. Log completed work
 
 At the end of a task or work block, call `session_log` with a summary. It auto-derives touched files, task changes, and stored memories from your session events.
 
@@ -51,6 +55,8 @@ At the end of a task or work block, call `session_log` with a summary. It auto-d
 **Claude Code** — hooks handle events, snapshots, and restore automatically. See `hooks/` directory and `hooks/claude-code/settings.json` for the hook configuration.
 
 **Cursor / Gemini** — no hooks, so call `session_event` manually after significant edits and decisions. Set a unique `ORC_SESSION_ID` per agent in your MCP config to isolate sessions.
+
+**Agent Loop Workers** — sessions are managed automatically by the task loop. Workers call `context()` at start and the loop handles lifecycle.
 
 ---
 

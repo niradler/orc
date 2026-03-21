@@ -98,7 +98,7 @@ describe("2. Prompt Discovery", () => {
     const result = await executeTool("prompt_get", { name: "orc-coder" });
     expect(result).toContain("# orc-coder");
     expect(result).toContain("Coder Workflow");
-    expect(result).toContain("Run tests and verify they pass");
+    expect(result).toContain("Run the full test suite");
   });
 
   test("get orc-coder prompt ID for later use", async () => {

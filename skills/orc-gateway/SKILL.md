@@ -9,7 +9,7 @@ The gateway bridges messaging platforms (Telegram, Slack) with live AI agent ses
 
 ## Why
 
-Without the gateway, HITL review requires the human at their terminal. The gateway lets you approve tasks, monitor agents, and start new agent sessions from Telegram or Slack.
+Without the gateway, HITL review requires the human at their terminal. The gateway lets you approve tasks, monitor agents, and start new agent sessions from Telegram or Slack. It also receives notifications from the agent loop when tasks need review.
 
 ---
 
@@ -38,7 +38,16 @@ Each chat has a mode: `direct` (ORC commands), `agent:claude`/`agent:codex`/`age
 
 ## HITL Review
 
-When an agent calls `task_submit_review`, the gateway sends a card with Approve/Reject buttons. Tap to respond — the agent picks up the result via `task_check_review`.
+When an agent sets task status to `review`, the gateway sends a notification. Use bot commands to review:
+
+```
+/tasks            # See tasks awaiting review
+/task <id>        # View task details and worker summary
+/approve <id>     # Approve — task moves to done
+/reject <id>      # Request changes — task moves to changes_requested
+```
+
+The agent loop automatically resumes workers when tasks move to `changes_requested`.
 
 ## Live Agent Sessions
 
@@ -49,7 +58,7 @@ When an agent calls `task_submit_review`, the gateway sends a card with Approve/
 
 ## Voice
 
-Telegram voice messages → transcribed → sent to agent. Responses → TTS → voice reply. Configure `speech`/`tts` providers in config (openai, groq, qwen).
+Telegram voice messages are transcribed and sent to the agent. Responses are converted to TTS voice replies. Configure `speech`/`tts` providers in config (openai, groq, qwen).
 
 ---
 
@@ -69,6 +78,6 @@ Telegram voice messages → transcribed → sent to agent. Responses → TTS →
 
 | Mistake | Fix |
 |---------|-----|
-| No HITL cards arriving | Check `authorized_users` includes your Telegram ID |
+| No review notifications arriving | Check `authorized_users` includes your Telegram ID |
 | Agent session won't start | Need `orc daemon start`, not just `orc api` |
 | Messages going nowhere | Check `/mode` — may be `direct` when you need `agent:claude` |

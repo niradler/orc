@@ -5,10 +5,10 @@ import { closeDb, createTestDb, getDb, getSqlite } from "@orc/db/client";
 import { gateway_sessions, job_runs, jobs, tasks } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
 import {
-  SYSTEM_JOB_NAME,
   cleanupStaleSessions,
   ensureSystemJob,
   recordedCycle,
+  SYSTEM_JOB_NAME,
 } from "../task-loop.js";
 
 beforeAll(() => {
