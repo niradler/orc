@@ -133,6 +133,7 @@ export const prompts = sqliteTable(
     skill_dir: text("skill_dir"),
     skill_version: text("skill_version"),
     frontmatter: text("frontmatter", { mode: "json" }).$type<Record<string, unknown>>(),
+    source_url: text("source_url"),
     tags: text("tags", { mode: "json" }).$type<string[]>(),
     version: integer("version").default(1).notNull(),
     pinned: integer("pinned", { mode: "boolean" }).default(false).notNull(),

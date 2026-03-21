@@ -1,6 +1,7 @@
 ---
 name: orc-session
 description: Use when starting any agent session on an ORC-backed project, when resuming after context compaction, when recording significant actions during work, or when ending a work unit. This is the foundational ORC workflow — call context() first, record events as you work, snapshot before compaction, restore after. Essential for Claude Code, Cursor, Codex, and Gemini CLI agents.
+allowed-tools: ["mcp__orc__context", "mcp__orc__session_event", "mcp__orc__session_snapshot", "mcp__orc__session_restore", "mcp__orc__session_log"]
 ---
 
 # ORC Session Workflow

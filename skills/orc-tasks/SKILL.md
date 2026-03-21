@@ -1,6 +1,7 @@
 ---
 name: orc-tasks
 description: Use when creating, updating, or managing tasks in an ORC-backed project, when submitting work for human review (HITL), when polling for approval, when transitioning task status, or when coordinating multi-agent work. Trigger on any task lifecycle operation — create, claim, review, approve, reject, block, complete. Also trigger when the user asks to break work into steps, track progress, or checkpoint work for review.
+allowed-tools: ["mcp__orc__task_list", "mcp__orc__task_get", "mcp__orc__task_create", "mcp__orc__task_update", "mcp__orc__task_batch_create", "mcp__orc__task_submit_review", "mcp__orc__task_check_review"]
 ---
 
 # ORC Task Workflow

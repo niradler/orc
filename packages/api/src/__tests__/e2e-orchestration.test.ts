@@ -97,7 +97,7 @@ describe("2. Prompt Discovery", () => {
   test("agent loads full orc-coder prompt content", async () => {
     const result = await executeTool("prompt_get", { name: "orc-coder" });
     expect(result).toContain("# orc-coder");
-    expect(result).toContain("Coder Workflow");
+    expect(result).toContain("# Coder");
     expect(result).toContain("Run the full test suite");
   });
 
