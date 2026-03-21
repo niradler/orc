@@ -371,12 +371,25 @@ function setupDb(sqlite: Database): void {
     "DROP TABLE IF EXISTS task_notes",
     "DROP TABLE IF EXISTS task_comments",
     "DROP TABLE IF EXISTS project_comments",
+    "ALTER TABLE tasks ADD COLUMN prompt_id TEXT REFERENCES prompts(id) ON DELETE SET NULL",
+    "ALTER TABLE tasks ADD COLUMN required_review INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE tasks ADD COLUMN agent_backend TEXT",
+    "ALTER TABLE tasks ADD COLUMN max_review_rounds INTEGER NOT NULL DEFAULT 3",
+    "ALTER TABLE gateway_sessions ADD COLUMN role TEXT",
+    "ALTER TABLE gateway_sessions ADD COLUMN pid INTEGER",
+    "ALTER TABLE gateway_sessions ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL",
+    "ALTER TABLE gateway_sessions ADD COLUMN review_rounds INTEGER NOT NULL DEFAULT 0",
   ];
   for (const statement of migrations) {
     try {
       sqlite.exec(statement);
     } catch {}
   }
+
+  try {
+    sqlite.exec(`INSERT OR IGNORE INTO bridge_chats (id, platform, chat_id, mode, authorized, updated_at, created_at)
+      VALUES ('__task-loop__', 'telegram', '__task-loop__', 'direct', 0, unixepoch(), unixepoch())`);
+  } catch {}
 }
 
 export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof schema>> {

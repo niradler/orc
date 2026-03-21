@@ -1,5 +1,3 @@
-export { startCodexSession } from "./codex.js";
-export { createBackend, listRegisteredBackends, registerBackend } from "./registry.js";
 export type {
   AgentBackend,
   AgentBackendName,
@@ -8,7 +6,12 @@ export type {
   ImageAttachment,
   PermissionResult,
   SessionOpts,
-} from "./types.js";
+} from "@orc/agent-runtime";
+export {
+  createBackend,
+  listRegisteredBackends,
+  registerBackend,
+  startCodexSession,
+} from "@orc/agent-runtime";
 
-import "./claude.js";
-import "./codex.js";
+import "@orc/agent-runtime";

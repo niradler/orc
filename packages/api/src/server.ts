@@ -4,6 +4,7 @@ import { loadConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
 import { ORC_VERSION } from "@orc/core/version";
+import { seedBuiltInPrompts } from "@orc/runner/seed-prompts";
 import { bearerAuth } from "./middleware/auth.js";
 import { gatewayRouter } from "./routes/gateway.js";
 import { healthRouter } from "./routes/health.js";
@@ -60,6 +61,8 @@ export function createApp() {
   });
 
   app.get("/docs", swaggerUI({ url: "/openapi.json" }));
+
+  seedBuiltInPrompts().catch(() => {});
 
   return app;
 }

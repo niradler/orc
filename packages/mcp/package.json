@@ -20,6 +20,7 @@
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
     "@orc/runner": "workspace:*",
+    "@orc/task-service": "workspace:*",
     "drizzle-orm": "^0.41.0",
     "zod": "^3.24.2"
   },

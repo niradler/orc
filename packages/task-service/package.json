@@ -1,0 +1,11 @@
+{
+  "name": "@orc/task-service",
+  "version": "0.1.6",
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@orc/core": "workspace:*",
+    "@orc/db": "workspace:*",
+    "drizzle-orm": "^0.41.0"
+  }
+}

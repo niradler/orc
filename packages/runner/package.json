@@ -7,7 +7,9 @@
     ".": "./src/index.ts",
     "./executor": "./src/executor.ts",
     "./scheduler": "./src/scheduler.ts",
-    "./watcher": "./src/watcher.ts"
+    "./watcher": "./src/watcher.ts",
+    "./seed-prompts": "./src/seed-prompts.ts",
+    "./task-loop": "./src/task-loop.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -16,8 +18,10 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@orc/agent-runtime": "workspace:*",
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
+    "@orc/task-service": "workspace:*",
     "chokidar": "^4.0.3",
     "croner": "^9.0.0",
     "drizzle-orm": "^0.41.0"

@@ -91,6 +91,16 @@ export const OrcConfigSchema = z.object({
     })
     .default({}),
 
+  agent_loop: z
+    .object({
+      enabled: z.boolean().default(false),
+      poll_interval_minutes: z.number().int().min(1).default(5),
+      max_workers: z.number().int().min(1).default(1),
+      default_backend: z.enum(["claude", "codex", "cursor"]).default("claude"),
+      session_idle_timeout_minutes: z.number().int().min(1).default(20),
+    })
+    .default({}),
+
   speech: SpeechConfigSchema.default({}),
   tts: TtsConfigSchema.default({}),
 
@@ -162,6 +172,19 @@ function fromEnv(): Record<string, unknown> {
   if (process.env.ORC_LAYER1_MEMORIES)
     context.layer1_memory_limit = Number(process.env.ORC_LAYER1_MEMORIES);
   if (Object.keys(context).length) env.context = context;
+
+  const agent_loop: Record<string, unknown> = {};
+  if (process.env.ORC_AGENT_LOOP_ENABLED)
+    agent_loop.enabled = process.env.ORC_AGENT_LOOP_ENABLED === "true";
+  if (process.env.ORC_AGENT_LOOP_POLL_INTERVAL)
+    agent_loop.poll_interval_minutes = Number(process.env.ORC_AGENT_LOOP_POLL_INTERVAL);
+  if (process.env.ORC_AGENT_LOOP_MAX_WORKERS)
+    agent_loop.max_workers = Number(process.env.ORC_AGENT_LOOP_MAX_WORKERS);
+  if (process.env.ORC_AGENT_LOOP_DEFAULT_BACKEND)
+    agent_loop.default_backend = process.env.ORC_AGENT_LOOP_DEFAULT_BACKEND;
+  if (process.env.ORC_AGENT_LOOP_IDLE_TIMEOUT)
+    agent_loop.session_idle_timeout_minutes = Number(process.env.ORC_AGENT_LOOP_IDLE_TIMEOUT);
+  if (Object.keys(agent_loop).length) env.agent_loop = agent_loop;
 
   const gateway: Record<string, unknown> = {};
   if (process.env.ORC_TELEGRAM_TOKEN) {

@@ -13,6 +13,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@orc/agent-runtime": "workspace:*",
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
     "@orc/runner": "workspace:*",

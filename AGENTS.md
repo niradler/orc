@@ -6,15 +6,17 @@ Human + AI orchestration hub. Persistent memory · Task management (HITL) · Gen
 
 ```
 packages/
-  core/     @orc/core     — config (Zod), types, logger, ULID IDs
-  db/       @orc/db       — Drizzle ORM schema + SQLite client (~/.orc/orc.db)
-  api/      @orc/api      — Hono REST API + auto-generated OpenAPI spec (:7700)
-  sdk/      @orc/sdk      — typed HTTP client generated from OpenAPI spec
-  cli/      @orc/cli      — commander CLI (`orc` binary) using the SDK
-  mcp/      @orc/mcp      — MCP server (stdio) for Claude/Cursor/Codex/Gemini
-  runner/   @orc/runner   — job executor + cron/watch/one-shot scheduler
-  gateway/  @orc/gateway  — multi-channel gateway (Telegram, Slack) + agent sessions
-  tui/      @orc/tui      — terminal UI (in-progress)
+  core/           @orc/core           — config (Zod), types, logger, ULID IDs
+  db/             @orc/db             — Drizzle ORM schema + SQLite client (~/.orc/orc.db)
+  api/            @orc/api            — Hono REST API + auto-generated OpenAPI spec (:7700)
+  sdk/            @orc/sdk            — typed HTTP client generated from OpenAPI spec
+  cli/            @orc/cli            — commander CLI (`orc` binary) using the SDK
+  mcp/            @orc/mcp            — MCP server (stdio) for Claude/Cursor/Codex/Gemini
+  runner/         @orc/runner         — job executor + cron/watch/one-shot scheduler + task loop
+  gateway/        @orc/gateway        — multi-channel gateway (Telegram, Slack) + agent sessions
+  agent-runtime/  @orc/agent-runtime  — shared agent backend registry (claude, codex)
+  task-service/   @orc/task-service   — task status transitions, side-effects, comments
+  tui/            @orc/tui            — terminal UI (in-progress)
 ```
 
 Data flow: `Agent → MCP → API → DB`. CLI goes via `CLI → SDK → API → DB`.
@@ -55,7 +57,9 @@ bun build            # build all packages
 | `prompts` | Prompt/skill templates |
 | `bridge_chats/messages/permissions` | Gateway HITL (Telegram/Slack) |
 
-**Task status flow**: `todo → doing → blocked → review → done/changes_requested → doing → …`
+**Task status flow**: `todo → queued → doing → blocked → review → done/changes_requested → doing → …`
+
+Additional statuses: `queued` (claimed by task loop, waiting to start), `paused` (exceeded review rounds or manually paused)
 
 **Task priorities**: `low | normal | high | critical`
 
@@ -63,7 +67,7 @@ bun build            # build all packages
 
 > `repeat` was removed — use `cron` with a 6-field expression for sub-minute intervals (e.g. `*/30 * * * * *` = every 30 s).
 
-## MCP Tools (20 tools in packages/mcp/src/tools.ts)
+## MCP Tools (22 tools in packages/mcp/src/tools.ts)
 
 **Call `context` first in every session** — returns active tasks + key memories in ~200 tokens.
 
@@ -83,12 +87,14 @@ For CRUD operations not in MCP (delete, project management, job creation), use t
 | `task_create` | Create a task. Pass `project` to scope. |
 | `task_update` | Update status/priority/body |
 | `task_batch_create` | Create multiple tasks with dependency links atomically. |
-| `task_submit_review` | HITL checkpoint → sets status=review, pings Telegram if configured |
-| `task_check_review` | Poll review result: `pending \| approved \| changes_requested` |
+| `task_submit_review` | **DEPRECATED** — use `task_update` with `status: "review"` instead |
+| `task_check_review` | **DEPRECATED** — use `task_get` instead |
 | `job_list` | List all jobs + last run status. Pass `project` to filter. |
 | `job_run` | Trigger a job by name |
 | `job_status` | Get run status/exit code/error for a run ID |
 | `project_list` | Discover all projects (name, status, description) |
+| `prompt_list` | Discover available prompts/skills. Filter by tags or is_skill. |
+| `prompt_get` | Load full prompt content by name or ID. |
 | `session_event` | Record significant action (file, task, decision, error, git, env, rule, plan). Deduped automatically. |
 | `session_snapshot` | Build ≤2KB XML snapshot — priority-tiered (P1: files/tasks, P2: decisions/git, P3: intent) |
 | `session_restore` | Restore session after compaction or agent restart |
@@ -111,6 +117,22 @@ Use the `type` field in `memory_store` — it affects scoring in `context`:
 Priority order (later wins): `~/.orc/config.json` → `./.orc/config.json` → env vars.
 
 Key env vars: `ORC_DB_PATH`, `ORC_API_PORT` (default 7700), `ORC_API_SECRET`, `ORC_TELEGRAM_TOKEN`, `ORC_LOG_LEVEL`.
+
+### Agent Loop Config
+
+```json
+{
+  "agent_loop": {
+    "enabled": false,
+    "poll_interval_minutes": 5,
+    "max_workers": 1,
+    "default_backend": "claude",
+    "session_idle_timeout_minutes": 20
+  }
+}
+```
+
+Env vars: `ORC_AGENT_LOOP_ENABLED`, `ORC_AGENT_LOOP_POLL_INTERVAL`, `ORC_AGENT_LOOP_MAX_WORKERS`, `ORC_AGENT_LOOP_DEFAULT_BACKEND`, `ORC_AGENT_LOOP_IDLE_TIMEOUT`.
 
 ## Coding Conventions
 
