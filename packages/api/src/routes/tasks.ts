@@ -149,6 +149,11 @@ const BatchTaskItem = z.object({
   title: z.string().min(1).max(500),
   body: z.string().optional(),
   priority: TaskPrioritySchema.optional().default("normal"),
+  tags: z.array(z.string()).optional(),
+  prompt_id: z.string().optional(),
+  required_review: z.boolean().optional().default(true),
+  agent_backend: z.enum(["claude", "codex", "cursor"]).optional(),
+  max_review_rounds: z.number().int().min(1).optional().default(3),
   depends_on: z.array(z.string()).optional().describe("Refs of tasks that block this one"),
   subtask_of: z.string().optional().describe("Ref of parent task"),
 });
@@ -444,6 +449,11 @@ app.openapi(batchCreateRoute, async (c) => {
         priority: item.priority,
         author,
         status: "todo",
+        tags: item.tags,
+        prompt_id: item.prompt_id,
+        required_review: item.required_review ?? true,
+        agent_backend: item.agent_backend as "claude" | "codex" | "cursor" | undefined,
+        max_review_rounds: item.max_review_rounds ?? 3,
         created_at: now,
         updated_at: now,
       });

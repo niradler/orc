@@ -277,6 +277,9 @@ async function driveWorkerLoop(
         "UPDATE gateway_sessions SET status = 'stopped', updated_at = unixepoch() WHERE id = ?",
       )
       .run(sessionId);
+    sqlite
+      .query("UPDATE tasks SET claimed_by = NULL, updated_at = unixepoch() WHERE id = ?")
+      .run(task.id);
     logger.info(`Worker ${sessionId} completed for task ${task.id}`);
   } catch (err) {
     const errMsg = String(err);
@@ -339,7 +342,13 @@ async function spawnReviewer(task: PickedTask): Promise<void> {
     .where(eq(tasks.id, task.id));
 
   const prompt = await buildReviewPrompt(task);
-  const cwd = process.cwd();
+  let cwd = process.cwd();
+  if (task.project_id) {
+    const proj = getSqlite()
+      .query("SELECT scope FROM projects WHERE id = ?")
+      .get(task.project_id) as { scope: string | null } | null;
+    if (proj?.scope) cwd = proj.scope;
+  }
 
   const now = new Date();
   await db.insert(gateway_sessions).values({
@@ -410,6 +419,9 @@ async function driveReviewerLoop(
         "UPDATE gateway_sessions SET status = 'stopped', updated_at = unixepoch() WHERE id = ?",
       )
       .run(sessionId);
+    sqlite
+      .query("UPDATE tasks SET claimed_by = NULL, updated_at = unixepoch() WHERE id = ?")
+      .run(task.id);
     logger.info(`Reviewer ${sessionId} completed for task ${task.id}`);
   } catch (err) {
     const errMsg = String(err);
