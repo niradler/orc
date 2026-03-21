@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { ulid } from "@orc/core/ids";
 import { closeDb, createTestDb, getDb } from "@orc/db/client";
-import { comments, task_links, tasks } from "@orc/db/schema";
+import { comments, gateway_sessions, task_links, tasks } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
 import { addTaskComment, updateTaskStatus } from "../transitions.js";
 
@@ -139,6 +139,55 @@ describe("updateTaskStatus", () => {
     const result = await updateTaskStatus({ taskId: id, status: "todo" });
     expect(result.ok).toBe(true);
     expect(result.task?.status).toBe("todo");
+  });
+});
+
+describe("max_review_rounds", () => {
+  test("pauses task after exceeding max review rounds", async () => {
+    const db = getDb();
+    const id = await createTask({ max_review_rounds: 2 });
+    const sessionId = ulid();
+    const now = new Date();
+    await db.insert(gateway_sessions).values({
+      id: sessionId,
+      chat_id: "__task-loop__",
+      backend: "claude",
+      mode: "agent:claude",
+      status: "running",
+      task_id: id,
+      review_rounds: 1,
+      created_at: now,
+      updated_at: now,
+    });
+    await updateTaskStatus({ taskId: id, status: "doing" });
+    await updateTaskStatus({ taskId: id, status: "review" });
+    await updateTaskStatus({ taskId: id, status: "changes_requested" });
+    const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
+    expect(task?.status).toBe("paused");
+    expect(task?.claimed_by).toBeNull();
+  });
+
+  test("does not pause when under max review rounds", async () => {
+    const db = getDb();
+    const id = await createTask({ max_review_rounds: 3 });
+    const sessionId = ulid();
+    const now = new Date();
+    await db.insert(gateway_sessions).values({
+      id: sessionId,
+      chat_id: "__task-loop__",
+      backend: "claude",
+      mode: "agent:claude",
+      status: "running",
+      task_id: id,
+      review_rounds: 0,
+      created_at: now,
+      updated_at: now,
+    });
+    await updateTaskStatus({ taskId: id, status: "doing" });
+    await updateTaskStatus({ taskId: id, status: "review" });
+    await updateTaskStatus({ taskId: id, status: "changes_requested" });
+    const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
+    expect(task?.status).toBe("changes_requested");
   });
 });
 

@@ -51,6 +51,24 @@ function pickNextTask(): PickedTask | null {
   return row;
 }
 
+function pickReviewTask(): PickedTask | null {
+  const sqlite = getSqlite();
+  const row = sqlite
+    .query(
+      `SELECT t.id, t.title, t.body, t.status, t.prompt_id, t.agent_backend, t.tags, t.project_id
+       FROM tasks t
+       WHERE t.status = 'review'
+         AND t.claimed_by IS NULL
+         AND EXISTS (SELECT 1 FROM json_each(t.tags) j WHERE j.value = 'agent-review')
+       ORDER BY
+         CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
+         t.updated_at ASC
+       LIMIT 1`,
+    )
+    .get() as PickedTask | null;
+  return row;
+}
+
 function getActiveWorkerCount(): number {
   const sqlite = getSqlite();
   const row = sqlite
@@ -94,23 +112,41 @@ async function buildPrompt(task: PickedTask): Promise<string> {
   return parts.join("\n\n");
 }
 
+function findPreviousSession(
+  taskId: string,
+): { runtime_session_id: string; review_rounds: number; cwd: string } | null {
+  const sqlite = getSqlite();
+  const row = sqlite
+    .query(
+      `SELECT runtime_session_id, review_rounds, cwd FROM gateway_sessions
+       WHERE task_id = ? AND runtime_session_id IS NOT NULL AND status IN ('stopped', 'error')
+       ORDER BY updated_at DESC LIMIT 1`,
+    )
+    .get(taskId) as { runtime_session_id: string; review_rounds: number; cwd: string } | null;
+  return row;
+}
+
 async function spawnWorker(task: PickedTask): Promise<void> {
   const config = loadConfig();
   const db = getDb();
   const sessionId = ulid();
 
   const backendName = (task.agent_backend ?? config.agent_loop.default_backend) as AgentBackendName;
+  const isResume = task.status === "changes_requested";
+  const prevSession = isResume ? findPreviousSession(task.id) : null;
 
   await updateTaskStatus({
     taskId: task.id,
     status: "queued",
     claimedBy: sessionId,
-    comment: `Claimed by task loop (backend: ${backendName})`,
+    comment: isResume
+      ? `Resuming after changes_requested (backend: ${backendName})`
+      : `Claimed by task loop (backend: ${backendName})`,
     author: "system",
   });
 
   const prompt = await buildPrompt(task);
-  const cwd = process.cwd();
+  const cwd = prevSession?.cwd ?? process.cwd();
 
   const now = new Date();
   await db.insert(gateway_sessions).values({
@@ -126,14 +162,16 @@ async function spawnWorker(task: PickedTask): Promise<void> {
     role: "worker",
     pid: process.pid,
     project_id: task.project_id,
-    review_rounds: 0,
+    review_rounds: prevSession?.review_rounds ?? 0,
     created_at: now,
     updated_at: now,
   });
 
-  driveWorkerLoop(sessionId, task, backendName, prompt, cwd).catch((err) => {
-    logger.error(`Worker ${sessionId} failed: ${String(err)}`);
-  });
+  driveWorkerLoop(sessionId, task, backendName, prompt, cwd, prevSession?.runtime_session_id).catch(
+    (err) => {
+      logger.error(`Worker ${sessionId} failed: ${String(err)}`);
+    },
+  );
 }
 
 async function driveWorkerLoop(
@@ -142,6 +180,7 @@ async function driveWorkerLoop(
   backendName: AgentBackendName,
   prompt: string,
   cwd: string,
+  previousRuntimeSessionId?: string | undefined,
 ): Promise<void> {
   const db = getDb();
   const sqlite = getSqlite();
@@ -156,8 +195,24 @@ async function driveWorkerLoop(
     });
 
     const backend = createBackend(backendName);
-    session = await backend.startSession({ cwd, autoApprove: true });
-    await session.send(prompt);
+
+    if (previousRuntimeSessionId) {
+      logger.info(`Attempting resume of session ${previousRuntimeSessionId} for task ${task.id}`);
+      try {
+        session = await backend.resumeSession(previousRuntimeSessionId, { cwd, autoApprove: true });
+        await session.send(prompt);
+        logger.info(`Resume succeeded for task ${task.id}`);
+      } catch (resumeErr) {
+        logger.warn(`Resume failed for task ${task.id}: ${String(resumeErr)}, starting fresh`);
+        session = await backend.startSession({ cwd, autoApprove: true });
+        await session.send(prompt);
+      }
+    } else {
+      session = await backend.startSession({ cwd, autoApprove: true });
+      await session.send(prompt);
+    }
+
+    const autoApprove = loadConfig().agent_loop.worker_auto_approve;
 
     for await (const event of session.events()) {
       sqlite
@@ -167,7 +222,14 @@ async function driveWorkerLoop(
         .run(sessionId);
 
       if (event.type === "permission_request") {
-        session.respondPermission(event.data.requestId, "approved");
+        if (autoApprove) {
+          session.respondPermission(event.data.requestId, "approved");
+        } else {
+          logger.info(
+            `Permission request for worker ${sessionId}: ${event.data.tool} — queuing for human`,
+          );
+          session.respondPermission(event.data.requestId, "denied");
+        }
       }
 
       if (event.type === "result") {
@@ -220,6 +282,134 @@ async function driveWorkerLoop(
   }
 }
 
+async function buildReviewPrompt(task: PickedTask): Promise<string> {
+  const db = getDb();
+  const parts: string[] = [];
+
+  const reviewerPrompt = await db.query.prompts.findFirst({
+    where: eq(prompts.name, "orc-reviewer"),
+  });
+  if (reviewerPrompt) parts.push(reviewerPrompt.template);
+
+  parts.push(`\n---\n## Task Under Review: ${task.title}\nTask ID: ${task.id}`);
+  if (task.body) parts.push(task.body);
+
+  const sqlite = getSqlite();
+  const taskComments = sqlite
+    .query(
+      "SELECT content, author, created_at FROM comments WHERE resource_type = 'task' AND resource_id = ? ORDER BY created_at ASC",
+    )
+    .all(task.id) as { content: string; author: string; created_at: number }[];
+  if (taskComments.length > 0) {
+    parts.push("\n## Comments");
+    for (const c of taskComments) {
+      parts.push(`[${c.author}]: ${c.content}`);
+    }
+  }
+
+  return parts.join("\n\n");
+}
+
+async function spawnReviewer(task: PickedTask): Promise<void> {
+  const config = loadConfig();
+  const db = getDb();
+  const sessionId = ulid();
+  const backendName = (task.agent_backend ?? config.agent_loop.default_backend) as AgentBackendName;
+
+  const sqlite = getSqlite();
+  sqlite
+    .query("UPDATE tasks SET claimed_by = ?, updated_at = unixepoch() WHERE id = ?")
+    .run(sessionId, task.id);
+
+  const prompt = await buildReviewPrompt(task);
+  const cwd = process.cwd();
+
+  const now = new Date();
+  await db.insert(gateway_sessions).values({
+    id: sessionId,
+    chat_id: "__task-loop__",
+    backend: backendName,
+    mode: `agent:${backendName}`,
+    cwd,
+    title: `Review: ${task.title}`,
+    status: "running",
+    auto_approve: true,
+    task_id: task.id,
+    role: "worker",
+    pid: process.pid,
+    project_id: task.project_id,
+    review_rounds: 0,
+    created_at: now,
+    updated_at: now,
+  });
+
+  driveReviewerLoop(sessionId, task, backendName, prompt, cwd).catch((err) => {
+    logger.error(`Reviewer ${sessionId} failed: ${String(err)}`);
+  });
+}
+
+async function driveReviewerLoop(
+  sessionId: string,
+  task: PickedTask,
+  backendName: AgentBackendName,
+  prompt: string,
+  cwd: string,
+): Promise<void> {
+  const sqlite = getSqlite();
+  let session: AgentSession | null = null;
+
+  try {
+    const backend = createBackend(backendName);
+    session = await backend.startSession({ cwd, autoApprove: true });
+    await session.send(prompt);
+
+    for await (const event of session.events()) {
+      sqlite
+        .query(
+          "UPDATE gateway_sessions SET last_activity_at = unixepoch(), updated_at = unixepoch() WHERE id = ?",
+        )
+        .run(sessionId);
+
+      if (event.type === "permission_request") {
+        session.respondPermission(event.data.requestId, "approved");
+      }
+
+      if (event.type === "error") {
+        logger.error(`Reviewer ${sessionId} error: ${event.data}`);
+        sqlite
+          .query("UPDATE gateway_sessions SET last_error = ?, status = 'error' WHERE id = ?")
+          .run(event.data, sessionId);
+        sqlite
+          .query("UPDATE tasks SET claimed_by = NULL, updated_at = unixepoch() WHERE id = ?")
+          .run(task.id);
+        return;
+      }
+    }
+
+    sqlite
+      .query(
+        "UPDATE gateway_sessions SET status = 'stopped', updated_at = unixepoch() WHERE id = ?",
+      )
+      .run(sessionId);
+    logger.info(`Reviewer ${sessionId} completed for task ${task.id}`);
+  } catch (err) {
+    const errMsg = String(err);
+    logger.error(`Reviewer ${sessionId} crashed: ${errMsg}`);
+    sqlite
+      .query(
+        "UPDATE gateway_sessions SET status = 'error', last_error = ?, updated_at = unixepoch() WHERE id = ?",
+      )
+      .run(errMsg, sessionId);
+    sqlite
+      .query("UPDATE tasks SET claimed_by = NULL, updated_at = unixepoch() WHERE id = ?")
+      .run(task.id);
+  } finally {
+    if (session?.alive()) {
+      await session.close().catch(() => {});
+    }
+  }
+}
+
 async function runCycle(): Promise<void> {
   const config = loadConfig();
   const maxWorkers = config.agent_loop.max_workers;
@@ -227,6 +417,13 @@ async function runCycle(): Promise<void> {
 
   if (activeCount >= maxWorkers) {
     logger.debug(`At capacity: ${activeCount}/${maxWorkers} workers`);
+    return;
+  }
+
+  const reviewTask = pickReviewTask();
+  if (reviewTask) {
+    logger.info(`Spawning reviewer for task ${reviewTask.id}: "${reviewTask.title}"`);
+    await spawnReviewer(reviewTask);
     return;
   }
 

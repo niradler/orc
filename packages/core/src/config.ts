@@ -98,6 +98,7 @@ export const OrcConfigSchema = z.object({
       max_workers: z.number().int().min(1).default(1),
       default_backend: z.enum(["claude", "codex", "cursor"]).default("claude"),
       session_idle_timeout_minutes: z.number().int().min(1).default(20),
+      worker_auto_approve: z.boolean().default(true),
     })
     .default({}),
 
@@ -184,6 +185,8 @@ function fromEnv(): Record<string, unknown> {
     agent_loop.default_backend = process.env.ORC_AGENT_LOOP_DEFAULT_BACKEND;
   if (process.env.ORC_AGENT_LOOP_IDLE_TIMEOUT)
     agent_loop.session_idle_timeout_minutes = Number(process.env.ORC_AGENT_LOOP_IDLE_TIMEOUT);
+  if (process.env.ORC_AGENT_LOOP_AUTO_APPROVE)
+    agent_loop.worker_auto_approve = process.env.ORC_AGENT_LOOP_AUTO_APPROVE === "true";
   if (Object.keys(agent_loop).length) env.agent_loop = agent_loop;
 
   const gateway: Record<string, unknown> = {};
