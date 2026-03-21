@@ -67,7 +67,7 @@ Additional statuses: `queued` (claimed by task loop, waiting to start), `paused`
 
 > `repeat` was removed — use `cron` with a 6-field expression for sub-minute intervals (e.g. `*/30 * * * * *` = every 30 s).
 
-## MCP Tools (20 tools in packages/mcp/src/tools.ts)
+## MCP Tools (22 tools in packages/mcp/src/tools.ts)
 
 **Call `context` first in every session** — returns active tasks + key memories in ~200 tokens.
 
@@ -97,6 +97,8 @@ For CRUD operations not in MCP (delete, project management, job creation), use t
 | `session_snapshot` | Build ≤2KB XML snapshot — priority-tiered (P1: files/tasks, P2: decisions/git, P3: intent) |
 | `session_restore` | Restore session after compaction or agent restart |
 | `session_log` | Log session summary at end of work unit. Pass `project` to associate. |
+| `docs_search` | Find a library's Context7 ID. Call before `docs_query`. Requires `CONTEXT7_API_KEY`. |
+| `docs_query` | Get up-to-date docs and code examples for a library by Context7 ID. |
 
 ### Memory types
 
