@@ -14,22 +14,32 @@ const logger = createLogger("agent-runtime:acpx");
 
 const GRACE_TIMEOUT_MS = 8_000;
 
-type AcpxEvent = {
-  eventVersion?: number;
-  sessionId?: string;
-  requestId?: string;
-  seq?: number;
-  stream?: string;
-  type?: string;
-  status?: string;
+type AcpxJsonRpc = {
+  jsonrpc?: string;
+  id?: number;
+  method?: string;
+  result?: {
+    stopReason?: string;
+    sessionId?: string;
+    usage?: unknown;
+  };
+  error?: { message?: string };
+  params?: {
+    sessionId?: string;
+    update?: AcpxUpdate;
+  };
+};
+
+type AcpxUpdate = {
+  sessionUpdate?: string;
+  content?: { type?: string; text?: string } | Array<{ type?: string; content?: { type?: string; text?: string } }>;
+  toolCallId?: string;
   title?: string;
-  text?: string;
-  data?: string;
-  content?: string;
-  id?: string;
-  name?: string;
-  input?: unknown;
-  runtimeSessionId?: string;
+  kind?: string;
+  status?: string;
+  rawInput?: unknown;
+  rawOutput?: string;
+  _meta?: { claudeCode?: { toolName?: string; toolResponse?: { stdout?: string; stderr?: string } } };
 };
 
 function findAcpxCli(): string | null {
@@ -45,6 +55,7 @@ class AcpxSession implements AgentSession {
   private readonly eventQueue: AgentEvent[] = [];
   private resolveNext: (() => void) | null = null;
   private done = false;
+  private gotResult = false;
   private readonly agent: string;
   private readonly sessionName: string;
   private readonly cwd: string;
@@ -63,18 +74,8 @@ class AcpxSession implements AgentSession {
   }
 
   async ensureSession(): Promise<void> {
-    const args = [this.acpxPath, this.agent, "sessions", "ensure", "--name", this.sessionName];
-    const proc = Bun.spawn({
-      cmd: args,
-      cwd: this.cwd,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    await proc.exited;
-    if (proc.exitCode !== 0) {
-      const stderr = await new Response(proc.stderr).text();
-      throw new Error(`acpx sessions ensure failed: ${stderr.trim()}`);
-    }
+    // No pre-creation needed — we use `exec` mode which handles session
+    // lifecycle internally per invocation.
   }
 
   private push(event: AgentEvent): void {
@@ -84,47 +85,79 @@ class AcpxSession implements AgentSession {
   }
 
   private handleLine(line: string): void {
-    let msg: AcpxEvent;
+    let msg: AcpxJsonRpc;
     try {
-      msg = JSON.parse(line) as AcpxEvent;
+      msg = JSON.parse(line) as AcpxJsonRpc;
     } catch {
       return;
     }
 
-    const type = msg.type;
-
-    if (type === "text") {
-      const text = msg.text ?? msg.data ?? msg.content ?? "";
-      if (text) this.push({ type: "text", data: text });
+    if (msg.error) {
+      this.push({ type: "error", data: msg.error.message ?? "ACPX error" });
       return;
     }
 
-    if (type === "thinking") {
-      const text = msg.text ?? msg.data ?? msg.content ?? "";
-      if (text) this.push({ type: "thinking", data: text });
+    if (msg.result && msg.id !== undefined) {
+      if (msg.result.stopReason || msg.result.usage) {
+        this.gotResult = true;
+        this.push({
+          type: "result",
+          data: { runtimeSessionId: this.sessionName, usage: msg.result.usage },
+        });
+        this.done = true;
+        this.resolveNext?.();
+      }
       return;
     }
 
-    if (type === "tool_call") {
+    if (msg.method !== "session/update" || !msg.params?.update) return;
+
+    const update = msg.params.update;
+    const sessionUpdate = update.sessionUpdate;
+
+    if (sessionUpdate === "agent_message_chunk") {
+      const content = update.content;
+      if (content && !Array.isArray(content)) {
+        if (content.type === "text" && content.text) {
+          this.push({ type: "text", data: content.text });
+        } else if (content.type === "thinking" && content.text) {
+          this.push({ type: "thinking", data: content.text });
+        }
+      }
+      return;
+    }
+
+    if (sessionUpdate === "tool_call") {
+      const toolName = update._meta?.claudeCode?.toolName ?? update.title ?? "";
       this.push({
         type: "tool_use",
         data: {
-          id: msg.id ?? ulid(),
-          name: msg.name ?? msg.title ?? "",
-          input: typeof msg.input === "string" ? msg.input : JSON.stringify(msg.input ?? {}),
+          id: update.toolCallId ?? ulid(),
+          name: toolName,
+          input: typeof update.rawInput === "string" ? update.rawInput : JSON.stringify(update.rawInput ?? {}),
         },
       });
       return;
     }
 
-    if (type === "error") {
-      this.push({ type: "error", data: msg.data ?? msg.text ?? "unknown error" });
+    if (sessionUpdate === "tool_call_update" && update.status === "completed") {
+      const toolResponse = update._meta?.claudeCode?.toolResponse;
+      const output = update.rawOutput ?? toolResponse?.stdout ?? "";
+      const isError = toolResponse?.stderr ? toolResponse.stderr.length > 0 : false;
+      this.push({
+        type: "tool_result",
+        data: {
+          toolUseId: update.toolCallId ?? "",
+          content: output,
+          isError,
+        },
+      });
       return;
     }
   }
 
   private handleEof(): void {
-    if (!this.done) {
+    if (!this.gotResult && !this.done) {
       this.push({
         type: "result",
         data: { runtimeSessionId: this.sessionName },
@@ -153,6 +186,7 @@ class AcpxSession implements AgentSession {
     }
 
     this.done = false;
+    this.gotResult = false;
     this.eventQueue.length = 0;
 
     const args = [
@@ -161,8 +195,7 @@ class AcpxSession implements AgentSession {
       "json",
       ...(this.autoApprove ? ["--approve-all"] : []),
       this.agent,
-      "-s",
-      this.sessionName,
+      "exec",
       prompt,
     ];
 
