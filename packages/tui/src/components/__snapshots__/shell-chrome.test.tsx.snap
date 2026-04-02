@@ -1,0 +1,23 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`shell chrome renders branded ORC layout 1`] = `
+"                                                                                    
+ ⬡ ORC orchestration terminal                                         ● API online  
+                                                                                    
+ Workspace Tasks  /  orc  /  01HXYZABCDEF            Tasks  /  orc  /  01HXYZABCDEF 
+                                                                                    
+ ────────────────────────────────────────────────────────────────────────────────── 
+                                                                                    
+                                                                                    
+ ┌──────────┐ ┌─────────┐                                                           
+ │ 2. Tasks │ │ 3. Jobs │                                                           
+ └──────────┘ └─────────┘                                                           
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+ ◉ doing • Polish ORC TUI                                                   BROWSE  
+ Arrows or j/k move • Enter open • / search • n new • e edit • d delete • : command 
+                                                                                    
+"
+`;

@@ -2,7 +2,19 @@ export type Route = "projects" | "tasks" | "jobs" | "memories" | "sessions" | "p
 
 export const ROUTES: Route[] = ["projects", "tasks", "jobs", "memories", "sessions", "prompts"];
 
-export type ViewMode = "list" | "detail" | "edit" | "create" | "confirm";
+export type ViewMode = "browse" | "detail" | "form" | "filter" | "confirm";
+
+export type ViewState = {
+  mode: ViewMode;
+  title: string;
+  countLabel: string;
+  filterQuery: string;
+  filterActive: boolean;
+  navigationLocked: boolean;
+  selectionLabel?: string | null;
+  detailId?: string | null;
+  statusMessage?: string | null;
+};
 
 export type Column<T> = {
   key: string;
@@ -31,3 +43,9 @@ export type KeyEvent = {
 };
 
 export type ViewKeyHandler = (key: KeyEvent) => boolean;
+
+export type SelectOption = {
+  label: string;
+  value: string;
+  description?: string;
+};

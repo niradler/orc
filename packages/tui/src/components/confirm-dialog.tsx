@@ -22,8 +22,8 @@ export function ConfirmDialog({ message, active }: Props) {
       border
       borderStyle="rounded"
       borderColor={colors.error}
-      backgroundColor={colors.bg}
-      padding={1}
+      backgroundColor={colors.bgElevated}
+      padding={2}
       zIndex={100}
     >
       <text fg={colors.error} paddingBottom={1}>
@@ -33,8 +33,8 @@ export function ConfirmDialog({ message, active }: Props) {
         {message}
       </text>
       <box flexDirection="row" gap={2}>
-        <text fg={colors.error}>{"y = delete"}</text>
-        <text fg={colors.textDim}>{"n/Esc = cancel"}</text>
+        <text fg={colors.error}>{"Enter / y = delete"}</text>
+        <text fg={colors.textDim}>{"Esc / n = cancel"}</text>
       </box>
     </box>
   );

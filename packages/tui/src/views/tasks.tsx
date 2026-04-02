@@ -3,18 +3,14 @@ import type { Task } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../components/confirm-dialog.js";
 import { DetailPane } from "../components/detail-pane.js";
-import {
-  EditFormOverlay,
-  type FormField,
-  type FormResult,
-  useEditForm,
-} from "../components/edit-form.js";
+import { EditFormOverlay, type FormField, useEditForm } from "../components/edit-form.js";
 import { ResourceTable } from "../components/resource-table.js";
+import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
 import { colors, priorityColor, statusColor, statusIcon } from "../theme.js";
-import type { Column, KeyEvent, ViewKeyHandler, ViewMode } from "../types.js";
+import type { Column, KeyEvent, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
 
 const client = createOrcClient();
 
@@ -43,39 +39,84 @@ const columns: Column<Task>[] = [
   },
 ];
 
-function taskFields(t?: Task): FormField[] {
+const TASK_PRIORITIES: SelectOption[] = [
+  { label: "Low", value: "low" },
+  { label: "Normal", value: "normal" },
+  { label: "High", value: "high" },
+  { label: "Critical", value: "critical" },
+];
+
+function taskStatusOptions(includeExtended: boolean): SelectOption[] {
+  const base: SelectOption[] = [
+    { label: "Todo", value: "todo" },
+    { label: "Doing", value: "doing" },
+    { label: "Blocked", value: "blocked" },
+  ];
+  if (!includeExtended) return base;
   return [
-    { key: "title", label: "Title", value: t?.title ?? "" },
-    { key: "body", label: "Body", value: t?.body ?? "" },
+    ...base,
+    { label: "Review", value: "review" },
+    { label: "Done", value: "done" },
+    { label: "Cancelled", value: "cancelled" },
+  ];
+}
+
+function taskFields(t?: Task): FormField[] {
+  const includeExtendedStatuses = Boolean(t);
+  return [
+    {
+      key: "title",
+      label: "Title",
+      value: t?.title ?? "",
+      placeholder: "Add a concise task title",
+    },
+    {
+      key: "body",
+      label: "Body",
+      value: t?.body ?? "",
+      type: "textarea",
+      height: 8,
+      placeholder: "Describe the work, context, and acceptance criteria",
+    },
     {
       key: "status",
       label: "Status",
       value: t?.status ?? "todo",
-      options: ["todo", "doing", "review", "blocked", "done", "cancelled"],
+      type: "select",
+      options: taskStatusOptions(includeExtendedStatuses),
     },
     {
       key: "priority",
       label: "Priority",
       value: t?.priority ?? "normal",
-      options: ["low", "normal", "high", "critical"],
+      type: "select",
+      options: TASK_PRIORITIES,
     },
-    { key: "tags", label: "Tags", value: t?.tags?.join(", ") ?? "" },
+    {
+      key: "tags",
+      label: "Tags",
+      value: t?.tags?.join(", ") ?? "",
+      placeholder: "tag-one, tag-two",
+      description: "Comma-separated tags help search and filtering.",
+    },
   ];
 }
 
 type Props = {
   projectId: string | null;
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
-  onStateChange: (mode: ViewMode, filterQuery: string, filterActive: boolean) => void;
+  onStateChange: (state: ViewState) => void;
 };
 
 export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Props) {
-  const [mode, setMode] = useState<ViewMode>("list");
+  const [mode, setMode] = useState<"browse" | "detail" | "form" | "confirm">("browse");
   const [detail, setDetail] = useState<Task | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
+  const [formIntent, setFormIntent] = useState<"create" | "edit">("create");
+  const [formTarget, setFormTarget] = useState<Task | null>(null);
   const editForm = useEditForm();
 
-  const { data, loading, refresh } = usePolling(
+  const { data, loading, error, refresh } = usePolling(
     () => client.tasks.list({ ...(projectId ? { project_id: projectId } : {}), limit: 100 }),
     5000,
   );
@@ -84,11 +125,16 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
     filtered,
     query,
     active: filterActive,
-    handleKey: filterHandleKey,
-  } = useFilter(tasks, (t) => `${t.title} ${t.status} ${t.priority} ${t.author}`, mode === "list");
+    setQuery,
+    setActive: setFilterActive,
+  } = useFilter(
+    tasks,
+    (t) => `${t.title} ${t.status} ${t.priority} ${t.author} ${t.tags?.join(" ") ?? ""}`,
+    true,
+  );
   const { cursor, handleKey: vimHandleKey } = useVimList(
     filtered.length,
-    mode === "list" && !filterActive,
+    mode === "browse" && !filterActive,
   );
 
   const modeRef = useRef(mode);
@@ -107,10 +153,30 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
   deleteTargetRef.current = deleteTarget;
   const detailRef = useRef(detail);
   detailRef.current = detail;
+  const formIntentRef = useRef(formIntent);
+  formIntentRef.current = formIntent;
+  const formTargetRef = useRef(formTarget);
+  formTargetRef.current = formTarget;
 
   useEffect(() => {
-    onStateChange(mode, query, filterActive);
-  }, [mode, query, filterActive, onStateChange]);
+    const selectedTask = filtered[cursor];
+    onStateChange({
+      mode: filterActive ? "filter" : mode,
+      title: "Tasks",
+      countLabel: loading ? "Loading tasks…" : `${filtered.length} visible tasks`,
+      filterQuery: query,
+      filterActive,
+      navigationLocked: filterActive || mode === "form" || mode === "confirm",
+      selectionLabel:
+        mode === "detail" && detail
+          ? `Task detail • ${detail.title}`
+          : selectedTask
+            ? `${statusIcon(selectedTask.status)} ${selectedTask.status} • ${selectedTask.title}`
+            : "No task selected yet.",
+      detailId: mode === "detail" ? (detail?.id ?? null) : null,
+      statusMessage: filterActive ? "Search updates live as you type." : null,
+    });
+  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
 
   const doCreate = useCallback(
     (vals: Record<string, string>) => {
@@ -136,7 +202,7 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
   );
 
   const doEdit = useCallback((vals: Record<string, string>) => {
-    const task = filteredRef.current[cursorRef.current];
+    const task = formTargetRef.current ?? filteredRef.current[cursorRef.current];
     if (!task) return;
     const tags = vals.tags
       ? vals.tags
@@ -162,33 +228,66 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
-      if (modeRef.current === "edit" || modeRef.current === "create") {
-        const result: FormResult | null = editFormRef.current.handleKey(key);
-        if (result?.submitted) {
-          const fn = modeRef.current === "create" ? doCreateRef.current : doEditRef.current;
-          fn(result.values);
+      if (filterActiveRef.current) {
+        if (key.name === "escape") {
+          setFilterActive(false);
+          return true;
         }
-        if (!editFormRef.current.active) setMode("list");
+        if (key.name === "return") {
+          setFilterActive(false);
+          return true;
+        }
         return true;
       }
+
+      if (modeRef.current === "form") {
+        if (key.name === "escape") {
+          editFormRef.current.close();
+          setMode("browse");
+          setFormTarget(null);
+          return true;
+        }
+        if (key.ctrl && key.name === "s") {
+          const result = editFormRef.current.submit();
+          const fn = formIntentRef.current === "create" ? doCreateRef.current : doEditRef.current;
+          fn(result.values);
+          setMode("browse");
+          setFormTarget(null);
+          return true;
+        }
+        if (key.name === "tab" && key.shift) {
+          editFormRef.current.prevField();
+          return true;
+        }
+        if (key.name === "tab") {
+          editFormRef.current.nextField();
+          return true;
+        }
+        return true;
+      }
+
       if (modeRef.current === "confirm") {
-        if (key.name === "y") {
+        if (key.name === "y" || key.name === "return") {
           const t = deleteTargetRef.current;
           if (t) client.tasks.delete(t.id).then(() => refreshRef.current());
           setDeleteTarget(null);
-          setMode("list");
+          setMode("browse");
           return true;
         }
         if (key.name === "n" || key.name === "escape") {
           setDeleteTarget(null);
-          setMode("list");
+          setMode("browse");
           return true;
         }
         return true;
       }
-      if (filterHandleKey(key)) return true;
-      if (modeRef.current === "list" && !filterActiveRef.current) {
+
+      if (modeRef.current === "browse" && !filterActiveRef.current) {
         if (vimHandleKey(key)) return true;
+        if (key.name === "/" || key.name === "f") {
+          setFilterActive(true);
+          return true;
+        }
         if (key.name === "return") {
           const task = filteredRef.current[cursorRef.current];
           if (task)
@@ -205,15 +304,19 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
           return true;
         }
         if (key.name === "n") {
+          setFormIntent("create");
+          setFormTarget(null);
           editFormRef.current.open(taskFields());
-          setMode("create");
+          setMode("form");
           return true;
         }
         if (key.name === "e") {
           const t = filteredRef.current[cursorRef.current];
           if (t) {
+            setFormIntent("edit");
+            setFormTarget(t);
             editFormRef.current.open(taskFields(t));
-            setMode("edit");
+            setMode("form");
           }
           return true;
         }
@@ -228,13 +331,15 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
       }
       if (modeRef.current === "detail") {
         if (key.name === "escape") {
-          setMode("list");
+          setMode("browse");
           setDetail(null);
           return true;
         }
         if (key.name === "e" && detailRef.current) {
+          setFormIntent("edit");
+          setFormTarget(detailRef.current);
           editFormRef.current.open(taskFields(detailRef.current));
-          setMode("edit");
+          setMode("form");
           return true;
         }
         if (key.name === "d" && detailRef.current) {
@@ -246,7 +351,7 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
       }
       return false;
     },
-    [filterHandleKey, vimHandleKey],
+    [vimHandleKey, setFilterActive],
   );
 
   useEffect(() => {
@@ -284,20 +389,42 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
     );
   }
 
+  const selectedTask = filtered[cursor];
+
   return (
     <box flexDirection="column" flexGrow={1}>
-      <box flexDirection="row" gap={2} marginBottom={0} paddingLeft={1}>
-        <text fg={colors.text}>{"TASKS"}</text>
-        <text fg={colors.textDim}>{loading ? "loading…" : `${filtered.length} tasks`}</text>
-        {query && <text fg={colors.accent}>{`/${query}`}</text>}
-      </box>
-      <ResourceTable columns={columns} data={filtered} cursor={cursor} keyFn={(t) => t.id} />
+      <ViewToolbar
+        title="Tasks"
+        countLabel={loading ? "Loading tasks…" : `${filtered.length} visible tasks`}
+        filterQuery={query}
+        filterActive={filterActive}
+        filterPlaceholder="Search tasks, status, priority, author, tags"
+        onFilterChange={setQuery}
+        onFilterSubmit={() => setFilterActive(false)}
+        statusMessage={projectId ? "Project-scoped view" : "All projects"}
+      />
+      <ResourceTable
+        columns={columns}
+        data={filtered}
+        cursor={cursor}
+        keyFn={(t) => t.id}
+        loading={loading}
+        error={error}
+        emptyMessage="No tasks to show yet."
+        filteredEmptyMessage="No tasks match the current search."
+        hasActiveFilter={Boolean(query)}
+        selectedSummary={
+          selectedTask
+            ? `${statusIcon(selectedTask.status)} ${selectedTask.status} • ${selectedTask.priority} • ${selectedTask.title}`
+            : "Create a task with n, or switch projects from the Projects tab."
+        }
+      />
       <EditFormOverlay
-        title={mode === "create" ? "New Task" : "Edit Task"}
+        title={formIntent === "create" ? "New Task" : "Edit Task"}
         fields={editForm.fields}
         focusIdx={editForm.focusIdx}
-        editing={editForm.editing}
-        active={mode === "edit" || mode === "create"}
+        active={mode === "form"}
+        onChange={editForm.updateValue}
       />
       <ConfirmDialog
         message={deleteTarget ? `Delete task "${deleteTarget.title}"?` : ""}

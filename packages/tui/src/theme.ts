@@ -1,58 +1,62 @@
 export const colors = {
-  bg: "#0d0d1a",
-  bgLight: "#1a1a2e",
-  bgHighlight: "#16213e",
-  border: "#333355",
-  borderFocus: "#00BFFF",
-  text: "#DDDDDD",
-  textDim: "#666666",
-  textMuted: "#444444",
-  accent: "#00BFFF",
-  accentAlt: "#7B68EE",
-  success: "#00FF7F",
-  warning: "#FFD700",
-  error: "#FF4444",
-  critical: "#FF3333",
-  logo: "#00BFFF",
+  bg: "#0b1118",
+  bgElevated: "#101822",
+  bgLight: "#16202b",
+  bgHighlight: "#1d2a36",
+  bgSelected: "#1c2533",
+  border: "#233244",
+  borderFocus: "#6d8cff",
+  text: "#e5edf5",
+  textDim: "#9cacbf",
+  textMuted: "#72839b",
+  accent: "#78a6ff",
+  accentAlt: "#f0a35e",
+  accentSoft: "#b08dff",
+  success: "#6ed7a6",
+  warning: "#e4bc64",
+  error: "#ef7f7f",
+  critical: "#ff6b6b",
+  info: "#7db7ff",
+  logo: "#78a6ff",
 } as const;
 
 export const statusColor: Record<string, string> = {
-  todo: "#888888",
-  doing: "#00BFFF",
-  review: "#FFD700",
-  changes_requested: "#FF6B6B",
-  blocked: "#FF4500",
-  done: "#00FF7F",
-  cancelled: "#555555",
+  todo: "#91a3b7",
+  doing: "#78a6ff",
+  review: "#e4bc64",
+  changes_requested: "#ef9a9a",
+  blocked: "#f28b82",
+  done: "#6ed7a6",
+  cancelled: "#6d7b8f",
 };
 
 export const priorityColor: Record<string, string> = {
-  critical: "#FF3333",
-  high: "#FF8C00",
-  normal: "#CCCCCC",
-  low: "#666666",
+  critical: "#ff7f7f",
+  high: "#f0a35e",
+  normal: "#d7e0ea",
+  low: "#8ea1b6",
 };
 
 export const importanceColor: Record<string, string> = {
-  critical: "#FF3333",
-  high: "#FF8C00",
-  normal: "#CCCCCC",
-  low: "#666666",
+  critical: "#ff7f7f",
+  high: "#f0a35e",
+  normal: "#d7e0ea",
+  low: "#8ea1b6",
 };
 
 export const jobStatusColor: Record<string, string> = {
-  pending: "#888888",
-  running: "#00BFFF",
-  success: "#00FF7F",
-  failed: "#FF4444",
-  cancelled: "#555555",
-  skipped: "#666666",
+  pending: "#91a3b7",
+  running: "#78a6ff",
+  success: "#6ed7a6",
+  failed: "#ef7f7f",
+  cancelled: "#6d7b8f",
+  skipped: "#8ea1b6",
 };
 
 export const projectStatusColor: Record<string, string> = {
-  active: "#00FF7F",
-  archived: "#666666",
-  paused: "#FFD700",
+  active: "#6ed7a6",
+  archived: "#8ea1b6",
+  paused: "#e4bc64",
 };
 
 export function statusIcon(status: string): string {

@@ -1,43 +1,59 @@
 import { useTerminalDimensions } from "@opentui/react";
 import { colors } from "../theme.js";
-import type { ViewMode } from "../types.js";
+import type { Route, ViewState } from "../types.js";
 
 type Props = {
-  mode: ViewMode;
-  filterQuery: string;
-  filterActive: boolean;
+  route: Route;
+  state: ViewState;
 };
 
-const HINTS: Record<ViewMode, string> = {
-  list: "j/k nav  ←→ tabs  Enter view  e edit  n new  d del  / filter  :cmd  Ctrl+C quit",
-  detail: "Esc back  e edit  d delete  :cmd  Ctrl+C quit",
-  edit: "j/k fields  Enter edit  w save  Esc cancel",
-  create: "j/k fields  Enter edit  w save  Esc cancel",
-  confirm: "y confirm  n/Esc cancel",
+const HINTS = {
+  browse: "Arrows or j/k move • Enter open • / search • n new • e edit • d delete • : command",
+  detail: "Esc back • Up/Down scroll • e edit • d delete",
+  form: "Tab next • Shift+Tab prev • Ctrl+S save • Esc cancel",
+  filter: "Type to search • Enter done • Esc close",
+  confirm: "Enter or y confirm • Esc or n cancel",
+} as const;
+
+const ROUTE_HELP: Record<Route, string> = {
+  projects: "Choose a project to scope the rest of ORC.",
+  tasks: "Track active work, owners, status, and review flow.",
+  jobs: "Inspect scheduled automation and run history.",
+  memories: "Browse and capture searchable project knowledge.",
+  sessions: "Review agent sessions, summaries, and snapshots.",
+  prompts: "Manage reusable prompts and skills.",
 };
 
-export function StatusBar({ mode, filterQuery, filterActive }: Props) {
+export function StatusBar({ route, state }: Props) {
   const { width } = useTerminalDimensions();
+  const modeLabel = state.mode.toUpperCase();
+  const left = state.selectionLabel ?? ROUTE_HELP[route];
+  const right = state.statusMessage ?? HINTS[state.mode];
 
   return (
     <box
-      flexDirection="row"
+      flexDirection="column"
       width={width}
-      height={1}
-      backgroundColor={colors.bgLight}
-      justifyContent="space-between"
+      backgroundColor={colors.bgElevated}
+      paddingLeft={1}
+      paddingRight={1}
+      paddingTop={1}
+      paddingBottom={1}
     >
-      <box flexDirection="row" gap={1} paddingLeft={1}>
-        {filterActive ? (
-          <text fg={colors.accent}>{`/${filterQuery}█`}</text>
-        ) : filterQuery ? (
-          <text fg={colors.textDim}>{`/${filterQuery}`}</text>
-        ) : null}
-        <text fg={colors.textMuted}>{HINTS[mode] ?? ""}</text>
+      <box flexDirection="row" justifyContent="space-between">
+        <text fg={colors.text}>{left}</text>
+        <box
+          flexDirection="row"
+          gap={1}
+          backgroundColor={state.navigationLocked ? colors.bgSelected : colors.bgLight}
+          paddingLeft={1}
+          paddingRight={1}
+        >
+          <text fg={state.navigationLocked ? colors.warning : colors.accent}>{modeLabel}</text>
+          {state.filterQuery ? <text fg={colors.textDim}>{`/${state.filterQuery}`}</text> : null}
+        </box>
       </box>
-      <box paddingRight={1}>
-        <text fg={colors.accentAlt}>{mode !== "list" ? `[${mode}]` : ""}</text>
-      </box>
+      <text fg={colors.textMuted}>{right}</text>
     </box>
   );
 }

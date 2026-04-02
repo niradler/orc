@@ -3,11 +3,12 @@ import type { Session } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DetailPane } from "../components/detail-pane.js";
 import { ResourceTable } from "../components/resource-table.js";
+import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
 import { colors } from "../theme.js";
-import type { Column, KeyEvent, ViewKeyHandler, ViewMode } from "../types.js";
+import type { Column, KeyEvent, ViewKeyHandler, ViewState } from "../types.js";
 
 const client = createOrcClient();
 
@@ -41,27 +42,31 @@ const columns: Column<Session>[] = [
 
 type Props = {
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
-  onStateChange: (mode: ViewMode, filterQuery: string, filterActive: boolean) => void;
+  onStateChange: (state: ViewState) => void;
 };
 
 export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
-  const [mode, setMode] = useState<ViewMode>("list");
+  const [mode, setMode] = useState<"browse" | "detail">("browse");
   const [detail, setDetail] = useState<
     (Session & { events: unknown[]; snapshot: string | null }) | null
   >(null);
 
-  const { data, loading, refresh } = usePolling(() => client.sessions.list({ limit: 50 }), 10000);
+  const { data, loading, error, refresh } = usePolling(
+    () => client.sessions.list({ limit: 50 }),
+    10000,
+  );
   const sessions = data?.sessions ?? [];
 
   const {
     filtered,
     query,
     active: filterActive,
-    handleKey: filterHandleKey,
-  } = useFilter(sessions, (s) => `${s.agent} ${s.summary ?? ""} ${s.id}`, mode === "list");
+    setQuery,
+    setActive: setFilterActive,
+  } = useFilter(sessions, (s) => `${s.agent} ${s.summary ?? ""} ${s.id}`, true);
   const { cursor, handleKey: vimHandleKey } = useVimList(
     filtered.length,
-    mode === "list" && !filterActive,
+    mode === "browse" && !filterActive,
   );
 
   const modeRef = useRef(mode);
@@ -76,14 +81,39 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
   refreshRef.current = refresh;
 
   useEffect(() => {
-    onStateChange(mode, query, filterActive);
-  }, [mode, query, filterActive, onStateChange]);
+    const selectedSession = filtered[cursor];
+    onStateChange({
+      mode: filterActive ? "filter" : mode,
+      title: "Sessions",
+      countLabel: loading ? "Loading sessions…" : `${filtered.length} visible sessions`,
+      filterQuery: query,
+      filterActive,
+      navigationLocked: filterActive,
+      selectionLabel:
+        mode === "detail" && detail
+          ? `Session detail • ${detail.agent}`
+          : selectedSession
+            ? `${selectedSession.agent} • ${selectedSession.id.slice(-8)}`
+            : "No session selected yet.",
+      detailId: mode === "detail" ? (detail?.id ?? null) : null,
+      statusMessage: "Recent sessions help audit agent activity.",
+    });
+  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
-      if (filterHandleKey(key)) return true;
-      if (modeRef.current === "list" && !filterActiveRef.current) {
+      if (filterActiveRef.current) {
+        if (key.name === "escape" || key.name === "return") {
+          setFilterActive(false);
+        }
+        return true;
+      }
+      if (modeRef.current === "browse" && !filterActiveRef.current) {
         if (vimHandleKey(key)) return true;
+        if (key.name === "/" || key.name === "f") {
+          setFilterActive(true);
+          return true;
+        }
         if (key.name === "return") {
           const session = filteredRef.current[cursorRef.current];
           if (session) {
@@ -102,13 +132,13 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
         }
       }
       if (modeRef.current === "detail" && key.name === "escape") {
-        setMode("list");
+        setMode("browse");
         setDetail(null);
         return true;
       }
       return false;
     },
-    [filterHandleKey, vimHandleKey],
+    [vimHandleKey, setFilterActive],
   );
 
   useEffect(() => {
@@ -135,12 +165,32 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
 
   return (
     <box flexDirection="column" flexGrow={1}>
-      <box flexDirection="row" gap={2} marginBottom={0} paddingLeft={1}>
-        <text fg={colors.text}>{"SESSIONS"}</text>
-        <text fg={colors.textDim}>{loading ? "loading…" : `${filtered.length} sessions`}</text>
-        {query && <text fg={colors.accent}>{`/${query}`}</text>}
-      </box>
-      <ResourceTable columns={columns} data={filtered} cursor={cursor} keyFn={(s) => s.id} />
+      <ViewToolbar
+        title="Sessions"
+        countLabel={loading ? "Loading sessions…" : `${filtered.length} visible sessions`}
+        filterQuery={query}
+        filterActive={filterActive}
+        filterPlaceholder="Search by agent, summary, or session id"
+        onFilterChange={setQuery}
+        onFilterSubmit={() => setFilterActive(false)}
+        statusMessage="Read-only audit surface"
+      />
+      <ResourceTable
+        columns={columns}
+        data={filtered}
+        cursor={cursor}
+        keyFn={(s) => s.id}
+        loading={loading}
+        error={error}
+        emptyMessage="No sessions recorded yet."
+        filteredEmptyMessage="No sessions match the current search."
+        hasActiveFilter={Boolean(query)}
+        selectedSummary={
+          filtered[cursor]
+            ? `${filtered[cursor]?.agent} • ${filtered[cursor]?.id.slice(-8)}`
+            : "Agent sessions will appear here once they are logged."
+        }
+      />
     </box>
   );
 }

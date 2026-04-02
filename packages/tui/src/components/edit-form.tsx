@@ -1,13 +1,19 @@
 import { useTerminalDimensions } from "@opentui/react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { colors } from "../theme.js";
-import type { KeyEvent } from "../types.js";
+import type { SelectOption } from "../types.js";
+
+export type FormFieldType = "input" | "textarea" | "select";
 
 export type FormField = {
   key: string;
   label: string;
   value: string;
-  options?: string[];
+  type?: FormFieldType;
+  placeholder?: string;
+  description?: string;
+  height?: number;
+  options?: SelectOption[];
 };
 
 export type FormResult = {
@@ -19,210 +25,224 @@ export function useEditForm() {
   const [active, setActive] = useState(false);
   const [fields, setFields] = useState<FormField[]>([]);
   const [focusIdx, setFocusIdx] = useState(0);
-  const [editing, setEditing] = useState(false);
-  const activeRef = useRef(false);
-  const fieldsRef = useRef<FormField[]>([]);
-  const focusIdxRef = useRef(0);
-  const editingRef = useRef(false);
-  const resultRef = useRef<FormResult>({ submitted: false, values: {} });
 
   const open = useCallback((newFields: FormField[]) => {
     setFields(newFields);
-    fieldsRef.current = newFields;
     setFocusIdx(0);
-    focusIdxRef.current = 0;
-    setEditing(false);
-    editingRef.current = false;
-    resultRef.current = { submitted: false, values: {} };
     setActive(true);
-    activeRef.current = true;
   }, []);
 
   const close = useCallback(() => {
     setActive(false);
-    activeRef.current = false;
-    setEditing(false);
-    editingRef.current = false;
   }, []);
 
-  const getValues = useCallback((): Record<string, string> => {
-    const vals: Record<string, string> = {};
-    for (const f of fieldsRef.current) vals[f.key] = f.value;
-    return vals;
+  const updateValue = useCallback((key: string, value: string) => {
+    setFields((current) =>
+      current.map((field) => (field.key === key ? { ...field, value } : field)),
+    );
   }, []);
 
-  const handleKey = useCallback(
-    (key: KeyEvent): FormResult | null => {
-      if (!activeRef.current) return null;
+  const nextField = useCallback(() => {
+    setFocusIdx((current) => {
+      if (fields.length === 0) return 0;
+      return (current + 1) % fields.length;
+    });
+  }, [fields.length]);
 
-      if (key.name === "escape") {
-        if (editingRef.current) {
-          setEditing(false);
-          editingRef.current = false;
-        } else {
-          resultRef.current = { submitted: false, values: {} };
-          close();
-        }
-        return null;
-      }
+  const prevField = useCallback(() => {
+    setFocusIdx((current) => {
+      if (fields.length === 0) return 0;
+      return (current - 1 + fields.length) % fields.length;
+    });
+  }, [fields.length]);
 
-      if ((key.name === "s" && key.ctrl) || (key.name === "w" && !editingRef.current)) {
-        const result: FormResult = { submitted: true, values: getValues() };
-        resultRef.current = result;
-        close();
-        return result;
-      }
+  const getValues = useCallback(() => {
+    const values: Record<string, string> = {};
+    for (const field of fields) {
+      values[field.key] = field.value;
+    }
+    return values;
+  }, [fields]);
 
-      if (!editingRef.current) {
-        if (key.name === "j" || key.name === "down" || key.name === "tab") {
-          const next = (focusIdxRef.current + 1) % fieldsRef.current.length;
-          setFocusIdx(next);
-          focusIdxRef.current = next;
-          return null;
-        }
-        if (key.name === "k" || key.name === "up") {
-          const prev =
-            (focusIdxRef.current - 1 + fieldsRef.current.length) % fieldsRef.current.length;
-          setFocusIdx(prev);
-          focusIdxRef.current = prev;
-          return null;
-        }
-        if (key.name === "return" || key.name === "e") {
-          const field = fieldsRef.current[focusIdxRef.current];
-          if (field?.options) {
-            const opts = field.options;
-            const curIdx = opts.indexOf(field.value);
-            const nextIdx = (curIdx + 1) % opts.length;
-            const updated = [...fieldsRef.current];
-            updated[focusIdxRef.current] = {
-              ...field,
-              value: opts[nextIdx] ?? field.value,
-            };
-            setFields(updated);
-            fieldsRef.current = updated;
-          } else {
-            setEditing(true);
-            editingRef.current = true;
-          }
-          return null;
-        }
-        return null;
-      }
+  const submit = useCallback((): FormResult => {
+    const values = getValues();
+    setActive(false);
+    return { submitted: true, values };
+  }, [getValues]);
 
-      if (key.name === "return") {
-        setEditing(false);
-        editingRef.current = false;
-        return null;
-      }
-
-      if (key.name === "backspace") {
-        const updated = [...fieldsRef.current];
-        const field = updated[focusIdxRef.current];
-        if (field) {
-          updated[focusIdxRef.current] = {
-            ...field,
-            value: field.value.slice(0, -1),
-          };
-          setFields(updated);
-          fieldsRef.current = updated;
-        }
-        return null;
-      }
-
-      if (key.name === "space") {
-        const updated = [...fieldsRef.current];
-        const field = updated[focusIdxRef.current];
-        if (field) {
-          updated[focusIdxRef.current] = { ...field, value: `${field.value} ` };
-          setFields(updated);
-          fieldsRef.current = updated;
-        }
-        return null;
-      }
-
-      if (key.name.length === 1 && !key.ctrl && !key.meta) {
-        const updated = [...fieldsRef.current];
-        const field = updated[focusIdxRef.current];
-        if (field) {
-          updated[focusIdxRef.current] = {
-            ...field,
-            value: field.value + key.name,
-          };
-          setFields(updated);
-          fieldsRef.current = updated;
-        }
-        return null;
-      }
-
-      return null;
-    },
-    [close, getValues],
-  );
-
-  return { active, fields, focusIdx, editing, open, close, handleKey, getValues };
+  return {
+    active,
+    fields,
+    focusIdx,
+    open,
+    close,
+    updateValue,
+    setFocusIdx,
+    nextField,
+    prevField,
+    getValues,
+    submit,
+  };
 }
 
 type RenderProps = {
   title: string;
   fields: FormField[];
   focusIdx: number;
-  editing: boolean;
   active: boolean;
+  onChange: (key: string, value: string) => void;
 };
 
-export function EditFormOverlay({ title, fields, focusIdx, editing, active }: RenderProps) {
+type TextareaRef = {
+  plainText: string;
+} | null;
+
+export function EditFormOverlay({ title, fields, focusIdx, active, onChange }: RenderProps) {
   const { width, height } = useTerminalDimensions();
+  const textareaRefs = useRef<Record<string, TextareaRef>>({});
+
+  const boxWidth = Math.min(92, width - 4);
+  const contentHeight = useMemo(() => {
+    return fields.reduce(
+      (total, field) => total + (field.type === "textarea" ? (field.height ?? 6) : 3),
+      2,
+    );
+  }, [fields]);
+  const boxHeight = Math.min(height - 2, contentHeight + 8);
 
   if (!active) return null;
-
-  const boxWidth = Math.min(70, width - 4);
-  const boxHeight = fields.length + 6;
 
   return (
     <box
       position="absolute"
       top={Math.max(1, Math.floor(height / 2) - Math.floor(boxHeight / 2))}
-      left={Math.floor((width - boxWidth) / 2)}
+      left={Math.max(2, Math.floor((width - boxWidth) / 2))}
       width={boxWidth}
       flexDirection="column"
       border
       borderStyle="rounded"
-      borderColor={colors.accent}
-      backgroundColor={colors.bg}
+      borderColor={colors.borderFocus}
+      backgroundColor={colors.bgElevated}
       padding={1}
       zIndex={100}
     >
-      <text fg={colors.accent} paddingBottom={1}>
-        {title}
-      </text>
-      {fields.map((f, i) => {
-        const focused = i === focusIdx;
-        const isEditing = focused && editing;
-        return (
-          <box key={f.key} flexDirection="row" gap={1}>
-            <text fg={focused ? colors.accent : colors.textMuted} width={1}>
-              {focused ? ">" : " "}
-            </text>
-            <text fg={colors.textDim} width={14}>
-              {f.label}
-            </text>
-            {f.options ? (
-              <text fg={focused ? colors.accent : colors.text}>{`< ${f.value} >`}</text>
-            ) : (
-              <text fg={isEditing ? colors.accent : colors.text}>
-                {isEditing ? `${f.value}█` : f.value || "—"}
-              </text>
-            )}
-          </box>
-        );
-      })}
-      <box marginTop={1}>
-        <text fg={colors.textMuted}>
-          {editing
-            ? "Type to edit  Enter confirm  Esc stop editing"
-            : "j/k move  Enter edit  ←→ cycle  w save  Esc cancel"}
+      <box
+        flexDirection="row"
+        justifyContent="space-between"
+        alignItems="center"
+        backgroundColor={colors.bgLight}
+        paddingLeft={1}
+        paddingRight={1}
+        paddingTop={1}
+        paddingBottom={1}
+      >
+        <text fg={colors.accent}>
+          <strong>{title}</strong>
         </text>
+        <text fg={colors.textMuted}>{"Tab cycle • Ctrl+S save • Esc cancel"}</text>
       </box>
+
+      <scrollbox
+        flexGrow={1}
+        height={Math.max(8, boxHeight - 6)}
+        viewportOptions={{ backgroundColor: colors.bgElevated }}
+        contentOptions={{ backgroundColor: colors.bgElevated }}
+        scrollbarOptions={{
+          trackOptions: {
+            foregroundColor: colors.accentSoft,
+            backgroundColor: colors.border,
+          },
+        }}
+      >
+        <box flexDirection="column" gap={1} paddingTop={1}>
+          {fields.map((field, index) => {
+            const focused = focusIdx === index;
+            const fieldType = field.type ?? (field.options ? "select" : "input");
+
+            return (
+              <box
+                key={field.key}
+                flexDirection="column"
+                border
+                borderStyle="single"
+                borderColor={focused ? colors.borderFocus : colors.border}
+                backgroundColor={focused ? colors.bg : colors.bgElevated}
+                padding={1}
+              >
+                <box flexDirection="row" justifyContent="space-between" marginBottom={1}>
+                  <text fg={focused ? colors.accent : colors.text}>{field.label}</text>
+                  <text fg={colors.textMuted}>{focused ? "active" : "field"}</text>
+                </box>
+
+                {fieldType === "select" ? (
+                  <select
+                    focused={focused}
+                    height={Math.min(4, field.options?.length ?? 1)}
+                    options={(field.options ?? []).map((option) => ({
+                      name: option.label,
+                      description: option.description ?? "",
+                      value: option.value,
+                    }))}
+                    selectedIndex={Math.max(
+                      0,
+                      (field.options ?? []).findIndex((option) => option.value === field.value),
+                    )}
+                    showDescription={false}
+                    showScrollIndicator={(field.options?.length ?? 0) > 4}
+                    backgroundColor={colors.bg}
+                    textColor={colors.text}
+                    focusedBackgroundColor={colors.bg}
+                    focusedTextColor={colors.text}
+                    selectedBackgroundColor={colors.bgSelected}
+                    selectedTextColor={colors.accent}
+                    descriptionColor={colors.textMuted}
+                    selectedDescriptionColor={colors.textDim}
+                    onChange={(_, option) => onChange(field.key, String(option?.value ?? ""))}
+                  />
+                ) : fieldType === "textarea" ? (
+                  <textarea
+                    ref={(instance) => {
+                      textareaRefs.current[field.key] = instance as TextareaRef;
+                    }}
+                    focused={focused}
+                    height={field.height ?? 6}
+                    initialValue={field.value}
+                    placeholder={field.placeholder ?? ""}
+                    wrapMode="word"
+                    backgroundColor={colors.bg}
+                    textColor={colors.text}
+                    focusedBackgroundColor={colors.bg}
+                    focusedTextColor={colors.text}
+                    placeholderColor={colors.textMuted}
+                    onContentChange={() => {
+                      const current = textareaRefs.current[field.key]?.plainText ?? "";
+                      onChange(field.key, current);
+                    }}
+                  />
+                ) : (
+                  <input
+                    focused={focused}
+                    value={field.value}
+                    placeholder={field.placeholder ?? ""}
+                    backgroundColor={colors.bg}
+                    textColor={colors.text}
+                    cursorColor={colors.accent}
+                    focusedBackgroundColor={colors.bg}
+                    placeholderColor={colors.textMuted}
+                    onChange={(value) => onChange(field.key, value)}
+                  />
+                )}
+
+                {field.description ? (
+                  <text fg={colors.textMuted} marginTop={1}>
+                    {field.description}
+                  </text>
+                ) : null}
+              </box>
+            );
+          })}
+        </box>
+      </scrollbox>
     </box>
   );
 }
