@@ -290,32 +290,6 @@ export const toolDefinitions = [
       id: z.string().optional().describe("Prompt ID (alternative to name)"),
     }),
   },
-  {
-    name: "docs_search",
-    description:
-      "Search for a library/framework to get its documentation ID. Use before docs_query to find the correct library ID. Powered by Context7.",
-    inputSchema: z.object({
-      query: z
-        .string()
-        .describe("What you need help with (e.g. 'How to set up authentication in Express')"),
-      library: z
-        .string()
-        .describe("Library name to search for (e.g. 'react', 'express', 'drizzle-orm')"),
-    }),
-  },
-  {
-    name: "docs_query",
-    description:
-      "Get up-to-date documentation and code examples for a library. Call docs_search first to get the library ID, unless you already know it (format: /org/project).",
-    inputSchema: z.object({
-      query: z
-        .string()
-        .describe("Specific question (e.g. 'How to define relations in Drizzle ORM')"),
-      library_id: z
-        .string()
-        .describe("Context7 library ID from docs_search (e.g. '/drizzle-team/drizzle-orm')"),
-    }),
-  },
 ] as const;
 
 export type ToolName = (typeof toolDefinitions)[number]["name"];
@@ -1013,55 +987,6 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       }
       if (!row) return `Prompt not found: ${pName ?? pId}`;
       return `# ${row.name}\n${row.description ?? ""}\n\n${row.template}`;
-    }
-
-    case "docs_search": {
-      const { query, library } = args as { query: string; library: string };
-      const apiKey = process.env.CONTEXT7_API_KEY;
-      if (!apiKey)
-        return "CONTEXT7_API_KEY not set. Get one free at https://context7.com/dashboard";
-
-      const params = new URLSearchParams({ query, libraryName: library });
-      const res = await fetch(`https://context7.com/api/v2/libs/search?${params}`, {
-        headers: { Authorization: `Bearer ${apiKey}` },
-      });
-      if (!res.ok) return `Context7 API error: ${res.status} ${res.statusText}`;
-      const body = (await res.json()) as {
-        results: {
-          id: string;
-          name: string;
-          description: string;
-          totalSnippets: number;
-          trustScore: number;
-          benchmarkScore: number;
-          versions?: string[];
-        }[];
-      };
-      if (!body.results?.length) return `No libraries found matching "${library}".`;
-
-      const lines = body.results.slice(0, 5).map((lib) => {
-        const versions = lib.versions?.length
-          ? ` (versions: ${lib.versions.slice(0, 3).join(", ")})`
-          : "";
-        return `- **${lib.name}** [${lib.id}] — ${lib.description || "No description"} | snippets: ${lib.totalSnippets}, score: ${lib.benchmarkScore}${versions}`;
-      });
-      return `Found ${body.results.length} libraries. Top matches:\n\n${lines.join("\n")}\n\nUse the [id] with docs_query to get documentation.`;
-    }
-
-    case "docs_query": {
-      const { query, library_id } = args as { query: string; library_id: string };
-      const apiKey = process.env.CONTEXT7_API_KEY;
-      if (!apiKey)
-        return "CONTEXT7_API_KEY not set. Get one free at https://context7.com/dashboard";
-
-      const params = new URLSearchParams({ query, libraryId: library_id, type: "txt" });
-      const res = await fetch(`https://context7.com/api/v2/context?${params}`, {
-        headers: { Authorization: `Bearer ${apiKey}` },
-      });
-      if (!res.ok) return `Context7 API error: ${res.status} ${res.statusText}`;
-      const text = await res.text();
-      if (!text.trim()) return `No documentation found for "${library_id}" matching "${query}".`;
-      return text;
     }
 
     default:
