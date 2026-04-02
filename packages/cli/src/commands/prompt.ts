@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
 import { dryRunMsg, isDryRun, isJson, jsonOut } from "../output.js";
@@ -181,7 +182,152 @@ export function promptCommand() {
       }
     });
 
+  cmd
+    .command("import <source>")
+    .description(
+      "Import a prompt from a file or GitHub (e.g. github:user/repo/path/file.md or ./file.md)",
+    )
+    .option("--tags <csv>", "Comma-separated tags to add")
+    .option("--skill", "Mark as skill")
+    .action(async (source: string, opts) => {
+      let content = "";
+      let sourceUrl = "";
+
+      if (source.startsWith("github:")) {
+        const path = source.slice("github:".length);
+        sourceUrl = `github:${path}`;
+
+        // Try raw.githubusercontent.com with the path as-is first, then with /main/ inserted
+        const urls = [
+          `https://raw.githubusercontent.com/${path}`,
+          `https://raw.githubusercontent.com/${path.replace(/^([^/]+\/[^/]+)\//, "$1/main/")}`,
+        ];
+
+        let fetched = false;
+        for (const url of urls) {
+          console.log(`Fetching: ${url}`);
+          const res = await fetch(url);
+          if (res.ok) {
+            content = await res.text();
+            fetched = true;
+            break;
+          }
+        }
+        if (!fetched) return console.error(`Failed to fetch from GitHub: ${path}`);
+      } else if (existsSync(source)) {
+        content = readFileSync(source, "utf-8");
+        sourceUrl = `file:${source}`;
+      } else {
+        return console.error(`Source not found: ${source}`);
+      }
+
+      const { name, description, template, tags: parsedTags, extras } = parseImportContent(content);
+      const allTags = [
+        ...parsedTags,
+        ...(opts.tags ? opts.tags.split(",").map((s: string) => s.trim()) : []),
+      ];
+
+      const client = createOrcClient();
+
+      const { data: existing } = await client.prompts.list({ limit: 200 });
+      const match = (existing?.prompts ?? []).find((p) => p.name === name);
+
+      if (match) {
+        if (isDryRun()) return dryRunMsg("update", `prompt ${name}`, { template, tags: allTags });
+        const updateInput: Record<string, unknown> = {
+          template,
+          description,
+          is_skill: opts.skill ?? false,
+        };
+        if (allTags.length > 0) updateInput.tags = allTags;
+        const { data, error } = await client.prompts.update(match.id, updateInput);
+        if (error) return console.error("Error:", error);
+        if (isJson()) return jsonOut(data);
+        console.log(`Updated: [${data?.id.slice(-6)}] ${data?.name}`);
+      } else {
+        if (isDryRun()) return dryRunMsg("create", `prompt ${name}`, { template, tags: allTags });
+        const createInput: Record<string, unknown> = {
+          name,
+          template,
+          description,
+          is_skill: opts.skill ?? false,
+          pinned: false,
+        };
+        if (allTags.length > 0) createInput.tags = allTags;
+        const { data, error } = await client.prompts.create(
+          createInput as Parameters<typeof client.prompts.create>[0],
+        );
+        if (error) return console.error("Error:", error);
+        if (isJson()) return jsonOut(data);
+        console.log(`Imported: [${data?.id.slice(-6)}] ${data?.name} (from ${sourceUrl})`);
+      }
+    });
+
   return cmd;
+}
+
+function parseImportContent(content: string): {
+  name: string;
+  description: string;
+  template: string;
+  tags: string[];
+  extras: Record<string, unknown>;
+} {
+  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+  if (!fmMatch) {
+    const firstLine = content.split("\n").find((l) => l.startsWith("# "));
+    const name = firstLine
+      ? firstLine
+          .replace(/^#+\s*/, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "")
+      : "imported-prompt";
+    return { name, description: "", template: content.trim(), tags: [], extras: {} };
+  }
+
+  const raw = fmMatch[1] as string;
+  const template = (fmMatch[2] as string).trim();
+  const fm: Record<string, string> = {};
+
+  let currentKey = "";
+  for (const line of raw.split("\n")) {
+    if (line.startsWith("  ") && currentKey) {
+      fm[currentKey] += ` ${line.trim()}`;
+      continue;
+    }
+    const idx = line.indexOf(":");
+    if (idx === -1) continue;
+    currentKey = line.slice(0, idx).trim();
+    fm[currentKey] = line.slice(idx + 1).trim();
+  }
+
+  const knownFields = new Set(["name", "description", "is_skill", "tags"]);
+  const extras: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fm)) {
+    if (!knownFields.has(key)) extras[key] = value;
+  }
+
+  const tags = (fm.tags ?? "")
+    .replace(/^\[/, "")
+    .replace(/\]$/, "")
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+  const name =
+    fm.name
+      ?.toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") ?? "imported-prompt";
+
+  return {
+    name,
+    description: fm.description ?? "",
+    template,
+    tags,
+    extras,
+  };
 }
 
 function collect(value: string, previous: string[]): string[] {

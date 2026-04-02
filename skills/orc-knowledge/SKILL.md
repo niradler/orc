@@ -1,6 +1,7 @@
 ---
 name: orc-knowledge
 description: Use when storing project knowledge, decisions, rules, or discoveries in ORC, when searching for past context, when recalling architectural decisions or conventions, when multiple agents need shared knowledge, or when building a persistent knowledge base. Trigger on "remember", "recall", "what did we decide", "store this", when making architectural decisions, or when you need past context before starting work.
+allowed-tools: ["mcp__orc__memory_search", "mcp__orc__memory_get", "mcp__orc__memory_store", "mcp__orc__search"]
 ---
 
 # ORC Knowledge Workflow
@@ -77,6 +78,21 @@ orc mem list --limit 20
 
 ---
 
+## Token Economics
+
+Know the cost of your actions:
+
+| Tool | Cost | Use when |
+|------|------|----------|
+| `context()` | ~200 tokens | Always call first — cheap overview |
+| `memory_search` | ~50-100 tokens/result | Targeted keyword search |
+| `search` | ~50-100 tokens/result | Unified search across memories + tasks |
+| `memory_get` | ~500-1000 tokens/item | Full content — **expensive, filter first** |
+
+**NEVER call `memory_get` without filtering via `memory_search` or `search` first.** Always: search → pick IDs → `memory_get(ids)`. This is 10x more token-efficient than fetching everything.
+
+---
+
 ## Common Mistakes
 
 | Mistake | Fix |
@@ -86,6 +102,7 @@ orc mem list --limit 20
 | Storing duplicates | Search first |
 | Missing rationale in decisions | Future agents need the *why*, not just the *what* |
 | Skipping scopes | Scopes make search faster |
+| Calling `memory_get` without filtering | Search first, then fetch only the IDs you need |
 
 ---
 

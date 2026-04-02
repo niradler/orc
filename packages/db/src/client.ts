@@ -85,6 +85,7 @@ function setupDb(sqlite: Database): void {
       skill_dir TEXT,
       skill_version TEXT,
       frontmatter TEXT,
+      source_url TEXT,
       tags TEXT,
       version INTEGER NOT NULL DEFAULT 1,
       pinned INTEGER NOT NULL DEFAULT 0,
