@@ -92,7 +92,7 @@ For CRUD operations not in MCP (delete, project management, job creation), use t
 | `job_status` | Get run status/exit code/error for a run ID |
 | `project_list` | Discover all projects (name, status, description) |
 | `prompt_list` | Discover available prompts/skills. Filter by tags or is_skill. |
-| `prompt_get` | Load full prompt content by name or ID. |
+| `prompt_get` | Load full prompt content by name or ID. Shows skill directory path + reference file paths — use Read to load them. |
 | `session_event` | Record significant action (file, task, decision, error, git, env, rule, plan). Deduped automatically. |
 | `session_snapshot` | Build ≤2KB XML snapshot — priority-tiered (P1: files/tasks, P2: decisions/git, P3: intent) |
 | `session_restore` | Restore session after compaction or agent restart |
@@ -155,7 +155,7 @@ Set default backend via `agent_loop.default_backend` in config. Per-task overrid
 
 ### Built-in Prompts
 
-Prompt templates live in `skills/prompts/*/SKILL.md` and are seeded to the database on API startup. Use `prompt_list` to discover them, `prompt_get` to load content. Assign to tasks via `prompt_id`.
+Prompt templates live in `skills/prompts/*/SKILL.md` and are seeded to the database on API startup. Use `prompt_list` to discover them, `prompt_get` to load content. Skills can have reference files (e.g. `reference.md`, `examples.md`) alongside `SKILL.md` — `prompt_get` shows their full paths so agents can Read them on demand. Assign to tasks via `prompt_id`.
 
 ## Coding Conventions
 

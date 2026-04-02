@@ -10,7 +10,8 @@
     "./logger": "./src/logger.ts",
     "./ids": "./src/ids.ts",
     "./errors": "./src/errors.ts",
-    "./version": "./src/version.ts"
+    "./version": "./src/version.ts",
+    "./skill-refs": "./src/skill-refs.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

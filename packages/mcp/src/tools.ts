@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
+import { resolve } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
+import { listSkillReferenceFiles } from "@orc/core/skill-refs";
 import type { TaskStatus } from "@orc/core/types";
 import { getDb, getSqlite } from "@orc/db/client";
 import {
@@ -288,7 +290,8 @@ export const toolDefinitions = [
   },
   {
     name: "prompt_get",
-    description: "Load full prompt content by name or ID.",
+    description:
+      "Load full prompt content by name or ID. Shows skill directory path and reference files if any — use Read to load them.",
     inputSchema: z.object({
       name: z.string().optional().describe("Prompt name"),
       id: z.string().optional().describe("Prompt ID (alternative to name)"),
@@ -463,9 +466,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         updated_at: now,
       });
       const proj = resolved ? ` (${resolved.name})` : "";
-      import("@orc/runner/task-loop")
-        .then((m) => m.triggerTaskCheck())
-        .catch(() => {});
+      import("@orc/runner/task-loop").then((m) => m.triggerTaskCheck()).catch(() => {});
       return `Created: ${id} — ${title}${proj}`;
     }
 
@@ -888,9 +889,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       }
 
       const lines = items.map((item) => `  ${item.ref} → ${mapping[item.ref]} — ${item.title}`);
-      import("@orc/runner/task-loop")
-        .then((m) => m.triggerTaskCheck())
-        .catch(() => {});
+      import("@orc/runner/task-loop").then((m) => m.triggerTaskCheck()).catch(() => {});
       return `Created ${items.length} tasks:\n${lines.join("\n")}`;
     }
 
@@ -998,7 +997,15 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         return "Provide either name or id.";
       }
       if (!row) return `Prompt not found: ${pName ?? pId}`;
-      return `# ${row.name}\n${row.description ?? ""}\n\n${row.template}`;
+      let out = `# ${row.name}\n${row.description ?? ""}\n\n${row.template}`;
+      if (row.skill_dir) {
+        const refs = listSkillReferenceFiles(row.skill_dir, process.cwd());
+        if (refs.length > 0) {
+          const dir = resolve(process.cwd(), row.skill_dir);
+          out += `\n\nReferences in ${dir}/:\n${refs.map((f) => `- ${dir}/${f}`).join("\n")}`;
+        }
+      }
+      return out;
     }
 
     default:
