@@ -658,3 +658,15 @@ export function stopTaskLoop(): void {
     logger.info("Task loop stopped");
   }
 }
+
+let triggerDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function triggerTaskCheck(): void {
+  if (!loopCron) return;
+  if (triggerDebounceTimer) return;
+  triggerDebounceTimer = setTimeout(() => {
+    triggerDebounceTimer = null;
+    logger.info("Task check triggered by task change");
+    recordedCycle().catch((err) => logger.error(`Triggered cycle error: ${String(err)}`));
+  }, 500);
+}

@@ -71,6 +71,8 @@ const UpdateTaskSchema = z
     due_at: z.string().datetime().optional(),
     tags: z.array(z.string()).optional(),
     comment: z.string().optional(),
+    agent_backend: z.string().optional(),
+    prompt_id: z.string().optional(),
   })
   .openapi("UpdateTask");
 
@@ -339,6 +341,9 @@ app.openapi(createRoute_, async (c) => {
 
   const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!task) throw new Error("Expected task to exist after write");
+  import("@orc/runner/task-loop")
+    .then((m) => m.triggerTaskCheck())
+    .catch(() => {});
   return c.json(toDto(task), 201);
 });
 
@@ -368,6 +373,8 @@ app.openapi(updateRoute, async (c) => {
     ...(body.priority !== undefined ? { priority: body.priority } : {}),
     ...(body.due_at !== undefined ? { due_at: new Date(body.due_at) } : {}),
     ...(body.tags !== undefined ? { tags: body.tags } : {}),
+    ...(body.agent_backend !== undefined ? { agent_backend: body.agent_backend } : {}),
+    ...(body.prompt_id !== undefined ? { prompt_id: body.prompt_id } : {}),
   };
   if (Object.keys(nonStatusFields).length > 0) {
     await db
@@ -502,6 +509,9 @@ app.openapi(batchCreateRoute, async (c) => {
     throw err;
   }
 
+  import("@orc/runner/task-loop")
+    .then((m) => m.triggerTaskCheck())
+    .catch(() => {});
   return c.json({ created: items.length, mapping }, 201);
 });
 

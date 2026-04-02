@@ -21,9 +21,12 @@ import {
 } from "./store.js";
 import type { DirectCommandResult } from "./types.js";
 
-function backendFromMode(mode: GatewayMode): string {
-  const parts = mode.split(":");
-  return parts[1] ?? "claude";
+export function backendFromMode(mode: GatewayMode): string {
+  if (mode.startsWith("agent:")) {
+    const name = mode.slice(6);
+    return name || "claude";
+  }
+  return "claude";
 }
 
 function statusEmoji(status: string): string {
@@ -225,9 +228,6 @@ export async function handleDirectCommand(input: {
   if (command === "/assign") {
     const [taskId, agent] = argText.split(/\s+/);
     if (!taskId || !agent) return { text: "Usage: /assign <task-id> <agent>" };
-    if (!agent) {
-      return { text: "Usage: /assign <task-id> <agent>" };
-    }
     const task = await findTask(taskId);
     if (!task) return { text: `Task not found: ${taskId}` };
     const sessions = await listGatewaySessions(input.chatKey);

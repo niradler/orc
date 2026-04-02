@@ -84,7 +84,7 @@ For CRUD operations not in MCP (delete, project management, job creation), use t
 | `search` | Unified search across tasks and memories. Use instead of separate calls. |
 | `task_list` | List active tasks (compact, no body). Pass `project` to filter. |
 | `task_get` | Fetch full task details by ID |
-| `task_create` | Create a task. Pass `project` to scope. |
+| `task_create` | Create a task. Pass `project` to scope. Set `agent_backend` to route to a specific agent runtime. |
 | `task_update` | Update status/priority/body |
 | `task_batch_create` | Create multiple tasks with dependency links atomically. |
 | `job_list` | List all jobs + last run status. Pass `project` to filter. |
@@ -132,6 +132,26 @@ Key env vars: `ORC_DB_PATH`, `ORC_API_PORT` (default 7700), `ORC_API_SECRET`, `O
 ```
 
 Env vars: `ORC_AGENT_LOOP_ENABLED`, `ORC_AGENT_LOOP_POLL_INTERVAL`, `ORC_AGENT_LOOP_MAX_WORKERS`, `ORC_AGENT_LOOP_DEFAULT_BACKEND`, `ORC_AGENT_LOOP_IDLE_TIMEOUT`, `ORC_AGENT_LOOP_AUTO_APPROVE`.
+
+### Agent Backends
+
+Three built-in backends route tasks to different agent runtimes:
+
+| Backend | Description | Config |
+| ------- | ----------- | ------ |
+| `claude` | Native Claude Code CLI adapter. Falls back to ACPX on error. | Default. Requires `claude` on PATH. |
+| `acpx` | Wraps 14+ coding agents via Agent Communication Protocol (ACP) CLI. Supports codex, gemini, copilot, kiro, cursor, etc. | Requires `acpx` CLI on PATH. |
+| `a2a` | Connects to remote agents via Google Agent2Agent protocol (JSON-RPC over HTTP). | Requires `a2a_url` per task/session. |
+
+**Custom backends**: `agent_backend` accepts any string. Unknown names route through ACPX with the name as the `--agent` flag.
+
+**Fallback routing** (gateway):
+
+1. `a2a` — direct A2A HTTP call
+2. `claude` — native CLI, falls back to ACPX on error
+3. Everything else — ACPX with backend name as agent
+
+Set default backend via `agent_loop.default_backend` in config. Per-task override: set `agent_backend` field when creating a task via API, MCP, or CLI.
 
 ### Built-in Prompts
 

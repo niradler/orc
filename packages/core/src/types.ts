@@ -33,8 +33,8 @@ export const MemoryImportanceSchema = z.enum(["low", "normal", "high", "critical
 export const BridgePlatformSchema = z.enum(["telegram", "slack", "discord", "feishu"]);
 export const BridgeModeSchema = z
   .enum(["direct", "multi"])
-  .or(z.string().startsWith("agent:"))
-  .or(z.string().startsWith("job:"));
+  .or(z.string().regex(/^agent:.+/))
+  .or(z.string().regex(/^job:.+/));
 
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 export type TaskPriority = z.infer<typeof TaskPrioritySchema>;

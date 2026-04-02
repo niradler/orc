@@ -135,6 +135,10 @@ export const toolDefinitions = [
       body: z.string().optional(),
       priority: z.enum(["low", "normal", "high", "critical"]).optional(),
       comment: z.string().optional().describe("Add a comment to the task"),
+      agent_backend: z
+        .string()
+        .optional()
+        .describe("Agent backend for task execution (e.g. claude, acpx, a2a, gemini)"),
     }),
   },
   {
@@ -459,16 +463,20 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         updated_at: now,
       });
       const proj = resolved ? ` (${resolved.name})` : "";
+      import("@orc/runner/task-loop")
+        .then((m) => m.triggerTaskCheck())
+        .catch(() => {});
       return `Created: ${id} — ${title}${proj}`;
     }
 
     case "task_update": {
-      const { id, status, body, priority, comment } = args as {
+      const { id, status, body, priority, comment, agent_backend } = args as {
         id: string;
         status?: string;
         body?: string;
         priority?: string;
         comment?: string;
+        agent_backend?: string;
       };
       if (status) {
         const result = await updateTaskStatus({
@@ -481,12 +489,13 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       } else if (comment) {
         await addTaskComment(id, comment, "agent");
       }
-      if (body !== undefined || priority) {
+      if (body !== undefined || priority || agent_backend !== undefined) {
         await db
           .update(tasks)
           .set({
             ...(body !== undefined ? { body } : {}),
             ...(priority ? { priority: priority as "low" } : {}),
+            ...(agent_backend !== undefined ? { agent_backend } : {}),
             updated_at: new Date(),
           })
           .where(eq(tasks.id, id));
@@ -879,6 +888,9 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       }
 
       const lines = items.map((item) => `  ${item.ref} → ${mapping[item.ref]} — ${item.title}`);
+      import("@orc/runner/task-loop")
+        .then((m) => m.triggerTaskCheck())
+        .catch(() => {});
       return `Created ${items.length} tasks:\n${lines.join("\n")}`;
     }
 

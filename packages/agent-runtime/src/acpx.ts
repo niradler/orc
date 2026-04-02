@@ -32,15 +32,88 @@ type AcpxJsonRpc = {
 
 type AcpxUpdate = {
   sessionUpdate?: string;
-  content?: { type?: string; text?: string } | Array<{ type?: string; content?: { type?: string; text?: string } }>;
+  content?:
+    | { type?: string; text?: string }
+    | Array<{ type?: string; content?: { type?: string; text?: string } }>;
   toolCallId?: string;
   title?: string;
   kind?: string;
   status?: string;
   rawInput?: unknown;
   rawOutput?: string;
-  _meta?: { claudeCode?: { toolName?: string; toolResponse?: { stdout?: string; stderr?: string } } };
+  _meta?: {
+    claudeCode?: { toolName?: string; toolResponse?: { stdout?: string; stderr?: string } };
+  };
 };
+
+export function parseAcpxLine(line: string): AgentEvent | null {
+  let msg: AcpxJsonRpc;
+  try {
+    msg = JSON.parse(line) as AcpxJsonRpc;
+  } catch {
+    return null;
+  }
+
+  if (msg.error) {
+    return { type: "error", data: msg.error.message ?? "ACPX error" };
+  }
+
+  if (msg.result && msg.id !== undefined) {
+    if (msg.result.stopReason || msg.result.usage) {
+      return { type: "result", data: { usage: msg.result.usage } };
+    }
+    return null;
+  }
+
+  if (msg.method !== "session/update" || !msg.params?.update) return null;
+
+  const update = msg.params.update;
+  const sessionUpdate = update.sessionUpdate;
+
+  if (sessionUpdate === "agent_message_chunk") {
+    const content = update.content;
+    if (content && !Array.isArray(content)) {
+      if (content.type === "text" && content.text) {
+        return { type: "text", data: content.text };
+      }
+      if (content.type === "thinking" && content.text) {
+        return { type: "thinking", data: content.text };
+      }
+    }
+    return null;
+  }
+
+  if (sessionUpdate === "tool_call") {
+    const toolName = update._meta?.claudeCode?.toolName ?? update.title ?? "";
+    return {
+      type: "tool_use",
+      data: {
+        id: update.toolCallId ?? ulid(),
+        name: toolName,
+        input:
+          typeof update.rawInput === "string"
+            ? update.rawInput
+            : JSON.stringify(update.rawInput ?? {}),
+      },
+    };
+  }
+
+  if (sessionUpdate === "tool_call_update" && update.status === "completed") {
+    const toolResponse = update._meta?.claudeCode?.toolResponse;
+    const output = update.rawOutput ?? toolResponse?.stdout ?? "";
+    const isError = toolResponse?.stderr ? toolResponse.stderr.length > 0 : false;
+    return {
+      type: "tool_result",
+      data: {
+        toolUseId: update.toolCallId ?? "",
+        content: output,
+        isError,
+      },
+    };
+  }
+
+  return null;
+}
 
 function findAcpxCli(): string | null {
   const found = Bun.which("acpx");
@@ -85,75 +158,21 @@ class AcpxSession implements AgentSession {
   }
 
   private handleLine(line: string): void {
-    let msg: AcpxJsonRpc;
-    try {
-      msg = JSON.parse(line) as AcpxJsonRpc;
-    } catch {
-      return;
-    }
+    const event = parseAcpxLine(line);
+    if (!event) return;
 
-    if (msg.error) {
-      this.push({ type: "error", data: msg.error.message ?? "ACPX error" });
-      return;
-    }
-
-    if (msg.result && msg.id !== undefined) {
-      if (msg.result.stopReason || msg.result.usage) {
-        this.gotResult = true;
-        this.push({
-          type: "result",
-          data: { runtimeSessionId: this.sessionName, usage: msg.result.usage },
-        });
-        this.done = true;
-        this.resolveNext?.();
-      }
-      return;
-    }
-
-    if (msg.method !== "session/update" || !msg.params?.update) return;
-
-    const update = msg.params.update;
-    const sessionUpdate = update.sessionUpdate;
-
-    if (sessionUpdate === "agent_message_chunk") {
-      const content = update.content;
-      if (content && !Array.isArray(content)) {
-        if (content.type === "text" && content.text) {
-          this.push({ type: "text", data: content.text });
-        } else if (content.type === "thinking" && content.text) {
-          this.push({ type: "thinking", data: content.text });
-        }
-      }
-      return;
-    }
-
-    if (sessionUpdate === "tool_call") {
-      const toolName = update._meta?.claudeCode?.toolName ?? update.title ?? "";
+    if (event.type === "result") {
+      this.gotResult = true;
       this.push({
-        type: "tool_use",
-        data: {
-          id: update.toolCallId ?? ulid(),
-          name: toolName,
-          input: typeof update.rawInput === "string" ? update.rawInput : JSON.stringify(update.rawInput ?? {}),
-        },
+        type: "result",
+        data: { runtimeSessionId: this.sessionName, ...event.data },
       });
+      this.done = true;
+      this.resolveNext?.();
       return;
     }
 
-    if (sessionUpdate === "tool_call_update" && update.status === "completed") {
-      const toolResponse = update._meta?.claudeCode?.toolResponse;
-      const output = update.rawOutput ?? toolResponse?.stdout ?? "";
-      const isError = toolResponse?.stderr ? toolResponse.stderr.length > 0 : false;
-      this.push({
-        type: "tool_result",
-        data: {
-          toolUseId: update.toolCallId ?? "",
-          content: output,
-          isError,
-        },
-      });
-      return;
-    }
+    this.push(event);
   }
 
   private handleEof(): void {

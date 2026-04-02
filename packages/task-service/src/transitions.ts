@@ -189,6 +189,12 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
     }
   }
 
+  if (["done", "cancelled", "changes_requested"].includes(opts.status)) {
+    import("@orc/runner/task-loop")
+      .then((m) => m.triggerTaskCheck())
+      .catch(() => {});
+  }
+
   const updated = await db.query.tasks.findFirst({ where: eq(tasks.id, opts.taskId) });
   return { ok: true, task: updated ?? undefined };
 }

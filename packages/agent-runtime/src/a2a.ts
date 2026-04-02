@@ -25,7 +25,7 @@ type A2aResponseEvent = {
   messageId?: string;
 };
 
-class A2aSession implements AgentSession {
+export class A2aSession implements AgentSession {
   readonly id: string;
 
   private readonly eventQueue: AgentEvent[] = [];
@@ -39,9 +39,23 @@ class A2aSession implements AgentSession {
 
   constructor(opts: SessionOpts) {
     this.id = ulid();
-    this.a2aUrl = opts.a2aUrl ?? "";
     this.cwd = opts.cwd;
     this.contextId = opts.runtimeSessionId ?? ulid();
+
+    const rawUrl = opts.a2aUrl;
+    if (!rawUrl) {
+      throw new Error("a2aUrl is required for A2A backend");
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(rawUrl);
+    } catch {
+      throw new Error(`Invalid a2aUrl: ${rawUrl}`);
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error(`a2aUrl must be http or https, got: ${parsed.protocol}`);
+    }
+    this.a2aUrl = rawUrl;
   }
 
   private push(event: AgentEvent): void {
