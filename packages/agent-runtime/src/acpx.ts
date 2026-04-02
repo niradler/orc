@@ -10,7 +10,7 @@ import type {
   SessionOpts,
 } from "./types.js";
 
-const logger = createLogger("agent-runtime:acpx");
+const _logger = createLogger("agent-runtime:acpx");
 
 const GRACE_TIMEOUT_MS = 8_000;
 
@@ -241,13 +241,13 @@ class AcpxSession implements AgentSession {
 
   async *events(): AsyncIterable<AgentEvent> {
     while (true) {
-      while (this.eventQueue.length > 0) yield this.eventQueue.shift()!;
+      while (this.eventQueue.length > 0) yield this.eventQueue.shift() as AgentEvent;
       if (this.done) break;
       await new Promise<void>((resolve) => {
         this.resolveNext = resolve;
       });
     }
-    while (this.eventQueue.length > 0) yield this.eventQueue.shift()!;
+    while (this.eventQueue.length > 0) yield this.eventQueue.shift() as AgentEvent;
   }
 
   alive(): boolean {

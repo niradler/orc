@@ -28,7 +28,10 @@ describe("parseAcpxLine", () => {
     });
     const event = parseAcpxLine(line);
     expect(event?.type).toBe("result");
-    expect((event?.data as any).usage).toEqual({ inputTokens: 100, outputTokens: 50 });
+    expect((event?.data as Record<string, unknown>).usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 50,
+    });
   });
 
   it("returns null for result without stopReason or usage", () => {
@@ -91,7 +94,7 @@ describe("parseAcpxLine", () => {
     });
     const event = parseAcpxLine(line);
     expect(event?.type).toBe("tool_use");
-    const data = event?.data as any;
+    const data = event?.data as Record<string, unknown>;
     expect(data.id).toBe("tc-123");
     expect(data.name).toBe("Read");
     expect(JSON.parse(data.input)).toEqual({ path: "/tmp/test.ts" });
@@ -111,7 +114,7 @@ describe("parseAcpxLine", () => {
       },
     });
     const event = parseAcpxLine(line);
-    const data = event?.data as any;
+    const data = event?.data as Record<string, unknown>;
     expect(data.name).toBe("Bash");
     expect(data.input).toBe("ls -la");
   });
@@ -132,7 +135,7 @@ describe("parseAcpxLine", () => {
     });
     const event = parseAcpxLine(line);
     expect(event?.type).toBe("tool_result");
-    const data = event?.data as any;
+    const data = event?.data as Record<string, unknown>;
     expect(data.toolUseId).toBe("tc-123");
     expect(data.content).toBe("file contents here");
     expect(data.isError).toBe(false);
@@ -152,7 +155,7 @@ describe("parseAcpxLine", () => {
       },
     });
     const event = parseAcpxLine(line);
-    const data = event?.data as any;
+    const data = event?.data as Record<string, unknown>;
     expect(data.isError).toBe(true);
     expect(data.content).toBe("output");
   });

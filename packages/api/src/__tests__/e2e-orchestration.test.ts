@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { loadConfig, resetConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import { getDb } from "@orc/db/client";
-import { comments, gateway_sessions, projects, tasks } from "@orc/db/schema";
+import { comments, gateway_sessions, tasks } from "@orc/db/schema";
 import { executeTool } from "@orc/mcp/tools";
 import { updateTaskStatus } from "@orc/task-service";
 import { eq } from "drizzle-orm";
@@ -107,7 +107,7 @@ describe("2. Prompt Discovery", () => {
     const body = (await res.json()) as { prompts: { id: string; name: string }[] };
     const coder = body.prompts.find((p) => p.name === "orc-coder");
     expect(coder).toBeTruthy();
-    coderPromptId = coder!.id;
+    coderPromptId = coder?.id;
   });
 });
 
@@ -169,11 +169,11 @@ describe("3. Planning Phase — Batch Task Creation", () => {
       const match = line.match(/(\w+)\s*→\s*(\S+)/);
       if (!match) continue;
       const [, ref, id] = match;
-      if (ref === "P") parentId = id!;
-      else if (ref === "T1") t1Id = id!;
-      else if (ref === "T2") t2Id = id!;
-      else if (ref === "T3") t3Id = id!;
-      else if (ref === "T4") t4Id = id!;
+      if (ref === "P") parentId = id as string;
+      else if (ref === "T1") t1Id = id as string;
+      else if (ref === "T2") t2Id = id as string;
+      else if (ref === "T3") t3Id = id as string;
+      else if (ref === "T4") t4Id = id as string;
     }
     expect(parentId).toBeTruthy();
     expect(t1Id).toBeTruthy();
@@ -190,7 +190,7 @@ describe("3. Planning Phase — Batch Task Creation", () => {
     };
     const subtaskLink = links.links.find((l) => l.link_type === "subtask_of");
     expect(subtaskLink).toBeTruthy();
-    expect(subtaskLink!.to_task_id).toBe(parentId);
+    expect(subtaskLink?.to_task_id).toBe(parentId);
 
     const t2LinksRes = await req(app, "GET", `/tasks/${t2Id}/links`);
     const t2Links = (await t2LinksRes.json()) as {

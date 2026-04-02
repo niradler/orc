@@ -30,6 +30,7 @@ describe("backend registry", () => {
   });
 
   it("throws for unregistered backend", () => {
+    // biome-ignore lint/suspicious/noExplicitAny: testing invalid input
     expect(() => createBackend("nonexistent" as any)).toThrow(/No agent backend registered/);
   });
 });

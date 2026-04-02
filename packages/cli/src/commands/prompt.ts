@@ -221,7 +221,7 @@ export function promptCommand() {
         return console.error(`Source not found: ${source}`);
       }
 
-      const { name, description, template, tags: parsedTags, extras } = parseImportContent(content);
+      const { name, description, template, tags: parsedTags } = parseImportContent(content);
       const allTags = [
         ...parsedTags,
         ...(opts.tags ? opts.tags.split(",").map((s: string) => s.trim()) : []),

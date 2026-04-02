@@ -5,16 +5,7 @@ import { ulid } from "@orc/core/ids";
 import { listSkillReferenceFiles } from "@orc/core/skill-refs";
 import type { TaskStatus } from "@orc/core/types";
 import { getDb, getSqlite } from "@orc/db/client";
-import {
-  comments,
-  job_runs,
-  jobs,
-  memories,
-  projects,
-  prompts,
-  sessions,
-  tasks,
-} from "@orc/db/schema";
+import { job_runs, jobs, memories, projects, prompts, sessions, tasks } from "@orc/db/schema";
 import { executeJob } from "@orc/runner/executor";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 import { and, desc, eq } from "drizzle-orm";

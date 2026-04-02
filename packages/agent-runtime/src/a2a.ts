@@ -186,13 +186,13 @@ export class A2aSession implements AgentSession {
 
   async *events(): AsyncIterable<AgentEvent> {
     while (true) {
-      while (this.eventQueue.length > 0) yield this.eventQueue.shift()!;
+      while (this.eventQueue.length > 0) yield this.eventQueue.shift() as AgentEvent;
       if (this.done) break;
       await new Promise<void>((resolve) => {
         this.resolveNext = resolve;
       });
     }
-    while (this.eventQueue.length > 0) yield this.eventQueue.shift()!;
+    while (this.eventQueue.length > 0) yield this.eventQueue.shift() as AgentEvent;
   }
 
   alive(): boolean {
