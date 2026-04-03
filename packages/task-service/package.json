@@ -6,6 +6,6 @@
   "dependencies": {
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
-    "drizzle-orm": "^0.41.0"
+    "drizzle-orm": "^0.45.2"
   }
 }

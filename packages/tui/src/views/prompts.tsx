@@ -1,9 +1,16 @@
 import { createOrcClient } from "@orc/sdk";
 import type { Prompt } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { expectApiData } from "../api-result.js";
 import { ConfirmDialog } from "../components/confirm-dialog.js";
 import { DetailPane } from "../components/detail-pane.js";
-import { EditFormOverlay, type FormField, useEditForm } from "../components/edit-form.js";
+import {
+  EditFormOverlay,
+  type FormField,
+  formErrorMessage,
+  isSaveKey,
+  useEditForm,
+} from "../components/edit-form.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
@@ -141,7 +148,7 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
       countLabel: loading ? "Loading prompts…" : `${filtered.length} visible prompts`,
       filterQuery: query,
       filterActive,
-      navigationLocked: filterActive || mode === "form" || mode === "confirm",
+      navigationLocked: filterActive || mode !== "browse",
       selectionLabel:
         mode === "detail" && detail
           ? `Prompt detail • ${detail.name}`
@@ -149,53 +156,75 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
             ? `${selectedPrompt.name} • v${selectedPrompt.version}`
             : "No prompt selected yet.",
       detailId: mode === "detail" ? (detail?.id ?? null) : null,
-      statusMessage: "Prompts and skills share the same TUI flow here.",
+      statusMessage:
+        mode === "detail" ? "Detail actions: e edit • d delete" : "Enter opens detail • n creates",
     });
   }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
 
-  const doCreate = useCallback((vals: Record<string, string>) => {
-    if (!vals.name || !vals.template) return;
+  const doCreate = useCallback(async (vals: Record<string, string>) => {
+    if (!vals.name) throw new Error("Prompt name is required.");
+    if (!vals.template) throw new Error("Template is required.");
     const tags = vals.tags
       ? vals.tags
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean)
       : undefined;
-    client.prompts
-      .create({
-        name: vals.name,
-        ...(vals.description ? { description: vals.description } : {}),
-        template: vals.template,
-        is_skill: vals.is_skill === "yes",
-        ...(tags ? { tags } : {}),
-      })
-      .then(() => refreshRef.current());
+    const created = await client.prompts.create({
+      name: vals.name,
+      ...(vals.description ? { description: vals.description } : {}),
+      template: vals.template,
+      is_skill: vals.is_skill === "yes",
+      ...(tags ? { tags } : {}),
+    });
+    return expectApiData(created, "Couldn't create prompt.");
   }, []);
 
-  const doEdit = useCallback((vals: Record<string, string>) => {
+  const doEdit = useCallback(async (vals: Record<string, string>) => {
     const p = formTargetRef.current ?? filteredRef.current[cursorRef.current];
-    if (!p) return;
+    if (!p) throw new Error("Select a prompt first.");
     const tags = vals.tags
       ? vals.tags
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean)
       : undefined;
-    client.prompts
-      .update(p.id, {
-        ...(vals.name ? { name: vals.name } : {}),
-        ...(vals.description ? { description: vals.description } : {}),
-        ...(vals.template ? { template: vals.template } : {}),
-        is_skill: vals.is_skill === "yes",
-        ...(tags ? { tags } : {}),
-      })
-      .then(() => refreshRef.current());
+    const updated = await client.prompts.update(p.id, {
+      ...(vals.name ? { name: vals.name } : {}),
+      ...(vals.description ? { description: vals.description } : {}),
+      ...(vals.template ? { template: vals.template } : {}),
+      is_skill: vals.is_skill === "yes",
+      ...(tags ? { tags } : {}),
+    });
+    return expectApiData(updated, "Couldn't save prompt.");
   }, []);
 
   const doCreateRef = useRef(doCreate);
   doCreateRef.current = doCreate;
   const doEditRef = useRef(doEdit);
   doEditRef.current = doEdit;
+
+  const submitCurrentForm = useCallback(async () => {
+    const result = editFormRef.current.submit();
+    const creating = formIntentRef.current === "create";
+    const action = creating ? doCreateRef.current : doEditRef.current;
+
+    if (!editFormRef.current.beginSubmit(creating ? "Creating prompt…" : "Saving prompt…")) return;
+
+    try {
+      const savedPrompt = await action(result.values);
+      if (savedPrompt) setDetail(savedPrompt);
+      await refreshRef.current();
+      editFormRef.current.finishSubmit("success", creating ? "Prompt created." : "Prompt saved.");
+      setTimeout(() => {
+        editFormRef.current.close();
+        setFormTarget(null);
+        setMode("browse");
+      }, 700);
+    } catch (error) {
+      editFormRef.current.finishSubmit("error", formErrorMessage(error, "Couldn't save prompt."));
+    }
+  }, []);
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
@@ -208,17 +237,14 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
 
       if (modeRef.current === "form") {
         if (key.name === "escape") {
+          if (editFormRef.current.submitState.status === "saving") return true;
           editFormRef.current.close();
           setMode("browse");
           setFormTarget(null);
           return true;
         }
-        if (key.ctrl && key.name === "s") {
-          const result = editFormRef.current.submit();
-          if (formIntentRef.current === "create") doCreateRef.current(result.values);
-          else doEditRef.current(result.values);
-          setMode("browse");
-          setFormTarget(null);
+        if (isSaveKey(key)) {
+          void submitCurrentForm();
           return true;
         }
         if (key.name === "tab" && key.shift) {
@@ -275,24 +301,6 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
           setMode("form");
           return true;
         }
-        if (key.name === "e") {
-          const p = filteredRef.current[cursorRef.current];
-          if (p) {
-            setFormIntent("edit");
-            setFormTarget(p);
-            editFormRef.current.open(promptFields(p));
-            setMode("form");
-          }
-          return true;
-        }
-        if (key.name === "d") {
-          const p = filteredRef.current[cursorRef.current];
-          if (p) {
-            setDeleteTarget(p);
-            setMode("confirm");
-          }
-          return true;
-        }
       }
       if (modeRef.current === "detail") {
         if (key.name === "escape") {
@@ -316,7 +324,7 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
       }
       return false;
     },
-    [vimHandleKey, setFilterActive],
+    [submitCurrentForm, vimHandleKey, setFilterActive],
   );
 
   useEffect(() => {
@@ -344,6 +352,7 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
         fields={fields}
         body={detail.template}
         renderMarkdown
+        hint="Esc back • e edit • d delete • Up/Down scroll"
       />
     );
   }
@@ -382,6 +391,16 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
         focusIdx={editForm.focusIdx}
         active={mode === "form"}
         onChange={editForm.updateValue}
+        submitState={editForm.submitState}
+        onSubmit={submitCurrentForm}
+        onCancel={() => {
+          if (editForm.submitState.status === "saving") return;
+          editForm.close();
+          setMode("browse");
+          setFormTarget(null);
+        }}
+        onNextField={editForm.nextField}
+        onPrevField={editForm.prevField}
       />
       <ConfirmDialog
         message={deleteTarget ? `Delete prompt "${deleteTarget.name}"?` : ""}

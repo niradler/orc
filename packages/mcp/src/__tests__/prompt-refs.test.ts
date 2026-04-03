@@ -7,7 +7,7 @@ import { prompts } from "@orc/db/schema";
 import { executeTool } from "../tools.js";
 
 const TMP = join(import.meta.dirname, ".tmp-mcp-refs-test");
-const SKILL_DIR = "packages/mcp/src/__tests__/.tmp-mcp-refs-test";
+const SKILL_DIR = "src/__tests__/.tmp-mcp-refs-test";
 
 beforeAll(() => {
   process.env.ORC_DB_PATH = ":memory:";

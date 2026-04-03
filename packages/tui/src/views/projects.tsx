@@ -1,9 +1,16 @@
 import { createOrcClient } from "@orc/sdk";
 import type { Project, ProjectSummary } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { expectApiData } from "../api-result.js";
 import { ConfirmDialog } from "../components/confirm-dialog.js";
 import { DetailPane } from "../components/detail-pane.js";
-import { EditFormOverlay, type FormField, useEditForm } from "../components/edit-form.js";
+import {
+  EditFormOverlay,
+  type FormField,
+  formErrorMessage,
+  isSaveKey,
+  useEditForm,
+} from "../components/edit-form.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
@@ -138,7 +145,7 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
       countLabel: loading ? "Loading projects…" : `${filtered.length} visible projects`,
       filterQuery: query,
       filterActive,
-      navigationLocked: filterActive || mode === "form" || mode === "confirm",
+      navigationLocked: filterActive || mode !== "browse",
       selectionLabel:
         mode === "detail" && detail
           ? `Project detail • ${detail.project.name}`
@@ -146,51 +153,83 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
             ? `${statusIcon(selectedProject.status)} ${selectedProject.status} • ${selectedProject.name}`
             : "Choose a project to scope tasks, jobs, and memories.",
       detailId: mode === "detail" ? (detail?.project.id ?? null) : null,
-      statusMessage: "Press s to set the active project filter.",
+      statusMessage:
+        mode === "detail"
+          ? "Detail actions: e edit • d delete • s set active project"
+          : "Enter opens detail • n creates • s scopes ORC",
     });
   }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
 
-  const doCreate = useCallback((vals: Record<string, string>) => {
-    if (!vals.name) return;
+  const doCreate = useCallback(async (vals: Record<string, string>) => {
+    if (!vals.name) throw new Error("Project name is required.");
     const tags = vals.tags
       ? vals.tags
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean)
       : undefined;
-    client.projects
-      .create({
-        name: vals.name,
-        ...(vals.description ? { description: vals.description } : {}),
-        status: (vals.status as Project["status"]) || "active",
-        ...(tags ? { tags } : {}),
-      })
-      .then(() => refreshRef.current());
+    const created = await client.projects.create({
+      name: vals.name,
+      ...(vals.description ? { description: vals.description } : {}),
+      status: (vals.status as Project["status"]) || "active",
+      ...(tags ? { tags } : {}),
+    });
+    return expectApiData(created, "Couldn't create project.");
   }, []);
 
-  const doEdit = useCallback((vals: Record<string, string>) => {
+  const doEdit = useCallback(async (vals: Record<string, string>) => {
     const p = formTargetRef.current ?? filteredRef.current[cursorRef.current];
-    if (!p) return;
+    if (!p) throw new Error("Select a project first.");
     const tags = vals.tags
       ? vals.tags
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean)
       : null;
-    client.projects
-      .update(p.id, {
-        ...(vals.name ? { name: vals.name } : {}),
-        description: vals.description || null,
-        ...(vals.status ? { status: vals.status as Project["status"] } : {}),
-        tags,
-      })
-      .then(() => refreshRef.current());
+    const updated = await client.projects.update(p.id, {
+      ...(vals.name ? { name: vals.name } : {}),
+      description: vals.description || null,
+      ...(vals.status ? { status: vals.status as Project["status"] } : {}),
+      tags,
+    });
+    return expectApiData(updated, "Couldn't save project.");
   }, []);
 
   const doCreateRef = useRef(doCreate);
   doCreateRef.current = doCreate;
   const doEditRef = useRef(doEdit);
   doEditRef.current = doEdit;
+
+  const submitCurrentForm = useCallback(async () => {
+    const result = editFormRef.current.submit();
+    const creating = formIntentRef.current === "create";
+    const action = creating ? doCreateRef.current : doEditRef.current;
+
+    if (!editFormRef.current.beginSubmit(creating ? "Creating project…" : "Saving project…")) return;
+
+    try {
+      const savedProject = await action(result.values);
+      if (savedProject && detailRef.current) {
+        setDetail((current) =>
+          current
+            ? {
+                ...current,
+                project: savedProject,
+              }
+            : current,
+        );
+      }
+      await refreshRef.current();
+      editFormRef.current.finishSubmit("success", creating ? "Project created." : "Project saved.");
+      setTimeout(() => {
+        editFormRef.current.close();
+        setFormTarget(null);
+        setMode("browse");
+      }, 700);
+    } catch (error) {
+      editFormRef.current.finishSubmit("error", formErrorMessage(error, "Couldn't save project."));
+    }
+  }, []);
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
@@ -203,17 +242,14 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
 
       if (modeRef.current === "form") {
         if (key.name === "escape") {
+          if (editFormRef.current.submitState.status === "saving") return true;
           editFormRef.current.close();
           setMode("browse");
           setFormTarget(null);
           return true;
         }
-        if (key.ctrl && key.name === "s") {
-          const result = editFormRef.current.submit();
-          if (formIntentRef.current === "create") doCreateRef.current(result.values);
-          else doEditRef.current(result.values);
-          setMode("browse");
-          setFormTarget(null);
+        if (isSaveKey(key)) {
+          void submitCurrentForm();
           return true;
         }
         if (key.name === "tab" && key.shift) {
@@ -276,24 +312,6 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
           setMode("form");
           return true;
         }
-        if (key.name === "e") {
-          const p = filteredRef.current[cursorRef.current];
-          if (p) {
-            setFormIntent("edit");
-            setFormTarget(p);
-            editFormRef.current.open(projectFields(p));
-            setMode("form");
-          }
-          return true;
-        }
-        if (key.name === "d") {
-          const p = filteredRef.current[cursorRef.current];
-          if (p) {
-            setDeleteTarget(p);
-            setMode("confirm");
-          }
-          return true;
-        }
       }
       if (modeRef.current === "detail") {
         if (key.name === "escape") {
@@ -313,11 +331,15 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
           setMode("confirm");
           return true;
         }
+        if (key.name === "s" && detailRef.current) {
+          onSelectProject(detailRef.current.project.name);
+          return true;
+        }
         return false;
       }
       return false;
     },
-    [vimHandleKey, onSelectProject, setFilterActive],
+    [submitCurrentForm, vimHandleKey, onSelectProject, setFilterActive],
   );
 
   useEffect(() => {
@@ -347,7 +369,13 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
       { label: "Jobs", value: String(detail.jobs) },
       { label: "Created", value: p.created_at },
     ];
-    return <DetailPane title={`Project: ${p.name}`} fields={fields} />;
+    return (
+      <DetailPane
+        title={`Project: ${p.name}`}
+        fields={fields}
+        hint="Esc back • e edit • d delete • s scope • Up/Down scroll"
+      />
+    );
   }
 
   return (
@@ -384,6 +412,16 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
         focusIdx={editForm.focusIdx}
         active={mode === "form"}
         onChange={editForm.updateValue}
+        submitState={editForm.submitState}
+        onSubmit={submitCurrentForm}
+        onCancel={() => {
+          if (editForm.submitState.status === "saving") return;
+          editForm.close();
+          setMode("browse");
+          setFormTarget(null);
+        }}
+        onNextField={editForm.nextField}
+        onPrevField={editForm.prevField}
       />
       <ConfirmDialog
         message={deleteTarget ? `Delete project "${deleteTarget.name}"?` : ""}

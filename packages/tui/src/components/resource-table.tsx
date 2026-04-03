@@ -1,6 +1,6 @@
 import { type BoxRenderable, LayoutEvents } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { colors } from "../theme.js";
 import type { Column } from "../types.js";
 
@@ -38,27 +38,43 @@ export function ResourceTable<T>({
 }: Props<T>) {
   const { height } = useTerminalDimensions();
   const showEmpty = !loading && data.length === 0;
-  const bodyRef = useRef<BoxRenderable | null>(null);
   const [visibleRows, setVisibleRows] = useState(Math.max(8, height - 18));
+  const [bodyNode, setBodyNode] = useState<BoxRenderable | null>(null);
+
+  const attachBodyRef = useCallback((node: BoxRenderable | null) => {
+    setBodyNode(node);
+  }, []);
 
   useEffect(() => {
-    const body = bodyRef.current;
-    if (!body) return;
+    if (!bodyNode) return;
 
     const handleLayoutChange = () => {
-      setVisibleRows(Math.max(1, body.height));
+      setVisibleRows(Math.max(1, bodyNode.height));
     };
 
     handleLayoutChange();
-    body.on(LayoutEvents.LAYOUT_CHANGED, handleLayoutChange);
+    bodyNode.on(LayoutEvents.LAYOUT_CHANGED, handleLayoutChange);
     return () => {
-      body.off(LayoutEvents.LAYOUT_CHANGED, handleLayoutChange);
+      bodyNode.off(LayoutEvents.LAYOUT_CHANGED, handleLayoutChange);
     };
-  }, []);
+  }, [bodyNode]);
 
   useEffect(() => {
     setVisibleRows(Math.max(8, height - 18));
   }, [height]);
+
+  useEffect(() => {
+    if (!bodyNode || loading || showEmpty) return;
+
+    setVisibleRows(Math.max(1, bodyNode.height));
+    const timeout = setTimeout(() => {
+      setVisibleRows(Math.max(1, bodyNode.height));
+    }, 0);
+
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [bodyNode, loading, showEmpty]);
 
   let startIdx = 0;
   if (cursor >= startIdx + visibleRows) {
@@ -120,7 +136,7 @@ export function ResourceTable<T>({
         </box>
       ) : (
         <box
-          ref={bodyRef}
+          ref={attachBodyRef}
           flexDirection="column"
           flexGrow={1}
           onSizeChange={function (this: BoxRenderable) {

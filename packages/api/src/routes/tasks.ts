@@ -67,7 +67,7 @@ const CreateTaskSchema = z
 const UpdateTaskSchema = z
   .object({
     title: z.string().min(1).max(500).optional(),
-    body: z.string().optional(),
+    body: z.string().nullable().optional(),
     status: TaskStatusSchema.optional(),
     priority: TaskPrioritySchema.optional(),
     due_at: z.string().datetime().optional(),

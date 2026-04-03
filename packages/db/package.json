@@ -20,10 +20,10 @@
   },
   "dependencies": {
     "@orc/core": "workspace:*",
-    "drizzle-orm": "^0.41.0"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
-    "drizzle-kit": "^0.30.4",
-    "typescript": "^5.7.3"
+    "drizzle-kit": "^0.31.10",
+    "typescript": "^6.0.2"
   }
 }

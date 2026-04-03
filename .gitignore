@@ -14,3 +14,6 @@ bun.lockb
 tui-debug.log
 .examples
 .claude
+.agents
+.cursor
+.vscode

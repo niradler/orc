@@ -17,10 +17,10 @@
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
     "@orc/runner": "workspace:*",
-    "drizzle-orm": "^0.41.0",
-    "grammy": "^1.36.3"
+    "drizzle-orm": "^0.45.2",
+    "grammy": "^1.41.1"
   },
   "devDependencies": {
-    "typescript": "^5.7.3"
+    "typescript": "^6.0.2"
   }
 }

@@ -19,7 +19,7 @@ test("detail pane renders metadata and content sections", async () => {
       ]}
       body={"Improve shell chrome\nImprove forms\nImprove scrolling"}
     />,
-    { width: 74, height: 22 },
+    { width: 74, height: 28 },
   );
 
   await setup.renderOnce();

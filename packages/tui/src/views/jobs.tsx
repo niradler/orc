@@ -1,8 +1,16 @@
 import { createOrcClient } from "@orc/sdk";
 import type { Job, JobRun } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { expectApiData } from "../api-result.js";
+import { ConfirmDialog } from "../components/confirm-dialog.js";
 import { DetailPane } from "../components/detail-pane.js";
-import { EditFormOverlay, type FormField, useEditForm } from "../components/edit-form.js";
+import {
+  EditFormOverlay,
+  type FormField,
+  formErrorMessage,
+  isSaveKey,
+  useEditForm,
+} from "../components/edit-form.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
@@ -46,7 +54,7 @@ const columns: Column<Job>[] = [
   },
 ];
 
-function jobFields(): FormField[] {
+function jobFields(job?: Job): FormField[] {
   const triggerOptions: SelectOption[] = [
     { label: "Manual", value: "manual" },
     { label: "Cron", value: "cron" },
@@ -55,12 +63,16 @@ function jobFields(): FormField[] {
     { label: "Webhook", value: "webhook" },
     { label: "Bridge message", value: "bridge-msg" },
   ];
+  const enabledOptions: SelectOption[] = [
+    { label: "Enabled", value: "yes" },
+    { label: "Disabled", value: "no" },
+  ];
   return [
-    { key: "name", label: "Name", value: "", placeholder: "nightly-index" },
+    { key: "name", label: "Name", value: job?.name ?? "", placeholder: "nightly-index" },
     {
       key: "command",
       label: "Command",
-      value: "",
+      value: job?.command ?? "",
       type: "textarea",
       height: 5,
       placeholder: "bun run sync:index",
@@ -68,18 +80,30 @@ function jobFields(): FormField[] {
     {
       key: "trigger_type",
       label: "Trigger",
-      value: "manual",
+      value: job?.trigger_type ?? "manual",
       type: "select",
       options: triggerOptions,
     },
-    { key: "cron_expr", label: "Cron Expr", value: "", placeholder: "0 */6 * * * *" },
+    {
+      key: "cron_expr",
+      label: "Cron Expr",
+      value: job?.cron_expr ?? "",
+      placeholder: "0 */6 * * * *",
+    },
     {
       key: "description",
       label: "Description",
-      value: "",
+      value: job?.description ?? "",
       type: "textarea",
       height: 4,
       placeholder: "What this job does",
+    },
+    {
+      key: "enabled",
+      label: "Enabled",
+      value: job?.enabled === false ? "no" : "yes",
+      type: "select",
+      options: enabledOptions,
     },
   ];
 }
@@ -91,8 +115,11 @@ type Props = {
 };
 
 export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Props) {
-  const [mode, setMode] = useState<"browse" | "detail" | "form">("browse");
+  const [mode, setMode] = useState<"browse" | "detail" | "form" | "confirm">("browse");
   const [detail, setDetail] = useState<{ job: Job; runs: JobRun[] } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Job | null>(null);
+  const [formIntent, setFormIntent] = useState<"create" | "edit">("create");
+  const [formTarget, setFormTarget] = useState<Job | null>(null);
   const editForm = useEditForm();
 
   const { data, loading, error, refresh } = usePolling(
@@ -126,6 +153,12 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
   editFormRef.current = editForm;
   const detailRef = useRef(detail);
   detailRef.current = detail;
+  const deleteTargetRef = useRef(deleteTarget);
+  deleteTargetRef.current = deleteTarget;
+  const formIntentRef = useRef(formIntent);
+  formIntentRef.current = formIntent;
+  const formTargetRef = useRef(formTarget);
+  formTargetRef.current = formTarget;
 
   useEffect(() => {
     const selectedJob = filtered[cursor];
@@ -135,7 +168,7 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
       countLabel: loading ? "Loading jobs…" : `${filtered.length} visible jobs`,
       filterQuery: query,
       filterActive,
-      navigationLocked: filterActive || mode === "form",
+      navigationLocked: filterActive || mode !== "browse",
       selectionLabel:
         mode === "detail" && detail
           ? `Job detail • ${detail.job.name}`
@@ -143,29 +176,78 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
             ? `${selectedJob.name} • ${selectedJob.trigger_type} • runs ${selectedJob.run_count}`
             : "No job selected yet.",
       detailId: mode === "detail" ? (detail?.job.id ?? null) : null,
-      statusMessage: "Press t to trigger the selected job.",
+      statusMessage:
+        mode === "detail"
+          ? "Detail actions: e edit • d delete • t trigger"
+          : "Enter opens detail • n creates",
     });
   }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
 
   const doCreate = useCallback(
-    (vals: Record<string, string>) => {
-      if (!vals.name || !vals.command) return;
-      client.jobs
-        .create({
-          name: vals.name,
-          command: vals.command,
-          trigger_type: (vals.trigger_type as Job["trigger_type"]) || "manual",
-          ...(vals.cron_expr ? { cron_expr: vals.cron_expr } : {}),
-          ...(vals.description ? { description: vals.description } : {}),
-          ...(projectId ? { project_id: projectId } : {}),
-        })
-        .then(() => refreshRef.current());
+    async (vals: Record<string, string>) => {
+      if (!vals.name) throw new Error("Job name is required.");
+      if (!vals.command) throw new Error("Command is required.");
+      const created = await client.jobs.create({
+        name: vals.name,
+        command: vals.command,
+        trigger_type: (vals.trigger_type as Job["trigger_type"]) || "manual",
+        ...(vals.cron_expr ? { cron_expr: vals.cron_expr } : {}),
+        ...(vals.description ? { description: vals.description } : {}),
+        ...(projectId ? { project_id: projectId } : {}),
+      });
+      return expectApiData(created, "Couldn't create job.");
     },
     [projectId],
   );
 
   const doCreateRef = useRef(doCreate);
   doCreateRef.current = doCreate;
+  const doEdit = useCallback(async (vals: Record<string, string>) => {
+    const job = formTargetRef.current ?? detailRef.current?.job;
+    if (!job) throw new Error("Select a job first.");
+    const updated = await client.jobs.update(job.id, {
+      ...(vals.name ? { name: vals.name } : {}),
+      ...(vals.command ? { command: vals.command } : {}),
+      ...(vals.trigger_type ? { trigger_type: vals.trigger_type as Job["trigger_type"] } : {}),
+      ...(vals.cron_expr ? { cron_expr: vals.cron_expr } : {}),
+      ...(vals.description ? { description: vals.description } : {}),
+      enabled: vals.enabled === "yes",
+    });
+    return expectApiData(updated, "Couldn't save job.");
+  }, []);
+  const doEditRef = useRef(doEdit);
+  doEditRef.current = doEdit;
+
+  const submitCurrentForm = useCallback(async () => {
+    const result = editFormRef.current.submit();
+    const creating = formIntentRef.current === "create";
+    const action = creating ? doCreateRef.current : doEditRef.current;
+
+    if (!editFormRef.current.beginSubmit(creating ? "Creating job…" : "Saving job…")) return;
+
+    try {
+      const savedJob = await action(result.values);
+      if (savedJob && detailRef.current) {
+        setDetail((current) =>
+          current
+            ? {
+                ...current,
+                job: savedJob,
+              }
+            : current,
+        );
+      }
+      await refreshRef.current();
+      editFormRef.current.finishSubmit("success", creating ? "Job created." : "Job saved.");
+      setTimeout(() => {
+        editFormRef.current.close();
+        setFormTarget(null);
+        setMode("browse");
+      }, 700);
+    } catch (error) {
+      editFormRef.current.finishSubmit("error", formErrorMessage(error, "Couldn't save job."));
+    }
+  }, []);
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
@@ -177,14 +259,14 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
       }
       if (modeRef.current === "form") {
         if (key.name === "escape") {
+          if (editFormRef.current.submitState.status === "saving") return true;
           editFormRef.current.close();
           setMode("browse");
+          setFormTarget(null);
           return true;
         }
-        if (key.ctrl && key.name === "s") {
-          const result = editFormRef.current.submit();
-          doCreateRef.current(result.values);
-          setMode("browse");
+        if (isSaveKey(key)) {
+          void submitCurrentForm();
           return true;
         }
         if (key.name === "tab" && key.shift) {
@@ -193,6 +275,21 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
         }
         if (key.name === "tab") {
           editFormRef.current.nextField();
+          return true;
+        }
+        return true;
+      }
+      if (modeRef.current === "confirm") {
+        if (key.name === "y" || key.name === "return") {
+          const job = deleteTargetRef.current;
+          if (job) client.jobs.delete(job.id).then(() => refreshRef.current());
+          setDeleteTarget(null);
+          setMode("browse");
+          return true;
+        }
+        if (key.name === "n" || key.name === "escape") {
+          setDeleteTarget(null);
+          setMode("browse");
           return true;
         }
         return true;
@@ -220,25 +317,41 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
           refreshRef.current();
           return true;
         }
-        if (key.name === "t") {
-          const job = filteredRef.current[cursorRef.current];
-          if (job) client.jobs.trigger(job.id).then(() => refreshRef.current());
-          return true;
-        }
         if (key.name === "n") {
+          setFormIntent("create");
+          setFormTarget(null);
           editFormRef.current.open(jobFields());
           setMode("form");
           return true;
         }
       }
-      if (modeRef.current === "detail" && key.name === "escape") {
-        setMode("browse");
-        setDetail(null);
-        return true;
+      if (modeRef.current === "detail") {
+        if (key.name === "escape") {
+          setMode("browse");
+          setDetail(null);
+          return true;
+        }
+        if (key.name === "t" && detailRef.current) {
+          client.jobs.trigger(detailRef.current.job.id).then(() => refreshRef.current());
+          return true;
+        }
+        if (key.name === "e" && detailRef.current) {
+          setFormIntent("edit");
+          setFormTarget(detailRef.current.job);
+          editFormRef.current.open(jobFields(detailRef.current.job));
+          setMode("form");
+          return true;
+        }
+        if (key.name === "d" && detailRef.current) {
+          setDeleteTarget(detailRef.current.job);
+          setMode("confirm");
+          return true;
+        }
+        return false;
       }
       return false;
     },
-    [vimHandleKey, setFilterActive],
+    [submitCurrentForm, vimHandleKey, setFilterActive],
   );
 
   useEffect(() => {
@@ -274,7 +387,12 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
           .join("\n")
       : "No runs yet.";
     return (
-      <DetailPane title={`Job: ${j.name}`} fields={fields} body={`Recent Runs:\n${runsText}`} />
+      <DetailPane
+        title={`Job: ${j.name}`}
+        fields={fields}
+        body={`Recent Runs:\n${runsText}`}
+        hint="Esc back • e edit • d delete • t trigger • Up/Down scroll"
+      />
     );
   }
 
@@ -307,11 +425,25 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
         }
       />
       <EditFormOverlay
-        title="New Job"
+        title={formIntent === "create" ? "New Job" : "Edit Job"}
         fields={editForm.fields}
         focusIdx={editForm.focusIdx}
         active={mode === "form"}
         onChange={editForm.updateValue}
+        submitState={editForm.submitState}
+        onSubmit={submitCurrentForm}
+        onCancel={() => {
+          if (editForm.submitState.status === "saving") return;
+          editForm.close();
+          setMode("browse");
+          setFormTarget(null);
+        }}
+        onNextField={editForm.nextField}
+        onPrevField={editForm.prevField}
+      />
+      <ConfirmDialog
+        message={deleteTarget ? `Delete job "${deleteTarget.name}"?` : ""}
+        active={mode === "confirm"}
       />
     </box>
   );

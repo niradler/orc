@@ -88,7 +88,7 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
       countLabel: loading ? "Loading sessions…" : `${filtered.length} visible sessions`,
       filterQuery: query,
       filterActive,
-      navigationLocked: filterActive,
+      navigationLocked: filterActive || mode === "detail",
       selectionLabel:
         mode === "detail" && detail
           ? `Session detail • ${detail.agent}`
@@ -96,7 +96,7 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
             ? `${selectedSession.agent} • ${selectedSession.id.slice(-8)}`
             : "No session selected yet.",
       detailId: mode === "detail" ? (detail?.id ?? null) : null,
-      statusMessage: "Recent sessions help audit agent activity.",
+      statusMessage: mode === "detail" ? "Read-only detail • Esc back" : "Read-only audit surface",
     });
   }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
 
@@ -159,6 +159,7 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
         title={`Session: ${detail.agent}`}
         fields={fields}
         body={detail.summary ?? detail.snapshot ?? undefined}
+        hint="Esc back • Up/Down scroll"
       />
     );
   }
