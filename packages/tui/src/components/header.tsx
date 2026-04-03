@@ -27,13 +27,16 @@ function trimTo(text: string, width: number): string {
 
 export function Header({ route, project, detailId, connected, connectionError }: Props) {
   const { width } = useTerminalDimensions();
+  const compact = width < 84;
 
   const contextParts = [ROUTE_LABELS[route]];
   if (project) contextParts.push(project);
   if (detailId) contextParts.push(trimTo(detailId, 12));
-  const contextLabel = contextParts.join("  /  ");
+  const contextLabel = trimTo(contextParts.join("  /  "), compact ? width - 6 : width - 26);
   const statusText = connected ? "API online" : "API offline";
-  const detail = connectionError ? trimTo(connectionError, Math.max(18, width - 54)) : contextLabel;
+  const detail = connectionError
+    ? trimTo(connectionError, Math.max(18, compact ? width - 6 : width - 54))
+    : contextLabel;
 
   return (
     <box
@@ -45,7 +48,12 @@ export function Header({ route, project, detailId, connected, connectionError }:
       paddingLeft={1}
       paddingRight={1}
     >
-      <box flexDirection="row" justifyContent="space-between" alignItems="center">
+      <box
+        flexDirection={compact ? "column" : "row"}
+        justifyContent="space-between"
+        alignItems={compact ? "flex-start" : "center"}
+        gap={compact ? 1 : 0}
+      >
         <box flexDirection="row" gap={1} alignItems="center">
           <text fg={colors.logo}>{"⬡"}</text>
           <text fg={colors.text}>
@@ -65,7 +73,12 @@ export function Header({ route, project, detailId, connected, connectionError }:
           <text fg={connected ? colors.text : colors.error}>{statusText}</text>
         </box>
       </box>
-      <box flexDirection="row" justifyContent="space-between" marginTop={1}>
+      <box
+        flexDirection={compact ? "column" : "row"}
+        justifyContent="space-between"
+        marginTop={1}
+        gap={compact ? 1 : 0}
+      >
         <box flexDirection="row" gap={1}>
           <text fg={colors.accent}>{"Workspace"}</text>
           <text fg={colors.text}>{contextLabel}</text>

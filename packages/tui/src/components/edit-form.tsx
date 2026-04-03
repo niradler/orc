@@ -100,24 +100,26 @@ type TextareaRef = {
 export function EditFormOverlay({ title, fields, focusIdx, active, onChange }: RenderProps) {
   const { width, height } = useTerminalDimensions();
   const textareaRefs = useRef<Record<string, TextareaRef>>({});
+  const compact = width < 88;
 
-  const boxWidth = Math.min(92, width - 4);
+  const boxWidth = compact ? Math.max(28, width - 2) : Math.min(92, width - 4);
   const contentHeight = useMemo(() => {
     return fields.reduce(
       (total, field) => total + (field.type === "textarea" ? (field.height ?? 6) : 3),
       2,
     );
   }, [fields]);
-  const boxHeight = Math.min(height - 2, contentHeight + 8);
+  const boxHeight = Math.max(10, Math.min(height - 2, contentHeight + (compact ? 6 : 8)));
 
   if (!active) return null;
 
   return (
     <box
       position="absolute"
-      top={Math.max(1, Math.floor(height / 2) - Math.floor(boxHeight / 2))}
-      left={Math.max(2, Math.floor((width - boxWidth) / 2))}
+      top={Math.max(1, Math.min(height - boxHeight - 1, Math.floor((height - boxHeight) / 2)))}
+      left={Math.max(1, Math.floor((width - boxWidth) / 2))}
       width={boxWidth}
+      height={boxHeight}
       flexDirection="column"
       border
       borderStyle="rounded"
@@ -128,13 +130,15 @@ export function EditFormOverlay({ title, fields, focusIdx, active, onChange }: R
     >
       <box
         flexDirection="row"
-        justifyContent="space-between"
-        alignItems="center"
+        justifyContent={compact ? "flex-start" : "space-between"}
+        alignItems={compact ? "flex-start" : "center"}
+        flexWrap={compact ? "wrap" : "no-wrap"}
         backgroundColor={colors.bgLight}
         paddingLeft={1}
         paddingRight={1}
-        paddingTop={1}
-        paddingBottom={1}
+        paddingTop={0}
+        paddingBottom={0}
+        flexShrink={0}
       >
         <text fg={colors.accent}>
           <strong>{title}</strong>
@@ -144,7 +148,8 @@ export function EditFormOverlay({ title, fields, focusIdx, active, onChange }: R
 
       <scrollbox
         flexGrow={1}
-        height={Math.max(8, boxHeight - 6)}
+        height="100%"
+        minHeight={0}
         viewportOptions={{ backgroundColor: colors.bgElevated }}
         contentOptions={{ backgroundColor: colors.bgElevated }}
         scrollbarOptions={{
@@ -154,7 +159,7 @@ export function EditFormOverlay({ title, fields, focusIdx, active, onChange }: R
           },
         }}
       >
-        <box flexDirection="column" gap={1} paddingTop={1}>
+        <box flexDirection="column" gap={1} paddingTop={1} paddingBottom={1}>
           {fields.map((field, index) => {
             const focused = focusIdx === index;
             const fieldType = field.type ?? (field.options ? "select" : "input");

@@ -1,4 +1,5 @@
 import { type BoxRenderable, LayoutEvents } from "@opentui/core";
+import { useTerminalDimensions } from "@opentui/react";
 import { useEffect, useRef, useState } from "react";
 import { colors } from "../theme.js";
 import type { Column } from "../types.js";
@@ -35,9 +36,10 @@ export function ResourceTable<T>({
   hasActiveFilter,
   selectedSummary,
 }: Props<T>) {
+  const { height } = useTerminalDimensions();
   const showEmpty = !loading && data.length === 0;
   const bodyRef = useRef<BoxRenderable | null>(null);
-  const [visibleRows, setVisibleRows] = useState(5);
+  const [visibleRows, setVisibleRows] = useState(Math.max(8, height - 18));
 
   useEffect(() => {
     const body = bodyRef.current;
@@ -53,6 +55,10 @@ export function ResourceTable<T>({
       body.off(LayoutEvents.LAYOUT_CHANGED, handleLayoutChange);
     };
   }, []);
+
+  useEffect(() => {
+    setVisibleRows(Math.max(8, height - 18));
+  }, [height]);
 
   let startIdx = 0;
   if (cursor >= startIdx + visibleRows) {
@@ -113,7 +119,14 @@ export function ResourceTable<T>({
           </text>
         </box>
       ) : (
-        <box ref={bodyRef} flexDirection="column" flexGrow={1}>
+        <box
+          ref={bodyRef}
+          flexDirection="column"
+          flexGrow={1}
+          onSizeChange={function (this: BoxRenderable) {
+            setVisibleRows(Math.max(1, this.height));
+          }}
+        >
           {visible.map((item, vi) => {
             const realIdx = startIdx + vi;
             const selected = realIdx === cursor;
