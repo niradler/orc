@@ -187,6 +187,16 @@ export type CreateMemoryInput = {
   expires_at?: string;
 };
 
+export type UpdateMemoryInput = {
+  content?: string;
+  title?: string;
+  type?: "fact" | "decision" | "event" | "rule" | "discovery";
+  source?: string;
+  scope?: string;
+  tags?: string[];
+  importance?: "low" | "normal" | "high" | "critical";
+};
+
 export type CreateJobInput = {
   name: string;
   project_id?: string;

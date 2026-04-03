@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { shortId } from "@orc/core/ids";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
 import { dryRunMsg, isDryRun, isJson, jsonOut } from "../output.js";
@@ -23,7 +24,7 @@ export function promptCommand() {
       if (prompts.length === 0) return console.log("No prompts found.");
 
       for (const p of prompts) {
-        const id = p.id.slice(-6);
+        const id = shortId(p.id);
         const skill = p.is_skill ? color(" [skill]", "36") : "";
         const ver = color(`v${p.version}`, "2");
         const name = p.name.length > 40 ? `${p.name.slice(0, 39)}…` : p.name;
@@ -85,7 +86,7 @@ export function promptCommand() {
       });
       if (error) return console.error("Error:", error);
       if (isJson()) return jsonOut(data);
-      console.log(`Created: [${data?.id.slice(-6)}] ${data?.name}`);
+      console.log(`Created: [${shortId(data?.id)}] ${data?.name}`);
     });
 
   cmd
@@ -115,11 +116,11 @@ export function promptCommand() {
       if (opts.tags) input.tags = opts.tags.split(",").map((s: string) => s.trim());
       if (opts.pinned !== undefined) input.pinned = opts.pinned;
 
-      if (isDryRun()) return dryRunMsg("update", `prompt [${full.slice(-6)}]`, input);
+      if (isDryRun()) return dryRunMsg("update", `prompt [${shortId(full)}]`, input);
       const { data, error } = await client.prompts.update(full, input);
       if (error) return console.error("Error:", error);
       if (isJson()) return jsonOut(data);
-      console.log(`Updated: [${data?.id.slice(-6)}] ${data?.name}`);
+      console.log(`Updated: [${shortId(data?.id)}] ${data?.name}`);
     });
 
   cmd
@@ -221,7 +222,7 @@ export function promptCommand() {
         return console.error(`Source not found: ${source}`);
       }
 
-      const { name, description, template, tags: parsedTags, extras } = parseImportContent(content);
+      const { name, description, template, tags: parsedTags } = parseImportContent(content);
       const allTags = [
         ...parsedTags,
         ...(opts.tags ? opts.tags.split(",").map((s: string) => s.trim()) : []),
@@ -243,7 +244,7 @@ export function promptCommand() {
         const { data, error } = await client.prompts.update(match.id, updateInput);
         if (error) return console.error("Error:", error);
         if (isJson()) return jsonOut(data);
-        console.log(`Updated: [${data?.id.slice(-6)}] ${data?.name}`);
+        console.log(`Updated: [${shortId(data?.id)}] ${data?.name}`);
       } else {
         if (isDryRun()) return dryRunMsg("create", `prompt ${name}`, { template, tags: allTags });
         const createInput: Record<string, unknown> = {
@@ -259,7 +260,7 @@ export function promptCommand() {
         );
         if (error) return console.error("Error:", error);
         if (isJson()) return jsonOut(data);
-        console.log(`Imported: [${data?.id.slice(-6)}] ${data?.name} (from ${sourceUrl})`);
+        console.log(`Imported: [${shortId(data?.id)}] ${data?.name} (from ${sourceUrl})`);
       }
     });
 

@@ -1,13 +1,15 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
+import { createLogger } from "@orc/core/logger";
 import type { TaskStatus } from "@orc/core/types";
-import { TaskPrioritySchema, TaskStatusSchema } from "@orc/core/types";
+import { AgentBackendSchema, TaskPrioritySchema, TaskStatusSchema } from "@orc/core/types";
 import { getDb, getSqlite } from "@orc/db/client";
 import { comments, task_links, tasks } from "@orc/db/schema";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 import { and, desc, eq } from "drizzle-orm";
-import { checkBlockers, rollupParentProgress, unblockDependents } from "../lib/task-deps.js";
+
+const logger = createLogger("api:tasks");
 
 const app = new OpenAPIHono();
 
@@ -57,7 +59,7 @@ const CreateTaskSchema = z
     author: z.string().optional().default("human"),
     prompt_id: z.string().optional(),
     required_review: z.boolean().optional().default(true),
-    agent_backend: z.enum(["claude", "codex", "cursor"]).optional(),
+    agent_backend: AgentBackendSchema.optional(),
     max_review_rounds: z.number().int().min(1).optional().default(3),
   })
   .openapi("CreateTask");
@@ -71,6 +73,8 @@ const UpdateTaskSchema = z
     due_at: z.string().datetime().optional(),
     tags: z.array(z.string()).optional(),
     comment: z.string().optional(),
+    agent_backend: AgentBackendSchema.optional(),
+    prompt_id: z.string().optional(),
   })
   .openapi("UpdateTask");
 
@@ -152,7 +156,7 @@ const BatchTaskItem = z.object({
   tags: z.array(z.string()).optional(),
   prompt_id: z.string().optional(),
   required_review: z.boolean().optional().default(true),
-  agent_backend: z.enum(["claude", "codex", "cursor"]).optional(),
+  agent_backend: AgentBackendSchema.optional(),
   max_review_rounds: z.number().int().min(1).optional().default(3),
   depends_on: z.array(z.string()).optional().describe("Refs of tasks that block this one"),
   subtask_of: z.string().optional().describe("Ref of parent task"),
@@ -331,7 +335,7 @@ app.openapi(createRoute_, async (c) => {
     author: body.author,
     prompt_id: body.prompt_id,
     required_review: body.required_review ?? true,
-    agent_backend: body.agent_backend as "claude" | "codex" | "cursor" | undefined,
+    agent_backend: body.agent_backend as string | undefined,
     max_review_rounds: body.max_review_rounds ?? 3,
     created_at: now,
     updated_at: now,
@@ -339,6 +343,9 @@ app.openapi(createRoute_, async (c) => {
 
   const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!task) throw new Error("Expected task to exist after write");
+  import("@orc/runner/task-loop")
+    .then((m) => m.triggerTaskCheck())
+    .catch((err) => logger.warn("triggerTaskCheck failed", { err }));
   return c.json(toDto(task), 201);
 });
 
@@ -368,6 +375,8 @@ app.openapi(updateRoute, async (c) => {
     ...(body.priority !== undefined ? { priority: body.priority } : {}),
     ...(body.due_at !== undefined ? { due_at: new Date(body.due_at) } : {}),
     ...(body.tags !== undefined ? { tags: body.tags } : {}),
+    ...(body.agent_backend !== undefined ? { agent_backend: body.agent_backend } : {}),
+    ...(body.prompt_id !== undefined ? { prompt_id: body.prompt_id } : {}),
   };
   if (Object.keys(nonStatusFields).length > 0) {
     await db
@@ -452,7 +461,7 @@ app.openapi(batchCreateRoute, async (c) => {
         tags: item.tags,
         prompt_id: item.prompt_id,
         required_review: item.required_review ?? true,
-        agent_backend: item.agent_backend as "claude" | "codex" | "cursor" | undefined,
+        agent_backend: item.agent_backend as string | undefined,
         max_review_rounds: item.max_review_rounds ?? 3,
         created_at: now,
         updated_at: now,
@@ -502,6 +511,9 @@ app.openapi(batchCreateRoute, async (c) => {
     throw err;
   }
 
+  import("@orc/runner/task-loop")
+    .then((m) => m.triggerTaskCheck())
+    .catch((err) => logger.warn("triggerTaskCheck failed", { err }));
   return c.json({ created: items.length, mapping }, 201);
 });
 

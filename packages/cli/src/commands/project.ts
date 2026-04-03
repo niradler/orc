@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "@orc/core/config";
+import { shortId } from "@orc/core/ids";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
 import { dryRunMsg, isDryRun, isJson, jsonOut } from "../output.js";
@@ -137,7 +138,7 @@ export function projectCommand() {
         writeConfigFile(cfg);
       }
 
-      console.log(`Created: ${data?.name} [${data?.id.slice(-6)}]`);
+      console.log(`Created: ${data?.name} [${shortId(data?.id)}]`);
     });
 
   cmd
@@ -184,7 +185,7 @@ export function projectCommand() {
       for (const t of tasks.slice(0, 10)) {
         const si = taskStatusIcon(t.status);
         const pi = priorityIcon(t.priority);
-        console.log(`  ${si} ${pi} [${t.id.slice(-6)}] ${t.title.padEnd(36)} ${t.status}`);
+        console.log(`  ${si} ${pi} [${shortId(t.id)}] ${t.title.padEnd(36)} ${t.status}`);
       }
       if (tasks.length > 10) console.log(`  ... and ${tasks.length - 10} more`);
       console.log();
@@ -254,7 +255,7 @@ export function projectCommand() {
       });
       if (error) return console.error("Error:", error);
       if (isJson()) return jsonOut(data);
-      console.log(`Updated: ${data?.name} [${data?.id.slice(-6)}]`);
+      console.log(`Updated: ${data?.name} [${shortId(data?.id)}]`);
     });
 
   cmd
@@ -269,7 +270,7 @@ export function projectCommand() {
       const { data, error } = await client.projects.update(project.id, { status: "archived" });
       if (error) return console.error("Error:", error);
       if (isJson()) return jsonOut(data);
-      console.log(`Archived: ${data?.name} [${data?.id.slice(-6)}]`);
+      console.log(`Archived: ${data?.name} [${shortId(data?.id)}]`);
     });
 
   cmd
@@ -284,7 +285,7 @@ export function projectCommand() {
       const { error } = await client.projects.delete(project.id);
       if (error) return console.error("Error:", error);
       if (isJson()) return jsonOut({ deleted: project.id, name });
-      console.log(`Deleted project: ${name} [${project.id.slice(-6)}]`);
+      console.log(`Deleted project: ${name} [${shortId(project.id)}]`);
     });
 
   return cmd;

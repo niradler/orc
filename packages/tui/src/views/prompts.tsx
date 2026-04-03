@@ -3,18 +3,14 @@ import type { Prompt } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../components/confirm-dialog.js";
 import { DetailPane } from "../components/detail-pane.js";
-import {
-  EditFormOverlay,
-  type FormField,
-  type FormResult,
-  useEditForm,
-} from "../components/edit-form.js";
+import { EditFormOverlay, type FormField, useEditForm } from "../components/edit-form.js";
 import { ResourceTable } from "../components/resource-table.js";
+import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
 import { colors } from "../theme.js";
-import type { Column, KeyEvent, ViewKeyHandler, ViewMode } from "../types.js";
+import type { Column, KeyEvent, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
 
 const client = createOrcClient();
 
@@ -49,46 +45,71 @@ const columns: Column<Prompt>[] = [
 ];
 
 function promptFields(p?: Prompt): FormField[] {
+  const skillOptions: SelectOption[] = [
+    { label: "No", value: "no" },
+    { label: "Yes", value: "yes" },
+  ];
   return [
-    { key: "name", label: "Name", value: p?.name ?? "" },
-    { key: "description", label: "Description", value: p?.description ?? "" },
-    { key: "template", label: "Template", value: p?.template ?? "" },
+    { key: "name", label: "Name", value: p?.name ?? "", placeholder: "prompt-name" },
+    {
+      key: "description",
+      label: "Description",
+      value: p?.description ?? "",
+      type: "textarea",
+      height: 4,
+      placeholder: "Short description for search and discovery",
+    },
+    {
+      key: "template",
+      label: "Template",
+      value: p?.template ?? "",
+      type: "textarea",
+      height: 10,
+      placeholder: "Prompt template contents",
+    },
     {
       key: "is_skill",
       label: "Is Skill",
       value: p?.is_skill ? "yes" : "no",
-      options: ["no", "yes"],
+      type: "select",
+      options: skillOptions,
     },
-    { key: "tags", label: "Tags", value: p?.tags?.join(", ") ?? "" },
+    { key: "tags", label: "Tags", value: p?.tags?.join(", ") ?? "", placeholder: "coding, review" },
   ];
 }
 
 type Props = {
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
-  onStateChange: (mode: ViewMode, filterQuery: string, filterActive: boolean) => void;
+  onStateChange: (state: ViewState) => void;
 };
 
 export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
-  const [mode, setMode] = useState<ViewMode>("list");
+  const [mode, setMode] = useState<"browse" | "detail" | "form" | "confirm">("browse");
   const [detail, setDetail] = useState<Prompt | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Prompt | null>(null);
+  const [formIntent, setFormIntent] = useState<"create" | "edit">("create");
+  const [formTarget, setFormTarget] = useState<Prompt | null>(null);
   const editForm = useEditForm();
 
-  const { data, loading, refresh } = usePolling(() => client.prompts.list({ limit: 100 }), 10000);
+  const { data, loading, error, refresh } = usePolling(
+    () => client.prompts.list({ limit: 100 }),
+    10000,
+  );
   const prompts = data?.prompts ?? [];
   const {
     filtered,
     query,
     active: filterActive,
-    handleKey: filterHandleKey,
+    setQuery,
+    setActive: setFilterActive,
   } = useFilter(
     prompts,
     (p) => `${p.name} ${p.description ?? ""} ${p.tags?.join(" ") ?? ""}`,
-    mode === "list",
+    true,
   );
   const { cursor, handleKey: vimHandleKey } = useVimList(
     filtered.length,
-    mode === "list" && !filterActive,
+    mode === "browse" && !filterActive,
   );
 
   const modeRef = useRef(mode);
@@ -107,10 +128,30 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
   deleteTargetRef.current = deleteTarget;
   const detailRef = useRef(detail);
   detailRef.current = detail;
+  const formIntentRef = useRef(formIntent);
+  formIntentRef.current = formIntent;
+  const formTargetRef = useRef(formTarget);
+  formTargetRef.current = formTarget;
 
   useEffect(() => {
-    onStateChange(mode, query, filterActive);
-  }, [mode, query, filterActive, onStateChange]);
+    const selectedPrompt = filtered[cursor];
+    onStateChange({
+      mode: filterActive ? "filter" : mode,
+      title: "Prompts",
+      countLabel: loading ? "Loading prompts…" : `${filtered.length} visible prompts`,
+      filterQuery: query,
+      filterActive,
+      navigationLocked: filterActive || mode === "form" || mode === "confirm",
+      selectionLabel:
+        mode === "detail" && detail
+          ? `Prompt detail • ${detail.name}`
+          : selectedPrompt
+            ? `${selectedPrompt.name} • v${selectedPrompt.version}`
+            : "No prompt selected yet.",
+      detailId: mode === "detail" ? (detail?.id ?? null) : null,
+      statusMessage: "Prompts and skills share the same TUI flow here.",
+    });
+  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
 
   const doCreate = useCallback((vals: Record<string, string>) => {
     if (!vals.name || !vals.template) return;
@@ -132,7 +173,7 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
   }, []);
 
   const doEdit = useCallback((vals: Record<string, string>) => {
-    const p = filteredRef.current[cursorRef.current];
+    const p = formTargetRef.current ?? filteredRef.current[cursorRef.current];
     if (!p) return;
     const tags = vals.tags
       ? vals.tags
@@ -158,33 +199,60 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
-      if (modeRef.current === "edit" || modeRef.current === "create") {
-        const result: FormResult | null = editFormRef.current.handleKey(key);
-        if (result?.submitted) {
-          if (modeRef.current === "create") doCreateRef.current(result.values);
-          else doEditRef.current(result.values);
+      if (filterActiveRef.current) {
+        if (key.name === "escape" || key.name === "return") {
+          setFilterActive(false);
         }
-        if (!editFormRef.current.active) setMode("list");
         return true;
       }
+
+      if (modeRef.current === "form") {
+        if (key.name === "escape") {
+          editFormRef.current.close();
+          setMode("browse");
+          setFormTarget(null);
+          return true;
+        }
+        if (key.ctrl && key.name === "s") {
+          const result = editFormRef.current.submit();
+          if (formIntentRef.current === "create") doCreateRef.current(result.values);
+          else doEditRef.current(result.values);
+          setMode("browse");
+          setFormTarget(null);
+          return true;
+        }
+        if (key.name === "tab" && key.shift) {
+          editFormRef.current.prevField();
+          return true;
+        }
+        if (key.name === "tab") {
+          editFormRef.current.nextField();
+          return true;
+        }
+        return true;
+      }
+
       if (modeRef.current === "confirm") {
-        if (key.name === "y") {
+        if (key.name === "y" || key.name === "return") {
           const p = deleteTargetRef.current;
           if (p) client.prompts.delete(p.id).then(() => refreshRef.current());
           setDeleteTarget(null);
-          setMode("list");
+          setMode("browse");
           return true;
         }
         if (key.name === "n" || key.name === "escape") {
           setDeleteTarget(null);
-          setMode("list");
+          setMode("browse");
           return true;
         }
         return true;
       }
-      if (filterHandleKey(key)) return true;
-      if (modeRef.current === "list" && !filterActiveRef.current) {
+      if (modeRef.current === "browse" && !filterActiveRef.current) {
         if (vimHandleKey(key)) return true;
+        if (key.name === "/" || key.name === "f") {
+          setFilterActive(true);
+          return true;
+        }
         if (key.name === "return") {
           const p = filteredRef.current[cursorRef.current];
           if (p)
@@ -201,15 +269,19 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
           return true;
         }
         if (key.name === "n") {
+          setFormIntent("create");
+          setFormTarget(null);
           editFormRef.current.open(promptFields());
-          setMode("create");
+          setMode("form");
           return true;
         }
         if (key.name === "e") {
           const p = filteredRef.current[cursorRef.current];
           if (p) {
+            setFormIntent("edit");
+            setFormTarget(p);
             editFormRef.current.open(promptFields(p));
-            setMode("edit");
+            setMode("form");
           }
           return true;
         }
@@ -224,13 +296,15 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
       }
       if (modeRef.current === "detail") {
         if (key.name === "escape") {
-          setMode("list");
+          setMode("browse");
           setDetail(null);
           return true;
         }
         if (key.name === "e" && detailRef.current) {
+          setFormIntent("edit");
+          setFormTarget(detailRef.current);
           editFormRef.current.open(promptFields(detailRef.current));
-          setMode("edit");
+          setMode("form");
           return true;
         }
         if (key.name === "d" && detailRef.current) {
@@ -242,7 +316,7 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
       }
       return false;
     },
-    [filterHandleKey, vimHandleKey],
+    [vimHandleKey, setFilterActive],
   );
 
   useEffect(() => {
@@ -276,18 +350,38 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
 
   return (
     <box flexDirection="column" flexGrow={1}>
-      <box flexDirection="row" gap={2} marginBottom={0} paddingLeft={1}>
-        <text fg={colors.text}>{"PROMPTS"}</text>
-        <text fg={colors.textDim}>{loading ? "loading…" : `${filtered.length} prompts`}</text>
-        {query && <text fg={colors.accent}>{`/${query}`}</text>}
-      </box>
-      <ResourceTable columns={columns} data={filtered} cursor={cursor} keyFn={(p) => p.id} />
+      <ViewToolbar
+        title="Prompts"
+        countLabel={loading ? "Loading prompts…" : `${filtered.length} visible prompts`}
+        filterQuery={query}
+        filterActive={filterActive}
+        filterPlaceholder="Search by name, tags, or description"
+        onFilterChange={setQuery}
+        onFilterSubmit={() => setFilterActive(false)}
+        statusMessage="Prompt templates and skills share one surface."
+      />
+      <ResourceTable
+        columns={columns}
+        data={filtered}
+        cursor={cursor}
+        keyFn={(p) => p.id}
+        loading={loading}
+        error={error}
+        emptyMessage="No prompts available yet."
+        filteredEmptyMessage="No prompts match the current search."
+        hasActiveFilter={Boolean(query)}
+        selectedSummary={
+          filtered[cursor]
+            ? `${filtered[cursor]?.name} • v${filtered[cursor]?.version}`
+            : "Create a prompt with n."
+        }
+      />
       <EditFormOverlay
-        title={mode === "create" ? "New Prompt" : "Edit Prompt"}
+        title={formIntent === "create" ? "New Prompt" : "Edit Prompt"}
         fields={editForm.fields}
         focusIdx={editForm.focusIdx}
-        editing={editForm.editing}
-        active={mode === "edit" || mode === "create"}
+        active={mode === "form"}
+        onChange={editForm.updateValue}
       />
       <ConfirmDialog
         message={deleteTarget ? `Delete prompt "${deleteTarget.name}"?` : ""}

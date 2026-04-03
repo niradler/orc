@@ -22,51 +22,6 @@ type PickedTask = {
   project_id: string | null;
 };
 
-function pickNextTask(): PickedTask | null {
-  const sqlite = getSqlite();
-  const row = sqlite
-    .query(
-      `SELECT t.id, t.title, t.body, t.status, t.prompt_id, t.agent_backend, t.tags, t.project_id
-       FROM tasks t
-       WHERE (t.status = 'todo' OR t.status = 'changes_requested')
-         AND t.claimed_by IS NULL
-         AND (t.prompt_id IS NOT NULL OR t.agent_backend IS NOT NULL
-              OR EXISTS (SELECT 1 FROM json_each(t.tags) j WHERE j.value = 'agent'))
-         AND NOT EXISTS (
-           SELECT 1 FROM (
-             SELECT tl.from_task_id AS blocker_id FROM task_links tl WHERE tl.to_task_id = t.id AND tl.link_type = 'blocks'
-             UNION
-             SELECT tl.to_task_id AS blocker_id FROM task_links tl WHERE tl.from_task_id = t.id AND tl.link_type = 'blocked_by'
-           ) b JOIN tasks blocker ON blocker.id = b.blocker_id
-           WHERE blocker.status NOT IN ('done', 'cancelled')
-         )
-       ORDER BY
-         CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
-         t.created_at ASC
-       LIMIT 1`,
-    )
-    .get() as PickedTask | null;
-  return row;
-}
-
-function pickReviewTask(): PickedTask | null {
-  const sqlite = getSqlite();
-  const row = sqlite
-    .query(
-      `SELECT t.id, t.title, t.body, t.status, t.prompt_id, t.agent_backend, t.tags, t.project_id
-       FROM tasks t
-       WHERE t.status = 'review'
-         AND t.claimed_by IS NULL
-         AND EXISTS (SELECT 1 FROM json_each(t.tags) j WHERE j.value = 'agent-review')
-       ORDER BY
-         CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
-         t.updated_at ASC
-       LIMIT 1`,
-    )
-    .get() as PickedTask | null;
-  return row;
-}
-
 function getActiveWorkerCount(projectId?: string | null): number {
   const sqlite = getSqlite();
   if (projectId) {
@@ -206,7 +161,7 @@ async function driveWorkerLoop(
   cwd: string,
   previousRuntimeSessionId?: string | undefined,
 ): Promise<void> {
-  const db = getDb();
+  const _db = getDb();
   const sqlite = getSqlite();
   let session: AgentSession | null = null;
 
@@ -514,6 +469,47 @@ export function cleanupStaleSessions(): number {
   return stale.length;
 }
 
+function pickAllReviewTasks(): PickedTask[] {
+  const sqlite = getSqlite();
+  return sqlite
+    .query(
+      `SELECT t.id, t.title, t.body, t.status, t.prompt_id, t.agent_backend, t.tags, t.project_id
+       FROM tasks t
+       WHERE t.status = 'review'
+         AND t.claimed_by IS NULL
+         AND EXISTS (SELECT 1 FROM json_each(t.tags) j WHERE j.value = 'agent-review')
+       ORDER BY
+         CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
+         t.updated_at ASC`,
+    )
+    .all() as PickedTask[];
+}
+
+function pickAllNextTasks(): PickedTask[] {
+  const sqlite = getSqlite();
+  return sqlite
+    .query(
+      `SELECT t.id, t.title, t.body, t.status, t.prompt_id, t.agent_backend, t.tags, t.project_id
+       FROM tasks t
+       WHERE (t.status = 'todo' OR t.status = 'changes_requested')
+         AND t.claimed_by IS NULL
+         AND (t.prompt_id IS NOT NULL OR t.agent_backend IS NOT NULL
+              OR EXISTS (SELECT 1 FROM json_each(t.tags) j WHERE j.value = 'agent'))
+         AND NOT EXISTS (
+           SELECT 1 FROM (
+             SELECT tl.from_task_id AS blocker_id FROM task_links tl WHERE tl.to_task_id = t.id AND tl.link_type = 'blocks'
+             UNION
+             SELECT tl.to_task_id AS blocker_id FROM task_links tl WHERE tl.from_task_id = t.id AND tl.link_type = 'blocked_by'
+           ) b JOIN tasks blocker ON blocker.id = b.blocker_id
+           WHERE blocker.status NOT IN ('done', 'cancelled')
+         )
+       ORDER BY
+         CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
+         t.created_at ASC`,
+    )
+    .all() as PickedTask[];
+}
+
 async function runCycle(): Promise<string> {
   const config = loadConfig();
   const lines: string[] = [];
@@ -529,28 +525,39 @@ async function runCycle(): Promise<string> {
     return lines.join("\n");
   }
 
-  const reviewTask = pickReviewTask();
-  if (reviewTask && !isAtCapacity(reviewTask)) {
+  let spawned = 0;
+
+  // Review tasks run in parallel with work tasks and with each other
+  const reviewTasks = pickAllReviewTasks();
+  for (const reviewTask of reviewTasks) {
+    if (getActiveWorkerCount() >= config.agent_loop.max_workers) break;
+    if (isAtCapacity(reviewTask)) continue;
     logger.info(`Spawning reviewer for task ${reviewTask.id}: "${reviewTask.title}"`);
     await spawnReviewer(reviewTask);
     lines.push(`Spawned reviewer for: [${reviewTask.id}] ${reviewTask.title}`);
-    return lines.join("\n");
+    spawned++;
   }
 
-  const task = pickNextTask();
-  if (!task) {
-    lines.push("No eligible tasks");
-    return lines.join("\n");
+  // Work tasks: one per project, different projects run in parallel
+  const projectsWithWorker = new Set<string>();
+  const allTasks = pickAllNextTasks();
+  for (const task of allTasks) {
+    if (getActiveWorkerCount() >= config.agent_loop.max_workers) break;
+    const projectKey = task.project_id ?? "__no_project__";
+    if (projectsWithWorker.has(projectKey)) continue;
+    if (isAtCapacity(task)) {
+      lines.push(`At capacity for project ${task.project_id ?? "global"}`);
+      projectsWithWorker.add(projectKey);
+      continue;
+    }
+    logger.info(`Spawning worker for task ${task.id}: "${task.title}"`);
+    await spawnWorker(task);
+    lines.push(`Spawned worker for: [${task.id}] ${task.title}`);
+    projectsWithWorker.add(projectKey);
+    spawned++;
   }
 
-  if (isAtCapacity(task)) {
-    lines.push(`At capacity for task ${task.id} (project: ${task.project_id ?? "global"})`);
-    return lines.join("\n");
-  }
-
-  logger.info(`Spawning worker for task ${task.id}: "${task.title}"`);
-  await spawnWorker(task);
-  lines.push(`Spawned worker for: [${task.id}] ${task.title}`);
+  if (spawned === 0) lines.push("No eligible tasks");
   return lines.join("\n");
 }
 
@@ -590,10 +597,21 @@ export async function ensureSystemJob(): Promise<string> {
   return id;
 }
 
+let cycleRunning = false;
+
 export async function recordedCycle(): Promise<void> {
+  if (cycleRunning) {
+    logger.debug("Skipping cycle — another cycle is already running");
+    return;
+  }
+  cycleRunning = true;
+
   const db = getDb();
   const job = await db.query.jobs.findFirst({ where: eq(jobs.name, SYSTEM_JOB_NAME) });
-  if (!job) return;
+  if (!job) {
+    cycleRunning = false;
+    return;
+  }
 
   const runId = ulid();
   const now = new Date();
@@ -624,6 +642,8 @@ export async function recordedCycle(): Promise<void> {
       .update(job_runs)
       .set({ status: "failed", ended_at: new Date(), error_msg: errMsg })
       .where(eq(job_runs.id, runId));
+  } finally {
+    cycleRunning = false;
   }
 }
 
@@ -636,7 +656,7 @@ export async function startTaskLoop(): Promise<void> {
     return;
   }
 
-  const jobId = await ensureSystemJob();
+  const _jobId = await ensureSystemJob();
   const cronExpr = `*/${config.agent_loop.poll_interval_minutes} * * * *`;
 
   logger.info(
@@ -657,4 +677,19 @@ export function stopTaskLoop(): void {
     loopCron = null;
     logger.info("Task loop stopped");
   }
+}
+
+let triggerDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function triggerTaskCheck(): void {
+  if (!loopCron) {
+    logger.debug("triggerTaskCheck called but task loop is not running");
+    return;
+  }
+  if (triggerDebounceTimer) return;
+  triggerDebounceTimer = setTimeout(() => {
+    triggerDebounceTimer = null;
+    logger.info("Task check triggered by task change");
+    recordedCycle().catch((err) => logger.error(`Triggered cycle error: ${String(err)}`));
+  }, 500);
 }

@@ -1,20 +1,18 @@
 import { createHash } from "node:crypto";
+import { resolve } from "node:path";
 import { loadConfig } from "@orc/core/config";
-import { ulid } from "@orc/core/ids";
+import { shortId, ulid } from "@orc/core/ids";
+import { createLogger } from "@orc/core/logger";
+import { listSkillReferenceFiles } from "@orc/core/skill-refs";
 import type { TaskStatus } from "@orc/core/types";
+import { AgentBackendSchema } from "@orc/core/types";
 import { getDb, getSqlite } from "@orc/db/client";
-import {
-  comments,
-  job_runs,
-  jobs,
-  memories,
-  projects,
-  prompts,
-  sessions,
-  tasks,
-} from "@orc/db/schema";
+import { job_runs, jobs, memories, projects, prompts, sessions, tasks } from "@orc/db/schema";
 import { executeJob } from "@orc/runner/executor";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
+
+const logger = createLogger("mcp:tools");
+
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getLayer3, searchLayer1 } from "./search.js";
@@ -58,12 +56,35 @@ export const toolDefinitions = [
       "'event' for things that happened, 'fact' for general knowledge.",
     inputSchema: z.object({
       content: z.string().describe("Content to remember"),
-      title: z.string().optional().describe("Short label (≤60 chars) for quick scanning"),
+      title: z
+        .string()
+        .optional()
+        .describe("Short label (≤60 chars) — what it is and when to use it"),
       type: z.enum(["fact", "decision", "event", "rule", "discovery"]).optional().default("fact"),
       scope: z.string().optional().describe("Scope (e.g. domain area)"),
       tags: z.array(z.string()).optional(),
       importance: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
+      source: z
+        .string()
+        .optional()
+        .describe("Source reference (auto-detected from agent env if omitted)"),
       project: projectParam,
+    }),
+  },
+  {
+    name: "memory_update",
+    description:
+      "Update an existing memory by ID. Only provided fields are changed; others remain untouched. " +
+      "Prefer this over delete+recreate to preserve history (created_at, access_count).",
+    inputSchema: z.object({
+      id: z.string().describe("Memory ID to update"),
+      content: z.string().optional().describe("New content"),
+      title: z.string().optional().describe("New title — what it is and when to use it"),
+      type: z.enum(["fact", "decision", "event", "rule", "discovery"]).optional(),
+      scope: z.string().optional().describe("New scope"),
+      tags: z.array(z.string()).optional(),
+      importance: z.enum(["low", "normal", "high", "critical"]).optional(),
+      source: z.string().optional().describe("New source reference"),
     }),
   },
   {
@@ -100,10 +121,9 @@ export const toolDefinitions = [
         .optional()
         .default(true)
         .describe("Require human review before done"),
-      agent_backend: z
-        .enum(["claude", "codex", "cursor"])
-        .optional()
-        .describe("Agent backend for task execution"),
+      agent_backend: AgentBackendSchema.optional().describe(
+        "Agent backend for task execution (e.g. claude, codex, gemini, a2a)",
+      ),
       max_review_rounds: z
         .number()
         .int()
@@ -135,6 +155,9 @@ export const toolDefinitions = [
       body: z.string().optional(),
       priority: z.enum(["low", "normal", "high", "critical"]).optional(),
       comment: z.string().optional().describe("Add a comment to the task"),
+      agent_backend: AgentBackendSchema.optional().describe(
+        "Agent backend for task execution (e.g. claude, acpx, a2a, gemini)",
+      ),
     }),
   },
   {
@@ -153,7 +176,7 @@ export const toolDefinitions = [
             tags: z.array(z.string()).optional(),
             prompt_id: z.string().optional(),
             required_review: z.boolean().optional().default(true),
-            agent_backend: z.enum(["claude", "codex", "cursor"]).optional(),
+            agent_backend: AgentBackendSchema.optional(),
             max_review_rounds: z.number().int().min(1).optional().default(3),
             depends_on: z
               .array(z.string())
@@ -284,7 +307,8 @@ export const toolDefinitions = [
   },
   {
     name: "prompt_get",
-    description: "Load full prompt content by name or ID.",
+    description:
+      "Load full prompt content by name or ID. Shows skill directory path and reference files if any — use Read to load them.",
     inputSchema: z.object({
       name: z.string().optional().describe("Prompt name"),
       id: z.string().optional().describe("Prompt ID (alternative to name)"),
@@ -324,8 +348,9 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const lines = [`Found ${results.length} results:`];
       for (const m of results) {
         const typeLabel = m.type !== "fact" ? ` [${m.type}]` : "";
+        const titleLabel = m.title ? ` "${m.title}"` : "";
         lines.push(
-          `[${m.rank}] ${m.id}${typeLabel}  "${m.snippet}"  scope:${m.scope ?? "—"}  ${m.age}  (${m.matchLayer})`,
+          `[${m.rank}] ${m.id}${typeLabel}${titleLabel}  ${m.snippet}  scope:${m.scope ?? "—"}  ${m.age}  (${m.matchLayer})`,
         );
       }
       lines.push("\nUse memory_timeline(id) for context, memory_get([ids]) for full content.");
@@ -341,29 +366,36 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           const header = m.title
             ? `[${m.id}] [${m.type}] "${m.title}" (${m.importance})`
             : `[${m.id}] [${m.type}] (${m.importance})`;
-          return `${header}\n${m.content}`;
+          const meta = m.source ? `\nsource: ${m.source}` : "";
+          return `${header}${meta}\n${m.content}`;
         })
         .join("\n\n---\n\n");
     }
 
     case "memory_store": {
-      const { content, title, type, scope, tags, importance, project } = args as {
+      const { content, title, type, scope, tags, importance, source, project } = args as {
         content: string;
         title?: string;
         type?: string;
         scope?: string;
         tags?: string[];
         importance?: string;
+        source?: string;
         project?: string;
       };
       const resolved = resolveProjectId(project);
       const id = ulid();
       const now = new Date();
+      const autoSource =
+        [process.env.ORC_AGENT, process.env.CLAUDE_MODEL].filter(Boolean).join("/") || "unknown";
+      const sessionId = process.env.ORC_SESSION_ID;
+      const resolvedSource = source ?? (sessionId ? `${autoSource}@${sessionId}` : autoSource);
       await db.insert(memories).values({
         id,
         title,
         type: (type ?? "fact") as "fact" | "decision" | "event" | "rule" | "discovery",
         content,
+        source: resolvedSource,
         scope,
         tags,
         importance: (importance ?? "normal") as "low" | "normal" | "high" | "critical",
@@ -373,7 +405,42 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       });
       const label = title ? ` "${title}"` : "";
       const proj = resolved ? ` (${resolved.name})` : "";
-      return `Stored: ${id}${label} [${type ?? "fact"}]${proj}`;
+      let result = `Stored: ${id}${label} [${type ?? "fact"}]${proj}`;
+
+      // Similarity hint: check for near-duplicates
+      const similar = searchLayer1(content, scope, 3, type as string | undefined, resolved?.id);
+      const top = similar.filter((m) => m.id !== id)[0];
+      if (top) {
+        result +=
+          `\n\n⚠ Similar memory exists: [${top.id}] "${top.snippet}"` +
+          `\nConsider using memory_update to merge them, or memory_get to compare, then delete the duplicate.`;
+      }
+      return result;
+    }
+
+    case "memory_update": {
+      const { id, content, title, type, scope, tags, importance, source } = args as {
+        id: string;
+        content?: string;
+        title?: string;
+        type?: string;
+        scope?: string;
+        tags?: string[];
+        importance?: string;
+        source?: string;
+      };
+      const existing = await db.query.memories.findFirst({ where: eq(memories.id, id) });
+      if (!existing) return `Memory not found: ${id}`;
+      const updates: Record<string, unknown> = { updated_at: new Date() };
+      if (content !== undefined) updates.content = content;
+      if (title !== undefined) updates.title = title;
+      if (type !== undefined) updates.type = type;
+      if (scope !== undefined) updates.scope = scope;
+      if (tags !== undefined) updates.tags = tags;
+      if (importance !== undefined) updates.importance = importance;
+      if (source !== undefined) updates.source = source;
+      await db.update(memories).set(updates).where(eq(memories.id, id));
+      return `Updated: ${id} [${type ?? existing.type}]`;
     }
 
     case "task_list": {
@@ -453,22 +520,26 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         tags,
         prompt_id,
         required_review: required_review ?? true,
-        agent_backend: agent_backend as "claude" | "codex" | "cursor" | undefined,
+        agent_backend: agent_backend as string | undefined,
         max_review_rounds: max_review_rounds ?? 3,
         created_at: now,
         updated_at: now,
       });
       const proj = resolved ? ` (${resolved.name})` : "";
+      import("@orc/runner/task-loop")
+        .then((m) => m.triggerTaskCheck())
+        .catch((err) => logger.warn("triggerTaskCheck failed", { err }));
       return `Created: ${id} — ${title}${proj}`;
     }
 
     case "task_update": {
-      const { id, status, body, priority, comment } = args as {
+      const { id, status, body, priority, comment, agent_backend } = args as {
         id: string;
         status?: string;
         body?: string;
         priority?: string;
         comment?: string;
+        agent_backend?: string;
       };
       if (status) {
         const result = await updateTaskStatus({
@@ -481,12 +552,13 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       } else if (comment) {
         await addTaskComment(id, comment, "agent");
       }
-      if (body !== undefined || priority) {
+      if (body !== undefined || priority || agent_backend !== undefined) {
         await db
           .update(tasks)
           .set({
             ...(body !== undefined ? { body } : {}),
             ...(priority ? { priority: priority as "low" } : {}),
+            ...(agent_backend !== undefined ? { agent_backend } : {}),
             updated_at: new Date(),
           })
           .where(eq(tasks.id, id));
@@ -577,10 +649,12 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const scored = allMems.map((m) => {
         const ageHours = (nowMs - m.created_at.getTime()) / 3_600_000;
         const recency = Math.max(0, 1 - ageHours / (24 * 30));
+        const accessBoost = Math.min((m.access_count ?? 0) / 5, 2);
         const score =
           (importanceWeight[m.importance] ?? 1) * 2 +
           (typeWeight[m.type ?? "fact"] ?? 1) +
-          recency * 2;
+          recency * 2 +
+          accessBoost;
         return { m, score };
       });
 
@@ -840,7 +914,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           tags: item.tags,
           prompt_id: item.prompt_id,
           required_review: item.required_review ?? true,
-          agent_backend: item.agent_backend as "claude" | "codex" | "cursor" | undefined,
+          agent_backend: item.agent_backend as string | undefined,
           max_review_rounds: item.max_review_rounds ?? 3,
           created_at: now,
           updated_at: now,
@@ -879,6 +953,9 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       }
 
       const lines = items.map((item) => `  ${item.ref} → ${mapping[item.ref]} — ${item.title}`);
+      import("@orc/runner/task-loop")
+        .then((m) => m.triggerTaskCheck())
+        .catch((err) => logger.warn("triggerTaskCheck failed", { err }));
       return `Created ${items.length} tasks:\n${lines.join("\n")}`;
     }
 
@@ -986,7 +1063,15 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         return "Provide either name or id.";
       }
       if (!row) return `Prompt not found: ${pName ?? pId}`;
-      return `# ${row.name}\n${row.description ?? ""}\n\n${row.template}`;
+      let out = `# ${row.name}\n${row.description ?? ""}\n\n${row.template}`;
+      if (row.skill_dir) {
+        const refs = listSkillReferenceFiles(row.skill_dir, process.cwd());
+        if (refs.length > 0) {
+          const dir = resolve(process.cwd(), row.skill_dir);
+          out += `\n\nReferences in ${dir}/:\n${refs.map((f) => `- ${dir}/${f}`).join("\n")}`;
+        }
+      }
+      return out;
     }
 
     default:
@@ -1004,7 +1089,7 @@ function buildSnapshot(tasks: TaskRow[], events: EventRow[], maxBytes: number): 
   const taskXml = tasks
     .map(
       (t) =>
-        `  <task id="${t.id.slice(-6)}" status="${t.status}" priority="${t.priority}">${escapeXml(t.title)}</task>`,
+        `  <task id="${shortId(t.id)}" status="${t.status}" priority="${t.priority}">${escapeXml(t.title)}</task>`,
     )
     .join("\n");
 

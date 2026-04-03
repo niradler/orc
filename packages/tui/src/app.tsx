@@ -6,8 +6,9 @@ import { Header } from "./components/header.js";
 import { StatusBar } from "./components/status-bar.js";
 import { useCommand } from "./hooks/use-command.js";
 import { usePolling } from "./hooks/use-polling.js";
+import { canHandleCommandInput, canSwitchRoutes } from "./navigation.js";
 import { colors } from "./theme.js";
-import type { Command, KeyEvent, Route, ViewKeyHandler, ViewMode } from "./types.js";
+import type { Command, KeyEvent, Route, ViewKeyHandler, ViewState } from "./types.js";
 import { ROUTES } from "./types.js";
 import { JobsView } from "./views/jobs.js";
 import { MemoriesView } from "./views/memories.js";
@@ -17,6 +18,26 @@ import { SessionsView } from "./views/sessions.js";
 import { TasksView } from "./views/tasks.js";
 
 const client = createOrcClient();
+const EMPTY_VIEW_STATE: ViewState = {
+  mode: "browse",
+  title: "Tasks",
+  countLabel: "",
+  filterQuery: "",
+  filterActive: false,
+  navigationLocked: false,
+  selectionLabel: null,
+  detailId: null,
+  statusMessage: null,
+};
+
+const TAB_LABELS: Record<Route, string> = {
+  projects: "Projects",
+  tasks: "Tasks",
+  jobs: "Jobs",
+  memories: "Memories",
+  sessions: "Sessions",
+  prompts: "Prompts",
+};
 
 export function App() {
   const renderer = useRenderer();
@@ -25,8 +46,8 @@ export function App() {
   const [activeProject, setActiveProject] = useState<string | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
 
-  const { data: healthData } = usePolling(() => client.health.check(), 10000);
-  const connected = !!healthData;
+  const { data: healthData, error: healthError } = usePolling(() => client.health.check(), 10000);
+  const connected = !!healthData && !healthError;
 
   const selectProject = useCallback(async (name: string) => {
     const result = await client.projects.getByName(name);
@@ -92,27 +113,30 @@ export function App() {
 
   const { active: cmdActive, input: cmdInput, handleKey: cmdHandleKey } = useCommand(commands);
 
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [filterQuery, setFilterQuery] = useState("");
-  const [filterActive, setFilterActive] = useState(false);
+  const [viewState, setViewState] = useState<ViewState>(EMPTY_VIEW_STATE);
 
   const viewKeyHandlerRef = useRef<ViewKeyHandler>(() => false);
   const registerViewKeyHandler = useCallback((handler: ViewKeyHandler) => {
     viewKeyHandlerRef.current = handler;
   }, []);
 
-  const onViewStateChange = useCallback((mode: ViewMode, fQuery: string, fActive: boolean) => {
-    setViewMode(mode);
-    setFilterQuery(fQuery);
-    setFilterActive(fActive);
+  const onViewStateChange = useCallback((state: ViewState) => {
+    setViewState(state);
   }, []);
 
   useKeyboard((key) => {
     const k = key as unknown as KeyEvent;
 
-    if (cmdHandleKey(k)) return;
+    if (canHandleCommandInput(cmdActive, viewState.navigationLocked) && cmdHandleKey(k)) return;
 
     if (viewKeyHandlerRef.current(k)) return;
+
+    if (k.name === "c" && k.ctrl) {
+      renderer.destroy();
+      return;
+    }
+
+    if (!canSwitchRoutes(cmdActive, viewState.navigationLocked)) return;
 
     if (k.name === "1") setRoute("projects");
     if (k.name === "2") setRoute("tasks");
@@ -123,34 +147,75 @@ export function App() {
     if (k.name === "left")
       setRoute((r) => ROUTES[(ROUTES.indexOf(r) - 1 + ROUTES.length) % ROUTES.length] ?? r);
     if (k.name === "right") setRoute((r) => ROUTES[(ROUTES.indexOf(r) + 1) % ROUTES.length] ?? r);
-    if (k.name === "c" && k.ctrl) renderer.destroy();
   });
 
   return (
     <box flexDirection="column" width={width} height={height} backgroundColor={colors.bg}>
-      <Header route={route} project={activeProject} detailId={null} connected={connected} />
+      <Header
+        route={route}
+        project={activeProject}
+        detailId={viewState.detailId ?? null}
+        connected={connected}
+        connectionError={healthError}
+      />
 
-      <box flexDirection="row" height={1} backgroundColor={colors.bgLight} paddingLeft={1} gap={1}>
+      <box
+        flexDirection="row"
+        backgroundColor={colors.bg}
+        paddingLeft={1}
+        paddingRight={1}
+        paddingTop={1}
+        paddingBottom={1}
+        gap={1}
+      >
         {(["projects", "tasks", "jobs", "memories", "sessions", "prompts"] as Route[]).map(
           (r, i) => (
             <box
               key={r}
-              {...(route === r ? { backgroundColor: colors.bgHighlight } : {})}
+              backgroundColor={route === r ? colors.bgSelected : colors.bgLight}
+              border
+              borderStyle="single"
+              borderColor={route === r ? colors.borderFocus : colors.border}
               paddingLeft={1}
               paddingRight={1}
+              paddingTop={0}
+              paddingBottom={0}
             >
-              <text fg={route === r ? colors.accent : colors.textDim}>{`${i + 1}:${r}`}</text>
+              <text
+                fg={route === r ? colors.text : colors.textDim}
+              >{`${i + 1}. ${TAB_LABELS[r]}`}</text>
             </box>
           ),
         )}
         {activeProject && (
-          <text fg={colors.accentAlt} paddingLeft={2}>
-            {`[${activeProject}]`}
-          </text>
+          <box
+            marginLeft={1}
+            backgroundColor={colors.bgSelected}
+            border
+            borderStyle="single"
+            borderColor={colors.border}
+            paddingLeft={1}
+            paddingRight={1}
+          >
+            <text fg={colors.accentAlt}>{`Project ${activeProject}`}</text>
+          </box>
         )}
+        <box flexGrow={1} justifyContent="center" alignItems="flex-end">
+          <text fg={colors.textMuted}>{"1-6 switch • ← → cycle • : command"}</text>
+        </box>
+      </box>
+      <box height={1} backgroundColor={colors.bg}>
+        <text fg={colors.border}>{"─".repeat(Math.max(8, width - 2))}</text>
       </box>
 
-      <box flexGrow={1} flexDirection="column" paddingLeft={1} paddingRight={1} paddingTop={1}>
+      <box
+        flexGrow={1}
+        flexDirection="column"
+        paddingLeft={1}
+        paddingRight={1}
+        paddingTop={1}
+        paddingBottom={1}
+      >
         {route === "projects" && (
           <ProjectsView
             onSelectProject={selectProject}
@@ -193,7 +258,7 @@ export function App() {
         )}
       </box>
 
-      <StatusBar mode={viewMode} filterQuery={filterQuery} filterActive={filterActive} />
+      <StatusBar route={route} state={viewState} />
 
       <CommandPalette active={cmdActive} input={cmdInput} commands={commands} />
     </box>

@@ -21,6 +21,7 @@ import type {
   Task,
   TaskLink,
   UpdateJobInput,
+  UpdateMemoryInput,
   UpdateProjectInput,
   UpdatePromptInput,
   UpdateTaskInput,
@@ -153,6 +154,9 @@ export function createOrcClient(options?: OrcClientOptions) {
         }),
 
       create: (input: CreateMemoryInput) => c<Memory>("POST", "/memories", input),
+
+      update: (id: string, input: UpdateMemoryInput) =>
+        c<Memory>("PATCH", `/memories/${id}`, input),
 
       delete: (id: string) => c<null>("DELETE", `/memories/${id}`),
     },

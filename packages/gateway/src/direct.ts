@@ -1,4 +1,4 @@
-import { ulid } from "@orc/core/ids";
+import { shortId, ulid } from "@orc/core/ids";
 import type { GatewayMode } from "@orc/core/types";
 import { executeJob } from "@orc/runner/executor";
 import {
@@ -21,11 +21,11 @@ import {
 } from "./store.js";
 import type { DirectCommandResult } from "./types.js";
 
-type Backend = "claude" | "codex" | "cursor";
-
-function backendFromMode(mode: GatewayMode): Backend {
-  if (mode.endsWith("codex")) return "codex";
-  if (mode.endsWith("cursor")) return "cursor";
+export function backendFromMode(mode: GatewayMode): string {
+  if (mode.startsWith("agent:")) {
+    const name = mode.slice(6);
+    return name || "claude";
+  }
   return "claude";
 }
 
@@ -60,7 +60,7 @@ function helpText(mode: GatewayMode): string {
     "<b>Navigation</b>",
     "/help — this message",
     "/status — system overview",
-    "/mode [direct|agent:claude|agent:codex|agent:cursor|multi|job:&lt;name&gt;] — switch mode",
+    "/mode [direct|agent:&lt;name&gt;|multi|job:&lt;name&gt;] — switch mode",
     "/cwd &lt;path&gt; — set working directory",
     "",
     "<b>Tasks</b>",
@@ -78,7 +78,7 @@ function helpText(mode: GatewayMode): string {
     "/mem &lt;query&gt; — search memories",
     "",
     "<b>Agents</b>",
-    "/agent claude|codex|cursor — switch active agent",
+    "/agent &lt;name&gt; — switch active agent (claude, codex, gemini, copilot, a2a, ...)",
     "/sessions — list all agent sessions",
     "/session new|list|switch &lt;id&gt;|stop — session lifecycle",
   ];
@@ -122,15 +122,14 @@ export async function handleDirectCommand(input: {
     ];
     if (activeSession) {
       lines.push(
-        `<b>Active session</b>: ${activeSession.backend} ${statusEmoji(activeSession.status)} <code>${activeSession.id.slice(-6)}</code>`,
+        `<b>Active session</b>: ${activeSession.backend} ${statusEmoji(activeSession.status)} <code>${shortId(activeSession.id)}</code>`,
       );
     }
     return { html: lines.join("\n") };
   }
 
   if (command === "/mode") {
-    if (!argText)
-      return { text: "Usage: /mode <direct|agent:claude|agent:codex|agent:cursor|multi|job:name>" };
+    if (!argText) return { text: "Usage: /mode <direct|agent:<name>|multi|job:<name>>" };
     const mode = argText as GatewayMode;
     await updateChatMode(input.chatKey, mode);
     return { text: `Mode updated to ${mode}`, mode };
@@ -145,8 +144,8 @@ export async function handleDirectCommand(input: {
   }
 
   if (command === "/agent") {
-    if (argText !== "claude" && argText !== "codex" && argText !== "cursor") {
-      return { text: "Usage: /agent <claude|codex|cursor>" };
+    if (!argText) {
+      return { text: "Usage: /agent <name> (e.g. claude, codex, gemini, copilot, a2a)" };
     }
     const mode = `agent:${argText}` as GatewayMode;
     await updateChatMode(input.chatKey, mode);
@@ -160,7 +159,7 @@ export async function handleDirectCommand(input: {
     for (const row of rows) {
       const claimed = row.claimed_by ? ` [${row.claimed_by}]` : "";
       lines.push(
-        `${taskStatusEmoji(row.status)} ${priorityEmoji(row.priority)} <code>${row.id.slice(-6)}</code> ${row.title}${claimed}`,
+        `${taskStatusEmoji(row.status)} ${priorityEmoji(row.priority)} <code>${shortId(row.id)}</code> ${row.title}${claimed}`,
       );
     }
     return { html: lines.join("\n") };
@@ -199,13 +198,13 @@ export async function handleDirectCommand(input: {
     const permission = await findPermission(id);
     if (permission) {
       return {
-        text: `Permission ${permission.id.slice(-6)} queued for approval — use the button or wait for agent context.`,
+        text: `Permission ${shortId(permission.id)} queued for approval — use the button or wait for agent context.`,
       };
     }
     const task = await findTask(id);
     if (!task) return { text: `No task or permission found for ${id}` };
     await approveTask(task.id, note || "Approved from gateway");
-    return { text: `✅ Approved task [${task.id.slice(-6)}] ${task.title}` };
+    return { text: `✅ Approved task [${shortId(task.id)}] ${task.title}` };
   }
 
   if (command === "/reject") {
@@ -217,21 +216,18 @@ export async function handleDirectCommand(input: {
     const permission = await findPermission(id);
     if (permission) {
       return {
-        text: `Permission ${permission.id.slice(-6)} denial queued — use the button or wait for agent context.`,
+        text: `Permission ${shortId(permission.id)} denial queued — use the button or wait for agent context.`,
       };
     }
     const task = await findTask(id);
     if (!task) return { text: `No task or permission found for ${id}` };
     await rejectTask(task.id, note || "Changes requested from gateway");
-    return { text: `🔁 Changes requested for [${task.id.slice(-6)}] ${task.title}` };
+    return { text: `🔁 Changes requested for [${shortId(task.id)}] ${task.title}` };
   }
 
   if (command === "/assign") {
     const [taskId, agent] = argText.split(/\s+/);
     if (!taskId || !agent) return { text: "Usage: /assign <task-id> <agent>" };
-    if (agent !== "claude" && agent !== "codex" && agent !== "cursor") {
-      return { text: "Agent must be: claude, codex, or cursor" };
-    }
     const task = await findTask(taskId);
     if (!task) return { text: `Task not found: ${taskId}` };
     const sessions = await listGatewaySessions(input.chatKey);
@@ -243,7 +239,7 @@ export async function handleDirectCommand(input: {
     }
     await assignTaskToSession(session.id, task.id);
     return {
-      text: `Assigned [${task.id.slice(-6)}] ${task.title} → ${agent} session [${session.id.slice(-6)}]`,
+      text: `Assigned [${shortId(task.id)}] ${task.title} → ${agent} session [${shortId(session.id)}]`,
     };
   }
 
@@ -263,7 +259,7 @@ export async function handleDirectCommand(input: {
     const job = await findJobByName(argText);
     if (!job) return { text: `Job not found: ${argText}` };
     const runId = await executeJob({ jobId: job.id, triggerBy: "bridge-msg" });
-    return { text: `Triggered ${job.name} → run ${runId.slice(-6)}` };
+    return { text: `Triggered ${job.name} → run ${shortId(runId)}` };
   }
 
   if (command === "/mem") {
@@ -273,7 +269,7 @@ export async function handleDirectCommand(input: {
     const lines = ["<b>Memories</b>", ""];
     for (const row of rows) {
       const title = row.title ?? row.content.slice(0, 40);
-      lines.push(`• [${row.id.slice(-6)}] <b>${title}</b>`);
+      lines.push(`• [${shortId(row.id)}] <b>${title}</b>`);
       lines.push(`  ${row.content.slice(0, 120)}${row.content.length > 120 ? "…" : ""}`);
     }
     return { html: lines.join("\n") };
@@ -286,9 +282,9 @@ export async function handleDirectCommand(input: {
     const lines = ["<b>Agent Sessions</b>", ""];
     for (const s of sessions) {
       const marker = s.id === active?.id ? "▶ " : "  ";
-      const task = s.task_id ? ` task:${s.task_id.slice(-6)}` : "";
+      const task = s.task_id ? ` task:${shortId(s.task_id)}` : "";
       lines.push(
-        `${marker}${statusEmoji(s.status)} <code>${s.id.slice(-6)}</code> ${s.backend}${task}`,
+        `${marker}${statusEmoji(s.status)} <code>${shortId(s.id)}</code> ${s.backend}${task}`,
       );
       if (s.cwd) lines.push(`     cwd: <code>${s.cwd}</code>`);
     }
@@ -306,10 +302,10 @@ export async function handleDirectCommand(input: {
         backend,
         cwd: input.currentWorkingDir ?? undefined,
         mode: (input.currentMode ?? `agent:${backend}`) as GatewayMode,
-        title: `Session ${ulid().slice(-6)}`,
+        title: `Session ${shortId(ulid())}`,
       });
       await setActiveGatewaySession(input.chatKey, session.id);
-      return { text: `Created and activated ${backend} session [${session.id.slice(-6)}]` };
+      return { text: `Created and activated ${backend} session [${shortId(session.id)}]` };
     }
 
     if (subcommand === "list") {
@@ -318,7 +314,7 @@ export async function handleDirectCommand(input: {
       const active = await getActiveGatewaySession(input.chatKey);
       const lines = sessions.map((s, i) => {
         const marker = s.id === active?.id ? "*" : " ";
-        return `${marker}${i + 1}. [${s.id.slice(-6)}] ${s.backend} ${s.status} cwd=${s.cwd ?? "(unset)"}`;
+        return `${marker}${i + 1}. [${shortId(s.id)}] ${s.backend} ${s.status} cwd=${s.cwd ?? "(unset)"}`;
       });
       return { text: lines.join("\n") };
     }
@@ -332,7 +328,7 @@ export async function handleDirectCommand(input: {
         : sessions.find((s) => s.id === target || s.id.endsWith(target));
       if (!session) return { text: `Session not found: ${target}` };
       await setActiveGatewaySession(input.chatKey, session.id);
-      return { text: `Active session: [${session.id.slice(-6)}] ${session.backend}` };
+      return { text: `Active session: [${shortId(session.id)}] ${session.backend}` };
     }
 
     if (subcommand === "stop") {
@@ -363,7 +359,7 @@ export async function ensureAgentSession(input: {
     backend,
     cwd: input.cwd ?? undefined,
     mode: input.mode,
-    title: `Session ${ulid().slice(-6)}`,
+    title: `Session ${shortId(ulid())}`,
   });
   await setActiveGatewaySession(input.chatKey, session.id);
   return session;

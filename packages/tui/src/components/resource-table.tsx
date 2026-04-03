@@ -1,4 +1,5 @@
-import { useTerminalDimensions } from "@opentui/react";
+import { type BoxRenderable, LayoutEvents } from "@opentui/core";
+import { useEffect, useRef, useState } from "react";
 import { colors } from "../theme.js";
 import type { Column } from "../types.js";
 
@@ -7,11 +8,51 @@ type Props<T> = {
   data: T[];
   cursor: number;
   keyFn: (item: T) => string;
+  loading: boolean;
+  error?: string | null;
+  emptyMessage: string;
+  filteredEmptyMessage?: string;
+  hasActiveFilter?: boolean;
+  selectedSummary?: string | null;
 };
 
-export function ResourceTable<T>({ columns, data, cursor, keyFn }: Props<T>) {
-  const { height } = useTerminalDimensions();
-  const visibleRows = height - 5;
+function truncate(value: string, width: number): string {
+  if (width <= 0) return "";
+  if (value.length <= width) return value;
+  if (width === 1) return value.slice(0, 1);
+  return `${value.slice(0, width - 1)}…`;
+}
+
+export function ResourceTable<T>({
+  columns,
+  data,
+  cursor,
+  keyFn,
+  loading,
+  error,
+  emptyMessage,
+  filteredEmptyMessage,
+  hasActiveFilter,
+  selectedSummary,
+}: Props<T>) {
+  const showEmpty = !loading && data.length === 0;
+  const bodyRef = useRef<BoxRenderable | null>(null);
+  const [visibleRows, setVisibleRows] = useState(5);
+
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+
+    const handleLayoutChange = () => {
+      setVisibleRows(Math.max(1, body.height));
+    };
+
+    handleLayoutChange();
+    body.on(LayoutEvents.LAYOUT_CHANGED, handleLayoutChange);
+    return () => {
+      body.off(LayoutEvents.LAYOUT_CHANGED, handleLayoutChange);
+    };
+  }, []);
 
   let startIdx = 0;
   if (cursor >= startIdx + visibleRows) {
@@ -24,40 +65,99 @@ export function ResourceTable<T>({ columns, data, cursor, keyFn }: Props<T>) {
   const visible = data.slice(startIdx, startIdx + visibleRows);
 
   return (
-    <box flexDirection="column" flexGrow={1}>
-      <box flexDirection="row" gap={0} marginBottom={0}>
+    <box
+      flexDirection="column"
+      flexGrow={1}
+      border
+      borderStyle="rounded"
+      borderColor={colors.border}
+      backgroundColor={colors.bgElevated}
+      padding={1}
+    >
+      <box flexDirection="row" gap={0} paddingLeft={1} paddingRight={1}>
         {columns.map((col) => (
-          <text key={col.key} fg={colors.textDim} width={col.width} paddingLeft={1}>
-            {col.label.toUpperCase()}
+          <text key={col.key} fg={colors.textDim} width={col.width}>
+            {truncate(col.label.toUpperCase(), col.width)}
           </text>
         ))}
       </box>
-      <box height={1} flexDirection="row" backgroundColor={colors.bgLight}>
-        <text fg={colors.border}>{"─".repeat(100)}</text>
+
+      <box height={1} marginTop={1} marginBottom={1}>
+        <text fg={colors.border}>{"─".repeat(120)}</text>
       </box>
-      {visible.map((item, vi) => {
-        const realIdx = startIdx + vi;
-        const selected = realIdx === cursor;
-        return (
-          <box
-            key={keyFn(item)}
-            flexDirection="row"
-            gap={0}
-            {...(selected ? { backgroundColor: colors.bgHighlight } : {})}
-          >
-            {columns.map((col) => (
-              <text
-                key={col.key}
-                fg={selected ? colors.accent : col.color ? col.color(item) : colors.text}
-                width={col.width}
+
+      {loading ? (
+        <box
+          flexGrow={1}
+          justifyContent="center"
+          alignItems="center"
+          backgroundColor={colors.bg}
+          border
+          borderStyle="single"
+          borderColor={colors.border}
+        >
+          <text fg={colors.textDim}>{"Loading ORC data…"}</text>
+        </box>
+      ) : showEmpty ? (
+        <box
+          flexGrow={1}
+          justifyContent="center"
+          alignItems="center"
+          backgroundColor={colors.bg}
+          border
+          borderStyle="single"
+          borderColor={colors.border}
+        >
+          <text fg={colors.textDim}>
+            {hasActiveFilter ? (filteredEmptyMessage ?? emptyMessage) : emptyMessage}
+          </text>
+        </box>
+      ) : (
+        <box ref={bodyRef} flexDirection="column" flexGrow={1}>
+          {visible.map((item, vi) => {
+            const realIdx = startIdx + vi;
+            const selected = realIdx === cursor;
+            return (
+              <box
+                key={keyFn(item)}
+                flexDirection="row"
+                gap={0}
+                backgroundColor={selected ? colors.bgSelected : colors.bgElevated}
                 paddingLeft={1}
+                paddingRight={1}
               >
-                {col.render(item)}
-              </text>
-            ))}
-          </box>
-        );
-      })}
+                {columns.map((col) => (
+                  <text
+                    key={col.key}
+                    fg={selected ? colors.text : col.color ? col.color(item) : colors.text}
+                    width={col.width}
+                  >
+                    {truncate(col.render(item), col.width)}
+                  </text>
+                ))}
+              </box>
+            );
+          })}
+        </box>
+      )}
+
+      <box
+        flexDirection="row"
+        justifyContent="space-between"
+        alignItems="center"
+        marginTop={1}
+        paddingLeft={1}
+        paddingRight={1}
+      >
+        <text fg={error ? colors.warning : colors.textMuted}>
+          {error
+            ? `Data warning: ${truncate(error, 72)}`
+            : (selectedSummary ?? "Use arrows or j/k to move through the list.")}
+        </text>
+        <text fg={colors.textMuted}>
+          {data.length > 0 ? `${Math.min(cursor + 1, data.length)} / ${data.length}` : "0 / 0"}
+        </text>
+      </box>
     </box>
   );
 }

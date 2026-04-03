@@ -1,3 +1,4 @@
+import { shortId } from "@orc/core/ids";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
 import { dryRunMsg, isDryRun, isJson, jsonOut } from "../output.js";
@@ -68,7 +69,7 @@ export function jobCommand() {
       });
       if (error || !data) return console.error("Error:", error);
       if (isJson()) return jsonOut(data);
-      console.log(`Created job: ${data.name} [${data.id.slice(-6)}]`);
+      console.log(`Created job: ${data.name} [${shortId(data.id)}]`);
     });
 
   cmd
@@ -140,7 +141,7 @@ export function jobCommand() {
       const { error } = await client.jobs.delete(job.id);
       if (error) return console.error("Error:", error);
       if (isJson()) return jsonOut({ deleted: job.id, name: job.name });
-      console.log(`Deleted job: ${job.name} [${job.id.slice(-6)}]`);
+      console.log(`Deleted job: ${job.name} [${shortId(job.id)}]`);
     });
 
   cmd
@@ -179,7 +180,7 @@ export function jobCommand() {
       const { data, error } = await client.jobs.update(job.id, input as never);
       if (error || !data) return console.error("Error:", error);
       if (isJson()) return jsonOut(data);
-      console.log(`Updated job: ${data.name} [${data.id.slice(-6)}]`);
+      console.log(`Updated job: ${data.name} [${shortId(data.id)}]`);
     });
 
   cmd
@@ -208,7 +209,7 @@ export function jobCommand() {
             ? `${Math.round((new Date(r.ended_at).getTime() - new Date(r.started_at).getTime()) / 1000)}s`
             : "-";
         console.log(
-          `${icon} ${r.status.padEnd(10)} ${r.created_at.slice(0, 19)}  ${dur}  [${r.id.slice(-6)}]`,
+          `${icon} ${r.status.padEnd(10)} ${r.created_at.slice(0, 19)}  ${dur}  [${shortId(r.id)}]`,
         );
 
         if (opts.logs) {

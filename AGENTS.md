@@ -14,7 +14,7 @@ packages/
   mcp/            @orc/mcp            — MCP server (stdio) for Claude/Cursor/Codex/Gemini
   runner/         @orc/runner         — job executor + cron/watch/one-shot scheduler + task loop
   gateway/        @orc/gateway        — multi-channel gateway (Telegram, Slack) + agent sessions
-  agent-runtime/  @orc/agent-runtime  — shared agent backend registry (claude, codex)
+  agent-runtime/  @orc/agent-runtime  — shared agent backend registry (claude, acpx, a2a)
   task-service/   @orc/task-service   — task status transitions, side-effects, comments
   tui/            @orc/tui            — terminal UI (in-progress)
 ```
@@ -80,11 +80,12 @@ For CRUD operations not in MCP (delete, project management, job creation), use t
 | `context` | Session start — compact overview. Pass `project: "name"` to scope. |
 | `memory_search` | Find facts/decisions — 3-layer BM25. Pass `project` to scope. |
 | `memory_get` | Fetch full content for specific IDs. Batch multiple IDs. Token-expensive — filter first. |
-| `memory_store` | Store a fact/decision/rule/event/discovery. Pass `project` to associate. |
+| `memory_store` | Store a fact/decision/rule/event/discovery. Pass `project` to associate. Source auto-detected from agent env. |
+| `memory_update` | Update an existing memory by ID (partial). Preserves created_at and access_count. Prefer over delete+recreate. |
 | `search` | Unified search across tasks and memories. Use instead of separate calls. |
 | `task_list` | List active tasks (compact, no body). Pass `project` to filter. |
 | `task_get` | Fetch full task details by ID |
-| `task_create` | Create a task. Pass `project` to scope. |
+| `task_create` | Create a task. Pass `project` to scope. Set `agent_backend` to route to a specific agent runtime. |
 | `task_update` | Update status/priority/body |
 | `task_batch_create` | Create multiple tasks with dependency links atomically. |
 | `job_list` | List all jobs + last run status. Pass `project` to filter. |
@@ -92,7 +93,7 @@ For CRUD operations not in MCP (delete, project management, job creation), use t
 | `job_status` | Get run status/exit code/error for a run ID |
 | `project_list` | Discover all projects (name, status, description) |
 | `prompt_list` | Discover available prompts/skills. Filter by tags or is_skill. |
-| `prompt_get` | Load full prompt content by name or ID. |
+| `prompt_get` | Load full prompt content by name or ID. Shows skill directory path + reference file paths — use Read to load them. |
 | `session_event` | Record significant action (file, task, decision, error, git, env, rule, plan). Deduped automatically. |
 | `session_snapshot` | Build ≤2KB XML snapshot — priority-tiered (P1: files/tasks, P2: decisions/git, P3: intent) |
 | `session_restore` | Restore session after compaction or agent restart |
@@ -114,7 +115,17 @@ Use the `type` field in `memory_store` — it affects scoring in `context`:
 
 Priority order (later wins): `~/.orc/config.json` → `./.orc/config.json` → env vars.
 
-Key env vars: `ORC_DB_PATH`, `ORC_API_PORT` (default 7700), `ORC_API_SECRET`, `ORC_TELEGRAM_TOKEN`, `ORC_LOG_LEVEL`.
+Key env vars: `ORC_DB_PATH`, `ORC_API_PORT` (default 7700), `ORC_API_SECRET`, `ORC_TELEGRAM_TOKEN`, `ORC_LOG_LEVEL`, `ORC_LOG_DIR`, `ORC_LOG_FILE`.
+
+### Logs
+
+All log output goes to **stderr** (human-readable, colored) and **`~/.orc/logs/orc.log`** (JSON lines, machine-readable).
+
+- **Rotation**: 10 MB max per file, keeps 3 rotated files (`orc.log.1`, `orc.log.2`, `orc.log.3`) — 30 MB total cap.
+- **Format**: One JSON object per line: `{"ts":"...","level":"info","ns":"api:tasks","msg":"...","data":"..."}`.
+- **Disable file logging**: `ORC_LOG_FILE=0`.
+- **Custom log directory**: `ORC_LOG_DIR=/path/to/logs` (defaults to `~/.orc/logs`).
+- **Agents**: read `~/.orc/logs/orc.log` to inspect recent errors — e.g. `grep '"level":"error"' ~/.orc/logs/orc.log | tail -20`.
 
 ### Agent Loop Config
 
@@ -133,9 +144,29 @@ Key env vars: `ORC_DB_PATH`, `ORC_API_PORT` (default 7700), `ORC_API_SECRET`, `O
 
 Env vars: `ORC_AGENT_LOOP_ENABLED`, `ORC_AGENT_LOOP_POLL_INTERVAL`, `ORC_AGENT_LOOP_MAX_WORKERS`, `ORC_AGENT_LOOP_DEFAULT_BACKEND`, `ORC_AGENT_LOOP_IDLE_TIMEOUT`, `ORC_AGENT_LOOP_AUTO_APPROVE`.
 
+### Agent Backends
+
+Three built-in backends route tasks to different agent runtimes:
+
+| Backend | Description | Config |
+| ------- | ----------- | ------ |
+| `claude` | Native Claude Code CLI adapter. Falls back to ACPX on error. | Default. Requires `claude` on PATH. |
+| `acpx` | Wraps 14+ coding agents via Agent Communication Protocol (ACP) CLI. Supports codex, gemini, copilot, kiro, cursor, etc. | Requires `acpx` CLI on PATH. |
+| `a2a` | Connects to remote agents via Google Agent2Agent protocol (JSON-RPC over HTTP). | Requires `a2a_url` per task/session. |
+
+**Custom backends**: `agent_backend` accepts any string. Unknown names route through ACPX with the name as the `--agent` flag.
+
+**Fallback routing** (gateway):
+
+1. `a2a` — direct A2A HTTP call
+2. `claude` — native CLI, falls back to ACPX on error
+3. Everything else — ACPX with backend name as agent
+
+Set default backend via `agent_loop.default_backend` in config. Per-task override: set `agent_backend` field when creating a task via API, MCP, or CLI.
+
 ### Built-in Prompts
 
-Prompt templates live in `skills/prompts/*/SKILL.md` and are seeded to the database on API startup. Use `prompt_list` to discover them, `prompt_get` to load content. Assign to tasks via `prompt_id`.
+Prompt templates live in `skills/prompts/*/SKILL.md` and are seeded to the database on API startup. Use `prompt_list` to discover them, `prompt_get` to load content. Skills can have reference files (e.g. `reference.md`, `examples.md`) alongside `SKILL.md` — `prompt_get` shows their full paths so agents can Read them on demand. Assign to tasks via `prompt_id`.
 
 ## Coding Conventions
 

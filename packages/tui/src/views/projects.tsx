@@ -3,18 +3,14 @@ import type { Project, ProjectSummary } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../components/confirm-dialog.js";
 import { DetailPane } from "../components/detail-pane.js";
-import {
-  EditFormOverlay,
-  type FormField,
-  type FormResult,
-  useEditForm,
-} from "../components/edit-form.js";
+import { EditFormOverlay, type FormField, useEditForm } from "../components/edit-form.js";
 import { ResourceTable } from "../components/resource-table.js";
+import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
 import { colors, projectStatusColor, statusIcon } from "../theme.js";
-import type { Column, KeyEvent, ViewKeyHandler, ViewMode } from "../types.js";
+import type { Column, KeyEvent, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
 
 const client = createOrcClient();
 
@@ -43,43 +39,74 @@ const columns: Column<Project>[] = [
   },
 ];
 
+const PROJECT_STATUS_OPTIONS: SelectOption[] = [
+  { label: "Active", value: "active" },
+  { label: "Paused", value: "paused" },
+  { label: "Archived", value: "archived" },
+];
+
 function projectFields(p?: Project): FormField[] {
   return [
-    { key: "name", label: "Name", value: p?.name ?? "" },
-    { key: "description", label: "Description", value: p?.description ?? "" },
+    {
+      key: "name",
+      label: "Name",
+      value: p?.name ?? "",
+      placeholder: "my-project",
+    },
+    {
+      key: "description",
+      label: "Description",
+      value: p?.description ?? "",
+      type: "textarea",
+      height: 6,
+      placeholder: "What this project is for",
+    },
     {
       key: "status",
       label: "Status",
       value: p?.status ?? "active",
-      options: ["active", "archived", "paused"],
+      type: "select",
+      options: PROJECT_STATUS_OPTIONS,
     },
-    { key: "tags", label: "Tags", value: p?.tags?.join(", ") ?? "" },
+    {
+      key: "tags",
+      label: "Tags",
+      value: p?.tags?.join(", ") ?? "",
+      placeholder: "backend, gateway, mcp",
+    },
   ];
 }
 
 type Props = {
   onSelectProject: (name: string) => void;
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
-  onStateChange: (mode: ViewMode, filterQuery: string, filterActive: boolean) => void;
+  onStateChange: (state: ViewState) => void;
 };
 
 export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateChange }: Props) {
-  const [mode, setMode] = useState<ViewMode>("list");
+  const [mode, setMode] = useState<"browse" | "detail" | "form" | "confirm">("browse");
   const [detail, setDetail] = useState<ProjectSummary | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+  const [formIntent, setFormIntent] = useState<"create" | "edit">("create");
+  const [formTarget, setFormTarget] = useState<Project | null>(null);
   const editForm = useEditForm();
 
-  const { data, loading, refresh } = usePolling(() => client.projects.list(), 5000);
+  const { data, loading, error, refresh } = usePolling(() => client.projects.list(), 5000);
   const projects = data?.projects ?? [];
   const {
     filtered,
     query,
     active: filterActive,
-    handleKey: filterHandleKey,
-  } = useFilter(projects, (p) => `${p.name} ${p.description ?? ""} ${p.status}`, mode === "list");
+    setQuery,
+    setActive: setFilterActive,
+  } = useFilter(
+    projects,
+    (p) => `${p.name} ${p.description ?? ""} ${p.status} ${p.tags?.join(" ") ?? ""}`,
+    true,
+  );
   const { cursor, handleKey: vimHandleKey } = useVimList(
     filtered.length,
-    mode === "list" && !filterActive,
+    mode === "browse" && !filterActive,
   );
 
   const modeRef = useRef(mode);
@@ -98,10 +125,30 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
   deleteTargetRef.current = deleteTarget;
   const detailRef = useRef(detail);
   detailRef.current = detail;
+  const formIntentRef = useRef(formIntent);
+  formIntentRef.current = formIntent;
+  const formTargetRef = useRef(formTarget);
+  formTargetRef.current = formTarget;
 
   useEffect(() => {
-    onStateChange(mode, query, filterActive);
-  }, [mode, query, filterActive, onStateChange]);
+    const selectedProject = filtered[cursor];
+    onStateChange({
+      mode: filterActive ? "filter" : mode,
+      title: "Projects",
+      countLabel: loading ? "Loading projects…" : `${filtered.length} visible projects`,
+      filterQuery: query,
+      filterActive,
+      navigationLocked: filterActive || mode === "form" || mode === "confirm",
+      selectionLabel:
+        mode === "detail" && detail
+          ? `Project detail • ${detail.project.name}`
+          : selectedProject
+            ? `${statusIcon(selectedProject.status)} ${selectedProject.status} • ${selectedProject.name}`
+            : "Choose a project to scope tasks, jobs, and memories.",
+      detailId: mode === "detail" ? (detail?.project.id ?? null) : null,
+      statusMessage: "Press s to set the active project filter.",
+    });
+  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
 
   const doCreate = useCallback((vals: Record<string, string>) => {
     if (!vals.name) return;
@@ -122,7 +169,7 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
   }, []);
 
   const doEdit = useCallback((vals: Record<string, string>) => {
-    const p = filteredRef.current[cursorRef.current];
+    const p = formTargetRef.current ?? filteredRef.current[cursorRef.current];
     if (!p) return;
     const tags = vals.tags
       ? vals.tags
@@ -147,33 +194,61 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
-      if (modeRef.current === "edit" || modeRef.current === "create") {
-        const result: FormResult | null = editFormRef.current.handleKey(key);
-        if (result?.submitted) {
-          if (modeRef.current === "create") doCreateRef.current(result.values);
-          else doEditRef.current(result.values);
+      if (filterActiveRef.current) {
+        if (key.name === "escape" || key.name === "return") {
+          setFilterActive(false);
         }
-        if (!editFormRef.current.active) setMode("list");
         return true;
       }
+
+      if (modeRef.current === "form") {
+        if (key.name === "escape") {
+          editFormRef.current.close();
+          setMode("browse");
+          setFormTarget(null);
+          return true;
+        }
+        if (key.ctrl && key.name === "s") {
+          const result = editFormRef.current.submit();
+          if (formIntentRef.current === "create") doCreateRef.current(result.values);
+          else doEditRef.current(result.values);
+          setMode("browse");
+          setFormTarget(null);
+          return true;
+        }
+        if (key.name === "tab" && key.shift) {
+          editFormRef.current.prevField();
+          return true;
+        }
+        if (key.name === "tab") {
+          editFormRef.current.nextField();
+          return true;
+        }
+        return true;
+      }
+
       if (modeRef.current === "confirm") {
-        if (key.name === "y") {
+        if (key.name === "y" || key.name === "return") {
           const p = deleteTargetRef.current;
           if (p) client.projects.delete(p.id).then(() => refreshRef.current());
           setDeleteTarget(null);
-          setMode("list");
+          setMode("browse");
           return true;
         }
         if (key.name === "n" || key.name === "escape") {
           setDeleteTarget(null);
-          setMode("list");
+          setMode("browse");
           return true;
         }
         return true;
       }
-      if (filterHandleKey(key)) return true;
-      if (modeRef.current === "list" && !filterActiveRef.current) {
+
+      if (modeRef.current === "browse" && !filterActiveRef.current) {
         if (vimHandleKey(key)) return true;
+        if (key.name === "/" || key.name === "f") {
+          setFilterActive(true);
+          return true;
+        }
         if (key.name === "return") {
           const p = filteredRef.current[cursorRef.current];
           if (p)
@@ -195,15 +270,19 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
           return true;
         }
         if (key.name === "n") {
+          setFormIntent("create");
+          setFormTarget(null);
           editFormRef.current.open(projectFields());
-          setMode("create");
+          setMode("form");
           return true;
         }
         if (key.name === "e") {
           const p = filteredRef.current[cursorRef.current];
           if (p) {
+            setFormIntent("edit");
+            setFormTarget(p);
             editFormRef.current.open(projectFields(p));
-            setMode("edit");
+            setMode("form");
           }
           return true;
         }
@@ -218,13 +297,15 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
       }
       if (modeRef.current === "detail") {
         if (key.name === "escape") {
-          setMode("list");
+          setMode("browse");
           setDetail(null);
           return true;
         }
         if (key.name === "e" && detailRef.current) {
+          setFormIntent("edit");
+          setFormTarget(detailRef.current.project);
           editFormRef.current.open(projectFields(detailRef.current.project));
-          setMode("edit");
+          setMode("form");
           return true;
         }
         if (key.name === "d" && detailRef.current) {
@@ -236,7 +317,7 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
       }
       return false;
     },
-    [filterHandleKey, vimHandleKey, onSelectProject],
+    [vimHandleKey, onSelectProject, setFilterActive],
   );
 
   useEffect(() => {
@@ -271,18 +352,38 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
 
   return (
     <box flexDirection="column" flexGrow={1}>
-      <box flexDirection="row" gap={2} marginBottom={0} paddingLeft={1}>
-        <text fg={colors.text}>{"PROJECTS"}</text>
-        <text fg={colors.textDim}>{loading ? "loading…" : `${filtered.length} projects`}</text>
-        {query && <text fg={colors.accent}>{`/${query}`}</text>}
-      </box>
-      <ResourceTable columns={columns} data={filtered} cursor={cursor} keyFn={(p) => p.id} />
+      <ViewToolbar
+        title="Projects"
+        countLabel={loading ? "Loading projects…" : `${filtered.length} visible projects`}
+        filterQuery={query}
+        filterActive={filterActive}
+        filterPlaceholder="Search by name, status, description, or tags"
+        onFilterChange={setQuery}
+        onFilterSubmit={() => setFilterActive(false)}
+        statusMessage="Press s to select an active project"
+      />
+      <ResourceTable
+        columns={columns}
+        data={filtered}
+        cursor={cursor}
+        keyFn={(p) => p.id}
+        loading={loading}
+        error={error}
+        emptyMessage="No projects created yet."
+        filteredEmptyMessage="No projects match the current search."
+        hasActiveFilter={Boolean(query)}
+        selectedSummary={
+          filtered[cursor]
+            ? `${statusIcon(filtered[cursor]?.status ?? "")} ${filtered[cursor]?.status} • ${filtered[cursor]?.name}`
+            : "Create a project with n, then press s to scope the rest of the TUI."
+        }
+      />
       <EditFormOverlay
-        title={mode === "create" ? "New Project" : "Edit Project"}
+        title={formIntent === "create" ? "New Project" : "Edit Project"}
         fields={editForm.fields}
         focusIdx={editForm.focusIdx}
-        editing={editForm.editing}
-        active={mode === "edit" || mode === "create"}
+        active={mode === "form"}
+        onChange={editForm.updateValue}
       />
       <ConfirmDialog
         message={deleteTarget ? `Delete project "${deleteTarget.name}"?` : ""}

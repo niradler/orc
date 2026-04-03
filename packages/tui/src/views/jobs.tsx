@@ -2,18 +2,14 @@ import { createOrcClient } from "@orc/sdk";
 import type { Job, JobRun } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DetailPane } from "../components/detail-pane.js";
-import {
-  EditFormOverlay,
-  type FormField,
-  type FormResult,
-  useEditForm,
-} from "../components/edit-form.js";
+import { EditFormOverlay, type FormField, useEditForm } from "../components/edit-form.js";
 import { ResourceTable } from "../components/resource-table.js";
+import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
 import { colors, statusIcon } from "../theme.js";
-import type { Column, KeyEvent, ViewKeyHandler, ViewMode } from "../types.js";
+import type { Column, KeyEvent, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
 
 const client = createOrcClient();
 
@@ -51,32 +47,55 @@ const columns: Column<Job>[] = [
 ];
 
 function jobFields(): FormField[] {
+  const triggerOptions: SelectOption[] = [
+    { label: "Manual", value: "manual" },
+    { label: "Cron", value: "cron" },
+    { label: "Watch", value: "watch" },
+    { label: "One-shot", value: "one-shot" },
+    { label: "Webhook", value: "webhook" },
+    { label: "Bridge message", value: "bridge-msg" },
+  ];
   return [
-    { key: "name", label: "Name", value: "" },
-    { key: "command", label: "Command", value: "" },
+    { key: "name", label: "Name", value: "", placeholder: "nightly-index" },
+    {
+      key: "command",
+      label: "Command",
+      value: "",
+      type: "textarea",
+      height: 5,
+      placeholder: "bun run sync:index",
+    },
     {
       key: "trigger_type",
       label: "Trigger",
       value: "manual",
-      options: ["manual", "cron", "watch", "one-shot", "webhook", "bridge-msg"],
+      type: "select",
+      options: triggerOptions,
     },
-    { key: "cron_expr", label: "Cron Expr", value: "" },
-    { key: "description", label: "Description", value: "" },
+    { key: "cron_expr", label: "Cron Expr", value: "", placeholder: "0 */6 * * * *" },
+    {
+      key: "description",
+      label: "Description",
+      value: "",
+      type: "textarea",
+      height: 4,
+      placeholder: "What this job does",
+    },
   ];
 }
 
 type Props = {
   projectId: string | null;
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
-  onStateChange: (mode: ViewMode, filterQuery: string, filterActive: boolean) => void;
+  onStateChange: (state: ViewState) => void;
 };
 
 export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Props) {
-  const [mode, setMode] = useState<ViewMode>("list");
+  const [mode, setMode] = useState<"browse" | "detail" | "form">("browse");
   const [detail, setDetail] = useState<{ job: Job; runs: JobRun[] } | null>(null);
   const editForm = useEditForm();
 
-  const { data, loading, refresh } = usePolling(
+  const { data, loading, error, refresh } = usePolling(
     () => client.jobs.list({ ...(projectId ? { project_id: projectId } : {}) }),
     5000,
   );
@@ -85,11 +104,12 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
     filtered,
     query,
     active: filterActive,
-    handleKey: filterHandleKey,
-  } = useFilter(jobs, (j) => `${j.name} ${j.trigger_type} ${j.description ?? ""}`, mode === "list");
+    setQuery,
+    setActive: setFilterActive,
+  } = useFilter(jobs, (j) => `${j.name} ${j.trigger_type} ${j.description ?? ""}`, true);
   const { cursor, handleKey: vimHandleKey } = useVimList(
     filtered.length,
-    mode === "list" && !filterActive,
+    mode === "browse" && !filterActive,
   );
 
   const modeRef = useRef(mode);
@@ -108,8 +128,24 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
   detailRef.current = detail;
 
   useEffect(() => {
-    onStateChange(mode, query, filterActive);
-  }, [mode, query, filterActive, onStateChange]);
+    const selectedJob = filtered[cursor];
+    onStateChange({
+      mode: filterActive ? "filter" : mode,
+      title: "Jobs",
+      countLabel: loading ? "Loading jobs…" : `${filtered.length} visible jobs`,
+      filterQuery: query,
+      filterActive,
+      navigationLocked: filterActive || mode === "form",
+      selectionLabel:
+        mode === "detail" && detail
+          ? `Job detail • ${detail.job.name}`
+          : selectedJob
+            ? `${selectedJob.name} • ${selectedJob.trigger_type} • runs ${selectedJob.run_count}`
+            : "No job selected yet.",
+      detailId: mode === "detail" ? (detail?.job.id ?? null) : null,
+      statusMessage: "Press t to trigger the selected job.",
+    });
+  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
 
   const doCreate = useCallback(
     (vals: Record<string, string>) => {
@@ -133,15 +169,40 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
-      if (modeRef.current === "create") {
-        const result: FormResult | null = editFormRef.current.handleKey(key);
-        if (result?.submitted) doCreateRef.current(result.values);
-        if (!editFormRef.current.active) setMode("list");
+      if (filterActiveRef.current) {
+        if (key.name === "escape" || key.name === "return") {
+          setFilterActive(false);
+        }
         return true;
       }
-      if (filterHandleKey(key)) return true;
-      if (modeRef.current === "list" && !filterActiveRef.current) {
+      if (modeRef.current === "form") {
+        if (key.name === "escape") {
+          editFormRef.current.close();
+          setMode("browse");
+          return true;
+        }
+        if (key.ctrl && key.name === "s") {
+          const result = editFormRef.current.submit();
+          doCreateRef.current(result.values);
+          setMode("browse");
+          return true;
+        }
+        if (key.name === "tab" && key.shift) {
+          editFormRef.current.prevField();
+          return true;
+        }
+        if (key.name === "tab") {
+          editFormRef.current.nextField();
+          return true;
+        }
+        return true;
+      }
+      if (modeRef.current === "browse" && !filterActiveRef.current) {
         if (vimHandleKey(key)) return true;
+        if (key.name === "/" || key.name === "f") {
+          setFilterActive(true);
+          return true;
+        }
         if (key.name === "return") {
           const job = filteredRef.current[cursorRef.current];
           if (job)
@@ -166,18 +227,18 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
         }
         if (key.name === "n") {
           editFormRef.current.open(jobFields());
-          setMode("create");
+          setMode("form");
           return true;
         }
       }
       if (modeRef.current === "detail" && key.name === "escape") {
-        setMode("list");
+        setMode("browse");
         setDetail(null);
         return true;
       }
       return false;
     },
-    [filterHandleKey, vimHandleKey],
+    [vimHandleKey, setFilterActive],
   );
 
   useEffect(() => {
@@ -219,18 +280,38 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
 
   return (
     <box flexDirection="column" flexGrow={1}>
-      <box flexDirection="row" gap={2} marginBottom={0} paddingLeft={1}>
-        <text fg={colors.text}>{"JOBS"}</text>
-        <text fg={colors.textDim}>{loading ? "loading…" : `${filtered.length} jobs`}</text>
-        {query && <text fg={colors.accent}>{`/${query}`}</text>}
-      </box>
-      <ResourceTable columns={columns} data={filtered} cursor={cursor} keyFn={(j) => j.id} />
+      <ViewToolbar
+        title="Jobs"
+        countLabel={loading ? "Loading jobs…" : `${filtered.length} visible jobs`}
+        filterQuery={query}
+        filterActive={filterActive}
+        filterPlaceholder="Search name, trigger, schedule, or description"
+        onFilterChange={setQuery}
+        onFilterSubmit={() => setFilterActive(false)}
+        statusMessage={projectId ? "Project-scoped view" : "All jobs"}
+      />
+      <ResourceTable
+        columns={columns}
+        data={filtered}
+        cursor={cursor}
+        keyFn={(j) => j.id}
+        loading={loading}
+        error={error}
+        emptyMessage="No jobs configured yet."
+        filteredEmptyMessage="No jobs match the current search."
+        hasActiveFilter={Boolean(query)}
+        selectedSummary={
+          filtered[cursor]
+            ? `${filtered[cursor]?.trigger_type} • ${filtered[cursor]?.run_count} runs • ${filtered[cursor]?.name}`
+            : "Create a job with n or trigger one with t."
+        }
+      />
       <EditFormOverlay
         title="New Job"
         fields={editForm.fields}
         focusIdx={editForm.focusIdx}
-        editing={editForm.editing}
-        active={mode === "create"}
+        active={mode === "form"}
+        onChange={editForm.updateValue}
       />
     </box>
   );

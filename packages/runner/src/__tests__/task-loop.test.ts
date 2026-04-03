@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resetConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import { closeDb, createTestDb, getDb, getSqlite } from "@orc/db/client";
-import { gateway_sessions, job_runs, jobs, tasks } from "@orc/db/schema";
+import { job_runs, jobs, tasks } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
 import {
   cleanupStaleSessions,
@@ -56,7 +56,7 @@ describe("recordedCycle", () => {
     const job = await db.query.jobs.findFirst({ where: eq(jobs.name, SYSTEM_JOB_NAME) });
     expect(job).toBeTruthy();
 
-    const runs = await db.query.job_runs.findMany({ where: eq(job_runs.job_id, job!.id) });
+    const runs = await db.query.job_runs.findMany({ where: eq(job_runs.job_id, job?.id) });
     expect(runs.length).toBeGreaterThanOrEqual(1);
 
     const lastRun = runs[runs.length - 1];
@@ -68,12 +68,12 @@ describe("recordedCycle", () => {
   test("increments job run_count", async () => {
     const db = getDb();
     const job = await db.query.jobs.findFirst({ where: eq(jobs.name, SYSTEM_JOB_NAME) });
-    const countBefore = job!.run_count;
+    const countBefore = job?.run_count;
 
     await recordedCycle();
 
     const jobAfter = await db.query.jobs.findFirst({ where: eq(jobs.name, SYSTEM_JOB_NAME) });
-    expect(jobAfter!.run_count).toBe(countBefore + 1);
+    expect(jobAfter?.run_count).toBe(countBefore + 1);
   });
 });
 

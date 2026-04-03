@@ -66,6 +66,7 @@ Check these dimensions in priority order:
 If you discover conventions or patterns worth preserving:
 - `memory_store(type: "rule", content: "...")` for conventions
 - `memory_store(type: "discovery", content: "...")` for findings
+- When requesting changes, store a `lesson` memory summarizing the mistake pattern: `memory_store(type: "lesson", content: "Task [title]: [what was wrong and the fix]")` — this helps future workers avoid the same issue
 
 ### 5. Post Review
 Post your review as a task comment using the deliverable format, then update the task status.

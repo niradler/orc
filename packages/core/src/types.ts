@@ -32,8 +32,9 @@ export const JobOverlapSchema = z.enum(["skip", "queue", "kill"]);
 export const MemoryImportanceSchema = z.enum(["low", "normal", "high", "critical"]);
 export const BridgePlatformSchema = z.enum(["telegram", "slack", "discord", "feishu"]);
 export const BridgeModeSchema = z
-  .enum(["direct", "agent:claude", "agent:codex", "agent:cursor", "multi"])
-  .or(z.string().startsWith("job:"));
+  .enum(["direct", "multi"])
+  .or(z.string().regex(/^agent:.+/))
+  .or(z.string().regex(/^job:.+/));
 
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 export type TaskPriority = z.infer<typeof TaskPrioritySchema>;
@@ -43,6 +44,13 @@ export type JobOverlap = z.infer<typeof JobOverlapSchema>;
 export type MemoryImportance = z.infer<typeof MemoryImportanceSchema>;
 export type BridgePlatform = z.infer<typeof BridgePlatformSchema>;
 export type BridgeMode = z.infer<typeof BridgeModeSchema>;
+
+export const AgentBackendSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z][a-z0-9_-]*$/);
+export type AgentBackendName = z.infer<typeof AgentBackendSchema>;
 export type GatewayPlatform = BridgePlatform;
 export type GatewayMode = BridgeMode;
 

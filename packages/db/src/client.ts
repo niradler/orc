@@ -381,6 +381,8 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE gateway_sessions ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL",
     "ALTER TABLE gateway_sessions ADD COLUMN review_rounds INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE projects ADD COLUMN max_workers INTEGER",
+    "ALTER TABLE gateway_sessions ADD COLUMN acpx_agent TEXT",
+    "ALTER TABLE gateway_sessions ADD COLUMN a2a_url TEXT",
   ];
   for (const statement of migrations) {
     try {

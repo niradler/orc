@@ -95,6 +95,32 @@ const createRoute_ = createRoute({
   },
 });
 
+const UpdateMemorySchema = z
+  .object({
+    content: z.string().optional(),
+    title: z.string().optional(),
+    type: MemoryTypeSchema.optional(),
+    source: z.string().optional(),
+    scope: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    importance: z.enum(["low", "normal", "high", "critical"]).optional(),
+  })
+  .openapi("UpdateMemory");
+
+const updateRoute = createRoute({
+  method: "patch",
+  path: "/memories/{id}",
+  tags: ["Memory"],
+  summary: "Update a memory (partial)",
+  request: {
+    params: z.object({ id: z.string() }),
+    body: { content: { "application/json": { schema: UpdateMemorySchema } } },
+  },
+  responses: {
+    200: { description: "Updated", content: { "application/json": { schema: MemorySchema } } },
+  },
+});
+
 const deleteRoute = createRoute({
   method: "delete",
   path: "/memories/{id}",
@@ -263,6 +289,25 @@ app.openapi(createRoute_, async (c) => {
 
   const mem = await db.query.memories.findFirst({ where: eq(memories.id, id) });
   return c.json(toDto(mem as NonNullable<typeof mem>), 201);
+});
+
+app.openapi(updateRoute, async (c) => {
+  const db = getDb();
+  const { id } = c.req.valid("param");
+  const body = c.req.valid("json");
+  const existing = await db.query.memories.findFirst({ where: eq(memories.id, id) });
+  if (!existing) throw new NotFoundError("Memory", id);
+  const updates: Record<string, unknown> = { updated_at: new Date() };
+  if (body.content !== undefined) updates.content = body.content;
+  if (body.title !== undefined) updates.title = body.title;
+  if (body.type !== undefined) updates.type = body.type;
+  if (body.source !== undefined) updates.source = body.source;
+  if (body.scope !== undefined) updates.scope = body.scope;
+  if (body.tags !== undefined) updates.tags = body.tags;
+  if (body.importance !== undefined) updates.importance = body.importance;
+  await db.update(memories).set(updates).where(eq(memories.id, id));
+  const mem = await db.query.memories.findFirst({ where: eq(memories.id, id) });
+  return c.json(toDto(mem as NonNullable<typeof mem>));
 });
 
 app.openapi(deleteRoute, async (c) => {

@@ -1,7 +1,7 @@
 ---
 name: orc-knowledge
 description: Use when storing project knowledge, decisions, rules, or discoveries in ORC, when searching for past context, when recalling architectural decisions or conventions, when multiple agents need shared knowledge, or when building a persistent knowledge base. Trigger on "remember", "recall", "what did we decide", "store this", when making architectural decisions, or when you need past context before starting work.
-allowed-tools: ["mcp__orc__memory_search", "mcp__orc__memory_get", "mcp__orc__memory_store", "mcp__orc__search"]
+allowed-tools: ["mcp__orc__memory_search", "mcp__orc__memory_get", "mcp__orc__memory_store", "mcp__orc__memory_update", "mcp__orc__search"]
 ---
 
 # ORC Knowledge Workflow
@@ -27,7 +27,49 @@ CLAUDE.md is for static conventions. ORC memory is for living knowledge — deci
 
 **Store as `fact`** or **`event`** (low): General knowledge, things that happened.
 
+### Write good titles
+
+Title appears in search results and context — it's how agents decide which memories to read. One short sentence: what it is + when to use it.
+
+Good: `title: "JWT over sessions — check before touching auth"`
+Bad: `title: "auth decision"`
+
 ### Before storing, always search first to avoid duplicates.
+
+If `memory_store` finds a similar existing memory, it will warn you. Use `memory_update` to merge instead of creating duplicates.
+
+---
+
+## Updating Memories
+
+Use `memory_update(id, {fields})` to correct or evolve a memory in place. This preserves history (created_at, access_count) and is preferred over delete+recreate.
+
+**Decisions and rules should rarely be deleted** — append corrections to the content instead. Future agents need the historical rationale.
+
+---
+
+## Source Metadata
+
+The `source` field is auto-detected from the agent environment (e.g. "claude-code@session_abc"). You can override it with an explicit `source` param for more context (e.g. "code-review", "debugging-session").
+
+---
+
+## What NOT to Store
+
+Not everything belongs in memory. Skip:
+- **Code patterns and conventions** derivable from reading the codebase
+- **Git history** — use `git log` / `git blame` instead
+- **Debugging solutions** — the fix is in the code, the commit message has context
+- **Anything already in CLAUDE.md** or project docs
+- **Ephemeral task details** — use tasks for in-progress work
+
+Store only what's surprising, non-obvious, or cross-session relevant.
+
+---
+
+## Content Size
+
+Keep individual memories under ~2000 characters. If you need more, split into multiple related memories with the same scope and tags.
 
 ---
 
@@ -88,6 +130,7 @@ Know the cost of your actions:
 | `memory_search` | ~50-100 tokens/result | Targeted keyword search |
 | `search` | ~50-100 tokens/result | Unified search across memories + tasks |
 | `memory_get` | ~500-1000 tokens/item | Full content — **expensive, filter first** |
+| `memory_update` | ~50 tokens | Update fields in place — cheap |
 
 **NEVER call `memory_get` without filtering via `memory_search` or `search` first.** Always: search → pick IDs → `memory_get(ids)`. This is 10x more token-efficient than fetching everything.
 
@@ -103,6 +146,8 @@ Know the cost of your actions:
 | Missing rationale in decisions | Future agents need the *why*, not just the *what* |
 | Skipping scopes | Scopes make search faster |
 | Calling `memory_get` without filtering | Search first, then fetch only the IDs you need |
+| Deleting decisions/rules to "fix" them | Use `memory_update` to correct — preserve the history |
+| Storing code patterns or git history | Derive from codebase/git — don't duplicate in memory |
 
 ---
 

@@ -1,4 +1,5 @@
 import { loadConfig } from "@orc/core/config";
+import { shortId } from "@orc/core/ids";
 import { Command } from "commander";
 import { isJson, jsonOut } from "../output.js";
 
@@ -86,7 +87,7 @@ export function sessionCommand() {
       console.log(`${"ID".padEnd(8)}  ${"AGENT".padEnd(16)}  ${"WHEN".padEnd(10)}  SUMMARY`);
       console.log("─".repeat(72));
       for (const s of rows) {
-        const id = s.id.slice(-6);
+        const id = shortId(s.id);
         const agent = s.agent.padEnd(16);
         const when = formatAgo(s.created_at).padEnd(10);
         const summary = (s.summary ?? "—").slice(0, 40);
