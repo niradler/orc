@@ -3,6 +3,7 @@ import { getDb } from "@orc/db/client";
 
 export type MemoryLayer1 = {
   id: string;
+  title: string | null;
   snippet: string;
   scope: string | null;
   type: string;
@@ -69,6 +70,7 @@ function toLayer1(
 ): MemoryLayer1 {
   return {
     id: row.id,
+    title: row.title,
     snippet: snippet(row.content),
     scope: row.scope,
     type: row.type ?? "fact",

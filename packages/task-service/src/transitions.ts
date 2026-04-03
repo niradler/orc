@@ -1,9 +1,12 @@
-import { ulid } from "@orc/core/ids";
+import { shortId, ulid } from "@orc/core/ids";
+import { createLogger } from "@orc/core/logger";
 import { TASK_STATUS_TRANSITIONS, type TaskStatus } from "@orc/core/types";
 import { getDb, getSqlite } from "@orc/db/client";
 import { comments, tasks } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
 import { notifyReview } from "./notifications.js";
+
+const logger = createLogger("task-service:transitions");
 
 export type TransitionOpts = {
   taskId: string;
@@ -60,7 +63,7 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
       )
       .all(opts.taskId, opts.taskId) as { id: string; title: string }[];
     if (blockers.length > 0) {
-      const names = blockers.map((b) => `[${b.id.slice(-6)}] ${b.title}`).join(", ");
+      const names = blockers.map((b) => `[${shortId(b.id)}] ${b.title}`).join(", ");
       return { ok: false, error: `Cannot start: blocked by ${names}` };
     }
   }
@@ -192,7 +195,7 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
   if (["done", "cancelled", "changes_requested"].includes(opts.status)) {
     import("@orc/runner/task-loop")
       .then((m) => m.triggerTaskCheck())
-      .catch(() => {});
+      .catch((err) => logger.warn("triggerTaskCheck failed", { err }));
   }
 
   const updated = await db.query.tasks.findFirst({ where: eq(tasks.id, opts.taskId) });

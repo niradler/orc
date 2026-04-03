@@ -597,10 +597,21 @@ export async function ensureSystemJob(): Promise<string> {
   return id;
 }
 
+let cycleRunning = false;
+
 export async function recordedCycle(): Promise<void> {
+  if (cycleRunning) {
+    logger.debug("Skipping cycle — another cycle is already running");
+    return;
+  }
+  cycleRunning = true;
+
   const db = getDb();
   const job = await db.query.jobs.findFirst({ where: eq(jobs.name, SYSTEM_JOB_NAME) });
-  if (!job) return;
+  if (!job) {
+    cycleRunning = false;
+    return;
+  }
 
   const runId = ulid();
   const now = new Date();
@@ -631,6 +642,8 @@ export async function recordedCycle(): Promise<void> {
       .update(job_runs)
       .set({ status: "failed", ended_at: new Date(), error_msg: errMsg })
       .where(eq(job_runs.id, runId));
+  } finally {
+    cycleRunning = false;
   }
 }
 
@@ -669,7 +682,10 @@ export function stopTaskLoop(): void {
 let triggerDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function triggerTaskCheck(): void {
-  if (!loopCron) return;
+  if (!loopCron) {
+    logger.debug("triggerTaskCheck called but task loop is not running");
+    return;
+  }
   if (triggerDebounceTimer) return;
   triggerDebounceTimer = setTimeout(() => {
     triggerDebounceTimer = null;

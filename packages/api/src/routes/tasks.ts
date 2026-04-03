@@ -1,13 +1,15 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
+import { createLogger } from "@orc/core/logger";
 import type { TaskStatus } from "@orc/core/types";
-import { TaskPrioritySchema, TaskStatusSchema } from "@orc/core/types";
+import { AgentBackendSchema, TaskPrioritySchema, TaskStatusSchema } from "@orc/core/types";
 import { getDb, getSqlite } from "@orc/db/client";
 import { comments, task_links, tasks } from "@orc/db/schema";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 import { and, desc, eq } from "drizzle-orm";
-import { checkBlockers, rollupParentProgress, unblockDependents } from "../lib/task-deps.js";
+
+const logger = createLogger("api:tasks");
 
 const app = new OpenAPIHono();
 
@@ -57,7 +59,7 @@ const CreateTaskSchema = z
     author: z.string().optional().default("human"),
     prompt_id: z.string().optional(),
     required_review: z.boolean().optional().default(true),
-    agent_backend: z.string().optional(),
+    agent_backend: AgentBackendSchema.optional(),
     max_review_rounds: z.number().int().min(1).optional().default(3),
   })
   .openapi("CreateTask");
@@ -71,7 +73,7 @@ const UpdateTaskSchema = z
     due_at: z.string().datetime().optional(),
     tags: z.array(z.string()).optional(),
     comment: z.string().optional(),
-    agent_backend: z.string().optional(),
+    agent_backend: AgentBackendSchema.optional(),
     prompt_id: z.string().optional(),
   })
   .openapi("UpdateTask");
@@ -154,7 +156,7 @@ const BatchTaskItem = z.object({
   tags: z.array(z.string()).optional(),
   prompt_id: z.string().optional(),
   required_review: z.boolean().optional().default(true),
-  agent_backend: z.string().optional(),
+  agent_backend: AgentBackendSchema.optional(),
   max_review_rounds: z.number().int().min(1).optional().default(3),
   depends_on: z.array(z.string()).optional().describe("Refs of tasks that block this one"),
   subtask_of: z.string().optional().describe("Ref of parent task"),
@@ -343,7 +345,7 @@ app.openapi(createRoute_, async (c) => {
   if (!task) throw new Error("Expected task to exist after write");
   import("@orc/runner/task-loop")
     .then((m) => m.triggerTaskCheck())
-    .catch(() => {});
+    .catch((err) => logger.warn("triggerTaskCheck failed", { err }));
   return c.json(toDto(task), 201);
 });
 
@@ -511,7 +513,7 @@ app.openapi(batchCreateRoute, async (c) => {
 
   import("@orc/runner/task-loop")
     .then((m) => m.triggerTaskCheck())
-    .catch(() => {});
+    .catch((err) => logger.warn("triggerTaskCheck failed", { err }));
   return c.json({ created: items.length, mapping }, 201);
 });
 

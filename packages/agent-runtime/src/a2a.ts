@@ -100,10 +100,9 @@ export class A2aSession implements AgentSession {
       });
 
       if (!response.ok) {
-        this.push({
-          type: "error",
-          data: `A2A request failed: ${response.status} ${response.statusText}`,
-        });
+        const msg = `A2A request failed: ${response.status} ${response.statusText}`;
+        logger.error(msg, { url: this.a2aUrl, contextId: this.contextId });
+        this.push({ type: "error", data: msg });
         this.done = true;
         this.resolveNext?.();
         return;
@@ -115,7 +114,9 @@ export class A2aSession implements AgentSession {
       };
 
       if (result.error) {
-        this.push({ type: "error", data: result.error.message ?? "A2A error" });
+        const msg = result.error.message ?? "A2A error";
+        logger.error("A2A JSON-RPC error", { url: this.a2aUrl, error: msg });
+        this.push({ type: "error", data: msg });
         this.done = true;
         this.resolveNext?.();
         return;
@@ -124,6 +125,7 @@ export class A2aSession implements AgentSession {
       this.processA2aResult(result.result);
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
+        logger.error("A2A request error", { url: this.a2aUrl, err });
         this.push({ type: "error", data: String(err) });
       }
       this.done = true;

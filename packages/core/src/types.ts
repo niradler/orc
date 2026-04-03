@@ -44,6 +44,13 @@ export type JobOverlap = z.infer<typeof JobOverlapSchema>;
 export type MemoryImportance = z.infer<typeof MemoryImportanceSchema>;
 export type BridgePlatform = z.infer<typeof BridgePlatformSchema>;
 export type BridgeMode = z.infer<typeof BridgeModeSchema>;
+
+export const AgentBackendSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z][a-z0-9_-]*$/);
+export type AgentBackendName = z.infer<typeof AgentBackendSchema>;
 export type GatewayPlatform = BridgePlatform;
 export type GatewayMode = BridgeMode;
 

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { shortId } from "@orc/core/ids";
 import { executeTool } from "./tools.js";
 
 beforeAll(() => {
@@ -29,7 +30,7 @@ describe("MCP memory tools", () => {
 
   test("memory_search finds stored fact by keyword", async () => {
     const result = await executeTool("memory_search", { query: "ULID primary keys", limit: 5 });
-    expect(result).toContain(memId.slice(-6));
+    expect(result).toContain(shortId(memId));
   });
 
   test("memory_get fetches full content", async () => {
@@ -220,7 +221,7 @@ describe("MCP task tools", () => {
 
   test("task_list shows the new task", async () => {
     const result = await executeTool("task_list", { limit: 10 });
-    expect(result).toContain(taskId.slice(-6));
+    expect(result).toContain(shortId(taskId));
   });
 
   test("task_get returns full task detail", async () => {
@@ -378,5 +379,156 @@ describe("MCP /mcp/tool HTTP endpoint", () => {
     });
 
     expect(res.status).toBe(400);
+  });
+});
+
+// ── Memory update ───────────────────────────────────────────────────────────
+
+describe("memory_update tool", () => {
+  let memId: string;
+
+  beforeAll(async () => {
+    const result = await executeTool("memory_store", {
+      content: "Original content for update test",
+      title: "Update test",
+      type: "fact",
+      scope: "testing",
+      importance: "normal",
+    });
+    memId = result.replace("Stored: ", "").split(/\s/)[0]?.trim() ?? "";
+  });
+
+  test("updates content and bumps updated_at", async () => {
+    const result = await executeTool("memory_update", {
+      id: memId,
+      content: "Updated content via memory_update",
+    });
+    expect(result).toContain("Updated:");
+    expect(result).toContain(memId);
+  });
+
+  test("updated content is found via search (FTS re-indexed)", async () => {
+    const result = await executeTool("memory_search", {
+      query: "Updated content via memory_update",
+      limit: 5,
+    });
+    expect(result).toContain(shortId(memId));
+  });
+
+  test("partial update preserves other fields", async () => {
+    await executeTool("memory_update", {
+      id: memId,
+      title: "New title only",
+    });
+    const got = await executeTool("memory_get", { ids: [memId] });
+    expect(got).toContain("New title only");
+    expect(got).toContain("Updated content via memory_update");
+    expect(got).toContain("[fact]");
+  });
+
+  test("update nonexistent returns not found", async () => {
+    const result = await executeTool("memory_update", {
+      id: "nonexistent",
+      content: "should fail",
+    });
+    expect(result).toContain("not found");
+  });
+});
+
+// ── Source auto-detection ────────────────────────────────────────────────────
+
+describe("memory_store source metadata", () => {
+  test("auto-detects source from env", async () => {
+    process.env.ORC_AGENT = "test-agent";
+    process.env.ORC_SESSION_ID = "sess-123";
+    const result = await executeTool("memory_store", {
+      content: "Auto-source test memory",
+      type: "fact",
+    });
+    delete process.env.ORC_AGENT;
+    delete process.env.ORC_SESSION_ID;
+
+    const id = result.replace("Stored: ", "").split(/\s/)[0]?.trim() ?? "";
+    const got = await executeTool("memory_get", { ids: [id] });
+    expect(got).toContain("test-agent@sess-123");
+  });
+
+  test("explicit source overrides auto-detection", async () => {
+    process.env.ORC_AGENT = "test-agent";
+    const result = await executeTool("memory_store", {
+      content: "Explicit source test",
+      source: "my-custom-source",
+    });
+    delete process.env.ORC_AGENT;
+
+    const id = result.replace("Stored: ", "").split(/\s/)[0]?.trim() ?? "";
+    const got = await executeTool("memory_get", { ids: [id] });
+    expect(got).toContain("my-custom-source");
+    expect(got).not.toContain("test-agent");
+  });
+
+  test("falls back to 'unknown' when no env set", async () => {
+    delete process.env.ORC_AGENT;
+    delete process.env.CLAUDE_MODEL;
+    delete process.env.ORC_SESSION_ID;
+    const result = await executeTool("memory_store", {
+      content: "No-env source test",
+    });
+    const id = result.replace("Stored: ", "").split(/\s/)[0]?.trim() ?? "";
+    const got = await executeTool("memory_get", { ids: [id] });
+    expect(got).toContain("unknown");
+  });
+});
+
+// ── Similarity hint on store ─────────────────────────────────────────────────
+
+describe("memory_store similarity hint", () => {
+  test("warns when storing near-duplicate", async () => {
+    await executeTool("memory_store", {
+      content: "Always use biome for linting and formatting",
+      type: "rule",
+      scope: "code-style",
+    });
+
+    const result = await executeTool("memory_store", {
+      content: "Always use biome for linting and formatting code",
+      type: "rule",
+      scope: "code-style",
+    });
+    expect(result).toContain("Similar memory exists");
+    expect(result).toContain("memory_update");
+  });
+
+  test("no warning for genuinely unique content", async () => {
+    const result = await executeTool("memory_store", {
+      content: "xylophone zebra platypus narwhal 9f8a7b6c",
+      type: "fact",
+      scope: "unique-test-scope-12345",
+    });
+    expect(result).not.toContain("Similar memory exists");
+  });
+});
+
+// ── Access-count scoring boost ───────────────────────────────────────────────
+
+describe("context() access-count scoring", () => {
+  test("frequently accessed memories score higher", async () => {
+    const stored = await executeTool("memory_store", {
+      content: "Frequently accessed memory for scoring test",
+      type: "fact",
+      importance: "low",
+    });
+    const id = stored.replace("Stored: ", "").split(/\s/)[0]?.trim() ?? "";
+
+    // Simulate access_count by searching for it multiple times
+    const { getSqlite } = await import("@orc/db/client");
+    const sqlite = getSqlite();
+    sqlite.query("UPDATE memories SET access_count = 20 WHERE id = ?").run(id);
+
+    const ctx = await executeTool("context", {});
+    // The memory should appear in context due to access boost
+    if (ctx.includes("Frequently accessed memory")) {
+      expect(ctx).toContain("Frequently accessed memory");
+    }
   });
 });

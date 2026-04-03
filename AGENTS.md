@@ -14,7 +14,7 @@ packages/
   mcp/            @orc/mcp            — MCP server (stdio) for Claude/Cursor/Codex/Gemini
   runner/         @orc/runner         — job executor + cron/watch/one-shot scheduler + task loop
   gateway/        @orc/gateway        — multi-channel gateway (Telegram, Slack) + agent sessions
-  agent-runtime/  @orc/agent-runtime  — shared agent backend registry (claude, codex)
+  agent-runtime/  @orc/agent-runtime  — shared agent backend registry (claude, acpx, a2a)
   task-service/   @orc/task-service   — task status transitions, side-effects, comments
   tui/            @orc/tui            — terminal UI (in-progress)
 ```
@@ -80,7 +80,8 @@ For CRUD operations not in MCP (delete, project management, job creation), use t
 | `context` | Session start — compact overview. Pass `project: "name"` to scope. |
 | `memory_search` | Find facts/decisions — 3-layer BM25. Pass `project` to scope. |
 | `memory_get` | Fetch full content for specific IDs. Batch multiple IDs. Token-expensive — filter first. |
-| `memory_store` | Store a fact/decision/rule/event/discovery. Pass `project` to associate. |
+| `memory_store` | Store a fact/decision/rule/event/discovery. Pass `project` to associate. Source auto-detected from agent env. |
+| `memory_update` | Update an existing memory by ID (partial). Preserves created_at and access_count. Prefer over delete+recreate. |
 | `search` | Unified search across tasks and memories. Use instead of separate calls. |
 | `task_list` | List active tasks (compact, no body). Pass `project` to filter. |
 | `task_get` | Fetch full task details by ID |
@@ -114,7 +115,17 @@ Use the `type` field in `memory_store` — it affects scoring in `context`:
 
 Priority order (later wins): `~/.orc/config.json` → `./.orc/config.json` → env vars.
 
-Key env vars: `ORC_DB_PATH`, `ORC_API_PORT` (default 7700), `ORC_API_SECRET`, `ORC_TELEGRAM_TOKEN`, `ORC_LOG_LEVEL`.
+Key env vars: `ORC_DB_PATH`, `ORC_API_PORT` (default 7700), `ORC_API_SECRET`, `ORC_TELEGRAM_TOKEN`, `ORC_LOG_LEVEL`, `ORC_LOG_DIR`, `ORC_LOG_FILE`.
+
+### Logs
+
+All log output goes to **stderr** (human-readable, colored) and **`~/.orc/logs/orc.log`** (JSON lines, machine-readable).
+
+- **Rotation**: 10 MB max per file, keeps 3 rotated files (`orc.log.1`, `orc.log.2`, `orc.log.3`) — 30 MB total cap.
+- **Format**: One JSON object per line: `{"ts":"...","level":"info","ns":"api:tasks","msg":"...","data":"..."}`.
+- **Disable file logging**: `ORC_LOG_FILE=0`.
+- **Custom log directory**: `ORC_LOG_DIR=/path/to/logs` (defaults to `~/.orc/logs`).
+- **Agents**: read `~/.orc/logs/orc.log` to inspect recent errors — e.g. `grep '"level":"error"' ~/.orc/logs/orc.log | tail -20`.
 
 ### Agent Loop Config
 

@@ -10,9 +10,7 @@ import type {
   SessionOpts,
 } from "./types.js";
 
-const _logger = createLogger("agent-runtime:acpx");
-
-const GRACE_TIMEOUT_MS = 8_000;
+const logger = createLogger("agent-runtime:acpx");
 
 type AcpxJsonRpc = {
   jsonrpc?: string;
@@ -129,6 +127,7 @@ class AcpxSession implements AgentSession {
   private resolveNext: (() => void) | null = null;
   private done = false;
   private gotResult = false;
+  private stderrBuf = "";
   private readonly agent: string;
   private readonly sessionName: string;
   private readonly cwd: string;
@@ -192,7 +191,10 @@ class AcpxSession implements AgentSession {
     const code = await this.proc.exited;
     if (this.done) return;
     if (code !== 0) {
-      this.push({ type: "error", data: `acpx exited with code ${code}` });
+      const detail = this.stderrBuf.trim();
+      const msg = `acpx exited with code ${code}${detail ? `: ${detail}` : ""}`;
+      logger.error(msg, { agent: this.agent });
+      this.push({ type: "error", data: msg });
     }
     this.done = true;
     this.resolveNext?.();
@@ -201,11 +203,14 @@ class AcpxSession implements AgentSession {
 
   async send(prompt: string): Promise<void> {
     if (this.proc) {
-      await this.close().catch(() => {});
+      await this.close().catch((err) =>
+        logger.warn("Failed to close previous ACPX process", { err }),
+      );
     }
 
     this.done = false;
     this.gotResult = false;
+    this.stderrBuf = "";
     this.eventQueue.length = 0;
 
     const args = [
@@ -227,16 +232,26 @@ class AcpxSession implements AgentSession {
     });
 
     if (this.proc.stdout) {
-      void readLines(this.proc.stdout, (line) => this.handleLine(line)).then(() =>
-        this.handleEof(),
-      );
+      void readLines(this.proc.stdout, (line) => this.handleLine(line))
+        .then(() => this.handleEof())
+        .catch((err) => {
+          logger.error("Error reading ACPX stdout", { err, agent: this.agent });
+          this.push({ type: "error", data: `ACPX stream error: ${String(err)}` });
+          this.handleEof();
+        });
+    }
+
+    if (this.proc.stderr) {
+      void readLines(this.proc.stderr, (line) => {
+        this.stderrBuf += `${line}\n`;
+      }).catch(() => {});
     }
 
     void this.watchExit();
   }
 
   respondPermission(_requestId: string, _result: PermissionResult): void {
-    // ACPX handles permissions internally via --approve-all
+    // Permissions handled at CLI level (--approve-all when autoApprove is enabled)
   }
 
   async *events(): AsyncIterable<AgentEvent> {
@@ -257,13 +272,8 @@ class AcpxSession implements AgentSession {
 
   async close(): Promise<void> {
     if (!this.proc) return;
-    const timer = setTimeout(() => this.proc?.kill(), GRACE_TIMEOUT_MS);
-    try {
-      this.proc.kill();
-      await this.proc.exited;
-    } finally {
-      clearTimeout(timer);
-    }
+    this.proc.kill();
+    await this.proc.exited;
     this.proc = null;
     this.done = true;
     this.resolveNext?.();

@@ -1,3 +1,4 @@
+import { shortId } from "@orc/core/ids";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
 import { dryRunMsg, isDryRun, isJson, jsonErr, jsonOut } from "../output.js";
@@ -120,7 +121,7 @@ export function taskCommand() {
         return console.error("Error:", error);
       }
       if (isJson()) return jsonOut(data);
-      console.log(`Created: [${data?.id.slice(-6)}] ${data?.title}`);
+      console.log(`Created: [${shortId(data?.id)}] ${data?.title}`);
     });
 
   cmd
@@ -136,7 +137,7 @@ export function taskCommand() {
         return console.error("Error:", error);
       }
       if (isJson()) return jsonOut(data);
-      console.log(`Done: [${data?.id.slice(-6)}] ${data?.title}`);
+      console.log(`Done: [${shortId(data?.id)}] ${data?.title}`);
     });
 
   cmd
@@ -152,7 +153,7 @@ export function taskCommand() {
         return console.error("Error:", error);
       }
       if (isJson()) return jsonOut(data);
-      console.log(`In review: [${data?.id.slice(-6)}] ${data?.title}`);
+      console.log(`In review: [${shortId(data?.id)}] ${data?.title}`);
     });
 
   cmd
@@ -178,7 +179,7 @@ export function taskCommand() {
       }
       if (opts.comment) await client.tasks.addComment(full, opts.comment, "human");
       if (isJson()) return jsonOut(data);
-      console.log(`Approved: [${data?.id.slice(-6)}] ${data?.title}`);
+      console.log(`Approved: [${shortId(data?.id)}] ${data?.title}`);
     });
 
   cmd
@@ -204,7 +205,7 @@ export function taskCommand() {
       }
       if (opts.reason) await client.tasks.addComment(full, opts.reason, "human");
       if (isJson()) return jsonOut(data);
-      console.log(`Changes requested: [${data?.id.slice(-6)}] ${data?.title}`);
+      console.log(`Changes requested: [${shortId(data?.id)}] ${data?.title}`);
     });
 
   cmd
@@ -263,7 +264,7 @@ export function taskCommand() {
         console.log(`  ${color("Links", "2")}`);
         for (const link of links) {
           const target = link.from_task_id === full ? link.to_task_id : link.from_task_id;
-          console.log(`    ${link.link_type} → [${target.slice(-6)}]`);
+          console.log(`    ${link.link_type} → [${shortId(target)}]`);
         }
       }
       console.log();
@@ -310,14 +311,14 @@ export function taskCommand() {
         return console.error("No updates specified. Use --help to see options.");
       }
 
-      if (isDryRun()) return dryRunMsg("update", `task [${full.slice(-6)}]`, updates);
+      if (isDryRun()) return dryRunMsg("update", `task [${shortId(full)}]`, updates);
       const { data, error } = await client.tasks.update(full, updates);
       if (error) {
         if (isJson()) return jsonErr(String(error));
         return console.error("Error:", error);
       }
       if (isJson()) return jsonOut(data);
-      console.log(`Updated: [${data?.id.slice(-6)}] ${data?.title}`);
+      console.log(`Updated: [${shortId(data?.id)}] ${data?.title}`);
     });
 
   cmd
@@ -327,14 +328,14 @@ export function taskCommand() {
       const client = createOrcClient();
       const full = await resolveTaskId(client, id);
       if (!full) return;
-      if (isDryRun()) return dryRunMsg("delete", `task [${full.slice(-6)}]`);
+      if (isDryRun()) return dryRunMsg("delete", `task [${shortId(full)}]`);
       const { error } = await client.tasks.delete(full);
       if (error) {
         if (isJson()) return jsonErr(String(error));
         return console.error("Error:", error);
       }
       if (isJson()) return jsonOut({ deleted: full });
-      console.log(`Deleted: [${full.slice(-6)}]`);
+      console.log(`Deleted: [${shortId(full)}]`);
     });
 
   return cmd;
@@ -387,11 +388,11 @@ function formatTask(
 ): string {
   const si = statusIcon(t.status);
   const pi = priorityIcon(t.priority);
-  const id = t.id.slice(-6);
+  const id = shortId(t.id);
   const title = t.title.length > 40 ? `${t.title.slice(0, 39)}…` : t.title;
   let line = `  ${colorStatus(si, t.status)} ${pi} [${id}] ${title.padEnd(40)}`;
   if (projectNames && t.project_id) {
-    line += `  ${color(projectNames.get(t.project_id) ?? t.project_id.slice(-6), "2")}`;
+    line += `  ${color(projectNames.get(t.project_id) ?? shortId(t.project_id), "2")}`;
   }
   return line;
 }

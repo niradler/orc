@@ -1,3 +1,4 @@
+import { shortId } from "@orc/core/ids";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
 import { dryRunMsg, isDryRun, isJson, jsonOut } from "../output.js";
@@ -64,7 +65,7 @@ export function memCommand() {
       });
       if (error) return console.error("Error:", error);
       if (isJson()) return jsonOut(data);
-      console.log(`Stored: [${data?.id.slice(-6)}] [${opts.type}] ${data?.content.slice(0, 60)}`);
+      console.log(`Stored: [${shortId(data?.id)}] [${opts.type}] ${data?.content.slice(0, 60)}`);
     });
 
   cmd
@@ -92,7 +93,7 @@ export function memCommand() {
       for (const m of mems) {
         const age = formatAge(m.created_at);
         const scope = m.scope ? `[${m.scope}]` : "";
-        console.log(`• [${m.id.slice(-6)}] ${m.content.slice(0, 70)} ${scope} ${age}`);
+        console.log(`• [${shortId(m.id)}] ${m.content.slice(0, 70)} ${scope} ${age}`);
       }
     });
 
@@ -127,6 +128,44 @@ export function memCommand() {
     });
 
   cmd
+    .command("edit <id>")
+    .description("Update a memory")
+    .option("--content <content>", "New content")
+    .option("--title <title>", "New title")
+    .option("--type <type>", "New type (fact/decision/event/rule/discovery)")
+    .option("-s, --scope <scope>", "New scope")
+    .option("--source <source>", "New source reference")
+    .option("--importance <level>", "New importance (low/normal/high/critical)")
+    .option("-t, --tags <tags>", "Comma-separated tags")
+    .action(async (id: string, opts) => {
+      const client = createOrcClient();
+      const { data: listData, error: listErr } = await client.memories.list({ limit: 200 });
+      if (listErr) return console.error("Error:", listErr);
+      const mem = (listData?.memories ?? []).find((m) => m.id === id || m.id.endsWith(id));
+      if (!mem) return console.error(`Memory not found: ${id}`);
+      if (isDryRun())
+        return dryRunMsg("update", `memory [${shortId(mem.id)}]`, {
+          content: opts.content?.slice(0, 80),
+        });
+
+      const input: Record<string, unknown> = {};
+      if (opts.content) input.content = opts.content;
+      if (opts.title) input.title = opts.title;
+      if (opts.type) input.type = opts.type;
+      if (opts.scope) input.scope = opts.scope;
+      if (opts.source) input.source = opts.source;
+      if (opts.importance) input.importance = opts.importance;
+      if (opts.tags) input.tags = (opts.tags as string).split(",").map((t: string) => t.trim());
+
+      if (Object.keys(input).length === 0) return console.error("No fields to update.");
+
+      const { data, error } = await client.memories.update(mem.id, input);
+      if (error) return console.error("Error:", error);
+      if (isJson()) return jsonOut(data);
+      console.log(`Updated: [${shortId(data?.id)}] [${data?.type}] ${data?.content.slice(0, 60)}`);
+    });
+
+  cmd
     .command("delete <id>")
     .description("Delete a memory")
     .action(async (id: string) => {
@@ -136,14 +175,14 @@ export function memCommand() {
       const mem = (data?.memories ?? []).find((m) => m.id === id || m.id.endsWith(id));
       if (!mem) return console.error(`Memory not found: ${id}`);
       if (isDryRun())
-        return dryRunMsg("delete", `memory [${mem.id.slice(-6)}]`, {
+        return dryRunMsg("delete", `memory [${shortId(mem.id)}]`, {
           content: mem.content.slice(0, 80),
         });
 
       const { error } = await client.memories.delete(mem.id);
       if (error) return console.error("Error:", error);
       if (isJson()) return jsonOut({ deleted: mem.id });
-      console.log(`Deleted memory: [${mem.id.slice(-6)}] ${mem.content.slice(0, 60)}`);
+      console.log(`Deleted memory: [${shortId(mem.id)}] ${mem.content.slice(0, 60)}`);
     });
 
   return cmd;
