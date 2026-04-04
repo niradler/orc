@@ -1,7 +1,3 @@
-<div align="center">
-
-<img src="assets/Title.gif" alt="ORC" width="600" />
-
 # orc
 
 **Multi-agent orchestrator with human-in-the-loop review**
