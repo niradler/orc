@@ -8,8 +8,14 @@ export function registerBackend(name: AgentBackendName, factory: () => AgentBack
 
 export function createBackend(name: AgentBackendName): AgentBackend {
   const factory = registry.get(name);
-  if (!factory) throw new Error(`No agent backend registered for: ${name}`);
-  return factory();
+  if (factory) return factory();
+  const acpxFactory = registry.get("acpx");
+  if (acpxFactory) return acpxFactory();
+  throw new Error(`No agent backend registered for: ${name}`);
+}
+
+export function hasBackend(name: AgentBackendName): boolean {
+  return registry.has(name);
 }
 
 export function listRegisteredBackends(): AgentBackendName[] {
