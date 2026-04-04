@@ -29,3 +29,22 @@ test("detail pane renders metadata and content sections", async () => {
   expect(frame).toContain("Content");
   expect(frame).toMatchSnapshot();
 });
+
+test("detail pane keeps compact hint readable on narrow terminals", async () => {
+  setup = await testRender(
+    <DetailPane
+      title="Task: narrow"
+      fields={[
+        { label: "Status", value: "doing" },
+        { label: "Priority", value: "high" },
+      ]}
+      body={"A\nB\nC"}
+    />,
+    { width: 62, height: 18 },
+  );
+
+  await setup.renderOnce();
+  const frame = setup.captureCharFrame();
+  expect(frame).toContain("Task: narrow");
+  expect(frame).toContain("Esc back");
+});

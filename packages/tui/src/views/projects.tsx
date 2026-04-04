@@ -16,6 +16,13 @@ import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
+import {
+  handleDetailEscapeKey,
+  handleFilterInputKey,
+  isFilterToggleKey,
+  isOpenDetailKey,
+  isRefreshKey,
+} from "../navigation.js";
 import { colors, projectStatusColor, statusIcon } from "../theme.js";
 import type { Column, KeyEvent, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
 
@@ -26,14 +33,18 @@ const columns: Column<Project>[] = [
     key: "status",
     label: "Status",
     width: 10,
+    minWidth: 8,
+    priority: 5,
     render: (p) => `${statusIcon(p.status)} ${p.status}`,
     color: (p) => projectStatusColor[p.status] ?? colors.text,
   },
-  { key: "name", label: "Name", width: 20, render: (p) => p.name },
+  { key: "name", label: "Name", width: 20, minWidth: 14, priority: 6, render: (p) => p.name },
   {
     key: "desc",
     label: "Description",
     width: 40,
+    minWidth: 16,
+    priority: 4,
     render: (p) => p.description ?? "—",
     color: () => colors.textDim,
   },
@@ -41,6 +52,8 @@ const columns: Column<Project>[] = [
     key: "tags",
     label: "Tags",
     width: 20,
+    minWidth: 10,
+    priority: 2,
     render: (p) => (p.tags?.length ? p.tags.join(", ") : "—"),
     color: () => colors.textDim,
   },
@@ -98,7 +111,7 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
   const [formTarget, setFormTarget] = useState<Project | null>(null);
   const editForm = useEditForm();
 
-  const { data, loading, error, refresh } = usePolling(() => client.projects.list(), 5000);
+  const { data, loading, error, refresh, mutate } = usePolling(() => client.projects.list(), 5000);
   const projects = data?.projects ?? [];
   const {
     filtered,
@@ -111,10 +124,11 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
     (p) => `${p.name} ${p.description ?? ""} ${p.status} ${p.tags?.join(" ") ?? ""}`,
     true,
   );
-  const { cursor, handleKey: vimHandleKey } = useVimList(
-    filtered.length,
-    mode === "browse" && !filterActive,
-  );
+  const {
+    cursor,
+    setCursor,
+    handleKey: vimHandleKey,
+  } = useVimList(filtered.length, mode === "browse" && !filterActive);
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -124,8 +138,12 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
   filteredRef.current = filtered;
   const cursorRef = useRef(cursor);
   cursorRef.current = cursor;
+  const setCursorRef = useRef(setCursor);
+  setCursorRef.current = setCursor;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
+  const mutateRef = useRef(mutate);
+  mutateRef.current = mutate;
   const editFormRef = useRef(editForm);
   editFormRef.current = editForm;
   const deleteTargetRef = useRef(deleteTarget);
@@ -205,7 +223,8 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
     const creating = formIntentRef.current === "create";
     const action = creating ? doCreateRef.current : doEditRef.current;
 
-    if (!editFormRef.current.beginSubmit(creating ? "Creating project…" : "Saving project…")) return;
+    if (!editFormRef.current.beginSubmit(creating ? "Creating project…" : "Saving project…"))
+      return;
 
     try {
       const savedProject = await action(result.values);
@@ -219,11 +238,21 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
             : current,
         );
       }
-      await refreshRef.current();
       editFormRef.current.finishSubmit("success", creating ? "Project created." : "Project saved.");
       setTimeout(() => {
         editFormRef.current.close();
         setFormTarget(null);
+        if (savedProject) {
+          mutateRef.current((current) => {
+            if (!current) return { projects: [savedProject] };
+            if (creating) {
+              return { projects: [savedProject, ...current.projects] };
+            }
+            return {
+              projects: current.projects.map((p) => (p.id === savedProject.id ? savedProject : p)),
+            };
+          });
+        }
         setMode("browse");
       }, 700);
     } catch (error) {
@@ -234,10 +263,7 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
       if (filterActiveRef.current) {
-        if (key.name === "escape" || key.name === "return") {
-          setFilterActive(false);
-        }
-        return true;
+        return handleFilterInputKey(key.name, setFilterActive);
       }
 
       if (modeRef.current === "form") {
@@ -281,11 +307,11 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
 
       if (modeRef.current === "browse" && !filterActiveRef.current) {
         if (vimHandleKey(key)) return true;
-        if (key.name === "/" || key.name === "f") {
+        if (isFilterToggleKey(key.name)) {
           setFilterActive(true);
           return true;
         }
-        if (key.name === "return") {
+        if (isOpenDetailKey(key.name)) {
           const p = filteredRef.current[cursorRef.current];
           if (p)
             client.projects.summary(p.id).then((r) => {
@@ -296,7 +322,7 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
             });
           return true;
         }
-        if (key.name === "r") {
+        if (isRefreshKey(key.name)) {
           refreshRef.current();
           return true;
         }
@@ -314,11 +340,13 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
         }
       }
       if (modeRef.current === "detail") {
-        if (key.name === "escape") {
-          setMode("browse");
-          setDetail(null);
+        if (
+          handleDetailEscapeKey(key.name, () => {
+            setMode("browse");
+            setDetail(null);
+          })
+        )
           return true;
-        }
         if (key.name === "e" && detailRef.current) {
           setFormIntent("edit");
           setFormTarget(detailRef.current.project);
@@ -406,27 +434,27 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
             : "Create a project with n, then press s to scope the rest of the TUI."
         }
       />
-      <EditFormOverlay
-        title={formIntent === "create" ? "New Project" : "Edit Project"}
-        fields={editForm.fields}
-        focusIdx={editForm.focusIdx}
-        active={mode === "form"}
-        onChange={editForm.updateValue}
-        submitState={editForm.submitState}
-        onSubmit={submitCurrentForm}
-        onCancel={() => {
-          if (editForm.submitState.status === "saving") return;
-          editForm.close();
-          setMode("browse");
-          setFormTarget(null);
-        }}
-        onNextField={editForm.nextField}
-        onPrevField={editForm.prevField}
-      />
-      <ConfirmDialog
-        message={deleteTarget ? `Delete project "${deleteTarget.name}"?` : ""}
-        active={mode === "confirm"}
-      />
+      {mode === "form" && (
+        <EditFormOverlay
+          title={formIntent === "create" ? "New Project" : "Edit Project"}
+          fields={editForm.fields}
+          focusIdx={editForm.focusIdx}
+          onChange={editForm.updateValue}
+          submitState={editForm.submitState}
+          onSubmit={submitCurrentForm}
+          onCancel={() => {
+            if (editForm.submitState.status === "saving") return;
+            editForm.close();
+            setMode("browse");
+            setFormTarget(null);
+          }}
+          onNextField={editForm.nextField}
+          onPrevField={editForm.prevField}
+        />
+      )}
+      {mode === "confirm" && deleteTarget && (
+        <ConfirmDialog message={`Delete project "${deleteTarget.name}"?`} />
+      )}
     </box>
   );
 }

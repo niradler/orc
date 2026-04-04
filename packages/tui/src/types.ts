@@ -6,6 +6,21 @@ export const ROUTES: Route[] = ["projects", "tasks", "jobs", "memories", "sessio
 
 export type ViewMode = "browse" | "detail" | "form" | "filter" | "confirm";
 
+export type ScreenSize = "xs" | "sm" | "md" | "lg";
+
+export const SCREEN_BREAKPOINTS = {
+  xs: 72,
+  sm: 96,
+  md: 128,
+} as const;
+
+export function getScreenSize(width: number): ScreenSize {
+  if (width < SCREEN_BREAKPOINTS.xs) return "xs";
+  if (width < SCREEN_BREAKPOINTS.sm) return "sm";
+  if (width < SCREEN_BREAKPOINTS.md) return "md";
+  return "lg";
+}
+
 export type ViewState = {
   mode: ViewMode;
   title: string;
@@ -22,6 +37,8 @@ export type Column<T> = {
   key: string;
   label: string;
   width: number;
+  minWidth?: number;
+  priority?: number;
   render: (item: T) => string;
   color?: (item: T) => string;
 };

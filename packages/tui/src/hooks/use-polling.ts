@@ -1,13 +1,11 @@
-import { createLogger } from "@orc/core/logger";
 import { useCallback, useEffect, useRef, useState } from "react";
-
-const logger = createLogger("tui:polling");
 
 type PollResult<T> = {
   data: T | null;
   loading: boolean;
   error: string | null;
-  refresh: () => void;
+  refresh: () => Promise<void>;
+  mutate: (updater: (current: T | null) => T | null) => void;
 };
 
 export function usePolling<T>(
@@ -29,15 +27,16 @@ export function usePolling<T>(
         setError(null);
       } else if (result.error) {
         setError(result.error.error);
-        logger.warn("Poll returned error", { error: result.error.error });
       }
     } catch (e) {
-      const msg = String(e);
-      setError(msg);
-      logger.error("Poll threw", { error: msg });
+      setError(String(e));
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  const mutate = useCallback((updater: (current: T | null) => T | null) => {
+    setData(updater);
   }, []);
 
   useEffect(() => {
@@ -48,5 +47,5 @@ export function usePolling<T>(
     };
   }, [fetch, intervalMs]);
 
-  return { data, loading, error, refresh: fetch };
+  return { data, loading, error, refresh: fetch, mutate };
 }

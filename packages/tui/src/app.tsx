@@ -9,7 +9,7 @@ import { usePolling } from "./hooks/use-polling.js";
 import { canHandleCommandInput, canSwitchRoutes } from "./navigation.js";
 import { colors } from "./theme.js";
 import type { Command, KeyEvent, Route, ViewKeyHandler, ViewState } from "./types.js";
-import { ROUTES } from "./types.js";
+import { getScreenSize, ROUTES } from "./types.js";
 import { JobsView } from "./views/jobs.js";
 import { MemoriesView } from "./views/memories.js";
 import { ProjectsView } from "./views/projects.js";
@@ -42,7 +42,7 @@ const TAB_LABELS: Record<Route, string> = {
 export function App() {
   const renderer = useRenderer();
   const { width, height } = useTerminalDimensions();
-  const compactShell = width < 96;
+  const compactShell = getScreenSize(width) === "xs";
   const [route, setRoute] = useState<Route>("tasks");
   const [activeProject, setActiveProject] = useState<string | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);

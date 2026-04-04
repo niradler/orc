@@ -84,3 +84,62 @@ test("resource table keeps the selected row visible in a short viewport", async 
   expect(frame).toContain("Row 10");
   expect(frame).toContain("10 / 12");
 });
+
+test("resource table hides low-priority columns on narrow terminals", async () => {
+  const wideColumns: Column<Row & { owner: string; notes: string }>[] = [
+    {
+      key: "status",
+      label: "Status",
+      width: 10,
+      minWidth: 8,
+      priority: 5,
+      render: (row) => row.status,
+    },
+    {
+      key: "title",
+      label: "Title",
+      width: 18,
+      minWidth: 10,
+      priority: 6,
+      render: (row) => row.title,
+    },
+    {
+      key: "owner",
+      label: "Owner",
+      width: 12,
+      minWidth: 8,
+      priority: 3,
+      render: (row) => row.owner,
+    },
+    {
+      key: "notes",
+      label: "Notes",
+      width: 20,
+      minWidth: 10,
+      priority: 1,
+      render: (row) => row.notes,
+    },
+  ];
+  const rows = [
+    { id: "1", title: "TUI polish", status: "doing", owner: "nirad", notes: "will-hide" },
+  ];
+
+  setup = await testRender(
+    <ResourceTable
+      columns={wideColumns}
+      data={rows}
+      cursor={0}
+      keyFn={(row) => row.id}
+      loading={false}
+      emptyMessage="No rows"
+    />,
+    { width: 42, height: 12 },
+  );
+
+  await setup.renderOnce();
+  const frame = setup.captureCharFrame();
+  expect(frame).toContain("STATUS");
+  expect(frame).toContain("TITLE");
+  expect(frame).not.toContain("NOTES");
+  expect(frame).not.toContain("will-hide");
+});

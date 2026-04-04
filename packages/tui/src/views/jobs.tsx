@@ -16,6 +16,13 @@ import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
+import {
+  handleDetailEscapeKey,
+  handleFilterInputKey,
+  isFilterToggleKey,
+  isOpenDetailKey,
+  isRefreshKey,
+} from "../navigation.js";
 import { colors, statusIcon } from "../theme.js";
 import type { Column, KeyEvent, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
 
@@ -26,14 +33,18 @@ const columns: Column<Job>[] = [
     key: "enabled",
     label: " ",
     width: 3,
+    minWidth: 2,
+    priority: 6,
     render: (j) => (j.enabled ? "●" : "○"),
     color: (j) => (j.enabled ? colors.success : colors.textDim),
   },
-  { key: "name", label: "Name", width: 24, render: (j) => j.name },
+  { key: "name", label: "Name", width: 24, minWidth: 14, priority: 7, render: (j) => j.name },
   {
     key: "trigger",
     label: "Trigger",
     width: 12,
+    minWidth: 8,
+    priority: 5,
     render: (j) => j.trigger_type,
     color: () => colors.textDim,
   },
@@ -41,14 +52,25 @@ const columns: Column<Job>[] = [
     key: "cron",
     label: "Schedule",
     width: 18,
+    minWidth: 10,
+    priority: 2,
     render: (j) => j.cron_expr ?? "—",
     color: () => colors.textDim,
   },
-  { key: "runs", label: "Runs", width: 8, render: (j) => String(j.run_count) },
+  {
+    key: "runs",
+    label: "Runs",
+    width: 8,
+    minWidth: 6,
+    priority: 4,
+    render: (j) => String(j.run_count),
+  },
   {
     key: "last_run",
     label: "Last Run",
     width: 20,
+    minWidth: 12,
+    priority: 1,
     render: (j) => j.last_run_at ?? "never",
     color: () => colors.textDim,
   },
@@ -122,7 +144,7 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
   const [formTarget, setFormTarget] = useState<Job | null>(null);
   const editForm = useEditForm();
 
-  const { data, loading, error, refresh } = usePolling(
+  const { data, loading, error, refresh, mutate } = usePolling(
     () => client.jobs.list({ ...(projectId ? { project_id: projectId } : {}) }),
     5000,
   );
@@ -134,10 +156,11 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
     setQuery,
     setActive: setFilterActive,
   } = useFilter(jobs, (j) => `${j.name} ${j.trigger_type} ${j.description ?? ""}`, true);
-  const { cursor, handleKey: vimHandleKey } = useVimList(
-    filtered.length,
-    mode === "browse" && !filterActive,
-  );
+  const {
+    cursor,
+    setCursor,
+    handleKey: vimHandleKey,
+  } = useVimList(filtered.length, mode === "browse" && !filterActive);
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -147,8 +170,12 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
   filteredRef.current = filtered;
   const cursorRef = useRef(cursor);
   cursorRef.current = cursor;
+  const setCursorRef = useRef(setCursor);
+  setCursorRef.current = setCursor;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
+  const mutateRef = useRef(mutate);
+  mutateRef.current = mutate;
   const editFormRef = useRef(editForm);
   editFormRef.current = editForm;
   const detailRef = useRef(detail);
@@ -237,11 +264,21 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
             : current,
         );
       }
-      await refreshRef.current();
       editFormRef.current.finishSubmit("success", creating ? "Job created." : "Job saved.");
       setTimeout(() => {
         editFormRef.current.close();
         setFormTarget(null);
+        if (savedJob) {
+          mutateRef.current((current) => {
+            if (!current) return { jobs: [savedJob] };
+            if (creating) {
+              return { jobs: [savedJob, ...current.jobs] };
+            }
+            return {
+              jobs: current.jobs.map((j) => (j.id === savedJob.id ? savedJob : j)),
+            };
+          });
+        }
         setMode("browse");
       }, 700);
     } catch (error) {
@@ -252,10 +289,7 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
       if (filterActiveRef.current) {
-        if (key.name === "escape" || key.name === "return") {
-          setFilterActive(false);
-        }
-        return true;
+        return handleFilterInputKey(key.name, setFilterActive);
       }
       if (modeRef.current === "form") {
         if (key.name === "escape") {
@@ -296,11 +330,11 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
       }
       if (modeRef.current === "browse" && !filterActiveRef.current) {
         if (vimHandleKey(key)) return true;
-        if (key.name === "/" || key.name === "f") {
+        if (isFilterToggleKey(key.name)) {
           setFilterActive(true);
           return true;
         }
-        if (key.name === "return") {
+        if (isOpenDetailKey(key.name)) {
           const job = filteredRef.current[cursorRef.current];
           if (job)
             Promise.all([client.jobs.get(job.id), client.jobs.runs(job.id, 10)]).then(
@@ -313,7 +347,7 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
             );
           return true;
         }
-        if (key.name === "r") {
+        if (isRefreshKey(key.name)) {
           refreshRef.current();
           return true;
         }
@@ -326,11 +360,13 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
         }
       }
       if (modeRef.current === "detail") {
-        if (key.name === "escape") {
-          setMode("browse");
-          setDetail(null);
+        if (
+          handleDetailEscapeKey(key.name, () => {
+            setMode("browse");
+            setDetail(null);
+          })
+        )
           return true;
-        }
         if (key.name === "t" && detailRef.current) {
           client.jobs.trigger(detailRef.current.job.id).then(() => refreshRef.current());
           return true;
@@ -424,27 +460,27 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
             : "Create a job with n or trigger one with t."
         }
       />
-      <EditFormOverlay
-        title={formIntent === "create" ? "New Job" : "Edit Job"}
-        fields={editForm.fields}
-        focusIdx={editForm.focusIdx}
-        active={mode === "form"}
-        onChange={editForm.updateValue}
-        submitState={editForm.submitState}
-        onSubmit={submitCurrentForm}
-        onCancel={() => {
-          if (editForm.submitState.status === "saving") return;
-          editForm.close();
-          setMode("browse");
-          setFormTarget(null);
-        }}
-        onNextField={editForm.nextField}
-        onPrevField={editForm.prevField}
-      />
-      <ConfirmDialog
-        message={deleteTarget ? `Delete job "${deleteTarget.name}"?` : ""}
-        active={mode === "confirm"}
-      />
+      {mode === "form" && (
+        <EditFormOverlay
+          title={formIntent === "create" ? "New Job" : "Edit Job"}
+          fields={editForm.fields}
+          focusIdx={editForm.focusIdx}
+          onChange={editForm.updateValue}
+          submitState={editForm.submitState}
+          onSubmit={submitCurrentForm}
+          onCancel={() => {
+            if (editForm.submitState.status === "saving") return;
+            editForm.close();
+            setMode("browse");
+            setFormTarget(null);
+          }}
+          onNextField={editForm.nextField}
+          onPrevField={editForm.prevField}
+        />
+      )}
+      {mode === "confirm" && deleteTarget && (
+        <ConfirmDialog message={`Delete job "${deleteTarget.name}"?`} />
+      )}
     </box>
   );
 }

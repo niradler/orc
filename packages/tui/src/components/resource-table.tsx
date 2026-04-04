@@ -1,6 +1,6 @@
 import { type BoxRenderable, LayoutEvents } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { colors } from "../theme.js";
 import type { Column } from "../types.js";
 
@@ -36,10 +36,53 @@ export function ResourceTable<T>({
   hasActiveFilter,
   selectedSummary,
 }: Props<T>) {
-  const { height } = useTerminalDimensions();
+  const { width, height } = useTerminalDimensions();
   const showEmpty = !loading && data.length === 0;
   const [visibleRows, setVisibleRows] = useState(Math.max(8, height - 18));
   const [bodyNode, setBodyNode] = useState<BoxRenderable | null>(null);
+
+  const chromeWidth = Math.max(20, width - 8);
+  const layoutColumns = useMemo(() => {
+    const source = columns.map((column, index) => ({
+      ...column,
+      minWidth: column.minWidth ?? Math.max(6, Math.min(12, column.width)),
+      priority: column.priority ?? columns.length - index,
+      hidden: false,
+      resolvedWidth: column.width,
+    }));
+
+    const sumWidths = () =>
+      source.reduce((sum, column) => (column.hidden ? sum : sum + column.resolvedWidth), 0);
+
+    while (sumWidths() > chromeWidth) {
+      const hideCandidate = source
+        .filter((column) => !column.hidden)
+        .sort((left, right) => {
+          if ((left.priority ?? 0) === (right.priority ?? 0))
+            return right.resolvedWidth - left.resolvedWidth;
+          return (left.priority ?? 0) - (right.priority ?? 0);
+        })[0];
+      if (!hideCandidate || source.filter((column) => !column.hidden).length <= 1) break;
+      hideCandidate.hidden = true;
+    }
+
+    let overflow = sumWidths() - chromeWidth;
+    while (overflow > 0) {
+      let shrunkAny = false;
+      for (const column of source) {
+        if (column.hidden) continue;
+        if (column.resolvedWidth > column.minWidth) {
+          column.resolvedWidth -= 1;
+          overflow -= 1;
+          shrunkAny = true;
+          if (overflow <= 0) break;
+        }
+      }
+      if (!shrunkAny) break;
+    }
+
+    return source.filter((column) => !column.hidden);
+  }, [columns, chromeWidth]);
 
   const attachBodyRef = useCallback((node: BoxRenderable | null) => {
     setBodyNode(node);
@@ -97,15 +140,15 @@ export function ResourceTable<T>({
       padding={1}
     >
       <box flexDirection="row" gap={0} paddingLeft={1} paddingRight={1}>
-        {columns.map((col) => (
-          <text key={col.key} fg={colors.textDim} width={col.width}>
-            {truncate(col.label.toUpperCase(), col.width)}
+        {layoutColumns.map((col) => (
+          <text key={col.key} fg={colors.textDim} width={col.resolvedWidth}>
+            {truncate(col.label.toUpperCase(), col.resolvedWidth)}
           </text>
         ))}
       </box>
 
       <box height={1} marginTop={1} marginBottom={1}>
-        <text fg={colors.border}>{"─".repeat(120)}</text>
+        <text fg={colors.border}>{"─".repeat(Math.max(8, chromeWidth))}</text>
       </box>
 
       {loading ? (
@@ -155,13 +198,13 @@ export function ResourceTable<T>({
                 paddingLeft={1}
                 paddingRight={1}
               >
-                {columns.map((col) => (
+                {layoutColumns.map((col) => (
                   <text
                     key={col.key}
                     fg={selected ? colors.text : col.color ? col.color(item) : colors.text}
-                    width={col.width}
+                    width={col.resolvedWidth}
                   >
-                    {truncate(col.render(item), col.width)}
+                    {truncate(col.render(item), col.resolvedWidth)}
                   </text>
                 ))}
               </box>

@@ -1,16 +1,15 @@
 import { useTerminalDimensions } from "@opentui/react";
 import { colors } from "../theme.js";
+import { getScreenSize } from "../types.js";
 
 type Props = {
   message: string;
-  active: boolean;
 };
 
-export function ConfirmDialog({ message, active }: Props) {
+export function ConfirmDialog({ message }: Props) {
   const { width } = useTerminalDimensions();
-
-  if (!active) return null;
-  const boxWidth = Math.min(50, width - 4);
+  const screen = getScreenSize(width);
+  const boxWidth = screen === "xs" ? Math.max(24, width - 2) : Math.min(54, width - 4);
 
   return (
     <box
@@ -42,7 +41,7 @@ export function ConfirmDialog({ message, active }: Props) {
         <text fg={colors.text} paddingBottom={1}>
           {message}
         </text>
-        <box flexDirection="row" gap={2}>
+        <box flexDirection={screen === "xs" ? "column" : "row"} gap={1}>
           <text fg={colors.error}>{"Enter / y = delete"}</text>
           <text fg={colors.textDim}>{"Esc / n = cancel"}</text>
         </box>

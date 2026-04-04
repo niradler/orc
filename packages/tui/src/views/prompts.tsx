@@ -16,6 +16,13 @@ import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
+import {
+  handleDetailEscapeKey,
+  handleFilterInputKey,
+  isFilterToggleKey,
+  isOpenDetailKey,
+  isRefreshKey,
+} from "../navigation.js";
 import { colors } from "../theme.js";
 import type { Column, KeyEvent, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
 
@@ -26,26 +33,46 @@ const columns: Column<Prompt>[] = [
     key: "skill",
     label: " ",
     width: 3,
+    minWidth: 2,
+    priority: 6,
     render: (p) => (p.is_skill ? "⚡" : " "),
     color: () => colors.warning,
   },
-  { key: "name", label: "Name", width: 24, render: (p) => p.name },
+  { key: "name", label: "Name", width: 24, minWidth: 14, priority: 7, render: (p) => p.name },
   {
     key: "desc",
     label: "Description",
     width: 40,
+    minWidth: 16,
+    priority: 5,
     render: (p) => {
       const t = p.description ?? "—";
       return t.length > 38 ? `${t.slice(0, 38)}…` : t;
     },
     color: () => colors.textDim,
   },
-  { key: "version", label: "Ver", width: 6, render: (p) => `v${p.version}` },
-  { key: "pinned", label: "Pin", width: 5, render: (p) => (p.pinned ? "📌" : "") },
+  {
+    key: "version",
+    label: "Ver",
+    width: 6,
+    minWidth: 4,
+    priority: 4,
+    render: (p) => `v${p.version}`,
+  },
+  {
+    key: "pinned",
+    label: "Pin",
+    width: 5,
+    minWidth: 3,
+    priority: 2,
+    render: (p) => (p.pinned ? "📌" : ""),
+  },
   {
     key: "tags",
     label: "Tags",
     width: 20,
+    minWidth: 10,
+    priority: 1,
     render: (p) => (p.tags?.length ? p.tags.join(", ") : "—"),
     color: () => colors.textDim,
   },
@@ -98,7 +125,7 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
   const [formTarget, setFormTarget] = useState<Prompt | null>(null);
   const editForm = useEditForm();
 
-  const { data, loading, error, refresh } = usePolling(
+  const { data, loading, error, refresh, mutate } = usePolling(
     () => client.prompts.list({ limit: 100 }),
     10000,
   );
@@ -114,10 +141,11 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
     (p) => `${p.name} ${p.description ?? ""} ${p.tags?.join(" ") ?? ""}`,
     true,
   );
-  const { cursor, handleKey: vimHandleKey } = useVimList(
-    filtered.length,
-    mode === "browse" && !filterActive,
-  );
+  const {
+    cursor,
+    setCursor,
+    handleKey: vimHandleKey,
+  } = useVimList(filtered.length, mode === "browse" && !filterActive);
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -127,8 +155,12 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
   filteredRef.current = filtered;
   const cursorRef = useRef(cursor);
   cursorRef.current = cursor;
+  const setCursorRef = useRef(setCursor);
+  setCursorRef.current = setCursor;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
+  const mutateRef = useRef(mutate);
+  mutateRef.current = mutate;
   const editFormRef = useRef(editForm);
   editFormRef.current = editForm;
   const deleteTargetRef = useRef(deleteTarget);
@@ -214,11 +246,21 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
     try {
       const savedPrompt = await action(result.values);
       if (savedPrompt) setDetail(savedPrompt);
-      await refreshRef.current();
       editFormRef.current.finishSubmit("success", creating ? "Prompt created." : "Prompt saved.");
       setTimeout(() => {
         editFormRef.current.close();
         setFormTarget(null);
+        if (savedPrompt) {
+          mutateRef.current((current) => {
+            if (!current) return { prompts: [savedPrompt] };
+            if (creating) {
+              return { prompts: [savedPrompt, ...current.prompts] };
+            }
+            return {
+              prompts: current.prompts.map((p) => (p.id === savedPrompt.id ? savedPrompt : p)),
+            };
+          });
+        }
         setMode("browse");
       }, 700);
     } catch (error) {
@@ -229,10 +271,7 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
       if (filterActiveRef.current) {
-        if (key.name === "escape" || key.name === "return") {
-          setFilterActive(false);
-        }
-        return true;
+        return handleFilterInputKey(key.name, setFilterActive);
       }
 
       if (modeRef.current === "form") {
@@ -275,11 +314,11 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
       }
       if (modeRef.current === "browse" && !filterActiveRef.current) {
         if (vimHandleKey(key)) return true;
-        if (key.name === "/" || key.name === "f") {
+        if (isFilterToggleKey(key.name)) {
           setFilterActive(true);
           return true;
         }
-        if (key.name === "return") {
+        if (isOpenDetailKey(key.name)) {
           const p = filteredRef.current[cursorRef.current];
           if (p)
             client.prompts.get(p.id).then((r) => {
@@ -290,7 +329,7 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
             });
           return true;
         }
-        if (key.name === "r") {
+        if (isRefreshKey(key.name)) {
           refreshRef.current();
           return true;
         }
@@ -303,11 +342,13 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
         }
       }
       if (modeRef.current === "detail") {
-        if (key.name === "escape") {
-          setMode("browse");
-          setDetail(null);
+        if (
+          handleDetailEscapeKey(key.name, () => {
+            setMode("browse");
+            setDetail(null);
+          })
+        )
           return true;
-        }
         if (key.name === "e" && detailRef.current) {
           setFormIntent("edit");
           setFormTarget(detailRef.current);
@@ -385,27 +426,27 @@ export function PromptsView({ onRegisterKeyHandler, onStateChange }: Props) {
             : "Create a prompt with n."
         }
       />
-      <EditFormOverlay
-        title={formIntent === "create" ? "New Prompt" : "Edit Prompt"}
-        fields={editForm.fields}
-        focusIdx={editForm.focusIdx}
-        active={mode === "form"}
-        onChange={editForm.updateValue}
-        submitState={editForm.submitState}
-        onSubmit={submitCurrentForm}
-        onCancel={() => {
-          if (editForm.submitState.status === "saving") return;
-          editForm.close();
-          setMode("browse");
-          setFormTarget(null);
-        }}
-        onNextField={editForm.nextField}
-        onPrevField={editForm.prevField}
-      />
-      <ConfirmDialog
-        message={deleteTarget ? `Delete prompt "${deleteTarget.name}"?` : ""}
-        active={mode === "confirm"}
-      />
+      {mode === "form" && (
+        <EditFormOverlay
+          title={formIntent === "create" ? "New Prompt" : "Edit Prompt"}
+          fields={editForm.fields}
+          focusIdx={editForm.focusIdx}
+          onChange={editForm.updateValue}
+          submitState={editForm.submitState}
+          onSubmit={submitCurrentForm}
+          onCancel={() => {
+            if (editForm.submitState.status === "saving") return;
+            editForm.close();
+            setMode("browse");
+            setFormTarget(null);
+          }}
+          onNextField={editForm.nextField}
+          onPrevField={editForm.prevField}
+        />
+      )}
+      {mode === "confirm" && deleteTarget && (
+        <ConfirmDialog message={`Delete prompt "${deleteTarget.name}"?`} />
+      )}
     </box>
   );
 }

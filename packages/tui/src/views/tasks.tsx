@@ -17,6 +17,13 @@ import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
+import {
+  handleDetailEscapeKey,
+  handleFilterInputKey,
+  isFilterToggleKey,
+  isOpenDetailKey,
+  isRefreshKey,
+} from "../navigation.js";
 import { colors, priorityColor, statusColor, statusIcon } from "../theme.js";
 import type { Column, KeyEvent, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
 
@@ -27,6 +34,8 @@ const columns: Column<Task>[] = [
     key: "status",
     label: "Status",
     width: 12,
+    minWidth: 10,
+    priority: 5,
     render: (t) => `${statusIcon(t.status)} ${t.status}`,
     color: (t) => statusColor[t.status] ?? colors.text,
   },
@@ -34,14 +43,18 @@ const columns: Column<Task>[] = [
     key: "priority",
     label: "Pri",
     width: 10,
+    minWidth: 8,
+    priority: 4,
     render: (t) => t.priority,
     color: (t) => priorityColor[t.priority] ?? colors.text,
   },
-  { key: "title", label: "Title", width: 60, render: (t) => t.title },
+  { key: "title", label: "Title", width: 60, minWidth: 20, priority: 6, render: (t) => t.title },
   {
     key: "author",
     label: "Author",
     width: 14,
+    minWidth: 10,
+    priority: 2,
     render: (t) => t.author,
     color: () => colors.textDim,
   },
@@ -128,7 +141,7 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
   const [formTarget, setFormTarget] = useState<Task | null>(null);
   const editForm = useEditForm();
 
-  const { data, loading, error, refresh } = usePolling(
+  const { data, loading, error, refresh, mutate } = usePolling(
     () => client.tasks.list({ ...(projectId ? { project_id: projectId } : {}), limit: 100 }),
     5000,
   );
@@ -144,10 +157,11 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
     (t) => `${t.title} ${t.status} ${t.priority} ${t.author} ${t.tags?.join(" ") ?? ""}`,
     true,
   );
-  const { cursor, handleKey: vimHandleKey } = useVimList(
-    filtered.length,
-    mode === "browse" && !filterActive,
-  );
+  const {
+    cursor,
+    setCursor,
+    handleKey: vimHandleKey,
+  } = useVimList(filtered.length, mode === "browse" && !filterActive);
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -157,8 +171,12 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
   filteredRef.current = filtered;
   const cursorRef = useRef(cursor);
   cursorRef.current = cursor;
+  const setCursorRef = useRef(setCursor);
+  setCursorRef.current = setCursor;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
+  const mutateRef = useRef(mutate);
+  mutateRef.current = mutate;
   const editFormRef = useRef(editForm);
   editFormRef.current = editForm;
   const deleteTargetRef = useRef(deleteTarget);
@@ -229,7 +247,9 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
     const updated = await client.tasks.update(task.id, {
       ...(vals.title ? { title: vals.title } : {}),
       body: vals.body || null,
-      ...(vals.status && vals.status !== task.status ? { status: vals.status as Task["status"] } : {}),
+      ...(vals.status && vals.status !== task.status
+        ? { status: vals.status as Task["status"] }
+        : {}),
       ...(vals.priority ? { priority: vals.priority as Task["priority"] } : {}),
       tags,
     });
@@ -251,11 +271,22 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
     try {
       const savedTask = await action(result.values);
       if (savedTask) setDetail(savedTask);
-      await refreshRef.current();
       editFormRef.current.finishSubmit("success", creating ? "Task created." : "Task saved.");
       setTimeout(() => {
         editFormRef.current.close();
         setFormTarget(null);
+        if (savedTask) {
+          mutateRef.current((current) => {
+            if (!current) return { tasks: [savedTask], total: 1 };
+            if (creating) {
+              return { tasks: [savedTask, ...current.tasks], total: current.total + 1 };
+            }
+            return {
+              ...current,
+              tasks: current.tasks.map((t) => (t.id === savedTask.id ? savedTask : t)),
+            };
+          });
+        }
         setMode("browse");
       }, 700);
     } catch (error) {
@@ -266,15 +297,7 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
       if (filterActiveRef.current) {
-        if (key.name === "escape") {
-          setFilterActive(false);
-          return true;
-        }
-        if (key.name === "return") {
-          setFilterActive(false);
-          return true;
-        }
-        return true;
+        return handleFilterInputKey(key.name, setFilterActive);
       }
 
       if (modeRef.current === "form") {
@@ -318,11 +341,11 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
 
       if (modeRef.current === "browse" && !filterActiveRef.current) {
         if (vimHandleKey(key)) return true;
-        if (key.name === "/" || key.name === "f") {
+        if (isFilterToggleKey(key.name)) {
           setFilterActive(true);
           return true;
         }
-        if (key.name === "return") {
+        if (isOpenDetailKey(key.name)) {
           const task = filteredRef.current[cursorRef.current];
           if (task)
             client.tasks.get(task.id).then((r) => {
@@ -333,7 +356,7 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
             });
           return true;
         }
-        if (key.name === "r") {
+        if (isRefreshKey(key.name)) {
           refreshRef.current();
           return true;
         }
@@ -346,11 +369,13 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
         }
       }
       if (modeRef.current === "detail") {
-        if (key.name === "escape") {
-          setMode("browse");
-          setDetail(null);
+        if (
+          handleDetailEscapeKey(key.name, () => {
+            setMode("browse");
+            setDetail(null);
+          })
+        )
           return true;
-        }
         if (key.name === "e" && detailRef.current) {
           setFormIntent("edit");
           setFormTarget(detailRef.current);
@@ -436,27 +461,27 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
             : "Create a task with n, or switch projects from the Projects tab."
         }
       />
-      <EditFormOverlay
-        title={formIntent === "create" ? "New Task" : "Edit Task"}
-        fields={editForm.fields}
-        focusIdx={editForm.focusIdx}
-        active={mode === "form"}
-        onChange={editForm.updateValue}
-        submitState={editForm.submitState}
-        onSubmit={submitCurrentForm}
-        onCancel={() => {
-          if (editForm.submitState.status === "saving") return;
-          editForm.close();
-          setMode("browse");
-          setFormTarget(null);
-        }}
-        onNextField={editForm.nextField}
-        onPrevField={editForm.prevField}
-      />
-      <ConfirmDialog
-        message={deleteTarget ? `Delete task "${deleteTarget.title}"?` : ""}
-        active={mode === "confirm"}
-      />
+      {mode === "form" && (
+        <EditFormOverlay
+          title={formIntent === "create" ? "New Task" : "Edit Task"}
+          fields={editForm.fields}
+          focusIdx={editForm.focusIdx}
+          onChange={editForm.updateValue}
+          submitState={editForm.submitState}
+          onSubmit={submitCurrentForm}
+          onCancel={() => {
+            if (editForm.submitState.status === "saving") return;
+            editForm.close();
+            setMode("browse");
+            setFormTarget(null);
+          }}
+          onNextField={editForm.nextField}
+          onPrevField={editForm.prevField}
+        />
+      )}
+      {mode === "confirm" && deleteTarget && (
+        <ConfirmDialog message={`Delete task "${deleteTarget.title}"?`} />
+      )}
     </box>
   );
 }

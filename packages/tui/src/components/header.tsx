@@ -1,6 +1,6 @@
 import { useTerminalDimensions } from "@opentui/react";
 import { colors } from "../theme.js";
-import type { Route } from "../types.js";
+import { getScreenSize, type Route } from "../types.js";
 
 type Props = {
   route: Route;
@@ -27,7 +27,8 @@ function trimTo(text: string, width: number): string {
 
 export function Header({ route, project, detailId, connected, connectionError }: Props) {
   const { width } = useTerminalDimensions();
-  const compact = width < 84;
+  const screen = getScreenSize(width);
+  const compact = screen === "xs";
 
   const contextParts = [ROUTE_LABELS[route]];
   if (project) contextParts.push(project);

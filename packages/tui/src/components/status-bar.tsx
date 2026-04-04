@@ -1,6 +1,6 @@
 import { useTerminalDimensions } from "@opentui/react";
 import { colors } from "../theme.js";
-import type { Route, ViewState } from "../types.js";
+import { getScreenSize, type Route, type ViewState } from "../types.js";
 
 type Props = {
   route: Route;
@@ -33,7 +33,7 @@ function trimTo(text: string, width: number): string {
 
 export function StatusBar({ route, state }: Props) {
   const { width } = useTerminalDimensions();
-  const compact = width < 76;
+  const compact = getScreenSize(width) === "xs";
   const modeLabel = state.mode.toUpperCase();
   const left = trimTo(state.selectionLabel ?? ROUTE_HELP[route], compact ? width - 8 : width - 28);
   const right = trimTo(state.statusMessage ?? HINTS[state.mode], Math.max(24, width - 4));

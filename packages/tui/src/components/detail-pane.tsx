@@ -1,6 +1,7 @@
 import { SyntaxStyle } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
 import { colors } from "../theme.js";
+import { getScreenSize } from "../types.js";
 
 const syntaxStyle = SyntaxStyle.create();
 
@@ -20,11 +21,16 @@ type Props = {
 
 export function DetailPane({ title, fields, body, renderMarkdown, hint }: Props) {
   const { width, height } = useTerminalDimensions();
-  const compact = width < 88;
-  const labelWidth = compact ? 12 : 16;
-  const detailsHeight = body
-    ? Math.max(6, Math.min(fields.length + 4, Math.floor(height * 0.45)))
-    : undefined;
+  const screen = getScreenSize(width);
+  const compact = screen === "xs";
+  const labelWidth = compact ? 10 : screen === "sm" ? 12 : 16;
+  const detailNaturalHeight = fields.length + 4;
+  const detailMaxHeight = body
+    ? Math.floor(height * (compact ? 0.34 : screen === "sm" ? 0.4 : 0.45))
+    : Math.floor(height * 0.72);
+  const detailsHeight = Math.max(compact ? 5 : 6, Math.min(detailNaturalHeight, detailMaxHeight));
+  const contentMinHeight = compact ? 4 : 6;
+  const effectiveHint = hint ?? (compact ? "Esc back • Scroll" : "Esc back • Up/Down scroll");
 
   return (
     <box
@@ -51,7 +57,7 @@ export function DetailPane({ title, fields, body, renderMarkdown, hint }: Props)
         <text fg={colors.accent}>
           <strong>{title}</strong>
         </text>
-        <text fg={colors.textMuted}>{hint ?? "Esc back • Up/Down scroll"}</text>
+        <text fg={colors.textMuted}>{effectiveHint}</text>
       </box>
 
       <box
@@ -63,7 +69,7 @@ export function DetailPane({ title, fields, body, renderMarkdown, hint }: Props)
         minHeight={0}
         padding={1}
         backgroundColor={colors.bg}
-        {...(detailsHeight ? { height: detailsHeight } : {})}
+        height={detailsHeight}
       >
         <text fg={colors.textDim} paddingBottom={1}>
           {"Details"}
@@ -83,7 +89,7 @@ export function DetailPane({ title, fields, body, renderMarkdown, hint }: Props)
         >
           <box flexDirection="column">
             {fields.map((f) => (
-              <box key={f.label} flexDirection={compact ? "column" : "row"} gap={1}>
+              <box key={f.label} flexDirection={screen === "lg" ? "row" : "column"} gap={1}>
                 <text fg={colors.textDim} width={labelWidth}>
                   {f.label}
                 </text>
@@ -112,7 +118,7 @@ export function DetailPane({ title, fields, body, renderMarkdown, hint }: Props)
           <scrollbox
             flexGrow={1}
             height="100%"
-            minHeight={3}
+            minHeight={contentMinHeight}
             focused
             viewportOptions={{ backgroundColor: colors.bg }}
             contentOptions={{ backgroundColor: colors.bg }}

@@ -16,6 +16,13 @@ import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
+import {
+  handleDetailEscapeKey,
+  handleFilterInputKey,
+  isFilterToggleKey,
+  isOpenDetailKey,
+  isRefreshKey,
+} from "../navigation.js";
 import { colors, importanceColor } from "../theme.js";
 import type { Column, KeyEvent, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
 
@@ -26,6 +33,8 @@ const columns: Column<Memory>[] = [
     key: "importance",
     label: "Imp",
     width: 10,
+    minWidth: 8,
+    priority: 5,
     render: (m) => m.importance,
     color: (m) => importanceColor[m.importance] ?? colors.text,
   },
@@ -33,6 +42,8 @@ const columns: Column<Memory>[] = [
     key: "scope",
     label: "Scope",
     width: 14,
+    minWidth: 8,
+    priority: 3,
     render: (m) => m.scope ?? "global",
     color: () => colors.textDim,
   },
@@ -40,12 +51,16 @@ const columns: Column<Memory>[] = [
     key: "content",
     label: "Content",
     width: 60,
+    minWidth: 18,
+    priority: 6,
     render: (m) => (m.content.length > 58 ? `${m.content.slice(0, 58)}…` : m.content),
   },
   {
     key: "created",
     label: "Created",
     width: 12,
+    minWidth: 10,
+    priority: 1,
     render: (m) => m.created_at.slice(0, 10),
     color: () => colors.textDim,
   },
@@ -128,7 +143,7 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
   const [formTarget, setFormTarget] = useState<Memory | null>(null);
   const editForm = useEditForm();
 
-  const { data, loading, error, refresh } = usePolling(
+  const { data, loading, error, refresh, mutate } = usePolling(
     () => client.memories.list({ ...(projectId ? { project_id: projectId } : {}), limit: 100 }),
     5000,
   );
@@ -144,10 +159,11 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
     (m) => `${m.content} ${m.scope ?? ""} ${m.importance} ${m.tags?.join(" ") ?? ""}`,
     true,
   );
-  const { cursor, handleKey: vimHandleKey } = useVimList(
-    filtered.length,
-    mode === "browse" && !filterActive,
-  );
+  const {
+    cursor,
+    setCursor,
+    handleKey: vimHandleKey,
+  } = useVimList(filtered.length, mode === "browse" && !filterActive);
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -157,8 +173,12 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
   filteredRef.current = filtered;
   const cursorRef = useRef(cursor);
   cursorRef.current = cursor;
+  const setCursorRef = useRef(setCursor);
+  setCursorRef.current = setCursor;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
+  const mutateRef = useRef(mutate);
+  mutateRef.current = mutate;
   const editFormRef = useRef(editForm);
   editFormRef.current = editForm;
   const deleteTargetRef = useRef(deleteTarget);
@@ -247,11 +267,21 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
     try {
       const savedMemory = await action(result.values);
       if (savedMemory) setDetail(savedMemory);
-      await refreshRef.current();
       editFormRef.current.finishSubmit("success", creating ? "Memory created." : "Memory saved.");
       setTimeout(() => {
         editFormRef.current.close();
         setFormTarget(null);
+        if (savedMemory) {
+          mutateRef.current((current) => {
+            if (!current) return { memories: [savedMemory] };
+            if (creating) {
+              return { memories: [savedMemory, ...current.memories] };
+            }
+            return {
+              memories: current.memories.map((m) => (m.id === savedMemory.id ? savedMemory : m)),
+            };
+          });
+        }
         setMode("browse");
       }, 700);
     } catch (error) {
@@ -262,10 +292,7 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
       if (filterActiveRef.current) {
-        if (key.name === "escape" || key.name === "return") {
-          setFilterActive(false);
-        }
-        return true;
+        return handleFilterInputKey(key.name, setFilterActive);
       }
 
       if (modeRef.current === "form") {
@@ -308,11 +335,11 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
       }
       if (modeRef.current === "browse" && !filterActiveRef.current) {
         if (vimHandleKey(key)) return true;
-        if (key.name === "/" || key.name === "f") {
+        if (isFilterToggleKey(key.name)) {
           setFilterActive(true);
           return true;
         }
-        if (key.name === "return") {
+        if (isOpenDetailKey(key.name)) {
           const m = filteredRef.current[cursorRef.current];
           if (m) {
             setDetail(m);
@@ -320,7 +347,7 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
           }
           return true;
         }
-        if (key.name === "r") {
+        if (isRefreshKey(key.name)) {
           refreshRef.current();
           return true;
         }
@@ -333,11 +360,13 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
         }
       }
       if (modeRef.current === "detail") {
-        if (key.name === "escape") {
-          setMode("browse");
-          setDetail(null);
+        if (
+          handleDetailEscapeKey(key.name, () => {
+            setMode("browse");
+            setDetail(null);
+          })
+        )
           return true;
-        }
         if (key.name === "d" && detailRef.current) {
           setDeleteTarget(detailRef.current);
           setMode("confirm");
@@ -415,27 +444,27 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
             : "Capture durable project knowledge with n."
         }
       />
-      <EditFormOverlay
-        title={formIntent === "create" ? "New Memory" : "Edit Memory"}
-        fields={editForm.fields}
-        focusIdx={editForm.focusIdx}
-        active={mode === "form"}
-        onChange={editForm.updateValue}
-        submitState={editForm.submitState}
-        onSubmit={submitCurrentForm}
-        onCancel={() => {
-          if (editForm.submitState.status === "saving") return;
-          editForm.close();
-          setMode("browse");
-          setFormTarget(null);
-        }}
-        onNextField={editForm.nextField}
-        onPrevField={editForm.prevField}
-      />
-      <ConfirmDialog
-        message={deleteTarget ? `Delete memory "${deleteTarget.content.slice(0, 40)}…"?` : ""}
-        active={mode === "confirm"}
-      />
+      {mode === "form" && (
+        <EditFormOverlay
+          title={formIntent === "create" ? "New Memory" : "Edit Memory"}
+          fields={editForm.fields}
+          focusIdx={editForm.focusIdx}
+          onChange={editForm.updateValue}
+          submitState={editForm.submitState}
+          onSubmit={submitCurrentForm}
+          onCancel={() => {
+            if (editForm.submitState.status === "saving") return;
+            editForm.close();
+            setMode("browse");
+            setFormTarget(null);
+          }}
+          onNextField={editForm.nextField}
+          onPrevField={editForm.prevField}
+        />
+      )}
+      {mode === "confirm" && deleteTarget && (
+        <ConfirmDialog message={`Delete memory "${deleteTarget.content.slice(0, 40)}…"?`} />
+      )}
     </box>
   );
 }

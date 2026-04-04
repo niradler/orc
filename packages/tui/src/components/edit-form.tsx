@@ -1,10 +1,11 @@
-import { createLogger } from "@orc/core/logger";
 import { useTerminalDimensions } from "@opentui/react";
+import { createLogger } from "@orc/core/logger";
 import { useCallback, useMemo, useRef, useState } from "react";
 
 const logger = createLogger("tui:form");
+
 import { colors } from "../theme.js";
-import type { KeyEvent, SelectOption } from "../types.js";
+import { getScreenSize, type KeyEvent, type SelectOption } from "../types.js";
 
 export type FormFieldType = "input" | "textarea" | "select";
 
@@ -168,7 +169,6 @@ type RenderProps = {
   title: string;
   fields: FormField[];
   focusIdx: number;
-  active: boolean;
   onChange: (key: string, value: string) => void;
   submitState: FormSubmitState;
   onSubmit: () => void | Promise<void>;
@@ -185,7 +185,6 @@ export function EditFormOverlay({
   title,
   fields,
   focusIdx,
-  active,
   onChange,
   submitState,
   onSubmit,
@@ -195,18 +194,22 @@ export function EditFormOverlay({
 }: RenderProps) {
   const { width, height } = useTerminalDimensions();
   const textareaRefs = useRef<Record<string, TextareaRef>>({});
-  const compact = width < 88;
+  const screen = getScreenSize(width);
+  const compact = screen === "xs";
 
-  const boxWidth = compact ? Math.max(28, width - 2) : Math.min(92, width - 4);
+  const boxWidth = compact
+    ? Math.max(24, width - 2)
+    : screen === "sm"
+      ? Math.min(78, width - 2)
+      : Math.min(92, width - 4);
   const contentHeight = useMemo(() => {
     return fields.reduce(
-      (total, field) => total + (field.type === "textarea" ? (field.height ?? 6) : 3),
+      (total, field) =>
+        total + (field.type === "textarea" ? (field.height ?? (compact ? 4 : 6)) : 3),
       2,
     );
-  }, [fields]);
-  const boxHeight = Math.max(10, Math.min(height - 2, contentHeight + (compact ? 8 : 10)));
-
-  if (!active) return null;
+  }, [compact, fields]);
+  const boxHeight = Math.max(10, Math.min(height - 2, contentHeight + (compact ? 7 : 9)));
 
   const handleFieldKey = (key: KeyEvent) => {
     if (submitState.status === "saving") return;
@@ -260,7 +263,6 @@ export function EditFormOverlay({
         title={` ${title} `}
         titleAlignment="left"
       >
-
         <scrollbox
           flexGrow={1}
           height="100%"
@@ -346,7 +348,7 @@ export function EditFormOverlay({
                           textareaRefs.current[field.key] = instance as TextareaRef;
                         }}
                         focused={focused}
-                        height={field.height ?? 6}
+                        height={field.height ?? (compact ? 4 : 6)}
                         initialValue={field.value}
                         placeholder={field.placeholder ?? ""}
                         wrapMode="word"
@@ -379,8 +381,7 @@ export function EditFormOverlay({
                         cursorColor={colors.accent}
                         focusedBackgroundColor={colors.bg}
                         placeholderColor={colors.textMuted}
-                        onKeyDown={handleFieldKey}
-                        onChange={(value) => onChange(field.key, value)}
+                        onInput={(value) => onChange(field.key, value)}
                       />
                     </box>
                   )}

@@ -4,9 +4,7 @@ exports[`detail pane renders metadata and content sections 1`] = `
 "╭────────────────────────────────────────────────────────────────────────╮
 │                                                                        │
 │                                                                        │
-│  Task: polish tui                                                      │
-│                                                                        │
-│  Esc back • Up/Down scroll                                             │
+│  Task: polish tui                           Esc back • Up/Down scroll  │
 │                                                                        │
 │                                                                        │
 │ ┌────────────────────────────────────────────────────────────────────┐ │
@@ -22,7 +20,9 @@ exports[`detail pane renders metadata and content sections 1`] = `
 │ │                                                                    │ │
 │ │ Improve shell chrome                                             █ │ │
 │ │ Improve forms                                                    █ │ │
-│ │ Improve scrolling                                                ▀ │ │
+│ │ Improve scrolling                                                █ │ │
+│ │                                                                  ▀ │ │
+│ │                                                                    │ │
 │ │                                                                    │ │
 │ │                                                                    │ │
 │ │                                                                    │ │
