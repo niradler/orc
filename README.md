@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/Title.gif" alt="ORC" width="600" />
+
 # orc
 
 **Multi-agent orchestrator with human-in-the-loop review**
@@ -12,13 +14,7 @@
 One SQLite file. One CLI. Any agent.<br>
 ORC coordinates Claude Code, Cursor, Codex, Gemini, and remote A2A agents through a shared task board, persistent memory, and a review flow that keeps you in control.
 
-```
-Claude Code  ──┐                          ┌── orc cli (you)
-Cursor       ──┤                          │
-Codex        ──┼──→  orc daemon  ←────────┤
-Gemini CLI   ──┤   (API + task loop +     ├── Telegram / Slack
-Custom A2A   ──┘    scheduler + gateway)  └── TUI
-```
+<img src="assets/Architecture.gif" alt="ORC Architecture" width="700" />
 
 </div>
 
@@ -273,6 +269,8 @@ todo → queued → doing → review → done
 ```
 
 Tasks with `required_review: true` (default) need your approval before moving to `done`. Set `max_review_rounds` to auto-pause tasks that cycle through too many revision rounds.
+
+<img src="assets/TaskFlow.gif" alt="Task Flow" width="600" />
 
 ### Jobs
 

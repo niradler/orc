@@ -1,4 +1,4 @@
-export { createBackend, listRegisteredBackends, registerBackend } from "./registry.js";
+export { createBackend, hasBackend, listRegisteredBackends, registerBackend } from "./registry.js";
 export type {
   AgentBackend,
   AgentBackendName,

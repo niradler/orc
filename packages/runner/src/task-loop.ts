@@ -1,5 +1,5 @@
 import type { AgentBackendName, AgentSession } from "@orc/agent-runtime";
-import { createBackend } from "@orc/agent-runtime";
+import { createBackend, hasBackend } from "@orc/agent-runtime";
 import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
@@ -180,21 +180,28 @@ async function driveWorkerLoop(
       return;
     }
 
-    const backend = createBackend(backendName);
+    const isAcpxFallback = !hasBackend(backendName);
+    const resolvedBackend = isAcpxFallback ? "acpx" as AgentBackendName : backendName;
+    const backend = createBackend(resolvedBackend);
+    const sessionOpts = {
+      cwd,
+      autoApprove: true,
+      ...(isAcpxFallback ? { acpxAgent: backendName } : {}),
+    };
 
     if (previousRuntimeSessionId) {
       logger.info(`Attempting resume of session ${previousRuntimeSessionId} for task ${task.id}`);
       try {
-        session = await backend.resumeSession(previousRuntimeSessionId, { cwd, autoApprove: true });
+        session = await backend.resumeSession(previousRuntimeSessionId, sessionOpts);
         await session.send(prompt);
         logger.info(`Resume succeeded for task ${task.id}`);
       } catch (resumeErr) {
         logger.warn(`Resume failed for task ${task.id}: ${String(resumeErr)}, starting fresh`);
-        session = await backend.startSession({ cwd, autoApprove: true });
+        session = await backend.startSession(sessionOpts);
         await session.send(prompt);
       }
     } else {
-      session = await backend.startSession({ cwd, autoApprove: true });
+      session = await backend.startSession(sessionOpts);
       await session.send(prompt);
     }
 
