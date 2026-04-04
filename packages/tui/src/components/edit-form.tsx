@@ -1,11 +1,10 @@
 import { useTerminalDimensions } from "@opentui/react";
 import { createLogger } from "@orc/core/logger";
 import { useCallback, useMemo, useRef, useState } from "react";
-
-const logger = createLogger("tui:form");
-
 import { colors } from "../theme.js";
 import { getScreenSize, type KeyEvent, type SelectOption } from "../types.js";
+
+const logger = createLogger("tui:form");
 
 export type FormFieldType = "input" | "textarea" | "select";
 

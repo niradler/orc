@@ -323,11 +323,13 @@ app.openapi(deleteRoute, async (c) => {
   const { id } = c.req.valid("param");
   const existing = await db.query.projects.findFirst({ where: eq(projects.id, id) });
   if (!existing) throw new NotFoundError("Project", id);
-  await db.update(tasks).set({ project_id: null }).where(eq(tasks.project_id, id));
-  await db.update(memories).set({ project_id: null }).where(eq(memories.project_id, id));
-  await db.update(jobs).set({ project_id: null }).where(eq(jobs.project_id, id));
-  await db.update(sessions).set({ project_id: null }).where(eq(sessions.project_id, id));
-  await db.delete(projects).where(eq(projects.id, id));
+  await db.transaction(async (tx) => {
+    await tx.update(tasks).set({ project_id: null }).where(eq(tasks.project_id, id));
+    await tx.update(memories).set({ project_id: null }).where(eq(memories.project_id, id));
+    await tx.update(jobs).set({ project_id: null }).where(eq(jobs.project_id, id));
+    await tx.update(sessions).set({ project_id: null }).where(eq(sessions.project_id, id));
+    await tx.delete(projects).where(eq(projects.id, id));
+  });
   return new Response(null, { status: 204 });
 });
 
