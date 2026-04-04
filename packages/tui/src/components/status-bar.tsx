@@ -1,6 +1,6 @@
 import { useTerminalDimensions } from "@opentui/react";
 import { colors } from "../theme.js";
-import type { Route, ViewState } from "../types.js";
+import { getScreenSize, type Route, type ViewState } from "../types.js";
 
 type Props = {
   route: Route;
@@ -8,9 +8,9 @@ type Props = {
 };
 
 const HINTS = {
-  browse: "Arrows or j/k move • Enter open • / search • n new • e edit • d delete • : command",
+  browse: "Arrows or j/k move • Enter open • / search • n new • : command",
   detail: "Esc back • Up/Down scroll • e edit • d delete",
-  form: "Tab next • Shift+Tab prev • Ctrl+S save • Esc cancel",
+  form: "Tab next • Shift+Tab prev • Ctrl+S or F2 save • Esc cancel",
   filter: "Type to search • Enter done • Esc close",
   confirm: "Enter or y confirm • Esc or n cancel",
 } as const;
@@ -24,11 +24,19 @@ const ROUTE_HELP: Record<Route, string> = {
   prompts: "Manage reusable prompts and skills.",
 };
 
+function trimTo(text: string, width: number): string {
+  if (width <= 0) return "";
+  if (text.length <= width) return text;
+  if (width === 1) return text.slice(0, 1);
+  return `${text.slice(0, width - 1)}…`;
+}
+
 export function StatusBar({ route, state }: Props) {
   const { width } = useTerminalDimensions();
+  const compact = getScreenSize(width) === "xs";
   const modeLabel = state.mode.toUpperCase();
-  const left = state.selectionLabel ?? ROUTE_HELP[route];
-  const right = state.statusMessage ?? HINTS[state.mode];
+  const left = trimTo(state.selectionLabel ?? ROUTE_HELP[route], compact ? width - 8 : width - 28);
+  const right = trimTo(state.statusMessage ?? HINTS[state.mode], Math.max(24, width - 4));
 
   return (
     <box
@@ -40,7 +48,11 @@ export function StatusBar({ route, state }: Props) {
       paddingTop={1}
       paddingBottom={1}
     >
-      <box flexDirection="row" justifyContent="space-between">
+      <box
+        flexDirection={compact ? "column" : "row"}
+        justifyContent="space-between"
+        gap={compact ? 1 : 0}
+      >
         <text fg={colors.text}>{left}</text>
         <box
           flexDirection="row"

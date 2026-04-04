@@ -7,18 +7,43 @@ import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
+import {
+  handleDetailEscapeKey,
+  handleFilterInputKey,
+  isFilterToggleKey,
+  isOpenDetailKey,
+  isRefreshKey,
+} from "../navigation.js";
 import { colors } from "../theme.js";
 import type { Column, KeyEvent, ViewKeyHandler, ViewState } from "../types.js";
 
 const client = createOrcClient();
 
 const columns: Column<Session>[] = [
-  { key: "agent", label: "Agent", width: 16, render: (s) => s.agent, color: () => colors.accent },
-  { key: "id", label: "ID", width: 10, render: (s) => s.id.slice(-8), color: () => colors.textDim },
+  {
+    key: "agent",
+    label: "Agent",
+    width: 16,
+    minWidth: 10,
+    priority: 6,
+    render: (s) => s.agent,
+    color: () => colors.accent,
+  },
+  {
+    key: "id",
+    label: "ID",
+    width: 10,
+    minWidth: 8,
+    priority: 4,
+    render: (s) => s.id.slice(-8),
+    color: () => colors.textDim,
+  },
   {
     key: "summary",
     label: "Summary",
     width: 50,
+    minWidth: 18,
+    priority: 7,
     render: (s) => {
       const t = s.summary ?? "—";
       return t.length > 48 ? `${t.slice(0, 48)}…` : t;
@@ -28,6 +53,8 @@ const columns: Column<Session>[] = [
     key: "tokens",
     label: "Tokens",
     width: 10,
+    minWidth: 8,
+    priority: 2,
     render: (s) => (s.tokens_used ? String(s.tokens_used) : "—"),
     color: () => colors.textDim,
   },
@@ -35,6 +62,8 @@ const columns: Column<Session>[] = [
     key: "created",
     label: "Created",
     width: 20,
+    minWidth: 12,
+    priority: 1,
     render: (s) => s.created_at,
     color: () => colors.textDim,
   },
@@ -88,7 +117,7 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
       countLabel: loading ? "Loading sessions…" : `${filtered.length} visible sessions`,
       filterQuery: query,
       filterActive,
-      navigationLocked: filterActive,
+      navigationLocked: filterActive || mode === "detail",
       selectionLabel:
         mode === "detail" && detail
           ? `Session detail • ${detail.agent}`
@@ -96,25 +125,22 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
             ? `${selectedSession.agent} • ${selectedSession.id.slice(-8)}`
             : "No session selected yet.",
       detailId: mode === "detail" ? (detail?.id ?? null) : null,
-      statusMessage: "Recent sessions help audit agent activity.",
+      statusMessage: mode === "detail" ? "Read-only detail • Esc back" : "Read-only audit surface",
     });
   }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
       if (filterActiveRef.current) {
-        if (key.name === "escape" || key.name === "return") {
-          setFilterActive(false);
-        }
-        return true;
+        return handleFilterInputKey(key.name, setFilterActive);
       }
       if (modeRef.current === "browse" && !filterActiveRef.current) {
         if (vimHandleKey(key)) return true;
-        if (key.name === "/" || key.name === "f") {
+        if (isFilterToggleKey(key.name)) {
           setFilterActive(true);
           return true;
         }
-        if (key.name === "return") {
+        if (isOpenDetailKey(key.name)) {
           const session = filteredRef.current[cursorRef.current];
           if (session) {
             client.sessions.get(session.id).then((result) => {
@@ -126,15 +152,16 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
           }
           return true;
         }
-        if (key.name === "r") {
+        if (isRefreshKey(key.name)) {
           refreshRef.current();
           return true;
         }
       }
-      if (modeRef.current === "detail" && key.name === "escape") {
-        setMode("browse");
-        setDetail(null);
-        return true;
+      if (modeRef.current === "detail") {
+        return handleDetailEscapeKey(key.name, () => {
+          setMode("browse");
+          setDetail(null);
+        });
       }
       return false;
     },
@@ -159,6 +186,7 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
         title={`Session: ${detail.agent}`}
         fields={fields}
         body={detail.summary ?? detail.snapshot ?? undefined}
+        hint="Esc back • Up/Down scroll"
       />
     );
   }

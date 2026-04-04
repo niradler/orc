@@ -1,14 +1,28 @@
 import { createOrcClient } from "@orc/sdk";
 import type { Memory } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { expectApiData } from "../api-result.js";
 import { ConfirmDialog } from "../components/confirm-dialog.js";
 import { DetailPane } from "../components/detail-pane.js";
-import { EditFormOverlay, type FormField, useEditForm } from "../components/edit-form.js";
+import {
+  EditFormOverlay,
+  type FormField,
+  formErrorMessage,
+  isSaveKey,
+  useEditForm,
+} from "../components/edit-form.js";
 import { ResourceTable } from "../components/resource-table.js";
 import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
+import {
+  handleDetailEscapeKey,
+  handleFilterInputKey,
+  isFilterToggleKey,
+  isOpenDetailKey,
+  isRefreshKey,
+} from "../navigation.js";
 import { colors, importanceColor } from "../theme.js";
 import type { Column, KeyEvent, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
 
@@ -19,6 +33,8 @@ const columns: Column<Memory>[] = [
     key: "importance",
     label: "Imp",
     width: 10,
+    minWidth: 8,
+    priority: 5,
     render: (m) => m.importance,
     color: (m) => importanceColor[m.importance] ?? colors.text,
   },
@@ -26,6 +42,8 @@ const columns: Column<Memory>[] = [
     key: "scope",
     label: "Scope",
     width: 14,
+    minWidth: 8,
+    priority: 3,
     render: (m) => m.scope ?? "global",
     color: () => colors.textDim,
   },
@@ -33,18 +51,22 @@ const columns: Column<Memory>[] = [
     key: "content",
     label: "Content",
     width: 60,
+    minWidth: 18,
+    priority: 6,
     render: (m) => (m.content.length > 58 ? `${m.content.slice(0, 58)}…` : m.content),
   },
   {
     key: "created",
     label: "Created",
     width: 12,
+    minWidth: 10,
+    priority: 1,
     render: (m) => m.created_at.slice(0, 10),
     color: () => colors.textDim,
   },
 ];
 
-function memoryFields(): FormField[] {
+function memoryFields(memory?: Memory): FormField[] {
   const typeOptions: SelectOption[] = [
     { label: "Fact", value: "fact" },
     { label: "Decision", value: "decision" },
@@ -58,32 +80,53 @@ function memoryFields(): FormField[] {
     { label: "High", value: "high" },
     { label: "Critical", value: "critical" },
   ];
-  return [
+  const baseFields: FormField[] = [
     {
       key: "content",
       label: "Content",
-      value: "",
+      value: memory?.content ?? "",
       type: "textarea",
       height: 8,
       placeholder: "Store a fact, decision, rule, or discovery",
     },
     {
+      key: "importance",
+      label: "Importance",
+      value: memory?.importance ?? "normal",
+      type: "select",
+      options: importanceOptions,
+    },
+    {
+      key: "scope",
+      label: "Scope",
+      value: memory?.scope ?? "",
+      placeholder: "global or subsystem",
+    },
+    {
+      key: "source",
+      label: "Source",
+      value: memory?.source ?? "",
+      placeholder: "agent, doc, discussion",
+    },
+    {
+      key: "tags",
+      label: "Tags",
+      value: memory?.tags?.join(", ") ?? "",
+      placeholder: "search, api, rule",
+    },
+  ];
+
+  if (!memory) {
+    baseFields.splice(1, 0, {
       key: "type",
       label: "Type",
       value: "fact",
       type: "select",
       options: typeOptions,
-    },
-    {
-      key: "importance",
-      label: "Importance",
-      value: "normal",
-      type: "select",
-      options: importanceOptions,
-    },
-    { key: "scope", label: "Scope", value: "", placeholder: "global or subsystem" },
-    { key: "tags", label: "Tags", value: "", placeholder: "search, api, rule" },
-  ];
+    });
+  }
+
+  return baseFields;
 }
 
 type Props = {
@@ -96,9 +139,11 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
   const [mode, setMode] = useState<"browse" | "detail" | "form" | "confirm">("browse");
   const [detail, setDetail] = useState<Memory | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Memory | null>(null);
+  const [formIntent, setFormIntent] = useState<"create" | "edit">("create");
+  const [formTarget, setFormTarget] = useState<Memory | null>(null);
   const editForm = useEditForm();
 
-  const { data, loading, error, refresh } = usePolling(
+  const { data, loading, error, refresh, mutate } = usePolling(
     () => client.memories.list({ ...(projectId ? { project_id: projectId } : {}), limit: 100 }),
     5000,
   );
@@ -114,10 +159,11 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
     (m) => `${m.content} ${m.scope ?? ""} ${m.importance} ${m.tags?.join(" ") ?? ""}`,
     true,
   );
-  const { cursor, handleKey: vimHandleKey } = useVimList(
-    filtered.length,
-    mode === "browse" && !filterActive,
-  );
+  const {
+    cursor,
+    setCursor,
+    handleKey: vimHandleKey,
+  } = useVimList(filtered.length, mode === "browse" && !filterActive);
 
   const modeRef = useRef(mode);
   modeRef.current = mode;
@@ -127,14 +173,22 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
   filteredRef.current = filtered;
   const cursorRef = useRef(cursor);
   cursorRef.current = cursor;
+  const setCursorRef = useRef(setCursor);
+  setCursorRef.current = setCursor;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
+  const mutateRef = useRef(mutate);
+  mutateRef.current = mutate;
   const editFormRef = useRef(editForm);
   editFormRef.current = editForm;
   const deleteTargetRef = useRef(deleteTarget);
   deleteTargetRef.current = deleteTarget;
   const detailRef = useRef(detail);
   detailRef.current = detail;
+  const formIntentRef = useRef(formIntent);
+  formIntentRef.current = formIntent;
+  const formTargetRef = useRef(formTarget);
+  formTargetRef.current = formTarget;
 
   useEffect(() => {
     const selectedMemory = filtered[cursor];
@@ -144,7 +198,7 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
       countLabel: loading ? "Loading memories…" : `${filtered.length} visible memories`,
       filterQuery: query,
       filterActive,
-      navigationLocked: filterActive || mode === "form" || mode === "confirm",
+      navigationLocked: filterActive || mode !== "browse",
       selectionLabel:
         mode === "detail" && detail
           ? `Memory detail • ${detail.importance}`
@@ -152,55 +206,105 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
             ? `${selectedMemory.importance} • ${(selectedMemory.scope ?? "global").toString()}`
             : "No memory selected yet.",
       detailId: mode === "detail" ? (detail?.id ?? null) : null,
-      statusMessage: "Memories update live as the API polls.",
+      statusMessage:
+        mode === "detail" ? "Detail actions: e edit • d delete" : "Enter opens detail • n creates",
     });
   }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
 
   const doCreate = useCallback(
-    (vals: Record<string, string>) => {
-      if (!vals.content) return;
+    async (vals: Record<string, string>) => {
+      if (!vals.content) throw new Error("Content is required.");
       const tags = vals.tags
         ? vals.tags
             .split(",")
             .map((s) => s.trim())
             .filter(Boolean)
         : undefined;
-      client.memories
-        .create({
-          content: vals.content,
-          type: (vals.type as "fact" | "decision" | "event" | "rule" | "discovery") || "fact",
-          importance: (vals.importance as "low" | "normal" | "high" | "critical") || "normal",
-          ...(vals.scope ? { scope: vals.scope } : {}),
-          ...(tags ? { tags } : {}),
-          ...(projectId ? { project_id: projectId } : {}),
-        })
-        .then(() => refreshRef.current());
+      const created = await client.memories.create({
+        content: vals.content,
+        type: (vals.type as "fact" | "decision" | "event" | "rule" | "discovery") || "fact",
+        importance: (vals.importance as "low" | "normal" | "high" | "critical") || "normal",
+        ...(vals.scope ? { scope: vals.scope } : {}),
+        ...(tags ? { tags } : {}),
+        ...(projectId ? { project_id: projectId } : {}),
+      });
+      return expectApiData(created, "Couldn't create memory.");
     },
     [projectId],
   );
 
   const doCreateRef = useRef(doCreate);
   doCreateRef.current = doCreate;
+  const doEdit = useCallback(async (vals: Record<string, string>) => {
+    const memory = formTargetRef.current ?? detailRef.current;
+    if (!memory) throw new Error("Select a memory first.");
+    if (!vals.content) throw new Error("Content is required.");
+    const tags = vals.tags
+      ? vals.tags
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+    const updated = await client.memories.update(memory.id, {
+      content: vals.content,
+      ...(vals.source ? { source: vals.source } : {}),
+      ...(vals.scope ? { scope: vals.scope } : {}),
+      tags,
+      importance: (vals.importance as "low" | "normal" | "high" | "critical") || memory.importance,
+    });
+    return expectApiData(updated, "Couldn't save memory.");
+  }, []);
+  const doEditRef = useRef(doEdit);
+  doEditRef.current = doEdit;
+
+  const submitCurrentForm = useCallback(async () => {
+    const result = editFormRef.current.submit();
+    const creating = formIntentRef.current === "create";
+    const action = creating ? doCreateRef.current : doEditRef.current;
+
+    if (!editFormRef.current.beginSubmit(creating ? "Creating memory…" : "Saving memory…")) return;
+
+    try {
+      const savedMemory = await action(result.values);
+      if (savedMemory) setDetail(savedMemory);
+      editFormRef.current.finishSubmit("success", creating ? "Memory created." : "Memory saved.");
+      setTimeout(() => {
+        editFormRef.current.close();
+        setFormTarget(null);
+        if (savedMemory) {
+          mutateRef.current((current) => {
+            if (!current) return { memories: [savedMemory] };
+            if (creating) {
+              return { memories: [savedMemory, ...current.memories] };
+            }
+            return {
+              memories: current.memories.map((m) => (m.id === savedMemory.id ? savedMemory : m)),
+            };
+          });
+        }
+        setMode("browse");
+      }, 700);
+    } catch (error) {
+      editFormRef.current.finishSubmit("error", formErrorMessage(error, "Couldn't save memory."));
+    }
+  }, []);
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
       if (filterActiveRef.current) {
-        if (key.name === "escape" || key.name === "return") {
-          setFilterActive(false);
-        }
-        return true;
+        return handleFilterInputKey(key.name, setFilterActive);
       }
 
       if (modeRef.current === "form") {
         if (key.name === "escape") {
+          if (editFormRef.current.submitState.status === "saving") return true;
           editFormRef.current.close();
           setMode("browse");
+          setFormTarget(null);
           return true;
         }
-        if (key.ctrl && key.name === "s") {
-          const result = editFormRef.current.submit();
-          doCreateRef.current(result.values);
-          setMode("browse");
+        if (isSaveKey(key)) {
+          void submitCurrentForm();
           return true;
         }
         if (key.name === "tab" && key.shift) {
@@ -231,11 +335,11 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
       }
       if (modeRef.current === "browse" && !filterActiveRef.current) {
         if (vimHandleKey(key)) return true;
-        if (key.name === "/" || key.name === "f") {
+        if (isFilterToggleKey(key.name)) {
           setFilterActive(true);
           return true;
         }
-        if (key.name === "return") {
+        if (isOpenDetailKey(key.name)) {
           const m = filteredRef.current[cursorRef.current];
           if (m) {
             setDetail(m);
@@ -243,40 +347,43 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
           }
           return true;
         }
-        if (key.name === "r") {
+        if (isRefreshKey(key.name)) {
           refreshRef.current();
           return true;
         }
         if (key.name === "n") {
+          setFormIntent("create");
+          setFormTarget(null);
           editFormRef.current.open(memoryFields());
           setMode("form");
           return true;
         }
-        if (key.name === "d") {
-          const m = filteredRef.current[cursorRef.current];
-          if (m) {
-            setDeleteTarget(m);
-            setMode("confirm");
-          }
-          return true;
-        }
       }
       if (modeRef.current === "detail") {
-        if (key.name === "escape") {
-          setMode("browse");
-          setDetail(null);
+        if (
+          handleDetailEscapeKey(key.name, () => {
+            setMode("browse");
+            setDetail(null);
+          })
+        )
           return true;
-        }
         if (key.name === "d" && detailRef.current) {
           setDeleteTarget(detailRef.current);
           setMode("confirm");
+          return true;
+        }
+        if (key.name === "e" && detailRef.current) {
+          setFormIntent("edit");
+          setFormTarget(detailRef.current);
+          editFormRef.current.open(memoryFields(detailRef.current));
+          setMode("form");
           return true;
         }
         return false;
       }
       return false;
     },
-    [vimHandleKey, setFilterActive],
+    [submitCurrentForm, vimHandleKey, setFilterActive],
   );
 
   useEffect(() => {
@@ -298,7 +405,15 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
       { label: "Created", value: detail.created_at },
       { label: "Updated", value: detail.updated_at },
     ];
-    return <DetailPane title={"Memory"} fields={fields} body={detail.content} renderMarkdown />;
+    return (
+      <DetailPane
+        title={"Memory"}
+        fields={fields}
+        body={detail.content}
+        renderMarkdown
+        hint="Esc back • e edit • d delete • Up/Down scroll"
+      />
+    );
   }
 
   return (
@@ -329,17 +444,27 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
             : "Capture durable project knowledge with n."
         }
       />
-      <EditFormOverlay
-        title="New Memory"
-        fields={editForm.fields}
-        focusIdx={editForm.focusIdx}
-        active={mode === "form"}
-        onChange={editForm.updateValue}
-      />
-      <ConfirmDialog
-        message={deleteTarget ? `Delete memory "${deleteTarget.content.slice(0, 40)}…"?` : ""}
-        active={mode === "confirm"}
-      />
+      {mode === "form" && (
+        <EditFormOverlay
+          title={formIntent === "create" ? "New Memory" : "Edit Memory"}
+          fields={editForm.fields}
+          focusIdx={editForm.focusIdx}
+          onChange={editForm.updateValue}
+          submitState={editForm.submitState}
+          onSubmit={submitCurrentForm}
+          onCancel={() => {
+            if (editForm.submitState.status === "saving") return;
+            editForm.close();
+            setMode("browse");
+            setFormTarget(null);
+          }}
+          onNextField={editForm.nextField}
+          onPrevField={editForm.prevField}
+        />
+      )}
+      {mode === "confirm" && deleteTarget && (
+        <ConfirmDialog message={`Delete memory "${deleteTarget.content.slice(0, 40)}…"?`} />
+      )}
     </box>
   );
 }

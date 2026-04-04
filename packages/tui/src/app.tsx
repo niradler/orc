@@ -9,7 +9,7 @@ import { usePolling } from "./hooks/use-polling.js";
 import { canHandleCommandInput, canSwitchRoutes } from "./navigation.js";
 import { colors } from "./theme.js";
 import type { Command, KeyEvent, Route, ViewKeyHandler, ViewState } from "./types.js";
-import { ROUTES } from "./types.js";
+import { getScreenSize, ROUTES } from "./types.js";
 import { JobsView } from "./views/jobs.js";
 import { MemoriesView } from "./views/memories.js";
 import { ProjectsView } from "./views/projects.js";
@@ -42,6 +42,7 @@ const TAB_LABELS: Record<Route, string> = {
 export function App() {
   const renderer = useRenderer();
   const { width, height } = useTerminalDimensions();
+  const compactShell = getScreenSize(width) === "xs";
   const [route, setRoute] = useState<Route>("tasks");
   const [activeProject, setActiveProject] = useState<string | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
@@ -160,7 +161,7 @@ export function App() {
       />
 
       <box
-        flexDirection="row"
+        flexDirection="column"
         backgroundColor={colors.bg}
         paddingLeft={1}
         paddingRight={1}
@@ -168,41 +169,42 @@ export function App() {
         paddingBottom={1}
         gap={1}
       >
-        {(["projects", "tasks", "jobs", "memories", "sessions", "prompts"] as Route[]).map(
-          (r, i) => (
+        <box flexDirection="row" flexWrap="wrap" gap={1}>
+          {(["projects", "tasks", "jobs", "memories", "sessions", "prompts"] as Route[]).map(
+            (r, i) => (
+              <box
+                key={r}
+                backgroundColor={route === r ? colors.bgSelected : colors.bgLight}
+                border
+                borderStyle="single"
+                borderColor={route === r ? colors.borderFocus : colors.border}
+                paddingLeft={1}
+                paddingRight={1}
+                paddingTop={0}
+                paddingBottom={0}
+              >
+                <text
+                  fg={route === r ? colors.text : colors.textDim}
+                >{`${i + 1}. ${TAB_LABELS[r]}`}</text>
+              </box>
+            ),
+          )}
+          {activeProject && (
             <box
-              key={r}
-              backgroundColor={route === r ? colors.bgSelected : colors.bgLight}
+              backgroundColor={colors.bgSelected}
               border
               borderStyle="single"
-              borderColor={route === r ? colors.borderFocus : colors.border}
+              borderColor={colors.border}
               paddingLeft={1}
               paddingRight={1}
-              paddingTop={0}
-              paddingBottom={0}
             >
-              <text
-                fg={route === r ? colors.text : colors.textDim}
-              >{`${i + 1}. ${TAB_LABELS[r]}`}</text>
+              <text fg={colors.accentAlt}>{`Project ${activeProject}`}</text>
             </box>
-          ),
-        )}
-        {activeProject && (
-          <box
-            marginLeft={1}
-            backgroundColor={colors.bgSelected}
-            border
-            borderStyle="single"
-            borderColor={colors.border}
-            paddingLeft={1}
-            paddingRight={1}
-          >
-            <text fg={colors.accentAlt}>{`Project ${activeProject}`}</text>
-          </box>
-        )}
-        <box flexGrow={1} justifyContent="center" alignItems="flex-end">
-          <text fg={colors.textMuted}>{"1-6 switch • ← → cycle • : command"}</text>
+          )}
         </box>
+        <text fg={colors.textMuted}>
+          {compactShell ? "1-6 switch • : command" : "1-6 switch • ← → cycle • : command"}
+        </text>
       </box>
       <box height={1} backgroundColor={colors.bg}>
         <text fg={colors.border}>{"─".repeat(Math.max(8, width - 2))}</text>

@@ -4,7 +4,8 @@ type PollResult<T> = {
   data: T | null;
   loading: boolean;
   error: string | null;
-  refresh: () => void;
+  refresh: () => Promise<void>;
+  mutate: (updater: (current: T | null) => T | null) => void;
 };
 
 export function usePolling<T>(
@@ -34,6 +35,10 @@ export function usePolling<T>(
     }
   }, []);
 
+  const mutate = useCallback((updater: (current: T | null) => T | null) => {
+    setData(updater);
+  }, []);
+
   useEffect(() => {
     fetch();
     timerRef.current = setInterval(fetch, intervalMs);
@@ -42,5 +47,5 @@ export function usePolling<T>(
     };
   }, [fetch, intervalMs]);
 
-  return { data, loading, error, refresh: fetch };
+  return { data, loading, error, refresh: fetch, mutate };
 }

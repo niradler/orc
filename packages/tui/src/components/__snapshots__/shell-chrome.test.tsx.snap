@@ -17,7 +17,7 @@ exports[`shell chrome renders branded ORC layout 1`] = `
                                                                                     
                                                                                     
  ◉ doing • Polish ORC TUI                                                   BROWSE  
- Arrows or j/k move • Enter open • / search • n new • e edit • d delete • : command 
+ Arrows or j/k move • Enter open • / search • n new • : command                     
                                                                                     
 "
 `;

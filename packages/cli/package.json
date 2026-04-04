@@ -26,8 +26,8 @@
     "@orc/mcp": "workspace:*",
     "@orc/runner": "workspace:*",
     "@orc/sdk": "workspace:*",
-    "commander": "^13.1.0",
-    "typescript": "^5.7.3"
+    "commander": "^14.0.3",
+    "typescript": "^6.0.2"
   },
   "peerDependencies": {
     "bun": ">=1.0.0"

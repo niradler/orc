@@ -1,5 +1,6 @@
 import { useTerminalDimensions } from "@opentui/react";
 import { colors } from "../theme.js";
+import { getScreenSize } from "../types.js";
 
 type Props = {
   title: string;
@@ -23,8 +24,9 @@ export function ViewToolbar({
   statusMessage,
 }: Props) {
   const { width } = useTerminalDimensions();
-  const compact = width < 86;
-  const searchWidth = compact ? Math.max(18, width - 18) : 32;
+  const screen = getScreenSize(width);
+  const compact = screen === "xs";
+  const searchWidth = compact ? Math.max(14, width - 14) : screen === "sm" ? 26 : 34;
 
   return (
     <box
@@ -52,7 +54,9 @@ export function ViewToolbar({
         paddingLeft={1}
         paddingRight={1}
       >
-        <text fg={filterActive || filterQuery ? colors.accent : colors.textDim}>{"Search"}</text>
+        <text fg={filterActive || filterQuery ? colors.accent : colors.textDim}>
+          {screen === "xs" ? "S" : "Search"}
+        </text>
         <input
           focused={filterActive}
           value={filterQuery}

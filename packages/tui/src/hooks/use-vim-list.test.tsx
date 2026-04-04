@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { testRender } from "@opentui/react/test-utils";
 import { act } from "react";
+import type { KeyEvent } from "../types.js";
 import { useVimList } from "./use-vim-list.js";
 
 let setup: Awaited<ReturnType<typeof testRender>> | null = null;
@@ -19,51 +20,46 @@ function VimListHarness() {
   return <text>{`cursor:${cursor}`}</text>;
 }
 
+function keyEvent(name: string, sequence = ""): KeyEvent {
+  return {
+    name,
+    sequence,
+    number: false,
+    raw: sequence,
+    source: "raw",
+    ctrl: false,
+    shift: false,
+    meta: false,
+    option: false,
+    eventType: "press",
+    repeated: false,
+    preventDefault() {},
+    stopPropagation() {},
+    stopImmediatePropagation() {},
+    clone() {
+      return keyEvent(name, sequence);
+    },
+  } as unknown as KeyEvent;
+}
+
 test("vim list responds to arrow keys and vim keys", async () => {
   setup = await testRender(<VimListHarness />, { width: 30, height: 8 });
   await setup.renderOnce();
 
   await act(async () => {
-    latestHandleKey?.({
-      name: "down",
-      sequence: "",
-      ctrl: false,
-      shift: false,
-      meta: false,
-      option: false,
-      eventType: "press",
-      repeated: false,
-    });
+    latestHandleKey?.(keyEvent("down"));
   });
   await setup.renderOnce();
   expect(setup.captureCharFrame()).toContain("cursor:1");
 
   await act(async () => {
-    latestHandleKey?.({
-      name: "j",
-      sequence: "j",
-      ctrl: false,
-      shift: false,
-      meta: false,
-      option: false,
-      eventType: "press",
-      repeated: false,
-    });
+    latestHandleKey?.(keyEvent("j", "j"));
   });
   await setup.renderOnce();
   expect(setup.captureCharFrame()).toContain("cursor:2");
 
   await act(async () => {
-    latestHandleKey?.({
-      name: "k",
-      sequence: "k",
-      ctrl: false,
-      shift: false,
-      meta: false,
-      option: false,
-      eventType: "press",
-      repeated: false,
-    });
+    latestHandleKey?.(keyEvent("k", "k"));
   });
   await setup.renderOnce();
   expect(setup.captureCharFrame()).toContain("cursor:1");

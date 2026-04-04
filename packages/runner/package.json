@@ -22,11 +22,11 @@
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
     "@orc/task-service": "workspace:*",
-    "chokidar": "^4.0.3",
-    "croner": "^9.0.0",
-    "drizzle-orm": "^0.41.0"
+    "chokidar": "^5.0.0",
+    "croner": "^10.0.1",
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
-    "typescript": "^5.7.3"
+    "typescript": "^6.0.2"
   }
 }

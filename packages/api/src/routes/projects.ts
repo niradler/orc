@@ -3,7 +3,7 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import { getDb } from "@orc/db/client";
-import { comments, projects } from "@orc/db/schema";
+import { comments, jobs, memories, projects, sessions, tasks } from "@orc/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 
 const app = new OpenAPIHono();
@@ -47,10 +47,10 @@ const UpdateProjectSchema = z
       .min(1)
       .max(100)
       .optional(),
-    description: z.string().optional(),
+    description: z.string().nullable().optional(),
     status: z.enum(["active", "archived", "paused"]).optional(),
     scope: z.string().optional(),
-    tags: z.array(z.string()).optional(),
+    tags: z.array(z.string()).nullable().optional(),
     obsidian_path: z.string().optional(),
     max_workers: z.number().int().min(1).nullable().optional(),
   })
@@ -323,7 +323,13 @@ app.openapi(deleteRoute, async (c) => {
   const { id } = c.req.valid("param");
   const existing = await db.query.projects.findFirst({ where: eq(projects.id, id) });
   if (!existing) throw new NotFoundError("Project", id);
-  await db.delete(projects).where(eq(projects.id, id));
+  await db.transaction(async (tx) => {
+    await tx.update(tasks).set({ project_id: null }).where(eq(tasks.project_id, id));
+    await tx.update(memories).set({ project_id: null }).where(eq(memories.project_id, id));
+    await tx.update(jobs).set({ project_id: null }).where(eq(jobs.project_id, id));
+    await tx.update(sessions).set({ project_id: null }).where(eq(sessions.project_id, id));
+    await tx.delete(projects).where(eq(projects.id, id));
+  });
   return new Response(null, { status: 204 });
 });
 
