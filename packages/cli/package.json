@@ -1,6 +1,6 @@
 {
   "name": "orc-ai",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Human + AI Orchestration Hub — persistent memory, task management, session continuity and multi-agent collaboration for Cursor, Claude Code, and Codex",
   "type": "module",
   "bin": {
@@ -12,12 +12,13 @@
     "typecheck": "tsc --noEmit",
     "build": "bun build src/index.ts --outfile dist/index.js --target bun --minify",
     "build:bin": "bun run build.ts",
-    "prepublishOnly": "bun run build",
+    "prepublishOnly": "cp ../../README.md . && bun run build",
     "test": "bun test",
     "clean": "rm -rf dist"
   },
   "files": [
-    "dist/index.js"
+    "dist/index.js",
+    "README.md"
   ],
   "devDependencies": {
     "@orc/api": "workspace:*",

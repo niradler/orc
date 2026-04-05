@@ -1,6 +1,6 @@
 {
   "name": "@orc/agent-runtime",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "type": "module",
   "main": "src/index.ts",
   "exports": {
