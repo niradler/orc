@@ -10,7 +10,7 @@
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
-    "build": "bun build src/index.ts --outfile dist/index.js --target bun --minify",
+    "build": "bun build src/index.ts --outfile dist/index.js --target bun --minify --external @orc/tui",
     "build:bin": "bun run build.ts",
     "prepublishOnly": "cp ../../README.md . && bun run build",
     "test": "bun test",
