@@ -27,7 +27,7 @@ const TaskSchema = z
     author: z.string(),
     claimed_by: z.string().nullable(),
     claim_expires_at: z.string().datetime().nullable(),
-    prompt_id: z.string().nullable(),
+    skill_name: z.string().nullable(),
     required_review: z.boolean(),
     agent_backend: z.string().nullable(),
     max_review_rounds: z.number().int(),
@@ -57,7 +57,7 @@ const CreateTaskSchema = z
     due_at: z.string().datetime().optional(),
     tags: z.array(z.string()).optional(),
     author: z.string().optional().default("human"),
-    prompt_id: z.string().optional(),
+    skill_name: z.string().optional(),
     required_review: z.boolean().optional().default(true),
     agent_backend: AgentBackendSchema.optional(),
     max_review_rounds: z.number().int().min(1).optional().default(3),
@@ -76,7 +76,7 @@ const UpdateTaskSchema = z
     tags: z.array(z.string()).nullable().optional(),
     comment: z.string().optional(),
     agent_backend: AgentBackendSchema.optional(),
-    prompt_id: z.string().optional(),
+    skill_name: z.string().optional(),
   })
   .openapi("UpdateTask");
 
@@ -156,7 +156,7 @@ const BatchTaskItem = z.object({
   body: z.string().optional(),
   priority: TaskPrioritySchema.optional().default("normal"),
   tags: z.array(z.string()).optional(),
-  prompt_id: z.string().optional(),
+  skill_name: z.string().optional(),
   required_review: z.boolean().optional().default(true),
   agent_backend: AgentBackendSchema.optional(),
   max_review_rounds: z.number().int().min(1).optional().default(3),
@@ -246,7 +246,6 @@ function toDto(t: typeof tasks.$inferSelect) {
     ...t,
     due_at: t.due_at?.toISOString() ?? null,
     claim_expires_at: t.claim_expires_at?.toISOString() ?? null,
-    prompt_id: t.prompt_id ?? null,
     required_review: t.required_review,
     agent_backend: t.agent_backend ?? null,
     max_review_rounds: t.max_review_rounds,
@@ -335,7 +334,7 @@ app.openapi(createRoute_, async (c) => {
     ...(body.due_at ? { due_at: new Date(body.due_at) } : {}),
     tags: body.tags,
     author: body.author,
-    prompt_id: body.prompt_id,
+    skill_name: body.skill_name,
     required_review: body.required_review ?? true,
     agent_backend: body.agent_backend as string | undefined,
     max_review_rounds: body.max_review_rounds ?? 3,
@@ -380,7 +379,7 @@ app.openapi(updateRoute, async (c) => {
     ...(body.due_at !== undefined ? { due_at: new Date(body.due_at) } : {}),
     ...(body.tags !== undefined ? { tags: body.tags } : {}),
     ...(body.agent_backend !== undefined ? { agent_backend: body.agent_backend } : {}),
-    ...(body.prompt_id !== undefined ? { prompt_id: body.prompt_id } : {}),
+    ...(body.skill_name !== undefined ? { skill_name: body.skill_name } : {}),
   };
   if (Object.keys(nonStatusFields).length > 0) {
     await db
@@ -463,7 +462,7 @@ app.openapi(batchCreateRoute, async (c) => {
         author,
         status: "todo",
         tags: item.tags,
-        prompt_id: item.prompt_id,
+        skill_name: item.skill_name,
         required_review: item.required_review ?? true,
         agent_backend: item.agent_backend as string | undefined,
         max_review_rounds: item.max_review_rounds ?? 3,

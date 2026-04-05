@@ -76,46 +76,11 @@ function setupDb(sqlite: Database): void {
       updated_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
-    CREATE TABLE IF NOT EXISTS prompts (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT,
-      template TEXT NOT NULL,
-      is_skill INTEGER NOT NULL DEFAULT 0,
-      skill_dir TEXT,
-      skill_version TEXT,
-      frontmatter TEXT,
-      source_url TEXT,
-      tags TEXT,
-      version INTEGER NOT NULL DEFAULT 1,
-      pinned INTEGER NOT NULL DEFAULT 0,
-      last_used_at INTEGER,
-      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
-    );
-
-    CREATE UNIQUE INDEX IF NOT EXISTS prompts_name_idx ON prompts(name);
-
-    CREATE TABLE IF NOT EXISTS prompt_history (
-      id TEXT PRIMARY KEY,
-      prompt_id TEXT NOT NULL REFERENCES prompts(id) ON DELETE CASCADE,
-      version INTEGER NOT NULL,
-      name TEXT NOT NULL,
-      description TEXT,
-      template TEXT NOT NULL,
-      tags TEXT,
-      changed_by TEXT NOT NULL DEFAULT 'human',
-      changed_at INTEGER NOT NULL DEFAULT (unixepoch())
-    );
-
-    CREATE INDEX IF NOT EXISTS prompt_history_prompt_id_idx ON prompt_history(prompt_id, version);
-
     CREATE TABLE IF NOT EXISTS jobs (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT,
       command TEXT NOT NULL,
-      prompt_id TEXT REFERENCES prompts(id),
       prompt_vars TEXT,
       inject_context INTEGER NOT NULL DEFAULT 1,
       trigger_type TEXT NOT NULL,
@@ -372,7 +337,7 @@ function setupDb(sqlite: Database): void {
     "DROP TABLE IF EXISTS task_notes",
     "DROP TABLE IF EXISTS task_comments",
     "DROP TABLE IF EXISTS project_comments",
-    "ALTER TABLE tasks ADD COLUMN prompt_id TEXT REFERENCES prompts(id) ON DELETE SET NULL",
+    "ALTER TABLE tasks ADD COLUMN prompt_id TEXT",
     "ALTER TABLE tasks ADD COLUMN required_review INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE tasks ADD COLUMN agent_backend TEXT",
     "ALTER TABLE tasks ADD COLUMN max_review_rounds INTEGER NOT NULL DEFAULT 3",
@@ -383,6 +348,8 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE projects ADD COLUMN max_workers INTEGER",
     "ALTER TABLE gateway_sessions ADD COLUMN acpx_agent TEXT",
     "ALTER TABLE gateway_sessions ADD COLUMN a2a_url TEXT",
+    "ALTER TABLE tasks ADD COLUMN skill_name TEXT",
+    "ALTER TABLE jobs ADD COLUMN skill_name TEXT",
   ];
   for (const statement of migrations) {
     try {

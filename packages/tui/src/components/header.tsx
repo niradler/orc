@@ -16,7 +16,7 @@ const ROUTE_LABELS: Record<Route, string> = {
   jobs: "Jobs",
   memories: "Memories",
   sessions: "Sessions",
-  prompts: "Prompts",
+  skills: "Skills",
 };
 
 function trimTo(text: string, width: number): string {

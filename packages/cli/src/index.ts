@@ -9,9 +9,9 @@ import { gatewayCommand } from "./commands/gateway.js";
 import { jobCommand } from "./commands/job.js";
 import { memCommand } from "./commands/mem.js";
 import { projectCommand } from "./commands/project.js";
-import { promptCommand } from "./commands/prompt.js";
 import { schemaCommand } from "./commands/schema.js";
 import { sessionCommand } from "./commands/session.js";
+import { skillCommand } from "./commands/skill.js";
 import { statusCommand } from "./commands/status.js";
 import { taskCommand } from "./commands/task.js";
 
@@ -68,7 +68,7 @@ program.addCommand(jobCommand());
 program.addCommand(sessionCommand());
 program.addCommand(daemonCommand());
 program.addCommand(gatewayCommand());
-program.addCommand(promptCommand());
+program.addCommand(skillCommand());
 program.addCommand(statusCommand());
 program.addCommand(schemaCommand());
 

@@ -67,15 +67,15 @@ orc task update <id> --status done
 For tasks the loop should pick up and assign to agents:
 
 ```bash
-# Set a prompt to make the task agent-eligible
-orc task add "Implement user auth" --prompt orc-coder --priority high
+# Set a skill to make the task agent-eligible
+orc task add "Implement user auth" --skill orc-coder --priority high
 
 # Or set a backend directly
-orc task add "Review PR #42" --prompt orc-reviewer --backend claude
+orc task add "Review PR #42" --skill orc-reviewer --backend claude
 ```
 
 A task is picked up by the loop when **any** of these is true:
-- `prompt_id` is set
+- `skill_name` is set
 - `agent_backend` is set
 - Tagged with `"agent"`
 
@@ -85,10 +85,10 @@ Use `task_batch_create` for multi-step work with dependencies:
 
 ```
 task_batch_create({ tasks: [
-  { title: "Design database schema", prompt_id: "orc-planner" },
-  { title: "Implement API endpoints", prompt_id: "orc-coder", blocked_by: [0] },
-  { title: "Write integration tests", prompt_id: "orc-coder", blocked_by: [1] },
-  { title: "Code review", prompt_id: "orc-reviewer", blocked_by: [2] }
+  { title: "Design database schema", skill_name: "orc-planner" },
+  { title: "Implement API endpoints", skill_name: "orc-coder", blocked_by: [0] },
+  { title: "Write integration tests", skill_name: "orc-coder", blocked_by: [1] },
+  { title: "Code review", skill_name: "orc-reviewer", blocked_by: [2] }
 ]})
 ```
 
@@ -119,9 +119,9 @@ On rejection, the task goes to `changes_requested` and the loop picks it up agai
 
 The most common setup: you (or a main agent) create tasks, the loop spawns workers.
 
-1. Human or main agent creates tasks with appropriate prompts
+1. Human or main agent creates tasks with appropriate skills
 2. Task loop spawns worker agents per task
-3. Workers follow prompts, post comments, submit for review
+3. Workers follow skills, post comments, submit for review
 4. Human approves or requests changes
 5. Loop handles the rest
 
@@ -131,10 +131,10 @@ Route different types of work to different agents:
 
 ```bash
 # Complex implementation → Claude Code
-orc task add "Refactor auth module" --prompt orc-coder --backend claude
+orc task add "Refactor auth module" --skill orc-coder --backend claude
 
 # Quick code review → Codex via ACPX
-orc task add "Review utils.ts changes" --prompt orc-reviewer --backend codex
+orc task add "Review utils.ts changes" --skill orc-reviewer --backend codex
 
 # Remote specialized agent → A2A (requires a2a_url on the task or session)
 orc task add "Run security scan" --backend a2a
@@ -184,12 +184,12 @@ Combine jobs with the task loop for fully automated workflows:
 ```bash
 # Nightly: create a task for the agent to run tests and report
 orc job add nightly-tests \
-  --command "orc task add 'Run test suite and report failures' --prompt orc-coder --priority high" \
+  --command "orc task add 'Run test suite and report failures' --skill orc-coder --priority high" \
   --trigger cron --cron "0 22 * * *"
 
 # Weekly: generate a project status report
 orc job add weekly-report \
-  --command "orc task add 'Generate weekly status report' --prompt orc-report" \
+  --command "orc task add 'Generate weekly status report' --skill orc-report" \
   --trigger cron --cron "0 9 * * 1"
 ```
 

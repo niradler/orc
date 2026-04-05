@@ -35,7 +35,7 @@ ORC fixes this. Shared memory across every session. A task board where agents su
 | **MCP server** | 20 tools connect any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) compatible agent with one config line |
 | **Session continuity** | Snapshots survive context compaction so agents resume where they left off |
 | **Gateway** | Approve work, search memory, and chat with live agents from Telegram or Slack |
-| **Prompt library** | Discoverable workflow templates (coder, reviewer, planner, bugfix) that encode your standards |
+| **Skill library** | Discoverable workflow templates (coder, reviewer, planner, bugfix) that encode your standards |
 
 ## Getting started
 
@@ -182,13 +182,13 @@ The task loop automatically picks up queued tasks and spawns worker agents:
 
 ```bash
 # Create a task with a workflow and backend
-orc task add "Implement user auth" --prompt orc-coder --backend claude --priority high
+orc task add "Implement user auth" --skill orc-coder --backend claude --priority high
 
 # Or batch-create with dependencies via MCP
 task_batch_create({ tasks: [
-  { title: "Design schema", prompt_id: "orc-planner" },
-  { title: "Implement API",  prompt_id: "orc-coder", blocked_by: [0] },
-  { title: "Review code",    prompt_id: "orc-reviewer", blocked_by: [1] }
+  { title: "Design schema", skill_name: "orc-planner" },
+  { title: "Implement API",  skill_name: "orc-coder", blocked_by: [0] },
+  { title: "Review code",    skill_name: "orc-reviewer", blocked_by: [1] }
 ]})
 ```
 
@@ -322,7 +322,7 @@ Same commands as Telegram. Create a Slack app at [api.slack.com/apps](https://ap
 
 ## Skills
 
-ORC ships with agent workflow skills and built-in prompt templates for the task loop.
+ORC ships with agent workflow skills and built-in skill templates for the task loop.
 
 ### Install skills
 
@@ -346,11 +346,11 @@ npx skills add niradler/orc --all -g
 | `orc-knowledge` | Storing decisions, searching memory, "remember this", "what did we decide" |
 | `orc-gateway` | Telegram/Slack setup, remote approval, live agent sessions |
 
-### Built-in prompt templates
+### Built-in skill templates
 
-Prompt templates live in `skills/prompts/*/SKILL.md` and are seeded on API startup. Agents discover them via `prompt_list` and load with `prompt_get`.
+Skill templates live in `skills/*/SKILL.md` (built-in) and `~/.orc/skills/` (user-defined). Agents discover them via `skill_list` and load with `skill_read`.
 
-| Prompt | Type | Purpose |
+| Skill | Type | Purpose |
 |---|---|---|
 | `orc-worker-base` | Base | Default worker behavior — ORC awareness, status updates, deliverable format |
 | `orc-main-base` | Base | Orchestration agent — planning, decomposition, monitoring |
@@ -361,7 +361,7 @@ Prompt templates live in `skills/prompts/*/SKILL.md` and are seeded on API start
 | `orc-requirements` | Skill | Requirements interview — outcome, criteria, constraints, scope |
 | `orc-report` | Skill | Project status report — health summary, blockers, active work |
 
-Add custom prompts: `orc prompt add my-workflow --body "..." --tags workflow,custom`
+Add custom skills by creating a `SKILL.md` in `~/.orc/skills/my-workflow/SKILL.md`.
 
 ## MCP tools
 
@@ -372,7 +372,7 @@ Add custom prompts: `orc prompt add my-workflow --body "..." --tags workflow,cus
 | **Project** | `project_list` |
 | **Memory** | `context`, `memory_search`, `memory_get`, `memory_store` |
 | **Task** | `task_list`, `task_get`, `task_create`, `task_update`, `task_batch_create` |
-| **Prompt** | `prompt_list`, `prompt_get` |
+| **Skill** | `skill_list`, `skill_read` |
 | **Search** | `search` |
 | **Job** | `job_list`, `job_run`, `job_status` |
 | **Session** | `session_event`, `session_snapshot`, `session_restore`, `session_log` |
@@ -402,7 +402,7 @@ Runs on port 7700 with auto-generated OpenAPI spec.
 | `POST` | `/jobs/{id}/trigger` | Trigger a job |
 | `GET` | `/jobs/{id}/runs` | Run history |
 | `GET` | `/jobs/{id}/runs/{runId}/logs` | Run logs |
-| `GET/POST/PATCH/DELETE` | `/prompts` | Prompt templates |
+| `GET` | `/skills` | Skill templates |
 | `GET` | `/sessions` | Agent session logs |
 | `POST` | `/mcp/tool` | Execute any MCP tool via HTTP |
 
@@ -422,7 +422,7 @@ orc task list|add|show|update|done|review|approve|reject|delete
 orc mem list|add|search
 orc job list|add|run|runs
 orc session list|show|log
-orc prompt list|add|show|render
+orc skill list|show
 ```
 
 > [!NOTE]

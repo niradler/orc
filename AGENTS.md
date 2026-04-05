@@ -54,7 +54,7 @@ bun build            # build all packages
 | `jobs` / `job_runs` | Scheduled/triggered command execution |
 | `sessions` | Agent session logs + snapshots (`agent_version`, `job_run_id`) |
 | `projects` | Optional grouping for tasks/memories |
-| `prompts` | Prompt/skill templates |
+| `skills` | Workflow skill templates (filesystem-based, `skills/*/SKILL.md` + `~/.orc/skills/`) |
 | `bridge_chats/messages/permissions` | Gateway HITL (Telegram/Slack) |
 
 **Task status flow**: `todo → queued → doing → blocked → review → done/changes_requested → doing → …`
@@ -92,8 +92,8 @@ For CRUD operations not in MCP (delete, project management, job creation), use t
 | `job_run` | Trigger a job by name |
 | `job_status` | Get run status/exit code/error for a run ID |
 | `project_list` | Discover all projects (name, status, description) |
-| `prompt_list` | Discover available prompts/skills. Filter by tags or is_skill. |
-| `prompt_get` | Load full prompt content by name or ID. Shows skill directory path + reference file paths — use Read to load them. |
+| `skill_list` | Discover available skills. Filter by tags. |
+| `skill_read` | Load full skill content by name. Shows skill directory path + reference file paths — use Read to load them. |
 | `session_event` | Record significant action (file, task, decision, error, git, env, rule, plan). Deduped automatically. |
 | `session_snapshot` | Build ≤2KB XML snapshot — priority-tiered (P1: files/tasks, P2: decisions/git, P3: intent) |
 | `session_restore` | Restore session after compaction or agent restart |
@@ -164,9 +164,9 @@ Three built-in backends route tasks to different agent runtimes:
 
 Set default backend via `agent_loop.default_backend` in config. Per-task override: set `agent_backend` field when creating a task via API, MCP, or CLI.
 
-### Built-in Prompts
+### Built-in Skills
 
-Prompt templates live in `skills/prompts/*/SKILL.md` and are seeded to the database on API startup. Use `prompt_list` to discover them, `prompt_get` to load content. Skills can have reference files (e.g. `reference.md`, `examples.md`) alongside `SKILL.md` — `prompt_get` shows their full paths so agents can Read them on demand. Assign to tasks via `prompt_id`.
+Skills live in `skills/*/SKILL.md` (built-in, shipped with ORC) and `~/.orc/skills/` (user-defined). No database seeding — skills are loaded directly from the filesystem. Use `skill_list` to discover available skills, `skill_read` to load content. Skills can have reference files (e.g. `reference.md`, `examples.md`) alongside `SKILL.md` — `skill_read` shows their full paths so agents can Read them on demand. Assign to tasks via `skill_name`.
 
 ## Coding Conventions
 

@@ -3,8 +3,10 @@ import { createBackend, hasBackend } from "@orc/agent-runtime";
 import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
+import type { SkillFull } from "@orc/core/skill-service";
+import { readSkill } from "@orc/core/skill-service";
 import { getDb, getSqlite } from "@orc/db/client";
-import { gateway_sessions, job_runs, jobs, prompts, tasks } from "@orc/db/schema";
+import { gateway_sessions, job_runs, jobs, tasks } from "@orc/db/schema";
 import { updateTaskStatus } from "@orc/task-service";
 import { Cron } from "croner";
 import { eq } from "drizzle-orm";
@@ -16,7 +18,7 @@ type PickedTask = {
   title: string;
   body: string | null;
   status: string;
-  prompt_id: string | null;
+  skill_name: string | null;
   agent_backend: string | null;
   tags: string | null;
   project_id: string | null;
@@ -49,17 +51,14 @@ function getProjectMaxWorkers(projectId: string): number | null {
 }
 
 async function buildPrompt(task: PickedTask): Promise<string> {
-  const db = getDb();
   const parts: string[] = [];
 
-  const basePrompt = await db.query.prompts.findFirst({
-    where: eq(prompts.name, "orc-worker-base"),
-  });
-  if (basePrompt) parts.push(basePrompt.template);
+  const baseSkill = readSkill("orc-worker-base") as SkillFull | null;
+  if (baseSkill) parts.push(baseSkill.content);
 
-  if (task.prompt_id) {
-    const taskPrompt = await db.query.prompts.findFirst({ where: eq(prompts.id, task.prompt_id) });
-    if (taskPrompt) parts.push(`\n---\n## Workflow: ${taskPrompt.name}\n${taskPrompt.template}`);
+  if (task.skill_name) {
+    const workflow = readSkill(task.skill_name) as SkillFull | null;
+    if (workflow) parts.push(`\n---\n## Workflow: ${workflow.name}\n${workflow.content}`);
   }
 
   parts.push(`\n---\n## Task: ${task.title}\nTask ID: ${task.id}`);
@@ -181,7 +180,7 @@ async function driveWorkerLoop(
     }
 
     const isAcpxFallback = !hasBackend(backendName);
-    const resolvedBackend = isAcpxFallback ? "acpx" as AgentBackendName : backendName;
+    const resolvedBackend = isAcpxFallback ? ("acpx" as AgentBackendName) : backendName;
     const backend = createBackend(resolvedBackend);
     const sessionOpts = {
       cwd,
@@ -279,13 +278,10 @@ async function driveWorkerLoop(
 }
 
 async function buildReviewPrompt(task: PickedTask): Promise<string> {
-  const db = getDb();
   const parts: string[] = [];
 
-  const reviewerPrompt = await db.query.prompts.findFirst({
-    where: eq(prompts.name, "orc-reviewer"),
-  });
-  if (reviewerPrompt) parts.push(reviewerPrompt.template);
+  const reviewerSkill = readSkill("orc-reviewer") as SkillFull | null;
+  if (reviewerSkill) parts.push(reviewerSkill.content);
 
   parts.push(`\n---\n## Task Under Review: ${task.title}\nTask ID: ${task.id}`);
   if (task.body) parts.push(task.body);
@@ -480,7 +476,7 @@ function pickAllReviewTasks(): PickedTask[] {
   const sqlite = getSqlite();
   return sqlite
     .query(
-      `SELECT t.id, t.title, t.body, t.status, t.prompt_id, t.agent_backend, t.tags, t.project_id
+      `SELECT t.id, t.title, t.body, t.status, t.skill_name, t.agent_backend, t.tags, t.project_id
        FROM tasks t
        WHERE t.status = 'review'
          AND t.claimed_by IS NULL
@@ -496,11 +492,11 @@ function pickAllNextTasks(): PickedTask[] {
   const sqlite = getSqlite();
   return sqlite
     .query(
-      `SELECT t.id, t.title, t.body, t.status, t.prompt_id, t.agent_backend, t.tags, t.project_id
+      `SELECT t.id, t.title, t.body, t.status, t.skill_name, t.agent_backend, t.tags, t.project_id
        FROM tasks t
        WHERE (t.status = 'todo' OR t.status = 'changes_requested')
          AND t.claimed_by IS NULL
-         AND (t.prompt_id IS NOT NULL OR t.agent_backend IS NOT NULL
+         AND (t.skill_name IS NOT NULL OR t.agent_backend IS NOT NULL
               OR EXISTS (SELECT 1 FROM json_each(t.tags) j WHERE j.value = 'agent'))
          AND NOT EXISTS (
            SELECT 1 FROM (

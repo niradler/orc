@@ -200,52 +200,6 @@ describe("Jobs", () => {
   });
 });
 
-describe("Prompts", () => {
-  let promptId: string;
-
-  test("POST /prompts creates a prompt", async () => {
-    const res = await req("POST", "/prompts", {
-      name: "greet",
-      template: "Hello {{name}}, welcome to {{place}}!",
-      tags: ["greeting"],
-    });
-    expect(res.status).toBe(201);
-    const body = (await res.json()) as { id: string; version: number };
-    expect(body.version).toBe(1);
-    promptId = body.id;
-  });
-
-  test("POST /prompts/:id/render interpolates variables", async () => {
-    const res = await req("POST", `/prompts/${promptId}/render`, {
-      vars: { name: "Alice", place: "Orc" },
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { rendered: string };
-    expect(body.rendered).toBe("Hello Alice, welcome to Orc!");
-  });
-
-  test("PATCH /prompts/:id bumps version and saves history", async () => {
-    const res = await req("PATCH", `/prompts/${promptId}`, {
-      template: "Hi {{name}}, welcome to {{place}}!",
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { version: number };
-    expect(body.version).toBe(2);
-
-    const histRes = await req("GET", `/prompts/${promptId}/history`);
-    expect(histRes.status).toBe(200);
-    const hist = (await histRes.json()) as { history: { version: number; template: string }[] };
-    expect(hist.history.length).toBe(1);
-    expect(hist.history[0]?.version).toBe(1);
-    expect(hist.history[0]?.template).toContain("Hello");
-  });
-
-  test("DELETE /prompts/:id removes prompt", async () => {
-    const res = await req("DELETE", `/prompts/${promptId}`);
-    expect(res.status).toBe(204);
-  });
-});
-
 describe("Sessions", () => {
   test("GET /sessions returns empty list initially", async () => {
     const res = await req("GET", "/sessions");

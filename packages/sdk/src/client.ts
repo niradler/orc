@@ -4,7 +4,7 @@ import type {
   CreateJobInput,
   CreateMemoryInput,
   CreateProjectInput,
-  CreatePromptInput,
+  CreateSkillInput,
   CreateTaskInput,
   CreateTaskLinkInput,
   HealthResponse,
@@ -14,16 +14,16 @@ import type {
   Memory,
   Project,
   ProjectSummary,
-  Prompt,
-  PromptHistoryEntry,
-  RenderedPrompt,
   Session,
+  SkillFull,
+  SkillMeta,
+  SkillRefContent,
+  SkillSource,
   Task,
   TaskLink,
   UpdateJobInput,
   UpdateMemoryInput,
   UpdateProjectInput,
-  UpdatePromptInput,
   UpdateTaskInput,
 } from "./types.js";
 
@@ -196,28 +196,24 @@ export function createOrcClient(options?: OrcClientOptions) {
         ),
     },
 
-    prompts: {
-      list: (params?: { is_skill?: boolean; limit?: number }) =>
-        c<{ prompts: Prompt[] }>(
+    skills: {
+      list: (params?: { q?: string; source?: SkillSource; reload?: boolean }) =>
+        c<{ skills: SkillMeta[] }>(
           "GET",
-          "/prompts",
+          "/skills",
           undefined,
           params as Record<string, string | number | boolean | undefined>,
         ),
 
-      get: (id: string) => c<Prompt>("GET", `/prompts/${id}`),
+      read: (name: string, ref?: string) =>
+        c<SkillFull | SkillRefContent>(
+          "GET",
+          `/skills/${encodeURIComponent(name)}`,
+          undefined,
+          ref ? { ref } : undefined,
+        ),
 
-      create: (input: CreatePromptInput) => c<Prompt>("POST", "/prompts", input),
-
-      update: (id: string, input: UpdatePromptInput) => c<Prompt>("PATCH", `/prompts/${id}`, input),
-
-      delete: (id: string) => c<null>("DELETE", `/prompts/${id}`),
-
-      render: (id: string, vars?: Record<string, string>) =>
-        c<RenderedPrompt>("POST", `/prompts/${id}/render`, { vars: vars ?? {} }),
-
-      history: (id: string, limit?: number) =>
-        c<{ history: PromptHistoryEntry[] }>("GET", `/prompts/${id}/history`, undefined, { limit }),
+      create: (input: CreateSkillInput) => c<SkillFull>("POST", "/skills", input),
     },
 
     projects: {

@@ -8,7 +8,6 @@
     "./executor": "./src/executor.ts",
     "./scheduler": "./src/scheduler.ts",
     "./watcher": "./src/watcher.ts",
-    "./seed-prompts": "./src/seed-prompts.ts",
     "./task-loop": "./src/task-loop.ts"
   },
   "scripts": {

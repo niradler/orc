@@ -50,7 +50,7 @@ todo ──► queued ──► doing ──► review ──► done
 
 ### Agent loop (automatic orchestration)
 
-1. `task_create` with `prompt_id` (e.g. `orc-coder`) and optionally `agent_backend` (e.g. `claude`)
+1. `task_create` with `skill_name` (e.g. `orc-coder`) and optionally `agent_backend` (e.g. `claude`)
 2. Task enters `todo` → the task loop picks it up, transitions to `queued` → `doing`
 3. Worker agent follows the assigned prompt, submits to `review` when done
 4. Human approves (`done`) or requests changes → worker resumes automatically
@@ -66,7 +66,7 @@ Use `task_batch_create` to create multiple tasks with dependency links atomicall
 
 ### Assigning prompts and backends
 
-- `prompt_id` — assign a workflow prompt (use `prompt_list` to discover available ones)
+- `skill_name` — assign a workflow skill (use `skill_list` to discover available ones)
 - `agent_backend` — choose which agent type executes: `claude`, `codex`, or `cursor`
 - `required_review` — whether the task needs human review (default: true)
 - `max_review_rounds` — how many review cycles before auto-pause (default: 3)
@@ -99,7 +99,7 @@ orc task delete <id>          # Delete task
 | Not reading feedback after `changes_requested` | Always `task_get` to read comments |
 | Creating tasks with no body | Include acceptance criteria |
 | Skipping `session_event` for transitions | Without it, transitions are lost on compaction |
-| Not setting `prompt_id` on tasks for the agent loop | Workers need a workflow to follow |
+| Not setting `skill_name` on tasks for the agent loop | Workers need a workflow to follow |
 
 ---
 
@@ -108,4 +108,4 @@ orc task delete <id>          # Delete task
 - **orc-session** skill — session start protocol, event recording, snapshot/restore
 - **orc-knowledge** skill — when to store decisions and rules in memory
 - **orc-gateway** skill — remote task approval via Telegram/Slack
-- Built-in prompts: `orc-coder`, `orc-planner`, `orc-reviewer`, `orc-bugfix` — use `prompt_list` to discover, assign via `prompt_id`
+- Built-in skills: `orc-coder`, `orc-planner`, `orc-reviewer`, `orc-bugfix` — use `skill_list` to discover, assign via `skill_name`

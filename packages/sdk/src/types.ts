@@ -34,6 +34,7 @@ export type Task = {
   author: string;
   claimed_by: string | null;
   claim_expires_at: string | null;
+  skill_name: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -135,6 +136,7 @@ export type CreateTaskInput = {
   due_at?: string;
   tags?: string[];
   author?: string;
+  skill_name?: string;
 };
 
 export type UpdateTaskInput = {
@@ -230,60 +232,35 @@ export type UpdateJobInput = {
   project_id?: string;
 };
 
-export type Prompt = {
-  id: string;
+export type SkillSource = "builtin" | "user";
+
+export type SkillMeta = {
   name: string;
-  description: string | null;
-  template: string;
-  is_skill: boolean;
-  skill_dir: string | null;
-  skill_version: string | null;
-  tags: string[] | null;
-  version: number;
-  pinned: boolean;
-  last_used_at: string | null;
-  created_at: string;
-  updated_at: string;
+  description: string;
+  source: SkillSource;
+  path: string;
+  metadata: Record<string, unknown>;
 };
 
-export type CreatePromptInput = {
+export type SkillRef = {
   name: string;
-  description?: string;
-  template: string;
-  is_skill?: boolean;
-  skill_dir?: string;
-  skill_version?: string;
-  tags?: string[];
-  pinned?: boolean;
+  path: string;
 };
 
-export type UpdatePromptInput = {
-  name?: string;
-  description?: string;
-  template?: string;
-  is_skill?: boolean;
-  skill_dir?: string;
-  skill_version?: string;
-  tags?: string[];
-  pinned?: boolean;
+export type SkillFull = SkillMeta & {
+  content: string;
+  references: SkillRef[];
 };
 
-export type RenderedPrompt = {
-  rendered: string;
-  prompt_id: string;
-  version: number;
-};
-
-export type PromptHistoryEntry = {
-  id: string;
-  prompt_id: string;
-  version: number;
+export type SkillRefContent = {
   name: string;
-  description: string | null;
-  template: string;
-  tags: string[] | null;
-  changed_by: string;
-  changed_at: string;
+  path: string;
+  content: string;
+};
+
+export type CreateSkillInput = {
+  name: string;
+  content: string;
 };
 
 export type TaskLink = {

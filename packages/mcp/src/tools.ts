@@ -1,13 +1,18 @@
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import { shortId, ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
-import { listSkillReferenceFiles } from "@orc/core/skill-refs";
+import {
+  createSkill as createSkillFs,
+  listSkills,
+  readSkill,
+  type SkillFull,
+  type SkillRefContent,
+} from "@orc/core/skill-service";
 import type { TaskStatus } from "@orc/core/types";
 import { AgentBackendSchema } from "@orc/core/types";
 import { getDb, getSqlite } from "@orc/db/client";
-import { job_runs, jobs, memories, projects, prompts, sessions, tasks } from "@orc/db/schema";
+import { job_runs, jobs, memories, projects, sessions, tasks } from "@orc/db/schema";
 import { executeJob } from "@orc/runner/executor";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 
@@ -115,7 +120,10 @@ export const toolDefinitions = [
       priority: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
       author: z.string().optional().default("agent"),
       tags: z.array(z.string()).optional(),
-      prompt_id: z.string().optional().describe("Prompt template to use for agent execution"),
+      skill_name: z
+        .string()
+        .optional()
+        .describe("Skill to use for agent execution (e.g. orc-coder)"),
       required_review: z
         .boolean()
         .optional()
@@ -174,7 +182,7 @@ export const toolDefinitions = [
             body: z.string().optional(),
             priority: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
             tags: z.array(z.string()).optional(),
-            prompt_id: z.string().optional(),
+            skill_name: z.string().optional().describe("Skill for agent execution"),
             required_review: z.boolean().optional().default(true),
             agent_backend: AgentBackendSchema.optional(),
             max_review_rounds: z.number().int().min(1).optional().default(3),
@@ -298,20 +306,32 @@ export const toolDefinitions = [
     }),
   },
   {
-    name: "prompt_list",
-    description: "Discover available prompts and skills. Returns name + description for each.",
+    name: "skill_list",
+    description:
+      "List installed skills (built-in + user). Returns name and description for each. " +
+      "Supports keyword search and filtering by source.",
     inputSchema: z.object({
-      tags: z.array(z.string()).optional().describe("Filter by tags"),
-      is_skill: z.boolean().optional().describe("Filter by skill flag"),
+      q: z.string().optional().describe("Keyword search on name and description"),
+      source: z.enum(["builtin", "user"]).optional().describe("Filter by source"),
+      reload: z.boolean().optional().describe("Force cache rebuild"),
     }),
   },
   {
-    name: "prompt_get",
+    name: "skill_read",
     description:
-      "Load full prompt content by name or ID. Shows skill directory path and reference files if any — use Read to load them.",
+      "Read a skill by name. Returns SKILL.md content and lists all reference filenames. " +
+      "Pass ref to read a specific reference file instead.",
     inputSchema: z.object({
-      name: z.string().optional().describe("Prompt name"),
-      id: z.string().optional().describe("Prompt ID (alternative to name)"),
+      name: z.string().describe("Skill name"),
+      ref: z.string().optional().describe("Reference filename to read instead of SKILL.md"),
+    }),
+  },
+  {
+    name: "skill_create",
+    description: "Create a new user skill. Writes SKILL.md to ~/.orc/skills/<name>/.",
+    inputSchema: z.object({
+      name: z.string().describe("Skill name (used as directory name)"),
+      content: z.string().describe("Full SKILL.md content including frontmatter"),
     }),
   },
 ] as const;
@@ -490,7 +510,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         priority,
         author,
         tags,
-        prompt_id,
+        skill_name,
         required_review,
         agent_backend,
         max_review_rounds,
@@ -501,7 +521,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         priority?: string;
         author?: string;
         tags?: string[];
-        prompt_id?: string;
+        skill_name?: string;
         required_review?: boolean;
         agent_backend?: string;
         max_review_rounds?: number;
@@ -518,7 +538,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         author: author ?? "agent",
         status: "todo",
         tags,
-        prompt_id,
+        skill_name,
         required_review: required_review ?? true,
         agent_backend: agent_backend as string | undefined,
         max_review_rounds: max_review_rounds ?? 3,
@@ -886,7 +906,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           body?: string;
           priority?: string;
           tags?: string[];
-          prompt_id?: string;
+          skill_name?: string;
           required_review?: boolean;
           agent_backend?: string;
           max_review_rounds?: number;
@@ -912,7 +932,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           author: author ?? "agent",
           status: "todo",
           tags: item.tags,
-          prompt_id: item.prompt_id,
+          skill_name: item.skill_name,
           required_review: item.required_review ?? true,
           agent_backend: item.agent_backend as string | undefined,
           max_review_rounds: item.max_review_rounds ?? 3,
@@ -1027,51 +1047,47 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       return parts.length > 0 ? parts.join("\n") : "No results found.";
     }
 
-    case "prompt_list": {
-      const { tags, is_skill } = args as { tags?: string[]; is_skill?: boolean };
-      const conditions = [];
-      if (is_skill !== undefined) conditions.push(eq(prompts.is_skill, is_skill));
-      const rows = await db.query.prompts.findMany({
-        where: conditions.length > 0 ? and(...conditions) : undefined,
-        orderBy: (p, { asc }) => [asc(p.name)],
-      });
-      let filtered = rows;
-      if (tags && tags.length > 0) {
-        filtered = rows.filter((p) => {
-          const pTags = p.tags ?? [];
-          return tags.some((t) => pTags.includes(t));
-        });
-      }
-      if (filtered.length === 0) return "No prompts found.";
-      return filtered
-        .map((p) => {
-          const skill = p.is_skill ? " [skill]" : "";
-          const desc = p.description ? ` — ${p.description.slice(0, 60)}` : "";
-          return `${p.name.padEnd(28)}${skill}${desc}`;
+    case "skill_list": {
+      const { q, source, reload } = args as {
+        q?: string;
+        source?: "builtin" | "user";
+        reload?: boolean;
+      };
+      const skills = listSkills({ q, source, reload });
+      if (skills.length === 0) return "No skills found.";
+      return skills
+        .map((s) => {
+          const src = s.source === "user" ? " [user]" : "";
+          const desc = s.description ? ` — ${s.description.slice(0, 80)}` : "";
+          return `${s.name.padEnd(28)}${src}${desc}`;
         })
         .join("\n");
     }
 
-    case "prompt_get": {
-      const { name: pName, id: pId } = args as { name?: string; id?: string };
-      let row: typeof prompts.$inferSelect | undefined;
-      if (pId) {
-        row = await db.query.prompts.findFirst({ where: eq(prompts.id, pId) });
-      } else if (pName) {
-        row = await db.query.prompts.findFirst({ where: eq(prompts.name, pName) });
-      } else {
-        return "Provide either name or id.";
+    case "skill_read": {
+      const { name: sName, ref } = args as { name: string; ref?: string };
+      const result = readSkill(sName, ref);
+      if (!result) return `Skill not found: ${sName}`;
+      if (ref) {
+        const rc = result as SkillRefContent;
+        return `# ${rc.name}\n\n${rc.content}`;
       }
-      if (!row) return `Prompt not found: ${pName ?? pId}`;
-      let out = `# ${row.name}\n${row.description ?? ""}\n\n${row.template}`;
-      if (row.skill_dir) {
-        const refs = listSkillReferenceFiles(row.skill_dir, process.cwd());
-        if (refs.length > 0) {
-          const dir = resolve(process.cwd(), row.skill_dir);
-          out += `\n\nReferences in ${dir}/:\n${refs.map((f) => `- ${dir}/${f}`).join("\n")}`;
-        }
+      const skill = result as SkillFull;
+      let out = `# ${skill.name}\n${skill.description}\n\n${skill.content}`;
+      if (skill.references.length > 0) {
+        out += `\n\nReferences:\n${skill.references.map((r) => `- ${r.name} (${r.path})`).join("\n")}`;
       }
       return out;
+    }
+
+    case "skill_create": {
+      const { name: cName, content: cContent } = args as { name: string; content: string };
+      try {
+        const skill = createSkillFs(cName, cContent);
+        return `Created skill: ${skill.name} at ${skill.path}`;
+      } catch (err) {
+        return `Error: ${err instanceof Error ? err.message : String(err)}`;
+      }
     }
 
     default:
