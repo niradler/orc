@@ -51,7 +51,7 @@ Ask these questions one at a time (skip what's already clear):
 Update the task body with the structured spec (see deliverable format below).
 
 ### 4. Submit
-If work should be broken down, create subtasks with `task_batch_create` and assign appropriate `prompt_id` values.
+If work should be broken down, create subtasks with `task_batch_create` and assign appropriate `skill_name` values.
 
 Set task status to `review` for human sign-off on the requirements.
 

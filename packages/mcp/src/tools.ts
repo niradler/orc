@@ -120,7 +120,6 @@ export const toolDefinitions = [
       priority: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
       author: z.string().optional().default("agent"),
       tags: z.array(z.string()).optional(),
-      prompt_id: z.string().optional().describe("Deprecated — use skill_name instead"),
       skill_name: z
         .string()
         .optional()
@@ -183,7 +182,6 @@ export const toolDefinitions = [
             body: z.string().optional(),
             priority: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
             tags: z.array(z.string()).optional(),
-            prompt_id: z.string().optional().describe("Deprecated — use skill_name"),
             skill_name: z.string().optional().describe("Skill for agent execution"),
             required_review: z.boolean().optional().default(true),
             agent_backend: AgentBackendSchema.optional(),
@@ -513,7 +511,6 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         priority,
         author,
         tags,
-        prompt_id,
         skill_name,
         required_review,
         agent_backend,
@@ -525,7 +522,6 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         priority?: string;
         author?: string;
         tags?: string[];
-        prompt_id?: string;
         skill_name?: string;
         required_review?: boolean;
         agent_backend?: string;
@@ -543,7 +539,6 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         author: author ?? "agent",
         status: "todo",
         tags,
-        prompt_id,
         skill_name,
         required_review: required_review ?? true,
         agent_backend: agent_backend as string | undefined,
@@ -912,7 +907,6 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           body?: string;
           priority?: string;
           tags?: string[];
-          prompt_id?: string;
           skill_name?: string;
           required_review?: boolean;
           agent_backend?: string;
@@ -939,7 +933,6 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           author: author ?? "agent",
           status: "todo",
           tags: item.tags,
-          prompt_id: item.prompt_id,
           skill_name: item.skill_name,
           required_review: item.required_review ?? true,
           agent_backend: item.agent_backend as string | undefined,

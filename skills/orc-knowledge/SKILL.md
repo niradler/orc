@@ -94,7 +94,7 @@ Use scopes to organize: `architecture`, `code-style`, `api`, `security`, `databa
 
 ## Prompts as Knowledge
 
-Built-in prompts (`prompt_list`) encode workflow knowledge — how to do code review, planning, bug fixing. Use `prompt_get` to load a specific workflow when you need structured guidance. Store project-specific workflow tweaks as `rule` memories.
+Built-in skills (`skill_list`) encode workflow knowledge — how to do code review, planning, bug fixing. Use `skill_read` to load a specific workflow when you need structured guidance. Store project-specific workflow tweaks as `rule` memories.
 
 ---
 

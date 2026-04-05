@@ -25,7 +25,7 @@ Returns ~200 tokens: active tasks, key memories, last session summary. Pass `pro
 
 ### 2. Discover available workflows
 
-Use `prompt_list` to see available prompts and skills. Use `prompt_get` to load specific prompt content when you need a structured workflow (e.g. for code review, planning, or bug fixes).
+Use `skill_list` to see available skills. Use `skill_read` to load specific skill content when you need a structured workflow (e.g. for code review, planning, or bug fixes).
 
 ### 3. Record events as you work
 
@@ -92,4 +92,4 @@ orc job add <name> --command "..." # Create a job
 
 - **orc-tasks** skill — task lifecycle, HITL review, agent loop patterns
 - **orc-knowledge** skill — when and how to store decisions and rules
-- Built-in prompts: use `prompt_list` to discover available workflows, `prompt_get` to load them
+- Built-in skills: use `skill_list` to discover available workflows, `skill_read` to load them

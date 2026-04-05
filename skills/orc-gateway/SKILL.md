@@ -89,4 +89,4 @@ Telegram voice messages are transcribed and sent to the agent. Responses are con
 
 - **orc-tasks** skill — task lifecycle, HITL review patterns
 - **orc-session** skill — session management for live agent sessions
-- Built-in prompts: workers spawned via `/agent` or the task loop follow prompts like `orc-worker-base` and `orc-coder` — use `prompt_list` to discover
+- Built-in skills: workers spawned via `/agent` or the task loop follow skills like `orc-worker-base` and `orc-coder` — use `skill_list` to discover

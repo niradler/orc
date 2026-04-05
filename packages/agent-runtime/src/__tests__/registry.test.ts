@@ -29,8 +29,9 @@ describe("backend registry", () => {
     expect(backend.name).toBe("a2a");
   });
 
-  it("throws for unregistered backend", () => {
+  it("falls back to acpx for unregistered backend", () => {
     // biome-ignore lint/suspicious/noExplicitAny: testing invalid input
-    expect(() => createBackend("nonexistent" as any)).toThrow(/No agent backend registered/);
+    const backend = createBackend("nonexistent" as any);
+    expect(backend.name).toBe("acpx");
   });
 });

@@ -18,7 +18,6 @@ type PickedTask = {
   title: string;
   body: string | null;
   status: string;
-  prompt_id: string | null;
   skill_name: string | null;
   agent_backend: string | null;
   tags: string | null;
@@ -57,9 +56,8 @@ async function buildPrompt(task: PickedTask): Promise<string> {
   const baseSkill = readSkill("orc-worker-base") as SkillFull | null;
   if (baseSkill) parts.push(baseSkill.content);
 
-  const skillName = task.skill_name ?? task.prompt_id;
-  if (skillName) {
-    const workflow = readSkill(skillName) as SkillFull | null;
+  if (task.skill_name) {
+    const workflow = readSkill(task.skill_name) as SkillFull | null;
     if (workflow) parts.push(`\n---\n## Workflow: ${workflow.name}\n${workflow.content}`);
   }
 
@@ -478,7 +476,7 @@ function pickAllReviewTasks(): PickedTask[] {
   const sqlite = getSqlite();
   return sqlite
     .query(
-      `SELECT t.id, t.title, t.body, t.status, t.prompt_id, t.agent_backend, t.tags, t.project_id
+      `SELECT t.id, t.title, t.body, t.status, t.skill_name, t.agent_backend, t.tags, t.project_id
        FROM tasks t
        WHERE t.status = 'review'
          AND t.claimed_by IS NULL
@@ -494,11 +492,11 @@ function pickAllNextTasks(): PickedTask[] {
   const sqlite = getSqlite();
   return sqlite
     .query(
-      `SELECT t.id, t.title, t.body, t.status, t.prompt_id, t.skill_name, t.agent_backend, t.tags, t.project_id
+      `SELECT t.id, t.title, t.body, t.status, t.skill_name, t.agent_backend, t.tags, t.project_id
        FROM tasks t
        WHERE (t.status = 'todo' OR t.status = 'changes_requested')
          AND t.claimed_by IS NULL
-         AND (t.skill_name IS NOT NULL OR t.prompt_id IS NOT NULL OR t.agent_backend IS NOT NULL
+         AND (t.skill_name IS NOT NULL OR t.agent_backend IS NOT NULL
               OR EXISTS (SELECT 1 FROM json_each(t.tags) j WHERE j.value = 'agent'))
          AND NOT EXISTS (
            SELECT 1 FROM (

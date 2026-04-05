@@ -4,7 +4,7 @@
 
 ### v0.0.1 — Foundation
 
-- SQLite core: tasks, memories, jobs, sessions, prompts, projects
+- SQLite core: tasks, memories, jobs, sessions, skills, projects
 - REST API with auto-generated OpenAPI spec + typed SDK + CLI
 - MCP server with memory, task, job, context, and session tools
 - Job executor with streaming logs and exit codes
@@ -34,8 +34,8 @@
 - **Agent runtime registry** — pluggable backend system extracted to `packages/agent-runtime`
 - **Three agent backends**: Claude Code (native CLI), ACPX (14+ agents via ACP protocol), A2A (remote agents via Google Agent2Agent JSON-RPC)
 - **Fallback routing** — unknown backend names route through ACPX automatically
-- **Prompt-as-skills system** — `SKILL.md` files with reference docs, seeded on startup, discoverable via `prompt_list`/`prompt_get` MCP tools
-- **Built-in workflow prompts** — orc-coder, orc-reviewer, orc-planner, orc-bugfix, orc-requirements, orc-report, orc-worker-base, orc-main-base
+- **Filesystem-based skills** — `skills/*/SKILL.md` (built-in) and `~/.orc/skills/` (user), discoverable via `skill_list`/`skill_read`/`skill_create` MCP tools
+- **Built-in workflow skills** — orc-coder, orc-reviewer, orc-planner, orc-bugfix, orc-requirements, orc-report, orc-worker-base, orc-main-base
 - **Review flow** — configurable `required_review`, `max_review_rounds` with auto-pause on exceeded rounds
 - **Per-project concurrency** — `max_workers` on projects to limit parallel agents
 - **Polymorphic comments** — `task_update` with `comment` param writes to shared comments table
@@ -72,7 +72,7 @@
 - Vector search with `sqlite-vec` for semantic memory retrieval
 - Permission approval flow — agent pauses at a decision point, human approves
 - Webhook trigger setup with examples (GitHub, CI)
-- Prompt versioning and management improvements
+- Skill versioning and management improvements
 - Discord bridge
 - Push memory scoring into SQL — `context()` currently fetches N×3 into JS for scoring; at thousands of memories this should be a single SQL query with ORDER BY score
 - Memory versioning — track previous content on update for undo/audit (investigate SQLite triggers or shadow table)

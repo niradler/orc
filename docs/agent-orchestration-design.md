@@ -24,7 +24,7 @@ ORC becomes the central brain that coordinates multiple coding agents (Claude Co
 
 ```
 Human ↔ Main agent (general, ORC-aware)
-  │  Loads prompts on-demand (requirements, planning, etc.)
+  │  Loads skills on-demand (requirements, planning, etc.)
   │  Gets requirements, DOD, clarifications
   │  Creates/reuses project
   │  Creates task(s)
@@ -54,7 +54,7 @@ Human review (Telegram/CLI)
   │  Requests changes → task goes back, worker resumes
   │
   ▼
-Done. Main agent reports status when asked (orc-report prompt).
+Done. Main agent reports status when asked (orc-report skill).
 ```
 
 ---
@@ -65,7 +65,7 @@ Done. Main agent reports status when asked (orc-report prompt).
 
 | Field | Type | Default | Purpose |
 |---|---|---|---|
-| `prompt_id` | text (FK to prompts) | null | Prompt template to load for this task's worker |
+| `skill_name` | text | null | Skill to load for this task's worker (references `skills/*/SKILL.md`) |
 | `required_review` | boolean | true | Whether human must review. false = auto-approve on agent review pass |
 | `agent_backend` | text | null | Preferred backend: `claude \| codex \| cursor`. null = use project/global default |
 | `max_review_rounds` | integer | 3 | Max times a task can cycle through changes_requested before escalating to human. Prevents infinite agent token burn. 0 = unlimited. |
@@ -127,31 +127,31 @@ Remove `task_submit_review` and `task_check_review`. Agents use `task_update({id
 
 ---
 
-## 2. Prompt System as Skills
+## 2. Skills System
 
 ### Current state
 
-Prompts table exists with full CRUD + versioning + rendering via REST API. **No MCP tools** — agents cannot discover or load prompts.
+Skills are filesystem-based, living in `skills/*/SKILL.md` (built-in) and `~/.orc/skills/` (user-defined). No database table — loaded directly from the filesystem.
 
 ### New MCP tools
 
 | Tool | Input | Output |
 |---|---|---|
-| `prompt_list` | `{tags?: string[]}` | Array of `{id, name, description, tags, is_skill}` |
-| `prompt_get` | `{name: string}` or `{id: string}` | Full prompt content + metadata |
+| `skill_list` | `{tags?: string[]}` | Array of `{name, description, tags}` |
+| `skill_read` | `{name: string}` | Full skill content + metadata |
 
-Two tools only. No `prompt_render` — the task loop injects task context alongside the prompt. Agents receive the prompt as static text plus task details as separate context.
+Two tools only. The task loop injects task context alongside the skill. Agents receive the skill as static text plus task details as separate context.
 
-**Prompt scoping:** Prompt names are globally unique (enforced by existing `prompts_name_idx`). No project-scoped prompts in v1. If project-specific behavior is needed, use tags to categorize and let agents filter via `prompt_list({tags: ["project-x"]})`.
+**Skill scoping:** Skill names are globally unique (directory name = skill name). No project-scoped skills in v1. If project-specific behavior is needed, use tags to categorize and let agents filter via `skill_list({tags: ["project-x"]})`.
 
-### Built-in prompt templates
+### Built-in skill templates
 
-Shipped with ORC, seeded into prompts table on first run:
+Shipped with ORC, loaded from `skills/` directory:
 
 | Name | Description |
 |---|---|
-| `orc-main-base` | Base prompt for main agent. ORC awareness, advise using ORC for state management, discover/load prompts, create tasks for the loop. Injected into main agent sessions. |
-| `orc-worker-base` | Base prompt for all worker sessions. ORC awareness, MCP tool usage, update status, post comments, store memories. Injected into every worker. |
+| `orc-main-base` | Base skill for main agent. ORC awareness, advise using ORC for state management, discover/load skills, create tasks for the loop. Injected into main agent sessions. |
+| `orc-worker-base` | Base skill for all worker sessions. ORC awareness, MCP tool usage, update status, post comments, store memories. Injected into every worker. |
 | `requirements-gathering` | Loaded on-demand by main agent. Interview human: clarifying questions, DOD, constraints, scope. |
 | `planner` | Deep-dive a task. Create implementation plan. Break into subtasks with clear descriptions. |
 | `coder` | Implement a plan. Write code, tests. Update task status and post comments as you go. |
@@ -159,25 +159,25 @@ Shipped with ORC, seeded into prompts table on first run:
 | `bug-fix` | Investigate, reproduce, fix, verify. |
 | `orc-report` | Collect task statuses, session errors, worker activity across project. Build summary report. |
 
-**`is_skill` field:** The existing boolean on the prompts table distinguishes prompts (templates for agent behavior) from skills (interactive workflows). The task loop treats both the same — it loads the content and injects it. The distinction is for human organization in `prompt_list` output.
+Skills are all filesystem-based. The task loop loads the `SKILL.md` content and injects it. Tags in the skill metadata can be used for organization and filtering via `skill_list` output.
 
-### Prompt variable handling
+### Skill variable handling
 
-Prompts are static text. The task loop does NOT perform variable substitution. Instead, it concatenates:
+Skills are static text. The task loop does NOT perform variable substitution. Instead, it concatenates:
 
 1. `orc-worker-base` content (always)
-2. Task-specific prompt content from `prompt_id` (if set)
+2. Task-specific skill content from `skill_name` (if set)
 3. Task context block: title, body, all comments, project name
 
 The agent receives all three sections and uses them as instructions + context. This avoids template syntax complexity entirely.
 
-### How agents use prompts
+### How agents use skills
 
-1. Main agent calls `prompt_list()` to discover available prompts
-2. Based on task nature, calls `prompt_get({name: "requirements-gathering"})` to load it
-3. Follows the prompt to gather requirements from the human
-4. Creates tasks. If a task needs a specific workflow, sets `prompt_id` pointing to the relevant prompt
-5. Worker agents receive: `orc-worker-base` + task-specific prompt (from `prompt_id`) + task body + comments
+1. Main agent calls `skill_list()` to discover available skills
+2. Based on task nature, calls `skill_read({name: "requirements-gathering"})` to load it
+3. Follows the skill to gather requirements from the human
+4. Creates tasks. If a task needs a specific workflow, sets `skill_name` pointing to the relevant skill
+5. Worker agents receive: `orc-worker-base` + task-specific skill (from `skill_name`) + task body + comments
 
 ---
 
@@ -234,13 +234,13 @@ Global or per-project in ORC config:
      - status = "todo" OR status = "changes_requested"
      - claimed_by IS NULL
      - all dependencies resolved (not blocked)
-     - eligible for agent pickup (has prompt_id, or tagged "agent", or agent_backend set)
+     - eligible for agent pickup (has skill_name, or tagged "agent", or agent_backend set)
    - Order by priority DESC, created_at ASC
    - Pick first eligible task
 
 4. Spawn worker
    - Claim task via task service: set claimed_by = new_session_id, status = "queued"
-   - Build prompt: orc-worker-base + prompt from prompt_id (if set) + task context
+   - Build prompt: orc-worker-base + skill from skill_name (if set) + task context
    - Select backend: task.agent_backend → project default → global default
    - For changes_requested: try resume first (see Section 4 resume logic)
    - Spawn agent via AgentBackend.startSession() from packages/agent-runtime
@@ -249,13 +249,13 @@ Global or per-project in ORC config:
 
 5. No event pushing to main agent
    - Human asks main agent for status when they want it
-   - Main agent uses task_list / task_get / orc-report prompt
+   - Main agent uses task_list / task_get / orc-report skill
 ```
 
 ### Task pickup eligibility
 
 A task is agent-eligible when ANY of these is true:
-- `prompt_id` is set
+- `skill_name` is set
 - `agent_backend` is set
 - Tagged with `"agent"`
 
@@ -267,7 +267,7 @@ Tasks without any of these are human tasks — the loop ignores them.
 
 ```
 Loop spawns worker
-  → Worker receives: base prompt + task prompt + task context
+  → Worker receives: base skill + task skill + task context
   → Worker sets status = "doing" (via MCP task_update)
   → Worker works (writes code, runs tests, posts comments via task_update)
   → Worker sets status = "review"
@@ -323,7 +323,7 @@ The gateway currently hardcodes `IDLE_TIMEOUT_MS = 10 * 60 * 1000` (10 min). Rep
    b. If success → agent continues with full context
 3. If resume fails OR session expired:
    a. Spawn fresh session via AgentBackend.startSession()
-   b. Inject: orc-worker-base + task prompt + task body + all comments (includes feedback)
+   b. Inject: orc-worker-base + task skill + task body + all comments (includes feedback)
    c. Agent reads code from repo, rebuilds context, continues
 4. Increment review_rounds on the session
 5. If review_rounds >= task.max_review_rounds:
@@ -360,7 +360,7 @@ Coder finishes → status: "review"
 |---|---|
 | `required_review: true` (default) | Human must approve |
 | `required_review: false` | Auto-approve when agent sets review |
-| Task has reviewer prompt | Agent reviews first, then human |
+| Task has reviewer skill | Agent reviews first, then human |
 | `paused` status | Taken off the board entirely |
 | `max_review_rounds: 3` (default) | Escalate to human after N failed review cycles |
 
@@ -372,15 +372,15 @@ Coder finishes → status: "review"
 
 | Tool | Purpose |
 |---|---|
-| `prompt_list` | Discover available prompts (name + description) |
-| `prompt_get` | Load full prompt content by name or ID |
+| `skill_list` | Discover available skills (name + description) |
+| `skill_read` | Load full skill content by name |
 
 ### Modified tools
 
 | Tool | Change |
 |---|---|
 | `task_update` | Support new statuses (`queued`, `paused`). Add `comment` param — creates a row in `comments` table (`resource_type: "task"`). All transitions go through shared task service for side-effects (notifications, unblocking). |
-| `task_create` | Add `prompt_id`, `required_review`, `agent_backend`, `max_review_rounds` params |
+| `task_create` | Add `skill_name`, `required_review`, `agent_backend`, `max_review_rounds` params |
 | `task_batch_create` | Same new params as `task_create` |
 | `task_list` | Update status filter enum to include `queued`, `paused` |
 | `context` | Include active agent sessions count and status summary in context output |
@@ -400,11 +400,11 @@ Coder finishes → status: "review"
 |---|---|---|
 | **Main agent** | Talk to human, gather requirements, create tasks, report status on request | Spawn workers, manage concurrency, push events |
 | **Task loop** (runner) | Watch board, spawn workers, manage concurrency, clean up crashes, handle timeouts | Review work, push updates to main agent |
-| **Task service** (core) | Status transitions, side-effects (notifications, unblocking, comments). Shared by MCP and runner. | Agent management, prompt loading |
+| **Task service** (core) | Status transitions, side-effects (notifications, unblocking, comments). Shared by MCP and runner. | Agent management, skill loading |
 | **Agent runtime** (new shared pkg) | Spawn agent sessions, manage backends, PID tracking. Shared by gateway and runner. | Task logic, review flow |
 | **Worker agents** | Execute task, post comments, update status | Coordinate with other workers, talk to human |
 | **Gateway** | Telegram/Slack for human review, approvals, notifications | Spawn agents, manage task board |
-| **Prompts** | Define agent behavior, discoverable via MCP | Execute anything — they're templates |
+| **Skills** | Define agent behavior, discoverable via MCP | Execute anything — they're templates |
 
 ---
 
@@ -414,10 +414,10 @@ Coder finishes → status: "review"
 
 - Extract agent runtime to `packages/agent-runtime` (from gateway)
 - Extract task service to shared layer (from MCP tools)
-- Task schema changes (new fields: `prompt_id`, `required_review`, `agent_backend`, `max_review_rounds`, new statuses: `queued`, `paused`)
+- Task schema changes (new fields: `skill_name`, `required_review`, `agent_backend`, `max_review_rounds`, new statuses: `queued`, `paused`)
 - Extend `gateway_sessions` with `role`, `pid`, `project_id`, `review_rounds`
-- Prompt MCP tools (`prompt_list`, `prompt_get`)
-- Seed built-in prompt templates
+- Skill MCP tools (`skill_list`, `skill_read`)
+- Load built-in skills from filesystem
 - Task loop in runner (poll, pickup, spawn, concurrency, cleanup)
 - Deprecate `task_submit_review` / `task_check_review` (log warning, redirect)
 - Status transition side-effects via task service
@@ -427,7 +427,7 @@ Coder finishes → status: "review"
 
 - Resume logic (try backend resume, fall back to fresh + ORC context)
 - Agent review step (reviewer worker before human review)
-- `orc-report` prompt for status collection
+- `orc-report` skill for status collection
 - Configurable review gates per task/project
 - Gateway review cards updated for new status flow
 - `max_review_rounds` enforcement with escalation to human
@@ -436,7 +436,7 @@ Coder finishes → status: "review"
 
 - ORC channel MCP server for real-time task events into CC sessions
 - Per-project concurrency overrides
-- Prompt versioning and management via CLI
+- Skill versioning and management via CLI
 - Session activity dashboard (TUI)
 - Multi-backend routing config
 - Remove deprecated `task_submit_review` / `task_check_review`
@@ -447,12 +447,12 @@ Coder finishes → status: "review"
 
 | Decision | Resolution |
 |---|---|
-| Task pickup signal | `prompt_id` OR `agent_backend` OR tag `"agent"` — any one makes a task agent-eligible |
-| Prompt scoping | Globally unique names, no project FK. Use tags for categorization. |
+| Task pickup signal | `skill_name` OR `agent_backend` OR tag `"agent"` — any one makes a task agent-eligible |
+| Skill scoping | Globally unique names (directory name = skill name). Use tags for categorization. |
 | Agent session table | Extend existing `gateway_sessions`, don't create new table |
 | Side-effect execution | Shared task service layer, not embedded in MCP tools |
 | Worker spawn mechanism | Shared `packages/agent-runtime` extracted from gateway |
-| Template variables | No template syntax. Loop concatenates prompt + task context as separate sections. |
+| Template variables | No template syntax. Loop concatenates skill + task context as separate sections. |
 | Review status | Single `review` status for both agent and human review. No `human_review`. |
 | Timeout config | Unified `session_idle_timeout_minutes` used by both gateway and task loop |
 
