@@ -383,6 +383,10 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE projects ADD COLUMN max_workers INTEGER",
     "ALTER TABLE gateway_sessions ADD COLUMN acpx_agent TEXT",
     "ALTER TABLE gateway_sessions ADD COLUMN a2a_url TEXT",
+    "ALTER TABLE tasks ADD COLUMN skill_name TEXT",
+    "ALTER TABLE jobs ADD COLUMN skill_name TEXT",
+    "UPDATE tasks SET skill_name = (SELECT name FROM prompts WHERE prompts.id = tasks.prompt_id) WHERE prompt_id IS NOT NULL AND skill_name IS NULL",
+    "UPDATE jobs SET skill_name = (SELECT name FROM prompts WHERE prompts.id = jobs.prompt_id) WHERE prompt_id IS NOT NULL AND skill_name IS NULL",
   ];
   for (const statement of migrations) {
     try {

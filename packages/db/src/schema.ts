@@ -53,7 +53,8 @@ export const tasks = sqliteTable("tasks", {
   author: text("author").default("human").notNull(),
   claimed_by: text("claimed_by"),
   claim_expires_at: integer("claim_expires_at", { mode: "timestamp" }),
-  prompt_id: text("prompt_id").references(() => prompts.id, { onDelete: "set null" }),
+  prompt_id: text("prompt_id"),
+  skill_name: text("skill_name"),
   required_review: integer("required_review", { mode: "boolean" }).default(true).notNull(),
   agent_backend: text("agent_backend"),
   max_review_rounds: integer("max_review_rounds").default(3).notNull(),
@@ -122,45 +123,6 @@ export const memories = sqliteTable("memories", {
   ...timestamps,
 });
 
-export const prompts = sqliteTable(
-  "prompts",
-  {
-    id: text("id").primaryKey(),
-    name: text("name").notNull(),
-    description: text("description"),
-    template: text("template").notNull(),
-    is_skill: integer("is_skill", { mode: "boolean" }).default(false).notNull(),
-    skill_dir: text("skill_dir"),
-    skill_version: text("skill_version"),
-    frontmatter: text("frontmatter", { mode: "json" }).$type<Record<string, unknown>>(),
-    source_url: text("source_url"),
-    tags: text("tags", { mode: "json" }).$type<string[]>(),
-    version: integer("version").default(1).notNull(),
-    pinned: integer("pinned", { mode: "boolean" }).default(false).notNull(),
-    last_used_at: integer("last_used_at", { mode: "timestamp" }),
-    ...timestamps,
-  },
-  (t) => [uniqueIndex("prompts_name_idx").on(t.name)],
-);
-
-export const prompt_history = sqliteTable(
-  "prompt_history",
-  {
-    id: text("id").primaryKey(),
-    prompt_id: text("prompt_id")
-      .notNull()
-      .references(() => prompts.id, { onDelete: "cascade" }),
-    version: integer("version").notNull(),
-    name: text("name").notNull(),
-    description: text("description"),
-    template: text("template").notNull(),
-    tags: text("tags", { mode: "json" }).$type<string[]>(),
-    changed_by: text("changed_by").default("human").notNull(),
-    changed_at: integer("changed_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
-  },
-  (t) => [index("prompt_history_prompt_id_idx").on(t.prompt_id, t.version)],
-);
-
 export const jobs = sqliteTable(
   "jobs",
   {
@@ -169,7 +131,8 @@ export const jobs = sqliteTable(
     name: text("name").notNull(),
     description: text("description"),
     command: text("command").notNull(),
-    prompt_id: text("prompt_id").references(() => prompts.id),
+    prompt_id: text("prompt_id"),
+    skill_name: text("skill_name"),
     prompt_vars: text("prompt_vars", { mode: "json" }).$type<Record<string, string>>(),
     inject_context: integer("inject_context", { mode: "boolean" }).default(true).notNull(),
     trigger_type: text("trigger_type", {
@@ -353,9 +316,6 @@ export type NewTaskLink = typeof task_links.$inferInsert;
 export type Memory = typeof memories.$inferSelect;
 export type NewMemory = typeof memories.$inferInsert;
 export type MemoryType = "fact" | "decision" | "event" | "rule" | "discovery";
-export type Prompt = typeof prompts.$inferSelect;
-export type NewPrompt = typeof prompts.$inferInsert;
-export type PromptHistory = typeof prompt_history.$inferSelect;
 export type Job = typeof jobs.$inferSelect;
 export type NewJob = typeof jobs.$inferInsert;
 export type JobRun = typeof job_runs.$inferSelect;

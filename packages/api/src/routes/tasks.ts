@@ -28,6 +28,7 @@ const TaskSchema = z
     claimed_by: z.string().nullable(),
     claim_expires_at: z.string().datetime().nullable(),
     prompt_id: z.string().nullable(),
+    skill_name: z.string().nullable(),
     required_review: z.boolean(),
     agent_backend: z.string().nullable(),
     max_review_rounds: z.number().int(),
@@ -58,6 +59,7 @@ const CreateTaskSchema = z
     tags: z.array(z.string()).optional(),
     author: z.string().optional().default("human"),
     prompt_id: z.string().optional(),
+    skill_name: z.string().optional(),
     required_review: z.boolean().optional().default(true),
     agent_backend: AgentBackendSchema.optional(),
     max_review_rounds: z.number().int().min(1).optional().default(3),
@@ -77,6 +79,7 @@ const UpdateTaskSchema = z
     comment: z.string().optional(),
     agent_backend: AgentBackendSchema.optional(),
     prompt_id: z.string().optional(),
+    skill_name: z.string().optional(),
   })
   .openapi("UpdateTask");
 
@@ -336,6 +339,7 @@ app.openapi(createRoute_, async (c) => {
     tags: body.tags,
     author: body.author,
     prompt_id: body.prompt_id,
+    skill_name: body.skill_name,
     required_review: body.required_review ?? true,
     agent_backend: body.agent_backend as string | undefined,
     max_review_rounds: body.max_review_rounds ?? 3,
@@ -381,6 +385,7 @@ app.openapi(updateRoute, async (c) => {
     ...(body.tags !== undefined ? { tags: body.tags } : {}),
     ...(body.agent_backend !== undefined ? { agent_backend: body.agent_backend } : {}),
     ...(body.prompt_id !== undefined ? { prompt_id: body.prompt_id } : {}),
+    ...(body.skill_name !== undefined ? { skill_name: body.skill_name } : {}),
   };
   if (Object.keys(nonStatusFields).length > 0) {
     await db

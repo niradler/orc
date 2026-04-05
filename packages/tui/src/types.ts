@@ -1,8 +1,8 @@
 import type { KeyEvent as OpenTUIKeyEvent } from "@opentui/core";
 
-export type Route = "projects" | "tasks" | "jobs" | "memories" | "sessions" | "prompts";
+export type Route = "projects" | "tasks" | "jobs" | "memories" | "sessions" | "skills";
 
-export const ROUTES: Route[] = ["projects", "tasks", "jobs", "memories", "sessions", "prompts"];
+export const ROUTES: Route[] = ["projects", "tasks", "jobs", "memories", "sessions", "skills"];
 
 export type ViewMode = "browse" | "detail" | "form" | "filter" | "confirm";
 

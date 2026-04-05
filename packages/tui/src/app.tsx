@@ -13,8 +13,8 @@ import { getScreenSize, ROUTES } from "./types.js";
 import { JobsView } from "./views/jobs.js";
 import { MemoriesView } from "./views/memories.js";
 import { ProjectsView } from "./views/projects.js";
-import { PromptsView } from "./views/prompts.js";
 import { SessionsView } from "./views/sessions.js";
+import { SkillsView } from "./views/skills.js";
 import { TasksView } from "./views/tasks.js";
 
 const client = createOrcClient();
@@ -36,7 +36,7 @@ const TAB_LABELS: Record<Route, string> = {
   jobs: "Jobs",
   memories: "Memories",
   sessions: "Sessions",
-  prompts: "Prompts",
+  skills: "Skills",
 };
 
 export function App() {
@@ -96,10 +96,10 @@ export function App() {
         action: () => setRoute("sessions"),
       },
       {
-        name: "prompts",
-        aliases: ["pr", "prompt"],
-        description: "View prompts",
-        action: () => setRoute("prompts"),
+        name: "skills",
+        aliases: ["sk", "skill"],
+        description: "View skills",
+        action: () => setRoute("skills"),
       },
       { name: "all", aliases: ["a"], description: "Clear project filter", action: clearProject },
       {
@@ -144,7 +144,7 @@ export function App() {
     if (k.name === "3") setRoute("jobs");
     if (k.name === "4") setRoute("memories");
     if (k.name === "5") setRoute("sessions");
-    if (k.name === "6") setRoute("prompts");
+    if (k.name === "6") setRoute("skills");
     if (k.name === "left")
       setRoute((r) => ROUTES[(ROUTES.indexOf(r) - 1 + ROUTES.length) % ROUTES.length] ?? r);
     if (k.name === "right") setRoute((r) => ROUTES[(ROUTES.indexOf(r) + 1) % ROUTES.length] ?? r);
@@ -170,7 +170,7 @@ export function App() {
         gap={1}
       >
         <box flexDirection="row" flexWrap="wrap" gap={1}>
-          {(["projects", "tasks", "jobs", "memories", "sessions", "prompts"] as Route[]).map(
+          {(["projects", "tasks", "jobs", "memories", "sessions", "skills"] as Route[]).map(
             (r, i) => (
               <box
                 key={r}
@@ -252,8 +252,8 @@ export function App() {
             onStateChange={onViewStateChange}
           />
         )}
-        {route === "prompts" && (
-          <PromptsView
+        {route === "skills" && (
+          <SkillsView
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
           />

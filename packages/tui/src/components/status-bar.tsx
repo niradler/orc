@@ -21,7 +21,7 @@ const ROUTE_HELP: Record<Route, string> = {
   jobs: "Inspect scheduled automation and run history.",
   memories: "Browse and capture searchable project knowledge.",
   sessions: "Review agent sessions, summaries, and snapshots.",
-  prompts: "Manage reusable prompts and skills.",
+  skills: "Browse built-in and user-installed skills.",
 };
 
 function trimTo(text: string, width: number): string {
