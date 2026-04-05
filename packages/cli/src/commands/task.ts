@@ -104,6 +104,8 @@ export function taskCommand() {
     .option("--no-project", "Create without project")
     .option("--priority <p>", "Priority (low/normal/high/critical)", "normal")
     .option("-b, --body <text>", "Task body")
+    .option("--skill <name>", "Skill for agent execution (e.g. orc-coder)")
+    .option("--backend <backend>", "Agent backend (claude|codex|cursor)")
     .action(async (title: string, opts) => {
       const client = createOrcClient();
       const noProject = opts.project === false;
@@ -115,6 +117,7 @@ export function taskCommand() {
         body: opts.body,
         ...(project ? { project_id: project.id } : {}),
         priority: opts.priority,
+        skill_name: opts.skill,
       });
       if (error) {
         if (isJson()) return jsonErr(String(error));
