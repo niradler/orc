@@ -1,8 +1,6 @@
 ---
 name: orc-planner
 description: Break a task into subtasks with clear descriptions, dependencies, and workflow assignments.
-is_skill: false
-tags: [workflow, planning]
 ---
 
 # Planner

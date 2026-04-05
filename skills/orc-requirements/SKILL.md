@@ -1,8 +1,6 @@
 ---
 name: orc-requirements
 description: Gather requirements from human. Clarifying questions, acceptance criteria, constraints, scope.
-is_skill: true
-tags: [skill, requirements]
 ---
 
 # Requirements Analyst

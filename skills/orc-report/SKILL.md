@@ -1,8 +1,6 @@
 ---
 name: orc-report
 description: Collect task statuses, worker activity, and blockers. Build a concise project status report.
-is_skill: true
-tags: [skill, reporting]
 ---
 
 # Status Reporter

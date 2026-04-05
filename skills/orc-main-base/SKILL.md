@@ -1,8 +1,6 @@
 ---
 name: orc-main-base
 description: Base prompt for the main orchestration agent. Task creation, prompt discovery, work delegation.
-is_skill: false
-tags: [base, main]
 ---
 
 # ORC Orchestrator

@@ -1,8 +1,6 @@
 ---
 name: orc-bugfix
 description: Investigate, reproduce, root-cause, fix, and verify a bug. Structured debugging workflow.
-is_skill: false
-tags: [workflow, bugfix]
 ---
 
 # Bug Fixer

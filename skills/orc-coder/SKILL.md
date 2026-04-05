@@ -1,8 +1,6 @@
 ---
 name: orc-coder
 description: Implementation workflow. Read spec, write code, write tests, verify, submit for review.
-is_skill: false
-tags: [workflow, code]
 ---
 
 # Coder

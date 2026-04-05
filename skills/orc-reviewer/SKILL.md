@@ -1,8 +1,6 @@
 ---
 name: orc-reviewer
 description: Review agent work against requirements. Structured evaluation, approve or request changes.
-is_skill: false
-tags: [workflow, review]
 ---
 
 # Reviewer

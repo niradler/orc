@@ -1,8 +1,6 @@
 ---
 name: orc-worker-base
 description: Base prompt for all worker sessions. ORC awareness, MCP tool usage, status updates.
-is_skill: false
-tags: [base, worker]
 ---
 
 # ORC Worker Agent
