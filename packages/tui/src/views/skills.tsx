@@ -42,23 +42,6 @@ const columns: Column<SkillMeta>[] = [
     },
     color: () => colors.textDim,
   },
-  {
-    key: "version",
-    label: "Ver",
-    width: 8,
-    minWidth: 5,
-    priority: 4,
-    render: (s) => s.version,
-  },
-  {
-    key: "tags",
-    label: "Tags",
-    width: 20,
-    minWidth: 10,
-    priority: 1,
-    render: (s) => (s.tags.length ? s.tags.join(", ") : "—"),
-    color: () => colors.textDim,
-  },
 ];
 
 type Props = {
@@ -78,7 +61,7 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange }: Props) {
     active: filterActive,
     setQuery,
     setActive: setFilterActive,
-  } = useFilter(skills, (s) => `${s.name} ${s.description} ${s.tags.join(" ")}`, true);
+  } = useFilter(skills, (s) => `${s.name} ${s.description}`, true);
   const { cursor, handleKey: vimHandleKey } = useVimList(
     filtered.length,
     mode === "browse" && !filterActive,
@@ -165,8 +148,6 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange }: Props) {
     const fields = [
       { label: "Name", value: detail.meta.name },
       { label: "Source", value: detail.meta.source },
-      { label: "Version", value: detail.meta.version },
-      { label: "Tags", value: detail.meta.tags.join(", ") || "—" },
       { label: "Path", value: detail.meta.path, color: colors.textDim },
     ];
     return (
@@ -187,7 +168,7 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange }: Props) {
         countLabel={loading ? "Loading skills…" : `${filtered.length} skills`}
         filterQuery={query}
         filterActive={filterActive}
-        filterPlaceholder="Search by name, tags, or description"
+        filterPlaceholder="Search by name or description"
         onFilterChange={setQuery}
         onFilterSubmit={() => setFilterActive(false)}
         statusMessage="Built-in and user skills from ~/.orc/skills"

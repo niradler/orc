@@ -36,14 +36,6 @@ describe("GET /skills", () => {
     expect(body.skills.every((s) => s.source === "builtin")).toBe(true);
   });
 
-  test("filters by tags", async () => {
-    const res = await req(app, "GET", "/skills?tags=workflow");
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { skills: { name: string; tags: string[] }[] };
-    expect(body.skills.length).toBeGreaterThan(0);
-    expect(body.skills.every((s) => s.tags.includes("workflow"))).toBe(true);
-  });
-
   test("keyword search with q param", async () => {
     const res = await req(app, "GET", "/skills?q=coder");
     expect(res.status).toBe(200);
@@ -106,8 +98,6 @@ describe("POST /skills", () => {
     const content = `---
 name: ${TEST_NAME}
 description: Created via API test
-tags: [test]
-version: 1.0.0
 ---
 
 API test body.`;

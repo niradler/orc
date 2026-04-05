@@ -26,13 +26,6 @@ describe("skill_list", () => {
     expect(result).toContain("orc-gateway");
   });
 
-  test("filters by tags", async () => {
-    const result = await executeTool("skill_list", { tags: ["workflow"] });
-    expect(result).toContain("orc-coder");
-    expect(result).toContain("orc-planner");
-    expect(result).not.toContain("orc-worker-base");
-  });
-
   test("keyword search", async () => {
     const result = await executeTool("skill_list", { q: "coder" });
     expect(result).toContain("orc-coder");
@@ -85,7 +78,6 @@ describe("skill_create", () => {
     const content = `---
 name: ${TEST_NAME}
 description: MCP test skill
-tags: [test]
 ---
 
 MCP test body.`;

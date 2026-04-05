@@ -11,12 +11,9 @@ export type SkillSource = "builtin" | "user";
 export type SkillMeta = {
   name: string;
   description: string;
-  tags: string[];
-  version: string;
   source: SkillSource;
   path: string;
-  dir: string;
-  frontmatter: Record<string, unknown>;
+  metadata: Record<string, unknown>;
 };
 
 export type SkillRef = { name: string; path: string };
@@ -36,7 +33,6 @@ export type SkillCache = {
 
 export type ListSkillsOpts = {
   q?: string | undefined;
-  tags?: string[] | undefined;
   source?: SkillSource | undefined;
   reload?: boolean | undefined;
 };
@@ -45,15 +41,13 @@ export type ListSkillsOpts = {
 // Frontmatter parser
 // ---------------------------------------------------------------------------
 
-const KNOWN_FIELDS = new Set(["name", "description", "tags", "version"]);
+const HEADER_FIELDS = new Set(["name", "description"]);
 
 export function parseFrontmatter(content: string): {
   frontmatter: {
     name: string;
     description: string;
-    tags: string[];
-    version: string;
-    extras: Record<string, unknown>;
+    metadata: Record<string, unknown>;
   };
   body: string;
 } {
@@ -70,25 +64,16 @@ export function parseFrontmatter(content: string): {
     fm[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
   }
 
-  const tags = (fm.tags ?? "")
-    .replace(/^\[/, "")
-    .replace(/\]$/, "")
-    .split(",")
-    .map((t) => t.trim())
-    .filter(Boolean);
-
-  const extras: Record<string, unknown> = {};
+  const metadata: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(fm)) {
-    if (!KNOWN_FIELDS.has(key)) extras[key] = value;
+    if (!HEADER_FIELDS.has(key)) metadata[key] = value;
   }
 
   return {
     frontmatter: {
       name: fm.name ?? "unknown",
       description: fm.description ?? "",
-      tags,
-      version: fm.version ?? "1.0.0",
-      extras,
+      metadata,
     },
     body,
   };
@@ -157,12 +142,9 @@ function scanDirectory(dir: string, source: SkillSource): SkillMeta[] {
         results.push({
           name: fm.name,
           description: fm.description,
-          tags: fm.tags,
-          version: fm.version,
           source,
           path: skillFile,
-          dir: skillDir,
-          frontmatter: fm.extras,
+          metadata: fm.metadata,
         });
       } catch {
         // skip malformed skills
@@ -223,17 +205,10 @@ export function listSkills(opts?: ListSkillsOpts): SkillMeta[] {
   if (opts?.source) {
     skills = skills.filter((s) => s.source === opts.source);
   }
-  if (opts?.tags && opts.tags.length > 0) {
-    const filterTags = opts.tags;
-    skills = skills.filter((s) => filterTags.some((t) => s.tags.includes(t)));
-  }
   if (opts?.q) {
     const q = opts.q.toLowerCase();
     skills = skills.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q) ||
-        s.tags.some((t) => t.toLowerCase().includes(q)),
+      (s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q),
     );
   }
 
@@ -245,13 +220,15 @@ export function readSkill(name: string, ref?: string): SkillFull | SkillRefConte
   const meta = cache.skills.find((s) => s.name === name);
   if (!meta) return null;
 
+  const skillDir = dirname(meta.path);
+
   if (ref) {
-    return readReferenceFile(meta.dir, ref);
+    return readReferenceFile(skillDir, ref);
   }
 
   const content = readFileSync(meta.path, "utf-8");
   const { body } = parseFrontmatter(content);
-  const references = listReferenceFiles(meta.dir);
+  const references = listReferenceFiles(skillDir);
 
   return { ...meta, content: body, references };
 }
@@ -279,12 +256,9 @@ export function createSkill(name: string, content: string): SkillFull {
   return {
     name: fm.name,
     description: fm.description,
-    tags: fm.tags,
-    version: fm.version,
-    source: "user",
+    source: "user" as SkillSource,
     path: skillFile,
-    dir: skillDir,
-    frontmatter: fm.extras,
+    metadata: fm.metadata,
     content: body,
     references,
   };

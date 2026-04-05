@@ -78,12 +78,9 @@ describe("2. Skill Discovery", () => {
     expect(result).toContain("orc-requirements");
   });
 
-  test("agent filters skills by workflow tag", async () => {
-    const result = await executeTool("skill_list", { tags: ["workflow"] });
+  test("agent searches skills by keyword", async () => {
+    const result = await executeTool("skill_list", { q: "coder" });
     expect(result).toContain("orc-coder");
-    expect(result).toContain("orc-planner");
-    expect(result).toContain("orc-reviewer");
-    expect(result).toContain("orc-bugfix");
     expect(result).not.toContain("orc-worker-base");
   });
 

@@ -15,14 +15,12 @@ export function skillCommand() {
     .command("list")
     .description("List installed skills")
     .option("-q, --query <q>", "Keyword search")
-    .option("--tags <tags>", "Comma-separated tag filter")
     .option("--source <source>", "Filter by source (builtin|user)")
     .option("--reload", "Force cache rebuild")
     .action(async (opts) => {
       const client = createOrcClient();
       const { data, error } = await client.skills.list({
         q: opts.query,
-        tags: opts.tags,
         source: opts.source,
         reload: opts.reload,
       });
@@ -33,10 +31,9 @@ export function skillCommand() {
 
       for (const s of skills) {
         const src = s.source === "user" ? color(" [user]", "36") : "";
-        const ver = color(s.version, "2");
         const name = s.name.length > 30 ? `${s.name.slice(0, 29)}…` : s.name;
         const desc = s.description ? ` — ${s.description.slice(0, 50)}` : "";
-        console.log(`  ${name.padEnd(32)} ${ver}${src}${desc}`);
+        console.log(`  ${name.padEnd(32)}${src}${desc}`);
       }
     });
 
@@ -61,8 +58,6 @@ export function skillCommand() {
         console.log(color(`# ${skill.name}`, "1"));
         if (skill.description) console.log(`  ${skill.description}`);
         console.log(`  source:   ${skill.source}`);
-        console.log(`  version:  ${skill.version}`);
-        if (skill.tags.length) console.log(`  tags:     ${skill.tags.join(", ")}`);
         console.log(`  path:     ${skill.path}`);
         if (skill.references.length > 0) {
           console.log(`  refs:     ${skill.references.map((r) => r.name).join(", ")}`);

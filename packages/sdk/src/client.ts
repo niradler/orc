@@ -197,7 +197,7 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     skills: {
-      list: (params?: { q?: string; tags?: string; source?: SkillSource; reload?: boolean }) =>
+      list: (params?: { q?: string; source?: SkillSource; reload?: boolean }) =>
         c<{ skills: SkillMeta[] }>(
           "GET",
           "/skills",

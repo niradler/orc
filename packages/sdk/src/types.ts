@@ -237,12 +237,9 @@ export type SkillSource = "builtin" | "user";
 export type SkillMeta = {
   name: string;
   description: string;
-  tags: string[];
-  version: string;
   source: SkillSource;
   path: string;
-  dir: string;
-  frontmatter: Record<string, unknown>;
+  metadata: Record<string, unknown>;
 };
 
 export type SkillRef = {

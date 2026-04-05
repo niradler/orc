@@ -309,10 +309,9 @@ export const toolDefinitions = [
     name: "skill_list",
     description:
       "List installed skills (built-in + user). Returns name and description for each. " +
-      "Supports keyword search and filtering by tags or source.",
+      "Supports keyword search and filtering by source.",
     inputSchema: z.object({
-      q: z.string().optional().describe("Keyword search on name, description, tags"),
-      tags: z.array(z.string()).optional().describe("Filter by tags"),
+      q: z.string().optional().describe("Keyword search on name and description"),
       source: z.enum(["builtin", "user"]).optional().describe("Filter by source"),
       reload: z.boolean().optional().describe("Force cache rebuild"),
     }),
@@ -1049,18 +1048,12 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "skill_list": {
-      const {
-        q,
-        tags: sTags,
-        source,
-        reload,
-      } = args as {
+      const { q, source, reload } = args as {
         q?: string;
-        tags?: string[];
         source?: "builtin" | "user";
         reload?: boolean;
       };
-      const skills = listSkills({ q, tags: sTags, source, reload });
+      const skills = listSkills({ q, source, reload });
       if (skills.length === 0) return "No skills found.";
       return skills
         .map((s) => {

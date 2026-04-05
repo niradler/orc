@@ -16,12 +16,9 @@ const SkillMetaSchema = z
   .object({
     name: z.string(),
     description: z.string(),
-    tags: z.array(z.string()),
-    version: z.string(),
     source: z.enum(["builtin", "user"]),
     path: z.string(),
-    dir: z.string(),
-    frontmatter: z.record(z.unknown()),
+    metadata: z.record(z.unknown()),
   })
   .openapi("SkillMeta");
 
@@ -61,11 +58,7 @@ const listRoute = createRoute({
   summary: "List installed skills",
   request: {
     query: z.object({
-      q: z
-        .string()
-        .optional()
-        .openapi({ description: "Keyword search on name, description, tags" }),
-      tags: z.string().optional().openapi({ description: "Comma-separated tag filter" }),
+      q: z.string().optional().openapi({ description: "Keyword search on name and description" }),
       source: z.enum(["builtin", "user"]).optional(),
       reload: z.coerce.boolean().optional().openapi({ description: "Force cache rebuild" }),
     }),
@@ -126,16 +119,9 @@ const createRoute_ = createRoute({
 // --- Handlers ---
 
 app.openapi(listRoute, (c) => {
-  const { q, tags, source, reload } = c.req.valid("query");
-  const parsedTags = tags
-    ? tags
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean)
-    : undefined;
+  const { q, source, reload } = c.req.valid("query");
   const skills = listSkills({
     q,
-    tags: parsedTags,
     source: source as SkillSource | undefined,
     reload,
   });

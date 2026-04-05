@@ -21,8 +21,6 @@ describe("parseFrontmatter", () => {
     const content = `---
 name: test-skill
 description: A test skill
-tags: [foo, bar]
-version: 2.0.0
 ---
 
 # Hello
@@ -32,13 +30,11 @@ Body content here.`;
     const { frontmatter, body } = parseFrontmatter(content);
     expect(frontmatter.name).toBe("test-skill");
     expect(frontmatter.description).toBe("A test skill");
-    expect(frontmatter.tags).toEqual(["foo", "bar"]);
-    expect(frontmatter.version).toBe("2.0.0");
-    expect(frontmatter.extras).toEqual({});
+    expect(frontmatter.metadata).toEqual({});
     expect(body).toBe("# Hello\n\nBody content here.");
   });
 
-  test("extracts extra frontmatter fields", () => {
+  test("extracts extra fields as metadata", () => {
     const content = `---
 name: with-extras
 description: Has extras
@@ -50,7 +46,7 @@ Content`;
 
     const { frontmatter } = parseFrontmatter(content);
     expect(frontmatter.name).toBe("with-extras");
-    expect(frontmatter.extras).toEqual({
+    expect(frontmatter.metadata).toEqual({
       "allowed-tools": "Bash, Read",
       model: "claude-sonnet",
     });
@@ -66,24 +62,10 @@ Content`;
     const { frontmatter } = parseFrontmatter(content);
     expect(frontmatter.name).toBe("minimal");
     expect(frontmatter.description).toBe("");
-    expect(frontmatter.tags).toEqual([]);
-    expect(frontmatter.version).toBe("1.0.0");
   });
 
   test("throws on missing frontmatter", () => {
     expect(() => parseFrontmatter("no frontmatter here")).toThrow("missing frontmatter");
-  });
-
-  test("handles empty tags", () => {
-    const content = `---
-name: no-tags
-tags: []
----
-
-Content`;
-
-    const { frontmatter } = parseFrontmatter(content);
-    expect(frontmatter.tags).toEqual([]);
   });
 });
 
@@ -118,9 +100,8 @@ describe("scanSkills", () => {
     const coder = skills.find((s) => s.name === "orc-coder");
     expect(coder).toBeTruthy();
     expect(coder!.description).toBeTruthy();
-    expect(Array.isArray(coder!.tags)).toBe(true);
     expect(coder!.path).toContain("SKILL.md");
-    expect(coder!.dir).toBeTruthy();
+    expect(typeof coder!.metadata).toBe("object");
   });
 });
 
@@ -137,12 +118,6 @@ describe("listSkills", () => {
   test("filters by source", () => {
     const builtin = listSkills({ source: "builtin", reload: true });
     expect(builtin.every((s) => s.source === "builtin")).toBe(true);
-  });
-
-  test("filters by tags", () => {
-    const workflow = listSkills({ tags: ["workflow"], reload: true });
-    expect(workflow.length).toBeGreaterThan(0);
-    expect(workflow.every((s) => s.tags.includes("workflow"))).toBe(true);
   });
 
   test("keyword search on name", () => {
@@ -207,7 +182,6 @@ describe("readSkill with ref", () => {
       `---
 name: __test-refs-skill__
 description: Test skill with references
-tags: [test]
 ---
 
 Test content`,
@@ -267,8 +241,6 @@ describe("createSkill", () => {
     const content = `---
 name: ${TEST_NAME}
 description: Created by test
-tags: [test]
-version: 1.0.0
 ---
 
 Test skill body.`;
