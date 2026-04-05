@@ -31,6 +31,12 @@ export type ViewState = {
   selectionLabel?: string | null;
   detailId?: string | null;
   statusMessage?: string | null;
+  contextData?: string | null;
+};
+
+export type SortState = {
+  key: string | null;
+  direction: "asc" | "desc";
 };
 
 export type Column<T> = {
@@ -41,6 +47,7 @@ export type Column<T> = {
   priority?: number;
   render: (item: T) => string;
   color?: (item: T) => string;
+  sortValue?: (item: T) => string | number;
 };
 
 export type Command = {

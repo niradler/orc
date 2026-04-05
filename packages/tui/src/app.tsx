@@ -1,15 +1,16 @@
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { createOrcClient } from "@orc/sdk";
 import { useCallback, useMemo, useRef, useState } from "react";
+import { ChatModal } from "./components/chat-modal.js";
 import { CommandPalette } from "./components/command-palette.js";
-import { Header } from "./components/header.js";
 import { StatusBar } from "./components/status-bar.js";
+import { useChat } from "./hooks/use-chat.js";
 import { useCommand } from "./hooks/use-command.js";
 import { usePolling } from "./hooks/use-polling.js";
 import { canHandleCommandInput, canSwitchRoutes } from "./navigation.js";
 import { colors } from "./theme.js";
 import type { Command, KeyEvent, Route, ViewKeyHandler, ViewState } from "./types.js";
-import { getScreenSize, ROUTES } from "./types.js";
+import { ROUTES } from "./types.js";
 import { JobsView } from "./views/jobs.js";
 import { MemoriesView } from "./views/memories.js";
 import { ProjectsView } from "./views/projects.js";
@@ -30,25 +31,51 @@ const EMPTY_VIEW_STATE: ViewState = {
   statusMessage: null,
 };
 
-const TAB_LABELS: Record<Route, string> = {
-  projects: "Projects",
-  tasks: "Tasks",
-  jobs: "Jobs",
-  memories: "Memories",
-  sessions: "Sessions",
-  skills: "Skills",
-};
-
 export function App() {
   const renderer = useRenderer();
   const { width, height } = useTerminalDimensions();
-  const compactShell = getScreenSize(width) === "xs";
   const [route, setRoute] = useState<Route>("tasks");
   const [activeProject, setActiveProject] = useState<string | null>(null);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const chatInputRef = useRef("");
 
   const { data: healthData, error: healthError } = usePolling(() => client.health.check(), 10000);
   const connected = !!healthData && !healthError;
+
+  const { data: skillsData } = usePolling(() => client.skills.list(), 60000);
+  const skillNames = skillsData?.skills?.map((s) => s.name) ?? [];
+
+  const viewStateRef = useRef<ViewState>(EMPTY_VIEW_STATE);
+  const routeRef = useRef(route);
+  routeRef.current = route;
+  const activeProjectRef = useRef(activeProject);
+  activeProjectRef.current = activeProject;
+
+  const buildSystemPrompt = useCallback(() => {
+    const vs = viewStateRef.current;
+    const parts: string[] = [
+      "You are the ORC chat assistant running inside the ORC terminal UI.",
+      "ORC is a human+AI orchestration hub with tasks, jobs, memories, sessions, projects, and skills.",
+      "",
+      `Current view: ${routeRef.current}`,
+    ];
+    if (activeProjectRef.current) parts.push(`Active project: ${activeProjectRef.current}`);
+    if (vs.selectionLabel) parts.push(`Selected: ${vs.selectionLabel}`);
+    if (vs.detailId) parts.push(`Detail ID: ${vs.detailId}`);
+    if (vs.countLabel) parts.push(`View info: ${vs.countLabel}`);
+    if (skillNames.length > 0) {
+      parts.push("");
+      parts.push(`Available ORC skills (${skillNames.length}): ${skillNames.join(", ")}`);
+    }
+    parts.push("");
+    parts.push("Help the user with questions about their ORC data, tasks, workflows, and skills.");
+    parts.push("Be concise and direct. Reference the current view context when relevant.");
+    return parts.join("\n");
+  }, [skillNames]);
+
+  const chat = useChat(buildSystemPrompt);
 
   const selectProject = useCallback(async (name: string) => {
     const result = await client.projects.getByName(name);
@@ -101,6 +128,12 @@ export function App() {
         description: "View skills",
         action: () => setRoute("skills"),
       },
+      {
+        name: "chat",
+        aliases: ["c"],
+        description: "Open chat",
+        action: () => setChatOpen(true),
+      },
       { name: "all", aliases: ["a"], description: "Clear project filter", action: clearProject },
       {
         name: "quit",
@@ -123,10 +156,34 @@ export function App() {
 
   const onViewStateChange = useCallback((state: ViewState) => {
     setViewState(state);
+    viewStateRef.current = state;
   }, []);
 
   useKeyboard((key) => {
     const k = key as unknown as KeyEvent;
+
+    if (chatOpen) {
+      if (k.name === "escape" && !chat.streaming) {
+        setChatOpen(false);
+        return;
+      }
+      if (k.name === "c" && k.ctrl) {
+        if (chat.streaming) chat.cancel();
+        else setChatOpen(false);
+        return;
+      }
+      if (k.name === "l" && k.ctrl) {
+        chat.clear();
+        return;
+      }
+      if (k.name === "return" && !chat.streaming && chatInputRef.current.trim()) {
+        void chat.send(chatInputRef.current);
+        setChatInput("");
+        chatInputRef.current = "";
+        return;
+      }
+      return;
+    }
 
     if (canHandleCommandInput(cmdActive, viewState.navigationLocked) && cmdHandleKey(k)) return;
 
@@ -139,84 +196,32 @@ export function App() {
 
     if (!canSwitchRoutes(cmdActive, viewState.navigationLocked)) return;
 
+    if (k.name === "c") {
+      setChatOpen(true);
+      return;
+    }
+
     if (k.name === "1") setRoute("projects");
     if (k.name === "2") setRoute("tasks");
     if (k.name === "3") setRoute("jobs");
     if (k.name === "4") setRoute("memories");
     if (k.name === "5") setRoute("sessions");
     if (k.name === "6") setRoute("skills");
-    if (k.name === "left")
+    if (k.name === "left" || (k.name === "tab" && k.shift))
       setRoute((r) => ROUTES[(ROUTES.indexOf(r) - 1 + ROUTES.length) % ROUTES.length] ?? r);
-    if (k.name === "right") setRoute((r) => ROUTES[(ROUTES.indexOf(r) + 1) % ROUTES.length] ?? r);
+    if (k.name === "right" || k.name === "tab")
+      setRoute((r) => ROUTES[(ROUTES.indexOf(r) + 1) % ROUTES.length] ?? r);
   });
 
   return (
     <box flexDirection="column" width={width} height={height} backgroundColor={colors.bg}>
-      <Header
-        route={route}
-        project={activeProject}
-        detailId={viewState.detailId ?? null}
-        connected={connected}
-        connectionError={healthError}
-      />
-
-      <box
-        flexDirection="column"
-        backgroundColor={colors.bg}
-        paddingLeft={1}
-        paddingRight={1}
-        paddingTop={1}
-        paddingBottom={1}
-        gap={1}
-      >
-        <box flexDirection="row" flexWrap="wrap" gap={1}>
-          {(["projects", "tasks", "jobs", "memories", "sessions", "skills"] as Route[]).map(
-            (r, i) => (
-              <box
-                key={r}
-                backgroundColor={route === r ? colors.bgSelected : colors.bgLight}
-                border
-                borderStyle="single"
-                borderColor={route === r ? colors.borderFocus : colors.border}
-                paddingLeft={1}
-                paddingRight={1}
-                paddingTop={0}
-                paddingBottom={0}
-              >
-                <text
-                  fg={route === r ? colors.text : colors.textDim}
-                >{`${i + 1}. ${TAB_LABELS[r]}`}</text>
-              </box>
-            ),
-          )}
-          {activeProject && (
-            <box
-              backgroundColor={colors.bgSelected}
-              border
-              borderStyle="single"
-              borderColor={colors.border}
-              paddingLeft={1}
-              paddingRight={1}
-            >
-              <text fg={colors.accentAlt}>{`Project ${activeProject}`}</text>
-            </box>
-          )}
-        </box>
-        <text fg={colors.textMuted}>
-          {compactShell ? "1-6 switch • : command" : "1-6 switch • ← → cycle • : command"}
-        </text>
-      </box>
-      <box height={1} backgroundColor={colors.bg}>
-        <text fg={colors.border}>{"─".repeat(Math.max(8, width - 2))}</text>
-      </box>
-
       <box
         flexGrow={1}
         flexDirection="column"
         paddingLeft={1}
         paddingRight={1}
-        paddingTop={1}
-        paddingBottom={1}
+        paddingTop={0}
+        paddingBottom={0}
       >
         {route === "projects" && (
           <ProjectsView
@@ -260,9 +265,27 @@ export function App() {
         )}
       </box>
 
-      <StatusBar route={route} state={viewState} />
+      <StatusBar route={route} state={viewState} connected={connected} project={activeProject} />
 
       <CommandPalette active={cmdActive} input={cmdInput} commands={commands} />
+
+      {chatOpen && (
+        <ChatModal
+          messages={chat.messages}
+          streaming={chat.streaming}
+          streamText={chat.streamText}
+          agent={chat.config.agent}
+          onSend={chat.send}
+          onCancel={chat.cancel}
+          onClose={() => setChatOpen(false)}
+          onClear={chat.clear}
+          inputValue={chatInput}
+          onInputChange={(v: string) => {
+            chatInputRef.current = v;
+            setChatInput(v);
+          }}
+        />
+      )}
     </box>
   );
 }

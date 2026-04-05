@@ -16,6 +16,7 @@ import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
+import { useSort } from "../hooks/use-sort.js";
 import {
   handleDetailEscapeKey,
   handleFilterInputKey,
@@ -28,41 +29,74 @@ import type { Column, KeyEvent, SelectOption, ViewKeyHandler, ViewState } from "
 
 const client = createOrcClient();
 
+const IMPORTANCE_ORDER: Record<string, number> = { critical: 0, high: 1, normal: 2, low: 3 };
+
 const columns: Column<Memory>[] = [
   {
     key: "importance",
-    label: "Imp",
+    label: "Importance",
     width: 10,
     minWidth: 8,
-    priority: 5,
+    priority: 7,
     render: (m) => m.importance,
     color: (m) => importanceColor[m.importance] ?? colors.text,
+    sortValue: (m) => IMPORTANCE_ORDER[m.importance] ?? 99,
   },
   {
     key: "scope",
     label: "Scope",
     width: 14,
     minWidth: 8,
-    priority: 3,
+    priority: 5,
     render: (m) => m.scope ?? "global",
     color: () => colors.textDim,
+    sortValue: (m) => (m.scope ?? "global").toLowerCase(),
   },
   {
     key: "content",
     label: "Content",
     width: 60,
     minWidth: 18,
-    priority: 6,
+    priority: 8,
     render: (m) => (m.content.length > 58 ? `${m.content.slice(0, 58)}…` : m.content),
+  },
+  {
+    key: "source",
+    label: "Source",
+    width: 12,
+    minWidth: 8,
+    priority: 3,
+    render: (m) => m.source ?? "—",
+    color: () => colors.textDim,
+  },
+  {
+    key: "tags",
+    label: "Tags",
+    width: 16,
+    minWidth: 10,
+    priority: 2,
+    render: (m) => m.tags?.join(", ") ?? "—",
+    color: () => colors.textDim,
   },
   {
     key: "created",
     label: "Created",
     width: 12,
     minWidth: 10,
-    priority: 1,
+    priority: 4,
     render: (m) => m.created_at.slice(0, 10),
     color: () => colors.textDim,
+    sortValue: (m) => m.created_at,
+  },
+  {
+    key: "updated_at",
+    label: "Updated",
+    width: 12,
+    minWidth: 10,
+    priority: 1,
+    render: (m) => m.updated_at.slice(0, 10),
+    color: () => colors.textDim,
+    sortValue: (m) => m.updated_at,
   },
 ];
 
@@ -142,6 +176,7 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
   const [formIntent, setFormIntent] = useState<"create" | "edit">("create");
   const [formTarget, setFormTarget] = useState<Memory | null>(null);
   const editForm = useEditForm();
+  const { sort, cycleSort, sortData } = useSort(columns);
 
   const { data, loading, error, refresh, mutate } = usePolling(
     () => client.memories.list({ ...(projectId ? { project_id: projectId } : {}), limit: 100 }),
@@ -149,7 +184,7 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
   );
   const memories = data?.memories ?? [];
   const {
-    filtered,
+    filtered: filteredUnsorted,
     query,
     active: filterActive,
     setQuery,
@@ -159,6 +194,7 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
     (m) => `${m.content} ${m.scope ?? ""} ${m.importance} ${m.tags?.join(" ") ?? ""}`,
     true,
   );
+  const filtered = sortData(filteredUnsorted);
   const {
     cursor,
     setCursor,
@@ -192,24 +228,23 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
 
   useEffect(() => {
     const selectedMemory = filtered[cursor];
+    const sortLabel = sort.key ? `sorted:${sort.key}` : "";
     onStateChange({
       mode: filterActive ? "filter" : mode,
       title: "Memories",
-      countLabel: loading ? "Loading memories…" : `${filtered.length} visible memories`,
+      countLabel: loading
+        ? "Loading memories…"
+        : `${filtered.length} memories${sortLabel ? ` • ${sortLabel}` : ""}`,
       filterQuery: query,
       filterActive,
       navigationLocked: filterActive || mode !== "browse",
-      selectionLabel:
-        mode === "detail" && detail
-          ? `Memory detail • ${detail.importance}`
-          : selectedMemory
-            ? `${selectedMemory.importance} • ${(selectedMemory.scope ?? "global").toString()}`
-            : "No memory selected yet.",
+      selectionLabel: selectedMemory
+        ? `${selectedMemory.importance} • ${(selectedMemory.scope ?? "global").toString()}`
+        : "No memory selected yet.",
       detailId: mode === "detail" ? (detail?.id ?? null) : null,
-      statusMessage:
-        mode === "detail" ? "Detail actions: e edit • d delete" : "Enter opens detail • n creates",
+      statusMessage: null,
     });
-  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
+  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort]);
 
   const doCreate = useCallback(
     async (vals: Record<string, string>) => {
@@ -358,6 +393,28 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
           setMode("form");
           return true;
         }
+        if (key.name === "e") {
+          const m = filteredRef.current[cursorRef.current];
+          if (m) {
+            setFormIntent("edit");
+            setFormTarget(m);
+            editFormRef.current.open(memoryFields(m));
+            setMode("form");
+          }
+          return true;
+        }
+        if (key.name === "d") {
+          const m = filteredRef.current[cursorRef.current];
+          if (m) {
+            setDeleteTarget(m);
+            setMode("confirm");
+          }
+          return true;
+        }
+        if (key.name === "s") {
+          cycleSort();
+          return true;
+        }
       }
       if (modeRef.current === "detail") {
         if (
@@ -383,7 +440,7 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
       }
       return false;
     },
-    [submitCurrentForm, vimHandleKey, setFilterActive],
+    [submitCurrentForm, vimHandleKey, setFilterActive, cycleSort],
   );
 
   useEffect(() => {
@@ -438,6 +495,7 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
         emptyMessage="No memories stored yet."
         filteredEmptyMessage="No memories match the current search."
         hasActiveFilter={Boolean(query)}
+        sort={sort}
         selectedSummary={
           filtered[cursor]
             ? `${filtered[cursor]?.importance} • ${(filtered[cursor]?.scope ?? "global").toString()}`

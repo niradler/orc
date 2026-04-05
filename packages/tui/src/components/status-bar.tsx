@@ -1,42 +1,45 @@
 import { useTerminalDimensions } from "@opentui/react";
 import { colors } from "../theme.js";
-import { getScreenSize, type Route, type ViewState } from "../types.js";
+import { getScreenSize, ROUTES, type Route, type ViewState } from "../types.js";
 
 type Props = {
   route: Route;
   state: ViewState;
+  connected: boolean;
+  project: string | null;
 };
 
 const HINTS = {
-  browse: "Arrows or j/k move • Enter open • / search • n new • : command",
-  detail: "Esc back • Up/Down scroll • e edit • d delete",
-  form: "Tab next • Shift+Tab prev • Ctrl+S or F2 save • Esc cancel",
+  browse: "j/k move • Enter open • / search • n new • : cmd",
+  detail: "Esc back • ↑↓ scroll • e edit • d delete",
+  form: "Tab next • S-Tab prev • C-S save • Esc cancel",
   filter: "Type to search • Enter done • Esc close",
-  confirm: "Enter or y confirm • Esc or n cancel",
+  confirm: "Enter/y confirm • Esc/n cancel",
 } as const;
 
-const ROUTE_HELP: Record<Route, string> = {
-  projects: "Choose a project to scope the rest of ORC.",
-  tasks: "Track active work, owners, status, and review flow.",
-  jobs: "Inspect scheduled automation and run history.",
-  memories: "Browse and capture searchable project knowledge.",
-  sessions: "Review agent sessions, summaries, and snapshots.",
-  skills: "Browse built-in and user-installed skills.",
+const TAB_KEYS: Record<Route, string> = {
+  projects: "1",
+  tasks: "2",
+  jobs: "3",
+  memories: "4",
+  sessions: "5",
+  skills: "6",
 };
 
-function trimTo(text: string, width: number): string {
-  if (width <= 0) return "";
-  if (text.length <= width) return text;
-  if (width === 1) return text.slice(0, 1);
-  return `${text.slice(0, width - 1)}…`;
-}
+const TAB_SHORT: Record<Route, string> = {
+  projects: "Proj",
+  tasks: "Tasks",
+  jobs: "Jobs",
+  memories: "Mem",
+  sessions: "Sess",
+  skills: "Skills",
+};
 
-export function StatusBar({ route, state }: Props) {
+export function StatusBar({ route, state, connected, project }: Props) {
   const { width } = useTerminalDimensions();
   const compact = getScreenSize(width) === "xs";
   const modeLabel = state.mode.toUpperCase();
-  const left = trimTo(state.selectionLabel ?? ROUTE_HELP[route], compact ? width - 8 : width - 28);
-  const right = trimTo(state.statusMessage ?? HINTS[state.mode], Math.max(24, width - 4));
+  const hint = state.statusMessage ?? HINTS[state.mode];
 
   return (
     <box
@@ -45,27 +48,29 @@ export function StatusBar({ route, state }: Props) {
       backgroundColor={colors.bgElevated}
       paddingLeft={1}
       paddingRight={1}
-      paddingTop={1}
-      paddingBottom={1}
+      paddingTop={0}
+      paddingBottom={0}
     >
-      <box
-        flexDirection={compact ? "column" : "row"}
-        justifyContent="space-between"
-        gap={compact ? 1 : 0}
-      >
-        <text fg={colors.text}>{left}</text>
-        <box
-          flexDirection="row"
-          gap={1}
-          backgroundColor={state.navigationLocked ? colors.bgSelected : colors.bgLight}
-          paddingLeft={1}
-          paddingRight={1}
-        >
+      <box flexDirection="row" justifyContent="space-between" alignItems="center">
+        <box flexDirection="row" gap={0} alignItems="center">
+          {ROUTES.map((r) => (
+            <box key={r} {...(route === r ? { backgroundColor: colors.bgSelected } : {})}>
+              <text fg={route === r ? colors.text : colors.textMuted}>
+                {` ${TAB_KEYS[r]}·${TAB_SHORT[r]} `}
+              </text>
+            </box>
+          ))}
+          {project ? (
+            <text fg={colors.accentAlt}>{`  ${project}`}</text>
+          ) : null}
+        </box>
+        <box flexDirection="row" gap={1} alignItems="center">
+          <text fg={connected ? colors.success : colors.error}>{connected ? "●" : "○"}</text>
           <text fg={state.navigationLocked ? colors.warning : colors.accent}>{modeLabel}</text>
           {state.filterQuery ? <text fg={colors.textDim}>{`/${state.filterQuery}`}</text> : null}
         </box>
       </box>
-      <text fg={colors.textMuted}>{right}</text>
+      {!compact ? <text fg={colors.textMuted}>{hint}</text> : null}
     </box>
   );
 }

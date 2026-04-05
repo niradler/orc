@@ -7,6 +7,7 @@ import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
+import { useSort } from "../hooks/use-sort.js";
 import {
   handleDetailEscapeKey,
   handleFilterInputKey,
@@ -22,24 +23,42 @@ const client = createOrcClient();
 const columns: Column<SkillMeta>[] = [
   {
     key: "source",
-    label: "Src",
-    width: 5,
-    minWidth: 4,
+    label: "Source",
+    width: 8,
+    minWidth: 5,
     priority: 6,
-    render: (s) => (s.source === "user" ? "user" : "built"),
+    render: (s) => (s.source === "user" ? "user" : "builtin"),
     color: (s) => (s.source === "user" ? colors.warning : colors.textDim),
+    sortValue: (s) => s.source,
   },
-  { key: "name", label: "Name", width: 24, minWidth: 14, priority: 7, render: (s) => s.name },
+  {
+    key: "name",
+    label: "Name",
+    width: 24,
+    minWidth: 14,
+    priority: 8,
+    render: (s) => s.name,
+    sortValue: (s) => s.name.toLowerCase(),
+  },
   {
     key: "desc",
     label: "Description",
     width: 40,
     minWidth: 16,
-    priority: 5,
+    priority: 7,
     render: (s) => {
       const t = s.description || "—";
       return t.length > 38 ? `${t.slice(0, 38)}…` : t;
     },
+    color: () => colors.textDim,
+  },
+  {
+    key: "path",
+    label: "Path",
+    width: 30,
+    minWidth: 14,
+    priority: 1,
+    render: (s) => s.path,
     color: () => colors.textDim,
   },
 ];
@@ -52,16 +71,26 @@ type Props = {
 export function SkillsView({ onRegisterKeyHandler, onStateChange }: Props) {
   const [mode, setMode] = useState<"browse" | "detail">("browse");
   const [detail, setDetail] = useState<{ meta: SkillMeta; content: string } | null>(null);
+  const { sort, cycleSort, sortData } = useSort(columns);
 
+  const [reloading, setReloading] = useState(false);
   const { data, loading, error, refresh } = usePolling(() => client.skills.list(), 30000);
+
+  const reloadSkills = useCallback(async () => {
+    setReloading(true);
+    await client.skills.list({ reload: true });
+    refresh();
+    setReloading(false);
+  }, [refresh]);
   const skills = data?.skills ?? [];
   const {
-    filtered,
+    filtered: filteredUnsorted,
     query,
     active: filterActive,
     setQuery,
     setActive: setFilterActive,
   } = useFilter(skills, (s) => `${s.name} ${s.description}`, true);
+  const filtered = sortData(filteredUnsorted);
   const { cursor, handleKey: vimHandleKey } = useVimList(
     filtered.length,
     mode === "browse" && !filterActive,
@@ -77,26 +106,30 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange }: Props) {
   cursorRef.current = cursor;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
+  const reloadRef = useRef(reloadSkills);
+  reloadRef.current = reloadSkills;
 
   useEffect(() => {
     const selected = filtered[cursor];
+    const sortLabel = sort.key ? `sorted:${sort.key}` : "";
     onStateChange({
       mode: filterActive ? "filter" : mode,
       title: "Skills",
-      countLabel: loading ? "Loading skills…" : `${filtered.length} skills`,
+      countLabel: reloading
+        ? "Reloading skills cache…"
+        : loading
+          ? "Loading skills…"
+          : `${filtered.length} skills${sortLabel ? ` • ${sortLabel}` : ""}`,
       filterQuery: query,
       filterActive,
       navigationLocked: filterActive || mode !== "browse",
-      selectionLabel:
-        mode === "detail" && detail
-          ? `Skill detail • ${detail.meta.name}`
-          : selected
-            ? `${selected.name} • ${selected.source}`
-            : "No skill selected.",
+      selectionLabel: selected
+        ? `${selected.name} • ${selected.source}`
+        : "No skill selected.",
       detailId: mode === "detail" ? (detail?.meta.name ?? null) : null,
-      statusMessage: mode === "detail" ? "Esc to go back" : "Enter opens detail",
+      statusMessage: null,
     });
-  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
+  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort, reloading]);
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
@@ -124,6 +157,14 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange }: Props) {
           refreshRef.current();
           return true;
         }
+        if (key.name === "R" || (key.name === "r" && key.shift)) {
+          void reloadRef.current();
+          return true;
+        }
+        if (key.name === "s") {
+          cycleSort();
+          return true;
+        }
       }
       if (modeRef.current === "detail") {
         if (
@@ -137,7 +178,7 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange }: Props) {
       }
       return false;
     },
-    [vimHandleKey, setFilterActive],
+    [vimHandleKey, setFilterActive, cycleSort],
   );
 
   useEffect(() => {
@@ -183,6 +224,7 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange }: Props) {
         emptyMessage="No skills installed."
         filteredEmptyMessage="No skills match the current search."
         hasActiveFilter={Boolean(query)}
+        sort={sort}
         selectedSummary={
           filtered[cursor]
             ? `${filtered[cursor]?.name} • ${filtered[cursor]?.source}`

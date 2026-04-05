@@ -21,3 +21,25 @@ exports[`shell chrome renders branded ORC layout 1`] = `
                                                                                     
 "
 `;
+
+exports[`shell chrome renders tab bar and API status 1`] = `
+"                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+  1·Proj  2·Tasks  3·Jobs  4·Mem  5·Sess  6·Skills   orc                   ● BROWSE 
+ j/k move • Enter open • / search • n new • : cmd                                   
+"
+`;

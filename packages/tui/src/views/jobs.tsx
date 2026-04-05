@@ -16,6 +16,7 @@ import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
+import { useSort } from "../hooks/use-sort.js";
 import {
   handleDetailEscapeKey,
   handleFilterInputKey,
@@ -34,26 +35,35 @@ const columns: Column<Job>[] = [
     label: " ",
     width: 3,
     minWidth: 2,
-    priority: 6,
+    priority: 8,
     render: (j) => (j.enabled ? "●" : "○"),
     color: (j) => (j.enabled ? colors.success : colors.textDim),
   },
-  { key: "name", label: "Name", width: 24, minWidth: 14, priority: 7, render: (j) => j.name },
+  {
+    key: "name",
+    label: "Name",
+    width: 24,
+    minWidth: 14,
+    priority: 9,
+    render: (j) => j.name,
+    sortValue: (j) => j.name.toLowerCase(),
+  },
   {
     key: "trigger",
     label: "Trigger",
     width: 12,
     minWidth: 8,
-    priority: 5,
+    priority: 6,
     render: (j) => j.trigger_type,
     color: () => colors.textDim,
+    sortValue: (j) => j.trigger_type,
   },
   {
     key: "cron",
     label: "Schedule",
     width: 18,
     minWidth: 10,
-    priority: 2,
+    priority: 3,
     render: (j) => j.cron_expr ?? "—",
     color: () => colors.textDim,
   },
@@ -62,17 +72,29 @@ const columns: Column<Job>[] = [
     label: "Runs",
     width: 8,
     minWidth: 6,
-    priority: 4,
+    priority: 5,
     render: (j) => String(j.run_count),
+    sortValue: (j) => j.run_count,
   },
   {
     key: "last_run",
     label: "Last Run",
-    width: 20,
-    minWidth: 12,
-    priority: 1,
-    render: (j) => j.last_run_at ?? "never",
+    width: 12,
+    minWidth: 10,
+    priority: 2,
+    render: (j) => (j.last_run_at ? j.last_run_at.slice(0, 10) : "never"),
     color: () => colors.textDim,
+    sortValue: (j) => j.last_run_at ?? "",
+  },
+  {
+    key: "updated_at",
+    label: "Updated",
+    width: 12,
+    minWidth: 10,
+    priority: 1,
+    render: (j) => j.updated_at.slice(0, 10),
+    color: () => colors.textDim,
+    sortValue: (j) => j.updated_at,
   },
 ];
 
@@ -143,6 +165,7 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
   const [formIntent, setFormIntent] = useState<"create" | "edit">("create");
   const [formTarget, setFormTarget] = useState<Job | null>(null);
   const editForm = useEditForm();
+  const { sort, cycleSort, sortData } = useSort(columns);
 
   const { data, loading, error, refresh, mutate } = usePolling(
     () => client.jobs.list({ ...(projectId ? { project_id: projectId } : {}) }),
@@ -150,12 +173,13 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
   );
   const jobs = data?.jobs ?? [];
   const {
-    filtered,
+    filtered: filteredUnsorted,
     query,
     active: filterActive,
     setQuery,
     setActive: setFilterActive,
   } = useFilter(jobs, (j) => `${j.name} ${j.trigger_type} ${j.description ?? ""}`, true);
+  const filtered = sortData(filteredUnsorted);
   const {
     cursor,
     setCursor,
@@ -189,26 +213,30 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
 
   useEffect(() => {
     const selectedJob = filtered[cursor];
+    const sortLabel = sort.key ? `sorted:${sort.key}` : "";
     onStateChange({
       mode: filterActive ? "filter" : mode,
       title: "Jobs",
-      countLabel: loading ? "Loading jobs…" : `${filtered.length} visible jobs`,
+      countLabel: loading
+        ? "Loading jobs…"
+        : `${filtered.length} jobs${sortLabel ? ` • ${sortLabel}` : ""}`,
       filterQuery: query,
       filterActive,
       navigationLocked: filterActive || mode !== "browse",
-      selectionLabel:
-        mode === "detail" && detail
-          ? `Job detail • ${detail.job.name}`
-          : selectedJob
-            ? `${selectedJob.name} • ${selectedJob.trigger_type} • runs ${selectedJob.run_count}`
-            : "No job selected yet.",
+      selectionLabel: selectedJob
+        ? `${selectedJob.name} • ${selectedJob.trigger_type} • runs ${selectedJob.run_count}`
+        : "No job selected yet.",
       detailId: mode === "detail" ? (detail?.job.id ?? null) : null,
-      statusMessage:
-        mode === "detail"
-          ? "Detail actions: e edit • d delete • t trigger"
-          : "Enter opens detail • n creates",
+      statusMessage: null,
+      contextData:
+        mode === "detail" && detail
+          ? `Job: ${detail.job.name}\nTrigger: ${detail.job.trigger_type} | Enabled: ${detail.job.enabled} | Runs: ${detail.job.run_count}\nCommand: ${detail.job.command}\nSchedule: ${detail.job.cron_expr ?? "none"}`
+          : filtered
+              .slice(0, 20)
+              .map((j) => `- ${j.enabled ? "●" : "○"} ${j.name} (${j.trigger_type}, ${j.run_count} runs)`)
+              .join("\n") || null,
     });
-  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
+  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort]);
 
   const doCreate = useCallback(
     async (vals: Record<string, string>) => {
@@ -358,6 +386,32 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
           setMode("form");
           return true;
         }
+        if (key.name === "e") {
+          const job = filteredRef.current[cursorRef.current];
+          if (job) {
+            client.jobs.get(job.id).then((r) => {
+              if (r.data) {
+                setFormIntent("edit");
+                setFormTarget(r.data);
+                editFormRef.current.open(jobFields(r.data));
+                setMode("form");
+              }
+            });
+          }
+          return true;
+        }
+        if (key.name === "d") {
+          const job = filteredRef.current[cursorRef.current];
+          if (job) {
+            setDeleteTarget(job);
+            setMode("confirm");
+          }
+          return true;
+        }
+        if (key.name === "s") {
+          cycleSort();
+          return true;
+        }
       }
       if (modeRef.current === "detail") {
         if (
@@ -387,7 +441,7 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
       }
       return false;
     },
-    [submitCurrentForm, vimHandleKey, setFilterActive],
+    [submitCurrentForm, vimHandleKey, setFilterActive, cycleSort],
   );
 
   useEffect(() => {
@@ -454,6 +508,7 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
         emptyMessage="No jobs configured yet."
         filteredEmptyMessage="No jobs match the current search."
         hasActiveFilter={Boolean(query)}
+        sort={sort}
         selectedSummary={
           filtered[cursor]
             ? `${filtered[cursor]?.trigger_type} • ${filtered[cursor]?.run_count} runs • ${filtered[cursor]?.name}`

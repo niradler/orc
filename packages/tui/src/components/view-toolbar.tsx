@@ -33,8 +33,8 @@ export function ViewToolbar({
       flexDirection={compact ? "column" : "row"}
       justifyContent="space-between"
       alignItems={compact ? "stretch" : "center"}
-      gap={2}
-      marginBottom={1}
+      gap={1}
+      marginBottom={0}
     >
       <box flexDirection="column">
         <text fg={colors.text}>

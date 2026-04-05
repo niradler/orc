@@ -16,6 +16,7 @@ import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
+import { useSort } from "../hooks/use-sort.js";
 import {
   handleDetailEscapeKey,
   handleFilterInputKey,
@@ -34,17 +35,26 @@ const columns: Column<Project>[] = [
     label: "Status",
     width: 10,
     minWidth: 8,
-    priority: 5,
+    priority: 7,
     render: (p) => `${statusIcon(p.status)} ${p.status}`,
     color: (p) => projectStatusColor[p.status] ?? colors.text,
+    sortValue: (p) => p.status,
   },
-  { key: "name", label: "Name", width: 20, minWidth: 14, priority: 6, render: (p) => p.name },
+  {
+    key: "name",
+    label: "Name",
+    width: 20,
+    minWidth: 14,
+    priority: 8,
+    render: (p) => p.name,
+    sortValue: (p) => p.name.toLowerCase(),
+  },
   {
     key: "desc",
     label: "Description",
     width: 40,
     minWidth: 16,
-    priority: 4,
+    priority: 5,
     render: (p) => p.description ?? "—",
     color: () => colors.textDim,
   },
@@ -53,9 +63,19 @@ const columns: Column<Project>[] = [
     label: "Tags",
     width: 20,
     minWidth: 10,
-    priority: 2,
+    priority: 3,
     render: (p) => (p.tags?.length ? p.tags.join(", ") : "—"),
     color: () => colors.textDim,
+  },
+  {
+    key: "updated_at",
+    label: "Updated",
+    width: 12,
+    minWidth: 10,
+    priority: 1,
+    render: (p) => p.updated_at.slice(0, 10),
+    color: () => colors.textDim,
+    sortValue: (p) => p.updated_at,
   },
 ];
 
@@ -110,11 +130,12 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
   const [formIntent, setFormIntent] = useState<"create" | "edit">("create");
   const [formTarget, setFormTarget] = useState<Project | null>(null);
   const editForm = useEditForm();
+  const { sort, cycleSort, sortData } = useSort(columns);
 
   const { data, loading, error, refresh, mutate } = usePolling(() => client.projects.list(), 5000);
   const projects = data?.projects ?? [];
   const {
-    filtered,
+    filtered: filteredUnsorted,
     query,
     active: filterActive,
     setQuery,
@@ -124,6 +145,7 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
     (p) => `${p.name} ${p.description ?? ""} ${p.status} ${p.tags?.join(" ") ?? ""}`,
     true,
   );
+  const filtered = sortData(filteredUnsorted);
   const {
     cursor,
     setCursor,
@@ -157,26 +179,23 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
 
   useEffect(() => {
     const selectedProject = filtered[cursor];
+    const sortLabel = sort.key ? `sorted:${sort.key}` : "";
     onStateChange({
       mode: filterActive ? "filter" : mode,
       title: "Projects",
-      countLabel: loading ? "Loading projects…" : `${filtered.length} visible projects`,
+      countLabel: loading
+        ? "Loading projects…"
+        : `${filtered.length} projects${sortLabel ? ` • ${sortLabel}` : ""}`,
       filterQuery: query,
       filterActive,
       navigationLocked: filterActive || mode !== "browse",
-      selectionLabel:
-        mode === "detail" && detail
-          ? `Project detail • ${detail.project.name}`
-          : selectedProject
-            ? `${statusIcon(selectedProject.status)} ${selectedProject.status} • ${selectedProject.name}`
-            : "Choose a project to scope tasks, jobs, and memories.",
+      selectionLabel: selectedProject
+        ? `${statusIcon(selectedProject.status)} ${selectedProject.status} • ${selectedProject.name}`
+        : "Choose a project to scope tasks, jobs, and memories.",
       detailId: mode === "detail" ? (detail?.project.id ?? null) : null,
-      statusMessage:
-        mode === "detail"
-          ? "Detail actions: e edit • d delete • s set active project"
-          : "Enter opens detail • n creates • s scopes ORC",
+      statusMessage: null,
     });
-  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
+  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort]);
 
   const doCreate = useCallback(async (vals: Record<string, string>) => {
     if (!vals.name) throw new Error("Project name is required.");
@@ -338,6 +357,28 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
           setMode("form");
           return true;
         }
+        if (key.name === "e") {
+          const p = filteredRef.current[cursorRef.current];
+          if (p) {
+            setFormIntent("edit");
+            setFormTarget(p);
+            editFormRef.current.open(projectFields(p));
+            setMode("form");
+          }
+          return true;
+        }
+        if (key.name === "d") {
+          const p = filteredRef.current[cursorRef.current];
+          if (p) {
+            setDeleteTarget(p);
+            setMode("confirm");
+          }
+          return true;
+        }
+        if (key.name === "o") {
+          cycleSort();
+          return true;
+        }
       }
       if (modeRef.current === "detail") {
         if (
@@ -367,7 +408,7 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
       }
       return false;
     },
-    [submitCurrentForm, vimHandleKey, onSelectProject, setFilterActive],
+    [submitCurrentForm, vimHandleKey, onSelectProject, setFilterActive, cycleSort],
   );
 
   useEffect(() => {
@@ -428,6 +469,7 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
         emptyMessage="No projects created yet."
         filteredEmptyMessage="No projects match the current search."
         hasActiveFilter={Boolean(query)}
+        sort={sort}
         selectedSummary={
           filtered[cursor]
             ? `${statusIcon(filtered[cursor]?.status ?? "")} ${filtered[cursor]?.status} • ${filtered[cursor]?.name}`

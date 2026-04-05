@@ -2,7 +2,7 @@ import { type BoxRenderable, LayoutEvents } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { colors } from "../theme.js";
-import type { Column } from "../types.js";
+import type { Column, SortState } from "../types.js";
 
 type Props<T> = {
   columns: Column<T>[];
@@ -15,6 +15,7 @@ type Props<T> = {
   filteredEmptyMessage?: string;
   hasActiveFilter?: boolean;
   selectedSummary?: string | null;
+  sort?: SortState;
 };
 
 function truncate(value: string, width: number): string {
@@ -35,6 +36,7 @@ export function ResourceTable<T>({
   filteredEmptyMessage,
   hasActiveFilter,
   selectedSummary,
+  sort,
 }: Props<T>) {
   const { width, height } = useTerminalDimensions();
   const showEmpty = !loading && data.length === 0;
@@ -140,11 +142,24 @@ export function ResourceTable<T>({
       padding={1}
     >
       <box flexDirection="row" gap={0} paddingLeft={1} paddingRight={1}>
-        {layoutColumns.map((col) => (
-          <text key={col.key} fg={colors.textDim} width={col.resolvedWidth}>
-            {truncate(col.label.toUpperCase(), col.resolvedWidth)}
-          </text>
-        ))}
+        {layoutColumns.map((col) => {
+          const sortIndicator =
+            sort?.key === col.key ? (sort.direction === "asc" ? " ▲" : " ▼") : "";
+          const isSorted = sort?.key === col.key;
+          const label = truncate(
+            `${col.label.toUpperCase()}${sortIndicator}`,
+            col.resolvedWidth,
+          );
+          return (
+            <text
+              key={col.key}
+              fg={isSorted ? colors.accent : colors.textDim}
+              width={col.resolvedWidth}
+            >
+              {label}
+            </text>
+          );
+        })}
       </box>
 
       <box height={1} marginTop={1} marginBottom={1}>
