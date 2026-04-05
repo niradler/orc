@@ -11,14 +11,14 @@
     },
     "packages/agent-runtime": {
       "name": "@orc/agent-runtime",
-      "version": "0.1.7",
+      "version": "0.1.11",
       "dependencies": {
         "@orc/core": "workspace:*",
       },
     },
     "packages/api": {
       "name": "@orc/api",
-      "version": "0.1.7",
+      "version": "0.1.11",
       "dependencies": {
         "@hono/swagger-ui": "^0.6.1",
         "@hono/zod-openapi": "^1.2.4",
@@ -38,7 +38,7 @@
     },
     "packages/cli": {
       "name": "orc-ai",
-      "version": "0.1.7",
+      "version": "0.1.11",
       "bin": {
         "orc": "dist/index.js",
       },
@@ -49,6 +49,7 @@
         "@orc/mcp": "workspace:*",
         "@orc/runner": "workspace:*",
         "@orc/sdk": "workspace:*",
+        "@orc/tui": "workspace:*",
         "commander": "^14.0.3",
         "typescript": "^6.0.2",
       },
@@ -58,7 +59,7 @@
     },
     "packages/core": {
       "name": "@orc/core",
-      "version": "0.1.7",
+      "version": "0.1.11",
       "dependencies": {
         "zod": "^4.3.6",
       },
@@ -68,7 +69,7 @@
     },
     "packages/db": {
       "name": "@orc/db",
-      "version": "0.1.7",
+      "version": "0.1.11",
       "dependencies": {
         "@orc/core": "workspace:*",
         "drizzle-orm": "^0.45.2",
@@ -80,7 +81,7 @@
     },
     "packages/gateway": {
       "name": "@orc/gateway",
-      "version": "0.1.7",
+      "version": "0.1.11",
       "dependencies": {
         "@orc/agent-runtime": "workspace:*",
         "@orc/core": "workspace:*",
@@ -95,7 +96,7 @@
     },
     "packages/mcp": {
       "name": "@orc/mcp",
-      "version": "0.1.7",
+      "version": "0.1.11",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.29.0",
         "@orc/core": "workspace:*",
@@ -112,7 +113,7 @@
     },
     "packages/runner": {
       "name": "@orc/runner",
-      "version": "0.1.7",
+      "version": "0.1.11",
       "dependencies": {
         "@orc/agent-runtime": "workspace:*",
         "@orc/core": "workspace:*",
@@ -128,7 +129,7 @@
     },
     "packages/sdk": {
       "name": "@orc/sdk",
-      "version": "0.1.7",
+      "version": "0.1.11",
       "dependencies": {
         "@orc/core": "workspace:*",
       },
@@ -139,7 +140,7 @@
     },
     "packages/task-service": {
       "name": "@orc/task-service",
-      "version": "0.1.7",
+      "version": "0.1.11",
       "dependencies": {
         "@orc/core": "workspace:*",
         "@orc/db": "workspace:*",
@@ -148,7 +149,7 @@
     },
     "packages/tui": {
       "name": "@orc/tui",
-      "version": "0.1.7",
+      "version": "0.1.11",
       "bin": {
         "orc-tui": "./src/index.tsx",
       },

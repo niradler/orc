@@ -1,13 +1,14 @@
 {
   "name": "@orc/tui",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "type": "module",
   "bin": {
     "orc-tui": "./src/index.tsx"
   },
   "main": "./src/index.tsx",
   "exports": {
-    ".": "./src/index.tsx"
+    ".": "./src/index.tsx",
+    "./app": "./src/app.tsx"
   },
   "scripts": {
     "dev": "bun --hot src/index.tsx",
