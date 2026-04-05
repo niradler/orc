@@ -177,6 +177,8 @@ Skills live in `skills/*/SKILL.md` (built-in, shipped with ORC) and `~/.orc/skil
 - **No comments** unless explaining non-obvious intent
 - **Biome** for all linting/formatting — run `bun check` before committing
 - **Aligned versions** — all `package.json` files (root + every package) must share the same version. Always patch bump all together.
+- **Publishing** — only `orc-ai` (packages/cli) is published to npm. It bundles all workspace packages into a single JS file via `bun build`. Other packages are internal workspace deps, never published separately.
+- **Releases** — push a `v*` tag to trigger the GitHub release workflow, which builds platform binaries (linux-x64, linux-arm64, mac-arm64, mac-x64, windows-x64) and creates a GitHub release with checksums.
 
 ## Adding a New MCP Tool
 
