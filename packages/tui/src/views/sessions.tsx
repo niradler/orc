@@ -94,7 +94,7 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange, onRegisterCo
   const [detail, setDetail] = useState<
     (Session & { events: unknown[]; snapshot: string | null }) | null
   >(null);
-  const { sort, setSortByKey, sortData } = useSort(columns, { key: "created", direction: "desc" });
+  const { sort, setSortByKey, toggleDirection, sortData } = useSort(columns, { key: "created", direction: "desc" });
 
   const { data, loading, error, refresh } = usePolling(
     () => client.sessions.list({ limit: 50 }),
@@ -220,6 +220,10 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange, onRegisterCo
           }
           return true;
         }
+        if (key.name === "s") {
+          toggleDirection();
+          return true;
+        }
         if (isRefreshKey(key.name)) {
           refreshRef.current();
           return true;
@@ -233,7 +237,7 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange, onRegisterCo
       }
       return false;
     },
-    [vimHandleKey, setFilterActive],
+    [vimHandleKey, setFilterActive, toggleDirection],
   );
 
   useEffect(() => {

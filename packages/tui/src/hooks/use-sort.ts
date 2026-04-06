@@ -54,5 +54,12 @@ export function useSort<T>(columns: Column<T>[], initialSort: SortState = DEFAUL
     [],
   );
 
-  return { sort, cycleSort, setSortByKey, sortData, sortableKeys };
+  const toggleDirection = useCallback(() => {
+    setSort((current) => {
+      if (!current.key) return current;
+      return { key: current.key, direction: current.direction === "asc" ? "desc" : "asc" };
+    });
+  }, []);
+
+  return { sort, cycleSort, setSortByKey, toggleDirection, sortData, sortableKeys };
 }
