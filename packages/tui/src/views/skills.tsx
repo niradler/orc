@@ -67,10 +67,10 @@ type Props = {
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
   onRegisterCommands: (cmds: PaletteCommand[]) => void;
-  onRegisterFilterActivator: (fn: () => void) => void;
+  onRegisterSearch: (fns: { setQuery: (q: string) => void; clear: () => void }) => void;
 };
 
-export function SkillsView({ onRegisterKeyHandler, onStateChange, onRegisterCommands, onRegisterFilterActivator }: Props) {
+export function SkillsView({ onRegisterKeyHandler, onStateChange, onRegisterCommands, onRegisterSearch }: Props) {
   const [mode, setMode] = useState<"browse" | "detail">("browse");
   const [detail, setDetail] = useState<{ meta: SkillMeta; content: string } | null>(null);
   const { sort, setSortByKey, sortData } = useSort(columns, { key: "name", direction: "asc" });
@@ -157,8 +157,8 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange, onRegisterComm
   }, [onRegisterCommands, setSortByKey, sort]);
 
   useEffect(() => {
-    onRegisterFilterActivator(() => setFilterActive(true));
-  }, [onRegisterFilterActivator, setFilterActive]);
+    onRegisterSearch({ setQuery, clear: () => setQuery("") });
+  }, [onRegisterSearch, setQuery]);
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {

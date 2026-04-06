@@ -7,6 +7,7 @@ type Props = {
   input: string;
   cursor: number;
   results: PaletteCommand[];
+  mode: "commands" | "search";
 };
 
 const CATEGORY_LABELS: Record<PaletteCategory, string> = {
@@ -38,16 +39,48 @@ function buildRenderItems(results: PaletteCommand[]): RenderItem[] {
   return items;
 }
 
-export function SmartPalette({ open, input, cursor, results }: Props) {
+export function SmartPalette({ open, input, cursor, results, mode }: Props) {
   const { width, height } = useTerminalDimensions();
 
   if (!open) return null;
 
   const boxWidth = Math.min(60, width - 4);
+  const isSearch = mode === "search";
+
+  // Search mode: compact UI
+  if (isSearch) {
+    const top = Math.max(0, Math.floor(height / 2) - 2);
+    return (
+      <box
+        position="absolute"
+        top={top}
+        left={Math.floor((width - boxWidth) / 2)}
+        width={boxWidth}
+        flexDirection="column"
+        border
+        borderStyle="rounded"
+        borderColor={colors.accent}
+        backgroundColor={colors.bg}
+        paddingLeft={1}
+        paddingRight={1}
+        zIndex={100}
+      >
+        <box flexDirection="row" gap={0}>
+          <text fg={colors.accent}>{":"}</text>
+          <text fg={colors.text}>{input}</text>
+          <text fg={colors.accent}>{"█"}</text>
+        </box>
+        <text fg={colors.textMuted}>
+          {"  Enter confirm · Esc clear & close"}
+        </text>
+      </box>
+    );
+  }
+
+  // Command mode
   const renderItems = buildRenderItems(results);
   const maxVisible = 14;
 
-  // Scroll window: find the render item containing the cursor, keep it visible
   let scrollOffset = 0;
   if (renderItems.length > maxVisible) {
     const cursorItemIdx = renderItems.findIndex(
@@ -78,17 +111,14 @@ export function SmartPalette({ open, input, cursor, results }: Props) {
       paddingRight={1}
       zIndex={100}
     >
-      {/* Input line */}
       <box flexDirection="row" gap={0} marginBottom={0}>
         <text fg={colors.accent}>{":"}</text>
         <text fg={colors.text}>{input}</text>
         <text fg={colors.accent}>{"█"}</text>
       </box>
 
-      {/* Separator */}
       <text fg={colors.border}>{"─".repeat(boxWidth - 4)}</text>
 
-      {/* Results */}
       {results.length === 0 && input.length > 0 && (
         <text fg={colors.textDim} paddingLeft={1}>
           {"No matching commands"}
@@ -118,19 +148,14 @@ export function SmartPalette({ open, input, cursor, results }: Props) {
               {icon}
               {cmd.name}
             </text>
-            {hint && (
-              <text fg={colors.textDim}>{hint}</text>
-            )}
-            {cmd.shortcut && (
-              <text fg={colors.textMuted}>{`  [${cmd.shortcut}]`}</text>
-            )}
+            {hint && <text fg={colors.textDim}>{hint}</text>}
+            {cmd.shortcut && <text fg={colors.textMuted}>{`  [${cmd.shortcut}]`}</text>}
           </box>
         );
       })}
 
-      {/* Footer */}
       <text fg={colors.textMuted}>
-        {"  ↑↓ navigate · Enter select · Esc close"}
+        {"  / search · ↑↓ navigate · Enter select · Esc close"}
       </text>
     </box>
   );

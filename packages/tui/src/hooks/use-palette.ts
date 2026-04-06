@@ -1,14 +1,6 @@
 import { useCallback, useRef, useState } from "react";
 import type { KeyEvent, PaletteCategory, PaletteCommand } from "../types.js";
 
-export type PaletteState = {
-  open: boolean;
-  input: string;
-  cursor: number;
-  results: PaletteCommand[];
-  mode: "commands" | "search";
-};
-
 const CATEGORY_ORDER: Record<PaletteCategory, number> = {
   navigation: 0,
   sort: 1,
@@ -43,20 +35,34 @@ function scoreCommand(query: string, cmd: PaletteCommand, recentIds: string[]): 
   return best;
 }
 
-export function usePalette(commands: PaletteCommand[], onSearchActivate?: () => void) {
+type PaletteMode = "commands" | "search";
+
+export function usePalette(
+  commands: PaletteCommand[],
+  callbacks: {
+    onSearchQuery?: (query: string) => void;
+    onSearchClear?: () => void;
+  } = {},
+) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [cursor, setCursor] = useState(0);
-  const [mode, setMode] = useState<"commands" | "search">("commands");
+  const [mode, setMode] = useState<PaletteMode>("commands");
 
   const openRef = useRef(false);
   const inputRef = useRef("");
   const cursorRef = useRef(0);
+  const modeRef = useRef<PaletteMode>("commands");
   const commandsRef = useRef(commands);
   commandsRef.current = commands;
+  const callbacksRef = useRef(callbacks);
+  callbacksRef.current = callbacks;
   const recentIdsRef = useRef<string[]>([]);
 
   const getResults = useCallback((): PaletteCommand[] => {
+    // In search mode, no command results — the palette shows search UI
+    if (modeRef.current === "search") return [];
+
     const cmds = commandsRef.current.filter((c) => c.available());
     const q = inputRef.current.trim();
 
@@ -67,7 +73,7 @@ export function usePalette(commands: PaletteCommand[], onSearchActivate?: () => 
       );
     }
 
-    // Special: "sort" prefix filters to sort category
+    // "sort" prefix: filter to sort category
     if (q.toLowerCase().startsWith("sort")) {
       const sortQuery = q.slice(4).trim();
       const sortCmds = cmds.filter((c) => c.category === "sort");
@@ -79,7 +85,7 @@ export function usePalette(commands: PaletteCommand[], onSearchActivate?: () => 
         .map((r) => r.cmd);
     }
 
-    // Special: "filter" prefix filters to filter category
+    // "filter" prefix: filter to filter category
     if (q.toLowerCase().startsWith("filter")) {
       const filterQuery = q.slice(6).trim();
       const filterCmds = cmds.filter((c) => c.category === "filter");
@@ -91,24 +97,17 @@ export function usePalette(commands: PaletteCommand[], onSearchActivate?: () => 
         .map((r) => r.cmd);
     }
 
-    // General fuzzy search across all commands
+    // General fuzzy search
     const scored = cmds
       .map((c) => ({ cmd: c, score: scoreCommand(q, c, recentIdsRef.current) }))
       .filter((r) => r.score > 0)
       .sort((a, b) => {
-        // First by score desc, then by category order
         if (b.score !== a.score) return b.score - a.score;
         return (CATEGORY_ORDER[a.cmd.category] ?? 9) - (CATEGORY_ORDER[b.cmd.category] ?? 9);
       });
 
     return scored.map((r) => r.cmd);
   }, []);
-
-  const updateState = useCallback(() => {
-    const results = getResults();
-    setCursor((prev) => Math.min(prev, Math.max(0, results.length - 1)));
-    cursorRef.current = Math.min(cursorRef.current, Math.max(0, results.length - 1));
-  }, [getResults]);
 
   const openPalette = useCallback(() => {
     setOpen(true);
@@ -118,27 +117,43 @@ export function usePalette(commands: PaletteCommand[], onSearchActivate?: () => 
     setCursor(0);
     cursorRef.current = 0;
     setMode("commands");
+    modeRef.current = "commands";
   }, []);
 
   const closePalette = useCallback(() => {
+    // If in search mode, clear the view's search on close
+    if (modeRef.current === "search") {
+      callbacksRef.current.onSearchClear?.();
+    }
     setOpen(false);
     openRef.current = false;
     setInput("");
     inputRef.current = "";
     setCursor(0);
     cursorRef.current = 0;
+    setMode("commands");
+    modeRef.current = "commands";
+  }, []);
+
+  const enterSearchMode = useCallback(() => {
+    setMode("search");
+    modeRef.current = "search";
+    setInput("/ ");
+    inputRef.current = "/ ";
+    setCursor(0);
+    cursorRef.current = 0;
+    callbacksRef.current.onSearchQuery?.("");
   }, []);
 
   const executeAtCursor = useCallback(() => {
     const results = getResults();
     const cmd = results[cursorRef.current];
     if (cmd) {
-      // Track recency
       const recent = recentIdsRef.current.filter((id) => id !== cmd.id);
       recent.unshift(cmd.id);
       recentIdsRef.current = recent.slice(0, 10);
 
-      // For filter commands, extract value from input (e.g. "filter status=todo" -> "todo")
+      // For filter commands, extract value from input
       const q = inputRef.current.trim();
       let value: string | undefined;
       if (cmd.category === "filter") {
@@ -148,7 +163,16 @@ export function usePalette(commands: PaletteCommand[], onSearchActivate?: () => 
         }
       }
 
-      closePalette();
+      // Don't clear search on close when executing a command
+      modeRef.current = "commands";
+      setOpen(false);
+      openRef.current = false;
+      setInput("");
+      inputRef.current = "";
+      setCursor(0);
+      cursorRef.current = 0;
+      setMode("commands");
+
       cmd.execute(value);
     } else {
       closePalette();
@@ -165,17 +189,54 @@ export function usePalette(commands: PaletteCommand[], onSearchActivate?: () => 
         return false;
       }
 
+      // Escape: close (and clear search if in search mode)
       if (key.name === "escape") {
         closePalette();
         return true;
       }
 
-      // "/" as first character: activate view search and close
+      // Search mode: all typing goes to search query
+      if (modeRef.current === "search") {
+        if (key.name === "return") {
+          // Confirm search, close palette but keep filter active
+          modeRef.current = "commands";
+          setOpen(false);
+          openRef.current = false;
+          setInput("");
+          inputRef.current = "";
+          setMode("commands");
+          return true;
+        }
+
+        if (key.name === "backspace") {
+          const current = inputRef.current;
+          if (current === "/ " || current === "/") {
+            // Backspace past prefix exits search mode, clears search
+            closePalette();
+            return true;
+          }
+          inputRef.current = current.slice(0, -1);
+          setInput(inputRef.current);
+          const searchText = inputRef.current.slice(2); // after "/ "
+          callbacksRef.current.onSearchQuery?.(searchText);
+          return true;
+        }
+
+        const ch = key.name === "space" ? " " : (key.sequence ?? key.name);
+        if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
+          inputRef.current += ch;
+          setInput(inputRef.current);
+          const searchText = inputRef.current.slice(2); // after "/ "
+          callbacksRef.current.onSearchQuery?.(searchText);
+          return true;
+        }
+
+        return true; // consume all other keys in search mode
+      }
+
+      // Command mode: "/" as first char enters search mode
       if (inputRef.current === "" && (key.name === "/" || key.sequence === "/")) {
-        closePalette();
-        // Find and execute the search command, or call the activator
-        const searchCmd = commandsRef.current.find((c) => c.id === "search-view");
-        if (searchCmd) searchCmd.execute();
+        enterSearchMode();
         return true;
       }
 
@@ -207,7 +268,6 @@ export function usePalette(commands: PaletteCommand[], onSearchActivate?: () => 
         setInput(inputRef.current);
         cursorRef.current = 0;
         setCursor(0);
-        updateState();
         return true;
       }
 
@@ -226,23 +286,20 @@ export function usePalette(commands: PaletteCommand[], onSearchActivate?: () => 
         setInput(inputRef.current);
         cursorRef.current = 0;
         setCursor(0);
-        updateState();
         return true;
       }
 
-      // Also accept space
       if (key.name === "space") {
         inputRef.current += " ";
         setInput(inputRef.current);
         cursorRef.current = 0;
         setCursor(0);
-        updateState();
         return true;
       }
 
       return true; // Consume all keys while open
     },
-    [openPalette, closePalette, getResults, executeAtCursor, updateState],
+    [openPalette, closePalette, enterSearchMode, getResults, executeAtCursor],
   );
 
   const results = open ? getResults() : [];
