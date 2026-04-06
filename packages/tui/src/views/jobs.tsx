@@ -25,7 +25,7 @@ import {
   isRefreshKey,
 } from "../navigation.js";
 import { colors, statusIcon } from "../theme.js";
-import type { Column, KeyEvent, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
+import type { Column, KeyEvent, PaletteCommand, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
 
 const client = createOrcClient();
 
@@ -156,16 +156,17 @@ type Props = {
   projectId: string | null;
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
+  onRegisterCommands: (cmds: PaletteCommand[]) => void;
 };
 
-export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Props) {
+export function JobsView({ projectId, onRegisterKeyHandler, onStateChange, onRegisterCommands }: Props) {
   const [mode, setMode] = useState<"browse" | "detail" | "form" | "confirm">("browse");
   const [detail, setDetail] = useState<{ job: Job; runs: JobRun[] } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Job | null>(null);
   const [formIntent, setFormIntent] = useState<"create" | "edit">("create");
   const [formTarget, setFormTarget] = useState<Job | null>(null);
   const editForm = useEditForm();
-  const { sort, cycleSort, sortData } = useSort(columns);
+  const { sort, cycleSort, setSortByKey, sortData } = useSort(columns);
 
   const { data, loading, error, refresh, mutate } = usePolling(
     () => client.jobs.list({ ...(projectId ? { project_id: projectId } : {}) }),
@@ -235,6 +236,22 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
             : null,
     });
   }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort]);
+
+  useEffect(() => {
+    const sortCommands: PaletteCommand[] = columns
+      .filter((c) => c.sortValue)
+      .map((col) => ({
+        id: `sort-${col.key}`,
+        name: `Sort by ${col.label}`,
+        category: "sort" as const,
+        aliases: [`sort ${col.key}`, `sort ${col.label.toLowerCase()}`],
+        icon: "↕",
+        ...(sort.key === col.key ? { hint: `${sort.direction === "asc" ? "▲" : "▼"} current` } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setSortByKey(col.key),
+      }));
+    onRegisterCommands(sortCommands);
+  }, [onRegisterCommands, setSortByKey, sort]);
 
   const doCreate = useCallback(
     async (vals: Record<string, string>) => {

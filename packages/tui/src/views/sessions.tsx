@@ -16,7 +16,7 @@ import {
   isRefreshKey,
 } from "../navigation.js";
 import { colors } from "../theme.js";
-import type { Column, KeyEvent, ViewKeyHandler, ViewState } from "../types.js";
+import type { Column, KeyEvent, PaletteCommand, ViewKeyHandler, ViewState } from "../types.js";
 
 const client = createOrcClient();
 
@@ -85,14 +85,15 @@ const columns: Column<Session>[] = [
 type Props = {
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
+  onRegisterCommands: (cmds: PaletteCommand[]) => void;
 };
 
-export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
+export function SessionsView({ onRegisterKeyHandler, onStateChange, onRegisterCommands }: Props) {
   const [mode, setMode] = useState<"browse" | "detail">("browse");
   const [detail, setDetail] = useState<
     (Session & { events: unknown[]; snapshot: string | null }) | null
   >(null);
-  const { sort, cycleSort, sortData } = useSort(columns, { key: "created", direction: "desc" });
+  const { sort, cycleSort, setSortByKey, sortData } = useSort(columns, { key: "created", direction: "desc" });
 
   const { data, loading, error, refresh } = usePolling(
     () => client.sessions.list({ limit: 50 }),
@@ -148,6 +149,22 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
             : null,
     });
   }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort]);
+
+  useEffect(() => {
+    const sortCommands: PaletteCommand[] = columns
+      .filter((c) => c.sortValue)
+      .map((col) => ({
+        id: `sort-${col.key}`,
+        name: `Sort by ${col.label}`,
+        category: "sort" as const,
+        aliases: [`sort ${col.key}`, `sort ${col.label.toLowerCase()}`],
+        icon: "↕",
+        ...(sort.key === col.key ? { hint: `${sort.direction === "asc" ? "▲" : "▼"} current` } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setSortByKey(col.key),
+      }));
+    onRegisterCommands(sortCommands);
+  }, [onRegisterCommands, setSortByKey, sort]);
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {

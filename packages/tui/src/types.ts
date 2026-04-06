@@ -58,6 +58,20 @@ export type Command = {
   action: () => void;
 };
 
+export type PaletteCategory = "navigation" | "sort" | "filter" | "search" | "action" | "system";
+
+export type PaletteCommand = {
+  id: string;
+  name: string;
+  category: PaletteCategory;
+  aliases: string[];
+  shortcut?: string;
+  icon?: string;
+  hint?: string;
+  available: () => boolean;
+  execute: (value?: string) => void;
+};
+
 export type KeyEvent = OpenTUIKeyEvent;
 
 export type ViewKeyHandler = (key: KeyEvent) => boolean;

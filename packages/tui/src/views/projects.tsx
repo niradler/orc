@@ -25,7 +25,7 @@ import {
   isRefreshKey,
 } from "../navigation.js";
 import { colors, projectStatusColor, statusIcon } from "../theme.js";
-import type { Column, KeyEvent, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
+import type { Column, KeyEvent, PaletteCommand, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
 
 const client = createOrcClient();
 
@@ -121,16 +121,17 @@ type Props = {
   onSelectProject: (name: string) => void;
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
+  onRegisterCommands: (cmds: PaletteCommand[]) => void;
 };
 
-export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateChange }: Props) {
+export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateChange, onRegisterCommands }: Props) {
   const [mode, setMode] = useState<"browse" | "detail" | "form" | "confirm">("browse");
   const [detail, setDetail] = useState<ProjectSummary | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [formIntent, setFormIntent] = useState<"create" | "edit">("create");
   const [formTarget, setFormTarget] = useState<Project | null>(null);
   const editForm = useEditForm();
-  const { sort, cycleSort, sortData } = useSort(columns);
+  const { sort, cycleSort, setSortByKey, sortData } = useSort(columns);
 
   const { data, loading, error, refresh, mutate } = usePolling(() => client.projects.list(), 5000);
   const projects = data?.projects ?? [];
@@ -201,6 +202,22 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
             : null,
     });
   }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort]);
+
+  useEffect(() => {
+    const sortCommands: PaletteCommand[] = columns
+      .filter((c) => c.sortValue)
+      .map((col) => ({
+        id: `sort-${col.key}`,
+        name: `Sort by ${col.label}`,
+        category: "sort" as const,
+        aliases: [`sort ${col.key}`, `sort ${col.label.toLowerCase()}`],
+        icon: "↕",
+        ...(sort.key === col.key ? { hint: `${sort.direction === "asc" ? "▲" : "▼"} current` } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setSortByKey(col.key),
+      }));
+    onRegisterCommands(sortCommands);
+  }, [onRegisterCommands, setSortByKey, sort]);
 
   const doCreate = useCallback(async (vals: Record<string, string>) => {
     if (!vals.name) throw new Error("Project name is required.");

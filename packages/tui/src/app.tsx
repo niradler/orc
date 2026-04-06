@@ -2,14 +2,13 @@ import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { createOrcClient } from "@orc/sdk";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ChatModal } from "./components/chat-modal.js";
-import { CommandPalette } from "./components/command-palette.js";
+import { SmartPalette } from "./components/smart-palette.js";
 import { StatusBar } from "./components/status-bar.js";
 import { useChat } from "./hooks/use-chat.js";
-import { useCommand } from "./hooks/use-command.js";
+import { usePalette } from "./hooks/use-palette.js";
 import { usePolling } from "./hooks/use-polling.js";
-import { canHandleCommandInput, canSwitchRoutes } from "./navigation.js";
 import { colors } from "./theme.js";
-import type { Command, KeyEvent, Route, ViewKeyHandler, ViewState } from "./types.js";
+import type { KeyEvent, PaletteCommand, Route, ViewKeyHandler, ViewState } from "./types.js";
 import { ROUTES } from "./types.js";
 import { JobsView } from "./views/jobs.js";
 import { MemoriesView } from "./views/memories.js";
@@ -95,62 +94,29 @@ export function App() {
     setActiveProjectId(null);
   }, []);
 
-  const commands: Command[] = useMemo(
-    () => [
-      {
-        name: "tasks",
-        aliases: ["t", "task"],
-        description: "View tasks",
-        action: () => setRoute("tasks"),
-      },
-      {
-        name: "jobs",
-        aliases: ["j", "job"],
-        description: "View jobs",
-        action: () => setRoute("jobs"),
-      },
-      {
-        name: "memories",
-        aliases: ["m", "mem", "memory"],
-        description: "View memories",
-        action: () => setRoute("memories"),
-      },
-      {
-        name: "projects",
-        aliases: ["p", "proj", "project"],
-        description: "View projects",
-        action: () => setRoute("projects"),
-      },
-      {
-        name: "sessions",
-        aliases: ["s", "sess", "session"],
-        description: "View sessions",
-        action: () => setRoute("sessions"),
-      },
-      {
-        name: "skills",
-        aliases: ["sk", "skill"],
-        description: "View skills",
-        action: () => setRoute("skills"),
-      },
-      {
-        name: "chat",
-        aliases: ["c"],
-        description: "Open chat",
-        action: () => setChatOpen(true),
-      },
-      { name: "all", aliases: ["a"], description: "Clear project filter", action: clearProject },
-      {
-        name: "quit",
-        aliases: ["q", "exit"],
-        description: "Exit TUI",
-        action: () => renderer.destroy(),
-      },
-    ],
-    [clearProject, renderer],
-  );
+  const viewCommandsRef = useRef<PaletteCommand[]>([]);
+  const registerViewCommands = useCallback((cmds: PaletteCommand[]) => {
+    viewCommandsRef.current = cmds;
+  }, []);
 
-  const { active: cmdActive, input: cmdInput, handleKey: cmdHandleKey } = useCommand(commands);
+  const paletteCommands: PaletteCommand[] = useMemo(() => {
+    const navAvailable = () => !viewStateRef.current.navigationLocked;
+    const staticCommands: PaletteCommand[] = [
+      { id: "nav-tasks", name: "Tasks", category: "navigation", aliases: ["t", "task"], icon: "◉", shortcut: "2", available: navAvailable, execute: () => setRoute("tasks") },
+      { id: "nav-jobs", name: "Jobs", category: "navigation", aliases: ["j", "job"], icon: "◉", shortcut: "3", available: navAvailable, execute: () => setRoute("jobs") },
+      { id: "nav-memories", name: "Memories", category: "navigation", aliases: ["m", "mem", "memory"], icon: "◉", shortcut: "4", available: navAvailable, execute: () => setRoute("memories") },
+      { id: "nav-projects", name: "Projects", category: "navigation", aliases: ["p", "proj", "project"], icon: "◉", shortcut: "1", available: navAvailable, execute: () => setRoute("projects") },
+      { id: "nav-sessions", name: "Sessions", category: "navigation", aliases: ["sess", "session"], icon: "◉", shortcut: "5", available: navAvailable, execute: () => setRoute("sessions") },
+      { id: "nav-skills", name: "Skills", category: "navigation", aliases: ["sk", "skill"], icon: "◉", shortcut: "6", available: navAvailable, execute: () => setRoute("skills") },
+      { id: "sys-chat", name: "Chat", category: "system", aliases: ["c"], icon: "💬", shortcut: "c", available: () => true, execute: () => setChatOpen(true) },
+      { id: "sys-all", name: "Clear project filter", category: "system", aliases: ["a", "all"], icon: "✕", available: () => true, execute: clearProject },
+      { id: "sys-refresh", name: "Refresh", category: "system", aliases: ["r", "reload"], icon: "↻", shortcut: "r", available: () => true, execute: () => { /* views handle their own refresh */ } },
+      { id: "sys-quit", name: "Quit", category: "system", aliases: ["q", "exit"], icon: "⏻", available: () => true, execute: () => renderer.destroy() },
+    ];
+    return [...staticCommands, ...viewCommandsRef.current];
+  }, [clearProject, renderer, viewStateRef]);
+
+  const palette = usePalette(paletteCommands);
 
   const [viewState, setViewState] = useState<ViewState>(EMPTY_VIEW_STATE);
 
@@ -167,6 +133,7 @@ export function App() {
   useKeyboard((key) => {
     const k = key as unknown as KeyEvent;
 
+    // Chat modal takes priority
     if (chatOpen) {
       if (k.name === "escape" && !chat.streaming) {
         setChatOpen(false);
@@ -184,16 +151,19 @@ export function App() {
       return;
     }
 
-    if (canHandleCommandInput(cmdActive, viewState.navigationLocked) && cmdHandleKey(k)) return;
+    // Palette consumes all keys while open; also handles ":" to open
+    if (palette.handleKey(k)) return;
 
+    // View key handlers (CRUD, cursor, filter, etc.)
     if (viewKeyHandlerRef.current(k)) return;
 
+    // Global shortcuts
     if (k.name === "c" && k.ctrl) {
       renderer.destroy();
       return;
     }
 
-    if (!canSwitchRoutes(cmdActive, viewState.navigationLocked)) return;
+    if (viewState.navigationLocked) return;
 
     if (k.name === "c") {
       setChatOpen(true);
@@ -227,6 +197,7 @@ export function App() {
             onSelectProject={selectProject}
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
+            onRegisterCommands={registerViewCommands}
           />
         )}
         {route === "tasks" && (
@@ -234,6 +205,7 @@ export function App() {
             projectId={activeProjectId}
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
+            onRegisterCommands={registerViewCommands}
           />
         )}
         {route === "jobs" && (
@@ -241,6 +213,7 @@ export function App() {
             projectId={activeProjectId}
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
+            onRegisterCommands={registerViewCommands}
           />
         )}
         {route === "memories" && (
@@ -248,25 +221,28 @@ export function App() {
             projectId={activeProjectId}
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
+            onRegisterCommands={registerViewCommands}
           />
         )}
         {route === "sessions" && (
           <SessionsView
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
+            onRegisterCommands={registerViewCommands}
           />
         )}
         {route === "skills" && (
           <SkillsView
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
+            onRegisterCommands={registerViewCommands}
           />
         )}
       </box>
 
       <StatusBar route={route} state={viewState} connected={connected} project={activeProject} />
 
-      <CommandPalette active={cmdActive} input={cmdInput} commands={commands} />
+      <SmartPalette open={palette.open} input={palette.input} cursor={palette.cursor} results={palette.results} />
 
       {chatOpen && (
         <ChatModal
