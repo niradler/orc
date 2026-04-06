@@ -166,7 +166,7 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange, onReg
   const [formIntent, setFormIntent] = useState<"create" | "edit">("create");
   const [formTarget, setFormTarget] = useState<Job | null>(null);
   const editForm = useEditForm();
-  const { sort, cycleSort, setSortByKey, sortData } = useSort(columns);
+  const { sort, setSortByKey, sortData } = useSort(columns);
 
   const { data, loading, error, refresh, mutate } = usePolling(
     () => client.jobs.list({ ...(projectId ? { project_id: projectId } : {}) }),
@@ -423,10 +423,6 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange, onReg
           }
           return true;
         }
-        if (key.name === "s") {
-          cycleSort();
-          return true;
-        }
       }
       if (modeRef.current === "detail") {
         if (
@@ -456,7 +452,7 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange, onReg
       }
       return false;
     },
-    [submitCurrentForm, vimHandleKey, setFilterActive, cycleSort],
+    [submitCurrentForm, vimHandleKey, setFilterActive],
   );
 
   useEffect(() => {

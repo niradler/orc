@@ -131,7 +131,7 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
   const [formIntent, setFormIntent] = useState<"create" | "edit">("create");
   const [formTarget, setFormTarget] = useState<Project | null>(null);
   const editForm = useEditForm();
-  const { sort, cycleSort, setSortByKey, sortData } = useSort(columns);
+  const { sort, setSortByKey, sortData } = useSort(columns);
 
   const { data, loading, error, refresh, mutate } = usePolling(() => client.projects.list(), 5000);
   const projects = data?.projects ?? [];
@@ -397,10 +397,6 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
           }
           return true;
         }
-        if (key.name === "o") {
-          cycleSort();
-          return true;
-        }
       }
       if (modeRef.current === "detail") {
         if (
@@ -430,7 +426,7 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
       }
       return false;
     },
-    [submitCurrentForm, vimHandleKey, onSelectProject, setFilterActive, cycleSort],
+    [submitCurrentForm, vimHandleKey, onSelectProject, setFilterActive],
   );
 
   useEffect(() => {

@@ -72,7 +72,7 @@ type Props = {
 export function SkillsView({ onRegisterKeyHandler, onStateChange, onRegisterCommands }: Props) {
   const [mode, setMode] = useState<"browse" | "detail">("browse");
   const [detail, setDetail] = useState<{ meta: SkillMeta; content: string } | null>(null);
-  const { sort, cycleSort, setSortByKey, sortData } = useSort(columns, { key: "name", direction: "asc" });
+  const { sort, setSortByKey, sortData } = useSort(columns, { key: "name", direction: "asc" });
 
   const [reloading, setReloading] = useState(false);
   const { data, loading, error, refresh } = usePolling(() => client.skills.list(), 30000);
@@ -185,10 +185,6 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange, onRegisterComm
           void reloadRef.current();
           return true;
         }
-        if (key.name === "s") {
-          cycleSort();
-          return true;
-        }
       }
       if (modeRef.current === "detail") {
         if (
@@ -202,7 +198,7 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange, onRegisterComm
       }
       return false;
     },
-    [vimHandleKey, setFilterActive, cycleSort],
+    [vimHandleKey, setFilterActive],
   );
 
   useEffect(() => {

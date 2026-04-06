@@ -192,7 +192,7 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange, onRe
   const [formIntent, setFormIntent] = useState<"create" | "edit">("create");
   const [formTarget, setFormTarget] = useState<Task | null>(null);
   const editForm = useEditForm();
-  const { sort, cycleSort, setSortByKey, sortData } = useSort(columns);
+  const { sort, setSortByKey, sortData } = useSort(columns);
 
   const { data, loading, error, refresh, mutate } = usePolling(
     () => client.tasks.list({ ...(projectId ? { project_id: projectId } : {}), limit: 100 }),
@@ -459,10 +459,6 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange, onRe
           }
           return true;
         }
-        if (key.name === "s") {
-          cycleSort();
-          return true;
-        }
       }
       if (modeRef.current === "detail") {
         if (
@@ -488,7 +484,7 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange, onRe
       }
       return false;
     },
-    [submitCurrentForm, vimHandleKey, setFilterActive, cycleSort],
+    [submitCurrentForm, vimHandleKey, setFilterActive],
   );
 
   useEffect(() => {
