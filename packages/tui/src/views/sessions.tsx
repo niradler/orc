@@ -141,6 +141,12 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
         : "No session selected yet.",
       detailId: mode === "detail" ? (detail?.id ?? null) : null,
       statusMessage: null,
+      contextData:
+        mode === "detail" && detail
+          ? JSON.stringify(detail, null, 2)
+          : filtered[cursor]
+            ? JSON.stringify(filtered[cursor], null, 2)
+            : null,
     });
   }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort]);
 

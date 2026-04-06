@@ -194,6 +194,12 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
         : "Choose a project to scope tasks, jobs, and memories.",
       detailId: mode === "detail" ? (detail?.project.id ?? null) : null,
       statusMessage: null,
+      contextData:
+        mode === "detail" && detail
+          ? JSON.stringify(detail, null, 2)
+          : filtered[cursor]
+            ? JSON.stringify(filtered[cursor], null, 2)
+            : null,
     });
   }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort]);
 

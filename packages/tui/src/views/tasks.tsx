@@ -260,11 +260,10 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
       statusMessage: null,
       contextData:
         mode === "detail" && detail
-          ? `Task: ${detail.title}\nStatus: ${detail.status} | Priority: ${detail.priority} | Author: ${detail.author}\nTags: ${detail.tags?.join(", ") ?? "none"}\nBody: ${detail.body ?? "(empty)"}`
-          : filtered
-              .slice(0, 20)
-              .map((t) => `- [${t.status}] ${t.title} (${t.priority})`)
-              .join("\n") || null,
+          ? JSON.stringify(detail, null, 2)
+          : filtered[cursor]
+            ? JSON.stringify(filtered[cursor], null, 2)
+            : null,
     });
   }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort]);
 

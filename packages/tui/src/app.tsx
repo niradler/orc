@@ -69,6 +69,11 @@ export function App() {
       parts.push("");
       parts.push(`Available ORC skills (${skillNames.length}): ${skillNames.join(", ")}`);
     }
+    if (vs.contextData) {
+      parts.push("");
+      parts.push("Currently selected object:");
+      parts.push(vs.contextData);
+    }
     parts.push("");
     parts.push("Help the user with questions about their ORC data, tasks, workflows, and skills.");
     parts.push("Be concise and direct. Reference the current view context when relevant.");

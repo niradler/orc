@@ -128,6 +128,12 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange }: Props) {
         : "No skill selected.",
       detailId: mode === "detail" ? (detail?.meta.name ?? null) : null,
       statusMessage: null,
+      contextData:
+        mode === "detail" && detail
+          ? JSON.stringify(detail, null, 2)
+          : filtered[cursor]
+            ? JSON.stringify(filtered[cursor], null, 2)
+            : null,
     });
   }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort, reloading]);
 

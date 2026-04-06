@@ -230,11 +230,10 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
       statusMessage: null,
       contextData:
         mode === "detail" && detail
-          ? `Job: ${detail.job.name}\nTrigger: ${detail.job.trigger_type} | Enabled: ${detail.job.enabled} | Runs: ${detail.job.run_count}\nCommand: ${detail.job.command}\nSchedule: ${detail.job.cron_expr ?? "none"}`
-          : filtered
-              .slice(0, 20)
-              .map((j) => `- ${j.enabled ? "●" : "○"} ${j.name} (${j.trigger_type}, ${j.run_count} runs)`)
-              .join("\n") || null,
+          ? JSON.stringify(detail, null, 2)
+          : filtered[cursor]
+            ? JSON.stringify(filtered[cursor], null, 2)
+            : null,
     });
   }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort]);
 

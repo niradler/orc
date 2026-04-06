@@ -160,7 +160,8 @@ export function useChat(buildSystemPrompt: () => string) {
         ...(cfg.autoApprove ? ["--approve-all"] : []),
         cfg.agent,
         "exec",
-        prompt,
+        "-f",
+        "-",
       ];
 
       streamingRef.current = true;
@@ -176,25 +177,34 @@ export function useChat(buildSystemPrompt: () => string) {
           cwd: process.cwd(),
           stdout: "pipe",
           stderr: "pipe",
-          stdin: "ignore",
+          stdin: "pipe",
         });
         procRef.current = proc;
 
-        if (proc.stdout) {
-          await readLines(proc.stdout, (line) => {
-            if (cancelledRef.current) return;
-            const text = parseTextFromLine(line);
-            if (text) {
-              accumulated += text;
-              setStreamText(accumulated);
-            }
-          });
+        // Write prompt via stdin to avoid arg length limits
+        if (proc.stdin) {
+          proc.stdin.write(prompt);
+          proc.stdin.end();
         }
-        if (proc.stderr) {
-          await readLines(proc.stderr, (line) => {
-            stderrBuf += `${line}\n`;
-          }).catch(() => {});
-        }
+
+        // Read stdout and stderr in parallel
+        const stdoutPromise = proc.stdout
+          ? readLines(proc.stdout, (line) => {
+              if (cancelledRef.current) return;
+              const text = parseTextFromLine(line);
+              if (text) {
+                accumulated += text;
+                setStreamText(accumulated);
+              }
+            })
+          : Promise.resolve();
+        const stderrPromise = proc.stderr
+          ? readLines(proc.stderr, (line) => {
+              stderrBuf += `${line}\n`;
+            }).catch(() => {})
+          : Promise.resolve();
+
+        await Promise.all([stdoutPromise, stderrPromise]);
 
         const exitCode = await proc.exited;
         if (exitCode !== 0 && !accumulated && stderrBuf) {
