@@ -168,9 +168,10 @@ type Props = {
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
   onRegisterCommands: (cmds: PaletteCommand[]) => void;
+  onRegisterFilterActivator: (fn: () => void) => void;
 };
 
-export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange, onRegisterCommands }: Props) {
+export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange, onRegisterCommands, onRegisterFilterActivator }: Props) {
   const [mode, setMode] = useState<"browse" | "detail" | "form" | "confirm">("browse");
   const [detail, setDetail] = useState<Memory | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Memory | null>(null);
@@ -267,6 +268,10 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange, o
       }));
     onRegisterCommands(sortCommands);
   }, [onRegisterCommands, setSortByKey, sort]);
+
+  useEffect(() => {
+    onRegisterFilterActivator(() => setFilterActive(true));
+  }, [onRegisterFilterActivator, setFilterActive]);
 
   const doCreate = useCallback(
     async (vals: Record<string, string>) => {

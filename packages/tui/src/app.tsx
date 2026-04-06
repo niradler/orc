@@ -99,6 +99,11 @@ export function App() {
     setViewCommands(cmds);
   }, []);
 
+  const viewFilterActivatorRef = useRef<(() => void) | null>(null);
+  const registerViewFilterActivator = useCallback((fn: () => void) => {
+    viewFilterActivatorRef.current = fn;
+  }, []);
+
   const paletteCommands: PaletteCommand[] = useMemo(() => {
     const navAvailable = () => !viewStateRef.current.navigationLocked;
     const staticCommands: PaletteCommand[] = [
@@ -108,6 +113,7 @@ export function App() {
       { id: "nav-projects", name: "Projects", category: "navigation", aliases: ["p", "proj", "project"], icon: "◉", shortcut: "1", available: navAvailable, execute: () => setRoute("projects") },
       { id: "nav-sessions", name: "Sessions", category: "navigation", aliases: ["sess", "session"], icon: "◉", shortcut: "5", available: navAvailable, execute: () => setRoute("sessions") },
       { id: "nav-skills", name: "Skills", category: "navigation", aliases: ["sk", "skill"], icon: "◉", shortcut: "6", available: navAvailable, execute: () => setRoute("skills") },
+      { id: "search-view", name: "Search in view", category: "search", aliases: ["/", "search", "find"], icon: "/", shortcut: "/", available: navAvailable, execute: () => viewFilterActivatorRef.current?.() },
       { id: "sys-chat", name: "Chat", category: "system", aliases: ["c"], icon: "💬", shortcut: "c", available: () => true, execute: () => setChatOpen(true) },
       { id: "sys-all", name: "Clear project filter", category: "system", aliases: ["a", "all"], icon: "✕", available: () => true, execute: clearProject },
       { id: "sys-refresh", name: "Refresh", category: "system", aliases: ["r", "reload"], icon: "↻", shortcut: "r", available: () => true, execute: () => { /* views handle their own refresh */ } },
@@ -198,6 +204,7 @@ export function App() {
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
             onRegisterCommands={registerViewCommands}
+            onRegisterFilterActivator={registerViewFilterActivator}
           />
         )}
         {route === "tasks" && (
@@ -206,6 +213,7 @@ export function App() {
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
             onRegisterCommands={registerViewCommands}
+            onRegisterFilterActivator={registerViewFilterActivator}
           />
         )}
         {route === "jobs" && (
@@ -214,6 +222,7 @@ export function App() {
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
             onRegisterCommands={registerViewCommands}
+            onRegisterFilterActivator={registerViewFilterActivator}
           />
         )}
         {route === "memories" && (
@@ -222,6 +231,7 @@ export function App() {
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
             onRegisterCommands={registerViewCommands}
+            onRegisterFilterActivator={registerViewFilterActivator}
           />
         )}
         {route === "sessions" && (
@@ -229,6 +239,7 @@ export function App() {
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
             onRegisterCommands={registerViewCommands}
+            onRegisterFilterActivator={registerViewFilterActivator}
           />
         )}
         {route === "skills" && (
@@ -236,6 +247,7 @@ export function App() {
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
             onRegisterCommands={registerViewCommands}
+            onRegisterFilterActivator={registerViewFilterActivator}
           />
         )}
       </box>

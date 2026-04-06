@@ -183,9 +183,10 @@ type Props = {
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
   onRegisterCommands: (cmds: PaletteCommand[]) => void;
+  onRegisterFilterActivator: (fn: () => void) => void;
 };
 
-export function TasksView({ projectId, onRegisterKeyHandler, onStateChange, onRegisterCommands }: Props) {
+export function TasksView({ projectId, onRegisterKeyHandler, onStateChange, onRegisterCommands, onRegisterFilterActivator }: Props) {
   const [mode, setMode] = useState<"browse" | "detail" | "form" | "confirm">("browse");
   const [detail, setDetail] = useState<Task | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
@@ -282,6 +283,10 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange, onRe
       }));
     onRegisterCommands(sortCommands);
   }, [onRegisterCommands, setSortByKey, sort]);
+
+  useEffect(() => {
+    onRegisterFilterActivator(() => setFilterActive(true));
+  }, [onRegisterFilterActivator, setFilterActive]);
 
   const doCreate = useCallback(
     async (vals: Record<string, string>) => {

@@ -43,7 +43,7 @@ function scoreCommand(query: string, cmd: PaletteCommand, recentIds: string[]): 
   return best;
 }
 
-export function usePalette(commands: PaletteCommand[]) {
+export function usePalette(commands: PaletteCommand[], onSearchActivate?: () => void) {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [cursor, setCursor] = useState(0);
@@ -60,7 +60,12 @@ export function usePalette(commands: PaletteCommand[]) {
     const cmds = commandsRef.current.filter((c) => c.available());
     const q = inputRef.current.trim();
 
-    if (!q) return [];
+    // Empty input: show all commands grouped by category
+    if (!q) {
+      return cmds.sort(
+        (a, b) => (CATEGORY_ORDER[a.category] ?? 9) - (CATEGORY_ORDER[b.category] ?? 9),
+      );
+    }
 
     // Special: "sort" prefix filters to sort category
     if (q.toLowerCase().startsWith("sort")) {
@@ -162,6 +167,15 @@ export function usePalette(commands: PaletteCommand[]) {
 
       if (key.name === "escape") {
         closePalette();
+        return true;
+      }
+
+      // "/" as first character: activate view search and close
+      if (inputRef.current === "" && (key.name === "/" || key.sequence === "/")) {
+        closePalette();
+        // Find and execute the search command, or call the activator
+        const searchCmd = commandsRef.current.find((c) => c.id === "search-view");
+        if (searchCmd) searchCmd.execute();
         return true;
       }
 

@@ -157,9 +157,10 @@ type Props = {
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
   onRegisterCommands: (cmds: PaletteCommand[]) => void;
+  onRegisterFilterActivator: (fn: () => void) => void;
 };
 
-export function JobsView({ projectId, onRegisterKeyHandler, onStateChange, onRegisterCommands }: Props) {
+export function JobsView({ projectId, onRegisterKeyHandler, onStateChange, onRegisterCommands, onRegisterFilterActivator }: Props) {
   const [mode, setMode] = useState<"browse" | "detail" | "form" | "confirm">("browse");
   const [detail, setDetail] = useState<{ job: Job; runs: JobRun[] } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Job | null>(null);
@@ -252,6 +253,10 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange, onReg
       }));
     onRegisterCommands(sortCommands);
   }, [onRegisterCommands, setSortByKey, sort]);
+
+  useEffect(() => {
+    onRegisterFilterActivator(() => setFilterActive(true));
+  }, [onRegisterFilterActivator, setFilterActive]);
 
   const doCreate = useCallback(
     async (vals: Record<string, string>) => {

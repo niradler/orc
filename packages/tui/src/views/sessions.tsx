@@ -86,9 +86,10 @@ type Props = {
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
   onRegisterCommands: (cmds: PaletteCommand[]) => void;
+  onRegisterFilterActivator: (fn: () => void) => void;
 };
 
-export function SessionsView({ onRegisterKeyHandler, onStateChange, onRegisterCommands }: Props) {
+export function SessionsView({ onRegisterKeyHandler, onStateChange, onRegisterCommands, onRegisterFilterActivator }: Props) {
   const [mode, setMode] = useState<"browse" | "detail">("browse");
   const [detail, setDetail] = useState<
     (Session & { events: unknown[]; snapshot: string | null }) | null
@@ -165,6 +166,10 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange, onRegisterCo
       }));
     onRegisterCommands(sortCommands);
   }, [onRegisterCommands, setSortByKey, sort]);
+
+  useEffect(() => {
+    onRegisterFilterActivator(() => setFilterActive(true));
+  }, [onRegisterFilterActivator, setFilterActive]);
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {

@@ -122,9 +122,10 @@ type Props = {
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
   onRegisterCommands: (cmds: PaletteCommand[]) => void;
+  onRegisterFilterActivator: (fn: () => void) => void;
 };
 
-export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateChange, onRegisterCommands }: Props) {
+export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateChange, onRegisterCommands, onRegisterFilterActivator }: Props) {
   const [mode, setMode] = useState<"browse" | "detail" | "form" | "confirm">("browse");
   const [detail, setDetail] = useState<ProjectSummary | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
@@ -218,6 +219,10 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
       }));
     onRegisterCommands(sortCommands);
   }, [onRegisterCommands, setSortByKey, sort]);
+
+  useEffect(() => {
+    onRegisterFilterActivator(() => setFilterActive(true));
+  }, [onRegisterFilterActivator, setFilterActive]);
 
   const doCreate = useCallback(async (vals: Record<string, string>) => {
     if (!vals.name) throw new Error("Project name is required.");
