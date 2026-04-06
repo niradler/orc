@@ -179,13 +179,12 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
 
   useEffect(() => {
     const selectedProject = filtered[cursor];
-    const sortLabel = sort.key ? `sorted:${sort.key}` : "";
+    const sortLabel = sort.key ? `${sort.key} ${sort.direction === "asc" ? "▲" : "▼"}` : null;
     onStateChange({
       mode: filterActive ? "filter" : mode,
       title: "Projects",
-      countLabel: loading
-        ? "Loading projects…"
-        : `${filtered.length} projects${sortLabel ? ` • ${sortLabel}` : ""}`,
+      countLabel: loading ? "Loading projects…" : `${filtered.length} projects`,
+      sortLabel,
       filterQuery: query,
       filterActive,
       navigationLocked: filterActive || mode !== "browse",

@@ -239,7 +239,7 @@ export function ResourceTable<T>({
         <text fg={error ? colors.warning : colors.textMuted}>
           {error
             ? `Data warning: ${truncate(error, 72)}`
-            : (selectedSummary ?? "Use arrows or j/k to move through the list.")}
+            : (selectedSummary ?? "Use ↑↓ to move through the list.")}
         </text>
         <text fg={colors.textMuted}>
           {data.length > 0 ? `${Math.min(cursor + 1, data.length)} / ${data.length}` : "0 / 0"}

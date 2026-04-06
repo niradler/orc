@@ -213,13 +213,12 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
 
   useEffect(() => {
     const selectedJob = filtered[cursor];
-    const sortLabel = sort.key ? `sorted:${sort.key}` : "";
+    const sortLabel = sort.key ? `${sort.key} ${sort.direction === "asc" ? "▲" : "▼"}` : null;
     onStateChange({
       mode: filterActive ? "filter" : mode,
       title: "Jobs",
-      countLabel: loading
-        ? "Loading jobs…"
-        : `${filtered.length} jobs${sortLabel ? ` • ${sortLabel}` : ""}`,
+      countLabel: loading ? "Loading jobs…" : `${filtered.length} jobs`,
+      sortLabel,
       filterQuery: query,
       filterActive,
       navigationLocked: filterActive || mode !== "browse",

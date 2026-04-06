@@ -10,7 +10,7 @@ type Props = {
 };
 
 const HINTS = {
-  browse: "j/k move • Enter open • / search • n new • : cmd",
+  browse: "↑↓ move • Enter open • / search • s sort • n new • : cmd",
   detail: "Esc back • ↑↓ scroll • e edit • d delete",
   form: "Tab next • S-Tab prev • C-S save • Esc cancel",
   filter: "Type to search • Enter done • Esc close",
@@ -65,6 +65,9 @@ export function StatusBar({ route, state, connected, project }: Props) {
           ) : null}
         </box>
         <box flexDirection="row" gap={1} alignItems="center">
+          {state.sortLabel ? (
+            <text fg={colors.textDim}>{`sort:${state.sortLabel}`}</text>
+          ) : null}
           <text fg={connected ? colors.success : colors.error}>{connected ? "●" : "○"}</text>
           <text fg={state.navigationLocked ? colors.warning : colors.accent}>{modeLabel}</text>
           {state.filterQuery ? <text fg={colors.textDim}>{`/${state.filterQuery}`}</text> : null}

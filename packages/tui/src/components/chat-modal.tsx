@@ -14,6 +14,7 @@ type Props = {
   onClear: () => void;
   inputValue: string;
   onInputChange: (value: string) => void;
+  onSubmit: () => void;
 };
 
 export function ChatModal({
@@ -27,6 +28,7 @@ export function ChatModal({
   onClear,
   inputValue,
   onInputChange,
+  onSubmit,
 }: Props) {
   const { width, height } = useTerminalDimensions();
   const screen = getScreenSize(width);
@@ -82,6 +84,8 @@ export function ChatModal({
         <scrollbox
           flexGrow={1}
           minHeight={0}
+          stickyScroll
+          stickyStart="bottom"
           viewportOptions={{ backgroundColor: colors.bgElevated }}
           contentOptions={{ backgroundColor: colors.bgElevated }}
           scrollbarOptions={{
@@ -148,6 +152,7 @@ export function ChatModal({
             focusedBackgroundColor={colors.bgElevated}
             placeholderColor={colors.textMuted}
             onChange={onInputChange}
+            onSubmit={onSubmit}
           />
         </box>
       </box>

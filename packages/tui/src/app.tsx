@@ -181,12 +181,6 @@ export function App() {
         chat.clear();
         return;
       }
-      if (k.name === "return" && !chat.streaming && chatInputRef.current.trim()) {
-        void chat.send(chatInputRef.current);
-        setChatInput("");
-        chatInputRef.current = "";
-        return;
-      }
       return;
     }
 
@@ -288,6 +282,13 @@ export function App() {
           onInputChange={(v: string) => {
             chatInputRef.current = v;
             setChatInput(v);
+          }}
+          onSubmit={() => {
+            if (!chat.streaming && chatInputRef.current.trim()) {
+              void chat.send(chatInputRef.current);
+              setChatInput("");
+              chatInputRef.current = "";
+            }
           }}
         />
       )}

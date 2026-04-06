@@ -32,6 +32,7 @@ export type ViewState = {
   detailId?: string | null;
   statusMessage?: string | null;
   contextData?: string | null;
+  sortLabel?: string | null;
 };
 
 export type SortState = {

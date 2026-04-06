@@ -1,8 +1,11 @@
 import { useCallback, useState } from "react";
 import type { Column, SortState } from "../types.js";
 
-export function useSort<T>(columns: Column<T>[]) {
-  const [sort, setSort] = useState<SortState>({ key: null, direction: "asc" });
+const DEFAULT_SORT: SortState = { key: "updated_at", direction: "desc" };
+
+export function useSort<T>(columns: Column<T>[], initialSort: SortState = DEFAULT_SORT) {
+  const hasInitialCol = columns.some((c) => c.key === initialSort.key && c.sortValue);
+  const [sort, setSort] = useState<SortState>(hasInitialCol ? initialSort : { key: null, direction: "asc" });
 
   const sortableKeys = columns.filter((c) => c.sortValue).map((c) => c.key);
 

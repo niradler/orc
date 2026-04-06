@@ -243,13 +243,12 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
 
   useEffect(() => {
     const selectedTask = filtered[cursor];
-    const sortLabel = sort.key ? `sorted:${sort.key}` : "";
+    const sortLabel = sort.key ? `${sort.key} ${sort.direction === "asc" ? "▲" : "▼"}` : null;
     onStateChange({
       mode: filterActive ? "filter" : mode,
       title: "Tasks",
-      countLabel: loading
-        ? "Loading tasks…"
-        : `${filtered.length} tasks${sortLabel ? ` • ${sortLabel}` : ""}`,
+      countLabel: loading ? "Loading tasks…" : `${filtered.length} tasks`,
+      sortLabel,
       filterQuery: query,
       filterActive,
       navigationLocked: filterActive || mode !== "browse",

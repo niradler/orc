@@ -92,7 +92,7 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
   const [detail, setDetail] = useState<
     (Session & { events: unknown[]; snapshot: string | null }) | null
   >(null);
-  const { sort, cycleSort, sortData } = useSort(columns);
+  const { sort, cycleSort, sortData } = useSort(columns, { key: "created", direction: "desc" });
 
   const { data, loading, error, refresh } = usePolling(
     () => client.sessions.list({ limit: 50 }),
@@ -126,13 +126,12 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
 
   useEffect(() => {
     const selectedSession = filtered[cursor];
-    const sortLabel = sort.key ? `sorted:${sort.key}` : "";
+    const sortLabel = sort.key ? `${sort.key} ${sort.direction === "asc" ? "▲" : "▼"}` : null;
     onStateChange({
       mode: filterActive ? "filter" : mode,
       title: "Sessions",
-      countLabel: loading
-        ? "Loading sessions…"
-        : `${filtered.length} sessions${sortLabel ? ` • ${sortLabel}` : ""}`,
+      countLabel: loading ? "Loading sessions…" : `${filtered.length} sessions`,
+      sortLabel,
       filterQuery: query,
       filterActive,
       navigationLocked: filterActive || mode === "detail",

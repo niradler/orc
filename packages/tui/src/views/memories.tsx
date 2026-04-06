@@ -228,13 +228,12 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange }:
 
   useEffect(() => {
     const selectedMemory = filtered[cursor];
-    const sortLabel = sort.key ? `sorted:${sort.key}` : "";
+    const sortLabel = sort.key ? `${sort.key} ${sort.direction === "asc" ? "▲" : "▼"}` : null;
     onStateChange({
       mode: filterActive ? "filter" : mode,
       title: "Memories",
-      countLabel: loading
-        ? "Loading memories…"
-        : `${filtered.length} memories${sortLabel ? ` • ${sortLabel}` : ""}`,
+      countLabel: loading ? "Loading memories…" : `${filtered.length} memories`,
+      sortLabel,
       filterQuery: query,
       filterActive,
       navigationLocked: filterActive || mode !== "browse",

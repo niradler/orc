@@ -71,7 +71,7 @@ type Props = {
 export function SkillsView({ onRegisterKeyHandler, onStateChange }: Props) {
   const [mode, setMode] = useState<"browse" | "detail">("browse");
   const [detail, setDetail] = useState<{ meta: SkillMeta; content: string } | null>(null);
-  const { sort, cycleSort, sortData } = useSort(columns);
+  const { sort, cycleSort, sortData } = useSort(columns, { key: "name", direction: "asc" });
 
   const [reloading, setReloading] = useState(false);
   const { data, loading, error, refresh } = usePolling(() => client.skills.list(), 30000);
@@ -111,7 +111,7 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange }: Props) {
 
   useEffect(() => {
     const selected = filtered[cursor];
-    const sortLabel = sort.key ? `sorted:${sort.key}` : "";
+    const sortLabel = sort.key ? `${sort.key} ${sort.direction === "asc" ? "▲" : "▼"}` : null;
     onStateChange({
       mode: filterActive ? "filter" : mode,
       title: "Skills",
@@ -119,7 +119,8 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange }: Props) {
         ? "Reloading skills cache…"
         : loading
           ? "Loading skills…"
-          : `${filtered.length} skills${sortLabel ? ` • ${sortLabel}` : ""}`,
+          : `${filtered.length} skills`,
+      sortLabel,
       filterQuery: query,
       filterActive,
       navigationLocked: filterActive || mode !== "browse",
