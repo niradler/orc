@@ -1,23 +1,23 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
-exports[`shell chrome renders branded ORC layout 1`] = `
+exports[`shell chrome renders tab bar and API status 1`] = `
 "                                                                                    
- ⬡ ORC orchestration terminal                                         ● API online  
-                                                                                    
- Workspace Tasks  /  orc  /  01HXYZABCDEF            Tasks  /  orc  /  01HXYZABCDEF 
-                                                                                    
- ────────────────────────────────────────────────────────────────────────────────── 
-                                                                                    
-                                                                                    
- ┌──────────┐ ┌─────────┐                                                           
- │ 2. Tasks │ │ 3. Jobs │                                                           
- └──────────┘ └─────────┘                                                           
                                                                                     
                                                                                     
                                                                                     
                                                                                     
- ◉ doing • Polish ORC TUI                                                   BROWSE  
- Arrows or j/k move • Enter open • / search • n new • : command                     
                                                                                     
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+                                                                                    
+  1·Proj  2·Tasks  3·Jobs  4·Mem  5·Sess  6·Skills   orc                   ● BROWSE 
+ ↑↓ move • Enter open • / search • s sort • n new • : cmd                           
 "
 `;

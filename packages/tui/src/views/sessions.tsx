@@ -7,6 +7,7 @@ import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
+import { useSort } from "../hooks/use-sort.js";
 import {
   handleDetailEscapeKey,
   handleFilterInputKey,
@@ -15,7 +16,7 @@ import {
   isRefreshKey,
 } from "../navigation.js";
 import { colors } from "../theme.js";
-import type { Column, KeyEvent, ViewKeyHandler, ViewState } from "../types.js";
+import type { Column, KeyEvent, PaletteCommand, ViewKeyHandler, ViewState } from "../types.js";
 
 const client = createOrcClient();
 
@@ -25,9 +26,10 @@ const columns: Column<Session>[] = [
     label: "Agent",
     width: 16,
     minWidth: 10,
-    priority: 6,
+    priority: 7,
     render: (s) => s.agent,
     color: () => colors.accent,
+    sortValue: (s) => s.agent.toLowerCase(),
   },
   {
     key: "id",
@@ -43,42 +45,56 @@ const columns: Column<Session>[] = [
     label: "Summary",
     width: 50,
     minWidth: 18,
-    priority: 7,
+    priority: 8,
     render: (s) => {
       const t = s.summary ?? "—";
       return t.length > 48 ? `${t.slice(0, 48)}…` : t;
     },
   },
   {
+    key: "version",
+    label: "Version",
+    width: 12,
+    minWidth: 8,
+    priority: 3,
+    render: (s) => s.agent_version ?? "—",
+    color: () => colors.textDim,
+  },
+  {
     key: "tokens",
     label: "Tokens",
     width: 10,
     minWidth: 8,
-    priority: 2,
+    priority: 5,
     render: (s) => (s.tokens_used ? String(s.tokens_used) : "—"),
     color: () => colors.textDim,
+    sortValue: (s) => s.tokens_used ?? 0,
   },
   {
     key: "created",
     label: "Created",
-    width: 20,
-    minWidth: 12,
-    priority: 1,
-    render: (s) => s.created_at,
+    width: 12,
+    minWidth: 10,
+    priority: 2,
+    render: (s) => s.created_at.slice(0, 10),
     color: () => colors.textDim,
+    sortValue: (s) => s.created_at,
   },
 ];
 
 type Props = {
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
+  onRegisterCommands: (cmds: PaletteCommand[]) => void;
+  onRegisterSearch: (fns: { setQuery: (q: string) => void; clear: () => void }) => void;
 };
 
-export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
+export function SessionsView({ onRegisterKeyHandler, onStateChange, onRegisterCommands, onRegisterSearch }: Props) {
   const [mode, setMode] = useState<"browse" | "detail">("browse");
   const [detail, setDetail] = useState<
     (Session & { events: unknown[]; snapshot: string | null }) | null
   >(null);
+  const { sort, setSortByKey, toggleDirection, sortData } = useSort(columns, { key: "created", direction: "desc" });
 
   const { data, loading, error, refresh } = usePolling(
     () => client.sessions.list({ limit: 50 }),
@@ -87,12 +103,13 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
   const sessions = data?.sessions ?? [];
 
   const {
-    filtered,
+    filtered: filteredUnsorted,
     query,
     active: filterActive,
     setQuery,
     setActive: setFilterActive,
   } = useFilter(sessions, (s) => `${s.agent} ${s.summary ?? ""} ${s.id}`, true);
+  const filtered = sortData(filteredUnsorted);
   const { cursor, handleKey: vimHandleKey } = useVimList(
     filtered.length,
     mode === "browse" && !filterActive,
@@ -111,23 +128,74 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
 
   useEffect(() => {
     const selectedSession = filtered[cursor];
+    const sortLabel = sort.key ? `${sort.key} ${sort.direction === "asc" ? "▲" : "▼"}` : null;
     onStateChange({
       mode: filterActive ? "filter" : mode,
       title: "Sessions",
-      countLabel: loading ? "Loading sessions…" : `${filtered.length} visible sessions`,
+      countLabel: loading ? "Loading sessions…" : `${filtered.length} sessions`,
+      sortLabel,
       filterQuery: query,
       filterActive,
       navigationLocked: filterActive || mode === "detail",
-      selectionLabel:
-        mode === "detail" && detail
-          ? `Session detail • ${detail.agent}`
-          : selectedSession
-            ? `${selectedSession.agent} • ${selectedSession.id.slice(-8)}`
-            : "No session selected yet.",
+      selectionLabel: selectedSession
+        ? `${selectedSession.agent} • ${selectedSession.id.slice(-8)}`
+        : "No session selected yet.",
       detailId: mode === "detail" ? (detail?.id ?? null) : null,
-      statusMessage: mode === "detail" ? "Read-only detail • Esc back" : "Read-only audit surface",
+      statusMessage: null,
+      contextData:
+        mode === "detail" && detail
+          ? JSON.stringify(detail, null, 2)
+          : filtered[cursor]
+            ? JSON.stringify(filtered[cursor], null, 2)
+            : null,
     });
-  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
+  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort]);
+
+  useEffect(() => {
+    const sortCommands: PaletteCommand[] = columns
+      .filter((c) => c.sortValue)
+      .map((col) => ({
+        id: `sort-${col.key}`,
+        name: `Sort by ${col.label}`,
+        category: "sort" as const,
+        aliases: [`sort ${col.key}`, `sort ${col.label.toLowerCase()}`],
+        icon: "↕",
+        ...(sort.key === col.key ? { hint: `${sort.direction === "asc" ? "▲" : "▼"} current` } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setSortByKey(col.key),
+      }));
+
+    const filterCommands: PaletteCommand[] = [];
+    const agents = [...new Set(sessions.map((s) => s.agent))];
+    for (const a of agents) {
+      filterCommands.push({
+        id: `filter-agent-${a}`,
+        name: `Filter agent: ${a}`,
+        category: "filter",
+        aliases: [`filter agent ${a}`, `filter agent=${a}`, a],
+        icon: "🤖",
+        ...(query === a ? { hint: "active" } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setQuery(a),
+      });
+    }
+    filterCommands.push({
+      id: "filter-clear",
+      name: "Clear filter",
+      category: "filter",
+      aliases: ["filter clear", "filter reset", "clear filter"],
+      icon: "✕",
+      ...(query ? { hint: `filtering: "${query}"` } : {}),
+      available: () => modeRef.current === "browse",
+      execute: () => setQuery(""),
+    });
+
+    onRegisterCommands([...sortCommands, ...filterCommands]);
+  }, [onRegisterCommands, setSortByKey, sort, sessions, query, setQuery]);
+
+  useEffect(() => {
+    onRegisterSearch({ setQuery, clear: () => setQuery("") });
+  }, [onRegisterSearch, setQuery]);
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
@@ -152,6 +220,10 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
           }
           return true;
         }
+        if (key.name === "s") {
+          toggleDirection();
+          return true;
+        }
         if (isRefreshKey(key.name)) {
           refreshRef.current();
           return true;
@@ -165,7 +237,7 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
       }
       return false;
     },
-    [vimHandleKey, setFilterActive],
+    [vimHandleKey, setFilterActive, toggleDirection],
   );
 
   useEffect(() => {
@@ -213,6 +285,7 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange }: Props) {
         emptyMessage="No sessions recorded yet."
         filteredEmptyMessage="No sessions match the current search."
         hasActiveFilter={Boolean(query)}
+        sort={sort}
         selectedSummary={
           filtered[cursor]
             ? `${filtered[cursor]?.agent} • ${filtered[cursor]?.id.slice(-8)}`

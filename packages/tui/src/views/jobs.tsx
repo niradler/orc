@@ -16,6 +16,7 @@ import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
+import { useSort } from "../hooks/use-sort.js";
 import {
   handleDetailEscapeKey,
   handleFilterInputKey,
@@ -24,7 +25,7 @@ import {
   isRefreshKey,
 } from "../navigation.js";
 import { colors, statusIcon } from "../theme.js";
-import type { Column, KeyEvent, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
+import type { Column, KeyEvent, PaletteCommand, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
 
 const client = createOrcClient();
 
@@ -34,26 +35,35 @@ const columns: Column<Job>[] = [
     label: " ",
     width: 3,
     minWidth: 2,
-    priority: 6,
+    priority: 8,
     render: (j) => (j.enabled ? "●" : "○"),
     color: (j) => (j.enabled ? colors.success : colors.textDim),
   },
-  { key: "name", label: "Name", width: 24, minWidth: 14, priority: 7, render: (j) => j.name },
+  {
+    key: "name",
+    label: "Name",
+    width: 24,
+    minWidth: 14,
+    priority: 9,
+    render: (j) => j.name,
+    sortValue: (j) => j.name.toLowerCase(),
+  },
   {
     key: "trigger",
     label: "Trigger",
     width: 12,
     minWidth: 8,
-    priority: 5,
+    priority: 6,
     render: (j) => j.trigger_type,
     color: () => colors.textDim,
+    sortValue: (j) => j.trigger_type,
   },
   {
     key: "cron",
     label: "Schedule",
     width: 18,
     minWidth: 10,
-    priority: 2,
+    priority: 3,
     render: (j) => j.cron_expr ?? "—",
     color: () => colors.textDim,
   },
@@ -62,17 +72,29 @@ const columns: Column<Job>[] = [
     label: "Runs",
     width: 8,
     minWidth: 6,
-    priority: 4,
+    priority: 5,
     render: (j) => String(j.run_count),
+    sortValue: (j) => j.run_count,
   },
   {
     key: "last_run",
     label: "Last Run",
-    width: 20,
-    minWidth: 12,
-    priority: 1,
-    render: (j) => j.last_run_at ?? "never",
+    width: 12,
+    minWidth: 10,
+    priority: 2,
+    render: (j) => (j.last_run_at ? j.last_run_at.slice(0, 10) : "never"),
     color: () => colors.textDim,
+    sortValue: (j) => j.last_run_at ?? "",
+  },
+  {
+    key: "updated_at",
+    label: "Updated",
+    width: 12,
+    minWidth: 10,
+    priority: 1,
+    render: (j) => j.updated_at.slice(0, 10),
+    color: () => colors.textDim,
+    sortValue: (j) => j.updated_at,
   },
 ];
 
@@ -134,15 +156,18 @@ type Props = {
   projectId: string | null;
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
+  onRegisterCommands: (cmds: PaletteCommand[]) => void;
+  onRegisterSearch: (fns: { setQuery: (q: string) => void; clear: () => void }) => void;
 };
 
-export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Props) {
+export function JobsView({ projectId, onRegisterKeyHandler, onStateChange, onRegisterCommands, onRegisterSearch }: Props) {
   const [mode, setMode] = useState<"browse" | "detail" | "form" | "confirm">("browse");
   const [detail, setDetail] = useState<{ job: Job; runs: JobRun[] } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Job | null>(null);
   const [formIntent, setFormIntent] = useState<"create" | "edit">("create");
   const [formTarget, setFormTarget] = useState<Job | null>(null);
   const editForm = useEditForm();
+  const { sort, setSortByKey, toggleDirection, sortData } = useSort(columns);
 
   const { data, loading, error, refresh, mutate } = usePolling(
     () => client.jobs.list({ ...(projectId ? { project_id: projectId } : {}) }),
@@ -150,12 +175,13 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
   );
   const jobs = data?.jobs ?? [];
   const {
-    filtered,
+    filtered: filteredUnsorted,
     query,
     active: filterActive,
     setQuery,
     setActive: setFilterActive,
   } = useFilter(jobs, (j) => `${j.name} ${j.trigger_type} ${j.description ?? ""}`, true);
+  const filtered = sortData(filteredUnsorted);
   const {
     cursor,
     setCursor,
@@ -189,26 +215,88 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
 
   useEffect(() => {
     const selectedJob = filtered[cursor];
+    const sortLabel = sort.key ? `${sort.key} ${sort.direction === "asc" ? "▲" : "▼"}` : null;
     onStateChange({
       mode: filterActive ? "filter" : mode,
       title: "Jobs",
-      countLabel: loading ? "Loading jobs…" : `${filtered.length} visible jobs`,
+      countLabel: loading ? "Loading jobs…" : `${filtered.length} jobs`,
+      sortLabel,
       filterQuery: query,
       filterActive,
       navigationLocked: filterActive || mode !== "browse",
-      selectionLabel:
-        mode === "detail" && detail
-          ? `Job detail • ${detail.job.name}`
-          : selectedJob
-            ? `${selectedJob.name} • ${selectedJob.trigger_type} • runs ${selectedJob.run_count}`
-            : "No job selected yet.",
+      selectionLabel: selectedJob
+        ? `${selectedJob.name} • ${selectedJob.trigger_type} • runs ${selectedJob.run_count}`
+        : "No job selected yet.",
       detailId: mode === "detail" ? (detail?.job.id ?? null) : null,
-      statusMessage:
-        mode === "detail"
-          ? "Detail actions: e edit • d delete • t trigger"
-          : "Enter opens detail • n creates",
+      statusMessage: null,
+      contextData:
+        mode === "detail" && detail
+          ? JSON.stringify(detail, null, 2)
+          : filtered[cursor]
+            ? JSON.stringify(filtered[cursor], null, 2)
+            : null,
     });
-  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
+  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort]);
+
+  useEffect(() => {
+    const sortCommands: PaletteCommand[] = columns
+      .filter((c) => c.sortValue)
+      .map((col) => ({
+        id: `sort-${col.key}`,
+        name: `Sort by ${col.label}`,
+        category: "sort" as const,
+        aliases: [`sort ${col.key}`, `sort ${col.label.toLowerCase()}`],
+        icon: "↕",
+        ...(sort.key === col.key ? { hint: `${sort.direction === "asc" ? "▲" : "▼"} current` } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setSortByKey(col.key),
+      }));
+
+    const filterCommands: PaletteCommand[] = [];
+    const triggers = [...new Set(jobs.map((j) => j.trigger_type))];
+    for (const t of triggers) {
+      filterCommands.push({
+        id: `filter-trigger-${t}`,
+        name: `Filter trigger: ${t}`,
+        category: "filter",
+        aliases: [`filter trigger ${t}`, `filter trigger_type=${t}`, t],
+        icon: "⚡",
+        ...(query === t ? { hint: "active" } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setQuery(t),
+      });
+    }
+    for (const enabled of ["enabled", "disabled"]) {
+      filterCommands.push({
+        id: `filter-enabled-${enabled}`,
+        name: `Filter ${enabled}`,
+        category: "filter",
+        aliases: [`filter enabled=${enabled === "enabled" ? "true" : "false"}`, enabled],
+        icon: enabled === "enabled" ? "●" : "○",
+        available: () => modeRef.current === "browse",
+        execute: () => {
+          const ids = new Set(jobs.filter((j) => (enabled === "enabled") === j.enabled).map((j) => j.name));
+          setQuery([...ids].join(" ") || enabled);
+        },
+      });
+    }
+    filterCommands.push({
+      id: "filter-clear",
+      name: "Clear filter",
+      category: "filter",
+      aliases: ["filter clear", "filter reset", "clear filter"],
+      icon: "✕",
+      ...(query ? { hint: `filtering: "${query}"` } : {}),
+      available: () => modeRef.current === "browse",
+      execute: () => setQuery(""),
+    });
+
+    onRegisterCommands([...sortCommands, ...filterCommands]);
+  }, [onRegisterCommands, setSortByKey, sort, jobs, query, setQuery]);
+
+  useEffect(() => {
+    onRegisterSearch({ setQuery, clear: () => setQuery("") });
+  }, [onRegisterSearch, setQuery]);
 
   const doCreate = useCallback(
     async (vals: Record<string, string>) => {
@@ -347,6 +435,10 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
             );
           return true;
         }
+        if (key.name === "s") {
+          toggleDirection();
+          return true;
+        }
         if (isRefreshKey(key.name)) {
           refreshRef.current();
           return true;
@@ -356,6 +448,28 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
           setFormTarget(null);
           editFormRef.current.open(jobFields());
           setMode("form");
+          return true;
+        }
+        if (key.name === "e") {
+          const job = filteredRef.current[cursorRef.current];
+          if (job) {
+            client.jobs.get(job.id).then((r) => {
+              if (r.data) {
+                setFormIntent("edit");
+                setFormTarget(r.data);
+                editFormRef.current.open(jobFields(r.data));
+                setMode("form");
+              }
+            });
+          }
+          return true;
+        }
+        if (key.name === "d") {
+          const job = filteredRef.current[cursorRef.current];
+          if (job) {
+            setDeleteTarget(job);
+            setMode("confirm");
+          }
           return true;
         }
       }
@@ -387,7 +501,7 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
       }
       return false;
     },
-    [submitCurrentForm, vimHandleKey, setFilterActive],
+    [submitCurrentForm, vimHandleKey, setFilterActive, toggleDirection],
   );
 
   useEffect(() => {
@@ -454,6 +568,7 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange }: Pro
         emptyMessage="No jobs configured yet."
         filteredEmptyMessage="No jobs match the current search."
         hasActiveFilter={Boolean(query)}
+        sort={sort}
         selectedSummary={
           filtered[cursor]
             ? `${filtered[cursor]?.trigger_type} • ${filtered[cursor]?.run_count} runs • ${filtered[cursor]?.name}`

@@ -17,6 +17,7 @@ import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
+import { useSort } from "../hooks/use-sort.js";
 import {
   handleDetailEscapeKey,
   handleFilterInputKey,
@@ -25,9 +26,20 @@ import {
   isRefreshKey,
 } from "../navigation.js";
 import { colors, priorityColor, statusColor, statusIcon } from "../theme.js";
-import type { Column, KeyEvent, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
+import type { Column, KeyEvent, PaletteCommand, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
 
 const client = createOrcClient();
+
+const PRIORITY_ORDER: Record<string, number> = { critical: 0, high: 1, normal: 2, low: 3 };
+const STATUS_ORDER: Record<string, number> = {
+  doing: 0,
+  review: 1,
+  blocked: 2,
+  todo: 3,
+  changes_requested: 4,
+  done: 5,
+  cancelled: 6,
+};
 
 const columns: Column<Task>[] = [
   {
@@ -35,28 +47,67 @@ const columns: Column<Task>[] = [
     label: "Status",
     width: 12,
     minWidth: 10,
-    priority: 5,
+    priority: 8,
     render: (t) => `${statusIcon(t.status)} ${t.status}`,
     color: (t) => statusColor[t.status] ?? colors.text,
+    sortValue: (t) => STATUS_ORDER[t.status] ?? 99,
   },
   {
     key: "priority",
-    label: "Pri",
+    label: "Priority",
     width: 10,
     minWidth: 8,
-    priority: 4,
+    priority: 7,
     render: (t) => t.priority,
     color: (t) => priorityColor[t.priority] ?? colors.text,
+    sortValue: (t) => PRIORITY_ORDER[t.priority] ?? 99,
   },
-  { key: "title", label: "Title", width: 60, minWidth: 20, priority: 6, render: (t) => t.title },
+  {
+    key: "title",
+    label: "Title",
+    width: 60,
+    minWidth: 20,
+    priority: 9,
+    render: (t) => t.title,
+    sortValue: (t) => t.title.toLowerCase(),
+  },
   {
     key: "author",
     label: "Author",
     width: 14,
     minWidth: 10,
-    priority: 2,
+    priority: 4,
     render: (t) => t.author,
     color: () => colors.textDim,
+    sortValue: (t) => t.author.toLowerCase(),
+  },
+  {
+    key: "tags",
+    label: "Tags",
+    width: 16,
+    minWidth: 10,
+    priority: 2,
+    render: (t) => t.tags?.join(", ") ?? "—",
+    color: () => colors.textDim,
+  },
+  {
+    key: "claimed_by",
+    label: "Claimed",
+    width: 14,
+    minWidth: 10,
+    priority: 3,
+    render: (t) => t.claimed_by ?? "—",
+    color: () => colors.textDim,
+  },
+  {
+    key: "updated_at",
+    label: "Updated",
+    width: 12,
+    minWidth: 10,
+    priority: 1,
+    render: (t) => t.updated_at.slice(0, 10),
+    color: () => colors.textDim,
+    sortValue: (t) => t.updated_at,
   },
 ];
 
@@ -131,15 +182,18 @@ type Props = {
   projectId: string | null;
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
+  onRegisterCommands: (cmds: PaletteCommand[]) => void;
+  onRegisterSearch: (fns: { setQuery: (q: string) => void; clear: () => void }) => void;
 };
 
-export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Props) {
+export function TasksView({ projectId, onRegisterKeyHandler, onStateChange, onRegisterCommands, onRegisterSearch }: Props) {
   const [mode, setMode] = useState<"browse" | "detail" | "form" | "confirm">("browse");
   const [detail, setDetail] = useState<Task | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
   const [formIntent, setFormIntent] = useState<"create" | "edit">("create");
   const [formTarget, setFormTarget] = useState<Task | null>(null);
   const editForm = useEditForm();
+  const { sort, setSortByKey, toggleDirection, sortData } = useSort(columns);
 
   const { data, loading, error, refresh, mutate } = usePolling(
     () => client.tasks.list({ ...(projectId ? { project_id: projectId } : {}), limit: 100 }),
@@ -147,7 +201,7 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
   );
   const tasks = data?.tasks ?? [];
   const {
-    filtered,
+    filtered: filteredUnsorted,
     query,
     active: filterActive,
     setQuery,
@@ -157,6 +211,7 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
     (t) => `${t.title} ${t.status} ${t.priority} ${t.author} ${t.tags?.join(" ") ?? ""}`,
     true,
   );
+  const filtered = sortData(filteredUnsorted);
   const {
     cursor,
     setCursor,
@@ -190,28 +245,99 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
 
   useEffect(() => {
     const selectedTask = filtered[cursor];
+    const sortLabel = sort.key ? `${sort.key} ${sort.direction === "asc" ? "▲" : "▼"}` : null;
     onStateChange({
       mode: filterActive ? "filter" : mode,
       title: "Tasks",
-      countLabel: loading ? "Loading tasks…" : `${filtered.length} visible tasks`,
+      countLabel: loading ? "Loading tasks…" : `${filtered.length} tasks`,
+      sortLabel,
       filterQuery: query,
       filterActive,
       navigationLocked: filterActive || mode !== "browse",
-      selectionLabel:
-        mode === "detail" && detail
-          ? `Task detail • ${detail.title}`
-          : selectedTask
-            ? `${statusIcon(selectedTask.status)} ${selectedTask.status} • ${selectedTask.title}`
-            : "No task selected yet.",
+      selectionLabel: selectedTask
+        ? `${statusIcon(selectedTask.status)} ${selectedTask.status} • ${selectedTask.title}`
+        : "No task selected yet.",
       detailId: mode === "detail" ? (detail?.id ?? null) : null,
-      statusMessage:
-        mode === "detail"
-          ? "Detail actions: e edit • d delete"
-          : filterActive
-            ? "Search updates live as you type."
-            : "Enter opens detail • n creates",
+      statusMessage: null,
+      contextData:
+        mode === "detail" && detail
+          ? JSON.stringify(detail, null, 2)
+          : filtered[cursor]
+            ? JSON.stringify(filtered[cursor], null, 2)
+            : null,
     });
-  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
+  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort]);
+
+  useEffect(() => {
+    const sortCommands: PaletteCommand[] = columns
+      .filter((c) => c.sortValue)
+      .map((col) => ({
+        id: `sort-${col.key}`,
+        name: `Sort by ${col.label}`,
+        category: "sort" as const,
+        aliases: [`sort ${col.key}`, `sort ${col.label.toLowerCase()}`],
+        icon: "↕",
+        ...(sort.key === col.key ? { hint: `${sort.direction === "asc" ? "▲" : "▼"} current` } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setSortByKey(col.key),
+      }));
+
+    const filterCommands: PaletteCommand[] = [];
+    const statuses = [...new Set(tasks.map((t) => t.status))];
+    for (const s of statuses) {
+      filterCommands.push({
+        id: `filter-status-${s}`,
+        name: `Filter status: ${s}`,
+        category: "filter",
+        aliases: [`filter status ${s}`, `filter status=${s}`, s],
+        icon: "⏳",
+        ...(query === s ? { hint: "active" } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setQuery(s),
+      });
+    }
+    const priorities = [...new Set(tasks.map((t) => t.priority))];
+    for (const p of priorities) {
+      filterCommands.push({
+        id: `filter-priority-${p}`,
+        name: `Filter priority: ${p}`,
+        category: "filter",
+        aliases: [`filter priority ${p}`, `filter priority=${p}`, p],
+        icon: "🔺",
+        ...(query === p ? { hint: "active" } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setQuery(p),
+      });
+    }
+    const authors = [...new Set(tasks.map((t) => t.author))];
+    for (const a of authors) {
+      filterCommands.push({
+        id: `filter-author-${a}`,
+        name: `Filter author: ${a}`,
+        category: "filter",
+        aliases: [`filter author ${a}`, `filter author=${a}`, a],
+        icon: "👤",
+        available: () => modeRef.current === "browse",
+        execute: () => setQuery(a),
+      });
+    }
+    filterCommands.push({
+      id: "filter-clear",
+      name: "Clear filter",
+      category: "filter",
+      aliases: ["filter clear", "filter reset", "clear filter"],
+      icon: "✕",
+      ...(query ? { hint: `filtering: "${query}"` } : {}),
+      available: () => modeRef.current === "browse",
+      execute: () => setQuery(""),
+    });
+
+    onRegisterCommands([...sortCommands, ...filterCommands]);
+  }, [onRegisterCommands, setSortByKey, sort, tasks, query, setQuery]);
+
+  useEffect(() => {
+    onRegisterSearch({ setQuery, clear: () => setQuery("") });
+  }, [onRegisterSearch, setQuery]);
 
   const doCreate = useCallback(
     async (vals: Record<string, string>) => {
@@ -356,6 +482,10 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
             });
           return true;
         }
+        if (key.name === "s") {
+          toggleDirection();
+          return true;
+        }
         if (isRefreshKey(key.name)) {
           refreshRef.current();
           return true;
@@ -365,6 +495,28 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
           setFormTarget(null);
           editFormRef.current.open(taskFields());
           setMode("form");
+          return true;
+        }
+        if (key.name === "e") {
+          const task = filteredRef.current[cursorRef.current];
+          if (task) {
+            client.tasks.get(task.id).then((r) => {
+              if (r.data) {
+                setFormIntent("edit");
+                setFormTarget(r.data);
+                editFormRef.current.open(taskFields(r.data));
+                setMode("form");
+              }
+            });
+          }
+          return true;
+        }
+        if (key.name === "d") {
+          const task = filteredRef.current[cursorRef.current];
+          if (task) {
+            setDeleteTarget(task);
+            setMode("confirm");
+          }
           return true;
         }
       }
@@ -392,7 +544,7 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
       }
       return false;
     },
-    [submitCurrentForm, vimHandleKey, setFilterActive],
+    [submitCurrentForm, vimHandleKey, setFilterActive, toggleDirection],
   );
 
   useEffect(() => {
@@ -455,6 +607,7 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange }: Pr
         emptyMessage="No tasks to show yet."
         filteredEmptyMessage="No tasks match the current search."
         hasActiveFilter={Boolean(query)}
+        sort={sort}
         selectedSummary={
           selectedTask
             ? `${statusIcon(selectedTask.status)} ${selectedTask.status} • ${selectedTask.priority} • ${selectedTask.title}`

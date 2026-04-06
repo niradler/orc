@@ -31,6 +31,13 @@ export type ViewState = {
   selectionLabel?: string | null;
   detailId?: string | null;
   statusMessage?: string | null;
+  contextData?: string | null;
+  sortLabel?: string | null;
+};
+
+export type SortState = {
+  key: string | null;
+  direction: "asc" | "desc";
 };
 
 export type Column<T> = {
@@ -41,6 +48,7 @@ export type Column<T> = {
   priority?: number;
   render: (item: T) => string;
   color?: (item: T) => string;
+  sortValue?: (item: T) => string | number;
 };
 
 export type Command = {
@@ -48,6 +56,20 @@ export type Command = {
   aliases: string[];
   description: string;
   action: () => void;
+};
+
+export type PaletteCategory = "navigation" | "sort" | "filter" | "search" | "action" | "system";
+
+export type PaletteCommand = {
+  id: string;
+  name: string;
+  category: PaletteCategory;
+  aliases: string[];
+  shortcut?: string;
+  icon?: string;
+  hint?: string;
+  available: () => boolean;
+  execute: (value?: string) => void;
 };
 
 export type KeyEvent = OpenTUIKeyEvent;

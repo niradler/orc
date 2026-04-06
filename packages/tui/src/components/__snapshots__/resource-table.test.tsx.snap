@@ -18,7 +18,7 @@ exports[`resource table shows filtered empty state 1`] = `
 │ │                                                                  │ │
 │ └──────────────────────────────────────────────────────────────────┘ │
 │                                                                      │
-│  Use arrows or j/k to move through the list.                  0 / 0  │
+│  Use ↑↓ to move through the list.                             0 / 0  │
 │                                                                      │
 ╰──────────────────────────────────────────────────────────────────────╯
 "

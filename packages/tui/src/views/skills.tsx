@@ -7,6 +7,7 @@ import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
 import { useVimList } from "../hooks/use-vim-list.js";
+import { useSort } from "../hooks/use-sort.js";
 import {
   handleDetailEscapeKey,
   handleFilterInputKey,
@@ -15,31 +16,49 @@ import {
   isRefreshKey,
 } from "../navigation.js";
 import { colors } from "../theme.js";
-import type { Column, KeyEvent, ViewKeyHandler, ViewState } from "../types.js";
+import type { Column, KeyEvent, PaletteCommand, ViewKeyHandler, ViewState } from "../types.js";
 
 const client = createOrcClient();
 
 const columns: Column<SkillMeta>[] = [
   {
     key: "source",
-    label: "Src",
-    width: 5,
-    minWidth: 4,
+    label: "Source",
+    width: 8,
+    minWidth: 5,
     priority: 6,
-    render: (s) => (s.source === "user" ? "user" : "built"),
+    render: (s) => (s.source === "user" ? "user" : "builtin"),
     color: (s) => (s.source === "user" ? colors.warning : colors.textDim),
+    sortValue: (s) => s.source,
   },
-  { key: "name", label: "Name", width: 24, minWidth: 14, priority: 7, render: (s) => s.name },
+  {
+    key: "name",
+    label: "Name",
+    width: 24,
+    minWidth: 14,
+    priority: 8,
+    render: (s) => s.name,
+    sortValue: (s) => s.name.toLowerCase(),
+  },
   {
     key: "desc",
     label: "Description",
     width: 40,
     minWidth: 16,
-    priority: 5,
+    priority: 7,
     render: (s) => {
       const t = s.description || "—";
       return t.length > 38 ? `${t.slice(0, 38)}…` : t;
     },
+    color: () => colors.textDim,
+  },
+  {
+    key: "path",
+    label: "Path",
+    width: 30,
+    minWidth: 14,
+    priority: 1,
+    render: (s) => s.path,
     color: () => colors.textDim,
   },
 ];
@@ -47,21 +66,33 @@ const columns: Column<SkillMeta>[] = [
 type Props = {
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
+  onRegisterCommands: (cmds: PaletteCommand[]) => void;
+  onRegisterSearch: (fns: { setQuery: (q: string) => void; clear: () => void }) => void;
 };
 
-export function SkillsView({ onRegisterKeyHandler, onStateChange }: Props) {
+export function SkillsView({ onRegisterKeyHandler, onStateChange, onRegisterCommands, onRegisterSearch }: Props) {
   const [mode, setMode] = useState<"browse" | "detail">("browse");
   const [detail, setDetail] = useState<{ meta: SkillMeta; content: string } | null>(null);
+  const { sort, setSortByKey, toggleDirection, sortData } = useSort(columns, { key: "name", direction: "asc" });
 
+  const [reloading, setReloading] = useState(false);
   const { data, loading, error, refresh } = usePolling(() => client.skills.list(), 30000);
+
+  const reloadSkills = useCallback(async () => {
+    setReloading(true);
+    await client.skills.list({ reload: true });
+    refresh();
+    setReloading(false);
+  }, [refresh]);
   const skills = data?.skills ?? [];
   const {
-    filtered,
+    filtered: filteredUnsorted,
     query,
     active: filterActive,
     setQuery,
     setActive: setFilterActive,
   } = useFilter(skills, (s) => `${s.name} ${s.description}`, true);
+  const filtered = sortData(filteredUnsorted);
   const { cursor, handleKey: vimHandleKey } = useVimList(
     filtered.length,
     mode === "browse" && !filterActive,
@@ -77,26 +108,84 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange }: Props) {
   cursorRef.current = cursor;
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
+  const reloadRef = useRef(reloadSkills);
+  reloadRef.current = reloadSkills;
 
   useEffect(() => {
     const selected = filtered[cursor];
+    const sortLabel = sort.key ? `${sort.key} ${sort.direction === "asc" ? "▲" : "▼"}` : null;
     onStateChange({
       mode: filterActive ? "filter" : mode,
       title: "Skills",
-      countLabel: loading ? "Loading skills…" : `${filtered.length} skills`,
+      countLabel: reloading
+        ? "Reloading skills cache…"
+        : loading
+          ? "Loading skills…"
+          : `${filtered.length} skills`,
+      sortLabel,
       filterQuery: query,
       filterActive,
       navigationLocked: filterActive || mode !== "browse",
-      selectionLabel:
-        mode === "detail" && detail
-          ? `Skill detail • ${detail.meta.name}`
-          : selected
-            ? `${selected.name} • ${selected.source}`
-            : "No skill selected.",
+      selectionLabel: selected
+        ? `${selected.name} • ${selected.source}`
+        : "No skill selected.",
       detailId: mode === "detail" ? (detail?.meta.name ?? null) : null,
-      statusMessage: mode === "detail" ? "Esc to go back" : "Enter opens detail",
+      statusMessage: null,
+      contextData:
+        mode === "detail" && detail
+          ? JSON.stringify(detail, null, 2)
+          : filtered[cursor]
+            ? JSON.stringify(filtered[cursor], null, 2)
+            : null,
     });
-  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading]);
+  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort, reloading]);
+
+  useEffect(() => {
+    const sortCommands: PaletteCommand[] = columns
+      .filter((c) => c.sortValue)
+      .map((col) => ({
+        id: `sort-${col.key}`,
+        name: `Sort by ${col.label}`,
+        category: "sort" as const,
+        aliases: [`sort ${col.key}`, `sort ${col.label.toLowerCase()}`],
+        icon: "↕",
+        ...(sort.key === col.key ? { hint: `${sort.direction === "asc" ? "▲" : "▼"} current` } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setSortByKey(col.key),
+      }));
+
+    const filterCommands: PaletteCommand[] = [];
+    const sources = [...new Set(skills.map((s) => s.source))];
+    for (const src of sources) {
+      const label = src === "user" ? "user" : "builtin";
+      filterCommands.push({
+        id: `filter-source-${label}`,
+        name: `Filter source: ${label}`,
+        category: "filter",
+        aliases: [`filter source ${label}`, `filter source=${label}`, label],
+        icon: src === "user" ? "👤" : "📦",
+        ...(query === label ? { hint: "active" } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setQuery(label),
+      });
+    }
+    filterCommands.push({
+      id: "filter-clear",
+      name: "Clear filter",
+      category: "filter",
+      aliases: ["filter clear", "filter reset", "clear filter"],
+      icon: "✕",
+      ...(query ? { hint: `filtering: "${query}"` } : {}),
+      available: () => modeRef.current === "browse",
+      execute: () => setQuery(""),
+    });
+
+    onRegisterCommands([...sortCommands, ...filterCommands]);
+  }, [onRegisterCommands, setSortByKey, sort, skills, query, setQuery]);
+
+  useEffect(() => {
+    onRegisterSearch({ setQuery, clear: () => setQuery("") });
+  }, [onRegisterSearch, setQuery]);
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
@@ -120,8 +209,16 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange }: Props) {
             });
           return true;
         }
+        if (key.name === "s") {
+          toggleDirection();
+          return true;
+        }
         if (isRefreshKey(key.name)) {
           refreshRef.current();
+          return true;
+        }
+        if (key.name === "R" || (key.name === "r" && key.shift)) {
+          void reloadRef.current();
           return true;
         }
       }
@@ -137,7 +234,7 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange }: Props) {
       }
       return false;
     },
-    [vimHandleKey, setFilterActive],
+    [vimHandleKey, setFilterActive, toggleDirection],
   );
 
   useEffect(() => {
@@ -183,6 +280,7 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange }: Props) {
         emptyMessage="No skills installed."
         filteredEmptyMessage="No skills match the current search."
         hasActiveFilter={Boolean(query)}
+        sort={sort}
         selectedSummary={
           filtered[cursor]
             ? `${filtered[cursor]?.name} • ${filtered[cursor]?.source}`

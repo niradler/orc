@@ -22,20 +22,12 @@ export function useVimList(length: number, enabled = true): VimListResult {
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
       if (!enabledRef.current || lengthRef.current === 0) return false;
-      if (key.name === "j" || key.name === "down") {
+      if (key.name === "down") {
         setCursorRaw((c) => clamp(c + 1));
         return true;
       }
-      if (key.name === "k" || key.name === "up") {
+      if (key.name === "up") {
         setCursorRaw((c) => clamp(c - 1));
-        return true;
-      }
-      if (key.name === "g" && !key.shift) {
-        setCursorRaw(0);
-        return true;
-      }
-      if (key.shift && key.name === "g") {
-        setCursorRaw(clamp(lengthRef.current - 1));
         return true;
       }
       if (key.name === "home") {
