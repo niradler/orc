@@ -59,6 +59,25 @@ export function usePalette(
   callbacksRef.current = callbacks;
   const recentIdsRef = useRef<string[]>([]);
 
+  const GATEWAY_SORT: PaletteCommand = {
+    id: "gateway-sort",
+    name: "Sort →",
+    category: "sort",
+    aliases: ["sort"],
+    icon: "↕",
+    available: () => true,
+    execute: () => {},
+  };
+  const GATEWAY_FILTER: PaletteCommand = {
+    id: "gateway-filter",
+    name: "Filter →",
+    category: "filter",
+    aliases: ["filter"],
+    icon: "⏳",
+    available: () => true,
+    execute: () => {},
+  };
+
   const getResults = useCallback((): PaletteCommand[] => {
     // In search mode, no command results — the palette shows search UI
     if (modeRef.current === "search") return [];
@@ -66,9 +85,15 @@ export function usePalette(
     const cmds = commandsRef.current.filter((c) => c.available());
     const q = inputRef.current.trim();
 
-    // Empty input: show all commands grouped by category
+    // Empty input: show static commands + gateway entries for sort/filter
     if (!q) {
-      return cmds.sort(
+      const staticCmds = cmds.filter((c) => c.category !== "sort" && c.category !== "filter");
+      const hasSortCmds = cmds.some((c) => c.category === "sort");
+      const hasFilterCmds = cmds.some((c) => c.category === "filter");
+      const gateways: PaletteCommand[] = [];
+      if (hasSortCmds) gateways.push(GATEWAY_SORT);
+      if (hasFilterCmds) gateways.push(GATEWAY_FILTER);
+      return [...staticCmds, ...gateways].sort(
         (a, b) => (CATEGORY_ORDER[a.category] ?? 9) - (CATEGORY_ORDER[b.category] ?? 9),
       );
     }
@@ -145,10 +170,27 @@ export function usePalette(
     callbacksRef.current.onSearchQuery?.("");
   }, []);
 
+  const drillInto = useCallback((prefix: string) => {
+    inputRef.current = prefix;
+    setInput(prefix);
+    cursorRef.current = 0;
+    setCursor(0);
+  }, []);
+
   const executeAtCursor = useCallback(() => {
     const results = getResults();
     const cmd = results[cursorRef.current];
     if (cmd) {
+      // Gateway commands drill into their category
+      if (cmd.id === "gateway-sort") {
+        drillInto("sort ");
+        return;
+      }
+      if (cmd.id === "gateway-filter") {
+        drillInto("filter ");
+        return;
+      }
+
       const recent = recentIdsRef.current.filter((id) => id !== cmd.id);
       recent.unshift(cmd.id);
       recentIdsRef.current = recent.slice(0, 10);
@@ -177,7 +219,7 @@ export function usePalette(
     } else {
       closePalette();
     }
-  }, [getResults, closePalette]);
+  }, [getResults, closePalette, drillInto]);
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
