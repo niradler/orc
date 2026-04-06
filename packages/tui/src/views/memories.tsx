@@ -266,8 +266,59 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange, o
         available: () => modeRef.current === "browse",
         execute: () => setSortByKey(col.key),
       }));
-    onRegisterCommands(sortCommands);
-  }, [onRegisterCommands, setSortByKey, sort]);
+
+    const filterCommands: PaletteCommand[] = [];
+    const importances = [...new Set(memories.map((m) => m.importance))];
+    for (const i of importances) {
+      filterCommands.push({
+        id: `filter-importance-${i}`,
+        name: `Filter importance: ${i}`,
+        category: "filter",
+        aliases: [`filter importance ${i}`, `filter importance=${i}`, i],
+        icon: "◆",
+        ...(query === i ? { hint: "active" } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setQuery(i),
+      });
+    }
+    const scopes = [...new Set(memories.map((m) => m.scope ?? "global"))];
+    for (const s of scopes) {
+      filterCommands.push({
+        id: `filter-scope-${s}`,
+        name: `Filter scope: ${s}`,
+        category: "filter",
+        aliases: [`filter scope ${s}`, `filter scope=${s}`, s],
+        icon: "◎",
+        ...(query === s ? { hint: "active" } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setQuery(s),
+      });
+    }
+    const sources = [...new Set(memories.map((m) => m.source).filter(Boolean))];
+    for (const s of sources) {
+      filterCommands.push({
+        id: `filter-source-${s}`,
+        name: `Filter source: ${s}`,
+        category: "filter",
+        aliases: [`filter source ${s}`, `filter source=${s}`, s!],
+        icon: "◇",
+        available: () => modeRef.current === "browse",
+        execute: () => setQuery(s!),
+      });
+    }
+    filterCommands.push({
+      id: "filter-clear",
+      name: "Clear filter",
+      category: "filter",
+      aliases: ["filter clear", "filter reset", "clear filter"],
+      icon: "✕",
+      ...(query ? { hint: `filtering: "${query}"` } : {}),
+      available: () => modeRef.current === "browse",
+      execute: () => setQuery(""),
+    });
+
+    onRegisterCommands([...sortCommands, ...filterCommands]);
+  }, [onRegisterCommands, setSortByKey, sort, memories, query, setQuery]);
 
   useEffect(() => {
     onRegisterSearch({ setQuery, clear: () => setQuery("") });

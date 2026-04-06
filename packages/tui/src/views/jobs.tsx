@@ -251,8 +251,48 @@ export function JobsView({ projectId, onRegisterKeyHandler, onStateChange, onReg
         available: () => modeRef.current === "browse",
         execute: () => setSortByKey(col.key),
       }));
-    onRegisterCommands(sortCommands);
-  }, [onRegisterCommands, setSortByKey, sort]);
+
+    const filterCommands: PaletteCommand[] = [];
+    const triggers = [...new Set(jobs.map((j) => j.trigger_type))];
+    for (const t of triggers) {
+      filterCommands.push({
+        id: `filter-trigger-${t}`,
+        name: `Filter trigger: ${t}`,
+        category: "filter",
+        aliases: [`filter trigger ${t}`, `filter trigger_type=${t}`, t],
+        icon: "⚡",
+        ...(query === t ? { hint: "active" } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setQuery(t),
+      });
+    }
+    for (const enabled of ["enabled", "disabled"]) {
+      filterCommands.push({
+        id: `filter-enabled-${enabled}`,
+        name: `Filter ${enabled}`,
+        category: "filter",
+        aliases: [`filter enabled=${enabled === "enabled" ? "true" : "false"}`, enabled],
+        icon: enabled === "enabled" ? "●" : "○",
+        available: () => modeRef.current === "browse",
+        execute: () => {
+          const ids = new Set(jobs.filter((j) => (enabled === "enabled") === j.enabled).map((j) => j.name));
+          setQuery([...ids].join(" ") || enabled);
+        },
+      });
+    }
+    filterCommands.push({
+      id: "filter-clear",
+      name: "Clear filter",
+      category: "filter",
+      aliases: ["filter clear", "filter reset", "clear filter"],
+      icon: "✕",
+      ...(query ? { hint: `filtering: "${query}"` } : {}),
+      available: () => modeRef.current === "browse",
+      execute: () => setQuery(""),
+    });
+
+    onRegisterCommands([...sortCommands, ...filterCommands]);
+  }, [onRegisterCommands, setSortByKey, sort, jobs, query, setQuery]);
 
   useEffect(() => {
     onRegisterSearch({ setQuery, clear: () => setQuery("") });

@@ -153,8 +153,35 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange, onRegisterComm
         available: () => modeRef.current === "browse",
         execute: () => setSortByKey(col.key),
       }));
-    onRegisterCommands(sortCommands);
-  }, [onRegisterCommands, setSortByKey, sort]);
+
+    const filterCommands: PaletteCommand[] = [];
+    const sources = [...new Set(skills.map((s) => s.source))];
+    for (const src of sources) {
+      const label = src === "user" ? "user" : "builtin";
+      filterCommands.push({
+        id: `filter-source-${label}`,
+        name: `Filter source: ${label}`,
+        category: "filter",
+        aliases: [`filter source ${label}`, `filter source=${label}`, label],
+        icon: src === "user" ? "👤" : "📦",
+        ...(query === label ? { hint: "active" } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setQuery(label),
+      });
+    }
+    filterCommands.push({
+      id: "filter-clear",
+      name: "Clear filter",
+      category: "filter",
+      aliases: ["filter clear", "filter reset", "clear filter"],
+      icon: "✕",
+      ...(query ? { hint: `filtering: "${query}"` } : {}),
+      available: () => modeRef.current === "browse",
+      execute: () => setQuery(""),
+    });
+
+    onRegisterCommands([...sortCommands, ...filterCommands]);
+  }, [onRegisterCommands, setSortByKey, sort, skills, query, setQuery]);
 
   useEffect(() => {
     onRegisterSearch({ setQuery, clear: () => setQuery("") });

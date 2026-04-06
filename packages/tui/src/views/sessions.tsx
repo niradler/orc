@@ -164,8 +164,34 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange, onRegisterCo
         available: () => modeRef.current === "browse",
         execute: () => setSortByKey(col.key),
       }));
-    onRegisterCommands(sortCommands);
-  }, [onRegisterCommands, setSortByKey, sort]);
+
+    const filterCommands: PaletteCommand[] = [];
+    const agents = [...new Set(sessions.map((s) => s.agent))];
+    for (const a of agents) {
+      filterCommands.push({
+        id: `filter-agent-${a}`,
+        name: `Filter agent: ${a}`,
+        category: "filter",
+        aliases: [`filter agent ${a}`, `filter agent=${a}`, a],
+        icon: "🤖",
+        ...(query === a ? { hint: "active" } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setQuery(a),
+      });
+    }
+    filterCommands.push({
+      id: "filter-clear",
+      name: "Clear filter",
+      category: "filter",
+      aliases: ["filter clear", "filter reset", "clear filter"],
+      icon: "✕",
+      ...(query ? { hint: `filtering: "${query}"` } : {}),
+      available: () => modeRef.current === "browse",
+      execute: () => setQuery(""),
+    });
+
+    onRegisterCommands([...sortCommands, ...filterCommands]);
+  }, [onRegisterCommands, setSortByKey, sort, sessions, query, setQuery]);
 
   useEffect(() => {
     onRegisterSearch({ setQuery, clear: () => setQuery("") });

@@ -281,8 +281,59 @@ export function TasksView({ projectId, onRegisterKeyHandler, onStateChange, onRe
         available: () => modeRef.current === "browse",
         execute: () => setSortByKey(col.key),
       }));
-    onRegisterCommands(sortCommands);
-  }, [onRegisterCommands, setSortByKey, sort]);
+
+    const filterCommands: PaletteCommand[] = [];
+    const statuses = [...new Set(tasks.map((t) => t.status))];
+    for (const s of statuses) {
+      filterCommands.push({
+        id: `filter-status-${s}`,
+        name: `Filter status: ${s}`,
+        category: "filter",
+        aliases: [`filter status ${s}`, `filter status=${s}`, s],
+        icon: "⏳",
+        ...(query === s ? { hint: "active" } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setQuery(s),
+      });
+    }
+    const priorities = [...new Set(tasks.map((t) => t.priority))];
+    for (const p of priorities) {
+      filterCommands.push({
+        id: `filter-priority-${p}`,
+        name: `Filter priority: ${p}`,
+        category: "filter",
+        aliases: [`filter priority ${p}`, `filter priority=${p}`, p],
+        icon: "🔺",
+        ...(query === p ? { hint: "active" } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setQuery(p),
+      });
+    }
+    const authors = [...new Set(tasks.map((t) => t.author))];
+    for (const a of authors) {
+      filterCommands.push({
+        id: `filter-author-${a}`,
+        name: `Filter author: ${a}`,
+        category: "filter",
+        aliases: [`filter author ${a}`, `filter author=${a}`, a],
+        icon: "👤",
+        available: () => modeRef.current === "browse",
+        execute: () => setQuery(a),
+      });
+    }
+    filterCommands.push({
+      id: "filter-clear",
+      name: "Clear filter",
+      category: "filter",
+      aliases: ["filter clear", "filter reset", "clear filter"],
+      icon: "✕",
+      ...(query ? { hint: `filtering: "${query}"` } : {}),
+      available: () => modeRef.current === "browse",
+      execute: () => setQuery(""),
+    });
+
+    onRegisterCommands([...sortCommands, ...filterCommands]);
+  }, [onRegisterCommands, setSortByKey, sort, tasks, query, setQuery]);
 
   useEffect(() => {
     onRegisterSearch({ setQuery, clear: () => setQuery("") });

@@ -217,8 +217,34 @@ export function ProjectsView({ onSelectProject, onRegisterKeyHandler, onStateCha
         available: () => modeRef.current === "browse",
         execute: () => setSortByKey(col.key),
       }));
-    onRegisterCommands(sortCommands);
-  }, [onRegisterCommands, setSortByKey, sort]);
+
+    const filterCommands: PaletteCommand[] = [];
+    const statuses = [...new Set(projects.map((p) => p.status))];
+    for (const s of statuses) {
+      filterCommands.push({
+        id: `filter-status-${s}`,
+        name: `Filter status: ${s}`,
+        category: "filter",
+        aliases: [`filter status ${s}`, `filter status=${s}`, s],
+        icon: "⏳",
+        ...(query === s ? { hint: "active" } : {}),
+        available: () => modeRef.current === "browse",
+        execute: () => setQuery(s),
+      });
+    }
+    filterCommands.push({
+      id: "filter-clear",
+      name: "Clear filter",
+      category: "filter",
+      aliases: ["filter clear", "filter reset", "clear filter"],
+      icon: "✕",
+      ...(query ? { hint: `filtering: "${query}"` } : {}),
+      available: () => modeRef.current === "browse",
+      execute: () => setQuery(""),
+    });
+
+    onRegisterCommands([...sortCommands, ...filterCommands]);
+  }, [onRegisterCommands, setSortByKey, sort, projects, query, setQuery]);
 
   useEffect(() => {
     onRegisterSearch({ setQuery, clear: () => setQuery("") });
