@@ -94,9 +94,9 @@ export function App() {
     setActiveProjectId(null);
   }, []);
 
-  const viewCommandsRef = useRef<PaletteCommand[]>([]);
+  const [viewCommands, setViewCommands] = useState<PaletteCommand[]>([]);
   const registerViewCommands = useCallback((cmds: PaletteCommand[]) => {
-    viewCommandsRef.current = cmds;
+    setViewCommands(cmds);
   }, []);
 
   const paletteCommands: PaletteCommand[] = useMemo(() => {
@@ -113,8 +113,8 @@ export function App() {
       { id: "sys-refresh", name: "Refresh", category: "system", aliases: ["r", "reload"], icon: "↻", shortcut: "r", available: () => true, execute: () => { /* views handle their own refresh */ } },
       { id: "sys-quit", name: "Quit", category: "system", aliases: ["q", "exit"], icon: "⏻", available: () => true, execute: () => renderer.destroy() },
     ];
-    return [...staticCommands, ...viewCommandsRef.current];
-  }, [clearProject, renderer, viewStateRef]);
+    return [...staticCommands, ...viewCommands];
+  }, [clearProject, renderer, viewCommands]);
 
   const palette = usePalette(paletteCommands);
 

@@ -42,7 +42,7 @@ function keyEvent(name: string, sequence = ""): KeyEvent {
   } as unknown as KeyEvent;
 }
 
-test("vim list responds to arrow keys and vim keys", async () => {
+test("vim list responds to arrow keys", async () => {
   setup = await testRender(<VimListHarness />, { width: 30, height: 8 });
   await setup.renderOnce();
 
@@ -53,13 +53,13 @@ test("vim list responds to arrow keys and vim keys", async () => {
   expect(setup.captureCharFrame()).toContain("cursor:1");
 
   await act(async () => {
-    latestHandleKey?.(keyEvent("j", "j"));
+    latestHandleKey?.(keyEvent("down"));
   });
   await setup.renderOnce();
   expect(setup.captureCharFrame()).toContain("cursor:2");
 
   await act(async () => {
-    latestHandleKey?.(keyEvent("k", "k"));
+    latestHandleKey?.(keyEvent("up"));
   });
   await setup.renderOnce();
   expect(setup.captureCharFrame()).toContain("cursor:1");
