@@ -71,7 +71,8 @@ export function App() {
     if (vs.contextData) {
       parts.push("");
       parts.push("Currently selected object:");
-      parts.push(vs.contextData);
+      const ctx = vs.contextData;
+      parts.push(ctx.length > 2000 ? `${ctx.slice(0, 2000)}\n[truncated]` : ctx);
     }
     parts.push("");
     parts.push("Help the user with questions about their ORC data, tasks, workflows, and skills.");

@@ -182,10 +182,9 @@ export function useChat(buildSystemPrompt: () => string) {
         procRef.current = proc;
 
         // Write prompt via stdin to avoid arg length limits
-        if (proc.stdin) {
-          proc.stdin.write(prompt);
-          proc.stdin.end();
-        }
+        if (!proc.stdin) throw new Error("Failed to open stdin for acpx process");
+        proc.stdin.write(prompt);
+        proc.stdin.end();
 
         // Read stdout and stderr in parallel
         const stdoutPromise = proc.stdout
