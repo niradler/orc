@@ -3,6 +3,15 @@ import { mkdirSync, readFileSync } from "node:fs";
 const pkg = JSON.parse(readFileSync("./package.json", "utf-8"));
 mkdirSync("dist", { recursive: true });
 
+const opentui_externals = [
+  "@opentui/core-darwin-x64",
+  "@opentui/core-darwin-arm64",
+  "@opentui/core-linux-x64",
+  "@opentui/core-linux-arm64",
+  "@opentui/core-win32-x64",
+  "@opentui/core-win32-arm64",
+];
+
 const targets = [
   { target: "bun-linux-x64", out: "dist/orc-linux-x64" },
   { target: "bun-linux-arm64", out: "dist/orc-linux-arm64" },
@@ -25,6 +34,7 @@ for (const { target, out } of targets) {
     out,
     "--define",
     `process.env.ORC_VERSION=${JSON.stringify(pkg.version)}`,
+    ...opentui_externals.flatMap((ext) => ["--external", ext]),
   ]);
   if (proc.exitCode !== 0) {
     console.error(proc.stderr.toString());
