@@ -146,10 +146,7 @@ export function ResourceTable<T>({
           const sortIndicator =
             sort?.key === col.key ? (sort.direction === "asc" ? " ▲" : " ▼") : "";
           const isSorted = sort?.key === col.key;
-          const label = truncate(
-            `${col.label.toUpperCase()}${sortIndicator}`,
-            col.resolvedWidth,
-          );
+          const label = truncate(`${col.label.toUpperCase()}${sortIndicator}`, col.resolvedWidth);
           return (
             <text
               key={col.key}
