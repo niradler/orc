@@ -143,11 +143,10 @@ export function KnowledgeView({
     setActive: setFilterActive,
   } = useFilter(collections, (c) => `${c.name} ${c.path} ${c.pattern}`, true);
   const filtered = sortData(filteredUnsorted);
-  const {
-    cursor,
-    setCursor,
-    handleKey: vimHandleKey,
-  } = useVimList(filtered.length, mode === "browse" && !filterActive);
+  const { cursor, handleKey: vimHandleKey } = useVimList(
+    filtered.length,
+    mode === "browse" && !filterActive,
+  );
 
   const modeRef = useRef(mode);
   modeRef.current = mode;

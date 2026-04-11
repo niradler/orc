@@ -35,6 +35,7 @@ ORC fixes this. Shared memory across every session. A task board where agents su
 | **MCP server** | 20 tools connect any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) compatible agent with one config line |
 | **Session continuity** | Snapshots survive context compaction so agents resume where they left off |
 | **Gateway** | Approve work, search memory, and chat with live agents from Telegram or Slack |
+| **Knowledge search** | Index document collections (markdown, notes, wikis) and search them via BM25 or hybrid (vector + reranking) |
 | **Skill library** | Discoverable workflow templates (coder, reviewer, planner, bugfix) that encode your standards |
 
 ## Getting started
@@ -254,6 +255,30 @@ orc mem search "authentication"
 | `event` | Low | Things that happened: "deployed v1.0" |
 | `fact` | Low | General knowledge (default) |
 
+### Knowledge
+
+Index existing document collections (markdown, notes, code docs) and make them searchable by any agent. Unlike memory (short agent-authored notes), knowledge searches pre-existing files on disk.
+
+```bash
+# Add a document collection
+orc knowledge add my-docs --path ~/projects/docs --pattern "**/*.md"
+
+# Search across indexed documents
+orc knowledge search "authentication flow"
+
+# List collections
+orc knowledge list
+
+# Re-index after files change
+orc knowledge update
+```
+
+Knowledge uses [QMD](https://github.com/nicholasgriffintn/qmd) as the search engine. By default it runs BM25 full-text search (no LLM needed). Set `search_mode: "hybrid"` in config for vector search with reranking — embeddings are generated automatically when documents are indexed.
+
+Collections can be scoped to projects. When scoped, searches and listing filter to only that project's collections.
+
+**MCP tools:** `knowledge_search`, `knowledge_get`, `knowledge_collections`, `knowledge_collection_add`, `knowledge_collection_remove`, `knowledge_update`
+
 ### Task status flow
 
 ```
@@ -365,7 +390,7 @@ Add custom skills by creating a `SKILL.md` in `~/.orc/skills/my-workflow/SKILL.m
 
 ## MCP tools
 
-**20 tools** available to any connected agent. Start every session with `context`.
+**26 tools** available to any connected agent. Start every session with `context`.
 
 | Category | Tools |
 |---|---|
@@ -373,6 +398,7 @@ Add custom skills by creating a `SKILL.md` in `~/.orc/skills/my-workflow/SKILL.m
 | **Memory** | `context`, `memory_search`, `memory_get`, `memory_store` |
 | **Task** | `task_list`, `task_get`, `task_create`, `task_update`, `task_batch_create` |
 | **Skill** | `skill_list`, `skill_read` |
+| **Knowledge** | `knowledge_search`, `knowledge_get`, `knowledge_collections`, `knowledge_collection_add`, `knowledge_collection_remove`, `knowledge_update` |
 | **Search** | `search` |
 | **Job** | `job_list`, `job_run`, `job_status` |
 | **Session** | `session_event`, `session_snapshot`, `session_restore`, `session_log` |
@@ -398,6 +424,11 @@ Runs on port 7700 with auto-generated OpenAPI spec.
 | `GET/POST/DELETE` | `/tasks/{id}/links` | Task dependencies |
 | `GET/POST/DELETE` | `/memories` | CRUD memories |
 | `GET` | `/memories/search` | BM25 search |
+| `GET` | `/knowledge/search` | Search documents (BM25/hybrid) |
+| `GET` | `/knowledge/documents/{id}` | Get document by docid |
+| `GET/POST/DELETE` | `/knowledge/collections` | CRUD collections |
+| `POST` | `/knowledge/update` | Re-index collections |
+| `GET` | `/knowledge/status` | Index status |
 | `GET/POST` | `/jobs` | CRUD jobs |
 | `POST` | `/jobs/{id}/trigger` | Trigger a job |
 | `GET` | `/jobs/{id}/runs` | Run history |
@@ -455,6 +486,8 @@ ORC merges config in priority order (later wins):
 | `ORC_AGENT_LOOP_DEFAULT_BACKEND` | `claude` | Default agent backend |
 | `ORC_AGENT_LOOP_IDLE_TIMEOUT` | `20` | Session idle timeout (minutes) |
 | `ORC_AGENT_LOOP_AUTO_APPROVE` | `true` | Auto-approve worker tool permissions |
+| `ORC_KNOWLEDGE_DB_PATH` | `~/.orc/knowledge.db` | Knowledge search database path |
+| `ORC_KNOWLEDGE_SEARCH_MODE` | `lexical` | `lexical` (BM25) or `hybrid` (vector + reranking) |
 
 </details>
 

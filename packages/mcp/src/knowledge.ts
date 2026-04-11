@@ -18,14 +18,14 @@ import type {
 import { createLogger } from "@orc/core/logger";
 import { getDb } from "@orc/db/client";
 import { knowledge_collections } from "@orc/db/schema";
-import { eq } from "drizzle-orm";
 import {
   createStore,
   extractSnippet,
+  type HybridQueryResult,
   type QMDStore,
   type SearchResult,
-  type HybridQueryResult,
 } from "@tobilu/qmd";
+import { eq } from "drizzle-orm";
 
 const logger = createLogger("knowledge:qmd");
 
@@ -53,17 +53,6 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
       .where(eq(knowledge_collections.project_id, projectId))
       .all();
     return rows.map((r) => r.name);
-  }
-
-  /** Get project_id for a collection from orc.db */
-  private getCollectionProjectId(name: string): string | null {
-    const db = getDb();
-    const row = db
-      .select({ project_id: knowledge_collections.project_id })
-      .from(knowledge_collections)
-      .where(eq(knowledge_collections.name, name))
-      .get();
-    return row?.project_id ?? null;
   }
 
   async search(
