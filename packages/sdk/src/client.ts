@@ -285,6 +285,88 @@ export function createOrcClient(options?: OrcClientOptions) {
       send: (input: { platform: string; chat_id: string; text: string; thread_id?: string }) =>
         c<null>("POST", "/gateway/send", input),
     },
+
+    knowledge: {
+      search: (
+        q: string,
+        opts?: { collection?: string; project_id?: string; mode?: string; limit?: number },
+      ) =>
+        c<{
+          results: {
+            docid: string;
+            path: string;
+            collection: string;
+            title: string;
+            snippet: string;
+            score: number;
+          }[];
+        }>("GET", "/knowledge/search", undefined, {
+          q,
+          collection: opts?.collection,
+          project_id: opts?.project_id,
+          mode: opts?.mode,
+          limit: opts?.limit,
+        }),
+
+      get: (id: string) =>
+        c<{
+          docid: string;
+          path: string;
+          collection: string;
+          title: string;
+          content: string;
+          modifiedAt: string;
+        }>("GET", `/knowledge/documents/${encodeURIComponent(id)}`),
+
+      collections: (params?: { project_id?: string }) =>
+        c<{
+          collections: {
+            name: string;
+            path: string;
+            pattern: string;
+            documentCount: number;
+            lastModified: string | null;
+            projectId: string | null;
+          }[];
+        }>(
+          "GET",
+          "/knowledge/collections",
+          undefined,
+          params as Record<string, string | number | boolean | undefined>,
+        ),
+
+      addCollection: (input: {
+        name: string;
+        path: string;
+        pattern?: string;
+        project_id?: string;
+      }) => c<{ name: string; indexed: number }>("POST", "/knowledge/collections", input),
+
+      removeCollection: (name: string) =>
+        c<null>("DELETE", `/knowledge/collections/${encodeURIComponent(name)}`),
+
+      update: (opts?: { collections?: string[] }) =>
+        c<{ indexed: number; updated: number; removed: number }>(
+          "POST",
+          "/knowledge/update",
+          opts ?? {},
+        ),
+
+      status: () =>
+        c<{
+          collections: {
+            name: string;
+            path: string;
+            pattern: string;
+            documentCount: number;
+            lastModified: string | null;
+            projectId: string | null;
+          }[];
+          totalDocuments: number;
+          dbPath: string;
+          searchMode: string;
+        }>("GET", "/knowledge/status"),
+    },
   };
 }
 
