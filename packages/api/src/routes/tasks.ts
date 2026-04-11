@@ -7,7 +7,7 @@ import { AgentBackendSchema, TaskPrioritySchema, TaskStatusSchema } from "@orc/c
 import { getDb, getSqlite } from "@orc/db/client";
 import { comments, task_links, tasks } from "@orc/db/schema";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 
 const logger = createLogger("api:tasks");
 
@@ -278,11 +278,15 @@ app.openapi(listRoute, async (c) => {
   const db = getDb();
   const { project_id, status, tag, limit } = c.req.valid("query");
 
+  const isUnassigned = project_id === "__none__";
+
   if (tag) {
     const sqlite = getSqlite();
     let sql = `SELECT DISTINCT t.* FROM tasks t, json_each(t.tags) AS j WHERE j.value = ?`;
     const params: (string | number)[] = [tag];
-    if (project_id) {
+    if (isUnassigned) {
+      sql += " AND t.project_id IS NULL";
+    } else if (project_id) {
       sql += " AND t.project_id = ?";
       params.push(project_id);
     }
@@ -298,7 +302,8 @@ app.openapi(listRoute, async (c) => {
   }
 
   const conditions = [];
-  if (project_id) conditions.push(eq(tasks.project_id, project_id));
+  if (isUnassigned) conditions.push(isNull(tasks.project_id));
+  else if (project_id) conditions.push(eq(tasks.project_id, project_id));
   if (status) conditions.push(eq(tasks.status, status));
 
   const rows = await db.query.tasks.findMany({

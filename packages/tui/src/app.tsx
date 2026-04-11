@@ -101,23 +101,116 @@ export function App() {
   }, []);
 
   const viewSearchRef = useRef<{ setQuery: (q: string) => void; clear: () => void } | null>(null);
-  const registerViewSearch = useCallback((fns: { setQuery: (q: string) => void; clear: () => void }) => {
-    viewSearchRef.current = fns;
-  }, []);
+  const registerViewSearch = useCallback(
+    (fns: { setQuery: (q: string) => void; clear: () => void }) => {
+      viewSearchRef.current = fns;
+    },
+    [],
+  );
 
   const paletteCommands: PaletteCommand[] = useMemo(() => {
     const navAvailable = () => !viewStateRef.current.navigationLocked;
     const staticCommands: PaletteCommand[] = [
-      { id: "nav-tasks", name: "Tasks", category: "navigation", aliases: ["t", "task"], icon: "◉", shortcut: "2", available: navAvailable, execute: () => setRoute("tasks") },
-      { id: "nav-jobs", name: "Jobs", category: "navigation", aliases: ["j", "job"], icon: "◉", shortcut: "3", available: navAvailable, execute: () => setRoute("jobs") },
-      { id: "nav-memories", name: "Memories", category: "navigation", aliases: ["m", "mem", "memory"], icon: "◉", shortcut: "4", available: navAvailable, execute: () => setRoute("memories") },
-      { id: "nav-projects", name: "Projects", category: "navigation", aliases: ["p", "proj", "project"], icon: "◉", shortcut: "1", available: navAvailable, execute: () => setRoute("projects") },
-      { id: "nav-sessions", name: "Sessions", category: "navigation", aliases: ["sess", "session"], icon: "◉", shortcut: "5", available: navAvailable, execute: () => setRoute("sessions") },
-      { id: "nav-skills", name: "Skills", category: "navigation", aliases: ["sk", "skill"], icon: "◉", shortcut: "6", available: navAvailable, execute: () => setRoute("skills") },
-      { id: "sys-chat", name: "Chat", category: "system", aliases: ["c"], icon: "💬", shortcut: "c", available: () => true, execute: () => setChatOpen(true) },
-      { id: "sys-all", name: "Clear project filter", category: "system", aliases: ["a", "all"], icon: "✕", available: () => true, execute: clearProject },
-      { id: "sys-refresh", name: "Refresh", category: "system", aliases: ["r", "reload"], icon: "↻", shortcut: "r", available: () => true, execute: () => { /* views handle their own refresh */ } },
-      { id: "sys-quit", name: "Quit", category: "system", aliases: ["q", "exit"], icon: "⏻", available: () => true, execute: () => renderer.destroy() },
+      {
+        id: "nav-tasks",
+        name: "Tasks",
+        category: "navigation",
+        aliases: ["t", "task"],
+        icon: "◉",
+        shortcut: "2",
+        available: navAvailable,
+        execute: () => setRoute("tasks"),
+      },
+      {
+        id: "nav-jobs",
+        name: "Jobs",
+        category: "navigation",
+        aliases: ["j", "job"],
+        icon: "◉",
+        shortcut: "3",
+        available: navAvailable,
+        execute: () => setRoute("jobs"),
+      },
+      {
+        id: "nav-memories",
+        name: "Memories",
+        category: "navigation",
+        aliases: ["m", "mem", "memory"],
+        icon: "◉",
+        shortcut: "4",
+        available: navAvailable,
+        execute: () => setRoute("memories"),
+      },
+      {
+        id: "nav-projects",
+        name: "Projects",
+        category: "navigation",
+        aliases: ["p", "proj", "project"],
+        icon: "◉",
+        shortcut: "1",
+        available: navAvailable,
+        execute: () => setRoute("projects"),
+      },
+      {
+        id: "nav-sessions",
+        name: "Sessions",
+        category: "navigation",
+        aliases: ["sess", "session"],
+        icon: "◉",
+        shortcut: "5",
+        available: navAvailable,
+        execute: () => setRoute("sessions"),
+      },
+      {
+        id: "nav-skills",
+        name: "Skills",
+        category: "navigation",
+        aliases: ["sk", "skill"],
+        icon: "◉",
+        shortcut: "6",
+        available: navAvailable,
+        execute: () => setRoute("skills"),
+      },
+      {
+        id: "sys-chat",
+        name: "Chat",
+        category: "system",
+        aliases: ["c"],
+        icon: "💬",
+        shortcut: "c",
+        available: () => true,
+        execute: () => setChatOpen(true),
+      },
+      {
+        id: "sys-all",
+        name: "Clear project filter",
+        category: "system",
+        aliases: ["a", "all"],
+        icon: "✕",
+        available: () => true,
+        execute: clearProject,
+      },
+      {
+        id: "sys-refresh",
+        name: "Refresh",
+        category: "system",
+        aliases: ["r", "reload"],
+        icon: "↻",
+        shortcut: "r",
+        available: () => true,
+        execute: () => {
+          /* views handle their own refresh */
+        },
+      },
+      {
+        id: "sys-quit",
+        name: "Quit",
+        category: "system",
+        aliases: ["q", "exit"],
+        icon: "⏻",
+        available: () => true,
+        execute: () => renderer.destroy(),
+      },
     ];
     return [...staticCommands, ...viewCommands];
   }, [clearProject, renderer, viewCommands]);
@@ -213,6 +306,8 @@ export function App() {
         {route === "tasks" && (
           <TasksView
             projectId={activeProjectId}
+            onSelectProject={selectProject}
+            onClearProject={clearProject}
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
             onRegisterCommands={registerViewCommands}
@@ -257,7 +352,13 @@ export function App() {
 
       <StatusBar route={route} state={viewState} connected={connected} project={activeProject} />
 
-      <SmartPalette open={palette.open} input={palette.input} cursor={palette.cursor} results={palette.results} mode={palette.mode} />
+      <SmartPalette
+        open={palette.open}
+        input={palette.input}
+        cursor={palette.cursor}
+        results={palette.results}
+        mode={palette.mode}
+      />
 
       {chatOpen && (
         <ChatModal
