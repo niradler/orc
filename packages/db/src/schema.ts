@@ -304,6 +304,12 @@ export const webhooks = sqliteTable("webhooks", {
   created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
 });
 
+export const knowledge_collections = sqliteTable("knowledge_collections", {
+  name: text("name").primaryKey(),
+  project_id: text("project_id").references(() => projects.id),
+  ...timestamps,
+});
+
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
 export type Task = typeof tasks.$inferSelect;
@@ -324,4 +330,5 @@ export type BridgeMessage = typeof bridge_messages.$inferSelect;
 export type BridgePermission = typeof bridge_permissions.$inferSelect;
 export type GatewaySession = typeof gateway_sessions.$inferSelect;
 export type GatewaySessionNew = typeof gateway_sessions.$inferInsert;
+export type KnowledgeCollectionRow = typeof knowledge_collections.$inferSelect;
 export type Webhook = typeof webhooks.$inferSelect;

@@ -70,9 +70,7 @@ export function SmartPalette({ open, input, cursor, results, mode }: Props) {
           <text fg={colors.text}>{input}</text>
           <text fg={colors.accent}>{"█"}</text>
         </box>
-        <text fg={colors.textMuted}>
-          {"  Enter confirm · Esc clear & close"}
-        </text>
+        <text fg={colors.textMuted}>{"  Enter confirm · Esc clear & close"}</text>
       </box>
     );
   }
@@ -154,9 +152,7 @@ export function SmartPalette({ open, input, cursor, results, mode }: Props) {
         );
       })}
 
-      <text fg={colors.textMuted}>
-        {"  / search · ↑↓ navigate · Enter select · Esc close"}
-      </text>
+      <text fg={colors.textMuted}>{"  / search · ↑↓ navigate · Enter select · Esc close"}</text>
     </box>
   );
 }

@@ -5,7 +5,9 @@ const DEFAULT_SORT: SortState = { key: "updated_at", direction: "desc" };
 
 export function useSort<T>(columns: Column<T>[], initialSort: SortState = DEFAULT_SORT) {
   const hasInitialCol = columns.some((c) => c.key === initialSort.key && c.sortValue);
-  const [sort, setSort] = useState<SortState>(hasInitialCol ? initialSort : { key: null, direction: "asc" });
+  const [sort, setSort] = useState<SortState>(
+    hasInitialCol ? initialSort : { key: null, direction: "asc" },
+  );
 
   const sortData = useCallback(
     (data: T[]): T[] => {
@@ -23,19 +25,16 @@ export function useSort<T>(columns: Column<T>[], initialSort: SortState = DEFAUL
     [sort, columns],
   );
 
-  const setSortByKey = useCallback(
-    (key: string, direction?: "asc" | "desc") => {
-      setSort((current) => {
-        if (direction) return { key, direction };
-        if (current.key === key) {
-          if (current.direction === "asc") return { key, direction: "desc" };
-          return { key: null, direction: "asc" }; // clear
-        }
-        return { key, direction: "asc" };
-      });
-    },
-    [],
-  );
+  const setSortByKey = useCallback((key: string, direction?: "asc" | "desc") => {
+    setSort((current) => {
+      if (direction) return { key, direction };
+      if (current.key === key) {
+        if (current.direction === "asc") return { key, direction: "desc" };
+        return { key: null, direction: "asc" }; // clear
+      }
+      return { key, direction: "asc" };
+    });
+  }, []);
 
   const toggleDirection = useCallback(() => {
     setSort((current) => {

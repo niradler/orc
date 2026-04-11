@@ -8,6 +8,7 @@ import { bearerAuth } from "./middleware/auth.js";
 import { gatewayRouter } from "./routes/gateway.js";
 import { healthRouter } from "./routes/health.js";
 import { jobsRouter } from "./routes/jobs.js";
+import { knowledgeRouter } from "./routes/knowledge.js";
 import { mcpToolRouter } from "./routes/mcp-tool.js";
 import { memoriesRouter } from "./routes/memories.js";
 import { projectsRouter } from "./routes/projects.js";
@@ -44,6 +45,7 @@ export function createApp() {
   app.route("/", tasksRouter);
   app.route("/", taskLinksRouter);
   app.route("/", memoriesRouter);
+  app.route("/", knowledgeRouter);
   app.route("/", sessionsRouter);
   app.route("/", jobsRouter);
   app.route("/", gatewayRouter);

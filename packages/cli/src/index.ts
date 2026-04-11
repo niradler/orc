@@ -126,7 +126,7 @@ program
   .command("tui")
   .description("Launch the terminal UI dashboard")
   .action(async () => {
-    // @ts-ignore — Bun handles TSX natively; CLI tsconfig has no JSX setting
+    // @ts-expect-error — Bun handles TSX natively; CLI tsconfig has no JSX setting
     await import("@orc/tui");
   });
 

@@ -92,6 +92,14 @@ export const OrcConfigSchema = z.object({
     })
     .default({}),
 
+  knowledge: z
+    .object({
+      db_path: z.string().default("~/.orc/knowledge.db"),
+      default_limit: z.number().int().min(1).max(50).default(10),
+      search_mode: z.enum(["hybrid", "lexical"]).default("lexical"),
+    })
+    .default({}),
+
   agent_loop: z
     .object({
       enabled: z.boolean().default(false),
@@ -175,6 +183,12 @@ function fromEnv(): Record<string, unknown> {
     context.layer1_memory_limit = Number(process.env.ORC_LAYER1_MEMORIES);
   if (Object.keys(context).length) env.context = context;
 
+  const knowledge: Record<string, unknown> = {};
+  if (process.env.ORC_KNOWLEDGE_DB_PATH) knowledge.db_path = process.env.ORC_KNOWLEDGE_DB_PATH;
+  if (process.env.ORC_KNOWLEDGE_SEARCH_MODE)
+    knowledge.search_mode = process.env.ORC_KNOWLEDGE_SEARCH_MODE;
+  if (Object.keys(knowledge).length) env.knowledge = knowledge;
+
   const agent_loop: Record<string, unknown> = {};
   if (process.env.ORC_AGENT_LOOP_ENABLED)
     agent_loop.enabled = process.env.ORC_AGENT_LOOP_ENABLED === "true";
@@ -252,6 +266,7 @@ export function loadConfig(overrides?: Partial<OrcConfig>): OrcConfig {
   }
 
   parsed.data.db.path = resolvePath(parsed.data.db.path);
+  parsed.data.knowledge.db_path = resolvePath(parsed.data.knowledge.db_path);
   _config = parsed.data;
   return _config;
 }

@@ -5,7 +5,8 @@
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./tools": "./src/tools.ts"
+    "./tools": "./src/tools.ts",
+    "./knowledge": "./src/knowledge.ts"
   },
   "scripts": {
     "dev": "bun run --watch src/index.ts",
@@ -17,6 +18,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@tobilu/qmd": "^2.1.0",
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
     "@orc/runner": "workspace:*",

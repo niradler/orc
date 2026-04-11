@@ -6,8 +6,8 @@ import { ResourceTable } from "../components/resource-table.js";
 import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
-import { useVimList } from "../hooks/use-vim-list.js";
 import { useSort } from "../hooks/use-sort.js";
+import { useVimList } from "../hooks/use-vim-list.js";
 import {
   handleDetailEscapeKey,
   handleFilterInputKey,
@@ -89,12 +89,20 @@ type Props = {
   onRegisterSearch: (fns: { setQuery: (q: string) => void; clear: () => void }) => void;
 };
 
-export function SessionsView({ onRegisterKeyHandler, onStateChange, onRegisterCommands, onRegisterSearch }: Props) {
+export function SessionsView({
+  onRegisterKeyHandler,
+  onStateChange,
+  onRegisterCommands,
+  onRegisterSearch,
+}: Props) {
   const [mode, setMode] = useState<"browse" | "detail">("browse");
   const [detail, setDetail] = useState<
     (Session & { events: unknown[]; snapshot: string | null }) | null
   >(null);
-  const { sort, setSortByKey, toggleDirection, sortData } = useSort(columns, { key: "created", direction: "desc" });
+  const { sort, setSortByKey, toggleDirection, sortData } = useSort(columns, {
+    key: "created",
+    direction: "desc",
+  });
 
   const { data, loading, error, refresh } = usePolling(
     () => client.sessions.list({ limit: 50 }),
@@ -160,7 +168,9 @@ export function SessionsView({ onRegisterKeyHandler, onStateChange, onRegisterCo
         category: "sort" as const,
         aliases: [`sort ${col.key}`, `sort ${col.label.toLowerCase()}`],
         icon: "↕",
-        ...(sort.key === col.key ? { hint: `${sort.direction === "asc" ? "▲" : "▼"} current` } : {}),
+        ...(sort.key === col.key
+          ? { hint: `${sort.direction === "asc" ? "▲" : "▼"} current` }
+          : {}),
         available: () => modeRef.current === "browse",
         execute: () => setSortByKey(col.key),
       }));
