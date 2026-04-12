@@ -5,7 +5,6 @@ import {
   listSkills,
   readSkill,
   type SkillFull,
-  type SkillMeta,
   type SkillRefContent,
   type SkillSource,
 } from "@orc/core/skill-service";

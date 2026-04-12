@@ -1,7 +1,7 @@
 import { shortId } from "@orc/core/ids";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
-import { dryRunMsg, isDryRun, isJson, jsonErr, jsonOut } from "../output.js";
+import { isJson, jsonErr, jsonOut } from "../output.js";
 import { resolveProject } from "./project.js";
 
 async function resolveTaskId(
@@ -314,7 +314,6 @@ export function taskCommand() {
         return console.error("No updates specified. Use --help to see options.");
       }
 
-      if (isDryRun()) return dryRunMsg("update", `task [${shortId(full)}]`, updates);
       const { data, error } = await client.tasks.update(full, updates);
       if (error) {
         if (isJson()) return jsonErr(String(error));
@@ -331,7 +330,6 @@ export function taskCommand() {
       const client = createOrcClient();
       const full = await resolveTaskId(client, id);
       if (!full) return;
-      if (isDryRun()) return dryRunMsg("delete", `task [${shortId(full)}]`);
       const { error } = await client.tasks.delete(full);
       if (error) {
         if (isJson()) return jsonErr(String(error));

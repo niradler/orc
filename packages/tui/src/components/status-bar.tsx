@@ -22,8 +22,9 @@ const TAB_KEYS: Record<Route, string> = {
   tasks: "2",
   jobs: "3",
   memories: "4",
-  sessions: "5",
-  skills: "6",
+  knowledge: "5",
+  sessions: "6",
+  skills: "7",
 };
 
 const TAB_SHORT: Record<Route, string> = {
@@ -31,6 +32,7 @@ const TAB_SHORT: Record<Route, string> = {
   tasks: "Tasks",
   jobs: "Jobs",
   memories: "Mem",
+  knowledge: "Know",
   sessions: "Sess",
   skills: "Skills",
 };
@@ -60,14 +62,10 @@ export function StatusBar({ route, state, connected, project }: Props) {
               </text>
             </box>
           ))}
-          {project ? (
-            <text fg={colors.accentAlt}>{`  ${project}`}</text>
-          ) : null}
+          {project ? <text fg={colors.accentAlt}>{`  ${project}`}</text> : null}
         </box>
         <box flexDirection="row" gap={1} alignItems="center">
-          {state.sortLabel ? (
-            <text fg={colors.textDim}>{`sort:${state.sortLabel}`}</text>
-          ) : null}
+          {state.sortLabel ? <text fg={colors.textDim}>{`sort:${state.sortLabel}`}</text> : null}
           <text fg={connected ? colors.success : colors.error}>{connected ? "●" : "○"}</text>
           <text fg={state.navigationLocked ? colors.warning : colors.accent}>{modeLabel}</text>
           {state.filterQuery ? <text fg={colors.textDim}>{`/${state.filterQuery}`}</text> : null}

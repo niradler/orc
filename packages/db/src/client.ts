@@ -217,6 +217,13 @@ function setupDb(sqlite: Database): void {
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
+    CREATE TABLE IF NOT EXISTS knowledge_collections (
+      name TEXT PRIMARY KEY,
+      project_id TEXT REFERENCES projects(id),
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
     CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
       id UNINDEXED,
       content,

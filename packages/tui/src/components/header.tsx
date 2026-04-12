@@ -15,6 +15,7 @@ const ROUTE_LABELS: Record<Route, string> = {
   tasks: "Tasks",
   jobs: "Jobs",
   memories: "Memories",
+  knowledge: "Knowledge",
   sessions: "Sessions",
   skills: "Skills",
 };

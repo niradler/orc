@@ -11,6 +11,7 @@ import { colors } from "./theme.js";
 import type { KeyEvent, PaletteCommand, Route, ViewKeyHandler, ViewState } from "./types.js";
 import { ROUTES } from "./types.js";
 import { JobsView } from "./views/jobs.js";
+import { KnowledgeView } from "./views/knowledge.js";
 import { MemoriesView } from "./views/memories.js";
 import { ProjectsView } from "./views/projects.js";
 import { SessionsView } from "./views/sessions.js";
@@ -276,8 +277,9 @@ export function App() {
     if (k.name === "2") setRoute("tasks");
     if (k.name === "3") setRoute("jobs");
     if (k.name === "4") setRoute("memories");
-    if (k.name === "5") setRoute("sessions");
-    if (k.name === "6") setRoute("skills");
+    if (k.name === "5") setRoute("knowledge");
+    if (k.name === "6") setRoute("sessions");
+    if (k.name === "7") setRoute("skills");
     if (k.name === "left" || (k.name === "tab" && k.shift))
       setRoute((r) => ROUTES[(ROUTES.indexOf(r) - 1 + ROUTES.length) % ROUTES.length] ?? r);
     if (k.name === "right" || k.name === "tab")
@@ -325,6 +327,15 @@ export function App() {
         )}
         {route === "memories" && (
           <MemoriesView
+            projectId={activeProjectId}
+            onRegisterKeyHandler={registerViewKeyHandler}
+            onStateChange={onViewStateChange}
+            onRegisterCommands={registerViewCommands}
+            onRegisterSearch={registerViewSearch}
+          />
+        )}
+        {route === "knowledge" && (
+          <KnowledgeView
             projectId={activeProjectId}
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}

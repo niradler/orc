@@ -25,7 +25,6 @@ type GlobalOpts = {
   runnerMaxJobs?: string;
   snapshotMaxBytes?: string;
   json?: boolean;
-  dryRun?: boolean;
 };
 
 const program = new Command()
@@ -47,7 +46,6 @@ const program = new Command()
     "Session snapshot budget bytes (overrides ORC_SNAPSHOT_MAX_BYTES)",
   )
   .option("--json", "Machine-readable JSON output")
-  .option("--dry-run", "Preview changes without executing")
   .hook("preSubcommand", (_thisCmd, subCmd) => {
     void subCmd;
     const opts = program.opts<GlobalOpts>();
@@ -126,7 +124,7 @@ program
   .command("tui")
   .description("Launch the terminal UI dashboard")
   .action(async () => {
-    // @ts-ignore — Bun handles TSX natively; CLI tsconfig has no JSX setting
+    // @ts-expect-error — Bun handles TSX natively; CLI tsconfig has no JSX setting
     await import("@orc/tui");
   });
 

@@ -11,7 +11,8 @@
     "./ids": "./src/ids.ts",
     "./errors": "./src/errors.ts",
     "./version": "./src/version.ts",
-    "./skill-service": "./src/skill-service.ts"
+    "./skill-service": "./src/skill-service.ts",
+    "./knowledge": "./src/knowledge.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

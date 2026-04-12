@@ -3,7 +3,15 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import { getDb } from "@orc/db/client";
-import { comments, jobs, memories, projects, sessions, tasks } from "@orc/db/schema";
+import {
+  comments,
+  jobs,
+  knowledge_collections,
+  memories,
+  projects,
+  sessions,
+  tasks,
+} from "@orc/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 
 const app = new OpenAPIHono();
@@ -328,6 +336,10 @@ app.openapi(deleteRoute, async (c) => {
     await tx.update(memories).set({ project_id: null }).where(eq(memories.project_id, id));
     await tx.update(jobs).set({ project_id: null }).where(eq(jobs.project_id, id));
     await tx.update(sessions).set({ project_id: null }).where(eq(sessions.project_id, id));
+    await tx
+      .update(knowledge_collections)
+      .set({ project_id: null })
+      .where(eq(knowledge_collections.project_id, id));
     await tx.delete(projects).where(eq(projects.id, id));
   });
   return new Response(null, { status: 204 });

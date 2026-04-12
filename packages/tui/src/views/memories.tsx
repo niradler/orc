@@ -15,8 +15,8 @@ import { ResourceTable } from "../components/resource-table.js";
 import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
-import { useVimList } from "../hooks/use-vim-list.js";
 import { useSort } from "../hooks/use-sort.js";
+import { useVimList } from "../hooks/use-vim-list.js";
 import {
   handleDetailEscapeKey,
   handleFilterInputKey,
@@ -25,7 +25,14 @@ import {
   isRefreshKey,
 } from "../navigation.js";
 import { colors, importanceColor } from "../theme.js";
-import type { Column, KeyEvent, PaletteCommand, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
+import type {
+  Column,
+  KeyEvent,
+  PaletteCommand,
+  SelectOption,
+  ViewKeyHandler,
+  ViewState,
+} from "../types.js";
 
 const client = createOrcClient();
 
@@ -171,7 +178,13 @@ type Props = {
   onRegisterSearch: (fns: { setQuery: (q: string) => void; clear: () => void }) => void;
 };
 
-export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange, onRegisterCommands, onRegisterSearch }: Props) {
+export function MemoriesView({
+  projectId,
+  onRegisterKeyHandler,
+  onStateChange,
+  onRegisterCommands,
+  onRegisterSearch,
+}: Props) {
   const [mode, setMode] = useState<"browse" | "detail" | "form" | "confirm">("browse");
   const [detail, setDetail] = useState<Memory | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Memory | null>(null);
@@ -262,7 +275,9 @@ export function MemoriesView({ projectId, onRegisterKeyHandler, onStateChange, o
         category: "sort" as const,
         aliases: [`sort ${col.key}`, `sort ${col.label.toLowerCase()}`],
         icon: "↕",
-        ...(sort.key === col.key ? { hint: `${sort.direction === "asc" ? "▲" : "▼"} current` } : {}),
+        ...(sort.key === col.key
+          ? { hint: `${sort.direction === "asc" ? "▲" : "▼"} current` }
+          : {}),
         available: () => modeRef.current === "browse",
         execute: () => setSortByKey(col.key),
       }));

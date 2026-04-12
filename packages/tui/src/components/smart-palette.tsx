@@ -70,9 +70,7 @@ export function SmartPalette({ open, input, cursor, results, mode }: Props) {
           <text fg={colors.text}>{input}</text>
           <text fg={colors.accent}>{"█"}</text>
         </box>
-        <text fg={colors.textMuted}>
-          {"  Enter confirm · Esc clear & close"}
-        </text>
+        <text fg={colors.textMuted}>{"  Enter confirm · Esc clear & close"}</text>
       </box>
     );
   }
@@ -129,13 +127,13 @@ export function SmartPalette({ open, input, cursor, results, mode }: Props) {
         if (item.type === "header") {
           return (
             <text key={`h-${item.label}`} fg={colors.textMuted}>
-              {"  " + item.label}
+              {`  ${item.label}`}
             </text>
           );
         }
         const isSelected = item.resultIndex === cursor;
         const cmd = item.command;
-        const icon = cmd.icon ? cmd.icon + " " : "  ";
+        const icon = cmd.icon ? `${cmd.icon} ` : "  ";
         const hint = cmd.hint ? `  ${cmd.hint}` : "";
         return (
           <box
@@ -154,9 +152,7 @@ export function SmartPalette({ open, input, cursor, results, mode }: Props) {
         );
       })}
 
-      <text fg={colors.textMuted}>
-        {"  / search · ↑↓ navigate · Enter select · Esc close"}
-      </text>
+      <text fg={colors.textMuted}>{"  / search · ↑↓ navigate · Enter select · Esc close"}</text>
     </box>
   );
 }

@@ -6,8 +6,8 @@ import { ResourceTable } from "../components/resource-table.js";
 import { ViewToolbar } from "../components/view-toolbar.js";
 import { useFilter } from "../hooks/use-filter.js";
 import { usePolling } from "../hooks/use-polling.js";
-import { useVimList } from "../hooks/use-vim-list.js";
 import { useSort } from "../hooks/use-sort.js";
+import { useVimList } from "../hooks/use-vim-list.js";
 import {
   handleDetailEscapeKey,
   handleFilterInputKey,
@@ -70,10 +70,18 @@ type Props = {
   onRegisterSearch: (fns: { setQuery: (q: string) => void; clear: () => void }) => void;
 };
 
-export function SkillsView({ onRegisterKeyHandler, onStateChange, onRegisterCommands, onRegisterSearch }: Props) {
+export function SkillsView({
+  onRegisterKeyHandler,
+  onStateChange,
+  onRegisterCommands,
+  onRegisterSearch,
+}: Props) {
   const [mode, setMode] = useState<"browse" | "detail">("browse");
   const [detail, setDetail] = useState<{ meta: SkillMeta; content: string } | null>(null);
-  const { sort, setSortByKey, toggleDirection, sortData } = useSort(columns, { key: "name", direction: "asc" });
+  const { sort, setSortByKey, toggleDirection, sortData } = useSort(columns, {
+    key: "name",
+    direction: "asc",
+  });
 
   const [reloading, setReloading] = useState(false);
   const { data, loading, error, refresh } = usePolling(() => client.skills.list(), 30000);
@@ -126,9 +134,7 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange, onRegisterComm
       filterQuery: query,
       filterActive,
       navigationLocked: filterActive || mode !== "browse",
-      selectionLabel: selected
-        ? `${selected.name} • ${selected.source}`
-        : "No skill selected.",
+      selectionLabel: selected ? `${selected.name} • ${selected.source}` : "No skill selected.",
       detailId: mode === "detail" ? (detail?.meta.name ?? null) : null,
       statusMessage: null,
       contextData:
@@ -138,7 +144,18 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange, onRegisterComm
             ? JSON.stringify(filtered[cursor], null, 2)
             : null,
     });
-  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort, reloading]);
+  }, [
+    mode,
+    query,
+    filterActive,
+    onStateChange,
+    filtered,
+    cursor,
+    detail,
+    loading,
+    sort,
+    reloading,
+  ]);
 
   useEffect(() => {
     const sortCommands: PaletteCommand[] = columns
@@ -149,7 +166,9 @@ export function SkillsView({ onRegisterKeyHandler, onStateChange, onRegisterComm
         category: "sort" as const,
         aliases: [`sort ${col.key}`, `sort ${col.label.toLowerCase()}`],
         icon: "↕",
-        ...(sort.key === col.key ? { hint: `${sort.direction === "asc" ? "▲" : "▼"} current` } : {}),
+        ...(sort.key === col.key
+          ? { hint: `${sort.direction === "asc" ? "▲" : "▼"} current` }
+          : {}),
         available: () => modeRef.current === "browse",
         execute: () => setSortByKey(col.key),
       }));
