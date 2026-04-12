@@ -214,7 +214,7 @@ export function EditFormOverlay({
   const minFormHeight = compact ? height - 2 : Math.round(height * 0.6);
   const boxHeight = Math.max(minFormHeight, Math.min(height - 2, contentHeight + (compact ? 7 : 9)));
 
-  const handleFieldKey = (key: KeyEvent) => {
+  const handleFieldKey = (key: KeyEvent, fieldType: FormFieldType) => {
     if (submitState.status === "saving") return;
 
     if (isSaveKey(key)) {
@@ -234,6 +234,30 @@ export function EditFormOverlay({
 
     if (key.name === "tab") {
       onNextField();
+      return;
+    }
+
+    // Ctrl+arrow: always navigate between fields regardless of field type
+    if (key.ctrl && key.name === "up") {
+      onPrevField();
+      return;
+    }
+    if (key.ctrl && key.name === "down") {
+      onNextField();
+      return;
+    }
+
+    // Bare Up/Down: only navigate fields for single-line inputs
+    // (textarea uses arrows to move cursor; select uses arrows to pick options)
+    if (fieldType === "input") {
+      if (key.name === "up") {
+        onPrevField();
+        return;
+      }
+      if (key.name === "down") {
+        onNextField();
+        return;
+      }
     }
   };
 
@@ -334,7 +358,7 @@ export function EditFormOverlay({
                         selectedTextColor={colors.accent}
                         descriptionColor={colors.textMuted}
                         selectedDescriptionColor={colors.textDim}
-                        onKeyDown={handleFieldKey}
+                        onKeyDown={(key) => handleFieldKey(key, "select")}
                         onChange={(_, option) => onChange(field.key, String(option?.value ?? ""))}
                       />
                     </box>
@@ -360,7 +384,7 @@ export function EditFormOverlay({
                         focusedBackgroundColor={colors.bg}
                         focusedTextColor={colors.text}
                         placeholderColor={colors.textMuted}
-                        onKeyDown={handleFieldKey}
+                        onKeyDown={(key) => handleFieldKey(key, "textarea")}
                         onContentChange={() => {
                           const current = textareaRefs.current[field.key]?.plainText ?? "";
                           onChange(field.key, current);
@@ -385,6 +409,7 @@ export function EditFormOverlay({
                         focusedBackgroundColor={colors.bg}
                         placeholderColor={colors.textMuted}
                         onInput={(value) => onChange(field.key, value)}
+                        onKeyDown={(key) => handleFieldKey(key, "input")}
                       />
                     </box>
                   )}
@@ -433,7 +458,7 @@ export function EditFormOverlay({
             }
           >
             {submitState.message ??
-              (submitState.status === "saving" ? "Saving changes…" : "Save: Ctrl+S or F2")}
+              (submitState.status === "saving" ? "Saving changes…" : "Save: Ctrl+S or F2 | Tab/↑↓: navigate fields")}
           </text>
           <text fg={colors.textMuted}>
             {submitState.status === "saving" ? "Please wait…" : "Cancel: Esc"}

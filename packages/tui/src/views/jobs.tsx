@@ -428,14 +428,6 @@ export function JobsView({
           void submitCurrentForm();
           return true;
         }
-        if (key.name === "tab" && key.shift) {
-          editFormRef.current.prevField();
-          return true;
-        }
-        if (key.name === "tab") {
-          editFormRef.current.nextField();
-          return true;
-        }
         return true;
       }
       if (modeRef.current === "confirm") {
