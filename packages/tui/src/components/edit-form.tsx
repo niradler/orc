@@ -237,12 +237,12 @@ export function EditFormOverlay({
       return;
     }
 
-    // Ctrl+arrow: always navigate between fields regardless of field type
-    if (key.ctrl && key.name === "up") {
+    // Ctrl+arrow: navigate between fields (not on select — select handles Ctrl+arrow internally)
+    if (fieldType !== "select" && key.ctrl && key.name === "up") {
       onPrevField();
       return;
     }
-    if (key.ctrl && key.name === "down") {
+    if (fieldType !== "select" && key.ctrl && key.name === "down") {
       onNextField();
       return;
     }
