@@ -5,7 +5,7 @@ import { loadConfig } from "@orc/core/config";
 import { shortId } from "@orc/core/ids";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
-import { dryRunMsg, isDryRun, isJson, jsonOut } from "../output.js";
+import { isJson, jsonOut } from "../output.js";
 
 export async function resolveProject(
   client: ReturnType<typeof createOrcClient>,
@@ -244,7 +244,6 @@ export function projectCommand() {
       const { data: project, error: findErr } = await client.projects.getByName(name);
       if (findErr || !project) return console.error(`Project not found: ${name}`);
 
-      if (isDryRun()) return dryRunMsg("update", `project ${name}`);
       const tags = opts.tags ? opts.tags.split(",").map((t: string) => t.trim()) : undefined;
       const { data, error } = await client.projects.update(project.id, {
         name: opts.name,
@@ -266,7 +265,6 @@ export function projectCommand() {
       const { data: project, error: findErr } = await client.projects.getByName(name);
       if (findErr || !project) return console.error(`Project not found: ${name}`);
 
-      if (isDryRun()) return dryRunMsg("archive", `project ${name}`);
       const { data, error } = await client.projects.update(project.id, { status: "archived" });
       if (error) return console.error("Error:", error);
       if (isJson()) return jsonOut(data);
@@ -281,7 +279,6 @@ export function projectCommand() {
       const { data: project, error: findErr } = await client.projects.getByName(name);
       if (findErr || !project) return console.error(`Project not found: ${name}`);
 
-      if (isDryRun()) return dryRunMsg("delete", `project ${name}`);
       const { error } = await client.projects.delete(project.id);
       if (error) return console.error("Error:", error);
       if (isJson()) return jsonOut({ deleted: project.id, name });
