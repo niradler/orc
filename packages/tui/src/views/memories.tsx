@@ -1,5 +1,5 @@
 import { createOrcClient } from "@orc/sdk";
-import type { Memory } from "@orc/sdk/types";
+import type { Memory, Project } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { expectApiData } from "../api-result.js";
 import { ConfirmDialog } from "../components/confirm-dialog.js";
@@ -107,7 +107,7 @@ const columns: Column<Memory>[] = [
   },
 ];
 
-function memoryFields(memory?: Memory): FormField[] {
+function memoryFields(memory?: Memory, projectOptions?: SelectOption[], defaultProjectId?: string | null): FormField[] {
   const typeOptions: SelectOption[] = [
     { label: "Fact", value: "fact" },
     { label: "Decision", value: "decision" },
@@ -165,6 +165,15 @@ function memoryFields(memory?: Memory): FormField[] {
       type: "select",
       options: typeOptions,
     });
+    if (projectOptions) {
+      baseFields.push({
+        key: "project_id",
+        label: "Project",
+        value: defaultProjectId ?? "",
+        type: "select",
+        options: projectOptions,
+      });
+    }
   }
 
   return baseFields;
@@ -172,6 +181,7 @@ function memoryFields(memory?: Memory): FormField[] {
 
 type Props = {
   projectId: string | null;
+  projects: Project[];
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
   onRegisterCommands: (cmds: PaletteCommand[]) => void;
@@ -180,6 +190,7 @@ type Props = {
 
 export function MemoriesView({
   projectId,
+  projects,
   onRegisterKeyHandler,
   onStateChange,
   onRegisterCommands,
@@ -240,6 +251,13 @@ export function MemoriesView({
   formIntentRef.current = formIntent;
   const formTargetRef = useRef(formTarget);
   formTargetRef.current = formTarget;
+
+  const projectOptions: SelectOption[] = [
+    { label: "Unassigned", value: "" },
+    ...projects.map((p) => ({ label: p.name, value: p.id })),
+  ];
+  const projectOptionsRef = useRef(projectOptions);
+  projectOptionsRef.current = projectOptions;
 
   useEffect(() => {
     const selectedMemory = filtered[cursor];
@@ -348,13 +366,14 @@ export function MemoriesView({
             .map((s) => s.trim())
             .filter(Boolean)
         : undefined;
+      const proj = "project_id" in vals ? vals.project_id || null : projectId;
       const created = await client.memories.create({
         content: vals.content,
         type: (vals.type as "fact" | "decision" | "event" | "rule" | "discovery") || "fact",
         importance: (vals.importance as "low" | "normal" | "high" | "critical") || "normal",
         ...(vals.scope ? { scope: vals.scope } : {}),
         ...(tags ? { tags } : {}),
-        ...(projectId ? { project_id: projectId } : {}),
+        ...(proj ? { project_id: proj } : {}),
       });
       return expectApiData(created, "Couldn't create memory.");
     },
@@ -486,7 +505,7 @@ export function MemoriesView({
         if (key.name === "n") {
           setFormIntent("create");
           setFormTarget(null);
-          editFormRef.current.open(memoryFields());
+          editFormRef.current.open(memoryFields(undefined, projectOptionsRef.current, projectId));
           setMode("form");
           return true;
         }

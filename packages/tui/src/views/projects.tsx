@@ -131,6 +131,7 @@ type Props = {
   activeProjectId: string | null;
   onSelectProject: (name: string) => void;
   onClearProject: () => void;
+  onProjectCreated?: () => void;
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
   onRegisterCommands: (cmds: PaletteCommand[]) => void;
@@ -141,6 +142,7 @@ export function ProjectsView({
   activeProjectId,
   onSelectProject,
   onClearProject,
+  onProjectCreated,
   onRegisterKeyHandler,
   onStateChange,
   onRegisterCommands,
@@ -334,6 +336,7 @@ export function ProjectsView({
         );
       }
       editFormRef.current.finishSubmit("success", creating ? "Project created." : "Project saved.");
+      if (creating) onProjectCreated?.();
       setTimeout(() => {
         editFormRef.current.close();
         setFormTarget(null);

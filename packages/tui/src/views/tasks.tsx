@@ -1,6 +1,6 @@
 import { TASK_STATUS_TRANSITIONS, type TaskStatus } from "@orc/core/types";
 import { createOrcClient } from "@orc/sdk";
-import type { Task } from "@orc/sdk/types";
+import type { Project, Task } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { expectApiData } from "../api-result.js";
 import { ConfirmDialog } from "../components/confirm-dialog.js";
@@ -145,8 +145,8 @@ function taskStatusOptions(currentStatus?: string): SelectOption[] {
   return [currentStatus, ...allowed].map((s) => ({ label: STATUS_LABELS[s] ?? s, value: s }));
 }
 
-function taskFields(t?: Task): FormField[] {
-  return [
+function taskFields(t?: Task, projectOptions?: SelectOption[], defaultProjectId?: string | null): FormField[] {
+  const fields: FormField[] = [
     {
       key: "title",
       label: "Title",
@@ -183,10 +183,21 @@ function taskFields(t?: Task): FormField[] {
       description: "Comma-separated tags help search and filtering.",
     },
   ];
+  if (!t && projectOptions) {
+    fields.push({
+      key: "project_id",
+      label: "Project",
+      value: defaultProjectId ?? "",
+      type: "select",
+      options: projectOptions,
+    });
+  }
+  return fields;
 }
 
 type Props = {
   projectId: string | null;
+  projects: Project[];
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
   onRegisterCommands: (cmds: PaletteCommand[]) => void;
@@ -195,6 +206,7 @@ type Props = {
 
 export function TasksView({
   projectId,
+  projects,
   onRegisterKeyHandler,
   onStateChange,
   onRegisterCommands,
@@ -255,6 +267,13 @@ export function TasksView({
   formIntentRef.current = formIntent;
   const formTargetRef = useRef(formTarget);
   formTargetRef.current = formTarget;
+
+  const projectOptions: SelectOption[] = [
+    { label: "Unassigned", value: "" },
+    ...projects.map((p) => ({ label: p.name, value: p.id })),
+  ];
+  const projectOptionsRef = useRef(projectOptions);
+  projectOptionsRef.current = projectOptions;
 
   useEffect(() => {
     const selectedTask = filtered[cursor];
@@ -363,13 +382,14 @@ export function TasksView({
             .map((s) => s.trim())
             .filter(Boolean)
         : undefined;
+      const proj = "project_id" in vals ? vals.project_id || null : projectId;
       const created = await client.tasks.create({
         title: vals.title,
         ...(vals.body ? { body: vals.body } : {}),
         status: (vals.status as "todo" | "doing" | "blocked") || "todo",
         priority: (vals.priority as "low" | "normal" | "high" | "critical") || "normal",
         ...(tags ? { tags } : {}),
-        ...(projectId ? { project_id: projectId } : {}),
+        ...(proj ? { project_id: proj } : {}),
       });
       return expectApiData(created, "Couldn't create task.");
     },
@@ -508,7 +528,7 @@ export function TasksView({
         if (key.name === "n") {
           setFormIntent("create");
           setFormTarget(null);
-          editFormRef.current.open(taskFields());
+          editFormRef.current.open(taskFields(undefined, projectOptionsRef.current, projectId));
           setMode("form");
           return true;
         }

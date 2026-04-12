@@ -1,4 +1,5 @@
 import { createOrcClient } from "@orc/sdk";
+import type { Project } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "../components/confirm-dialog.js";
 import { DetailPane } from "../components/detail-pane.js";
@@ -23,7 +24,7 @@ import {
   isRefreshKey,
 } from "../navigation.js";
 import { colors } from "../theme.js";
-import type { Column, KeyEvent, PaletteCommand, ViewKeyHandler, ViewState } from "../types.js";
+import type { Column, KeyEvent, PaletteCommand, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
 
 const client = createOrcClient();
 
@@ -86,7 +87,7 @@ const columns: Column<KnowledgeCollection>[] = [
   },
 ];
 
-function collectionFields(): FormField[] {
+function collectionFields(projectOptions: SelectOption[], defaultProjectId: string | null): FormField[] {
   return [
     {
       key: "name",
@@ -106,11 +107,19 @@ function collectionFields(): FormField[] {
       value: "**/*.md",
       placeholder: "Glob pattern (default: **/*.md)",
     },
+    {
+      key: "project_id",
+      label: "Project",
+      value: defaultProjectId ?? "",
+      type: "select",
+      options: projectOptions,
+    },
   ];
 }
 
 type Props = {
   projectId: string | null;
+  projects: Project[];
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
   onRegisterCommands: (cmds: PaletteCommand[]) => void;
@@ -119,6 +128,7 @@ type Props = {
 
 export function KnowledgeView({
   projectId,
+  projects,
   onRegisterKeyHandler,
   onStateChange,
   onRegisterCommands,
@@ -130,10 +140,16 @@ export function KnowledgeView({
   const { sort, setSortByKey, toggleDirection, sortData } = useSort(columns);
 
   const fetchCollections = useCallback(
-    () => client.knowledge.collections(projectId ? { project_id: projectId } : undefined),
+    () =>
+      client.knowledge.collections(
+        projectId ? { project_id: projectId } : undefined,
+      ),
     [projectId],
   );
-  const { data, loading, error, refresh, mutate } = usePolling(fetchCollections, 5000);
+  const { data, loading, error, refresh, mutate } = usePolling(
+    fetchCollections,
+    5000,
+  );
   const collections = data?.collections ?? [];
   const {
     filtered: filteredUnsorted,
@@ -165,13 +181,24 @@ export function KnowledgeView({
   const deleteTargetRef = useRef(deleteTarget);
   deleteTargetRef.current = deleteTarget;
 
+  const projectOptions: SelectOption[] = [
+    { label: "Unassigned", value: "" },
+    ...projects.map((p) => ({ label: p.name, value: p.id })),
+  ];
+  const projectOptionsRef = useRef(projectOptions);
+  projectOptionsRef.current = projectOptions;
+
   useEffect(() => {
     const selected = filtered[cursor];
-    const sortLabel = sort.key ? `${sort.key} ${sort.direction === "asc" ? "▲" : "▼"}` : null;
+    const sortLabel = sort.key
+      ? `${sort.key} ${sort.direction === "asc" ? "▲" : "▼"}`
+      : null;
     onStateChange({
       mode: filterActive ? "filter" : mode,
       title: "Knowledge",
-      countLabel: loading ? "Loading collections…" : `${filtered.length} collections`,
+      countLabel: loading
+        ? "Loading collections…"
+        : `${filtered.length} collections`,
       sortLabel,
       filterQuery: query,
       filterActive,
@@ -183,7 +210,16 @@ export function KnowledgeView({
       statusMessage: null,
       contextData: selected ? JSON.stringify(selected, null, 2) : null,
     });
-  }, [mode, query, filterActive, onStateChange, filtered, cursor, loading, sort]);
+  }, [
+    mode,
+    query,
+    filterActive,
+    onStateChange,
+    filtered,
+    cursor,
+    loading,
+    sort,
+  ]);
 
   useEffect(() => {
     const sortCommands: PaletteCommand[] = columns
@@ -212,11 +248,12 @@ export function KnowledgeView({
     async (vals: Record<string, string>) => {
       if (!vals.name) throw new Error("Name is required.");
       if (!vals.path) throw new Error("Path is required.");
+      const proj = "project_id" in vals ? vals.project_id || null : projectId;
       const result = await client.knowledge.addCollection({
         name: vals.name,
         path: vals.path,
         pattern: vals.pattern || "**/*.md",
-        ...(projectId ? { project_id: projectId } : {}),
+        ...(proj ? { project_id: proj } : {}),
       });
       if (result.error) throw new Error(result.error.error);
       return result.data;
@@ -239,7 +276,10 @@ export function KnowledgeView({
         setMode("browse");
       }, 700);
     } catch (err) {
-      editFormRef.current.finishSubmit("error", formErrorMessage(err, "Couldn't add collection."));
+      editFormRef.current.finishSubmit(
+        "error",
+        formErrorMessage(err, "Couldn't add collection."),
+      );
     }
   }, []);
 
@@ -275,7 +315,9 @@ export function KnowledgeView({
         if (key.name === "y" || key.name === "return") {
           const target = deleteTargetRef.current;
           if (target)
-            client.knowledge.removeCollection(target.name).then(() => refreshRef.current());
+            client.knowledge
+              .removeCollection(target.name)
+              .then(() => refreshRef.current());
           setDeleteTarget(null);
           setMode("browse");
           return true;
@@ -310,7 +352,7 @@ export function KnowledgeView({
           return true;
         }
         if (key.name === "a" || key.name === "n") {
-          editFormRef.current.open(collectionFields());
+          editFormRef.current.open(collectionFields(projectOptionsRef.current, projectId));
           setMode("form");
           return true;
         }

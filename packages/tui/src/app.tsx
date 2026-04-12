@@ -1,9 +1,10 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
 import { loadConfig } from "@orc/core/config";
 import { createOrcClient } from "@orc/sdk";
+import type { Project } from "@orc/sdk/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatModal } from "./components/chat-modal.js";
 import { SmartPalette } from "./components/smart-palette.js";
@@ -30,9 +31,15 @@ function configPath(): string {
 
 function persistActiveProject(name: string | null): void {
   const p = configPath();
-  const cfg: Record<string, unknown> = existsSync(p) ? JSON.parse(readFileSync(p, "utf-8")) : {};
+  let cfg: Record<string, unknown> = {};
+  try {
+    if (existsSync(p)) cfg = JSON.parse(readFileSync(p, "utf-8"));
+  } catch {
+    // Corrupt config — start fresh
+  }
   if (name) cfg.activeProject = name;
   else delete cfg.activeProject;
+  mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, `${JSON.stringify(cfg, null, 2)}\n`);
 }
 
@@ -62,11 +69,31 @@ export function App() {
 
   useEffect(() => {
     if (activeProject && !activeProjectId) {
-      client.projects.getByName(activeProject).then((r) => {
-        if (r.data) setActiveProjectId(r.data.id);
-      });
+      let stale = false;
+      client.projects
+        .getByName(activeProject)
+        .then((r) => {
+          if (!stale && r.data) setActiveProjectId(r.data.id);
+        })
+        .catch(() => {});
+      return () => {
+        stale = true;
+      };
     }
   }, [activeProject, activeProjectId]);
+
+  const [allProjects, setAllProjects] = useState<Project[]>([]);
+  const refreshProjects = useCallback(() => {
+    client.projects
+      .list()
+      .then((r) => {
+        if (r.data) setAllProjects(r.data.projects);
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    refreshProjects();
+  }, [refreshProjects]);
 
   const { data: healthData, error: healthError } = usePolling(() => client.health.check(), 10000);
   const connected = !!healthData && !healthError;
@@ -340,6 +367,7 @@ export function App() {
             activeProjectId={activeProjectId}
             onSelectProject={selectProject}
             onClearProject={clearProject}
+            onProjectCreated={refreshProjects}
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
             onRegisterCommands={registerViewCommands}
@@ -349,6 +377,7 @@ export function App() {
         {route === "tasks" && (
           <TasksView
             projectId={activeProjectId}
+            projects={allProjects}
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
             onRegisterCommands={registerViewCommands}
@@ -358,6 +387,7 @@ export function App() {
         {route === "jobs" && (
           <JobsView
             projectId={activeProjectId}
+            projects={allProjects}
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
             onRegisterCommands={registerViewCommands}
@@ -367,6 +397,7 @@ export function App() {
         {route === "memories" && (
           <MemoriesView
             projectId={activeProjectId}
+            projects={allProjects}
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
             onRegisterCommands={registerViewCommands}
@@ -376,6 +407,7 @@ export function App() {
         {route === "knowledge" && (
           <KnowledgeView
             projectId={activeProjectId}
+            projects={allProjects}
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
             onRegisterCommands={registerViewCommands}

@@ -1,5 +1,5 @@
 import { createOrcClient } from "@orc/sdk";
-import type { Job, JobRun } from "@orc/sdk/types";
+import type { Job, JobRun, Project } from "@orc/sdk/types";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { expectApiData } from "../api-result.js";
 import { ConfirmDialog } from "../components/confirm-dialog.js";
@@ -105,7 +105,7 @@ const columns: Column<Job>[] = [
   },
 ];
 
-function jobFields(job?: Job): FormField[] {
+function jobFields(job?: Job, projectOptions?: SelectOption[], defaultProjectId?: string | null): FormField[] {
   const triggerOptions: SelectOption[] = [
     { label: "Manual", value: "manual" },
     { label: "Cron", value: "cron" },
@@ -118,7 +118,7 @@ function jobFields(job?: Job): FormField[] {
     { label: "Enabled", value: "yes" },
     { label: "Disabled", value: "no" },
   ];
-  return [
+  const fields: FormField[] = [
     { key: "name", label: "Name", value: job?.name ?? "", placeholder: "nightly-index" },
     {
       key: "command",
@@ -157,10 +157,21 @@ function jobFields(job?: Job): FormField[] {
       options: enabledOptions,
     },
   ];
+  if (!job && projectOptions) {
+    fields.push({
+      key: "project_id",
+      label: "Project",
+      value: defaultProjectId ?? "",
+      type: "select",
+      options: projectOptions,
+    });
+  }
+  return fields;
 }
 
 type Props = {
   projectId: string | null;
+  projects: Project[];
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
   onRegisterCommands: (cmds: PaletteCommand[]) => void;
@@ -169,6 +180,7 @@ type Props = {
 
 export function JobsView({
   projectId,
+  projects,
   onRegisterKeyHandler,
   onStateChange,
   onRegisterCommands,
@@ -225,6 +237,13 @@ export function JobsView({
   formIntentRef.current = formIntent;
   const formTargetRef = useRef(formTarget);
   formTargetRef.current = formTarget;
+
+  const projectOptions: SelectOption[] = [
+    { label: "Unassigned", value: "" },
+    ...projects.map((p) => ({ label: p.name, value: p.id })),
+  ];
+  const projectOptionsRef = useRef(projectOptions);
+  projectOptionsRef.current = projectOptions;
 
   useEffect(() => {
     const selectedJob = filtered[cursor];
@@ -319,13 +338,14 @@ export function JobsView({
     async (vals: Record<string, string>) => {
       if (!vals.name) throw new Error("Job name is required.");
       if (!vals.command) throw new Error("Command is required.");
+      const proj = "project_id" in vals ? vals.project_id || null : projectId;
       const created = await client.jobs.create({
         name: vals.name,
         command: vals.command,
         trigger_type: (vals.trigger_type as Job["trigger_type"]) || "manual",
         ...(vals.cron_expr ? { cron_expr: vals.cron_expr } : {}),
         ...(vals.description ? { description: vals.description } : {}),
-        ...(projectId ? { project_id: projectId } : {}),
+        ...(proj ? { project_id: proj } : {}),
       });
       return expectApiData(created, "Couldn't create job.");
     },
@@ -463,7 +483,7 @@ export function JobsView({
         if (key.name === "n") {
           setFormIntent("create");
           setFormTarget(null);
-          editFormRef.current.open(jobFields());
+          editFormRef.current.open(jobFields(undefined, projectOptionsRef.current, projectId));
           setMode("form");
           return true;
         }
