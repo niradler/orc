@@ -108,7 +108,7 @@ export class PreviewManager {
 
   private async flushPending(sessionId: string): Promise<void> {
     const state = this.states.get(sessionId);
-    if (!state || !state.pendingText || state.frozen) return;
+    if (!state?.pendingText || state.frozen) return;
     state.pendingTimer = null;
     const text = state.pendingText;
     state.pendingText = null;

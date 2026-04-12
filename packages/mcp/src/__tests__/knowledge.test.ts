@@ -80,9 +80,9 @@ describe("collections", () => {
     await engine.addCollection("test-docs", { path: docsDir, pattern: "**/*.md" });
     const collections = await engine.listCollections();
     expect(collections).toHaveLength(1);
-    expect(collections[0]!.name).toBe("test-docs");
-    expect(collections[0]!.documentCount).toBe(3);
-    expect(collections[0]!.pattern).toBe("**/*.md");
+    expect(collections[0]?.name).toBe("test-docs");
+    expect(collections[0]?.documentCount).toBe(3);
+    expect(collections[0]?.pattern).toBe("**/*.md");
   });
 
   test("remove a collection", async () => {
@@ -107,7 +107,7 @@ describe("search", () => {
     expect(results.length).toBeGreaterThan(0);
     const authResult = results.find((r) => r.path.includes("auth"));
     expect(authResult).toBeDefined();
-    expect(authResult!.score).toBeGreaterThan(0);
+    expect(authResult?.score).toBeGreaterThan(0);
   });
 
   test("search respects limit", async () => {
@@ -127,10 +127,10 @@ describe("get", () => {
   test("get document by docid", async () => {
     const results = await engine.search("tasks", { mode: "lexical", limit: 1 });
     expect(results.length).toBeGreaterThan(0);
-    const doc = await engine.get(results[0]!.docid);
+    const doc = await engine.get(results[0]?.docid);
     expect(doc).not.toBeNull();
-    expect(doc!.content).toContain("Tasks");
-    expect(doc!.collection).toBe("test-docs");
+    expect(doc?.content).toContain("Tasks");
+    expect(doc?.collection).toBe("test-docs");
   });
 
   test("get nonexistent document returns null", async () => {
@@ -176,7 +176,7 @@ describe("project scoping", () => {
     const collections = await engine.listCollections();
     const alphaNotes = collections.find((c) => c.name === "alpha-notes");
     expect(alphaNotes).toBeDefined();
-    expect(alphaNotes!.projectId).toBe(projectAId);
+    expect(alphaNotes?.projectId).toBe(projectAId);
   });
 
   test("listCollections with project_id filters correctly", async () => {

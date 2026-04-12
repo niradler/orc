@@ -127,13 +127,13 @@ export function SmartPalette({ open, input, cursor, results, mode }: Props) {
         if (item.type === "header") {
           return (
             <text key={`h-${item.label}`} fg={colors.textMuted}>
-              {"  " + item.label}
+              {`  ${item.label}`}
             </text>
           );
         }
         const isSelected = item.resultIndex === cursor;
         const cmd = item.command;
-        const icon = cmd.icon ? cmd.icon + " " : "  ";
+        const icon = cmd.icon ? `${cmd.icon} ` : "  ";
         const hint = cmd.hint ? `  ${cmd.hint}` : "";
         return (
           <box

@@ -105,8 +105,8 @@ export function ChatModal({
                 </text>
               </box>
             ) : null}
-            {messages.map((msg, i) => (
-              <box key={`${msg.timestamp}-${i}`} flexDirection="column">
+            {messages.map((msg) => (
+              <box key={`${msg.role}-${msg.timestamp}`} flexDirection="column">
                 <text fg={msg.role === "user" ? colors.accent : colors.accentAlt}>
                   {msg.role === "user" ? "You" : agent}
                 </text>

@@ -45,7 +45,7 @@ export async function runAgentTurn(
 ): Promise<RunResult> {
   let agentSession = activeSessions.get(ctx.session.id);
 
-  if (!agentSession || !agentSession.alive()) {
+  if (!agentSession?.alive()) {
     agentSession = await createAgentSession(ctx, prompt);
     activeSessions.set(ctx.session.id, agentSession);
   } else {
