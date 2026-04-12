@@ -8,7 +8,7 @@ Human + AI orchestration hub. Persistent memory · Task management (HITL) · Gen
 packages/
   core/           @orc/core           — config (Zod), types, logger, ULID IDs
   db/             @orc/db             — Drizzle ORM schema + SQLite client (~/.orc/orc.db)
-  api/            @orc/api            — Hono REST API + auto-generated OpenAPI spec (:7700)
+  api/            @orc/api            — Hono REST API + auto-generated OpenAPI spec (:7701)
   sdk/            @orc/sdk            — typed HTTP client generated from OpenAPI spec
   cli/            @orc/cli            — commander CLI (`orc` binary) using the SDK
   mcp/            @orc/mcp            — MCP server (stdio) for Claude/Cursor/Codex/Gemini
@@ -17,6 +17,7 @@ packages/
   agent-runtime/  @orc/agent-runtime  — shared agent backend registry (claude, acpx, a2a)
   task-service/   @orc/task-service   — task status transitions, side-effects, comments
   tui/            @orc/tui            — terminal UI (in-progress)
+  web/            @orc/web            — React dashboard (Vite + Tailwind + shadcn + React Query)
 ```
 
 Data flow: `Agent → MCP → API → DB`. CLI goes via `CLI → SDK → API → DB`.
@@ -34,7 +35,7 @@ Data flow: `Agent → MCP → API → DB`. CLI goes via `CLI → SDK → API →
 
 ```bash
 bun install          # install all workspace deps
-bun dev              # API + CLI in dev mode
+bun dev              # API + CLI + web in dev mode (reads .env)
 bun typecheck        # typecheck all packages
 bun check            # biome lint + format (auto-fix)
 bun test             # run all tests (91 passing)
@@ -43,6 +44,44 @@ bun db:generate      # generate migration files
 bun sdk:generate     # regenerate SDK types (API must be running)
 bun build            # build all packages
 ```
+
+## Dev Environment
+
+All packages load `../../.env` via `bun --env-file ../../.env` in their `dev` scripts. Create `.env` at the repo root:
+
+```env
+ORC_API_PORT=7701
+ORC_WEB_PORT=3000
+```
+
+Default ports when `.env` is absent: API → 7700, web → 9742.
+
+The web dev server proxies `/api/*` → `http://localhost:$ORC_API_PORT` (strips the `/api` prefix). The API auth secret defaults to `""` (open). Set `ORC_API_SECRET` or `api.secret` in `~/.orc/config.json` to require a Bearer token.
+
+## Web Dashboard (packages/web)
+
+React SPA served by Vite at `ORC_WEB_PORT` (default 3000 from `.env`).
+
+- **API client**: `packages/web/src/api/client.ts` — all requests go through Vite proxy at `/api`
+- **Hooks**: `packages/web/src/hooks/` — React Query wrappers (30s refetch interval)
+- **Views**: Tasks, Dashboard, Jobs, Memories, Projects, Sessions, Knowledge, Settings
+- **API limit**: task list max is 100 per request (API enforces `max: 100` via Zod)
+
+## Testing the Web UI with agent-browser
+
+Use `agent-browser` (installed via `agent-browser install`) to drive a real browser for UI sanity checks:
+
+```bash
+agent-browser open http://localhost:3000   # open the web app
+agent-browser snapshot                     # get accessibility tree with refs
+agent-browser click @e5                    # click by ref from snapshot
+agent-browser fill @e3 "value"             # fill input by ref
+agent-browser get text @e1                 # read text by ref
+agent-browser screenshot path/to/out.png   # capture screenshot
+agent-browser close                        # close browser
+```
+
+Refs (`@e1`, `@e2`, …) are assigned per snapshot — always take a fresh snapshot after navigation before using refs. Check for `[OBJECT OBJECT]` or `RETRY` buttons in snapshots as signals of error states.
 
 ## Core Data Model (packages/db/src/schema.ts)
 

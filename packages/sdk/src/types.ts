@@ -1,10 +1,12 @@
 export type TaskStatus =
   | "todo"
+  | "queued"
   | "doing"
   | "review"
   | "changes_requested"
   | "blocked"
   | "done"
+  | "paused"
   | "cancelled";
 export type TaskPriority = "low" | "normal" | "high" | "critical";
 export type TaskType = "feature" | "bug" | "research" | "ops" | "chore" | "coordination";
@@ -35,6 +37,9 @@ export type Task = {
   claimed_by: string | null;
   claim_expires_at: string | null;
   skill_name: string | null;
+  required_review: boolean;
+  agent_backend: string | null;
+  max_review_rounds: number;
   created_at: string;
   updated_at: string;
 };
@@ -48,9 +53,13 @@ export type Comment = {
   created_at: string;
 };
 
+export type MemoryType = "fact" | "decision" | "event" | "rule" | "discovery";
+
 export type Memory = {
   id: string;
   project_id: string | null;
+  title: string | null;
+  type: MemoryType;
   content: string;
   source: string | null;
   scope: string | null;
@@ -94,15 +103,29 @@ export type JobRun = {
   created_at: string;
 };
 
+export type SessionEvent = {
+  id: string;
+  type: string;
+  priority: number;
+  data: unknown;
+  created_at: string;
+};
+
 export type Session = {
   id: string;
-  agent: string;
+  agent: string | null;
   agent_version: string | null;
   project_id: string | null;
   job_run_id: string | null;
   summary: string | null;
   tokens_used: number | null;
   created_at: string;
+  updated_at: string;
+};
+
+export type SessionDetail = Session & {
+  events: SessionEvent[];
+  snapshot: string | null;
 };
 
 export type ProjectStatus = "active" | "archived" | "paused";
@@ -114,6 +137,7 @@ export type Project = {
   scope: string | null;
   tags: string[] | null;
   obsidian_path: string | null;
+  max_workers: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -137,6 +161,9 @@ export type CreateTaskInput = {
   tags?: string[];
   author?: string;
   skill_name?: string;
+  required_review?: boolean;
+  agent_backend?: string;
+  max_review_rounds?: number;
 };
 
 export type UpdateTaskInput = {
@@ -144,8 +171,15 @@ export type UpdateTaskInput = {
   body?: string | null;
   status?: TaskStatus;
   priority?: TaskPriority;
+  progress?: number;
   due_at?: string | null;
   tags?: string[] | null;
+  project_id?: string | null;
+  skill_name?: string | null;
+  required_review?: boolean;
+  agent_backend?: string | null;
+  max_review_rounds?: number;
+  claimed_by?: string | null;
 };
 
 export type TaskClaimInput = {
@@ -291,6 +325,7 @@ export type CreateProjectInput = {
   scope?: string;
   tags?: string[];
   obsidian_path?: string;
+  max_workers?: number;
 };
 
 export type UpdateProjectInput = {
@@ -300,6 +335,7 @@ export type UpdateProjectInput = {
   scope?: string | null;
   tags?: string[] | null;
   obsidian_path?: string | null;
+  max_workers?: number | null;
 };
 
 export type ApiError = { error: string; code: string };

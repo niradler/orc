@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import Dashboard from "@/views/Dashboard";
 import Jobs from "@/views/Jobs";
@@ -7,6 +7,7 @@ import Memories from "@/views/Memories";
 import Projects from "@/views/Projects";
 import Sessions from "@/views/Sessions";
 import Settings from "@/views/Settings";
+import Skills from "@/views/Skills";
 import Tasks from "@/views/Tasks";
 
 export type View =
@@ -17,23 +18,39 @@ export type View =
   | "projects"
   | "sessions"
   | "knowledge"
+  | "skills"
   | "settings";
+
+const STORAGE_KEY = "orc_selected_project";
 
 export default function App() {
   const [view, setView] = useState<View>("tasks");
+  const [projectId, setProjectId] = useState<string>(
+    () => localStorage.getItem(STORAGE_KEY) ?? "all",
+  );
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, projectId);
+  }, [projectId]);
 
   return (
     <div className="min-h-screen bg-background flex">
-      <Sidebar active={view} onNavigate={setView} />
+      <Sidebar
+        active={view}
+        onNavigate={setView}
+        projectId={projectId}
+        onProjectChange={setProjectId}
+      />
       <main className="ml-64 flex-1 overflow-y-auto">
         <div className="p-8 max-w-[1200px]">
-          {view === "dashboard" && <Dashboard onNavigate={setView} />}
-          {view === "tasks" && <Tasks />}
-          {view === "jobs" && <Jobs />}
-          {view === "memories" && <Memories />}
+          {view === "dashboard" && <Dashboard onNavigate={setView} projectId={projectId} />}
+          {view === "tasks" && <Tasks projectId={projectId} />}
+          {view === "jobs" && <Jobs projectId={projectId} />}
+          {view === "memories" && <Memories projectId={projectId} />}
           {view === "projects" && <Projects />}
-          {view === "sessions" && <Sessions />}
-          {view === "knowledge" && <Knowledge />}
+          {view === "sessions" && <Sessions projectId={projectId} />}
+          {view === "knowledge" && <Knowledge projectId={projectId} />}
+          {view === "skills" && <Skills />}
           {view === "settings" && <Settings />}
         </div>
       </main>

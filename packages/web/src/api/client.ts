@@ -1,6 +1,72 @@
 // Browser-compatible ORC API client.
-// Dev: Vite proxies /api/* → http://localhost:7700/*
+// Types imported from @orc/sdk for end-to-end type safety.
+// Dev: Vite proxies /api/* → http://localhost:7701/*
 // Override via localStorage: orc_api_url, orc_api_secret
+
+export type {
+  Comment,
+  CreateJobInput,
+  CreateMemoryInput,
+  CreateProjectInput,
+  CreateSkillInput,
+  CreateTaskInput,
+  CreateTaskLinkInput,
+  HealthResponse,
+  Job,
+  JobRun,
+  JobRunLog,
+  JobStatus,
+  JobTriggerType,
+  Memory,
+  MemoryType,
+  Project,
+  ProjectStatus,
+  ProjectSummary,
+  Session,
+  SessionDetail,
+  SessionEvent,
+  SkillFull,
+  SkillMeta,
+  SkillRefContent,
+  SkillSource,
+  Task,
+  TaskLink,
+  TaskLinkType,
+  TaskPriority,
+  TaskStatus,
+  UpdateJobInput,
+  UpdateMemoryInput,
+  UpdateProjectInput,
+  UpdateTaskInput,
+} from "@orc/sdk/types";
+
+import type {
+  Comment,
+  CreateJobInput,
+  CreateMemoryInput,
+  CreateProjectInput,
+  CreateSkillInput,
+  CreateTaskInput,
+  CreateTaskLinkInput,
+  HealthResponse,
+  Job,
+  JobRun,
+  JobRunLog,
+  Memory,
+  Project,
+  ProjectSummary,
+  Session,
+  SessionDetail,
+  SkillFull,
+  SkillMeta,
+  SkillRefContent,
+  Task,
+  TaskLink,
+  UpdateJobInput,
+  UpdateMemoryInput,
+  UpdateProjectInput,
+  UpdateTaskInput,
+} from "@orc/sdk/types";
 
 export const getApiUrl = (): string =>
   localStorage.getItem("orc_api_url") ?? "/api";
@@ -41,109 +107,6 @@ async function req<T>(
   return json as T;
 }
 
-// ---- Types ----
-
-export type TaskStatus =
-  | "todo" | "queued" | "doing" | "review"
-  | "changes_requested" | "blocked" | "done" | "cancelled" | "paused";
-
-export type TaskPriority = "low" | "normal" | "high" | "critical";
-
-export type Task = {
-  id: string;
-  project_id: string | null;
-  title: string;
-  body: string | null;
-  status: TaskStatus;
-  priority: TaskPriority;
-  progress: number;
-  due_at: string | null;
-  tags: string[] | null;
-  author: string;
-  claimed_by: string | null;
-  skill_name: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type Memory = {
-  id: string;
-  project_id: string | null;
-  content: string;
-  source: string | null;
-  scope: string | null;
-  tags: string[] | null;
-  importance: "low" | "normal" | "high" | "critical";
-  expires_at: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type Job = {
-  id: string;
-  project_id: string | null;
-  name: string;
-  description: string | null;
-  command: string;
-  trigger_type: string;
-  cron_expr: string | null;
-  enabled: boolean;
-  timeout_secs: number;
-  max_retries: number;
-  overlap: "skip" | "queue" | "kill";
-  notify_on: string;
-  run_count: number;
-  last_run_at: string | null;
-  next_run_at: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type JobRun = {
-  id: string;
-  job_id: string;
-  status: "pending" | "running" | "success" | "failed" | "cancelled" | "skipped";
-  exit_code: number | null;
-  started_at: string | null;
-  finished_at: string | null;
-  error: string | null;
-};
-
-export type Project = {
-  id: string;
-  name: string;
-  description: string | null;
-  status: string;
-  tags: string[] | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type Session = {
-  id: string;
-  agent: string | null;
-  job_run_id: string | null;
-  agent_version: string | null;
-  summary: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type KnowledgeCollection = {
-  name: string;
-  path: string;
-  pattern: string;
-  documentCount: number;
-  lastModified: string | null;
-  projectId: string | null;
-};
-
-export type HealthResponse = {
-  status: string;
-  version: string;
-  uptime: number;
-};
-
 // ---- API client ----
 
 export const api = {
@@ -152,25 +115,25 @@ export const api = {
   },
 
   tasks: {
-    list: (params?: { status?: string; project_id?: string; limit?: number }) =>
+    list: (params?: { status?: string; project_id?: string; tag?: string; limit?: number }) =>
       req<{ tasks: Task[]; total: number }>(
         "GET", "/tasks", undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
-    create: (data: {
-      title: string;
-      body?: string;
-      status?: TaskStatus;
-      priority?: TaskPriority;
-      project_id?: string;
-    }) => req<Task>("POST", "/tasks", data),
-    update: (id: string, data: Partial<Pick<Task, "status" | "priority" | "title" | "body">>) =>
-      req<Task>("PATCH", `/tasks/${id}`, data),
+    get: (id: string) => req<Task>("GET", `/tasks/${id}`),
+    create: (data: CreateTaskInput) => req<Task>("POST", "/tasks", data),
+    update: (id: string, data: UpdateTaskInput) => req<Task>("PATCH", `/tasks/${id}`, data),
     delete: (id: string) => req<null>("DELETE", `/tasks/${id}`),
     addComment: (id: string, content: string, author = "human") =>
-      req<{ id: string; content: string; author: string; created_at: string }>(
-        "POST", `/tasks/${id}/comments`, { content, author },
-      ),
+      req<Comment>("POST", `/tasks/${id}/comments`, { content, author }),
+    listComments: (id: string) =>
+      req<{ comments: Comment[] }>("GET", `/tasks/${id}/comments`),
+    listLinks: (id: string) =>
+      req<{ links: TaskLink[] }>("GET", `/tasks/${id}/links`),
+    addLink: (id: string, data: CreateTaskLinkInput) =>
+      req<TaskLink>("POST", `/tasks/${id}/links`, data),
+    deleteLink: (id: string, linkId: string) =>
+      req<null>("DELETE", `/tasks/${id}/links/${linkId}`),
   },
 
   memories: {
@@ -179,60 +142,118 @@ export const api = {
         "GET", "/memories", undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
-    search: (q: string, opts?: { scope?: string; limit?: number }) =>
+    search: (q: string, opts?: { scope?: string; project_id?: string; limit?: number }) =>
       req<{ results: Memory[] }>("GET", "/memories/search", undefined, {
         q,
         scope: opts?.scope,
+        project_id: opts?.project_id,
         limit: opts?.limit,
       }),
-    create: (data: { content: string; scope?: string; tags?: string[]; importance?: string }) =>
-      req<Memory>("POST", "/memories", data),
-    update: (id: string, data: Partial<Pick<Memory, "content" | "scope" | "tags" | "importance">>) =>
-      req<Memory>("PATCH", `/memories/${id}`, data),
+    create: (data: CreateMemoryInput) => req<Memory>("POST", "/memories", data),
+    update: (id: string, data: UpdateMemoryInput) => req<Memory>("PATCH", `/memories/${id}`, data),
     delete: (id: string) => req<null>("DELETE", `/memories/${id}`),
   },
 
   jobs: {
-    list: (params?: { enabled?: boolean; project_id?: string }) =>
+    list: (params?: { enabled?: boolean; project_id?: string; limit?: number }) =>
       req<{ jobs: Job[] }>(
         "GET", "/jobs", undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
+    get: (id: string) => req<Job>("GET", `/jobs/${id}`),
+    create: (data: CreateJobInput) => req<Job>("POST", "/jobs", data),
+    update: (id: string, data: UpdateJobInput) => req<Job>("PATCH", `/jobs/${id}`, data),
+    delete: (id: string) => req<null>("DELETE", `/jobs/${id}`),
     trigger: (id: string) => req<{ run_id: string }>("POST", `/jobs/${id}/trigger`),
     runs: (id: string, limit = 10) =>
       req<{ runs: JobRun[] }>("GET", `/jobs/${id}/runs`, undefined, { limit }),
+    runLogs: (id: string, runId: string, params?: { stream?: "stdout" | "stderr"; limit?: number }) =>
+      req<{ logs: JobRunLog[] }>(
+        "GET", `/jobs/${id}/runs/${runId}/logs`, undefined,
+        params as Record<string, string | number | boolean | undefined>,
+      ),
   },
 
   projects: {
-    list: (params?: { status?: string }) =>
+    list: (params?: { status?: string; tag?: string; limit?: number }) =>
       req<{ projects: Project[] }>(
         "GET", "/projects", undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
     get: (id: string) => req<Project>("GET", `/projects/${id}`),
-    create: (data: { name: string; description?: string }) =>
-      req<Project>("POST", "/projects", data),
+    getByName: (name: string) => req<Project>("GET", `/projects/by-name/${encodeURIComponent(name)}`),
+    summary: (id: string) => req<ProjectSummary>("GET", `/projects/${id}/summary`),
+    create: (data: CreateProjectInput) => req<Project>("POST", "/projects", data),
+    update: (id: string, data: UpdateProjectInput) => req<Project>("PATCH", `/projects/${id}`, data),
     delete: (id: string) => req<null>("DELETE", `/projects/${id}`),
+    addComment: (id: string, content: string, author = "human") =>
+      req<Comment>("POST", `/projects/${id}/comments`, { content, author }),
+    listComments: (id: string) =>
+      req<{ comments: Comment[] }>("GET", `/projects/${id}/comments`),
   },
 
   sessions: {
-    list: (params?: { agent?: string; limit?: number }) =>
+    list: (params?: { agent?: string; job_run_id?: string; limit?: number }) =>
       req<{ sessions: Session[] }>(
         "GET", "/sessions", undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
-    get: (id: string) =>
-      req<Session & { events: unknown[]; snapshot: string | null }>("GET", `/sessions/${id}`),
+    get: (id: string) => req<SessionDetail>("GET", `/sessions/${id}`),
+  },
+
+  skills: {
+    list: (params?: { q?: string; source?: "builtin" | "user"; reload?: boolean }) =>
+      req<{ skills: SkillMeta[] }>(
+        "GET", "/skills", undefined,
+        params as Record<string, string | number | boolean | undefined>,
+      ),
+    get: (name: string, ref?: string) =>
+      req<SkillFull | SkillRefContent>(
+        "GET", `/skills/${encodeURIComponent(name)}`, undefined,
+        ref ? { ref } : undefined,
+      ),
+    create: (data: CreateSkillInput) => req<SkillFull>("POST", "/skills", data),
   },
 
   knowledge: {
-    collections: () =>
-      req<{ collections: KnowledgeCollection[] }>("GET", "/knowledge/collections"),
-    search: (q: string, opts?: { collection?: string; limit?: number }) =>
+    collections: (params?: { project_id?: string }) =>
+      req<{ collections: { name: string; path: string; pattern: string; documentCount: number; lastModified: string | null; projectId: string | null }[] }>(
+        "GET", "/knowledge/collections", undefined,
+        params as Record<string, string | number | boolean | undefined>,
+      ),
+    search: (q: string, opts?: { collection?: string; project_id?: string; mode?: string; limit?: number }) =>
       req<{
         results: { docid: string; path: string; collection: string; title: string; snippet: string; score: number }[];
-      }>("GET", "/knowledge/search", undefined, { q, collection: opts?.collection, limit: opts?.limit }),
-    update: () =>
-      req<{ indexed: number; updated: number; removed: number }>("POST", "/knowledge/update", {}),
+      }>("GET", "/knowledge/search", undefined, {
+        q, collection: opts?.collection, project_id: opts?.project_id, mode: opts?.mode, limit: opts?.limit,
+      }),
+    getDocument: (id: string) =>
+      req<{ docid: string; path: string; collection: string; title: string; content: string; modifiedAt: string }>(
+        "GET", `/knowledge/documents/${encodeURIComponent(id)}`,
+      ),
+    addCollection: (data: { name: string; path: string; pattern?: string; project_id?: string }) =>
+      req<{ name: string; indexed: number }>("POST", "/knowledge/collections", data),
+    removeCollection: (name: string) =>
+      req<null>("DELETE", `/knowledge/collections/${encodeURIComponent(name)}`),
+    update: (opts?: { collections?: string[] }) =>
+      req<{ indexed: number; updated: number; removed: number }>("POST", "/knowledge/update", opts ?? {}),
+    status: () =>
+      req<{ collections: { name: string; path: string; pattern: string; documentCount: number; lastModified: string | null; projectId: string | null }[]; totalDocuments: number; dbPath: string; searchMode: string }>(
+        "GET", "/knowledge/status",
+      ),
+  },
+
+  tags: {
+    list: (params?: { resource_type?: "task" | "project" | "memory" }) =>
+      req<{ tags: { name: string; count: number; resource_type: string }[] }>(
+        "GET", "/tags", undefined,
+        params as Record<string, string | number | boolean | undefined>,
+      ),
+  },
+
+  gateway: {
+    status: () => req<{ running: boolean; status: string }>("GET", "/gateway/status"),
+    send: (data: { platform: string; chat_id: string; text: string; thread_id?: string }) =>
+      req<null>("POST", "/gateway/send", data),
   },
 };
