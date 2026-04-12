@@ -10,10 +10,10 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: Number(process.env.ORC_WEB_PORT) || 9742,
     proxy: {
       "/api": {
-        target: "http://localhost:7700",
+        target: `http://localhost:${process.env.ORC_API_PORT ?? 7701}`,
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/api/, ""),
       },

@@ -34,8 +34,9 @@ async function req<T>(
   if (res.status === 204) return null as T;
   const json = (await res.json()) as unknown;
   if (!res.ok) {
-    const e = json as { error?: string };
-    throw new Error(e.error ?? `HTTP ${res.status}`);
+    const e = json as { error?: unknown };
+    const msg = typeof e.error === "string" ? e.error : `HTTP ${res.status}`;
+    throw new Error(msg);
   }
   return json as T;
 }

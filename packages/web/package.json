@@ -3,9 +3,9 @@
   "version": "0.1.14",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview",
+    "dev": "bun --env-file ../../.env vite",
+    "build": "bun --env-file ../../.env run tsc -b && bun --env-file ../../.env vite build",
+    "preview": "bun --env-file ../../.env vite preview",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },

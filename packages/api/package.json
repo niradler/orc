@@ -8,7 +8,7 @@
     "./server": "./src/server.ts"
   },
   "scripts": {
-    "dev": "bun run --hot src/index.ts",
+    "dev": "bun --env-file ../../.env --hot src/index.ts",
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
     "build": "bun build src/index.ts --outdir dist --target bun",

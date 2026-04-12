@@ -7,7 +7,7 @@
     "orc": "dist/index.js"
   },
   "scripts": {
-    "dev": "bun run --watch src/index.ts",
+    "dev": "bun --env-file ../../.env --watch src/index.ts",
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
     "build": "bun build src/index.ts --outdir dist --target bun --minify --external @opentui/core-darwin-x64 --external @opentui/core-darwin-arm64 --external @opentui/core-linux-x64 --external @opentui/core-linux-arm64 --external @opentui/core-win32-x64 --external @opentui/core-win32-arm64",

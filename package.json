@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "bun run --filter @orc/api dev & bun run --filter @orc/cli dev",
+    "dev": "bun run --filter @orc/api dev & bun run --filter @orc/cli dev & bun run --filter @orc/web dev",
     "build": "bun run --filter '*' build",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "biome lint ./packages",
@@ -20,6 +20,10 @@
     "tui": "bun --hot packages/tui/src/index.tsx",
     "test": "bun run --filter '*' test",
     "clean": "bun run --filter '*' clean"
+  },
+  "overrides": {
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.10",
