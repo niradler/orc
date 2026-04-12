@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   createSkill,
@@ -85,7 +85,7 @@ describe("scanSkills", () => {
     const skills = scanSkills();
     const coder = skills.find((s) => s.name === "orc-coder");
     expect(coder).toBeTruthy();
-    expect(coder!.source).toBe("builtin");
+    expect(coder?.source).toBe("builtin");
   });
 
   test("skills are sorted by name", () => {
@@ -99,9 +99,9 @@ describe("scanSkills", () => {
     const skills = scanSkills();
     const coder = skills.find((s) => s.name === "orc-coder");
     expect(coder).toBeTruthy();
-    expect(coder!.description).toBeTruthy();
-    expect(coder!.path).toContain("SKILL.md");
-    expect(typeof coder!.metadata).toBe("object");
+    expect(coder?.description).toBeTruthy();
+    expect(coder?.path).toContain("SKILL.md");
+    expect(typeof coder?.metadata).toBe("object");
   });
 });
 

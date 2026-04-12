@@ -48,7 +48,7 @@ const searchRoute = createRoute({
   summary: "Search memories (3-layer BM25: porter → trigram → fallback)",
   request: {
     query: z.object({
-      q: z.string().min(1),
+      q: z.string().min(1, "Search query cannot be empty"),
       scope: z.string().optional(),
       type: MemoryTypeSchema.optional(),
       project_id: z.string().optional(),

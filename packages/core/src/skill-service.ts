@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -245,12 +245,13 @@ export function createSkill(name: string, content: string): SkillFull {
     throw new Error(`Skill already exists: ${name}`);
   }
 
+  const { frontmatter: fm, body } = parseFrontmatter(content);
+
   mkdirSync(skillDir, { recursive: true });
   writeFileSync(skillFile, content, "utf-8");
 
   reloadCache();
 
-  const { frontmatter: fm, body } = parseFrontmatter(content);
   const references = listReferenceFiles(skillDir);
 
   return {

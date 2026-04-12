@@ -1,7 +1,7 @@
 import { shortId } from "@orc/core/ids";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
-import { dryRunMsg, isDryRun, isJson, jsonOut } from "../output.js";
+import { isJson, jsonOut } from "../output.js";
 import { resolveProject } from "./project.js";
 
 export function jobCommand() {
@@ -137,7 +137,6 @@ export function jobCommand() {
       const job = list?.jobs.find((j) => j.name === nameOrId || j.id === nameOrId);
       if (!job) return console.error(`Job not found: ${nameOrId}`);
 
-      if (isDryRun()) return dryRunMsg("delete", `job ${job.name}`);
       const { error } = await client.jobs.delete(job.id);
       if (error) return console.error("Error:", error);
       if (isJson()) return jsonOut({ deleted: job.id, name: job.name });
@@ -176,7 +175,6 @@ export function jobCommand() {
       if (opts.enabled) input.enabled = true;
       if (opts.disabled) input.enabled = false;
 
-      if (isDryRun()) return dryRunMsg("update", `job ${job.name}`, input);
       const { data, error } = await client.jobs.update(job.id, input as never);
       if (error || !data) return console.error("Error:", error);
       if (isJson()) return jsonOut(data);

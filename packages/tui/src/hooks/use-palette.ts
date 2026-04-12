@@ -37,6 +37,25 @@ function scoreCommand(query: string, cmd: PaletteCommand, recentIds: string[]): 
 
 type PaletteMode = "commands" | "search";
 
+const GATEWAY_SORT: PaletteCommand = {
+  id: "gateway-sort",
+  name: "Sort →",
+  category: "sort",
+  aliases: ["sort"],
+  icon: "↕",
+  available: () => true,
+  execute: () => {},
+};
+const GATEWAY_FILTER: PaletteCommand = {
+  id: "gateway-filter",
+  name: "Filter →",
+  category: "filter",
+  aliases: ["filter"],
+  icon: "⏳",
+  available: () => true,
+  execute: () => {},
+};
+
 export function usePalette(
   commands: PaletteCommand[],
   callbacks: {
@@ -58,25 +77,6 @@ export function usePalette(
   const callbacksRef = useRef(callbacks);
   callbacksRef.current = callbacks;
   const recentIdsRef = useRef<string[]>([]);
-
-  const GATEWAY_SORT: PaletteCommand = {
-    id: "gateway-sort",
-    name: "Sort →",
-    category: "sort",
-    aliases: ["sort"],
-    icon: "↕",
-    available: () => true,
-    execute: () => {},
-  };
-  const GATEWAY_FILTER: PaletteCommand = {
-    id: "gateway-filter",
-    name: "Filter →",
-    category: "filter",
-    aliases: ["filter"],
-    icon: "⏳",
-    available: () => true,
-    execute: () => {},
-  };
 
   const getResults = useCallback((): PaletteCommand[] => {
     // In search mode, no command results — the palette shows search UI

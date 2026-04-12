@@ -1,7 +1,7 @@
 import { shortId } from "@orc/core/ids";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
-import { dryRunMsg, isDryRun, isJson, jsonOut } from "../output.js";
+import { isJson, jsonOut } from "../output.js";
 import { resolveProject } from "./project.js";
 
 export function memCommand() {
@@ -102,7 +102,7 @@ export function memCommand() {
     .description("Show memory details")
     .action(async (id: string) => {
       const client = createOrcClient();
-      const { data, error } = await client.memories.list({ limit: 200 });
+      const { data, error } = await client.memories.list({ limit: 100 });
       if (error) return console.error("Error:", error);
       const mem = (data?.memories ?? []).find((m) => m.id === id || m.id.endsWith(id));
       if (!mem) return console.error(`Memory not found: ${id}`);
@@ -139,14 +139,10 @@ export function memCommand() {
     .option("-t, --tags <tags>", "Comma-separated tags")
     .action(async (id: string, opts) => {
       const client = createOrcClient();
-      const { data: listData, error: listErr } = await client.memories.list({ limit: 200 });
+      const { data: listData, error: listErr } = await client.memories.list({ limit: 100 });
       if (listErr) return console.error("Error:", listErr);
       const mem = (listData?.memories ?? []).find((m) => m.id === id || m.id.endsWith(id));
       if (!mem) return console.error(`Memory not found: ${id}`);
-      if (isDryRun())
-        return dryRunMsg("update", `memory [${shortId(mem.id)}]`, {
-          content: opts.content?.slice(0, 80),
-        });
 
       const input: Record<string, unknown> = {};
       if (opts.content) input.content = opts.content;
@@ -170,14 +166,10 @@ export function memCommand() {
     .description("Delete a memory")
     .action(async (id: string) => {
       const client = createOrcClient();
-      const { data, error: listErr } = await client.memories.list({ limit: 200 });
+      const { data, error: listErr } = await client.memories.list({ limit: 100 });
       if (listErr) return console.error("Error:", listErr);
       const mem = (data?.memories ?? []).find((m) => m.id === id || m.id.endsWith(id));
       if (!mem) return console.error(`Memory not found: ${id}`);
-      if (isDryRun())
-        return dryRunMsg("delete", `memory [${shortId(mem.id)}]`, {
-          content: mem.content.slice(0, 80),
-        });
 
       const { error } = await client.memories.delete(mem.id);
       if (error) return console.error("Error:", error);
