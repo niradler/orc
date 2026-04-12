@@ -1,6 +1,6 @@
 import { createOrcClient } from "@orc/sdk";
 import type { Project, ProjectSummary } from "@orc/sdk/types";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { expectApiData } from "../api-result.js";
 import { ConfirmDialog } from "../components/confirm-dialog.js";
 import { DetailPane } from "../components/detail-pane.js";
@@ -36,55 +36,58 @@ import type {
 
 const client = createOrcClient();
 
-const columns: Column<Project>[] = [
-  {
-    key: "status",
-    label: "Status",
-    width: 10,
-    minWidth: 8,
-    priority: 7,
-    render: (p) => `${statusIcon(p.status)} ${p.status}`,
-    color: (p) => projectStatusColor[p.status] ?? colors.text,
-    sortValue: (p) => p.status,
-  },
-  {
-    key: "name",
-    label: "Name",
-    width: 20,
-    minWidth: 14,
-    priority: 8,
-    render: (p) => p.name,
-    sortValue: (p) => p.name.toLowerCase(),
-  },
-  {
-    key: "desc",
-    label: "Description",
-    width: 40,
-    minWidth: 16,
-    priority: 5,
-    render: (p) => p.description ?? "—",
-    color: () => colors.textDim,
-  },
-  {
-    key: "tags",
-    label: "Tags",
-    width: 20,
-    minWidth: 10,
-    priority: 3,
-    render: (p) => (p.tags?.length ? p.tags.join(", ") : "—"),
-    color: () => colors.textDim,
-  },
-  {
-    key: "updated_at",
-    label: "Updated",
-    width: 12,
-    minWidth: 10,
-    priority: 1,
-    render: (p) => p.updated_at.slice(0, 10),
-    color: () => colors.textDim,
-    sortValue: (p) => p.updated_at,
-  },
-];
+function buildColumns(activeId: string | null): Column<Project>[] {
+  return [
+    {
+      key: "status",
+      label: "Status",
+      width: 10,
+      minWidth: 8,
+      priority: 7,
+      render: (p) => `${statusIcon(p.status)} ${p.status}`,
+      color: (p) => projectStatusColor[p.status] ?? colors.text,
+      sortValue: (p) => p.status,
+    },
+    {
+      key: "name",
+      label: "Name",
+      width: 22,
+      minWidth: 14,
+      priority: 8,
+      render: (p) => (p.id === activeId ? `▸ ${p.name}` : `  ${p.name}`),
+      color: (p) => (p.id === activeId ? colors.success : colors.text),
+      sortValue: (p) => p.name.toLowerCase(),
+    },
+    {
+      key: "desc",
+      label: "Description",
+      width: 40,
+      minWidth: 16,
+      priority: 5,
+      render: (p) => p.description ?? "—",
+      color: () => colors.textDim,
+    },
+    {
+      key: "tags",
+      label: "Tags",
+      width: 20,
+      minWidth: 10,
+      priority: 3,
+      render: (p) => (p.tags?.length ? p.tags.join(", ") : "—"),
+      color: () => colors.textDim,
+    },
+    {
+      key: "updated_at",
+      label: "Updated",
+      width: 12,
+      minWidth: 10,
+      priority: 1,
+      render: (p) => p.updated_at.slice(0, 10),
+      color: () => colors.textDim,
+      sortValue: (p) => p.updated_at,
+    },
+  ];
+}
 
 const PROJECT_STATUS_OPTIONS: SelectOption[] = [
   { label: "Active", value: "active" },
@@ -125,7 +128,9 @@ function projectFields(p?: Project): FormField[] {
 }
 
 type Props = {
+  activeProjectId: string | null;
   onSelectProject: (name: string) => void;
+  onClearProject: () => void;
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
   onRegisterCommands: (cmds: PaletteCommand[]) => void;
@@ -133,7 +138,9 @@ type Props = {
 };
 
 export function ProjectsView({
+  activeProjectId,
   onSelectProject,
+  onClearProject,
   onRegisterKeyHandler,
   onStateChange,
   onRegisterCommands,
@@ -145,7 +152,8 @@ export function ProjectsView({
   const [formIntent, setFormIntent] = useState<"create" | "edit">("create");
   const [formTarget, setFormTarget] = useState<Project | null>(null);
   const editForm = useEditForm();
-  const { sort, setSortByKey, sortData } = useSort(columns);
+  const columns = useMemo(() => buildColumns(activeProjectId), [activeProjectId]);
+  const { sort, setSortByKey, toggleDirection, sortData } = useSort(columns);
 
   const { data, loading, error, refresh, mutate } = usePolling(() => client.projects.list(), 5000);
   const projects = data?.projects ?? [];
@@ -259,7 +267,7 @@ export function ProjectsView({
     });
 
     onRegisterCommands([...sortCommands, ...filterCommands]);
-  }, [onRegisterCommands, setSortByKey, sort, projects, query, setQuery]);
+  }, [onRegisterCommands, setSortByKey, sort, projects, query, setQuery, columns]);
 
   useEffect(() => {
     onRegisterSearch({ setQuery, clear: () => setQuery("") });
@@ -413,9 +421,16 @@ export function ProjectsView({
           refreshRef.current();
           return true;
         }
-        if (key.name === "s") {
+        if (key.name === "space") {
           const p = filteredRef.current[cursorRef.current];
-          if (p) onSelectProject(p.name);
+          if (p) {
+            if (p.id === activeProjectId) onClearProject();
+            else onSelectProject(p.name);
+          }
+          return true;
+        }
+        if (key.name === "s") {
+          toggleDirection();
           return true;
         }
         if (key.name === "n") {
@@ -464,15 +479,24 @@ export function ProjectsView({
           setMode("confirm");
           return true;
         }
-        if (key.name === "s" && detailRef.current) {
-          onSelectProject(detailRef.current.project.name);
+        if (key.name === "space" && detailRef.current) {
+          if (detailRef.current.project.id === activeProjectId) onClearProject();
+          else onSelectProject(detailRef.current.project.name);
           return true;
         }
         return false;
       }
       return false;
     },
-    [submitCurrentForm, vimHandleKey, onSelectProject, setFilterActive],
+    [
+      submitCurrentForm,
+      vimHandleKey,
+      onSelectProject,
+      onClearProject,
+      activeProjectId,
+      setFilterActive,
+      toggleDirection,
+    ],
   );
 
   useEffect(() => {
@@ -506,7 +530,7 @@ export function ProjectsView({
       <DetailPane
         title={`Project: ${p.name}`}
         fields={fields}
-        hint="Esc back • e edit • d delete • s scope • Up/Down scroll"
+        hint="Esc back • e edit • d delete • Space scope • Up/Down scroll"
       />
     );
   }
@@ -521,7 +545,7 @@ export function ProjectsView({
         filterPlaceholder="Search by name, status, description, or tags"
         onFilterChange={setQuery}
         onFilterSubmit={() => setFilterActive(false)}
-        statusMessage="Press s to select an active project"
+        statusMessage="Select a project to scope all views"
       />
       <ResourceTable
         columns={columns}
@@ -537,7 +561,7 @@ export function ProjectsView({
         selectedSummary={
           filtered[cursor]
             ? `${statusIcon(filtered[cursor]?.status ?? "")} ${filtered[cursor]?.status} • ${filtered[cursor]?.name}`
-            : "Create a project with n, then press s to scope the rest of the TUI."
+            : "Create a project with n, then press Space to scope."
         }
       />
       {mode === "form" && (

@@ -12,11 +12,11 @@ export type Route =
 export const ROUTES: Route[] = [
   "projects",
   "tasks",
-  "jobs",
+  "skills",
   "memories",
   "knowledge",
+  "jobs",
   "sessions",
-  "skills",
 ];
 
 export type ViewMode = "browse" | "detail" | "form" | "filter" | "confirm";

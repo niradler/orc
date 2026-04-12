@@ -25,7 +25,7 @@ import {
   isOpenDetailKey,
   isRefreshKey,
 } from "../navigation.js";
-import { colors, priorityColor, projectStatusColor, statusColor, statusIcon } from "../theme.js";
+import { colors, priorityColor, statusColor, statusIcon } from "../theme.js";
 import type {
   Column,
   KeyEvent,
@@ -118,50 +118,6 @@ const columns: Column<Task>[] = [
   },
 ];
 
-type ProjectPickerEntry = {
-  id: string;
-  name: string;
-  description: string;
-  status: string;
-};
-
-const pickerColumns: Column<ProjectPickerEntry>[] = [
-  {
-    key: "status",
-    label: "",
-    width: 3,
-    minWidth: 3,
-    priority: 9,
-    render: (p) =>
-      p.id === "__all__" ? "◉" : p.id === "__none__" ? "○" : `${statusIcon(p.status)}`,
-    color: (p) =>
-      p.id === "__all__"
-        ? colors.accent
-        : p.id === "__none__"
-          ? colors.textDim
-          : (projectStatusColor[p.status] ?? colors.text),
-  },
-  {
-    key: "name",
-    label: "Project",
-    width: 24,
-    minWidth: 14,
-    priority: 8,
-    render: (p) => p.name,
-    color: (p) => (p.id === "__all__" || p.id === "__none__" ? colors.accent : colors.text),
-    sortValue: (p) => p.name.toLowerCase(),
-  },
-  {
-    key: "description",
-    label: "Description",
-    width: 50,
-    minWidth: 20,
-    priority: 5,
-    render: (p) => p.description,
-    color: () => colors.textDim,
-  },
-];
-
 const TASK_PRIORITIES: SelectOption[] = [
   { label: "Low", value: "low" },
   { label: "Normal", value: "normal" },
@@ -229,15 +185,8 @@ function taskFields(t?: Task): FormField[] {
   ];
 }
 
-type ProjectFilter =
-  | { type: "all" }
-  | { type: "none" }
-  | { type: "project"; id: string; name: string };
-
 type Props = {
   projectId: string | null;
-  onSelectProject: (name: string) => void;
-  onClearProject: () => void;
   onRegisterKeyHandler: (handler: ViewKeyHandler) => void;
   onStateChange: (state: ViewState) => void;
   onRegisterCommands: (cmds: PaletteCommand[]) => void;
@@ -246,19 +195,12 @@ type Props = {
 
 export function TasksView({
   projectId,
-  onSelectProject,
-  onClearProject,
   onRegisterKeyHandler,
   onStateChange,
   onRegisterCommands,
   onRegisterSearch,
 }: Props) {
-  const [projectFilter, setProjectFilter] = useState<ProjectFilter | null>(
-    projectId ? { type: "project", id: projectId, name: "" } : null,
-  );
-  const [mode, setMode] = useState<"project-picker" | "browse" | "detail" | "form" | "confirm">(
-    projectId ? "browse" : "project-picker",
-  );
+  const [mode, setMode] = useState<"browse" | "detail" | "form" | "confirm">("browse");
   const [detail, setDetail] = useState<Task | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
   const [formIntent, setFormIntent] = useState<"create" | "edit">("create");
@@ -266,64 +208,8 @@ export function TasksView({
   const editForm = useEditForm();
   const { sort, setSortByKey, toggleDirection, sortData } = useSort(columns);
 
-  // Project list for the picker
-  const { data: projectsData, loading: projectsLoading } = usePolling(
-    () => client.projects.list(),
-    10000,
-  );
-  const projects = projectsData?.projects ?? [];
-
-  const pickerEntries: ProjectPickerEntry[] = [
-    {
-      id: "__all__",
-      name: "All Tasks",
-      description: "Show tasks from all projects",
-      status: "active",
-    },
-    {
-      id: "__none__",
-      name: "Unassigned",
-      description: "Tasks not assigned to any project",
-      status: "active",
-    },
-    ...projects.map((p) => ({
-      id: p.id,
-      name: p.name,
-      description: p.description ?? "—",
-      status: p.status,
-    })),
-  ];
-
-  const {
-    filtered: pickerFiltered,
-    query: pickerQuery,
-    active: pickerFilterActive,
-    setQuery: setPickerQuery,
-    setActive: setPickerFilterActive,
-  } = useFilter(pickerEntries, (p) => `${p.name} ${p.description} ${p.status}`, true);
-  const { cursor: pickerCursor, handleKey: pickerVimHandleKey } = useVimList(
-    pickerFiltered.length,
-    mode === "project-picker" && !pickerFilterActive,
-  );
-
-  // Compute the effective project_id for the task query
-  const effectiveProjectId =
-    projectFilter?.type === "all"
-      ? undefined
-      : projectFilter?.type === "none"
-        ? "__none__"
-        : projectFilter?.type === "project"
-          ? projectFilter.id
-          : undefined;
-
   const { data, loading, error, refresh, mutate } = usePolling(
-    () =>
-      projectFilter
-        ? client.tasks.list({
-            ...(effectiveProjectId ? { project_id: effectiveProjectId } : {}),
-            limit: 100,
-          })
-        : Promise.resolve({ data: { tasks: [], total: 0 }, error: null }),
+    () => client.tasks.list({ ...(projectId ? { project_id: projectId } : {}), limit: 100 }),
     5000,
   );
   const tasks = data?.tasks ?? [];
@@ -349,8 +235,6 @@ export function TasksView({
   modeRef.current = mode;
   const filterActiveRef = useRef(filterActive);
   filterActiveRef.current = filterActive;
-  const pickerFilterActiveRef = useRef(pickerFilterActive);
-  pickerFilterActiveRef.current = pickerFilterActive;
   const filteredRef = useRef(filtered);
   filteredRef.current = filtered;
   const cursorRef = useRef(cursor);
@@ -371,40 +255,8 @@ export function TasksView({
   formIntentRef.current = formIntent;
   const formTargetRef = useRef(formTarget);
   formTargetRef.current = formTarget;
-  const pickerFilteredRef = useRef(pickerFiltered);
-  pickerFilteredRef.current = pickerFiltered;
-  const pickerCursorRef = useRef(pickerCursor);
-  pickerCursorRef.current = pickerCursor;
-  const projectFilterRef = useRef(projectFilter);
-  projectFilterRef.current = projectFilter;
-
-  const projectFilterLabel =
-    projectFilter?.type === "all"
-      ? "All projects"
-      : projectFilter?.type === "none"
-        ? "Unassigned tasks"
-        : projectFilter?.type === "project"
-          ? projectFilter.name
-          : null;
 
   useEffect(() => {
-    if (mode === "project-picker") {
-      onStateChange({
-        mode: pickerFilterActive ? "filter" : "browse",
-        title: "Tasks",
-        countLabel: projectsLoading ? "Loading projects…" : `${pickerFiltered.length} projects`,
-        filterQuery: pickerQuery,
-        filterActive: pickerFilterActive,
-        navigationLocked: pickerFilterActive,
-        selectionLabel: pickerFiltered[pickerCursor]
-          ? `Select: ${pickerFiltered[pickerCursor]?.name}`
-          : "Pick a project to view tasks.",
-        detailId: null,
-        statusMessage: "Select a project scope",
-      });
-      return;
-    }
-
     const selectedTask = filtered[cursor];
     const sortLabel = sort.key ? `${sort.key} ${sort.direction === "asc" ? "▲" : "▼"}` : null;
     onStateChange({
@@ -419,7 +271,7 @@ export function TasksView({
         ? `${statusIcon(selectedTask.status)} ${selectedTask.status} • ${selectedTask.title}`
         : "No task selected yet.",
       detailId: mode === "detail" ? (detail?.id ?? null) : null,
-      statusMessage: projectFilterLabel,
+      statusMessage: null,
       contextData:
         mode === "detail" && detail
           ? JSON.stringify(detail, null, 2)
@@ -427,30 +279,9 @@ export function TasksView({
             ? JSON.stringify(filtered[cursor], null, 2)
             : null,
     });
-  }, [
-    mode,
-    query,
-    filterActive,
-    onStateChange,
-    filtered,
-    cursor,
-    detail,
-    loading,
-    sort,
-    pickerFilterActive,
-    pickerQuery,
-    pickerFiltered,
-    pickerCursor,
-    projectsLoading,
-    projectFilterLabel,
-  ]);
+  }, [mode, query, filterActive, onStateChange, filtered, cursor, detail, loading, sort]);
 
   useEffect(() => {
-    if (mode === "project-picker") {
-      onRegisterCommands([]);
-      return;
-    }
-
     const sortCommands: PaletteCommand[] = columns
       .filter((c) => c.sortValue)
       .map((col) => ({
@@ -516,72 +347,34 @@ export function TasksView({
       execute: () => setQuery(""),
     });
 
-    const projectCommand: PaletteCommand = {
-      id: "switch-project",
-      name: "Switch project",
-      category: "action",
-      aliases: ["project", "pick project", "change project"],
-      icon: "◉",
-      available: () => modeRef.current === "browse",
-      execute: () => {
-        setProjectFilter(null);
-        setMode("project-picker");
-      },
-    };
-
-    onRegisterCommands([projectCommand, ...sortCommands, ...filterCommands]);
-  }, [onRegisterCommands, setSortByKey, sort, tasks, query, setQuery, mode]);
+    onRegisterCommands([...sortCommands, ...filterCommands]);
+  }, [onRegisterCommands, setSortByKey, sort, tasks, query, setQuery]);
 
   useEffect(() => {
-    if (mode === "project-picker") {
-      onRegisterSearch({ setQuery: setPickerQuery, clear: () => setPickerQuery("") });
-    } else {
-      onRegisterSearch({ setQuery, clear: () => setQuery("") });
-    }
-  }, [onRegisterSearch, setQuery, setPickerQuery, mode]);
+    onRegisterSearch({ setQuery, clear: () => setQuery("") });
+  }, [onRegisterSearch, setQuery]);
 
-  const selectPickerEntry = useCallback(
-    (entry: ProjectPickerEntry) => {
-      if (entry.id === "__all__") {
-        setProjectFilter({ type: "all" });
-        onClearProject();
-      } else if (entry.id === "__none__") {
-        setProjectFilter({ type: "none" });
-        onClearProject();
-      } else {
-        setProjectFilter({ type: "project", id: entry.id, name: entry.name });
-        onSelectProject(entry.name);
-      }
-      setPickerQuery("");
-      setPickerFilterActive(false);
-      setMode("browse");
+  const doCreate = useCallback(
+    async (vals: Record<string, string>) => {
+      if (!vals.title) throw new Error("Title is required.");
+      const tags = vals.tags
+        ? vals.tags
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : undefined;
+      const created = await client.tasks.create({
+        title: vals.title,
+        ...(vals.body ? { body: vals.body } : {}),
+        status: (vals.status as "todo" | "doing" | "blocked") || "todo",
+        priority: (vals.priority as "low" | "normal" | "high" | "critical") || "normal",
+        ...(tags ? { tags } : {}),
+        ...(projectId ? { project_id: projectId } : {}),
+      });
+      return expectApiData(created, "Couldn't create task.");
     },
-    [onSelectProject, onClearProject, setPickerQuery, setPickerFilterActive],
+    [projectId],
   );
-
-  const selectPickerEntryRef = useRef(selectPickerEntry);
-  selectPickerEntryRef.current = selectPickerEntry;
-
-  const doCreate = useCallback(async (vals: Record<string, string>) => {
-    if (!vals.title) throw new Error("Title is required.");
-    const tags = vals.tags
-      ? vals.tags
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : undefined;
-    const effectivePid =
-      projectFilterRef.current?.type === "project" ? projectFilterRef.current.id : undefined;
-    const created = await client.tasks.create({
-      title: vals.title,
-      ...(vals.body ? { body: vals.body } : {}),
-      status: (vals.status as "todo" | "doing" | "blocked") || "todo",
-      priority: (vals.priority as "low" | "normal" | "high" | "critical") || "normal",
-      ...(tags ? { tags } : {}),
-      ...(effectivePid ? { project_id: effectivePid } : {}),
-    });
-    return expectApiData(created, "Couldn't create task.");
-  }, []);
 
   const doEdit = useCallback(async (vals: Record<string, string>) => {
     const task = formTargetRef.current ?? filteredRef.current[cursorRef.current];
@@ -644,28 +437,6 @@ export function TasksView({
 
   const handleKey = useCallback(
     (key: KeyEvent): boolean => {
-      // Project picker mode
-      if (modeRef.current === "project-picker") {
-        if (pickerFilterActiveRef.current) {
-          return handleFilterInputKey(key.name, setPickerFilterActive);
-        }
-        if (pickerVimHandleKey(key)) return true;
-        if (isFilterToggleKey(key.name)) {
-          setPickerFilterActive(true);
-          return true;
-        }
-        if (isOpenDetailKey(key.name)) {
-          const entry = pickerFilteredRef.current[pickerCursorRef.current];
-          if (entry) selectPickerEntryRef.current(entry);
-          return true;
-        }
-        if (key.name === "escape" && projectFilterRef.current) {
-          setMode("browse");
-          return true;
-        }
-        return true;
-      }
-
       if (filterActiveRef.current) {
         return handleFilterInputKey(key.name, setFilterActive);
       }
@@ -724,10 +495,6 @@ export function TasksView({
                 setMode("detail");
               }
             });
-          return true;
-        }
-        if (key.name === "p") {
-          setMode("project-picker");
           return true;
         }
         if (key.name === "s") {
@@ -792,54 +559,12 @@ export function TasksView({
       }
       return false;
     },
-    [
-      submitCurrentForm,
-      vimHandleKey,
-      pickerVimHandleKey,
-      setFilterActive,
-      setPickerFilterActive,
-      toggleDirection,
-    ],
+    [submitCurrentForm, vimHandleKey, setFilterActive, toggleDirection],
   );
 
   useEffect(() => {
     onRegisterKeyHandler(handleKey);
   }, [handleKey, onRegisterKeyHandler]);
-
-  // Project picker view
-  if (mode === "project-picker") {
-    return (
-      <box flexDirection="column" flexGrow={1}>
-        <ViewToolbar
-          title="Tasks — Select Project"
-          countLabel={projectsLoading ? "Loading projects…" : `${pickerFiltered.length} projects`}
-          filterQuery={pickerQuery}
-          filterActive={pickerFilterActive}
-          filterPlaceholder="Search projects"
-          onFilterChange={setPickerQuery}
-          onFilterSubmit={() => setPickerFilterActive(false)}
-          statusMessage={
-            projectFilter ? "Esc to go back • Enter to select" : "Enter to select a project"
-          }
-        />
-        <ResourceTable
-          columns={pickerColumns}
-          data={pickerFiltered}
-          cursor={pickerCursor}
-          keyFn={(p) => p.id}
-          loading={projectsLoading}
-          emptyMessage="No projects found."
-          filteredEmptyMessage="No projects match the search."
-          hasActiveFilter={Boolean(pickerQuery)}
-          selectedSummary={
-            pickerFiltered[pickerCursor]
-              ? `${pickerFiltered[pickerCursor]?.name} — ${pickerFiltered[pickerCursor]?.description}`
-              : "Navigate with j/k, select with Enter"
-          }
-        />
-      </box>
-    );
-  }
 
   if (mode === "detail" && detail) {
     const fields = [
@@ -885,7 +610,7 @@ export function TasksView({
         filterPlaceholder="Search tasks, status, priority, author, tags"
         onFilterChange={setQuery}
         onFilterSubmit={() => setFilterActive(false)}
-        statusMessage={projectFilterLabel ?? "All projects"}
+        statusMessage={projectId ? "Project-scoped view" : "All projects"}
       />
       <ResourceTable
         columns={columns}
@@ -901,7 +626,7 @@ export function TasksView({
         selectedSummary={
           selectedTask
             ? `${statusIcon(selectedTask.status)} ${selectedTask.status} • ${selectedTask.priority} • ${selectedTask.title}`
-            : "Create a task with n, or press p to switch project."
+            : "Create a task with n, or switch projects from the Projects tab."
         }
       />
       {mode === "form" && (

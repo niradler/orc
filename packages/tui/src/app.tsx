@@ -1,6 +1,10 @@
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react";
+import { loadConfig } from "@orc/core/config";
 import { createOrcClient } from "@orc/sdk";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChatModal } from "./components/chat-modal.js";
 import { SmartPalette } from "./components/smart-palette.js";
 import { StatusBar } from "./components/status-bar.js";
@@ -19,6 +23,19 @@ import { SkillsView } from "./views/skills.js";
 import { TasksView } from "./views/tasks.js";
 
 const client = createOrcClient();
+
+function configPath(): string {
+  return join(homedir(), ".orc", "config.json");
+}
+
+function persistActiveProject(name: string | null): void {
+  const p = configPath();
+  const cfg: Record<string, unknown> = existsSync(p) ? JSON.parse(readFileSync(p, "utf-8")) : {};
+  if (name) cfg.activeProject = name;
+  else delete cfg.activeProject;
+  writeFileSync(p, `${JSON.stringify(cfg, null, 2)}\n`);
+}
+
 const EMPTY_VIEW_STATE: ViewState = {
   mode: "browse",
   title: "Tasks",
@@ -35,11 +52,21 @@ export function App() {
   const renderer = useRenderer();
   const { width, height } = useTerminalDimensions();
   const [route, setRoute] = useState<Route>("tasks");
-  const [activeProject, setActiveProject] = useState<string | null>(null);
+  const [activeProject, setActiveProject] = useState<string | null>(
+    () => loadConfig().activeProject ?? null,
+  );
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const chatInputRef = useRef("");
+
+  useEffect(() => {
+    if (activeProject && !activeProjectId) {
+      client.projects.getByName(activeProject).then((r) => {
+        if (r.data) setActiveProjectId(r.data.id);
+      });
+    }
+  }, [activeProject, activeProjectId]);
 
   const { data: healthData, error: healthError } = usePolling(() => client.health.check(), 10000);
   const connected = !!healthData && !healthError;
@@ -88,12 +115,14 @@ export function App() {
     if (result.data) {
       setActiveProject(result.data.name);
       setActiveProjectId(result.data.id);
+      persistActiveProject(result.data.name);
     }
   }, []);
 
   const clearProject = useCallback(() => {
     setActiveProject(null);
     setActiveProjectId(null);
+    persistActiveProject(null);
   }, []);
 
   const [viewCommands, setViewCommands] = useState<PaletteCommand[]>([]);
@@ -113,6 +142,16 @@ export function App() {
     const navAvailable = () => !viewStateRef.current.navigationLocked;
     const staticCommands: PaletteCommand[] = [
       {
+        id: "nav-projects",
+        name: "Projects",
+        category: "navigation",
+        aliases: ["p", "proj", "project"],
+        icon: "◉",
+        shortcut: "1",
+        available: navAvailable,
+        execute: () => setRoute("projects"),
+      },
+      {
         id: "nav-tasks",
         name: "Tasks",
         category: "navigation",
@@ -123,14 +162,14 @@ export function App() {
         execute: () => setRoute("tasks"),
       },
       {
-        id: "nav-jobs",
-        name: "Jobs",
+        id: "nav-skills",
+        name: "Skills",
         category: "navigation",
-        aliases: ["j", "job"],
+        aliases: ["sk", "skill"],
         icon: "◉",
         shortcut: "3",
         available: navAvailable,
-        execute: () => setRoute("jobs"),
+        execute: () => setRoute("skills"),
       },
       {
         id: "nav-memories",
@@ -143,14 +182,24 @@ export function App() {
         execute: () => setRoute("memories"),
       },
       {
-        id: "nav-projects",
-        name: "Projects",
+        id: "nav-knowledge",
+        name: "Knowledge",
         category: "navigation",
-        aliases: ["p", "proj", "project"],
+        aliases: ["k", "know"],
         icon: "◉",
-        shortcut: "1",
+        shortcut: "5",
         available: navAvailable,
-        execute: () => setRoute("projects"),
+        execute: () => setRoute("knowledge"),
+      },
+      {
+        id: "nav-jobs",
+        name: "Jobs",
+        category: "navigation",
+        aliases: ["j", "job"],
+        icon: "◉",
+        shortcut: "6",
+        available: navAvailable,
+        execute: () => setRoute("jobs"),
       },
       {
         id: "nav-sessions",
@@ -158,19 +207,9 @@ export function App() {
         category: "navigation",
         aliases: ["sess", "session"],
         icon: "◉",
-        shortcut: "5",
+        shortcut: "7",
         available: navAvailable,
         execute: () => setRoute("sessions"),
-      },
-      {
-        id: "nav-skills",
-        name: "Skills",
-        category: "navigation",
-        aliases: ["sk", "skill"],
-        icon: "◉",
-        shortcut: "6",
-        available: navAvailable,
-        execute: () => setRoute("skills"),
       },
       {
         id: "sys-chat",
@@ -275,11 +314,11 @@ export function App() {
 
     if (k.name === "1") setRoute("projects");
     if (k.name === "2") setRoute("tasks");
-    if (k.name === "3") setRoute("jobs");
+    if (k.name === "3") setRoute("skills");
     if (k.name === "4") setRoute("memories");
     if (k.name === "5") setRoute("knowledge");
-    if (k.name === "6") setRoute("sessions");
-    if (k.name === "7") setRoute("skills");
+    if (k.name === "6") setRoute("jobs");
+    if (k.name === "7") setRoute("sessions");
     if (k.name === "left" || (k.name === "tab" && k.shift))
       setRoute((r) => ROUTES[(ROUTES.indexOf(r) - 1 + ROUTES.length) % ROUTES.length] ?? r);
     if (k.name === "right" || k.name === "tab")
@@ -298,7 +337,9 @@ export function App() {
       >
         {route === "projects" && (
           <ProjectsView
+            activeProjectId={activeProjectId}
             onSelectProject={selectProject}
+            onClearProject={clearProject}
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
             onRegisterCommands={registerViewCommands}
@@ -308,8 +349,6 @@ export function App() {
         {route === "tasks" && (
           <TasksView
             projectId={activeProjectId}
-            onSelectProject={selectProject}
-            onClearProject={clearProject}
             onRegisterKeyHandler={registerViewKeyHandler}
             onStateChange={onViewStateChange}
             onRegisterCommands={registerViewCommands}

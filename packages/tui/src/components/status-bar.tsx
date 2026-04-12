@@ -20,21 +20,21 @@ const HINTS = {
 const TAB_KEYS: Record<Route, string> = {
   projects: "1",
   tasks: "2",
-  jobs: "3",
+  skills: "3",
   memories: "4",
   knowledge: "5",
-  sessions: "6",
-  skills: "7",
+  jobs: "6",
+  sessions: "7",
 };
 
 const TAB_SHORT: Record<Route, string> = {
-  projects: "Proj",
+  projects: "Projects",
   tasks: "Tasks",
-  jobs: "Jobs",
-  memories: "Mem",
-  knowledge: "Know",
-  sessions: "Sess",
   skills: "Skills",
+  memories: "Memories",
+  knowledge: "Knowledge",
+  jobs: "Jobs",
+  sessions: "Sessions",
 };
 
 export function StatusBar({ route, state, connected, project }: Props) {
