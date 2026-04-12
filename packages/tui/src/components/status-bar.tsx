@@ -17,31 +17,37 @@ const HINTS = {
   confirm: "Enter/y confirm • Esc/n cancel",
 } as const;
 
+const ROUTE_BROWSE_HINTS: Partial<Record<Route, string>> = {
+  projects: "↑↓ move • Enter open • Space select • / search • s sort • n new • : cmd",
+};
+
 const TAB_KEYS: Record<Route, string> = {
   projects: "1",
   tasks: "2",
-  jobs: "3",
+  skills: "3",
   memories: "4",
   knowledge: "5",
-  sessions: "6",
-  skills: "7",
+  jobs: "6",
+  sessions: "7",
 };
 
 const TAB_SHORT: Record<Route, string> = {
-  projects: "Proj",
+  projects: "Projects",
   tasks: "Tasks",
-  jobs: "Jobs",
-  memories: "Mem",
-  knowledge: "Know",
-  sessions: "Sess",
   skills: "Skills",
+  memories: "Memories",
+  knowledge: "Knowledge",
+  jobs: "Jobs",
+  sessions: "Sessions",
 };
 
 export function StatusBar({ route, state, connected, project }: Props) {
   const { width } = useTerminalDimensions();
   const compact = getScreenSize(width) === "xs";
   const modeLabel = state.mode.toUpperCase();
-  const hint = state.statusMessage ?? HINTS[state.mode];
+  const defaultHint =
+    state.mode === "browse" ? (ROUTE_BROWSE_HINTS[route] ?? HINTS.browse) : HINTS[state.mode];
+  const hint = state.statusMessage ?? defaultHint;
 
   return (
     <box

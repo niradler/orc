@@ -200,15 +200,19 @@ export function EditFormOverlay({
     ? Math.max(24, width - 2)
     : screen === "sm"
       ? Math.min(78, width - 2)
-      : Math.min(92, width - 4);
+      : screen === "md"
+        ? Math.min(100, width - 4)
+        : Math.min(Math.round(width * 0.6), width - 4);
+  const defaultTextareaHeight = compact ? 4 : screen === "lg" ? 10 : 6;
   const contentHeight = useMemo(() => {
     return fields.reduce(
       (total, field) =>
-        total + (field.type === "textarea" ? (field.height ?? (compact ? 4 : 6)) : 3),
+        total + (field.type === "textarea" ? (field.height ?? defaultTextareaHeight) : 3),
       2,
     );
-  }, [compact, fields]);
-  const boxHeight = Math.max(10, Math.min(height - 2, contentHeight + (compact ? 7 : 9)));
+  }, [defaultTextareaHeight, fields]);
+  const minFormHeight = compact ? height - 2 : Math.round(height * 0.6);
+  const boxHeight = Math.max(minFormHeight, Math.min(height - 2, contentHeight + (compact ? 7 : 9)));
 
   const handleFieldKey = (key: KeyEvent) => {
     if (submitState.status === "saving") return;
@@ -347,7 +351,7 @@ export function EditFormOverlay({
                           textareaRefs.current[field.key] = instance as TextareaRef;
                         }}
                         focused={focused}
-                        height={field.height ?? (compact ? 4 : 6)}
+                        height={field.height ?? defaultTextareaHeight}
                         initialValue={field.value}
                         placeholder={field.placeholder ?? ""}
                         wrapMode="word"
@@ -381,6 +385,7 @@ export function EditFormOverlay({
                         focusedBackgroundColor={colors.bg}
                         placeholderColor={colors.textMuted}
                         onInput={(value) => onChange(field.key, value)}
+                        onKeyDown={handleFieldKey}
                       />
                     </box>
                   )}
