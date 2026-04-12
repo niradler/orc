@@ -434,7 +434,7 @@ export function EditFormOverlay({
             }
           >
             {submitState.message ??
-              (submitState.status === "saving" ? "Saving changes…" : "Save: Ctrl+S or F2 | Tab/↑↓: navigate fields")}
+              (submitState.status === "saving" ? "Saving changes…" : "Save: Ctrl+S or F2")}
           </text>
           <text fg={colors.textMuted}>
             {submitState.status === "saving" ? "Please wait…" : "Cancel: Esc"}
