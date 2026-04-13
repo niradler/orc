@@ -1,6 +1,6 @@
 {
   "name": "orc-ai",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "description": "Human + AI Orchestration Hub — persistent memory, task management, session continuity and multi-agent collaboration for Cursor, Claude Code, and Codex",
   "type": "module",
   "bin": {
@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "build:web": "cd ../web && bun run build",
     "build:copy-web": "bun run copy-web.ts",
-    "build": "bun run build:web && bun build src/index.ts --outdir dist --target bun --minify --external 'node-llama-cpp' --external '@node-llama-cpp/*' && bun run build:copy-web",
+    "build": "bun run build:web && bun build src/index.ts --outdir dist --target bun --minify --external '@tobilu/qmd' --external 'node-llama-cpp' --external '@node-llama-cpp/*' && bun run build:copy-web",
     "build:bin": "bun run build.ts",
     "prepublishOnly": "cp ../../README.md . && bun run build",
     "test": "bun test",
@@ -32,6 +32,9 @@
     "@orc/web": "workspace:*",
     "commander": "^14.0.3",
     "typescript": "^6.0.2"
+  },
+  "optionalDependencies": {
+    "@tobilu/qmd": "^2.1.0"
   },
   "peerDependencies": {
     "bun": ">=1.0.0"

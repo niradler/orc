@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { argv } from "node:process";
 import type { Context, MiddlewareHandler } from "hono";
 
 const MIME: Record<string, string> = {
@@ -23,16 +24,23 @@ const MIME: Record<string, string> = {
 };
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
+// For `bun build --compile` standalone binaries, `import.meta.url` points at an
+// embedded virtual FS (e.g. `$bunfs/root/...`), so we also look next to the
+// actual executable path provided by `process.argv[0]`.
+const execDir = argv[0] ? dirname(argv[0]) : moduleDir;
 
 // Candidate dist locations — first existing wins.
 // 1. Source dev / workspace install: packages/api/src → packages/web/dist
 // 2. Bundled CLI (packages/cli/dist/index.js): dist/web (copied by CLI build)
 // 3. Sibling install layout
+// 4. Standalone binary: ./web relative to the exe on disk
 const CANDIDATES = [
   resolve(moduleDir, "../../web/dist"),
   resolve(moduleDir, "./web"),
   resolve(moduleDir, "../web"),
   resolve(moduleDir, "../../web"),
+  resolve(execDir, "./web"),
+  resolve(execDir, "../web"),
 ];
 
 function resolveWebDist(): string | null {

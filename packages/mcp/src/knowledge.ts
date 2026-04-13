@@ -7,6 +7,7 @@
  */
 
 import { loadConfig } from "@orc/core/config";
+import { OrcError } from "@orc/core/errors";
 import type {
   KnowledgeCollection,
   KnowledgeDocument,
@@ -18,16 +19,32 @@ import type {
 import { createLogger } from "@orc/core/logger";
 import { getDb } from "@orc/db/client";
 import { knowledge_collections } from "@orc/db/schema";
-import {
-  createStore,
-  extractSnippet,
-  type HybridQueryResult,
-  type QMDStore,
-  type SearchResult,
-} from "@tobilu/qmd";
+import type { HybridQueryResult, QMDStore, SearchResult } from "@tobilu/qmd";
 import { eq } from "drizzle-orm";
 
 const logger = createLogger("knowledge:qmd");
+
+// Lazy-load @tobilu/qmd so that its transitive static import of `node-llama-cpp`
+// (pulled in by `qmd/llm.js`) doesn't fire at module load. Compiled standalone
+// binaries and npm users without the optional native dep installed should still
+// be able to start the CLI — the knowledge feature surfaces a clear error on use
+// instead of crashing on boot.
+let _qmd: typeof import("@tobilu/qmd") | null = null;
+async function loadQmd(): Promise<typeof import("@tobilu/qmd")> {
+  if (_qmd) return _qmd;
+  try {
+    _qmd = await import("@tobilu/qmd");
+    return _qmd;
+  } catch (err) {
+    throw new OrcError(
+      "Knowledge feature requires @tobilu/qmd (and its native node-llama-cpp dependency). " +
+        "Install with: npm install @tobilu/qmd node-llama-cpp. " +
+        `Underlying error: ${err instanceof Error ? err.message : String(err)}`,
+      "KNOWLEDGE_UNAVAILABLE",
+      503,
+    );
+  }
+}
 
 export class QmdKnowledgeEngine implements KnowledgeEngine {
   private store: QMDStore | null = null;
@@ -40,6 +57,7 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
   private async getStore(): Promise<QMDStore> {
     if (this.store) return this.store;
     logger.info("Initializing QMD knowledge store", { dbPath: this.dbPath });
+    const { createStore } = await loadQmd();
     this.store = await createStore({ dbPath: this.dbPath });
     return this.store;
   }
@@ -248,7 +266,10 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
   }
 
   private mapSearchResult(r: SearchResult, query: string): KnowledgeSearchResult {
-    const snippet = r.body ? extractSnippet(r.body, query, 120).snippet : r.title;
+    // getStore() has already loaded qmd by the time this is invoked from search paths
+    const extractSnippet = _qmd?.extractSnippet;
+    const snippet =
+      r.body && extractSnippet ? extractSnippet(r.body, query, 120).snippet : r.title;
     return {
       docid: r.docid,
       path: r.displayPath,
@@ -260,7 +281,9 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
   }
 
   private mapHybridResult(r: HybridQueryResult, query: string): KnowledgeSearchResult {
-    const snippet = r.bestChunk ? extractSnippet(r.bestChunk, query, 120).snippet : r.title;
+    const extractSnippet = _qmd?.extractSnippet;
+    const snippet =
+      r.bestChunk && extractSnippet ? extractSnippet(r.bestChunk, query, 120).snippet : r.title;
     return {
       docid: r.docid,
       path: r.displayPath,

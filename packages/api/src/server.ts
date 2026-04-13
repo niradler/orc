@@ -33,7 +33,7 @@ export function createApp() {
     if (orcErr) {
       return c.json(
         { error: orcErr.message, code: orcErr.code },
-        orcErr.statusCode as 400 | 401 | 404 | 409 | 500,
+        orcErr.statusCode as 400 | 401 | 404 | 409 | 500 | 503,
       );
     }
     logger.error("Unhandled error", err);

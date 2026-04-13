@@ -49,6 +49,8 @@ for (const { target, out } of targets) {
     "--define",
     `process.env.ORC_VERSION=${JSON.stringify(pkg.version)}`,
     "--external",
+    "@tobilu/qmd",
+    "--external",
     "node-llama-cpp",
     "--external",
     "@node-llama-cpp/*",
