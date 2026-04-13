@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
-import { argv } from "node:process";
+import process from "node:process";
 import { fileURLToPath } from "node:url";
 import type { Context, MiddlewareHandler } from "hono";
 
@@ -25,9 +25,10 @@ const MIME: Record<string, string> = {
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 // For `bun build --compile` standalone binaries, `import.meta.url` points at an
-// embedded virtual FS (e.g. `$bunfs/root/...`), so we also look next to the
-// actual executable path provided by `process.argv[0]`.
-const execDir = argv[0] ? dirname(argv[0]) : moduleDir;
+// embedded virtual FS (e.g. `$bunfs/root/...`), and `process.argv[0]` is just
+// the string `"bun"`. Only `process.execPath` resolves to the real on-disk
+// executable path — use it so bundled `./web` alongside the exe is discoverable.
+const execDir = process.execPath ? dirname(process.execPath) : moduleDir;
 
 // Candidate dist locations — first existing wins.
 // 1. Source dev / workspace install: packages/api/src → packages/web/dist
