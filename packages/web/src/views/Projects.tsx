@@ -42,6 +42,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ViewHeader } from "@/components/ViewHeader";
+import { useDetailRoute } from "@/hooks/useDetailRoute";
 import {
   useCreateProject,
   useDeleteProject,
@@ -69,9 +70,14 @@ export default function Projects() {
   const { data: projects, isLoading, error, refetch } = useProjects();
   const [filter, setFilter] = useState<ProjectStatus | "all">("all");
   const [creating, setCreating] = useState(false);
-  const [editing, setEditing] = useState<Project | null>(null);
   const [deleting, setDeleting] = useState<Project | null>(null);
+  const {
+    selectedId: editingId,
+    openDetail: openEdit,
+    closeDetail: closeEdit,
+  } = useDetailRoute("/projects", "projectId");
   const deleteProject = useDeleteProject();
+  const editing = editingId ? ((projects ?? []).find((p) => p.id === editingId) ?? null) : null;
 
   const visible = useMemo(() => {
     const all = projects ?? [];
@@ -176,7 +182,7 @@ export default function Projects() {
                   data-project-id={p.id}
                   data-project-name={p.name}
                   className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
-                  onClick={() => setEditing(p)}
+                  onClick={() => openEdit(p.id)}
                 >
                   <TableCell className="font-body text-xs font-semibold text-on-surface">
                     {p.name}
@@ -229,9 +235,10 @@ export default function Projects() {
 
       {editing && (
         <EditProjectDialog
+          key={editing.id}
           open={Boolean(editing)}
           project={editing}
-          onClose={() => setEditing(null)}
+          onClose={closeEdit}
         />
       )}
 

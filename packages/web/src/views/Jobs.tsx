@@ -33,7 +33,9 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { ViewHeader } from "@/components/ViewHeader";
+import { useDetailRoute } from "@/hooks/useDetailRoute";
 import { useCreateJob, useDeleteJob, useJobs, useTriggerJob, useUpdateJob } from "@/hooks/useJobs";
+import { useProjectScope } from "@/hooks/useProjectScope";
 import { useProjects } from "@/hooks/useProjects";
 
 const TRIGGER_TYPES: JobTriggerType[] = [
@@ -48,13 +50,18 @@ const TRIGGER_TYPES: JobTriggerType[] = [
 const OVERLAPS: Array<"skip" | "queue" | "kill"> = ["skip", "queue", "kill"];
 const NOTIFY_OPTIONS: Array<"never" | "failure" | "always"> = ["never", "failure", "always"];
 
-export default function Jobs({ projectId }: { projectId: string }) {
+export default function Jobs({ projectId: savedProjectId }: { projectId: string }) {
+  const projectId = useProjectScope(savedProjectId);
   const scopedProjectId = projectId === "all" ? undefined : projectId;
   const { data: jobs, isLoading, error, refetch } = useJobs({ project_id: scopedProjectId });
   const triggerJob = useTriggerJob();
   const deleteJob = useDeleteJob();
 
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const {
+    selectedId: selectedJobId,
+    openDetail: openJobDetail,
+    closeDetail: closeJobDetail,
+  } = useDetailRoute("/jobs", "jobId");
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<Job | null>(null);
   const [deleting, setDeleting] = useState<Job | null>(null);
@@ -126,7 +133,7 @@ export default function Jobs({ projectId }: { projectId: string }) {
                   data-job-id={job.id}
                   data-job-name={job.name}
                   className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
-                  onClick={() => setSelectedJobId(job.id)}
+                  onClick={() => openJobDetail(job.id)}
                 >
                   <TableCell>
                     <div className="font-body text-xs font-medium text-on-surface">{job.name}</div>
@@ -195,7 +202,7 @@ export default function Jobs({ projectId }: { projectId: string }) {
       <JobDetailSheet
         jobId={selectedJobId}
         open={Boolean(selectedJobId)}
-        onClose={() => setSelectedJobId(null)}
+        onClose={closeJobDetail}
       />
 
       {creating && (

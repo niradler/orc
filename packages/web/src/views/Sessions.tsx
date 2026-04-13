@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { SessionDetailSheet } from "@/components/SessionDetailSheet";
@@ -12,11 +12,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ViewHeader } from "@/components/ViewHeader";
+import { useDetailRoute } from "@/hooks/useDetailRoute";
+import { useProjectScope } from "@/hooks/useProjectScope";
 import { useSessions } from "@/hooks/useSessions";
 
-export default function Sessions({ projectId }: { projectId: string }) {
+export default function Sessions({ projectId: savedProjectId }: { projectId: string }) {
+  const projectId = useProjectScope(savedProjectId);
   const { data: sessions, isLoading, error, refetch } = useSessions({ limit: 50 });
-  const [selected, setSelected] = useState<string | null>(null);
+  const {
+    selectedId: selected,
+    openDetail,
+    closeDetail,
+  } = useDetailRoute("/sessions", "sessionId");
 
   const visible = useMemo(() => {
     const all = sessions ?? [];
@@ -69,7 +76,7 @@ export default function Sessions({ projectId }: { projectId: string }) {
                 <TableRow
                   key={s.id}
                   className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
-                  onClick={() => setSelected(s.id)}
+                  onClick={() => openDetail(s.id)}
                 >
                   <TableCell className="font-label text-xs text-primary">
                     {s.agent ?? "\u2014"}
@@ -96,11 +103,7 @@ export default function Sessions({ projectId }: { projectId: string }) {
         </div>
       )}
 
-      <SessionDetailSheet
-        sessionId={selected}
-        open={Boolean(selected)}
-        onClose={() => setSelected(null)}
-      />
+      <SessionDetailSheet sessionId={selected} open={Boolean(selected)} onClose={closeDetail} />
     </div>
   );
 }

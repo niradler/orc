@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { ViewHeader } from "@/components/ViewHeader";
+import { useDetailRoute } from "@/hooks/useDetailRoute";
 import {
   useCreateMemory,
   useDeleteMemory,
@@ -39,6 +40,7 @@ import {
   useMemorySearch,
   useUpdateMemory,
 } from "@/hooks/useMemories";
+import { useProjectScope } from "@/hooks/useProjectScope";
 import { useProjects } from "@/hooks/useProjects";
 
 const MEMORY_TYPES: MemoryType[] = ["fact", "decision", "event", "rule", "discovery"];
@@ -69,13 +71,18 @@ const TYPE_COLORS: Record<string, string> = {
 
 const IMPORTANCES = ["low", "normal", "high", "critical"] as const;
 
-export default function Memories({ projectId }: { projectId: string }) {
+export default function Memories({ projectId: savedProjectId }: { projectId: string }) {
+  const projectId = useProjectScope(savedProjectId);
   const [query, setQuery] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [typeFilter, setTypeFilter] = useState<MemoryType | "all">("all");
   const [creating, setCreating] = useState(false);
-  const [editing, setEditing] = useState<Memory | null>(null);
   const [deleting, setDeleting] = useState<Memory | null>(null);
+  const {
+    selectedId: editingId,
+    openDetail: openEdit,
+    closeDetail: closeEdit,
+  } = useDetailRoute("/memories", "memoryId");
 
   const deleteMemory = useDeleteMemory();
 
@@ -86,6 +93,7 @@ export default function Memories({ projectId }: { projectId: string }) {
   const isSearching = query.trim().length > 0;
   const { data, isLoading, error, refetch } = isSearching ? searchResult : listResult;
   const allMemories = data ?? [];
+  const editing = editingId ? (allMemories.find((m) => m.id === editingId) ?? null) : null;
 
   const filtered = useMemo(() => {
     if (typeFilter === "all") return allMemories;
@@ -215,7 +223,7 @@ export default function Memories({ projectId }: { projectId: string }) {
                   data-testid="memory-row"
                   data-memory-id={mem.id}
                   className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
-                  onClick={() => setEditing(mem)}
+                  onClick={() => openEdit(mem.id)}
                 >
                   <TableCell className="font-body text-xs text-on-surface max-w-xs truncate">
                     {mem.title || mem.content.slice(0, 80)}
@@ -282,9 +290,10 @@ export default function Memories({ projectId }: { projectId: string }) {
 
       {editing && (
         <EditMemoryDialog
+          key={editing.id}
           memory={editing}
           open={Boolean(editing)}
-          onClose={() => setEditing(null)}
+          onClose={closeEdit}
         />
       )}
 

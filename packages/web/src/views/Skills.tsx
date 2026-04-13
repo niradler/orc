@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { ViewHeader } from "@/components/ViewHeader";
+import { useDetailRoute } from "@/hooks/useDetailRoute";
 import { useCreateSkill, useSkill, useSkills } from "@/hooks/useSkills";
 
 type SourceFilter = "all" | "builtin" | "user";
@@ -46,7 +47,11 @@ export default function Skills() {
   const [searchInput, setSearchInput] = useState("");
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
-  const [selectedSkill, setSelectedSkill] = useState<string | null>(null);
+  const {
+    selectedId: selectedSkill,
+    openDetail: openSkillDetail,
+    closeDetail: closeSkillDetail,
+  } = useDetailRoute("/skills", "skillName");
   const [creating, setCreating] = useState(false);
 
   const {
@@ -146,7 +151,7 @@ export default function Skills() {
                 <TableRow
                   key={skill.name}
                   className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
-                  onClick={() => setSelectedSkill(skill.name)}
+                  onClick={() => openSkillDetail(skill.name)}
                 >
                   <TableCell className="font-body text-xs font-medium text-on-surface">
                     {skill.name}
@@ -171,7 +176,7 @@ export default function Skills() {
       <SkillDetailSheet
         skillName={selectedSkill}
         open={Boolean(selectedSkill)}
-        onClose={() => setSelectedSkill(null)}
+        onClose={closeSkillDetail}
       />
 
       {creating && <CreateSkillDialog open={creating} onClose={() => setCreating(false)} />}

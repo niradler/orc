@@ -1,5 +1,6 @@
 import { LayoutGrid, List, MessageSquare, Plus, Search, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import type { CreateTaskInput, Task, TaskPriority, TaskStatus } from "@/api/client";
 import { KanbanBoard } from "@/components/board/KanbanBoard";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -37,6 +38,8 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ViewHeader } from "@/components/ViewHeader";
+import { useDetailRoute } from "@/hooks/useDetailRoute";
+import { useProjectScope } from "@/hooks/useProjectScope";
 import { useProjects } from "@/hooks/useProjects";
 import { useCreateTask, useDeleteTask, useTasks, useUpdateTask } from "@/hooks/useTasks";
 
@@ -56,18 +59,70 @@ const ALL_STATUSES: TaskStatus[] = ["todo", "doing", "review", "blocked", "done"
 
 const PRIORITIES: TaskPriority[] = ["low", "normal", "high", "critical"];
 
+const STATUS_VALUES = new Set<string>([
+  "all",
+  "todo",
+  "queued",
+  "doing",
+  "review",
+  "changes_requested",
+  "blocked",
+  "done",
+  "cancelled",
+  "paused",
+]);
+
+const PRIORITY_VALUES = new Set<string>(["all", "low", "normal", "high", "critical"]);
+
 interface TasksProps {
   projectId: string;
 }
 
-export default function Tasks({ projectId }: TasksProps) {
-  const [statusFilter, setStatusFilter] = useState<TaskStatus | "all">("all");
-  const [priorityFilter, setPriorityFilter] = useState<TaskPriority | "all">("all");
-  const [search, setSearch] = useState("");
+export default function Tasks({ projectId: savedProjectId }: TasksProps) {
+  const projectId = useProjectScope(savedProjectId);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const {
+    selectedId: selectedTaskId,
+    openDetail,
+    closeDetail,
+  } = useDetailRoute("/tasks", "taskId");
+
+  const statusParam = searchParams.get("status");
+  const statusFilter = (statusParam && STATUS_VALUES.has(statusParam) ? statusParam : "all") as
+    | TaskStatus
+    | "all";
+  const priorityParam = searchParams.get("priority");
+  const priorityFilter = (
+    priorityParam && PRIORITY_VALUES.has(priorityParam) ? priorityParam : "all"
+  ) as TaskPriority | "all";
+  const search = searchParams.get("q") ?? "";
+  const viewMode: "board" | "table" = searchParams.get("view") === "table" ? "table" : "board";
+
+  const updateParam = useCallback(
+    (key: string, value: string | null, defaultValue?: string) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (value === null || value === "" || value === defaultValue) {
+            next.delete(key);
+          } else {
+            next.set(key, value);
+          }
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const setStatusFilter = (v: TaskStatus | "all") => updateParam("status", v, "all");
+  const setPriorityFilter = (v: TaskPriority | "all") => updateParam("priority", v, "all");
+  const setSearch = (v: string) => updateParam("q", v || null);
+  const setViewMode = (v: "board" | "table") => updateParam("view", v, "board");
+
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"board" | "table">("board");
 
   const apiProjectId =
     projectId === "all" ? undefined : projectId === "unassigned" ? undefined : projectId;
@@ -194,7 +249,7 @@ export default function Tasks({ projectId }: TasksProps) {
               const task = (allTasks ?? []).find((t) => t.id === id);
               if (task) setDeleteTarget(task);
             }}
-            onCardClick={(task) => setSelectedTaskId(task.id)}
+            onCardClick={(task) => openDetail(task.id)}
           />
         )
       ) : (
@@ -317,7 +372,7 @@ export default function Tasks({ projectId }: TasksProps) {
                       data-task-id={task.id}
                       data-task-title={task.title}
                       className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
-                      onClick={() => setSelectedTaskId(task.id)}
+                      onClick={() => openDetail(task.id)}
                     >
                       <TableCell className="font-label text-[10px] text-outline">
                         {task.id.slice(-6)}
@@ -456,7 +511,7 @@ export default function Tasks({ projectId }: TasksProps) {
         taskId={selectedTaskId}
         open={selectedTaskId !== null}
         onOpenChange={(open) => {
-          if (!open) setSelectedTaskId(null);
+          if (!open) closeDetail();
         }}
       />
     </div>
