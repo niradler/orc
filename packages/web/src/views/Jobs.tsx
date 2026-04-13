@@ -83,6 +83,7 @@ export default function Jobs({ projectId }: { projectId: string }) {
       {isLoading ? (
         <div className="space-y-2">
           {[...Array(3)].map((_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
             <Skeleton key={i} className="h-12 w-full bg-surface-highest" />
           ))}
         </div>
@@ -162,6 +163,8 @@ export default function Jobs({ projectId }: { projectId: string }) {
                     {job.next_run_at ? new Date(job.next_run_at).toLocaleString() : "\u2014"}
                   </TableCell>
                   <TableCell>
+                    {/* biome-ignore lint/a11y/noStaticElementInteractions: stop propagation wrapper around action buttons */}
+                    {/* biome-ignore lint/a11y/useKeyWithClickEvents: keyboard events bubble to the child buttons */}
                     <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                       <Button
                         data-testid="job-trigger"
@@ -173,6 +176,7 @@ export default function Jobs({ projectId }: { projectId: string }) {
                         <Play size={10} className="mr-1" /> Run
                       </Button>
                       <button
+                        type="button"
                         data-testid="job-delete"
                         onClick={() => setDeleting(job)}
                         className="text-outline hover:text-error transition-colors p-1"

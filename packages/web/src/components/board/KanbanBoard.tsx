@@ -42,7 +42,7 @@ export function KanbanBoard({ tasks, onUpdateStatus, onDeleteTask }: KanbanBoard
     return map;
   }, [tasks]);
 
-  const validDropStatuses = useMemo(() => {
+  const _validDropStatuses = useMemo(() => {
     if (!activeTask) return null;
     return new Set(validTargets(activeTask.status));
   }, [activeTask]);

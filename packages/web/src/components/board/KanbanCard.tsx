@@ -79,6 +79,7 @@ export function KanbanCard({ task, onDelete, isDragOverlay }: KanbanCardProps) {
             </span>
 
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete(task.id);

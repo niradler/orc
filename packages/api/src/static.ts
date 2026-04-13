@@ -53,7 +53,7 @@ function isSafeChild(base: string, target: string): boolean {
   return rel === base || rel.startsWith(`${base}${process.platform === "win32" ? "\\" : "/"}`);
 }
 
-async function sendFile(c: Context, filePath: string, cacheable: boolean): Promise<Response> {
+async function sendFile(_c: Context, filePath: string, cacheable: boolean): Promise<Response> {
   const file = Bun.file(filePath);
   const headers: Record<string, string> = {
     "Content-Type": guessContentType(filePath),

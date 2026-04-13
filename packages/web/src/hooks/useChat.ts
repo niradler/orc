@@ -53,7 +53,7 @@ export function useChat() {
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
         };
-        if (secret) headers["Authorization"] = `Bearer ${secret}`;
+        if (secret) headers.Authorization = `Bearer ${secret}`;
 
         const allMessages = [...messages, userMessage].map((m) => ({
           role: m.role,

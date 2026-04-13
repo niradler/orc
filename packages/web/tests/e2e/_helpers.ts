@@ -37,17 +37,11 @@ export async function gotoView(
   await page.getByTestId(`nav-${view}`).click();
 }
 
-export async function apiDelete(
-  request: APIRequestContext,
-  path: string,
-): Promise<void> {
+export async function apiDelete(request: APIRequestContext, path: string): Promise<void> {
   await request.delete(`${API_BASE}${path}`, { headers: AUTH_HEADERS });
 }
 
-export async function apiGet<T>(
-  request: APIRequestContext,
-  path: string,
-): Promise<T> {
+export async function apiGet<T>(request: APIRequestContext, path: string): Promise<T> {
   const res = await request.get(`${API_BASE}${path}`, { headers: AUTH_HEADERS });
   if (!res.ok()) throw new Error(`GET ${path} failed: ${res.status()}`);
   return (await res.json()) as T;

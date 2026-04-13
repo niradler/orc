@@ -165,6 +165,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
             {isLoading ? (
               <div className="space-y-4">
                 {Array.from({ length: 6 }).map((_, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
                   <Skeleton key={i} className="h-8 w-full bg-surface-highest" />
                 ))}
               </div>
@@ -249,6 +250,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                       Links
                     </div>
                     <button
+                      type="button"
                       onClick={() => setShowAddLink(true)}
                       className="text-primary hover:text-primary/80 transition-colors"
                     >
@@ -274,6 +276,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                                   : link.from_task_id.slice(-6)}
                               </span>
                               <button
+                                type="button"
                                 onClick={() =>
                                   deleteLink.mutate({
                                     taskId: taskId!,

@@ -48,6 +48,7 @@ export function SessionDetailSheet({ sessionId, open, onClose }: SessionDetailSh
           {isLoading ? (
             <div className="space-y-4">
               {[...Array(4)].map((_, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
                 <Skeleton key={i} className="h-8 w-full bg-surface-highest" />
               ))}
             </div>

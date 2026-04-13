@@ -60,6 +60,4 @@ for (const { target, out } of targets) {
   console.log(proc.stdout.toString());
 }
 
-console.log(
-  "All builds complete. Ship dist/web/ alongside each binary for the dashboard to work.",
-);
+console.log("All builds complete. Ship dist/web/ alongside each binary for the dashboard to work.");

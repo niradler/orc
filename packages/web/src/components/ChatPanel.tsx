@@ -1,6 +1,6 @@
 import { MessageSquare, Send, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { type ChatConfig, useChat } from "@/hooks/useChat";
+import { useChat } from "@/hooks/useChat";
 
 interface ChatPanelProps {
   open: boolean;
@@ -16,7 +16,7 @@ export function ChatPanel({ open, onToggle }: ChatPanelProps) {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, streamText]);
+  }, []);
 
   const handleSend = () => {
     if (!input.trim() || streaming) return;
@@ -40,6 +40,7 @@ export function ChatPanel({ open, onToggle }: ChatPanelProps) {
         className="fixed top-0 right-0 h-full w-12 z-40 bg-surface border-l border-surface-highest flex flex-col items-center pt-4 gap-3"
       >
         <button
+          type="button"
           data-testid="chat-open-button"
           onClick={onToggle}
           className="text-outline hover:text-primary transition-colors p-1.5"
@@ -74,6 +75,7 @@ export function ChatPanel({ open, onToggle }: ChatPanelProps) {
             />
           </div>
           <button
+            type="button"
             onClick={onToggle}
             className="text-outline hover:text-on-surface-variant transition-colors p-1"
           >
@@ -99,6 +101,7 @@ export function ChatPanel({ open, onToggle }: ChatPanelProps) {
         )}
 
         {messages.map((msg, i) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: append-only chat history
           <div key={i} data-testid="chat-message" data-role={msg.role}>
             <span
               className={`font-label text-[9px] uppercase tracking-widest ${msg.role === "user" ? "text-primary" : "text-secondary"}`}
@@ -148,6 +151,7 @@ export function ChatPanel({ open, onToggle }: ChatPanelProps) {
           />
           {streaming ? (
             <button
+              type="button"
               data-testid="chat-cancel-button"
               onClick={cancel}
               className="text-error hover:text-error/80 transition-colors p-1"
@@ -156,6 +160,7 @@ export function ChatPanel({ open, onToggle }: ChatPanelProps) {
             </button>
           ) : (
             <button
+              type="button"
               data-testid="chat-send-button"
               onClick={handleSend}
               disabled={!input.trim()}
@@ -182,6 +187,7 @@ export function ChatPanel({ open, onToggle }: ChatPanelProps) {
           ))}
         </select>
         <button
+          type="button"
           onClick={clear}
           className="text-outline hover:text-error transition-colors p-1"
           title="Clear chat"

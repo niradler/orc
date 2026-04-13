@@ -48,7 +48,7 @@ export function Sidebar({
   const { data: health, isError } = useHealth();
   const { data: projects } = useProjects();
 
-  const selectedLabel =
+  const _selectedLabel =
     projectId === "all"
       ? "All Projects"
       : projectId === "unassigned"
@@ -82,11 +82,15 @@ export function Sidebar({
       {/* Project Selector */}
       {!collapsed && (
         <div className="px-3 mb-6">
-          <label className="font-label text-[9px] uppercase tracking-widest text-outline px-3 mb-1 block">
+          <label
+            htmlFor="sidebar-project-select"
+            className="font-label text-[9px] uppercase tracking-widest text-outline px-3 mb-1 block"
+          >
             Scope
           </label>
           <div className="relative">
             <select
+              id="sidebar-project-select"
               data-testid="sidebar-project-select"
               value={projectId}
               onChange={(e) => onProjectChange(e.target.value)}
@@ -119,6 +123,7 @@ export function Sidebar({
         {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
+            type="button"
             data-testid={`nav-${id}`}
             onClick={() => onNavigate(id)}
             title={collapsed ? label : undefined}
@@ -137,6 +142,7 @@ export function Sidebar({
 
         {/* Collapse toggle */}
         <button
+          type="button"
           onClick={onToggle}
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           className={cn(
@@ -155,6 +161,7 @@ export function Sidebar({
       <div className={cn("mt-auto space-y-3", collapsed ? "px-1" : "px-3")}>
         <div className="pt-4 border-t border-surface-highest">
           <button
+            type="button"
             data-testid="nav-settings"
             onClick={() => onNavigate("settings")}
             title={collapsed ? "Settings" : undefined}

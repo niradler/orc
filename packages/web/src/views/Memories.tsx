@@ -125,6 +125,7 @@ export default function Memories({ projectId }: { projectId: string }) {
         {TYPE_TABS.map((tab) => (
           <button
             key={tab.value}
+            type="button"
             onClick={() => setTypeFilter(tab.value)}
             className={`font-label text-[10px] uppercase tracking-widest px-3 py-1.5 border transition-colors ${
               typeFilter === tab.value
@@ -175,6 +176,7 @@ export default function Memories({ projectId }: { projectId: string }) {
       {isLoading ? (
         <div className="space-y-2">
           {[...Array(4)].map((_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
             <Skeleton key={i} className="h-10 w-full bg-surface-highest" />
           ))}
         </div>
@@ -252,6 +254,7 @@ export default function Memories({ projectId }: { projectId: string }) {
                   </TableCell>
                   <TableCell>
                     <button
+                      type="button"
                       data-testid="memory-delete"
                       onClick={(e) => {
                         e.stopPropagation();

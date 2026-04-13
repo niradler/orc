@@ -136,6 +136,7 @@ export default function Projects() {
       {isLoading ? (
         <div className="space-y-2">
           {[...Array(3)].map((_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
             <Skeleton key={i} className="h-12 w-full bg-surface-highest" />
           ))}
         </div>
@@ -206,6 +207,7 @@ export default function Projects() {
                   </TableCell>
                   <TableCell>
                     <button
+                      type="button"
                       data-testid="project-delete"
                       onClick={(e) => {
                         e.stopPropagation();

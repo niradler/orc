@@ -1,14 +1,17 @@
+/* biome-ignore-all lint/suspicious/noUnknownAtRules: tailwind directives */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   * {
-    @apply border-outline-variant;
+    border-color: #434856;
   }
 
   body {
-    @apply bg-background text-on-surface font-body;
+    background-color: #090e1a;
+    color: #e1e5f6;
+    font-family: Inter, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
 

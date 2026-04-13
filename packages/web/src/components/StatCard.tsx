@@ -28,17 +28,13 @@ interface StatCardProps {
 }
 
 export function StatCard({ label, value, accent = "muted", sub, onClick }: StatCardProps) {
-  return (
-    <div
-      data-testid="stat-card"
-      data-stat-label={label}
-      className={cn(
-        "bg-surface-low p-4 rounded-sm border-l-2 relative overflow-hidden",
-        ACCENT_COLORS[accent],
-        onClick && "cursor-pointer hover:bg-surface transition-colors",
-      )}
-      onClick={onClick}
-    >
+  const classes = cn(
+    "bg-surface-low p-4 rounded-sm border-l-2 relative overflow-hidden text-left w-full block",
+    ACCENT_COLORS[accent],
+    onClick && "cursor-pointer hover:bg-surface transition-colors",
+  );
+  const inner = (
+    <>
       <div className="flex justify-between items-start mb-2">
         <span className="font-label text-[10px] text-outline uppercase tracking-widest">
           {label}
@@ -51,6 +47,24 @@ export function StatCard({ label, value, accent = "muted", sub, onClick }: StatC
         {value}
       </div>
       {sub && <div className="font-label text-[10px] text-outline mt-1">{sub}</div>}
+    </>
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        data-testid="stat-card"
+        data-stat-label={label}
+        className={classes}
+        onClick={onClick}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return (
+    <div data-testid="stat-card" data-stat-label={label} className={classes}>
+      {inner}
     </div>
   );
 }

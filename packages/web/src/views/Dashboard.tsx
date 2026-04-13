@@ -68,28 +68,28 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
         <StatCard
           label="Doing"
-          value={byStatus["doing"] ?? 0}
+          value={byStatus.doing ?? 0}
           accent="primary"
           sub="in progress"
           onClick={() => onNavigate("tasks")}
         />
         <StatCard
           label="Review"
-          value={byStatus["review"] ?? 0}
+          value={byStatus.review ?? 0}
           accent="tertiary"
           sub="awaiting review"
           onClick={() => onNavigate("tasks")}
         />
         <StatCard
           label="Blocked"
-          value={byStatus["blocked"] ?? 0}
+          value={byStatus.blocked ?? 0}
           accent="error"
           sub="needs attention"
           onClick={() => onNavigate("tasks")}
         />
         <StatCard
           label="Todo"
-          value={(byStatus["todo"] ?? 0) + (byStatus["queued"] ?? 0)}
+          value={(byStatus.todo ?? 0) + (byStatus.queued ?? 0)}
           accent="muted"
           sub="pending"
           onClick={() => onNavigate("tasks")}
@@ -97,7 +97,7 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-8">
-        <StatCard label="Done" value={byStatus["done"] ?? 0} accent="secondary" sub="completed" />
+        <StatCard label="Done" value={byStatus.done ?? 0} accent="secondary" sub="completed" />
         <StatCard
           label="Active Jobs"
           value={activeJobs.length}
@@ -127,6 +127,7 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
             Recent Tasks
           </h2>
           <button
+            type="button"
             onClick={() => onNavigate("tasks")}
             className="font-label text-[10px] text-primary hover:underline uppercase tracking-widest"
           >
@@ -136,6 +137,7 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
         {tasksLoading ? (
           <div className="space-y-2">
             {[...Array(4)].map((_, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
               <Skeleton key={i} className="h-10 w-full bg-surface-highest" />
             ))}
           </div>
@@ -196,6 +198,7 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
                 Active Jobs
               </h2>
               <button
+                type="button"
                 onClick={() => onNavigate("jobs")}
                 className="font-label text-[10px] text-primary hover:underline uppercase tracking-widest"
               >
@@ -204,9 +207,10 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
             </div>
             <div className="space-y-2">
               {activeJobs.slice(0, 5).map((job) => (
-                <div
+                <button
                   key={job.id}
-                  className="bg-surface p-3 rounded-sm border border-surface-highest hover:bg-surface-low transition-colors cursor-pointer"
+                  type="button"
+                  className="w-full text-left bg-surface p-3 rounded-sm border border-surface-highest hover:bg-surface-low transition-colors cursor-pointer"
                   onClick={() => onNavigate("jobs")}
                 >
                   <div className="flex items-center justify-between">
@@ -220,7 +224,7 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
                       Last run: {new Date(job.last_run_at).toLocaleString()}
                     </div>
                   )}
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -234,6 +238,7 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
                 Recent Sessions
               </h2>
               <button
+                type="button"
                 onClick={() => onNavigate("sessions")}
                 className="font-label text-[10px] text-primary hover:underline uppercase tracking-widest"
               >
@@ -242,9 +247,10 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
             </div>
             <div className="space-y-2">
               {(sessions ?? []).slice(0, 5).map((session) => (
-                <div
+                <button
                   key={session.id}
-                  className="bg-surface p-3 rounded-sm border border-surface-highest hover:bg-surface-low transition-colors cursor-pointer"
+                  type="button"
+                  className="w-full text-left bg-surface p-3 rounded-sm border border-surface-highest hover:bg-surface-low transition-colors cursor-pointer"
                   onClick={() => onNavigate("sessions")}
                 >
                   <div className="flex items-center justify-between">
@@ -260,7 +266,7 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
                       {session.summary}
                     </div>
                   )}
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -275,6 +281,7 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
               Projects
             </h2>
             <button
+              type="button"
               onClick={() => onNavigate("projects")}
               className="font-label text-[10px] text-primary hover:underline uppercase tracking-widest"
             >
@@ -286,9 +293,10 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
               .filter((p) => p.status === "active")
               .slice(0, 6)
               .map((p) => (
-                <div
+                <button
                   key={p.id}
-                  className="bg-surface p-4 rounded-sm border border-surface-highest hover:bg-surface-low transition-colors cursor-pointer"
+                  type="button"
+                  className="text-left bg-surface p-4 rounded-sm border border-surface-highest hover:bg-surface-low transition-colors cursor-pointer"
                   onClick={() => onNavigate("projects")}
                 >
                   <div className="font-label text-xs font-semibold text-on-surface truncate">
@@ -299,7 +307,7 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
                       {p.description}
                     </div>
                   )}
-                </div>
+                </button>
               ))}
           </div>
         </div>

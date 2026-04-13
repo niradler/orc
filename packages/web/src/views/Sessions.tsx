@@ -33,6 +33,7 @@ export default function Sessions({ projectId }: { projectId: string }) {
       {isLoading ? (
         <div className="space-y-2">
           {[...Array(5)].map((_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
             <Skeleton key={i} className="h-10 w-full bg-surface-highest" />
           ))}
         </div>

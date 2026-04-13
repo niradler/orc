@@ -89,7 +89,7 @@ async function req<T>(
   }
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const secret = getApiSecret();
-  if (secret) headers["Authorization"] = `Bearer ${secret}`;
+  if (secret) headers.Authorization = `Bearer ${secret}`;
   const res = await fetch(url, {
     method,
     headers,

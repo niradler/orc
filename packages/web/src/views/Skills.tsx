@@ -83,6 +83,7 @@ export default function Skills() {
           {SOURCE_FILTERS.map((f) => (
             <button
               key={f.value}
+              type="button"
               onClick={() => setSourceFilter(f.value)}
               className={`font-label text-[10px] uppercase tracking-widest px-3 py-1.5 border transition-colors ${
                 sourceFilter === f.value
@@ -118,6 +119,7 @@ export default function Skills() {
       {isLoading ? (
         <div className="space-y-2">
           {[...Array(5)].map((_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
             <Skeleton key={i} className="h-10 w-full bg-surface-highest" />
           ))}
         </div>
@@ -202,6 +204,7 @@ function SkillDetailSheet({
           {isLoading || !skill ? (
             <div className="space-y-3">
               {[...Array(4)].map((_, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
                 <Skeleton key={i} className="h-8 w-full bg-surface-highest" />
               ))}
             </div>

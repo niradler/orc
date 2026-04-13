@@ -147,6 +147,7 @@ export default function Tasks({ projectId }: TasksProps) {
           <div className="flex items-center gap-2">
             <div className="flex border border-surface-highest rounded-sm overflow-hidden">
               <button
+                type="button"
                 data-testid="tasks-view-board"
                 title="Board view"
                 onClick={() => setViewMode("board")}
@@ -159,6 +160,7 @@ export default function Tasks({ projectId }: TasksProps) {
                 <LayoutGrid size={14} />
               </button>
               <button
+                type="button"
                 data-testid="tasks-view-table"
                 title="Table view"
                 onClick={() => setViewMode("table")}
@@ -188,6 +190,7 @@ export default function Tasks({ projectId }: TasksProps) {
         isLoading ? (
           <div className="space-y-2">
             {Array.from({ length: 5 }).map((_, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
               <Skeleton key={i} className="h-10 w-full bg-surface-highest" />
             ))}
           </div>
@@ -269,6 +272,7 @@ export default function Tasks({ projectId }: TasksProps) {
           {isLoading ? (
             <div className="space-y-2">
               {Array.from({ length: 5 }).map((_, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
                 <Skeleton key={i} className="h-10 w-full bg-surface-highest" />
               ))}
             </div>
@@ -323,6 +327,7 @@ export default function Tasks({ projectId }: TasksProps) {
                         {task.title}
                       </TableCell>
                       <TableCell>
+                        {/** biome-ignore lint/a11y/noStaticElementInteractions: event stopper wrapping an interactive Select */}
                         <div
                           onClick={(e) => e.stopPropagation()}
                           onKeyDown={(e) => {
@@ -394,6 +399,7 @@ export default function Tasks({ projectId }: TasksProps) {
                       </TableCell>
                       <TableCell>
                         <button
+                          type="button"
                           data-testid="task-delete"
                           onClick={(e) => {
                             e.stopPropagation();

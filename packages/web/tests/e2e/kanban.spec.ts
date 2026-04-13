@@ -11,7 +11,9 @@ interface Task {
 // directly with intermediate steps reliably triggers onDragStart + onDragEnd.
 async function dragCardTo(page: Page, taskId: string, targetStatus: string): Promise<void> {
   const card = page.locator(`[data-testid="kanban-card"][data-task-id="${taskId}"]`);
-  const target = page.locator(`[data-testid="kanban-column"][data-column-status="${targetStatus}"]`);
+  const target = page.locator(
+    `[data-testid="kanban-column"][data-column-status="${targetStatus}"]`,
+  );
   const cardBox = await card.boundingBox();
   const targetBox = await target.boundingBox();
   if (!cardBox || !targetBox) throw new Error("card or target not in viewport");
@@ -52,11 +54,16 @@ test.describe("Kanban drag & drop", () => {
 
       // Wait for PATCH to land and React Query to invalidate
       await expect
-        .poll(async () => {
-          const res = await request.get(`http://localhost:${process.env.ORC_API_PORT ?? "7721"}/tasks/${task.id}`);
-          if (!res.ok()) return null;
-          return ((await res.json()) as Task).status;
-        }, { timeout: 10_000 })
+        .poll(
+          async () => {
+            const res = await request.get(
+              `http://localhost:${process.env.ORC_API_PORT ?? "7721"}/tasks/${task.id}`,
+            );
+            if (!res.ok()) return null;
+            return ((await res.json()) as Task).status;
+          },
+          { timeout: 10_000 },
+        )
         .toBe("doing");
     } finally {
       await apiDelete(request, `/tasks/${task.id}`);
@@ -88,7 +95,9 @@ test.describe("Kanban drag & drop", () => {
 
       // Give any stray PATCH a moment to fire (or not), then confirm API still says "done"
       await page.waitForTimeout(500);
-      const res = await request.get(`http://localhost:${process.env.ORC_API_PORT ?? "7721"}/tasks/${task.id}`);
+      const res = await request.get(
+        `http://localhost:${process.env.ORC_API_PORT ?? "7721"}/tasks/${task.id}`,
+      );
       const fresh = (await res.json()) as Task;
       expect(fresh.status).toBe("done");
 

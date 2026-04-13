@@ -218,6 +218,7 @@ function SearchTab({ projectId }: { projectId?: string }) {
             {isDocLoading ? (
               <div className="space-y-4">
                 {[...Array(3)].map((_, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
                   <Skeleton key={i} className="h-8 w-full bg-surface-highest" />
                 ))}
               </div>
@@ -302,6 +303,7 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
       {isLoading ? (
         <div className="space-y-2">
           {[...Array(3)].map((_, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
             <Skeleton key={i} className="h-10 w-full bg-surface-highest" />
           ))}
         </div>
@@ -358,6 +360,7 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <button
+                        type="button"
                         onClick={() => reindex.mutate({ collections: [c.name] })}
                         disabled={reindex.isPending}
                         className="text-outline hover:text-primary transition-colors p-1"
@@ -366,6 +369,7 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
                         <RefreshCw size={12} className={reindex.isPending ? "animate-spin" : ""} />
                       </button>
                       <button
+                        type="button"
                         onClick={() => setDeleting(c.name)}
                         className="text-outline hover:text-error transition-colors p-1"
                         title="Delete"
