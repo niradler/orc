@@ -5,6 +5,7 @@ const WEB_PORT = process.env.ORC_WEB_PORT ?? "3077";
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  testMatch: /.*\.e2e\.ts$/,
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
