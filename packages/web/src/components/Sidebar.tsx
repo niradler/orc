@@ -12,39 +12,41 @@ import {
   TerminalSquare,
   Zap,
 } from "lucide-react";
-import type { View } from "@/App";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useHealth } from "@/hooks/useHealth";
 import { useProjects } from "@/hooks/useProjects";
 import { cn } from "@/lib/utils";
 
-const NAV_ITEMS: { id: View; label: string; icon: React.ElementType }[] = [
-  { id: "dashboard", label: "Dashboard", icon: Activity },
-  { id: "tasks", label: "Tasks", icon: CheckSquare },
-  { id: "jobs", label: "Jobs", icon: TerminalSquare },
-  { id: "memories", label: "Memories", icon: Brain },
-  { id: "projects", label: "Projects", icon: Folder },
-  { id: "sessions", label: "Sessions", icon: History },
-  { id: "knowledge", label: "Knowledge", icon: BookOpen },
-  { id: "skills", label: "Skills", icon: Zap },
+const NAV_ITEMS: {
+  id: string;
+  path: string;
+  label: string;
+  icon: React.ElementType;
+}[] = [
+  { id: "dashboard", path: "/dashboard", label: "Dashboard", icon: Activity },
+  { id: "tasks", path: "/tasks", label: "Tasks", icon: CheckSquare },
+  { id: "jobs", path: "/jobs", label: "Jobs", icon: TerminalSquare },
+  { id: "memories", path: "/memories", label: "Memories", icon: Brain },
+  { id: "projects", path: "/projects", label: "Projects", icon: Folder },
+  { id: "sessions", path: "/sessions", label: "Sessions", icon: History },
+  { id: "knowledge", path: "/knowledge", label: "Knowledge", icon: BookOpen },
+  { id: "skills", path: "/skills", label: "Skills", icon: Zap },
 ];
 
 interface SidebarProps {
-  active: View;
-  onNavigate: (view: View) => void;
   projectId: string;
   onProjectChange: (id: string) => void;
   collapsed: boolean;
   onToggle: () => void;
 }
 
-export function Sidebar({
-  active,
-  onNavigate,
-  projectId,
-  onProjectChange,
-  collapsed,
-  onToggle,
-}: SidebarProps) {
+function isPathActive(pathname: string, path: string): boolean {
+  return pathname === path || pathname.startsWith(`${path}/`);
+}
+
+export function Sidebar({ projectId, onProjectChange, collapsed, onToggle }: SidebarProps) {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { data: health, isError } = useHealth();
   const { data: projects } = useProjects();
 
@@ -54,6 +56,8 @@ export function Sidebar({
       : projectId === "unassigned"
         ? "Unassigned"
         : (projects?.find((p) => p.id === projectId)?.name ?? "...");
+
+  const settingsActive = isPathActive(pathname, "/settings");
 
   return (
     <aside
@@ -120,25 +124,28 @@ export function Sidebar({
 
       {/* Navigation */}
       <nav className={cn("flex-1 space-y-0.5", collapsed ? "px-1" : "px-3")}>
-        {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            type="button"
-            data-testid={`nav-${id}`}
-            onClick={() => onNavigate(id)}
-            title={collapsed ? label : undefined}
-            className={cn(
-              "w-full flex items-center font-label text-xs tracking-tight uppercase transition-all duration-150",
-              collapsed ? "justify-center px-0 py-2" : "gap-3 px-3 py-2",
-              active === id
-                ? "bg-surface-highest text-primary font-bold border-r-2 border-primary translate-x-0.5"
-                : "text-outline hover:text-on-surface-variant hover:bg-surface-highest/50",
-            )}
-          >
-            <Icon size={16} strokeWidth={active === id ? 2.5 : 1.5} />
-            {!collapsed && label}
-          </button>
-        ))}
+        {NAV_ITEMS.map(({ id, path, label, icon: Icon }) => {
+          const active = isPathActive(pathname, path);
+          return (
+            <button
+              key={id}
+              type="button"
+              data-testid={`nav-${id}`}
+              onClick={() => navigate(path)}
+              title={collapsed ? label : undefined}
+              className={cn(
+                "w-full flex items-center font-label text-xs tracking-tight uppercase transition-all duration-150",
+                collapsed ? "justify-center px-0 py-2" : "gap-3 px-3 py-2",
+                active
+                  ? "bg-surface-highest text-primary font-bold border-r-2 border-primary translate-x-0.5"
+                  : "text-outline hover:text-on-surface-variant hover:bg-surface-highest/50",
+              )}
+            >
+              <Icon size={16} strokeWidth={active ? 2.5 : 1.5} />
+              {!collapsed && label}
+            </button>
+          );
+        })}
 
         {/* Collapse toggle */}
         <button
@@ -163,12 +170,12 @@ export function Sidebar({
           <button
             type="button"
             data-testid="nav-settings"
-            onClick={() => onNavigate("settings")}
+            onClick={() => navigate("/settings")}
             title={collapsed ? "Settings" : undefined}
             className={cn(
               "w-full flex items-center font-label text-xs tracking-tight uppercase transition-all",
               collapsed ? "justify-center px-0 py-2" : "gap-3 px-3 py-2",
-              active === "settings"
+              settingsActive
                 ? "text-primary font-bold"
                 : "text-outline hover:text-on-surface-variant",
             )}

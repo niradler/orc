@@ -1,5 +1,6 @@
 import { FileText, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DetailField } from "@/components/DetailField";
 import { EmptyState } from "@/components/EmptyState";
@@ -43,9 +44,27 @@ import {
   useReindexKnowledge,
   useRemoveKnowledgeCollection,
 } from "@/hooks/useKnowledge";
+import { useProjectScope } from "@/hooks/useProjectScope";
 
-export default function Knowledge({ projectId }: { projectId: string }) {
-  const [tab, setTab] = useState<"search" | "collections">("search");
+export default function Knowledge({ projectId: savedProjectId }: { projectId: string }) {
+  const projectId = useProjectScope(savedProjectId);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab: "search" | "collections" =
+    searchParams.get("tab") === "collections" ? "collections" : "search";
+  const setTab = (v: "search" | "collections") => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (v === "search") {
+          next.delete("tab");
+        } else {
+          next.set("tab", v);
+        }
+        return next;
+      },
+      { replace: true },
+    );
+  };
   const pid = projectId === "all" ? undefined : projectId;
 
   const { data: statusData } = useKnowledgeStatus();

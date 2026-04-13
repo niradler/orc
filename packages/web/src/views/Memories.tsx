@@ -39,6 +39,7 @@ import {
   useMemorySearch,
   useUpdateMemory,
 } from "@/hooks/useMemories";
+import { useProjectScope } from "@/hooks/useProjectScope";
 import { useProjects } from "@/hooks/useProjects";
 
 const MEMORY_TYPES: MemoryType[] = ["fact", "decision", "event", "rule", "discovery"];
@@ -69,7 +70,8 @@ const TYPE_COLORS: Record<string, string> = {
 
 const IMPORTANCES = ["low", "normal", "high", "critical"] as const;
 
-export default function Memories({ projectId }: { projectId: string }) {
+export default function Memories({ projectId: savedProjectId }: { projectId: string }) {
+  const projectId = useProjectScope(savedProjectId);
   const [query, setQuery] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [typeFilter, setTypeFilter] = useState<MemoryType | "all">("all");
