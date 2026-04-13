@@ -41,7 +41,8 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Trash2, Search, Plus } from "lucide-react";
+import { Trash2, Search, Plus, LayoutGrid, List } from "lucide-react";
+import { KanbanBoard } from "@/components/board/KanbanBoard";
 import type {
   Task,
   TaskPriority,
@@ -86,6 +87,7 @@ export default function Tasks({ projectId }: TasksProps) {
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"board" | "table">("board");
 
   const apiProjectId =
     projectId === "all" ? undefined : projectId === "unassigned" ? undefined : projectId;
@@ -151,230 +153,275 @@ export default function Tasks({ projectId }: TasksProps) {
         title="Tasks"
         meta={`${filteredByProject.length} total`}
         action={
-          <Button
-            size="sm"
-            onClick={() => setCreating(true)}
-            className="font-label text-xs uppercase tracking-widest bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
-          >
-            <Plus size={14} className="mr-1" />
-            New Task
-          </Button>
+          <div className="flex items-center gap-2">
+            <div className="flex border border-surface-highest rounded-sm overflow-hidden">
+              <button
+                onClick={() => setViewMode("board")}
+                className={`p-1.5 transition-colors ${
+                  viewMode === "board"
+                    ? "bg-primary/15 text-primary"
+                    : "text-outline hover:text-on-surface-variant"
+                }`}
+              >
+                <LayoutGrid size={14} />
+              </button>
+              <button
+                onClick={() => setViewMode("table")}
+                className={`p-1.5 transition-colors ${
+                  viewMode === "table"
+                    ? "bg-primary/15 text-primary"
+                    : "text-outline hover:text-on-surface-variant"
+                }`}
+              >
+                <List size={14} />
+              </button>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => setCreating(true)}
+              className="font-label text-xs uppercase tracking-widest bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
+            >
+              <Plus size={14} className="mr-1" />
+              New Task
+            </Button>
+          </div>
         }
       />
 
-      <div className="flex items-center gap-3 mb-4">
-        <div className="relative flex-1 max-w-xs">
-          <Search
-            size={14}
-            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-outline"
-          />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search tasks..."
-            className="bg-surface border-surface-highest text-on-surface font-body text-xs pl-8 h-8"
-          />
-        </div>
-        <Select
-          value={priorityFilter}
-          onValueChange={(v) => setPriorityFilter(v as TaskPriority | "all")}
-        >
-          <SelectTrigger className="bg-surface border-surface-highest text-on-surface font-label text-[10px] uppercase tracking-widest w-32 h-8">
-            <SelectValue placeholder="Priority" />
-          </SelectTrigger>
-          <SelectContent className="bg-surface-highest border-surface-highest">
-            <SelectItem
-              value="all"
-              className="font-label text-xs uppercase"
-            >
-              All Priorities
-            </SelectItem>
-            {PRIORITIES.map((p) => (
-              <SelectItem
-                key={p}
-                value={p}
-                className="font-label text-xs uppercase"
-              >
-                {p}
-              </SelectItem>
+      {viewMode === "board" ? (
+        isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full bg-surface-highest" />
             ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <Tabs
-        value={statusFilter}
-        onValueChange={(v) => setStatusFilter(v as TaskStatus | "all")}
-        className="mb-4"
-      >
-        <TabsList className="bg-surface-highest border border-surface-highest gap-0 h-auto p-0">
-          {STATUS_TABS.map(({ value, label }) => (
-            <TabsTrigger
-              key={value}
-              value={value}
-              className="font-label text-[10px] uppercase tracking-widest px-4 py-2 rounded-none
-                data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none
-                text-outline hover:text-on-surface-variant"
-            >
-              {label}
-              {value !== "all" && counts[value] != null && (
-                <span className="ml-1.5 text-[9px] bg-surface-highest px-1.5 py-0.5 rounded-sm">
-                  {counts[value]}
-                </span>
-              )}
-              {value === "all" && (
-                <span className="ml-1.5 text-[9px] bg-surface-highest px-1.5 py-0.5 rounded-sm">
-                  {filteredByProject.length}
-                </span>
-              )}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
-
-      {isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Skeleton key={i} className="h-10 w-full bg-surface-highest" />
-          ))}
-        </div>
-      ) : visible.length === 0 ? (
-        <EmptyState message="No tasks" />
+          </div>
+        ) : (
+          <KanbanBoard
+            tasks={filteredByProject}
+            onUpdateStatus={(id, status) => updateTask.mutate({ id, status })}
+            onDeleteTask={(id) => {
+              const task = (allTasks ?? []).find((t) => t.id === id);
+              if (task) setDeleteTarget(task);
+            }}
+          />
+        )
       ) : (
-        <div className="border border-surface-highest rounded-sm overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-16">
-                  ID
-                </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">
-                  Title
-                </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-40">
-                  Status
-                </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-28">
-                  Priority
-                </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
-                  Tags
-                </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
-                  Due
-                </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
-                  Author
-                </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
-                  Updated
-                </TableHead>
-                <TableHead className="w-10" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visible.map((task) => (
-                <TableRow
-                  key={task.id}
-                  className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
-                  onClick={() => setSelectedTaskId(task.id)}
+        <>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="relative flex-1 max-w-xs">
+              <Search
+                size={14}
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-outline"
+              />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search tasks..."
+                className="bg-surface border-surface-highest text-on-surface font-body text-xs pl-8 h-8"
+              />
+            </div>
+            <Select
+              value={priorityFilter}
+              onValueChange={(v) => setPriorityFilter(v as TaskPriority | "all")}
+            >
+              <SelectTrigger className="bg-surface border-surface-highest text-on-surface font-label text-[10px] uppercase tracking-widest w-32 h-8">
+                <SelectValue placeholder="Priority" />
+              </SelectTrigger>
+              <SelectContent className="bg-surface-highest border-surface-highest">
+                <SelectItem
+                  value="all"
+                  className="font-label text-xs uppercase"
                 >
-                  <TableCell className="font-label text-[10px] text-outline">
-                    {task.id.slice(-6)}
-                  </TableCell>
-                  <TableCell className="font-body text-xs text-on-surface max-w-xs truncate">
-                    {task.title}
-                  </TableCell>
-                  <TableCell>
-                    <div
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") e.stopPropagation();
-                      }}
-                    >
-                      <Select
-                        value={task.status}
-                        onValueChange={(v) =>
-                          updateTask.mutate({
-                            id: task.id,
-                            status: v as TaskStatus,
-                          })
-                        }
-                      >
-                        <SelectTrigger className="h-6 w-auto border-0 bg-transparent p-0 focus:ring-0 gap-1">
-                          <SelectValue>
-                            <StatusBadge status={task.status} />
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent className="bg-surface-highest border-surface-highest">
-                          {ALL_STATUSES.map((s) => (
-                            <SelectItem
-                              key={s}
-                              value={s}
-                              className="font-label text-xs uppercase"
-                            >
-                              {s.replace(/_/g, " ")}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <PriorityBadge priority={task.priority} />
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-0.5">
-                      {task.tags && task.tags.length > 0
-                        ? task.tags.slice(0, 2).map((tag) => (
-                            <span
-                              key={tag}
-                              className="px-1.5 py-0.5 text-[9px] font-label uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 rounded-sm"
-                            >
-                              {tag}
-                            </span>
-                          ))
-                        : <span className="text-outline text-[10px]">-</span>}
-                      {task.tags && task.tags.length > 2 && (
-                        <span className="text-outline text-[9px]">
-                          +{task.tags.length - 2}
-                        </span>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell
-                    className={`font-label text-[10px] ${
-                      isOverdue(task.due_at, task.status)
-                        ? "text-error"
-                        : "text-outline"
-                    }`}
+                  All Priorities
+                </SelectItem>
+                {PRIORITIES.map((p) => (
+                  <SelectItem
+                    key={p}
+                    value={p}
+                    className="font-label text-xs uppercase"
                   >
-                    {task.due_at
-                      ? new Date(task.due_at).toLocaleDateString()
-                      : "-"}
-                  </TableCell>
-                  <TableCell className="font-label text-[10px] text-outline">
-                    {task.author}
-                  </TableCell>
-                  <TableCell className="font-label text-[10px] text-outline">
-                    {new Date(task.updated_at).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteTarget(task);
-                      }}
-                      className="text-outline hover:text-error transition-colors p-1"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </TableCell>
-                </TableRow>
+                    {p}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <Tabs
+            value={statusFilter}
+            onValueChange={(v) => setStatusFilter(v as TaskStatus | "all")}
+            className="mb-4"
+          >
+            <TabsList className="bg-surface-highest border border-surface-highest gap-0 h-auto p-0">
+              {STATUS_TABS.map(({ value, label }) => (
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  className="font-label text-[10px] uppercase tracking-widest px-4 py-2 rounded-none
+                    data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none
+                    text-outline hover:text-on-surface-variant"
+                >
+                  {label}
+                  {value !== "all" && counts[value] != null && (
+                    <span className="ml-1.5 text-[9px] bg-surface-highest px-1.5 py-0.5 rounded-sm">
+                      {counts[value]}
+                    </span>
+                  )}
+                  {value === "all" && (
+                    <span className="ml-1.5 text-[9px] bg-surface-highest px-1.5 py-0.5 rounded-sm">
+                      {filteredByProject.length}
+                    </span>
+                  )}
+                </TabsTrigger>
               ))}
-            </TableBody>
-          </Table>
-        </div>
+            </TabsList>
+          </Tabs>
+
+          {isLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full bg-surface-highest" />
+              ))}
+            </div>
+          ) : visible.length === 0 ? (
+            <EmptyState message="No tasks" />
+          ) : (
+            <div className="border border-surface-highest rounded-sm overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-b border-surface-highest hover:bg-transparent">
+                    <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-16">
+                      ID
+                    </TableHead>
+                    <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">
+                      Title
+                    </TableHead>
+                    <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-40">
+                      Status
+                    </TableHead>
+                    <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-28">
+                      Priority
+                    </TableHead>
+                    <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                      Tags
+                    </TableHead>
+                    <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                      Due
+                    </TableHead>
+                    <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                      Author
+                    </TableHead>
+                    <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                      Updated
+                    </TableHead>
+                    <TableHead className="w-10" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visible.map((task) => (
+                    <TableRow
+                      key={task.id}
+                      className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
+                      onClick={() => setSelectedTaskId(task.id)}
+                    >
+                      <TableCell className="font-label text-[10px] text-outline">
+                        {task.id.slice(-6)}
+                      </TableCell>
+                      <TableCell className="font-body text-xs text-on-surface max-w-xs truncate">
+                        {task.title}
+                      </TableCell>
+                      <TableCell>
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+                          }}
+                        >
+                          <Select
+                            value={task.status}
+                            onValueChange={(v) =>
+                              updateTask.mutate({
+                                id: task.id,
+                                status: v as TaskStatus,
+                              })
+                            }
+                          >
+                            <SelectTrigger className="h-6 w-auto border-0 bg-transparent p-0 focus:ring-0 gap-1">
+                              <SelectValue>
+                                <StatusBadge status={task.status} />
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent className="bg-surface-highest border-surface-highest">
+                              {ALL_STATUSES.map((s) => (
+                                <SelectItem
+                                  key={s}
+                                  value={s}
+                                  className="font-label text-xs uppercase"
+                                >
+                                  {s.replace(/_/g, " ")}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <PriorityBadge priority={task.priority} />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-0.5">
+                          {task.tags && task.tags.length > 0
+                            ? task.tags.slice(0, 2).map((tag) => (
+                                <span
+                                  key={tag}
+                                  className="px-1.5 py-0.5 text-[9px] font-label uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 rounded-sm"
+                                >
+                                  {tag}
+                                </span>
+                              ))
+                            : <span className="text-outline text-[10px]">-</span>}
+                          {task.tags && task.tags.length > 2 && (
+                            <span className="text-outline text-[9px]">
+                              +{task.tags.length - 2}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell
+                        className={`font-label text-[10px] ${
+                          isOverdue(task.due_at, task.status)
+                            ? "text-error"
+                            : "text-outline"
+                        }`}
+                      >
+                        {task.due_at
+                          ? new Date(task.due_at).toLocaleDateString()
+                          : "-"}
+                      </TableCell>
+                      <TableCell className="font-label text-[10px] text-outline">
+                        {task.author}
+                      </TableCell>
+                      <TableCell className="font-label text-[10px] text-outline">
+                        {new Date(task.updated_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteTarget(task);
+                          }}
+                          className="text-outline hover:text-error transition-colors p-1"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </>
       )}
 
       {creating && (

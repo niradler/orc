@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Sidebar } from "@/components/Sidebar";
+import { ChatPanel } from "@/components/ChatPanel";
 import Dashboard from "@/views/Dashboard";
 import Jobs from "@/views/Jobs";
 import Knowledge from "@/views/Knowledge";
@@ -28,6 +29,8 @@ export default function App() {
   const [projectId, setProjectId] = useState<string>(
     () => localStorage.getItem(STORAGE_KEY) ?? "all",
   );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, projectId);
@@ -40,8 +43,12 @@ export default function App() {
         onNavigate={setView}
         projectId={projectId}
         onProjectChange={setProjectId}
+        collapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed((v) => !v)}
       />
-      <main className="ml-64 flex-1 overflow-y-auto">
+      <main
+        className={`flex-1 overflow-y-auto transition-all duration-200 ${sidebarCollapsed ? "ml-14" : "ml-64"} ${chatOpen ? "mr-80" : "mr-12"}`}
+      >
         <div className="p-8 max-w-[1200px]">
           {view === "dashboard" && <Dashboard onNavigate={setView} projectId={projectId} />}
           {view === "tasks" && <Tasks projectId={projectId} />}
@@ -54,6 +61,7 @@ export default function App() {
           {view === "settings" && <Settings />}
         </div>
       </main>
+      <ChatPanel open={chatOpen} onToggle={() => setChatOpen((v) => !v)} />
     </div>
   );
 }
