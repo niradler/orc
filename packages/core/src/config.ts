@@ -5,8 +5,8 @@ import { z } from "zod";
 
 const ChannelDefaultModeSchema = z
   .enum(["direct", "multi"])
-  .or(z.string().startsWith("agent:"))
-  .or(z.string().startsWith("job:"))
+  .or(z.string().regex(/^agent:/))
+  .or(z.string().regex(/^job:/))
   .default("direct");
 
 export const GatewayPlatformConfigSchema = z.object({
