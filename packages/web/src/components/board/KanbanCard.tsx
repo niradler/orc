@@ -28,8 +28,13 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
 
   const accentColor = PRIORITY_COLORS[task.priority] ?? PRIORITY_COLORS.normal;
 
+  // Chain our click-detection with dnd-kit's drag listeners so we don't clobber them.
+  const dragPointerDown = listeners?.onPointerDown as
+    | ((e: React.PointerEvent<HTMLDivElement>) => void)
+    | undefined;
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     downPos.current = { x: e.clientX, y: e.clientY };
+    dragPointerDown?.(e);
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -41,6 +46,9 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
     if (dx < 5 && dy < 5) onClick(task);
   };
 
+  // Spread dnd-kit listeners but override pointerDown with our chained version.
+  const dragListeners = isDragOverlay ? {} : { ...listeners, onPointerDown: handlePointerDown };
+
   return (
     <div
       ref={isDragOverlay ? undefined : setNodeRef}
@@ -49,8 +57,7 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
       data-task-id={task.id}
       data-task-status={task.status}
       {...(isDragOverlay ? {} : attributes)}
-      {...(isDragOverlay ? {} : listeners)}
-      onPointerDown={isDragOverlay ? undefined : handlePointerDown}
+      {...dragListeners}
       onPointerUp={isDragOverlay ? undefined : handlePointerUp}
       className={`
         group relative bg-surface-high border border-surface-highest rounded-sm
