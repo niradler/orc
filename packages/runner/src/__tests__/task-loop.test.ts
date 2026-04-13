@@ -55,11 +55,13 @@ describe("recordedCycle", () => {
 
     const job = await db.query.jobs.findFirst({ where: eq(jobs.name, SYSTEM_JOB_NAME) });
     expect(job).toBeTruthy();
+    if (!job) throw new Error("expected job");
 
-    const runs = await db.query.job_runs.findMany({ where: eq(job_runs.job_id, job?.id) });
+    const runs = await db.query.job_runs.findMany({ where: eq(job_runs.job_id, job.id) });
     expect(runs.length).toBeGreaterThanOrEqual(1);
 
     const lastRun = runs[runs.length - 1];
+    if (!lastRun) throw new Error("expected at least one run");
     expect(lastRun.status).toBe("success");
     expect(lastRun.stdout).toContain("Active workers:");
     expect(lastRun.stdout).toContain("No eligible tasks");
@@ -68,7 +70,8 @@ describe("recordedCycle", () => {
   test("increments job run_count", async () => {
     const db = getDb();
     const job = await db.query.jobs.findFirst({ where: eq(jobs.name, SYSTEM_JOB_NAME) });
-    const countBefore = job?.run_count;
+    if (!job) throw new Error("expected job");
+    const countBefore = job.run_count;
 
     await recordedCycle();
 

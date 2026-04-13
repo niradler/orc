@@ -16,13 +16,16 @@ export function teardownTestApp() {
 
 const AUTH = "Bearer test-secret";
 
+// biome-ignore lint/suspicious/noExplicitAny: tests use dynamic response shapes
+type AnyJsonResponse = Omit<Response, "json"> & { json<T = any>(): Promise<T> };
+
 export async function req(
   app: ReturnType<typeof createApp>,
   method: string,
   path: string,
   body?: unknown,
-) {
-  return app.request(path, {
+): Promise<AnyJsonResponse> {
+  const res = await app.request(path, {
     method,
     headers: {
       "Content-Type": "application/json",
@@ -30,4 +33,5 @@ export async function req(
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
+  return res as AnyJsonResponse;
 }
