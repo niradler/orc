@@ -1,20 +1,25 @@
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { Trash2 } from "lucide-react";
+import { MessageSquare, Trash2 } from "lucide-react";
+import { useRef } from "react";
 import type { Task } from "@/api/client";
 import { PRIORITY_COLORS } from "./board-utils";
 
 interface KanbanCardProps {
   task: Task;
   onDelete: (id: string) => void;
+  onClick?: (task: Task) => void;
   isDragOverlay?: boolean;
 }
 
-export function KanbanCard({ task, onDelete, isDragOverlay }: KanbanCardProps) {
+export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
     data: { type: "task", task },
   });
+
+  // Distinguish click from drag: only fire onClick if pointer barely moved.
+  const downPos = useRef<{ x: number; y: number } | null>(null);
 
   const style = {
     transform: CSS.Translate.toString(transform),
@@ -22,6 +27,27 @@ export function KanbanCard({ task, onDelete, isDragOverlay }: KanbanCardProps) {
   };
 
   const accentColor = PRIORITY_COLORS[task.priority] ?? PRIORITY_COLORS.normal;
+
+  // Chain our click-detection with dnd-kit's drag listeners so we don't clobber them.
+  const dragPointerDown = listeners?.onPointerDown as
+    | ((e: React.PointerEvent<HTMLDivElement>) => void)
+    | undefined;
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    downPos.current = { x: e.clientX, y: e.clientY };
+    dragPointerDown?.(e);
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!onClick || !downPos.current) return;
+    const dx = Math.abs(e.clientX - downPos.current.x);
+    const dy = Math.abs(e.clientY - downPos.current.y);
+    downPos.current = null;
+    // Pointer moved <5px: treat as click. Drag activates at 5px (PointerSensor distance).
+    if (dx < 5 && dy < 5) onClick(task);
+  };
+
+  // Spread dnd-kit listeners but override pointerDown with our chained version.
+  const dragListeners = isDragOverlay ? {} : { ...listeners, onPointerDown: handlePointerDown };
 
   return (
     <div
@@ -31,7 +57,8 @@ export function KanbanCard({ task, onDelete, isDragOverlay }: KanbanCardProps) {
       data-task-id={task.id}
       data-task-status={task.status}
       {...(isDragOverlay ? {} : attributes)}
-      {...(isDragOverlay ? {} : listeners)}
+      {...dragListeners}
+      onPointerUp={isDragOverlay ? undefined : handlePointerUp}
       className={`
         group relative bg-surface-high border border-surface-highest rounded-sm
         cursor-grab active:cursor-grabbing
@@ -74,12 +101,22 @@ export function KanbanCard({ task, onDelete, isDragOverlay }: KanbanCardProps) {
           </div>
 
           <div className="flex items-center gap-1.5 flex-shrink-0">
+            {task.comments_count != null && task.comments_count > 0 && (
+              <span
+                className="flex items-center gap-0.5 text-[9px] font-label text-outline"
+                title={`${task.comments_count} comment${task.comments_count === 1 ? "" : "s"}`}
+              >
+                <MessageSquare size={9} />
+                {task.comments_count}
+              </span>
+            )}
             <span className="text-[9px] font-label text-outline">
               {formatRelative(task.updated_at)}
             </span>
 
             <button
               type="button"
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete(task.id);

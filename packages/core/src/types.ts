@@ -74,14 +74,20 @@ export type TaskExecutionMode = z.infer<typeof TaskExecutionModeSchema>;
 export const ProjectCoordinationModeSchema = z.enum(["solo", "human_agent", "multi_agent"]);
 export type ProjectCoordinationMode = z.infer<typeof ProjectCoordinationModeSchema>;
 
-export const TASK_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
-  todo: ["doing", "queued", "paused", "cancelled"],
-  queued: ["doing", "todo", "cancelled"],
-  doing: ["review", "blocked", "paused", "cancelled"],
-  blocked: ["doing", "todo", "cancelled"],
-  review: ["done", "changes_requested"],
-  changes_requested: ["doing", "queued", "paused"],
-  done: [],
-  paused: ["todo"],
-  cancelled: [],
-};
+// Trello-like: any status can transition to any other status.
+// Blocker checks (e.g. cannot start a task with unfinished blockers) are enforced
+// separately in updateTaskStatus, not via this transition matrix.
+const ALL_STATUSES: TaskStatus[] = [
+  "todo",
+  "queued",
+  "doing",
+  "review",
+  "changes_requested",
+  "blocked",
+  "done",
+  "paused",
+  "cancelled",
+];
+export const TASK_STATUS_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = Object.fromEntries(
+  ALL_STATUSES.map((from) => [from, ALL_STATUSES.filter((to) => to !== from)]),
+) as Record<TaskStatus, TaskStatus[]>;

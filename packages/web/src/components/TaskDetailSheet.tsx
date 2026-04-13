@@ -42,17 +42,7 @@ import {
   useUpdateTask,
 } from "@/hooks/useTasks";
 
-const ALL_STATUSES: TaskStatus[] = [
-  "todo",
-  "queued",
-  "doing",
-  "review",
-  "changes_requested",
-  "blocked",
-  "done",
-  "cancelled",
-  "paused",
-];
+const ALL_STATUSES: TaskStatus[] = ["todo", "doing", "review", "blocked", "done"];
 
 const PRIORITIES: TaskPriority[] = ["low", "normal", "high", "critical"];
 

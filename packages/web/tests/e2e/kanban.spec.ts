@@ -70,18 +70,15 @@ test.describe("Kanban drag & drop", () => {
     }
   });
 
-  test("invalid drop (done → doing) snaps back: task stays in 'done'", async ({
-    page,
-    request,
-  }) => {
-    const title = tid("pw-kanban-invalid");
+  test("free drag (done → doing) is allowed in Trello-like mode", async ({ page, request }) => {
+    const title = tid("pw-kanban-free-drag");
     const task = await apiPost<Task>(request, "/tasks", {
       title,
       status: "todo",
       priority: "normal",
     });
     try {
-      // Move to review then to done via API (valid path), leaving the board showing 'done'
+      // Move to done via API, leaving the board showing 'done'
       await apiPatch<Task>(request, `/tasks/${task.id}`, { status: "doing" });
       await apiPatch<Task>(request, `/tasks/${task.id}`, { status: "review" });
       await apiPatch<Task>(request, `/tasks/${task.id}`, { status: "done" });
@@ -90,20 +87,39 @@ test.describe("Kanban drag & drop", () => {
       const card = page.locator(`[data-testid="kanban-card"][data-task-id="${task.id}"]`);
       await expect(card).toHaveAttribute("data-task-status", "done");
 
-      // Attempt the forbidden drop done → doing
+      // Drag from done back to doing — this used to be forbidden, now it's allowed
       await dragCardTo(page, task.id, "doing");
 
-      // Give any stray PATCH a moment to fire (or not), then confirm API still says "done"
-      await page.waitForTimeout(500);
-      const res = await request.get(
-        `http://localhost:${process.env.ORC_API_PORT ?? "7721"}/tasks/${task.id}`,
-      );
-      const fresh = (await res.json()) as Task;
-      expect(fresh.status).toBe("done");
+      await expect
+        .poll(
+          async () => {
+            const res = await request.get(
+              `http://localhost:${process.env.ORC_API_PORT ?? "7721"}/tasks/${task.id}`,
+            );
+            if (!res.ok()) return null;
+            return ((await res.json()) as Task).status;
+          },
+          { timeout: 10_000 },
+        )
+        .toBe("doing");
+    } finally {
+      await apiDelete(request, `/tasks/${task.id}`);
+    }
+  });
 
-      // And the card should still be in the done column
-      const cardNow = page.locator(`[data-testid="kanban-card"][data-task-id="${task.id}"]`);
-      await expect(cardNow).toHaveAttribute("data-task-status", "done");
+  test("clicking a card opens the task detail sheet", async ({ page, request }) => {
+    const title = tid("pw-kanban-click");
+    const task = await apiPost<Task>(request, "/tasks", {
+      title,
+      status: "todo",
+      priority: "normal",
+    });
+    try {
+      await page.reload();
+      const card = page.locator(`[data-testid="kanban-card"][data-task-id="${task.id}"]`);
+      await card.click();
+      // Detail sheet is a dialog that shows the task title
+      await expect(page.getByRole("dialog").getByText(title)).toBeVisible();
     } finally {
       await apiDelete(request, `/tasks/${task.id}`);
     }

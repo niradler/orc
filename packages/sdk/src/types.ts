@@ -40,6 +40,7 @@ export type Task = {
   required_review: boolean;
   agent_backend: string | null;
   max_review_rounds: number;
+  comments_count?: number;
   created_at: string;
   updated_at: string;
 };
