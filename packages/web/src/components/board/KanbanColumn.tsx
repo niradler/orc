@@ -1,5 +1,4 @@
 import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import type { Task, TaskStatus } from "@/api/client";
 import { KanbanCard } from "./KanbanCard";
 
@@ -21,8 +20,6 @@ export function KanbanColumn({
   isValidDrop,
 }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: status, data: { type: "column", status } });
-
-  const taskIds = tasks.map((t) => t.id);
 
   let borderClass = "border-surface-highest";
   if (isValidDrop === true && isOver) {
@@ -64,12 +61,15 @@ export function KanbanColumn({
         <div className="h-0.5 mt-2 rounded-full opacity-40" style={{ backgroundColor: color }} />
       </div>
 
-      <div ref={setNodeRef} className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[100px]">
-        <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
-          {tasks.map((task) => (
-            <KanbanCard key={task.id} task={task} onDelete={onDeleteTask} />
-          ))}
-        </SortableContext>
+      <div
+        ref={setNodeRef}
+        data-testid="kanban-column"
+        data-column-status={status}
+        className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[100px]"
+      >
+        {tasks.map((task) => (
+          <KanbanCard key={task.id} task={task} onDelete={onDeleteTask} />
+        ))}
 
         {tasks.length === 0 && (
           <div className="flex items-center justify-center h-16 text-outline text-[10px] font-label uppercase tracking-widest">

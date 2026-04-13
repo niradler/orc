@@ -39,6 +39,7 @@ import {
   useMemorySearch,
   useUpdateMemory,
 } from "@/hooks/useMemories";
+import { useProjects } from "@/hooks/useProjects";
 
 const MEMORY_TYPES: MemoryType[] = ["fact", "decision", "event", "rule", "discovery"];
 
@@ -78,8 +79,9 @@ export default function Memories({ projectId }: { projectId: string }) {
 
   const deleteMemory = useDeleteMemory();
 
-  const listResult = useMemories({ project_id: projectId });
-  const searchResult = useMemorySearch(query, { project_id: projectId });
+  const scopedProjectId = projectId === "all" ? undefined : projectId;
+  const listResult = useMemories({ project_id: scopedProjectId });
+  const searchResult = useMemorySearch(query, { project_id: scopedProjectId });
 
   const isSearching = query.trim().length > 0;
   const { data, isLoading, error, refetch } = isSearching ? searchResult : listResult;
@@ -108,6 +110,7 @@ export default function Memories({ projectId }: { projectId: string }) {
         meta={`${filtered.length} shown`}
         action={
           <Button
+            data-testid="new-memory-button"
             size="sm"
             onClick={() => setCreating(true)}
             className="font-label text-xs uppercase tracking-widest bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
@@ -207,6 +210,8 @@ export default function Memories({ projectId }: { projectId: string }) {
               {filtered.map((mem) => (
                 <TableRow
                   key={mem.id}
+                  data-testid="memory-row"
+                  data-memory-id={mem.id}
                   className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
                   onClick={() => setEditing(mem)}
                 >
@@ -247,6 +252,7 @@ export default function Memories({ projectId }: { projectId: string }) {
                   </TableCell>
                   <TableCell>
                     <button
+                      data-testid="memory-delete"
                       onClick={(e) => {
                         e.stopPropagation();
                         setDeleting(mem);
@@ -265,7 +271,7 @@ export default function Memories({ projectId }: { projectId: string }) {
 
       {creating && (
         <CreateMemoryDialog
-          projectId={projectId}
+          defaultProjectId={scopedProjectId}
           open={creating}
           onClose={() => setCreating(false)}
         />
@@ -300,14 +306,15 @@ export default function Memories({ projectId }: { projectId: string }) {
 }
 
 function CreateMemoryDialog({
-  projectId,
+  defaultProjectId,
   open,
   onClose,
 }: {
-  projectId: string;
+  defaultProjectId?: string;
   open: boolean;
   onClose: () => void;
 }) {
+  const { data: projects } = useProjects();
   const [title, setTitle] = useState("");
   const [type, setType] = useState<MemoryType>("fact");
   const [content, setContent] = useState("");
@@ -316,6 +323,7 @@ function CreateMemoryDialog({
   const [tags, setTags] = useState("");
   const [importance, setImportance] = useState<CreateMemoryInput["importance"]>("normal");
   const [expiresAt, setExpiresAt] = useState("");
+  const [projectId, setProjectId] = useState<string>(defaultProjectId ?? "");
   const createMemory = useCreateMemory();
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -402,6 +410,7 @@ function CreateMemoryDialog({
               Content *
             </Label>
             <Textarea
+              data-testid="memory-content-input"
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="Memory content..."
@@ -458,6 +467,32 @@ function CreateMemoryDialog({
               />
             </div>
           </div>
+          <div className="space-y-1.5">
+            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              Project
+            </Label>
+            <Select
+              value={projectId || "__none__"}
+              onValueChange={(v) => setProjectId(v === "__none__" ? "" : v)}
+            >
+              <SelectTrigger
+                data-testid="memory-project-select"
+                className="bg-background border-surface-highest text-on-surface font-body text-xs h-9"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-surface border-surface-highest">
+                <SelectItem value="__none__" className="font-body text-xs">
+                  None
+                </SelectItem>
+                {projects?.map((p) => (
+                  <SelectItem key={p.id} value={p.id} className="font-body text-xs">
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <DialogFooter>
             <Button
               type="button"
@@ -469,6 +504,7 @@ function CreateMemoryDialog({
               Cancel
             </Button>
             <Button
+              data-testid="memory-submit"
               type="submit"
               size="sm"
               disabled={createMemory.isPending || !content.trim()}

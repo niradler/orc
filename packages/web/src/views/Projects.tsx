@@ -97,6 +97,7 @@ export default function Projects() {
         meta={`${(projects ?? []).length} total`}
         action={
           <Button
+            data-testid="new-project-button"
             size="sm"
             onClick={() => setCreating(true)}
             className="font-label text-xs uppercase tracking-widest bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
@@ -170,6 +171,9 @@ export default function Projects() {
               {visible.map((p) => (
                 <TableRow
                   key={p.id}
+                  data-testid="project-row"
+                  data-project-id={p.id}
+                  data-project-name={p.name}
                   className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
                   onClick={() => setEditing(p)}
                 >
@@ -202,6 +206,7 @@ export default function Projects() {
                   </TableCell>
                   <TableCell>
                     <button
+                      data-testid="project-delete"
                       onClick={(e) => {
                         e.stopPropagation();
                         setDeleting(p);
@@ -294,6 +299,7 @@ function CreateProjectDialog({ open, onClose }: { open: boolean; onClose: () => 
               Name *
             </Label>
             <Input
+              data-testid="project-name-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="project-name"
@@ -378,6 +384,7 @@ function CreateProjectDialog({ open, onClose }: { open: boolean; onClose: () => 
               Cancel
             </Button>
             <Button
+              data-testid="project-submit"
               type="submit"
               size="sm"
               disabled={createProject.isPending || !name.trim()}

@@ -30,6 +30,8 @@ interface StatCardProps {
 export function StatCard({ label, value, accent = "muted", sub, onClick }: StatCardProps) {
   return (
     <div
+      data-testid="stat-card"
+      data-stat-label={label}
       className={cn(
         "bg-surface-low p-4 rounded-sm border-l-2 relative overflow-hidden",
         ACCENT_COLORS[accent],
@@ -42,7 +44,10 @@ export function StatCard({ label, value, accent = "muted", sub, onClick }: StatC
           {label}
         </span>
       </div>
-      <div className={cn("text-2xl font-headline font-extrabold uppercase", VALUE_COLORS[accent])}>
+      <div
+        data-testid="stat-card-value"
+        className={cn("text-2xl font-headline font-extrabold uppercase", VALUE_COLORS[accent])}
+      >
         {value}
       </div>
       {sub && <div className="font-label text-[10px] text-outline mt-1">{sub}</div>}

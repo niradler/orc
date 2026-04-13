@@ -87,6 +87,7 @@ export function Sidebar({
           </label>
           <div className="relative">
             <select
+              data-testid="sidebar-project-select"
               value={projectId}
               onChange={(e) => onProjectChange(e.target.value)}
               className={cn(
@@ -118,6 +119,7 @@ export function Sidebar({
         {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
+            data-testid={`nav-${id}`}
             onClick={() => onNavigate(id)}
             title={collapsed ? label : undefined}
             className={cn(
@@ -153,6 +155,7 @@ export function Sidebar({
       <div className={cn("mt-auto space-y-3", collapsed ? "px-1" : "px-3")}>
         <div className="pt-4 border-t border-surface-highest">
           <button
+            data-testid="nav-settings"
             onClick={() => onNavigate("settings")}
             title={collapsed ? "Settings" : undefined}
             className={cn(

@@ -51,6 +51,7 @@ export function ConfirmDialog({
             Cancel
           </Button>
           <Button
+            data-testid="confirm-dialog-confirm"
             type="button"
             size="sm"
             onClick={onConfirm}

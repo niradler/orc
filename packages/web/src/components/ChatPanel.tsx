@@ -31,7 +31,7 @@ export function ChatPanel({ open, onToggle }: ChatPanelProps) {
     }
   };
 
-  const agents = ["claude", "acpx", "codex", "gemini", "copilot"];
+  const agents = ["claude", "codex", "gemini", "copilot"];
 
   if (!open) {
     return (

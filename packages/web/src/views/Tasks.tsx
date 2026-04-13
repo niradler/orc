@@ -147,6 +147,8 @@ export default function Tasks({ projectId }: TasksProps) {
           <div className="flex items-center gap-2">
             <div className="flex border border-surface-highest rounded-sm overflow-hidden">
               <button
+                data-testid="tasks-view-board"
+                title="Board view"
                 onClick={() => setViewMode("board")}
                 className={`p-1.5 transition-colors ${
                   viewMode === "board"
@@ -157,6 +159,8 @@ export default function Tasks({ projectId }: TasksProps) {
                 <LayoutGrid size={14} />
               </button>
               <button
+                data-testid="tasks-view-table"
+                title="Table view"
                 onClick={() => setViewMode("table")}
                 className={`p-1.5 transition-colors ${
                   viewMode === "table"
@@ -168,6 +172,7 @@ export default function Tasks({ projectId }: TasksProps) {
               </button>
             </div>
             <Button
+              data-testid="new-task-button"
               size="sm"
               onClick={() => setCreating(true)}
               className="font-label text-xs uppercase tracking-widest bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
@@ -305,6 +310,9 @@ export default function Tasks({ projectId }: TasksProps) {
                   {visible.map((task) => (
                     <TableRow
                       key={task.id}
+                      data-testid="task-row"
+                      data-task-id={task.id}
+                      data-task-title={task.title}
                       className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
                       onClick={() => setSelectedTaskId(task.id)}
                     >
@@ -386,6 +394,7 @@ export default function Tasks({ projectId }: TasksProps) {
                       </TableCell>
                       <TableCell>
                         <button
+                          data-testid="task-delete"
                           onClick={(e) => {
                             e.stopPropagation();
                             setDeleteTarget(task);
@@ -508,6 +517,7 @@ function CreateTaskDialog({
               Title *
             </Label>
             <Input
+              data-testid="task-title-input"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Task title..."
@@ -656,6 +666,7 @@ function CreateTaskDialog({
               Cancel
             </Button>
             <Button
+              data-testid="task-submit"
               type="submit"
               size="sm"
               disabled={createTask.isPending || !title.trim()}

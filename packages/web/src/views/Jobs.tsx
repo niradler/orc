@@ -34,6 +34,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useCreateJob, useDeleteJob, useJobs, useTriggerJob, useUpdateJob } from "@/hooks/useJobs";
+import { useProjects } from "@/hooks/useProjects";
 
 const TRIGGER_TYPES: JobTriggerType[] = [
   "one-shot",
@@ -48,7 +49,8 @@ const OVERLAPS: Array<"skip" | "queue" | "kill"> = ["skip", "queue", "kill"];
 const NOTIFY_OPTIONS: Array<"never" | "failure" | "always"> = ["never", "failure", "always"];
 
 export default function Jobs({ projectId }: { projectId: string }) {
-  const { data: jobs, isLoading, error, refetch } = useJobs({ project_id: projectId });
+  const scopedProjectId = projectId === "all" ? undefined : projectId;
+  const { data: jobs, isLoading, error, refetch } = useJobs({ project_id: scopedProjectId });
   const triggerJob = useTriggerJob();
   const deleteJob = useDeleteJob();
 
@@ -68,6 +70,7 @@ export default function Jobs({ projectId }: { projectId: string }) {
         meta={`${enabledCount}/${(jobs ?? []).length} enabled`}
         action={
           <Button
+            data-testid="new-job-button"
             size="sm"
             onClick={() => setCreating(true)}
             className="font-label text-xs uppercase tracking-widest bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
@@ -118,6 +121,9 @@ export default function Jobs({ projectId }: { projectId: string }) {
               {(jobs ?? []).map((job) => (
                 <TableRow
                   key={job.id}
+                  data-testid="job-row"
+                  data-job-id={job.id}
+                  data-job-name={job.name}
                   className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
                   onClick={() => setSelectedJobId(job.id)}
                 >
@@ -158,6 +164,7 @@ export default function Jobs({ projectId }: { projectId: string }) {
                   <TableCell>
                     <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                       <Button
+                        data-testid="job-trigger"
                         size="sm"
                         disabled={triggerJob.isPending}
                         onClick={() => triggerJob.mutate(job.id)}
@@ -166,6 +173,7 @@ export default function Jobs({ projectId }: { projectId: string }) {
                         <Play size={10} className="mr-1" /> Run
                       </Button>
                       <button
+                        data-testid="job-delete"
                         onClick={() => setDeleting(job)}
                         className="text-outline hover:text-error transition-colors p-1"
                       >
@@ -187,7 +195,11 @@ export default function Jobs({ projectId }: { projectId: string }) {
       />
 
       {creating && (
-        <CreateJobDialog projectId={projectId} open={creating} onClose={() => setCreating(false)} />
+        <CreateJobDialog
+          defaultProjectId={scopedProjectId}
+          open={creating}
+          onClose={() => setCreating(false)}
+        />
       )}
 
       {editing && (
@@ -215,14 +227,15 @@ export default function Jobs({ projectId }: { projectId: string }) {
 }
 
 function CreateJobDialog({
-  projectId,
+  defaultProjectId,
   open,
   onClose,
 }: {
-  projectId: string;
+  defaultProjectId?: string;
   open: boolean;
   onClose: () => void;
 }) {
+  const { data: projects } = useProjects();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [command, setCommand] = useState("");
@@ -233,6 +246,7 @@ function CreateJobDialog({
   const [overlap, setOverlap] = useState<"skip" | "queue" | "kill">("skip");
   const [notifyOn, setNotifyOn] = useState<"never" | "failure" | "always">("failure");
   const [workingDir, setWorkingDir] = useState("");
+  const [projectId, setProjectId] = useState<string>(defaultProjectId ?? "");
   const createJob = useCreateJob();
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -268,6 +282,7 @@ function CreateJobDialog({
               Name *
             </Label>
             <Input
+              data-testid="job-name-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Job name..."
@@ -291,6 +306,7 @@ function CreateJobDialog({
               Command *
             </Label>
             <Textarea
+              data-testid="job-command-input"
               value={command}
               onChange={(e) => setCommand(e.target.value)}
               placeholder="bun run build"
@@ -404,6 +420,32 @@ function CreateJobDialog({
               />
             </div>
           </div>
+          <div className="space-y-1.5">
+            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              Project
+            </Label>
+            <Select
+              value={projectId || "__none__"}
+              onValueChange={(v) => setProjectId(v === "__none__" ? "" : v)}
+            >
+              <SelectTrigger
+                data-testid="job-project-select"
+                className="bg-background border-surface-highest text-on-surface font-body text-xs h-9"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-surface border-surface-highest">
+                <SelectItem value="__none__" className="font-body text-xs">
+                  None
+                </SelectItem>
+                {projects?.map((p) => (
+                  <SelectItem key={p.id} value={p.id} className="font-body text-xs">
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <DialogFooter>
             <Button
               type="button"
@@ -415,6 +457,7 @@ function CreateJobDialog({
               Cancel
             </Button>
             <Button
+              data-testid="job-submit"
               type="submit"
               size="sm"
               disabled={createJob.isPending || !name.trim() || !command.trim()}

@@ -1,4 +1,4 @@
-import { useSortable } from "@dnd-kit/sortable";
+import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Trash2 } from "lucide-react";
 import type { Task } from "@/api/client";
@@ -11,14 +11,13 @@ interface KanbanCardProps {
 }
 
 export function KanbanCard({ task, onDelete, isDragOverlay }: KanbanCardProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
     data: { type: "task", task },
   });
 
   const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
+    transform: CSS.Translate.toString(transform),
     opacity: isDragging ? 0.3 : 1,
   };
 
@@ -28,6 +27,9 @@ export function KanbanCard({ task, onDelete, isDragOverlay }: KanbanCardProps) {
     <div
       ref={isDragOverlay ? undefined : setNodeRef}
       style={isDragOverlay ? undefined : style}
+      data-testid="kanban-card"
+      data-task-id={task.id}
+      data-task-status={task.status}
       {...(isDragOverlay ? {} : attributes)}
       {...(isDragOverlay ? {} : listeners)}
       className={`
