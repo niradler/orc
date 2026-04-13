@@ -24,7 +24,6 @@
 - Projects as organizing hub with `project_id` FK on tasks, memories, jobs
 - Readable project names everywhere (MCP tools accept `project: "name"`)
 - Full CRUD across CLI, MCP, and API for all resources
-- Terminal UI (TUI) with vim-style navigation
 - Gateway: Telegram + Slack bridge with agent sessions, HITL review cards, voice
 
 ### v0.1.x — Agent Orchestration
@@ -40,7 +39,9 @@
 - **Per-project concurrency** — `max_workers` on projects to limit parallel agents
 - **Polymorphic comments** — `task_update` with `comment` param writes to shared comments table
 - **Skill installation** — `npx skills add niradler/orc` for agent skill distribution
-- **TUI polish** — improved navigation, layout, and keybindings
+- **Web dashboard** — React SPA (Vite + Tailwind + shadcn + React Query) covering tasks, jobs, memories, projects, sessions, knowledge, skills, and chat
+- **Single-binary deployment** — CLI build bundles the prebuilt dashboard into `packages/cli/dist/web/`; `orc daemon start` serves the API at `/api/*` and the web UI at `/` from one process
+- **TUI removed** — all features migrated to the web dashboard; `@orc/tui` package and `orc tui` command deleted
 - **91+ automated tests**
 
 ### v0.1.x — Memory System Improvements
@@ -68,7 +69,6 @@
 
 ### Medium Term
 
-- Web dashboard for task board and memory browsing
 - Vector search with `sqlite-vec` for semantic memory retrieval
 - Permission approval flow — agent pauses at a decision point, human approves
 - Webhook trigger setup with examples (GitHub, CI)

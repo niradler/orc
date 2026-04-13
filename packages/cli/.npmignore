@@ -2,3 +2,4 @@ src/
 *.test.ts
 tsconfig.json
 build.ts
+copy-web.ts

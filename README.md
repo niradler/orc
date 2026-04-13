@@ -85,7 +85,7 @@ cd orc && bun install && bun build
 ### Quick start
 
 ```bash
-# 1. Start the daemon — runs the REST API on :7700, task loop, job scheduler, and gateway
+# 1. Start the daemon — runs the REST API on :7700, task loop, job scheduler, gateway, and web UI
 orc daemon start
 
 # 2. Create a project
@@ -102,8 +102,24 @@ orc status
 orc task list
 ```
 
+Open `http://localhost:7700` to use the web dashboard — task board, kanban, jobs, memories, sessions, knowledge, and a live chat panel. The same server hosts both the REST API and the prebuilt React SPA, so there is no separate command to run for the UI.
+
 > [!TIP]
 > The database is created automatically at `~/.orc/orc.db` on first run. No setup needed.
+
+### Web dashboard
+
+The web dashboard ships inside the `orc` binary and is served by the API process at the root path. Endpoints are still reachable at both `/<route>` (legacy SDK/CLI/MCP) and `/api/<route>` (used by the dashboard's browser client).
+
+| Route | Served from |
+|---|---|
+| `GET /` | `index.html` (web SPA shell) |
+| `GET /assets/*` | Built JS/CSS bundles |
+| `GET /api/*` | All REST routes (mirrors the root mount) |
+| `GET /openapi.json`, `GET /docs` | Swagger UI |
+| `GET /tasks`, `/memories`, … | Same handler as `/api/<...>`, kept for SDK/CLI/MCP backwards compat |
+
+Override the served dist directory with `ORC_WEB_DIST=/path/to/web/dist` if you want to host a custom build (e.g. a fork). If no dist is found, the server runs in pure-API mode.
 
 ## Connect your agent
 
@@ -529,7 +545,7 @@ packages/
   gateway/        Telegram + Slack bridge + agent sessions
   agent-runtime/  Agent backend registry (claude, acpx, a2a)
   task-service/   Task status transitions + side-effects
-  tui/            Terminal UI
+  web/            React dashboard (Vite + Tailwind + shadcn + React Query)
 ```
 
 Data flow: `Agent → MCP → API → DB` / `CLI → SDK → API → DB`

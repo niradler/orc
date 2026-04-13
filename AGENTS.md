@@ -16,7 +16,6 @@ packages/
   gateway/        @orc/gateway        — multi-channel gateway (Telegram, Slack) + agent sessions
   agent-runtime/  @orc/agent-runtime  — shared agent backend registry (claude, acpx, a2a)
   task-service/   @orc/task-service   — task status transitions, side-effects, comments
-  tui/            @orc/tui            — terminal UI (in-progress)
   web/            @orc/web            — React dashboard (Vite + Tailwind + shadcn + React Query)
 ```
 
@@ -114,7 +113,7 @@ pkill -f 'packages/api/src/index.ts'
 pkill -f 'packages/web'
 ```
 
-**Don't blanket-kill `bun.exe`** — the TUI, MCP servers, and the `--port 9742` service also run under `bun` and you'll break unrelated sessions. Match on the command line.
+**Don't blanket-kill `bun.exe`** — MCP servers and the `--port 9742` service also run under `bun` and you'll break unrelated sessions. Match on the command line.
 
 ### Zombie socket recovery
 
@@ -142,12 +141,29 @@ bun run --filter @orc/api dev > /tmp/orc-api-$(date +%s).log 2>&1 &
 
 ## Web Dashboard (packages/web)
 
-React SPA served by Vite at `ORC_WEB_PORT` (default 3000 from `.env`).
+React SPA replacing the removed TUI. Same feature surface — Tasks, Kanban, Jobs, Memories, Projects, Sessions, Knowledge, Skills — plus Dashboard, Settings, and a streaming chat panel that spawns `acpx` via `POST /chat/stream`.
 
-- **API client**: `packages/web/src/api/client.ts` — all requests go through Vite proxy at `/api`
-- **Hooks**: `packages/web/src/hooks/` — React Query wrappers (30s refetch interval)
-- **Views**: Tasks, Dashboard, Jobs, Memories, Projects, Sessions, Knowledge, Settings
+- **Stack**: React 19 + Vite 6 + TypeScript + Tailwind + shadcn/ui + React Query (30s refetch) + `@dnd-kit` (kanban DnD) + Playwright (e2e)
+- **API client**: `packages/web/src/api/client.ts` — calls `${getApiUrl()}/<route>`, default `getApiUrl()` is `/api`. Override via `localStorage.orc_api_url` / `orc_api_secret`.
+- **Hooks**: `packages/web/src/hooks/` — one React Query wrapper per resource (`useTasks`, `useJobs`, `useMemories`, `useProjects`, `useSessions`, `useKnowledge`, `useSkills`, `useChat`, `useHealth`)
 - **API limit**: task list max is 100 per request (API enforces `max: 100` via Zod)
+
+### Two ways to run the web UI
+
+| Mode | When | How |
+|---|---|---|
+| **Production (single server)** | After `bun build` or from a published `orc-ai` install | `orc daemon start` (or `orc api`). The API serves the built dashboard at `/`. Endpoints reachable at both `/<route>` and `/api/<route>`. |
+| **Vite dev server** | Local frontend development with hot reload | `bun run --filter @orc/web dev` (port `ORC_WEB_PORT`, default 3077). Vite proxies `/api/*` → `http://localhost:$ORC_API_PORT/*`. |
+
+The CLI build (`packages/cli`) runs `bun run --filter @orc/web build` first and copies `packages/web/dist/` into `packages/cli/dist/web/`. The API resolves the dist via `ORC_WEB_DIST` env, then a candidate path list (`packages/web/dist`, `dist/web` next to the bundle, etc.). If no dist is found, the server runs pure-API.
+
+### Why API routes mount at both `/` and `/api`
+
+Historic clients (SDK, CLI, MCP, Claude Code hooks) call `/<route>` directly — `ORC_API_BASE=http://127.0.0.1:7700` + `/tasks`. The web dashboard calls `/api/<route>` so it can be served from the same origin without colliding with the SPA shell at `/`. Both prefixes share the same handler — no duplicated logic. See `packages/api/src/server.ts` `mountRouters()`.
+
+### Static file serving
+
+`packages/api/src/static.ts` serves `index.html` at `/`, hashed bundles at `/assets/*` (with `Cache-Control: public, max-age=31536000, immutable`), and root-level files (favicon, robots) by name. It is mounted last so any conflicting API route wins. Web app uses state-based navigation (no React Router) — there is no SPA fallback for arbitrary paths, only the explicit static routes above.
 
 ## Web UI e2e tests (Playwright)
 
@@ -160,7 +176,7 @@ bun run test:e2e                   # auto-starts API + web via webServer
 bun run test:e2e:ui                # headed, picker UI
 ```
 
-The suite currently covers the `/chat/stream` round-trip (`chat.spec.ts`) — the regression guard for the "send a message and it hangs" class of bug. An SSE contract test (empty messages → 400) lives at `packages/api/src/__tests__/chat-stream.test.ts` and runs as part of `bun test`.
+Specs cover chat round-trip, dashboard counts, jobs CRUD, kanban DnD, memories CRUD, projects CRUD, project scope filtering, and tasks CRUD. An SSE contract test (empty messages → 400) lives at `packages/api/src/__tests__/chat-stream.test.ts` and runs as part of `bun test`.
 
 ## Testing the Web UI with agent-browser
 

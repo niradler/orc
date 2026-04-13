@@ -18,6 +18,7 @@ import { skillsRouter } from "./routes/skills.js";
 import { tagsRouter } from "./routes/tags.js";
 import { taskLinksRouter } from "./routes/task-links.js";
 import { tasksRouter } from "./routes/tasks.js";
+import { createWebStatic } from "./static.js";
 
 const logger = createLogger("api");
 
@@ -39,19 +40,25 @@ export function createApp() {
     return c.json({ error: "Internal server error", code: "INTERNAL_ERROR" }, 500);
   });
 
-  app.route("/", chatRouter);
-  app.route("/", healthRouter);
-  app.route("/", mcpToolRouter);
-  app.route("/", projectsRouter);
-  app.route("/", skillsRouter);
-  app.route("/", tasksRouter);
-  app.route("/", taskLinksRouter);
-  app.route("/", memoriesRouter);
-  app.route("/", knowledgeRouter);
-  app.route("/", sessionsRouter);
-  app.route("/", jobsRouter);
-  app.route("/", gatewayRouter);
-  app.route("/", tagsRouter);
+  // Routers are registered at root for SDK/CLI/MCP backwards compatibility
+  // and under `/api` for the web dashboard (which calls `/api/*`).
+  const mountRouters = (prefix: string) => {
+    app.route(prefix, chatRouter);
+    app.route(prefix, healthRouter);
+    app.route(prefix, mcpToolRouter);
+    app.route(prefix, projectsRouter);
+    app.route(prefix, skillsRouter);
+    app.route(prefix, tasksRouter);
+    app.route(prefix, taskLinksRouter);
+    app.route(prefix, memoriesRouter);
+    app.route(prefix, knowledgeRouter);
+    app.route(prefix, sessionsRouter);
+    app.route(prefix, jobsRouter);
+    app.route(prefix, gatewayRouter);
+    app.route(prefix, tagsRouter);
+  };
+  mountRouters("/");
+  mountRouters("/api");
 
   app.doc("/openapi.json", {
     openapi: "3.1.0",
@@ -64,6 +71,9 @@ export function createApp() {
   });
 
   app.get("/docs", swaggerUI({ url: "/openapi.json" }));
+
+  // Static web dashboard — mounted last so API routes take precedence.
+  app.use("*", createWebStatic());
 
   return app;
 }

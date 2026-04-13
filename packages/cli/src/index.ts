@@ -121,14 +121,6 @@ program
   });
 
 program
-  .command("tui")
-  .description("Launch the terminal UI dashboard")
-  .action(async () => {
-    // @ts-expect-error — Bun handles TSX natively; CLI tsconfig has no JSX setting
-    await import("@orc/tui");
-  });
-
-program
   .command("mcp")
   .description("Start the MCP server (stdio)")
   .action(async () => {

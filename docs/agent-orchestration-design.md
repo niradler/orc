@@ -437,7 +437,7 @@ Coder finishes → status: "review"
 - ORC channel MCP server for real-time task events into CC sessions
 - Per-project concurrency overrides
 - Skill versioning and management via CLI
-- Session activity dashboard (TUI)
+- Session activity dashboard (web)
 - Multi-backend routing config
 - Remove deprecated `task_submit_review` / `task_check_review`
 
