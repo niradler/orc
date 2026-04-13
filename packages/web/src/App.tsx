@@ -47,7 +47,9 @@ export default function App() {
             <Route path="/sessions" element={<Sessions projectId={projectId} />} />
             <Route path="/sessions/:sessionId" element={<Sessions projectId={projectId} />} />
             <Route path="/memories" element={<Memories projectId={projectId} />} />
+            <Route path="/memories/:memoryId" element={<Memories projectId={projectId} />} />
             <Route path="/projects" element={<Projects />} />
+            <Route path="/projects/:projectId" element={<Projects />} />
             <Route path="/knowledge" element={<Knowledge projectId={projectId} />} />
             <Route path="/skills" element={<Skills />} />
             <Route path="/skills/:skillName" element={<Skills />} />
