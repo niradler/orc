@@ -1,6 +1,6 @@
 {
   "name": "orc-ai",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "Human + AI Orchestration Hub — persistent memory, task management, session continuity and multi-agent collaboration for Cursor, Claude Code, and Codex",
   "type": "module",
   "bin": {
