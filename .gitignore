@@ -11,7 +11,6 @@ drizzle/
 bun.lockb
 .claude/settings.local.json
 .worktrees/
-tui-debug.log
 .examples
 .claude
 .agents
@@ -27,3 +26,7 @@ packages/*/playwright/.cache/
 # Local debugging artifacts
 tmp/
 qa-screenshot*.png
+
+# Plans (local-only — not shared via repo)
+docs/superpowers/plans/
+.claude/plans/

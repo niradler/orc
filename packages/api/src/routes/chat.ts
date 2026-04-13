@@ -102,6 +102,12 @@ app.post("/chat/stream", async (c) => {
   }
 
   const agent = body.agent ?? "claude";
+  // Whitelist-style validation — `agent` is passed as an argv element to acpx,
+  // so a value like "--help" or "-v" would be interpreted as a flag. Reject
+  // anything that isn't a plain identifier.
+  if (!/^[a-z][a-z0-9-]{0,31}$/i.test(agent)) {
+    return c.json({ error: "invalid agent name" }, 400);
+  }
   const systemPrompt = body.system;
   const autoApprove = body.autoApprove ?? true;
 
@@ -168,9 +174,8 @@ app.post("/chat/stream", async (c) => {
     // Write the prompt and await the write before closing stdin, otherwise the
     // Bun stdin pipe can be closed before bytes are flushed.
     try {
-      const writer = proc.stdin as unknown as WritableStreamDefaultWriter<Uint8Array>;
       const bytes = new TextEncoder().encode(prompt);
-      // Bun's stdin supports both .write() (FileSink) and WritableStream APIs.
+      // Bun's stdin is a FileSink — use its write/flush/end API directly.
       const sink = proc.stdin as unknown as {
         write: (chunk: Uint8Array | string) => number | Promise<number>;
         end: () => void | Promise<void>;
@@ -179,7 +184,6 @@ app.post("/chat/stream", async (c) => {
       await Promise.resolve(sink.write(bytes));
       if (sink.flush) await Promise.resolve(sink.flush());
       await Promise.resolve(sink.end());
-      void writer;
     } catch (err) {
       const message = err instanceof Error ? err.message : "stdin write failed";
       console.error("[chat] stdin error:", message);
