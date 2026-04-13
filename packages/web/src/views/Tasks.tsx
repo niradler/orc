@@ -186,7 +186,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
   if (error) return <ErrorState message={error.message} onRetry={() => refetch()} />;
 
   return (
-    <div>
+    <div className="flex-1 min-h-0 flex flex-col">
       <ViewHeader
         title="Tasks"
         meta={`${filteredByProject.length} total`}

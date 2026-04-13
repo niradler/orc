@@ -1,13 +1,18 @@
 import { MessageSquare, Send, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useChat } from "@/hooks/useChat";
+import { cn } from "@/lib/utils";
 
 interface ChatPanelProps {
   open: boolean;
   onToggle: () => void;
+  /** When true, panel renders expanded and without the collapsed rail — used inside a mobile sheet. */
+  embedded?: boolean;
+  /** Optional close handler used when embedded (falls back to onToggle). */
+  onClose?: () => void;
 }
 
-export function ChatPanel({ open, onToggle }: ChatPanelProps) {
+export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPanelProps) {
   const { messages, streaming, streamText, config, setConfig, send, cancel, clear } = useChat();
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -31,13 +36,15 @@ export function ChatPanel({ open, onToggle }: ChatPanelProps) {
     }
   };
 
+  const handleClose = onClose ?? onToggle;
+
   const agents = ["claude", "codex", "gemini", "copilot"];
 
-  if (!open) {
+  if (!open && !embedded) {
     return (
       <div
         data-testid="chat-panel-collapsed"
-        className="fixed top-0 right-0 h-full w-12 z-40 bg-surface border-l border-surface-highest flex flex-col items-center pt-4 gap-3"
+        className="h-full w-12 shrink-0 bg-surface border-l border-surface-highest flex flex-col items-center pt-4 gap-3"
       >
         <button
           type="button"
@@ -59,7 +66,12 @@ export function ChatPanel({ open, onToggle }: ChatPanelProps) {
     <div
       data-testid="chat-panel"
       data-streaming={streaming ? "true" : "false"}
-      className="fixed top-0 right-0 h-full w-80 z-40 flex flex-col bg-surface border-l border-surface-highest transition-all duration-200"
+      className={cn(
+        "h-full flex flex-col min-h-0 bg-surface",
+        embedded
+          ? "w-full"
+          : "w-80 shrink-0 border-l border-surface-highest transition-[width] duration-200",
+      )}
     >
       {/* Header */}
       <div className="flex-shrink-0 px-4 py-3 border-b border-surface-highest">
@@ -76,8 +88,9 @@ export function ChatPanel({ open, onToggle }: ChatPanelProps) {
           </div>
           <button
             type="button"
-            onClick={onToggle}
+            onClick={handleClose}
             className="text-outline hover:text-on-surface-variant transition-colors p-1"
+            aria-label="Close chat"
           >
             <X size={14} />
           </button>
@@ -88,7 +101,7 @@ export function ChatPanel({ open, onToggle }: ChatPanelProps) {
       <div
         ref={scrollRef}
         data-testid="chat-messages"
-        className="flex-1 overflow-y-auto px-3 py-3 space-y-3"
+        className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-3"
       >
         {messages.length === 0 && !streaming && (
           <div className="flex items-center justify-center h-full">

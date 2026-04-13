@@ -13,7 +13,7 @@ export function useJobs(params?: { project_id?: string; enabled?: boolean }) {
 export function useJob(id: string | null) {
   return useQuery({
     queryKey: ["job", id],
-    queryFn: () => api.jobs.get(id!),
+    queryFn: () => api.jobs.get(id as string),
     enabled: Boolean(id),
   });
 }
@@ -56,7 +56,7 @@ export function useTriggerJob() {
 export function useJobRuns(jobId: string | null) {
   return useQuery({
     queryKey: ["job-runs", jobId],
-    queryFn: () => api.jobs.runs(jobId!),
+    queryFn: () => api.jobs.runs(jobId as string),
     refetchInterval: 5_000,
     select: (data) => data.runs,
     enabled: Boolean(jobId),
@@ -66,7 +66,7 @@ export function useJobRuns(jobId: string | null) {
 export function useJobRunLogs(jobId: string | null, runId: string | null) {
   return useQuery({
     queryKey: ["job-run-logs", jobId, runId],
-    queryFn: () => api.jobs.runLogs(jobId!, runId!),
+    queryFn: () => api.jobs.runLogs(jobId as string, runId as string),
     enabled: Boolean(jobId) && Boolean(runId),
     select: (data) => data.logs,
   });

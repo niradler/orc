@@ -14,20 +14,51 @@ async function dragCardTo(page: Page, taskId: string, targetStatus: string): Pro
   const target = page.locator(
     `[data-testid="kanban-column"][data-column-status="${targetStatus}"]`,
   );
+
+  // The kanban board scrolls horizontally when columns don't fit; make sure
+  // we can actually see the card before trying to grab it.
+  await card.scrollIntoViewIfNeeded();
   const cardBox = await card.boundingBox();
-  const targetBox = await target.boundingBox();
-  if (!cardBox || !targetBox) throw new Error("card or target not in viewport");
+  if (!cardBox) throw new Error("card not in viewport after scroll");
 
   const from = { x: cardBox.x + cardBox.width / 2, y: cardBox.y + cardBox.height / 2 };
-  const to = { x: targetBox.x + targetBox.width / 2, y: targetBox.y + targetBox.height / 2 };
 
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
-  // Cross activation threshold
+  // Cross dnd-kit PointerSensor activation threshold (5px)
   await page.mouse.move(from.x + 10, from.y + 10, { steps: 5 });
-  // Glide to target
-  await page.mouse.move(to.x, to.y, { steps: 12 });
-  await page.mouse.up();
+
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error("no viewport");
+
+  // Drive pointer toward the target. If the target is off-screen, park the
+  // pointer near the viewport edge so dnd-kit's autoScroll brings it in, then
+  // re-measure and continue. Caps the loop so a genuinely broken drop fails
+  // fast instead of hanging the suite.
+  let dropped = false;
+  for (let i = 0; i < 30; i++) {
+    const targetBox = await target.boundingBox();
+    if (targetBox) {
+      const centerX = targetBox.x + targetBox.width / 2;
+      const inView = centerX >= 0 && centerX <= viewport.width;
+      if (inView) {
+        await page.mouse.move(centerX, targetBox.y + targetBox.height / 2, { steps: 10 });
+        await page.mouse.up();
+        dropped = true;
+        break;
+      }
+      // Hold the pointer near the edge toward the target — dnd-kit autoScroll
+      // only kicks in while an active drag pointer sits in the edge region.
+      const edgeX = centerX < 0 ? 20 : viewport.width - 20;
+      await page.mouse.move(edgeX, viewport.height / 2, { steps: 3 });
+    }
+    await page.waitForTimeout(250);
+  }
+
+  if (!dropped) {
+    await page.mouse.up();
+    throw new Error(`target column "${targetStatus}" never came into view during drag`);
+  }
 }
 
 test.describe("Kanban drag & drop", () => {

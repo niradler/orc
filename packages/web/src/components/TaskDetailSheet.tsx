@@ -269,7 +269,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                                 type="button"
                                 onClick={() =>
                                   deleteLink.mutate({
-                                    taskId: taskId!,
+                                    taskId: taskId as string,
                                     linkId: link.id,
                                   })
                                 }

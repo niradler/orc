@@ -13,7 +13,7 @@ export function useProjects(params?: { status?: string }) {
 export function useProject(id: string | null) {
   return useQuery({
     queryKey: ["project", id],
-    queryFn: () => api.projects.get(id!),
+    queryFn: () => api.projects.get(id as string),
     enabled: Boolean(id),
   });
 }
@@ -21,7 +21,7 @@ export function useProject(id: string | null) {
 export function useProjectSummary(id: string | null) {
   return useQuery({
     queryKey: ["project-summary", id],
-    queryFn: () => api.projects.summary(id!),
+    queryFn: () => api.projects.summary(id as string),
     enabled: Boolean(id),
   });
 }
@@ -58,7 +58,7 @@ export function useDeleteProject() {
 export function useProjectComments(id: string | null) {
   return useQuery({
     queryKey: ["project-comments", id],
-    queryFn: () => api.projects.listComments(id!),
+    queryFn: () => api.projects.listComments(id as string),
     enabled: Boolean(id),
     select: (data) => data.comments,
   });

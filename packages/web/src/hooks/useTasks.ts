@@ -18,7 +18,7 @@ export function useTasks(params?: { status?: string; project_id?: string }) {
 export function useTask(id: string | null) {
   return useQuery({
     queryKey: ["task", id],
-    queryFn: () => api.tasks.get(id!),
+    queryFn: () => api.tasks.get(id as string),
     enabled: Boolean(id),
   });
 }
@@ -53,7 +53,7 @@ export function useDeleteTask() {
 export function useTaskComments(id: string | null) {
   return useQuery({
     queryKey: ["task-comments", id],
-    queryFn: () => api.tasks.listComments(id!),
+    queryFn: () => api.tasks.listComments(id as string),
     enabled: Boolean(id),
     select: (data) => data.comments,
   });
@@ -71,7 +71,7 @@ export function useAddTaskComment() {
 export function useTaskLinks(id: string | null) {
   return useQuery({
     queryKey: ["task-links", id],
-    queryFn: () => api.tasks.listLinks(id!),
+    queryFn: () => api.tasks.listLinks(id as string),
     enabled: Boolean(id),
     select: (data) => data.links,
   });

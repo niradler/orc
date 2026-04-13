@@ -1155,8 +1155,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       });
       if (results.length === 0) return "No knowledge documents found.";
       const lines = [`Found ${results.length} results:`];
-      for (let i = 0; i < results.length; i++) {
-        const r = results[i]!;
+      for (const [i, r] of results.entries()) {
         lines.push(
           `[${i + 1}] ${r.docid}  ${r.path}  [${r.collection}]  score:${r.score.toFixed(3)}  ${r.snippet}`,
         );

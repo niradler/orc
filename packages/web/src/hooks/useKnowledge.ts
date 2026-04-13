@@ -25,7 +25,7 @@ export function useKnowledgeSearch(
 export function useKnowledgeDocument(id: string | null) {
   return useQuery({
     queryKey: ["knowledge-document", id],
-    queryFn: () => api.knowledge.getDocument(id!),
+    queryFn: () => api.knowledge.getDocument(id as string),
     enabled: Boolean(id),
   });
 }

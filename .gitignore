@@ -25,6 +25,7 @@ packages/*/playwright/.cache/
 
 # Local debugging artifacts
 tmp/
+.tmp/
 qa-screenshot*.png
 
 # Plans (local-only — not shared via repo)

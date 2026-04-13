@@ -17,7 +17,12 @@ export default defineConfig({
     screenshot: "only-on-failure",
     actionTimeout: 10_000,
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } },
+    },
+  ],
   webServer: process.env.PW_NO_SERVER
     ? undefined
     : [

@@ -268,8 +268,7 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
   private mapSearchResult(r: SearchResult, query: string): KnowledgeSearchResult {
     // getStore() has already loaded qmd by the time this is invoked from search paths
     const extractSnippet = _qmd?.extractSnippet;
-    const snippet =
-      r.body && extractSnippet ? extractSnippet(r.body, query, 120).snippet : r.title;
+    const snippet = r.body && extractSnippet ? extractSnippet(r.body, query, 120).snippet : r.title;
     return {
       docid: r.docid,
       path: r.displayPath,

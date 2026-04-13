@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { argv } from "node:process";
+import { fileURLToPath } from "node:url";
 import type { Context, MiddlewareHandler } from "hono";
 
 const MIME: Record<string, string> = {

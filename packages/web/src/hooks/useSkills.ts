@@ -13,7 +13,7 @@ export function useSkills(params?: { q?: string; source?: "builtin" | "user" }) 
 export function useSkill(name: string | null) {
   return useQuery({
     queryKey: ["skill", name],
-    queryFn: () => api.skills.get(name!),
+    queryFn: () => api.skills.get(name as string),
     enabled: Boolean(name),
   });
 }

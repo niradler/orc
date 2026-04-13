@@ -111,7 +111,7 @@ export function JobDetailSheet({ jobId, open, onClose }: JobDetailSheetProps) {
                       <RunItem
                         key={run.id}
                         run={run}
-                        jobId={jobId!}
+                        jobId={jobId as string}
                         expanded={expandedRun === run.id}
                         onToggle={() => setExpandedRun(expandedRun === run.id ? null : run.id)}
                       />
