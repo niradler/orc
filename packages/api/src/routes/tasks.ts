@@ -31,6 +31,7 @@ const TaskSchema = z
     required_review: z.boolean(),
     agent_backend: z.string().nullable(),
     max_review_rounds: z.number().int(),
+    comments_count: z.number().int().optional(),
     created_at: z.string().datetime(),
     updated_at: z.string().datetime(),
   })
@@ -241,7 +242,7 @@ const addCommentRoute = createRoute({
   },
 });
 
-function toDto(t: typeof tasks.$inferSelect) {
+function toDto(t: typeof tasks.$inferSelect, commentsCount?: number) {
   return {
     ...t,
     due_at: t.due_at?.toISOString() ?? null,
@@ -249,15 +250,43 @@ function toDto(t: typeof tasks.$inferSelect) {
     required_review: t.required_review,
     agent_backend: t.agent_backend ?? null,
     max_review_rounds: t.max_review_rounds,
+    comments_count: commentsCount ?? 0,
     created_at: t.created_at.toISOString(),
     updated_at: t.updated_at.toISOString(),
   };
 }
 
-function rawToDto(row: Record<string, unknown>) {
+function getCommentsCountMap(taskIds: string[]): Map<string, number> {
+  const map = new Map<string, number>();
+  if (taskIds.length === 0) return map;
+  const sqlite = getSqlite();
+  const placeholders = taskIds.map(() => "?").join(",");
+  const rows = sqlite
+    .query(
+      `SELECT resource_id AS id, COUNT(*) AS count FROM comments
+       WHERE resource_type = 'task' AND resource_id IN (${placeholders})
+       GROUP BY resource_id`,
+    )
+    .all(...taskIds) as { id: string; count: number }[];
+  for (const row of rows) map.set(row.id, row.count);
+  return map;
+}
+
+function getCommentsCountForTask(id: string): number {
+  const sqlite = getSqlite();
+  const row = sqlite
+    .query(
+      "SELECT COUNT(*) AS count FROM comments WHERE resource_type = 'task' AND resource_id = ?",
+    )
+    .get(id) as { count: number } | null;
+  return row?.count ?? 0;
+}
+
+function rawToDto(row: Record<string, unknown>, commentsCount?: number) {
   return {
     ...row,
     tags: typeof row.tags === "string" ? JSON.parse(row.tags) : row.tags,
+    comments_count: commentsCount ?? 0,
     due_at: row.due_at ? new Date((row.due_at as number) * 1000).toISOString() : null,
     claim_expires_at: row.claim_expires_at
       ? new Date((row.claim_expires_at as number) * 1000).toISOString()
@@ -293,7 +322,11 @@ app.openapi(listRoute, async (c) => {
     sql += " ORDER BY t.updated_at DESC LIMIT ?";
     params.push(limit);
     const rows = sqlite.query(sql).all(...params) as Record<string, unknown>[];
-    const mapped = rows.map(rawToDto) as ReturnType<typeof toDto>[];
+    const ids = rows.map((r) => String(r.id));
+    const counts = getCommentsCountMap(ids);
+    const mapped = rows.map((r) => rawToDto(r, counts.get(String(r.id)) ?? 0)) as ReturnType<
+      typeof toDto
+    >[];
     return c.json({ tasks: mapped, total: rows.length });
   }
 
@@ -307,7 +340,11 @@ app.openapi(listRoute, async (c) => {
     orderBy: [desc(tasks.updated_at)],
   });
 
-  return c.json({ tasks: rows.map(toDto), total: rows.length });
+  const counts = getCommentsCountMap(rows.map((r) => r.id));
+  return c.json({
+    tasks: rows.map((r) => toDto(r, counts.get(r.id) ?? 0)),
+    total: rows.length,
+  });
 });
 
 app.openapi(getRoute, async (c) => {
@@ -315,7 +352,7 @@ app.openapi(getRoute, async (c) => {
   const { id } = c.req.valid("param");
   const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!task) throw new NotFoundError("Task", id);
-  return c.json(toDto(task));
+  return c.json(toDto(task, getCommentsCountForTask(id)));
 });
 
 app.openapi(createRoute_, async (c) => {
@@ -347,7 +384,7 @@ app.openapi(createRoute_, async (c) => {
   import("@orc/runner/task-loop")
     .then((m) => m.triggerTaskCheck())
     .catch((err) => logger.warn("triggerTaskCheck failed", { err }));
-  return c.json(toDto(task), 201);
+  return c.json(toDto(task, 0), 201);
 });
 
 app.openapi(updateRoute, async (c) => {
@@ -390,7 +427,7 @@ app.openapi(updateRoute, async (c) => {
 
   const updated = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!updated) throw new Error("Expected updated to exist after write");
-  return c.json(toDto(updated));
+  return c.json(toDto(updated, getCommentsCountForTask(id)));
 });
 
 app.openapi(deleteRoute, async (c) => {

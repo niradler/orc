@@ -218,14 +218,16 @@ describe("Tasks CRUD", () => {
       expect(body.status).toBe("review");
     });
 
-    test("rejects invalid transition (todo → review)", async () => {
+    test("allows any-to-any transition (todo → review) Trello-style", async () => {
       const newRes = await req(app, "POST", "/tasks", { title: "Todo task" });
       const newTask = await newRes.json();
 
       const res = await req(app, "PATCH", `/tasks/${newTask.id}`, {
         status: "review",
       });
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.status).toBe("review");
     });
   });
 

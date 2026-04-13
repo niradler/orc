@@ -1,36 +1,52 @@
 import type { TaskStatus } from "@/api/client";
 
-export const BOARD_COLUMNS: { status: TaskStatus; label: string; color: string }[] = [
+// Visible kanban columns — the 5 statuses users actively manage.
+// Internal/edge statuses (queued, changes_requested, paused, cancelled)
+// are mapped into one of these for display via toVisibleStatus().
+export type VisibleStatus = "todo" | "doing" | "review" | "blocked" | "done";
+
+export const BOARD_COLUMNS: { status: VisibleStatus; label: string; color: string }[] = [
   { status: "todo", label: "Todo", color: "#a6abbb" },
-  { status: "queued", label: "Queued", color: "#549fff" },
   { status: "doing", label: "In Progress", color: "#78b0ff" },
   { status: "review", label: "Review", color: "#ffa851" },
-  { status: "changes_requested", label: "Changes", color: "#eb8800" },
   { status: "blocked", label: "Blocked", color: "#ff716c" },
   { status: "done", label: "Done", color: "#70fda7" },
-  { status: "paused", label: "Paused", color: "#707584" },
-  { status: "cancelled", label: "Cancelled", color: "#434856" },
 ];
 
-const TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
-  todo: ["doing", "queued", "paused", "cancelled"],
-  queued: ["doing", "todo", "cancelled"],
-  doing: ["review", "blocked", "paused", "cancelled"],
-  blocked: ["doing", "todo", "cancelled"],
-  review: ["done", "changes_requested"],
-  changes_requested: ["doing", "queued", "paused"],
-  done: [],
-  paused: ["todo"],
-  cancelled: [],
-};
+export const VISIBLE_STATUSES: VisibleStatus[] = BOARD_COLUMNS.map((c) => c.status);
 
-export function canTransition(from: TaskStatus, to: TaskStatus): boolean {
-  if (from === to) return true;
-  return TRANSITIONS[from]?.includes(to) ?? false;
+/**
+ * Map any backend TaskStatus onto one of the five visible kanban columns.
+ * - queued → doing (claimed by runner, effectively in progress)
+ * - changes_requested → review (still part of the review cycle)
+ * - paused → blocked (stalled / needs manual attention)
+ * - cancelled → null (hidden from kanban)
+ */
+export function toVisibleStatus(status: TaskStatus): VisibleStatus | null {
+  switch (status) {
+    case "todo":
+    case "doing":
+    case "review":
+    case "blocked":
+    case "done":
+      return status;
+    case "queued":
+      return "doing";
+    case "changes_requested":
+      return "review";
+    case "paused":
+      return "blocked";
+    case "cancelled":
+      return null;
+    default:
+      return null;
+  }
 }
 
-export function validTargets(from: TaskStatus): TaskStatus[] {
-  return TRANSITIONS[from] ?? [];
+// Trello-like: any visible column accepts a card from any other column.
+// Backend enforces integrity rules (e.g. blockers) via updateTaskStatus.
+export function canTransition(_from: TaskStatus, _to: TaskStatus): boolean {
+  return true;
 }
 
 export const PRIORITY_COLORS: Record<string, string> = {

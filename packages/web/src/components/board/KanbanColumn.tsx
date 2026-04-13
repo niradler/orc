@@ -8,6 +8,7 @@ interface KanbanColumnProps {
   color: string;
   tasks: Task[];
   onDeleteTask: (id: string) => void;
+  onCardClick?: (task: Task) => void;
   isValidDrop: boolean | null;
 }
 
@@ -17,6 +18,7 @@ export function KanbanColumn({
   color,
   tasks,
   onDeleteTask,
+  onCardClick,
   isValidDrop,
 }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: status, data: { type: "column", status } });
@@ -68,7 +70,7 @@ export function KanbanColumn({
         className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[100px]"
       >
         {tasks.map((task) => (
-          <KanbanCard key={task.id} task={task} onDelete={onDeleteTask} />
+          <KanbanCard key={task.id} task={task} onDelete={onDeleteTask} onClick={onCardClick} />
         ))}
 
         {tasks.length === 0 && (

@@ -1,4 +1,4 @@
-import { LayoutGrid, List, Plus, Search, Trash2 } from "lucide-react";
+import { LayoutGrid, List, MessageSquare, Plus, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { CreateTaskInput, Task, TaskPriority, TaskStatus } from "@/api/client";
 import { KanbanBoard } from "@/components/board/KanbanBoard";
@@ -43,24 +43,16 @@ import { useCreateTask, useDeleteTask, useTasks, useUpdateTask } from "@/hooks/u
 const STATUS_TABS: Array<{ value: TaskStatus | "all"; label: string }> = [
   { value: "all", label: "All" },
   { value: "todo", label: "Todo" },
-  { value: "queued", label: "Queued" },
   { value: "doing", label: "Doing" },
   { value: "review", label: "Review" },
   { value: "blocked", label: "Blocked" },
   { value: "done", label: "Done" },
 ];
 
-const ALL_STATUSES: TaskStatus[] = [
-  "todo",
-  "queued",
-  "doing",
-  "review",
-  "changes_requested",
-  "blocked",
-  "done",
-  "cancelled",
-  "paused",
-];
+// Statuses exposed in the user-facing dropdown. Internal/edge statuses
+// (queued, changes_requested, paused, cancelled) are still respected by the
+// backend but are not surfaced as direct picks here.
+const ALL_STATUSES: TaskStatus[] = ["todo", "doing", "review", "blocked", "done"];
 
 const PRIORITIES: TaskPriority[] = ["low", "normal", "high", "critical"];
 
@@ -202,6 +194,7 @@ export default function Tasks({ projectId }: TasksProps) {
               const task = (allTasks ?? []).find((t) => t.id === id);
               if (task) setDeleteTarget(task);
             }}
+            onCardClick={(task) => setSelectedTaskId(task.id)}
           />
         )
       ) : (
@@ -298,6 +291,12 @@ export default function Tasks({ projectId }: TasksProps) {
                     <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
                       Tags
                     </TableHead>
+                    <TableHead
+                      className="font-label text-[10px] uppercase tracking-widest text-outline w-16"
+                      title="Comments"
+                    >
+                      <MessageSquare size={12} className="inline" />
+                    </TableHead>
                     <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
                       Due
                     </TableHead>
@@ -383,6 +382,19 @@ export default function Tasks({ projectId }: TasksProps) {
                             <span className="text-outline text-[9px]">+{task.tags.length - 2}</span>
                           )}
                         </div>
+                      </TableCell>
+                      <TableCell
+                        className="font-label text-[10px] text-outline"
+                        data-testid="task-comments-count"
+                      >
+                        {task.comments_count && task.comments_count > 0 ? (
+                          <span className="inline-flex items-center gap-1">
+                            <MessageSquare size={10} />
+                            {task.comments_count}
+                          </span>
+                        ) : (
+                          <span className="text-outline/50">-</span>
+                        )}
                       </TableCell>
                       <TableCell
                         className={`font-label text-[10px] ${

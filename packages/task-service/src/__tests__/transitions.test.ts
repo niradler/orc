@@ -40,11 +40,11 @@ describe("updateTaskStatus", () => {
     expect(result.task?.status).toBe("doing");
   });
 
-  test("rejects invalid transition (todo → done)", async () => {
+  test("allows any-to-any transition (todo → done) Trello-style", async () => {
     const id = await createTask();
     const result = await updateTaskStatus({ taskId: id, status: "done" });
-    expect(result.ok).toBe(false);
-    expect(result.error).toContain("Cannot transition");
+    expect(result.ok).toBe(true);
+    expect(result.task?.status).toBe("done");
   });
 
   test("adds comment on transition", async () => {
