@@ -54,7 +54,7 @@ curl -s -H "Authorization: Bearer $SECRET" http://127.0.0.1:$PORT/health
 ### 1.4 Build Health
 - [ ] `bun typecheck` — FAILS: TS errors in `packages/api/src/__tests__/tasks.test.ts` (`'body' is of type 'unknown'`)
 - [ ] `bun check` (biome lint) — has warnings
-- [~] `bun test` — mostly passing, snapshot mismatch in TUI tests
+- [~] `bun test` — mostly passing
 
 ---
 
@@ -313,16 +313,77 @@ curl -s -H "Authorization: Bearer $SECRET" http://127.0.0.1:$PORT/health
 
 ---
 
-## 14. CLI Global Options
+## 14. Web Dashboard (`packages/web`)
 
-### 14.1 Global Flags
+React SPA replacing the removed TUI — all TUI views plus Dashboard, Settings, Kanban board, and a live chat panel.
+
+**Two ways to run it:**
+1. **Production**: `orc daemon start` (or `orc api`) — the API server hosts the prebuilt SPA at `/`. Endpoints exposed at both `/api/*` (used by the dashboard) and root `/*` (legacy SDK/CLI/MCP). The CLI build copies `packages/web/dist/` → `packages/cli/dist/web/` so the published `orc-ai` package ships with the dashboard included.
+2. **Frontend dev**: `bun run --filter @orc/web dev` — Vite hot-reload on `ORC_WEB_PORT` (default 3077), proxying `/api/*` → `ORC_API_PORT`.
+
+### 14.1 Build & Dev
+
+- [x] `bun run --filter @orc/web dev` — starts Vite with hot reload
+- [x] `bun run --filter @orc/web build` — `tsc -b` + `vite build` produces `dist/`
+- [x] `bun run --filter @orc/web typecheck` — no errors
+- [x] `bun run --filter orc-ai build` — bundles CLI **and** copies web dist into `packages/cli/dist/web/`
+- [x] `bun run packages/cli/dist/index.js api` then `curl http://localhost:7700/` returns `index.html`
+- [x] Same bundled server: `curl /api/health` → 200 (web prefix), `curl /health` → 200 (legacy prefix)
+
+### 14.2 Views
+
+All views scope to the sidebar project selector. `"All Projects"` → no filter, `"Unassigned"` → `project_id IS NULL`, specific project → exact match.
+
+- [x] **Dashboard** — counts (tasks, jobs, memories, sessions) + stat cards
+- [x] **Tasks** — table + detail sheet + create dialog with project Select
+- [x] **Kanban** — `todo | doing | blocked | review | done` columns with drag-and-drop (`@dnd-kit`). Invalid transitions snap back.
+- [x] **Jobs** — list + detail sheet + run history + create dialog
+- [x] **Memories** — list + create dialog + search
+- [x] **Projects** — CRUD (create/edit/archive/delete)
+- [x] **Sessions** — session log viewer with detail sheet
+- [x] **Knowledge** — collections + search
+- [x] **Skills** — skill library browser
+- [x] **Settings** — bearer secret config in `localStorage.orc_api_secret`
+
+### 14.3 Chat Panel
+
+- [x] `POST /api/chat/stream` — SSE round-trip spawning `acpx` (claude | codex | gemini | copilot)
+- [x] Clear error surfaced when `acpx` not on PATH (503)
+- [x] Cancel button aborts stream and kills child process
+- [x] Agent name validated against `^[a-z][a-z0-9-]{0,31}$` (prevents argv injection)
+
+### 14.4 Playwright E2E
+
+Selectors are `data-testid` only — never rely on text or class names.
+
+```bash
+cd packages/web
+bun add -D @playwright/test          # one-time
+bun x playwright install chromium    # one-time
+bun run test:e2e                     # auto-starts API + web via webServer
+bun run test:e2e:ui                  # headed picker UI
+```
+
+Specs in `packages/web/tests/e2e/` cover: chat, dashboard, jobs, kanban, memories, projects, scope, tasks.
+
+### 14.5 Not covered here
+
+- [ ] Visual regression (no snapshot testing yet)
+- [ ] Accessibility audit (axe / Lighthouse)
+- [ ] Mobile / small-viewport responsiveness
+
+---
+
+## 16. CLI Global Options
+
+### 16.1 Global Flags
 - [x] `--port <n>` overrides API port
 - [x] `--secret <secret>` overrides API secret
 - [x] `--db <path>` overrides DB path
 - [x] `--json` enables machine-readable JSON output
 - [x] `--version` shows version
 
-### 14.2 JSON Output Mode
+### 16.2 JSON Output Mode
 - [x] `--json task list` returns JSON
 - [x] `--json project list` returns JSON
 - [x] `--json job list` returns JSON
@@ -330,7 +391,7 @@ curl -s -H "Authorization: Bearer $SECRET" http://127.0.0.1:$PORT/health
 
 ---
 
-## 15. Error Handling
+## 17. Error Handling
 
 - [x] Nonexistent task ID returns "Task not found" (not a crash)
 - [x] Nonexistent job name returns "Job not found"
@@ -398,7 +459,6 @@ bash scripts/e2e.sh
 - [ ] Agent loop / task loop (requires `claude`/`acpx` on PATH)
 - [ ] A2A protocol (requires remote agent URL)
 - [ ] Daemon start/stop lifecycle
-- [ ] TUI (terminal UI) — interactive, requires manual testing
 - [ ] MCP server via stdio (`orc mcp`)
 - [ ] Cron job actual scheduling (tested create/update only)
 - [ ] Watch trigger (file watching)

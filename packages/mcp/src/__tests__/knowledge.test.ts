@@ -127,7 +127,9 @@ describe("get", () => {
   test("get document by docid", async () => {
     const results = await engine.search("tasks", { mode: "lexical", limit: 1 });
     expect(results.length).toBeGreaterThan(0);
-    const doc = await engine.get(results[0]?.docid);
+    const first = results[0];
+    if (!first) throw new Error("expected a result");
+    const doc = await engine.get(first.docid);
     expect(doc).not.toBeNull();
     expect(doc?.content).toContain("Tasks");
     expect(doc?.collection).toBe("test-docs");

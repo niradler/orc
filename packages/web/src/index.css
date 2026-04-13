@@ -1,0 +1,49 @@
+/* biome-ignore-all lint/suspicious/noUnknownAtRules: tailwind directives */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    border-color: #434856;
+  }
+
+  body {
+    background-color: #090e1a;
+    color: #e1e5f6;
+    font-family: Inter, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #090e1a;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1e2537;
+    border-radius: 10px;
+  }
+}
+
+@layer utilities {
+  .terminal-glow {
+    text-shadow: 0 0 8px rgba(120, 176, 255, 0.4);
+  }
+
+  .animate-pulse-subtle {
+    animation: pulse-subtle 3s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse-subtle {
+  0%,
+  100% {
+    border-left-color: rgba(255, 113, 108, 0.4);
+  }
+  50% {
+    border-left-color: rgba(255, 113, 108, 1);
+  }
+}

@@ -11,10 +11,22 @@ drizzle/
 bun.lockb
 .claude/settings.local.json
 .worktrees/
-tui-debug.log
 .examples
 .claude
 .agents
 .cursor
 .vscode
 .demo
+
+# Playwright
+packages/*/test-results/
+packages/*/playwright-report/
+packages/*/playwright/.cache/
+
+# Local debugging artifacts
+tmp/
+qa-screenshot*.png
+
+# Plans (local-only — not shared via repo)
+docs/superpowers/plans/
+.claude/plans/

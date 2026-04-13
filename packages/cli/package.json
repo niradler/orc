@@ -7,10 +7,12 @@
     "orc": "dist/index.js"
   },
   "scripts": {
-    "dev": "bun run --watch src/index.ts",
+    "dev": "bun --env-file ../../.env --watch src/index.ts",
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
-    "build": "bun build src/index.ts --outdir dist --target bun --minify --external @opentui/core-darwin-x64 --external @opentui/core-darwin-arm64 --external @opentui/core-linux-x64 --external @opentui/core-linux-arm64 --external @opentui/core-win32-x64 --external @opentui/core-win32-arm64",
+    "build:web": "cd ../web && bun run build",
+    "build:copy-web": "bun run copy-web.ts",
+    "build": "bun run build:web && bun build src/index.ts --outdir dist --target bun --minify --external 'node-llama-cpp' --external '@node-llama-cpp/*' && bun run build:copy-web",
     "build:bin": "bun run build.ts",
     "prepublishOnly": "cp ../../README.md . && bun run build",
     "test": "bun test",
@@ -27,17 +29,9 @@
     "@orc/mcp": "workspace:*",
     "@orc/runner": "workspace:*",
     "@orc/sdk": "workspace:*",
-    "@orc/tui": "workspace:*",
+    "@orc/web": "workspace:*",
     "commander": "^14.0.3",
     "typescript": "^6.0.2"
-  },
-  "optionalDependencies": {
-    "@opentui/core-darwin-x64": "0.1.96",
-    "@opentui/core-darwin-arm64": "0.1.96",
-    "@opentui/core-linux-x64": "0.1.96",
-    "@opentui/core-linux-arm64": "0.1.96",
-    "@opentui/core-win32-x64": "0.1.96",
-    "@opentui/core-win32-arm64": "0.1.96"
   },
   "peerDependencies": {
     "bun": ">=1.0.0"

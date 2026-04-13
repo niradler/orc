@@ -15,6 +15,7 @@ import type {
   Project,
   ProjectSummary,
   Session,
+  SessionDetail,
   SkillFull,
   SkillMeta,
   SkillRefContent,
@@ -271,8 +272,17 @@ export function createOrcClient(options?: OrcClientOptions) {
           params as Record<string, string | number | boolean | undefined>,
         ),
 
-      get: (id: string) =>
-        c<Session & { events: unknown[]; snapshot: string | null }>("GET", `/sessions/${id}`),
+      get: (id: string) => c<SessionDetail>("GET", `/sessions/${id}`),
+    },
+
+    tags: {
+      list: (params?: { resource_type?: "task" | "project" | "memory" }) =>
+        c<{ tags: { name: string; count: number; resource_type: string }[] }>(
+          "GET",
+          "/tags",
+          undefined,
+          params as Record<string, string | number | boolean | undefined>,
+        ),
     },
 
     health: {

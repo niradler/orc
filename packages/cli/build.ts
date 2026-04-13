@@ -1,16 +1,30 @@
-import { mkdirSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 
 const pkg = JSON.parse(readFileSync("./package.json", "utf-8"));
 mkdirSync("dist", { recursive: true });
 
-const opentui_externals = [
-  "@opentui/core-darwin-x64",
-  "@opentui/core-darwin-arm64",
-  "@opentui/core-linux-x64",
-  "@opentui/core-linux-arm64",
-  "@opentui/core-win32-x64",
-  "@opentui/core-win32-arm64",
-];
+// Ensure the web dashboard is built before we bundle the CLI. `bun build --compile`
+// cannot embed static HTML/JS assets, so we ship them as a `dist/web/` directory
+// alongside each binary and the API server serves them at runtime.
+console.log("Building web dashboard...");
+{
+  const proc = Bun.spawnSync(["bun", "run", "--filter", "@orc/web", "build"], {
+    stderr: "inherit",
+    stdout: "inherit",
+  });
+  if (proc.exitCode !== 0) process.exit(1);
+}
+
+const webDistSrc = join("..", "web", "dist");
+const webDistDest = join("dist", "web");
+if (!existsSync(join(webDistSrc, "index.html"))) {
+  console.error(`Expected ${webDistSrc}/index.html after web build — aborting.`);
+  process.exit(1);
+}
+rmSync(webDistDest, { recursive: true, force: true });
+cpSync(webDistSrc, webDistDest, { recursive: true });
+console.log(`Copied web dist → ${webDistDest}`);
 
 const targets = [
   { target: "bun-linux-x64", out: "dist/orc-linux-x64" },
@@ -34,7 +48,10 @@ for (const { target, out } of targets) {
     out,
     "--define",
     `process.env.ORC_VERSION=${JSON.stringify(pkg.version)}`,
-    ...opentui_externals.flatMap((ext) => ["--external", ext]),
+    "--external",
+    "node-llama-cpp",
+    "--external",
+    "@node-llama-cpp/*",
   ]);
   if (proc.exitCode !== 0) {
     console.error(proc.stderr.toString());
@@ -43,4 +60,4 @@ for (const { target, out } of targets) {
   console.log(proc.stdout.toString());
 }
 
-console.log("All builds complete.");
+console.log("All builds complete. Ship dist/web/ alongside each binary for the dashboard to work.");
