@@ -6,7 +6,7 @@ const logger = createLogger("api");
 const config = loadConfig();
 const app = createApp();
 
-Bun.serve({
+const server = Bun.serve({
   port: config.api.port,
   hostname: config.api.host,
   fetch: app.fetch,
@@ -18,5 +18,26 @@ Bun.serve({
 logger.info(`API server running on http://${config.api.host}:${config.api.port}`);
 logger.info(`OpenAPI spec: http://${config.api.host}:${config.api.port}/openapi.json`);
 logger.info(`Swagger UI:   http://${config.api.host}:${config.api.port}/docs`);
+
+let shuttingDown = false;
+async function shutdown(signal: string) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info(`Received ${signal}, shutting down…`);
+  try {
+    // true = drop in-flight connections immediately so the port is released fast
+    await server.stop(true);
+    logger.info("Server stopped, port released");
+  } catch (err) {
+    logger.error("Error during shutdown", err);
+  } finally {
+    process.exit(0);
+  }
+}
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+// Windows: Ctrl+Break
+process.on("SIGBREAK" as NodeJS.Signals, () => shutdown("SIGBREAK"));
 
 export { app };
