@@ -145,7 +145,11 @@ function taskStatusOptions(currentStatus?: string): SelectOption[] {
   return [currentStatus, ...allowed].map((s) => ({ label: STATUS_LABELS[s] ?? s, value: s }));
 }
 
-function taskFields(t?: Task, projectOptions?: SelectOption[], defaultProjectId?: string | null): FormField[] {
+function taskFields(
+  t?: Task,
+  projectOptions?: SelectOption[],
+  defaultProjectId?: string | null,
+): FormField[] {
   const fields: FormField[] = [
     {
       key: "title",

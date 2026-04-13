@@ -1,5 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type CreateTaskInput, type UpdateTaskInput, type CreateTaskLinkInput } from "@/api/client";
+import {
+  api,
+  type CreateTaskInput,
+  type CreateTaskLinkInput,
+  type UpdateTaskInput,
+} from "@/api/client";
 
 export function useTasks(params?: { status?: string; project_id?: string }) {
   return useQuery({
@@ -29,8 +34,7 @@ export function useCreateTask() {
 export function useUpdateTask() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...data }: { id: string } & UpdateTaskInput) =>
-      api.tasks.update(id, data),
+    mutationFn: ({ id, ...data }: { id: string } & UpdateTaskInput) => api.tasks.update(id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tasks"] });
       qc.invalidateQueries({ queryKey: ["task"] });

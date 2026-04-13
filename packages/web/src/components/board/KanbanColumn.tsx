@@ -61,10 +61,7 @@ export function KanbanColumn({
           </span>
         </div>
 
-        <div
-          className="h-0.5 mt-2 rounded-full opacity-40"
-          style={{ backgroundColor: color }}
-        />
+        <div className="h-0.5 mt-2 rounded-full opacity-40" style={{ backgroundColor: color }} />
       </div>
 
       <div ref={setNodeRef} className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[100px]">

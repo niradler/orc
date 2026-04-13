@@ -1,17 +1,22 @@
-import { useTasks } from "@/hooks/useTasks";
+import type { View } from "@/App";
+import { PriorityBadge } from "@/components/PriorityBadge";
+import { StatCard } from "@/components/StatCard";
+import { StatusBadge } from "@/components/StatusBadge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { ViewHeader } from "@/components/ViewHeader";
 import { useJobs } from "@/hooks/useJobs";
 import { useMemories } from "@/hooks/useMemories";
 import { useProjects } from "@/hooks/useProjects";
 import { useSessions } from "@/hooks/useSessions";
-import { StatCard } from "@/components/StatCard";
-import { ViewHeader } from "@/components/ViewHeader";
-import { StatusBadge } from "@/components/StatusBadge";
-import { PriorityBadge } from "@/components/PriorityBadge";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
-import type { View } from "@/App";
+import { useTasks } from "@/hooks/useTasks";
 
 interface DashboardProps {
   onNavigate: (view: View) => void;
@@ -19,19 +24,26 @@ interface DashboardProps {
 }
 
 export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
-  const scopeParams = projectId === "all" ? undefined : projectId === "unassigned" ? undefined : { project_id: projectId };
+  const scopeParams =
+    projectId === "all"
+      ? undefined
+      : projectId === "unassigned"
+        ? undefined
+        : { project_id: projectId };
   const { data: tasks, isLoading: tasksLoading } = useTasks(scopeParams);
   const { data: jobs } = useJobs(scopeParams);
   const { data: memories } = useMemories(scopeParams);
   const { data: projects } = useProjects();
   const { data: sessions } = useSessions({ limit: 5 });
 
-  const filteredTasks = projectId === "unassigned"
-    ? (tasks ?? []).filter((t) => t.project_id === null)
-    : (tasks ?? []);
+  const filteredTasks =
+    projectId === "unassigned" ? (tasks ?? []).filter((t) => t.project_id === null) : (tasks ?? []);
 
   const byStatus = filteredTasks.reduce(
-    (acc, t) => { acc[t.status] = (acc[t.status] ?? 0) + 1; return acc; },
+    (acc, t) => {
+      acc[t.status] = (acc[t.status] ?? 0) + 1;
+      return acc;
+    },
     {} as Record<string, number>,
   );
 
@@ -41,18 +53,16 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
 
   const activeJobs = (jobs ?? []).filter((j) => j.enabled);
 
-  const scopeLabel = projectId === "all"
-    ? "All Projects"
-    : projectId === "unassigned"
-      ? "Unassigned"
-      : projects?.find((p) => p.id === projectId)?.name ?? "";
+  const scopeLabel =
+    projectId === "all"
+      ? "All Projects"
+      : projectId === "unassigned"
+        ? "Unassigned"
+        : (projects?.find((p) => p.id === projectId)?.name ?? "");
 
   return (
     <div>
-      <ViewHeader
-        title="Dashboard"
-        meta={scopeLabel !== "All Projects" ? scopeLabel : undefined}
-      />
+      <ViewHeader title="Dashboard" meta={scopeLabel !== "All Projects" ? scopeLabel : undefined} />
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
@@ -87,12 +97,7 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-8">
-        <StatCard
-          label="Done"
-          value={byStatus["done"] ?? 0}
-          accent="secondary"
-          sub="completed"
-        />
+        <StatCard label="Done" value={byStatus["done"] ?? 0} accent="secondary" sub="completed" />
         <StatCard
           label="Active Jobs"
           value={activeJobs.length}
@@ -130,7 +135,9 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
         </div>
         {tasksLoading ? (
           <div className="space-y-2">
-            {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-10 w-full bg-surface-highest" />)}
+            {[...Array(4)].map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full bg-surface-highest" />
+            ))}
           </div>
         ) : recent.length === 0 ? (
           <div className="text-center py-8 font-body text-xs text-outline">No tasks</div>
@@ -139,18 +146,36 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
             <Table>
               <TableHeader>
                 <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                  <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">Title</TableHead>
-                  <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-32">Status</TableHead>
-                  <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">Priority</TableHead>
-                  <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-28">Updated</TableHead>
+                  <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">
+                    Title
+                  </TableHead>
+                  <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-32">
+                    Status
+                  </TableHead>
+                  <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                    Priority
+                  </TableHead>
+                  <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-28">
+                    Updated
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {recent.map((task) => (
-                  <TableRow key={task.id} className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer" onClick={() => onNavigate("tasks")}>
-                    <TableCell className="font-body text-xs text-on-surface truncate max-w-xs">{task.title}</TableCell>
-                    <TableCell><StatusBadge status={task.status} /></TableCell>
-                    <TableCell><PriorityBadge priority={task.priority} /></TableCell>
+                  <TableRow
+                    key={task.id}
+                    className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
+                    onClick={() => onNavigate("tasks")}
+                  >
+                    <TableCell className="font-body text-xs text-on-surface truncate max-w-xs">
+                      {task.title}
+                    </TableCell>
+                    <TableCell>
+                      <StatusBadge status={task.status} />
+                    </TableCell>
+                    <TableCell>
+                      <PriorityBadge priority={task.priority} />
+                    </TableCell>
                     <TableCell className="font-label text-[10px] text-outline">
                       {new Date(task.updated_at).toLocaleDateString()}
                     </TableCell>
@@ -185,7 +210,9 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
                   onClick={() => onNavigate("jobs")}
                 >
                   <div className="flex items-center justify-between">
-                    <div className="font-label text-xs font-semibold text-on-surface">{job.name}</div>
+                    <div className="font-label text-xs font-semibold text-on-surface">
+                      {job.name}
+                    </div>
                     <span className="font-label text-[10px] text-outline">{job.trigger_type}</span>
                   </div>
                   {job.last_run_at && (
@@ -221,13 +248,17 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
                   onClick={() => onNavigate("sessions")}
                 >
                   <div className="flex items-center justify-between">
-                    <div className="font-label text-xs font-semibold text-on-surface">{session.agent ?? "unknown"}</div>
+                    <div className="font-label text-xs font-semibold text-on-surface">
+                      {session.agent ?? "unknown"}
+                    </div>
                     <span className="font-label text-[10px] text-outline">
                       {new Date(session.created_at).toLocaleString()}
                     </span>
                   </div>
                   {session.summary && (
-                    <div className="font-body text-[10px] text-outline mt-1 truncate">{session.summary}</div>
+                    <div className="font-body text-[10px] text-outline mt-1 truncate">
+                      {session.summary}
+                    </div>
                   )}
                 </div>
               ))}
@@ -251,18 +282,25 @@ export default function Dashboard({ onNavigate, projectId }: DashboardProps) {
             </button>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {(projects ?? []).filter((p) => p.status === "active").slice(0, 6).map((p) => (
-              <div
-                key={p.id}
-                className="bg-surface p-4 rounded-sm border border-surface-highest hover:bg-surface-low transition-colors cursor-pointer"
-                onClick={() => onNavigate("projects")}
-              >
-                <div className="font-label text-xs font-semibold text-on-surface truncate">{p.name}</div>
-                {p.description && (
-                  <div className="font-body text-[10px] text-outline mt-1 truncate">{p.description}</div>
-                )}
-              </div>
-            ))}
+            {(projects ?? [])
+              .filter((p) => p.status === "active")
+              .slice(0, 6)
+              .map((p) => (
+                <div
+                  key={p.id}
+                  className="bg-surface p-4 rounded-sm border border-surface-highest hover:bg-surface-low transition-colors cursor-pointer"
+                  onClick={() => onNavigate("projects")}
+                >
+                  <div className="font-label text-xs font-semibold text-on-surface truncate">
+                    {p.name}
+                  </div>
+                  {p.description && (
+                    <div className="font-body text-[10px] text-outline mt-1 truncate">
+                      {p.description}
+                    </div>
+                  )}
+                </div>
+              ))}
           </div>
         </div>
       )}

@@ -68,11 +68,9 @@ import type {
   UpdateTaskInput,
 } from "@orc/sdk/types";
 
-export const getApiUrl = (): string =>
-  localStorage.getItem("orc_api_url") ?? "/api";
+export const getApiUrl = (): string => localStorage.getItem("orc_api_url") ?? "/api";
 
-export const getApiSecret = (): string =>
-  localStorage.getItem("orc_api_secret") ?? "";
+export const getApiSecret = (): string => localStorage.getItem("orc_api_secret") ?? "";
 
 async function req<T>(
   method: string,
@@ -117,7 +115,9 @@ export const api = {
   tasks: {
     list: (params?: { status?: string; project_id?: string; tag?: string; limit?: number }) =>
       req<{ tasks: Task[]; total: number }>(
-        "GET", "/tasks", undefined,
+        "GET",
+        "/tasks",
+        undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
     get: (id: string) => req<Task>("GET", `/tasks/${id}`),
@@ -126,20 +126,19 @@ export const api = {
     delete: (id: string) => req<null>("DELETE", `/tasks/${id}`),
     addComment: (id: string, content: string, author = "human") =>
       req<Comment>("POST", `/tasks/${id}/comments`, { content, author }),
-    listComments: (id: string) =>
-      req<{ comments: Comment[] }>("GET", `/tasks/${id}/comments`),
-    listLinks: (id: string) =>
-      req<{ links: TaskLink[] }>("GET", `/tasks/${id}/links`),
+    listComments: (id: string) => req<{ comments: Comment[] }>("GET", `/tasks/${id}/comments`),
+    listLinks: (id: string) => req<{ links: TaskLink[] }>("GET", `/tasks/${id}/links`),
     addLink: (id: string, data: CreateTaskLinkInput) =>
       req<TaskLink>("POST", `/tasks/${id}/links`, data),
-    deleteLink: (id: string, linkId: string) =>
-      req<null>("DELETE", `/tasks/${id}/links/${linkId}`),
+    deleteLink: (id: string, linkId: string) => req<null>("DELETE", `/tasks/${id}/links/${linkId}`),
   },
 
   memories: {
     list: (params?: { scope?: string; project_id?: string; limit?: number }) =>
       req<{ memories: Memory[] }>(
-        "GET", "/memories", undefined,
+        "GET",
+        "/memories",
+        undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
     search: (q: string, opts?: { scope?: string; project_id?: string; limit?: number }) =>
@@ -157,7 +156,9 @@ export const api = {
   jobs: {
     list: (params?: { enabled?: boolean; project_id?: string; limit?: number }) =>
       req<{ jobs: Job[] }>(
-        "GET", "/jobs", undefined,
+        "GET",
+        "/jobs",
+        undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
     get: (id: string) => req<Job>("GET", `/jobs/${id}`),
@@ -167,9 +168,15 @@ export const api = {
     trigger: (id: string) => req<{ run_id: string }>("POST", `/jobs/${id}/trigger`),
     runs: (id: string, limit = 10) =>
       req<{ runs: JobRun[] }>("GET", `/jobs/${id}/runs`, undefined, { limit }),
-    runLogs: (id: string, runId: string, params?: { stream?: "stdout" | "stderr"; limit?: number }) =>
+    runLogs: (
+      id: string,
+      runId: string,
+      params?: { stream?: "stdout" | "stderr"; limit?: number },
+    ) =>
       req<{ logs: JobRunLog[] }>(
-        "GET", `/jobs/${id}/runs/${runId}/logs`, undefined,
+        "GET",
+        `/jobs/${id}/runs/${runId}/logs`,
+        undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
   },
@@ -177,25 +184,30 @@ export const api = {
   projects: {
     list: (params?: { status?: string; tag?: string; limit?: number }) =>
       req<{ projects: Project[] }>(
-        "GET", "/projects", undefined,
+        "GET",
+        "/projects",
+        undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
     get: (id: string) => req<Project>("GET", `/projects/${id}`),
-    getByName: (name: string) => req<Project>("GET", `/projects/by-name/${encodeURIComponent(name)}`),
+    getByName: (name: string) =>
+      req<Project>("GET", `/projects/by-name/${encodeURIComponent(name)}`),
     summary: (id: string) => req<ProjectSummary>("GET", `/projects/${id}/summary`),
     create: (data: CreateProjectInput) => req<Project>("POST", "/projects", data),
-    update: (id: string, data: UpdateProjectInput) => req<Project>("PATCH", `/projects/${id}`, data),
+    update: (id: string, data: UpdateProjectInput) =>
+      req<Project>("PATCH", `/projects/${id}`, data),
     delete: (id: string) => req<null>("DELETE", `/projects/${id}`),
     addComment: (id: string, content: string, author = "human") =>
       req<Comment>("POST", `/projects/${id}/comments`, { content, author }),
-    listComments: (id: string) =>
-      req<{ comments: Comment[] }>("GET", `/projects/${id}/comments`),
+    listComments: (id: string) => req<{ comments: Comment[] }>("GET", `/projects/${id}/comments`),
   },
 
   sessions: {
     list: (params?: { agent?: string; job_run_id?: string; limit?: number }) =>
       req<{ sessions: Session[] }>(
-        "GET", "/sessions", undefined,
+        "GET",
+        "/sessions",
+        undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
     get: (id: string) => req<SessionDetail>("GET", `/sessions/${id}`),
@@ -204,12 +216,16 @@ export const api = {
   skills: {
     list: (params?: { q?: string; source?: "builtin" | "user"; reload?: boolean }) =>
       req<{ skills: SkillMeta[] }>(
-        "GET", "/skills", undefined,
+        "GET",
+        "/skills",
+        undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
     get: (name: string, ref?: string) =>
       req<SkillFull | SkillRefContent>(
-        "GET", `/skills/${encodeURIComponent(name)}`, undefined,
+        "GET",
+        `/skills/${encodeURIComponent(name)}`,
+        undefined,
         ref ? { ref } : undefined,
       ),
     create: (data: CreateSkillInput) => req<SkillFull>("POST", "/skills", data),
@@ -217,36 +233,82 @@ export const api = {
 
   knowledge: {
     collections: (params?: { project_id?: string }) =>
-      req<{ collections: { name: string; path: string; pattern: string; documentCount: number; lastModified: string | null; projectId: string | null }[] }>(
-        "GET", "/knowledge/collections", undefined,
+      req<{
+        collections: {
+          name: string;
+          path: string;
+          pattern: string;
+          documentCount: number;
+          lastModified: string | null;
+          projectId: string | null;
+        }[];
+      }>(
+        "GET",
+        "/knowledge/collections",
+        undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
-    search: (q: string, opts?: { collection?: string; project_id?: string; mode?: string; limit?: number }) =>
+    search: (
+      q: string,
+      opts?: { collection?: string; project_id?: string; mode?: string; limit?: number },
+    ) =>
       req<{
-        results: { docid: string; path: string; collection: string; title: string; snippet: string; score: number }[];
+        results: {
+          docid: string;
+          path: string;
+          collection: string;
+          title: string;
+          snippet: string;
+          score: number;
+        }[];
       }>("GET", "/knowledge/search", undefined, {
-        q, collection: opts?.collection, project_id: opts?.project_id, mode: opts?.mode, limit: opts?.limit,
+        q,
+        collection: opts?.collection,
+        project_id: opts?.project_id,
+        mode: opts?.mode,
+        limit: opts?.limit,
       }),
     getDocument: (id: string) =>
-      req<{ docid: string; path: string; collection: string; title: string; content: string; modifiedAt: string }>(
-        "GET", `/knowledge/documents/${encodeURIComponent(id)}`,
-      ),
+      req<{
+        docid: string;
+        path: string;
+        collection: string;
+        title: string;
+        content: string;
+        modifiedAt: string;
+      }>("GET", `/knowledge/documents/${encodeURIComponent(id)}`),
     addCollection: (data: { name: string; path: string; pattern?: string; project_id?: string }) =>
       req<{ name: string; indexed: number }>("POST", "/knowledge/collections", data),
     removeCollection: (name: string) =>
       req<null>("DELETE", `/knowledge/collections/${encodeURIComponent(name)}`),
     update: (opts?: { collections?: string[] }) =>
-      req<{ indexed: number; updated: number; removed: number }>("POST", "/knowledge/update", opts ?? {}),
-    status: () =>
-      req<{ collections: { name: string; path: string; pattern: string; documentCount: number; lastModified: string | null; projectId: string | null }[]; totalDocuments: number; dbPath: string; searchMode: string }>(
-        "GET", "/knowledge/status",
+      req<{ indexed: number; updated: number; removed: number }>(
+        "POST",
+        "/knowledge/update",
+        opts ?? {},
       ),
+    status: () =>
+      req<{
+        collections: {
+          name: string;
+          path: string;
+          pattern: string;
+          documentCount: number;
+          lastModified: string | null;
+          projectId: string | null;
+        }[];
+        totalDocuments: number;
+        dbPath: string;
+        searchMode: string;
+      }>("GET", "/knowledge/status"),
   },
 
   tags: {
     list: (params?: { resource_type?: "task" | "project" | "memory" }) =>
       req<{ tags: { name: string; count: number; resource_type: string }[] }>(
-        "GET", "/tags", undefined,
+        "GET",
+        "/tags",
+        undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
   },

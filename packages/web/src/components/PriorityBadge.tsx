@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils";
 import type { TaskPriority } from "@/api/client";
+import { cn } from "@/lib/utils";
 
 const PRIORITY_COLORS: Record<TaskPriority, string> = {
   critical: "text-error font-bold",
@@ -8,9 +8,21 @@ const PRIORITY_COLORS: Record<TaskPriority, string> = {
   low: "text-outline",
 };
 
-export function PriorityBadge({ priority, className }: { priority: TaskPriority; className?: string }) {
+export function PriorityBadge({
+  priority,
+  className,
+}: {
+  priority: TaskPriority;
+  className?: string;
+}) {
   return (
-    <span className={cn("font-label text-xs uppercase tracking-wide", PRIORITY_COLORS[priority], className)}>
+    <span
+      className={cn(
+        "font-label text-xs uppercase tracking-wide",
+        PRIORITY_COLORS[priority],
+        className,
+      )}
+    >
       {priority}
     </span>
   );

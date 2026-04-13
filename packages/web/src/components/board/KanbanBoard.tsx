@@ -1,17 +1,17 @@
-import { useState, useMemo } from "react";
 import {
+  closestCorners,
   DndContext,
+  type DragEndEvent,
+  type DragStartEvent,
   PointerSensor,
   useSensor,
   useSensors,
-  closestCorners,
-  type DragStartEvent,
-  type DragEndEvent,
 } from "@dnd-kit/core";
+import { useMemo, useState } from "react";
 import type { Task, TaskStatus } from "@/api/client";
-import { KanbanColumn } from "./KanbanColumn";
-import { KanbanCardOverlay } from "./KanbanCardOverlay";
 import { BOARD_COLUMNS, canTransition, validTargets } from "./board-utils";
+import { KanbanCardOverlay } from "./KanbanCardOverlay";
+import { KanbanColumn } from "./KanbanColumn";
 
 interface KanbanBoardProps {
   tasks: Task[];
@@ -22,15 +22,19 @@ interface KanbanBoardProps {
 export function KanbanBoard({ tasks, onUpdateStatus, onDeleteTask }: KanbanBoardProps) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-  );
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const tasksByStatus = useMemo(() => {
     const map: Record<TaskStatus, Task[]> = {
-      todo: [], queued: [], doing: [], review: [],
-      changes_requested: [], blocked: [], done: [],
-      paused: [], cancelled: [],
+      todo: [],
+      queued: [],
+      doing: [],
+      review: [],
+      changes_requested: [],
+      blocked: [],
+      done: [],
+      paused: [],
+      cancelled: [],
     };
     for (const task of tasks) {
       map[task.status]?.push(task);

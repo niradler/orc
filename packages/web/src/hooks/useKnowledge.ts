@@ -10,7 +10,10 @@ export function useKnowledgeCollections(params?: { project_id?: string }) {
   });
 }
 
-export function useKnowledgeSearch(q: string, opts?: { collection?: string; project_id?: string; limit?: number }) {
+export function useKnowledgeSearch(
+  q: string,
+  opts?: { collection?: string; project_id?: string; limit?: number },
+) {
   return useQuery({
     queryKey: ["knowledge-search", q, opts],
     queryFn: () => api.knowledge.search(q, opts),

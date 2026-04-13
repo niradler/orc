@@ -1,8 +1,8 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { Trash2 } from "lucide-react";
 import type { Task } from "@/api/client";
 import { PRIORITY_COLORS } from "./board-utils";
-import { Trash2 } from "lucide-react";
 
 interface KanbanCardProps {
   task: Task;
@@ -11,14 +11,10 @@ interface KanbanCardProps {
 }
 
 export function KanbanCard({ task, onDelete, isDragOverlay }: KanbanCardProps) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: task.id, data: { type: "task", task } });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: task.id,
+    data: { type: "task", task },
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),

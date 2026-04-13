@@ -1,29 +1,19 @@
-import { useState, useMemo } from "react";
-import {
-  useTask,
-  useUpdateTask,
-  useTaskComments,
-  useAddTaskComment,
-  useTaskLinks,
-  useCreateTaskLink,
-  useDeleteTaskLink,
-} from "@/hooks/useTasks";
-import { useProjects } from "@/hooks/useProjects";
-import { StatusBadge } from "@/components/StatusBadge";
-import { PriorityBadge } from "@/components/PriorityBadge";
+import { Link2, MessageSquare, Plus, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import type { Task, TaskLinkType, TaskPriority, TaskStatus } from "@/api/client";
 import { DetailField } from "@/components/DetailField";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetBody,
-  SheetFooter,
-} from "@/components/ui/sheet";
+import { PriorityBadge } from "@/components/PriorityBadge";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -32,20 +22,25 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MessageSquare, Link2, Plus, Trash2 } from "lucide-react";
-import type {
-  Task,
-  TaskStatus,
-  TaskPriority,
-  TaskLinkType,
-} from "@/api/client";
+import { Textarea } from "@/components/ui/textarea";
+import { useProjects } from "@/hooks/useProjects";
+import {
+  useAddTaskComment,
+  useCreateTaskLink,
+  useDeleteTaskLink,
+  useTask,
+  useTaskComments,
+  useTaskLinks,
+  useUpdateTask,
+} from "@/hooks/useTasks";
 
 const ALL_STATUSES: TaskStatus[] = [
   "todo",
@@ -77,11 +72,7 @@ interface TaskDetailSheetProps {
   onOpenChange: (open: boolean) => void;
 }
 
-export function TaskDetailSheet({
-  taskId,
-  open,
-  onOpenChange,
-}: TaskDetailSheetProps) {
+export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetProps) {
   const { data: task, isLoading } = useTask(taskId);
   const { data: comments } = useTaskComments(taskId);
   const { data: links } = useTaskLinks(taskId);
@@ -101,7 +92,11 @@ export function TaskDetailSheet({
     if (!taskId || !commentText.trim()) return;
     addComment.mutate(
       { id: taskId, content: commentText.trim(), author: commentAuthor || "human" },
-      { onSuccess: () => { setCommentText(""); } },
+      {
+        onSuccess: () => {
+          setCommentText("");
+        },
+      },
     );
   };
 
@@ -109,7 +104,12 @@ export function TaskDetailSheet({
     if (!taskId || !linkToTaskId.trim()) return;
     createLink.mutate(
       { id: taskId, to_task_id: linkToTaskId.trim(), link_type: linkType },
-      { onSuccess: () => { setLinkToTaskId(""); setShowAddLink(false); } },
+      {
+        onSuccess: () => {
+          setLinkToTaskId("");
+          setShowAddLink(false);
+        },
+      },
     );
   };
 
@@ -186,35 +186,25 @@ export function TaskDetailSheet({
                     <span className="font-mono text-[10px]">{task.id}</span>
                   </DetailField>
                   <DetailField label="Author">{task.author}</DetailField>
-                  <DetailField label="Claimed By">
-                    {task.claimed_by ?? "-"}
-                  </DetailField>
-                  <DetailField label="Project">
-                    {projectName ?? "-"}
-                  </DetailField>
-                  <DetailField label="Skill">
-                    {task.skill_name ?? "-"}
-                  </DetailField>
-                  <DetailField label="Agent Backend">
-                    {task.agent_backend ?? "-"}
-                  </DetailField>
+                  <DetailField label="Claimed By">{task.claimed_by ?? "-"}</DetailField>
+                  <DetailField label="Project">{projectName ?? "-"}</DetailField>
+                  <DetailField label="Skill">{task.skill_name ?? "-"}</DetailField>
+                  <DetailField label="Agent Backend">{task.agent_backend ?? "-"}</DetailField>
                   <DetailField label="Required Review">
                     {task.required_review ? "Yes" : "No"}
                   </DetailField>
-                  <DetailField label="Max Review Rounds">
-                    {task.max_review_rounds}
-                  </DetailField>
+                  <DetailField label="Max Review Rounds">{task.max_review_rounds}</DetailField>
                   <DetailField label="Due">
-                    <span className={isOverdue(task.due_at) && task.status !== "done" ? "text-error" : ""}>
+                    <span
+                      className={
+                        isOverdue(task.due_at) && task.status !== "done" ? "text-error" : ""
+                      }
+                    >
                       {formatDate(task.due_at)}
                     </span>
                   </DetailField>
-                  <DetailField label="Created">
-                    {formatDate(task.created_at)}
-                  </DetailField>
-                  <DetailField label="Updated">
-                    {formatDate(task.updated_at)}
-                  </DetailField>
+                  <DetailField label="Created">{formatDate(task.created_at)}</DetailField>
+                  <DetailField label="Updated">{formatDate(task.updated_at)}</DetailField>
                 </div>
 
                 {task.progress > 0 && (
@@ -229,9 +219,7 @@ export function TaskDetailSheet({
                           style={{ width: `${Math.min(100, task.progress)}%` }}
                         />
                       </div>
-                      <span className="font-label text-[10px] text-outline">
-                        {task.progress}%
-                      </span>
+                      <span className="font-label text-[10px] text-outline">{task.progress}%</span>
                     </div>
                   </div>
                 )}
@@ -356,9 +344,7 @@ export function TaskDetailSheet({
                         <Button
                           size="sm"
                           onClick={handleAddLink}
-                          disabled={
-                            createLink.isPending || !linkToTaskId.trim()
-                          }
+                          disabled={createLink.isPending || !linkToTaskId.trim()}
                           className="font-label text-[10px] uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 h-6 px-2"
                         >
                           Add
@@ -448,11 +434,7 @@ export function TaskDetailSheet({
       </Sheet>
 
       {task && editing && (
-        <EditTaskDialog
-          task={task}
-          open={editing}
-          onClose={() => setEditing(false)}
-        />
+        <EditTaskDialog task={task} open={editing} onClose={() => setEditing(false)} />
       )}
     </>
   );
@@ -480,9 +462,7 @@ function EditTaskDialog({
   const [skillName, setSkillName] = useState(task.skill_name ?? "");
   const [agentBackend, setAgentBackend] = useState(task.agent_backend ?? "");
   const [requiredReview, setRequiredReview] = useState(task.required_review);
-  const [maxReviewRounds, setMaxReviewRounds] = useState(
-    String(task.max_review_rounds),
-  );
+  const [maxReviewRounds, setMaxReviewRounds] = useState(String(task.max_review_rounds));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -545,10 +525,7 @@ function EditTaskDialog({
               <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
                 Status
               </Label>
-              <Select
-                value={status}
-                onValueChange={(v) => setStatus(v as TaskStatus)}
-              >
+              <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
                 <SelectTrigger className="bg-background border-surface-highest text-on-surface font-label text-xs">
                   <SelectValue />
                 </SelectTrigger>
@@ -565,10 +542,7 @@ function EditTaskDialog({
               <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
                 Priority
               </Label>
-              <Select
-                value={priority}
-                onValueChange={(v) => setPriority(v as TaskPriority)}
-              >
+              <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
                 <SelectTrigger className="bg-background border-surface-highest text-on-surface font-label text-xs">
                   <SelectValue />
                 </SelectTrigger>

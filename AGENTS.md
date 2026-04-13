@@ -51,12 +51,94 @@ All packages load `../../.env` via `bun --env-file ../../.env` in their `dev` sc
 
 ```env
 ORC_API_PORT=7701
-ORC_WEB_PORT=3000
+ORC_WEB_PORT=3077
 ```
 
-Default ports when `.env` is absent: API → 7700, web → 9742.
+**Canonical ports** (use these, don't improvise):
+
+| Service | Port  | Env var         |
+|---------|-------|-----------------|
+| API     | 7701  | `ORC_API_PORT`  |
+| Web     | 3077  | `ORC_WEB_PORT`  |
+
+Default ports when `.env` is absent: API → 7700, web → 9742. If you need a temporary alternate (e.g. zombie socket on 7701), prefer **7711 / 3087** — don't pick arbitrary numbers, and always update both `.env` and any running dev server together so the web proxy points at the right API.
 
 The web dev server proxies `/api/*` → `http://localhost:$ORC_API_PORT` (strips the `/api` prefix). The API auth secret defaults to `""` (open). Set `ORC_API_SECRET` or `api.secret` in `~/.orc/config.json` to require a Bearer token.
+
+### Running dev servers
+
+```bash
+bun dev                         # API + CLI + web in one shell (recommended)
+bun run --filter @orc/api dev   # API only
+bun run --filter @orc/web dev   # web only
+```
+
+Before starting, run the pre-flight check below — starting a second copy of the API on a port already held by an old one is the #1 source of "my changes aren't taking effect" on this repo.
+
+### Pre-flight: is the port free?
+
+```bash
+# Windows / Git Bash
+netstat -ano -p tcp | grep ':7701' | head
+# or, with full process info:
+powershell -Command "Get-NetTCPConnection -LocalPort 7701 -State Listen -EA SilentlyContinue | \
+  ForEach-Object { \$p = Get-Process -Id \$_.OwningProcess -EA SilentlyContinue; \
+  [PSCustomObject]@{ PID=\$_.OwningProcess; Name=\$p.ProcessName; Cmd=(Get-CimInstance Win32_Process -Filter \"ProcessId=\$(\$_.OwningProcess)\").CommandLine } }"
+
+# macOS / Linux
+lsof -iTCP:7701 -sTCP:LISTEN
+```
+
+- Port listed under a **live PID** → an API is running. Hit `curl -s http://localhost:7701/health` — if `uptime` is huge, it's stale; shut it down before you start a new one.
+- Port listed under a **dead PID** (Windows `Get-Process` returns nothing for it) → zombie socket (see below).
+
+### Shutdown procedure (Windows-specific pitfall)
+
+On Windows, `bun run --filter @orc/api dev` spawns a chain: `bun` (filter wrapper) → `bun exec` → `bun run --hot src/index.ts`. **The grandchild holds the listening socket.** Killing only the top-level `bun` orphans the grandchild, which keeps the port in `LISTEN` under a PID `Get-Process` can no longer resolve. Windows won't release that port until TIME_WAIT expires (~2–4 min) or the orphan is killed.
+
+**Always** kill the whole tree, not just the launcher:
+
+```bash
+# Windows — kill every orc API bun child, regardless of who spawned it
+powershell -Command "Get-CimInstance Win32_Process -Filter 'Name=\"bun.exe\"' | \
+  Where-Object { \$_.CommandLine -like '*run --hot src/index.ts*' -and \$_.CommandLine -notlike '*--port 9742*' } | \
+  ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }"
+
+# The same pattern catches web dev children:
+powershell -Command "Get-CimInstance Win32_Process -Filter 'Name=\"bun.exe\"' | \
+  Where-Object { \$_.CommandLine -like '*packages/web*' -or \$_.CommandLine -like '*vite*' } | \
+  ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }"
+
+# macOS / Linux — simpler, kill the whole process group
+pkill -f 'packages/api/src/index.ts'
+pkill -f 'packages/web'
+```
+
+**Don't blanket-kill `bun.exe`** — the TUI, MCP servers, and the `--port 9742` service also run under `bun` and you'll break unrelated sessions. Match on the command line.
+
+### Zombie socket recovery
+
+If `netstat` shows port `7701` LISTENING under a dead PID and no child process can be found:
+
+1. First re-run the shutdown command above — there may be a grandchild whose `CommandLine` you missed.
+2. If still stuck: either wait 2–4 min for TIME_WAIT, **or** start on `7711` and temporarily set `ORC_API_PORT=7711` in `.env` (restart the web dev server so its Vite proxy picks up the new target).
+3. Don't `Get-Process -Id <pid> | Stop-Process` on the PID reported by `netstat` — that PID is already gone; the socket is held by the kernel.
+
+### Restart procedure after code changes
+
+- `src/routes/**` and most route handlers → Bun's `--hot` picks them up, **no restart needed**.
+- `src/index.ts`, `Bun.serve({...})` config, top-level imports, env var changes → full restart required. Use the shutdown command above, then start.
+- Chat streaming (`/chat/stream`) specifically — if it hangs with no output, check `tail -f /tmp/api-dev.log` for `[chat] acpx stderr:` lines; the route drains acpx's stderr into server logs on purpose.
+
+### When launching in the background
+
+Always redirect to a log file you can tail, and name it distinctly per run so you can tell instances apart:
+
+```bash
+bun run --filter @orc/api dev > /tmp/orc-api-$(date +%s).log 2>&1 &
+```
+
+`bun run --filter ...` without a redirect loses stderr to a background task's captured output, which makes it invisible when debugging startup errors.
 
 ## Web Dashboard (packages/web)
 
@@ -66,6 +148,19 @@ React SPA served by Vite at `ORC_WEB_PORT` (default 3000 from `.env`).
 - **Hooks**: `packages/web/src/hooks/` — React Query wrappers (30s refetch interval)
 - **Views**: Tasks, Dashboard, Jobs, Memories, Projects, Sessions, Knowledge, Settings
 - **API limit**: task list max is 100 per request (API enforces `max: 100` via Zod)
+
+## Web UI e2e tests (Playwright)
+
+Playwright specs live in `packages/web/tests/e2e/`. Selectors are `data-testid` only — never rely on text or class names, which churn every design pass.
+
+```bash
+cd packages/web
+bun add -D @playwright/test        # one-time: install + `bun x playwright install chromium`
+bun run test:e2e                   # auto-starts API + web via webServer
+bun run test:e2e:ui                # headed, picker UI
+```
+
+The suite currently covers the `/chat/stream` round-trip (`chat.spec.ts`) — the regression guard for the "send a message and it hangs" class of bug. An SSE contract test (empty messages → 400) lives at `packages/api/src/__tests__/chat-stream.test.ts` and runs as part of `bun test`.
 
 ## Testing the Web UI with agent-browser
 

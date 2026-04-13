@@ -107,7 +107,11 @@ const columns: Column<Memory>[] = [
   },
 ];
 
-function memoryFields(memory?: Memory, projectOptions?: SelectOption[], defaultProjectId?: string | null): FormField[] {
+function memoryFields(
+  memory?: Memory,
+  projectOptions?: SelectOption[],
+  defaultProjectId?: string | null,
+): FormField[] {
   const typeOptions: SelectOption[] = [
     { label: "Fact", value: "fact" },
     { label: "Decision", value: "decision" },

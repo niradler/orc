@@ -24,7 +24,14 @@ import {
   isRefreshKey,
 } from "../navigation.js";
 import { colors } from "../theme.js";
-import type { Column, KeyEvent, PaletteCommand, SelectOption, ViewKeyHandler, ViewState } from "../types.js";
+import type {
+  Column,
+  KeyEvent,
+  PaletteCommand,
+  SelectOption,
+  ViewKeyHandler,
+  ViewState,
+} from "../types.js";
 
 const client = createOrcClient();
 
@@ -87,7 +94,10 @@ const columns: Column<KnowledgeCollection>[] = [
   },
 ];
 
-function collectionFields(projectOptions: SelectOption[], defaultProjectId: string | null): FormField[] {
+function collectionFields(
+  projectOptions: SelectOption[],
+  defaultProjectId: string | null,
+): FormField[] {
   return [
     {
       key: "name",
@@ -140,16 +150,10 @@ export function KnowledgeView({
   const { sort, setSortByKey, toggleDirection, sortData } = useSort(columns);
 
   const fetchCollections = useCallback(
-    () =>
-      client.knowledge.collections(
-        projectId ? { project_id: projectId } : undefined,
-      ),
+    () => client.knowledge.collections(projectId ? { project_id: projectId } : undefined),
     [projectId],
   );
-  const { data, loading, error, refresh, mutate } = usePolling(
-    fetchCollections,
-    5000,
-  );
+  const { data, loading, error, refresh, mutate } = usePolling(fetchCollections, 5000);
   const collections = data?.collections ?? [];
   const {
     filtered: filteredUnsorted,
@@ -190,15 +194,11 @@ export function KnowledgeView({
 
   useEffect(() => {
     const selected = filtered[cursor];
-    const sortLabel = sort.key
-      ? `${sort.key} ${sort.direction === "asc" ? "▲" : "▼"}`
-      : null;
+    const sortLabel = sort.key ? `${sort.key} ${sort.direction === "asc" ? "▲" : "▼"}` : null;
     onStateChange({
       mode: filterActive ? "filter" : mode,
       title: "Knowledge",
-      countLabel: loading
-        ? "Loading collections…"
-        : `${filtered.length} collections`,
+      countLabel: loading ? "Loading collections…" : `${filtered.length} collections`,
       sortLabel,
       filterQuery: query,
       filterActive,
@@ -210,16 +210,7 @@ export function KnowledgeView({
       statusMessage: null,
       contextData: selected ? JSON.stringify(selected, null, 2) : null,
     });
-  }, [
-    mode,
-    query,
-    filterActive,
-    onStateChange,
-    filtered,
-    cursor,
-    loading,
-    sort,
-  ]);
+  }, [mode, query, filterActive, onStateChange, filtered, cursor, loading, sort]);
 
   useEffect(() => {
     const sortCommands: PaletteCommand[] = columns
@@ -276,10 +267,7 @@ export function KnowledgeView({
         setMode("browse");
       }, 700);
     } catch (err) {
-      editFormRef.current.finishSubmit(
-        "error",
-        formErrorMessage(err, "Couldn't add collection."),
-      );
+      editFormRef.current.finishSubmit("error", formErrorMessage(err, "Couldn't add collection."));
     }
   }, []);
 
@@ -307,9 +295,7 @@ export function KnowledgeView({
         if (key.name === "y" || key.name === "return") {
           const target = deleteTargetRef.current;
           if (target)
-            client.knowledge
-              .removeCollection(target.name)
-              .then(() => refreshRef.current());
+            client.knowledge.removeCollection(target.name).then(() => refreshRef.current());
           setDeleteTarget(null);
           setMode("browse");
           return true;

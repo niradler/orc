@@ -2,20 +2,20 @@ import {
   Activity,
   BookOpen,
   Brain,
+  CheckSquare,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsUpDown,
   Folder,
   History,
   Settings,
   TerminalSquare,
-  CheckSquare,
   Zap,
-  ChevronsUpDown,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import type { View } from "@/App";
 import { useHealth } from "@/hooks/useHealth";
 import { useProjects } from "@/hooks/useProjects";
-import type { View } from "@/App";
+import { cn } from "@/lib/utils";
 
 const NAV_ITEMS: { id: View; label: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", icon: Activity },
@@ -53,7 +53,7 @@ export function Sidebar({
       ? "All Projects"
       : projectId === "unassigned"
         ? "Unassigned"
-        : projects?.find((p) => p.id === projectId)?.name ?? "...";
+        : (projects?.find((p) => p.id === projectId)?.name ?? "...");
 
   return (
     <aside
@@ -70,11 +70,7 @@ export function Sidebar({
             collapsed ? "text-base text-center" : "text-xl",
           )}
         >
-          {collapsed ? (
-            <span title="ORC">&#x25C8;</span>
-          ) : (
-            "◈ ORC"
-          )}
+          {collapsed ? <span title="ORC">&#x25C8;</span> : "◈ ORC"}
         </div>
         {!collapsed && (
           <div className="font-label text-[10px] tracking-widest text-outline uppercase mt-1">
@@ -148,9 +144,7 @@ export function Sidebar({
         >
           {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
           {!collapsed && (
-            <span className="font-label text-xs tracking-tight uppercase">
-              Collapse
-            </span>
+            <span className="font-label text-xs tracking-tight uppercase">Collapse</span>
           )}
         </button>
       </nav>
@@ -174,10 +168,7 @@ export function Sidebar({
           </button>
         </div>
         <div
-          className={cn(
-            "py-2 flex items-center",
-            collapsed ? "justify-center px-1" : "gap-2 px-3",
-          )}
+          className={cn("py-2 flex items-center", collapsed ? "justify-center px-1" : "gap-2 px-3")}
         >
           <span
             className={cn(
@@ -187,11 +178,7 @@ export function Sidebar({
           />
           {!collapsed && (
             <span className="font-label text-[9px] text-outline uppercase tracking-widest">
-              {isError
-                ? "OFFLINE"
-                : health
-                  ? `v${health.version}`
-                  : "CONNECTING..."}
+              {isError ? "OFFLINE" : health ? `v${health.version}` : "CONNECTING..."}
             </span>
           )}
         </div>

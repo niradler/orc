@@ -1,5 +1,7 @@
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { Hono } from "hono";
-import { stream } from "hono/streaming";
+import { streamSSE } from "hono/streaming";
 
 type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
 
@@ -108,44 +110,111 @@ app.post("/chat/stream", async (c) => {
     return c.json({ error: "acpx CLI not found on PATH" }, 503);
   }
 
+  // On Windows, Bun.which returns a `.cmd` shim that wraps `node cli.js`. Driving
+  // stdin/stdout through the cmd.exe wrapper is unreliable under Bun.spawn, so
+  // resolve to the underlying `cli.js` and invoke node directly when possible.
+  let spawnBin = acpxPath;
+  const spawnPrefix: string[] = [];
+  if (process.platform === "win32" && acpxPath.toLowerCase().endsWith(".cmd")) {
+    const cliJs = join(dirname(acpxPath), "node_modules", "acpx", "dist", "cli.js");
+    const nodeExe = Bun.which("node");
+    if (nodeExe && existsSync(cliJs)) {
+      spawnBin = nodeExe;
+      spawnPrefix.push(cliJs);
+    }
+  }
+
   const prompt = buildPrompt(messages, systemPrompt);
 
-  c.header("Content-Type", "text/event-stream");
-  c.header("Cache-Control", "no-cache");
-  c.header("X-Accel-Buffering", "no");
+  return streamSSE(c, async (s) => {
+    const args = [
+      spawnBin,
+      ...spawnPrefix,
+      "--format",
+      "json",
+      ...(autoApprove ? ["--approve-all"] : []),
+      agent,
+      "exec",
+      "-f",
+      "-",
+    ];
 
-  return stream(c, async (s) => {
-    const args = [acpxPath, "--format", "json", ...(autoApprove ? ["--approve-all"] : []), agent, "exec", "-f", "-"];
+    console.log("[chat] spawning acpx:", args.join(" "));
+
     const proc = Bun.spawn(args, {
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
     });
 
-    s.onAbort(() => {
-      proc.kill();
-    });
+    let aborted = false;
+    const cleanup = () => {
+      if (aborted) return;
+      aborted = true;
+      try {
+        proc.kill();
+      } catch {
+        /* ignore */
+      }
+    };
+    s.onAbort(cleanup);
+    c.req.raw.signal.addEventListener("abort", cleanup);
 
-    c.req.raw.signal.addEventListener("abort", () => {
-      proc.kill();
-    });
+    // Drain stderr into server logs so failures are visible (not silently hung).
+    const stderrTask = readLines(proc.stderr as ReadableStream<Uint8Array>, (line) => {
+      console.error("[chat] acpx stderr:", line);
+    }).catch(() => undefined);
 
-    proc.stdin.write(prompt);
-    proc.stdin.end();
+    // Write the prompt and await the write before closing stdin, otherwise the
+    // Bun stdin pipe can be closed before bytes are flushed.
+    try {
+      const writer = proc.stdin as unknown as WritableStreamDefaultWriter<Uint8Array>;
+      const bytes = new TextEncoder().encode(prompt);
+      // Bun's stdin supports both .write() (FileSink) and WritableStream APIs.
+      const sink = proc.stdin as unknown as {
+        write: (chunk: Uint8Array | string) => number | Promise<number>;
+        end: () => void | Promise<void>;
+        flush?: () => void | Promise<void>;
+      };
+      await Promise.resolve(sink.write(bytes));
+      if (sink.flush) await Promise.resolve(sink.flush());
+      await Promise.resolve(sink.end());
+      void writer;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "stdin write failed";
+      console.error("[chat] stdin error:", message);
+      await s.writeSSE({ data: JSON.stringify({ type: "error", message }) });
+      cleanup();
+      await s.writeSSE({ data: JSON.stringify({ type: "done" }) });
+      return;
+    }
+
+    // Send an opening ping immediately so the client knows the stream is alive
+    // (proxies won't buffer; user sees activity before acpx produces text).
+    await s.writeSSE({ data: JSON.stringify({ type: "open" }) });
 
     try {
       await readLines(proc.stdout as ReadableStream<Uint8Array>, (line) => {
         const text = parseTextFromLine(line);
         if (text !== null) {
-          s.write(`data: ${JSON.stringify({ type: "text", text })}\n\n`);
+          void s.writeSSE({ data: JSON.stringify({ type: "text", text }) });
         }
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown streaming error";
-      s.write(`data: ${JSON.stringify({ type: "error", message })}\n\n`);
+      console.error("[chat] stdout read error:", message);
+      await s.writeSSE({ data: JSON.stringify({ type: "error", message }) });
     }
 
-    s.write(`data: ${JSON.stringify({ type: "done" })}\n\n`);
+    await stderrTask;
+    const exitCode = await proc.exited;
+    if (exitCode !== 0 && !aborted) {
+      await s.writeSSE({
+        data: JSON.stringify({ type: "error", message: `acpx exited with code ${exitCode}` }),
+      });
+    }
+
+    await s.writeSSE({ data: JSON.stringify({ type: "done" }) });
   });
 });
 

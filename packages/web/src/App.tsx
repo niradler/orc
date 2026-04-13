@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
-import { Sidebar } from "@/components/Sidebar";
+import { useEffect, useState } from "react";
 import { ChatPanel } from "@/components/ChatPanel";
+import { Sidebar } from "@/components/Sidebar";
 import Dashboard from "@/views/Dashboard";
 import Jobs from "@/views/Jobs";
 import Knowledge from "@/views/Knowledge";

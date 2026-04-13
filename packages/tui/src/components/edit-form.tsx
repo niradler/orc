@@ -212,7 +212,10 @@ export function EditFormOverlay({
     );
   }, [defaultTextareaHeight, fields]);
   const minFormHeight = compact ? height - 2 : Math.round(height * 0.6);
-  const boxHeight = Math.max(minFormHeight, Math.min(height - 2, contentHeight + (compact ? 7 : 9)));
+  const boxHeight = Math.max(
+    minFormHeight,
+    Math.min(height - 2, contentHeight + (compact ? 7 : 9)),
+  );
 
   const handleFieldKey = (key: KeyEvent) => {
     if (submitState.status === "saving") return;

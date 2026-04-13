@@ -1,12 +1,12 @@
-import { useState } from "react";
-import { Save, CheckCircle } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getApiUrl, getApiSecret } from "@/api/client";
-import { ViewHeader } from "@/components/ViewHeader";
+import { CheckCircle, Save } from "lucide-react";
+import { useState } from "react";
+import { getApiSecret, getApiUrl } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { ViewHeader } from "@/components/ViewHeader";
 
 export default function Settings() {
   const [apiUrl, setApiUrl] = useState(getApiUrl);
@@ -41,8 +41,8 @@ export default function Settings() {
             API Configuration
           </h2>
           <p className="font-body text-xs text-outline mb-4">
-            Configure how the frontend connects to the ORC API server.
-            In development, the default <code className="text-primary">/api</code> is proxied by Vite to{" "}
+            Configure how the frontend connects to the ORC API server. In development, the default{" "}
+            <code className="text-primary">/api</code> is proxied by Vite to{" "}
             <code className="text-primary">localhost:7700</code>.
           </p>
           <Separator className="bg-surface-highest mb-4" />
@@ -78,8 +78,10 @@ export default function Settings() {
 
         {/* Actions */}
         <div className="flex gap-3 pt-2">
-          <Button onClick={handleSave}
-            className="font-label text-xs uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25">
+          <Button
+            onClick={handleSave}
+            className="font-label text-xs uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+          >
             {saved ? (
               <>
                 <CheckCircle size={12} className="mr-1.5 text-secondary" /> Saved
@@ -90,8 +92,11 @@ export default function Settings() {
               </>
             )}
           </Button>
-          <Button variant="ghost" onClick={handleReset}
-            className="font-label text-xs uppercase text-outline hover:text-on-surface">
+          <Button
+            variant="ghost"
+            onClick={handleReset}
+            className="font-label text-xs uppercase text-outline hover:text-on-surface"
+          >
             Reset to Defaults
           </Button>
         </div>
@@ -103,8 +108,8 @@ export default function Settings() {
             Storage
           </div>
           <p className="font-body text-xs text-outline">
-            Settings are persisted in <code className="text-primary">localStorage</code> and survive page reloads.
-            Clearing browser storage resets to defaults.
+            Settings are persisted in <code className="text-primary">localStorage</code> and survive
+            page reloads. Clearing browser storage resets to defaults.
           </p>
         </section>
       </div>

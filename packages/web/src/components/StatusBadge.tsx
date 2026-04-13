@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils";
 import type { TaskStatus } from "@/api/client";
+import { cn } from "@/lib/utils";
 
 type JobStatus = "pending" | "running" | "success" | "failed" | "cancelled" | "skipped";
 

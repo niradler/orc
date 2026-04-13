@@ -105,7 +105,11 @@ const columns: Column<Job>[] = [
   },
 ];
 
-function jobFields(job?: Job, projectOptions?: SelectOption[], defaultProjectId?: string | null): FormField[] {
+function jobFields(
+  job?: Job,
+  projectOptions?: SelectOption[],
+  defaultProjectId?: string | null,
+): FormField[] {
   const triggerOptions: SelectOption[] = [
     { label: "Manual", value: "manual" },
     { label: "Cron", value: "cron" },

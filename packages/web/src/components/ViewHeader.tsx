@@ -13,7 +13,11 @@ export function ViewHeader({ title, action, meta }: ViewHeaderProps) {
         <h1 className="font-headline font-extrabold text-sm uppercase tracking-widest text-on-surface">
           {title}
         </h1>
-        {meta && <span className="font-label text-[10px] text-outline uppercase tracking-widest">{meta}</span>}
+        {meta && (
+          <span className="font-label text-[10px] text-outline uppercase tracking-widest">
+            {meta}
+          </span>
+        )}
       </div>
       {action && <div>{action}</div>}
     </div>

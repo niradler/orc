@@ -1,17 +1,12 @@
-import { useState, useMemo } from "react";
-import {
-  useTasks,
-  useCreateTask,
-  useUpdateTask,
-  useDeleteTask,
-} from "@/hooks/useTasks";
-import { useProjects } from "@/hooks/useProjects";
-import { ViewHeader } from "@/components/ViewHeader";
-import { StatusBadge } from "@/components/StatusBadge";
-import { PriorityBadge } from "@/components/PriorityBadge";
+import { LayoutGrid, List, Plus, Search, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import type { CreateTaskInput, Task, TaskPriority, TaskStatus } from "@/api/client";
+import { KanbanBoard } from "@/components/board/KanbanBoard";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { PriorityBadge } from "@/components/PriorityBadge";
+import { StatusBadge } from "@/components/StatusBadge";
 import { TaskDetailSheet } from "@/components/TaskDetailSheet";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -40,15 +36,9 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Trash2, Search, Plus, LayoutGrid, List } from "lucide-react";
-import { KanbanBoard } from "@/components/board/KanbanBoard";
-import type {
-  Task,
-  TaskPriority,
-  TaskStatus,
-  CreateTaskInput,
-} from "@/api/client";
+import { ViewHeader } from "@/components/ViewHeader";
+import { useProjects } from "@/hooks/useProjects";
+import { useCreateTask, useDeleteTask, useTasks, useUpdateTask } from "@/hooks/useTasks";
 
 const STATUS_TABS: Array<{ value: TaskStatus | "all"; label: string }> = [
   { value: "all", label: "All" },
@@ -80,9 +70,7 @@ interface TasksProps {
 
 export default function Tasks({ projectId }: TasksProps) {
   const [statusFilter, setStatusFilter] = useState<TaskStatus | "all">("all");
-  const [priorityFilter, setPriorityFilter] = useState<TaskPriority | "all">(
-    "all",
-  );
+  const [priorityFilter, setPriorityFilter] = useState<TaskPriority | "all">("all");
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
@@ -92,9 +80,12 @@ export default function Tasks({ projectId }: TasksProps) {
   const apiProjectId =
     projectId === "all" ? undefined : projectId === "unassigned" ? undefined : projectId;
 
-  const { data: allTasks, isLoading, error, refetch } = useTasks(
-    apiProjectId ? { project_id: apiProjectId } : undefined,
-  );
+  const {
+    data: allTasks,
+    isLoading,
+    error,
+    refetch,
+  } = useTasks(apiProjectId ? { project_id: apiProjectId } : undefined);
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
 
@@ -228,18 +219,11 @@ export default function Tasks({ projectId }: TasksProps) {
                 <SelectValue placeholder="Priority" />
               </SelectTrigger>
               <SelectContent className="bg-surface-highest border-surface-highest">
-                <SelectItem
-                  value="all"
-                  className="font-label text-xs uppercase"
-                >
+                <SelectItem value="all" className="font-label text-xs uppercase">
                   All Priorities
                 </SelectItem>
                 {PRIORITIES.map((p) => (
-                  <SelectItem
-                    key={p}
-                    value={p}
-                    className="font-label text-xs uppercase"
-                  >
+                  <SelectItem key={p} value={p} className="font-label text-xs uppercase">
                     {p}
                   </SelectItem>
                 ))}
@@ -370,33 +354,29 @@ export default function Tasks({ projectId }: TasksProps) {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-0.5">
-                          {task.tags && task.tags.length > 0
-                            ? task.tags.slice(0, 2).map((tag) => (
-                                <span
-                                  key={tag}
-                                  className="px-1.5 py-0.5 text-[9px] font-label uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 rounded-sm"
-                                >
-                                  {tag}
-                                </span>
-                              ))
-                            : <span className="text-outline text-[10px]">-</span>}
+                          {task.tags && task.tags.length > 0 ? (
+                            task.tags.slice(0, 2).map((tag) => (
+                              <span
+                                key={tag}
+                                className="px-1.5 py-0.5 text-[9px] font-label uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 rounded-sm"
+                              >
+                                {tag}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-outline text-[10px]">-</span>
+                          )}
                           {task.tags && task.tags.length > 2 && (
-                            <span className="text-outline text-[9px]">
-                              +{task.tags.length - 2}
-                            </span>
+                            <span className="text-outline text-[9px]">+{task.tags.length - 2}</span>
                           )}
                         </div>
                       </TableCell>
                       <TableCell
                         className={`font-label text-[10px] ${
-                          isOverdue(task.due_at, task.status)
-                            ? "text-error"
-                            : "text-outline"
+                          isOverdue(task.due_at, task.status) ? "text-error" : "text-outline"
                         }`}
                       >
-                        {task.due_at
-                          ? new Date(task.due_at).toLocaleDateString()
-                          : "-"}
+                        {task.due_at ? new Date(task.due_at).toLocaleDateString() : "-"}
                       </TableCell>
                       <TableCell className="font-label text-[10px] text-outline">
                         {task.author}
@@ -429,9 +409,7 @@ export default function Tasks({ projectId }: TasksProps) {
           open={creating}
           onClose={() => setCreating(false)}
           defaultProjectId={
-            projectId !== "all" && projectId !== "unassigned"
-              ? projectId
-              : undefined
+            projectId !== "all" && projectId !== "unassigned" ? projectId : undefined
           }
         />
       )}
@@ -554,10 +532,7 @@ function CreateTaskDialog({
               <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
                 Status
               </Label>
-              <Select
-                value={status}
-                onValueChange={(v) => setStatus(v as TaskStatus)}
-              >
+              <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
                 <SelectTrigger className="bg-background border-surface-highest text-on-surface font-label text-xs">
                   <SelectValue />
                 </SelectTrigger>
@@ -574,10 +549,7 @@ function CreateTaskDialog({
               <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
                 Priority
               </Label>
-              <Select
-                value={priority}
-                onValueChange={(v) => setPriority(v as TaskPriority)}
-              >
+              <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
                 <SelectTrigger className="bg-background border-surface-highest text-on-surface font-label text-xs">
                   <SelectValue />
                 </SelectTrigger>

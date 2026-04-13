@@ -36,6 +36,11 @@
 }
 
 @keyframes pulse-subtle {
-  0%, 100% { border-left-color: rgba(255, 113, 108, 0.4); }
-  50% { border-left-color: rgba(255, 113, 108, 1); }
+  0%,
+  100% {
+    border-left-color: rgba(255, 113, 108, 0.4);
+  }
+  50% {
+    border-left-color: rgba(255, 113, 108, 1);
+  }
 }

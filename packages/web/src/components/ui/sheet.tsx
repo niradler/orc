@@ -1,6 +1,6 @@
-import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
+import * as React from "react";
 import { cn } from "@/lib/utils";
 
 const Sheet = DialogPrimitive.Root;
@@ -71,21 +71,20 @@ function SheetTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingEle
 }
 
 function SheetDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {
-  return (
-    <p className={cn("font-body text-xs text-outline mt-1", className)} {...props} />
-  );
+  return <p className={cn("font-body text-xs text-outline mt-1", className)} {...props} />;
 }
 
 function SheetBody({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
-  return (
-    <div className={cn("flex-1 overflow-y-auto px-6 py-4", className)} {...props} />
-  );
+  return <div className={cn("flex-1 overflow-y-auto px-6 py-4", className)} {...props} />;
 }
 
 function SheetFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("px-6 py-4 border-t border-surface-highest shrink-0 flex justify-end gap-2", className)}
+      className={cn(
+        "px-6 py-4 border-t border-surface-highest shrink-0 flex justify-end gap-2",
+        className,
+      )}
       {...props}
     />
   );
@@ -93,13 +92,13 @@ function SheetFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
 
 export {
   Sheet,
-  SheetTrigger,
+  SheetBody,
   SheetClose,
   SheetContent,
-  SheetHeader,
-  SheetTitle,
   SheetDescription,
-  SheetBody,
   SheetFooter,
+  SheetHeader,
   SheetOverlay,
+  SheetTitle,
+  SheetTrigger,
 };

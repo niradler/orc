@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils";
 import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
 
 type Accent = "primary" | "secondary" | "tertiary" | "error" | "muted";
 
@@ -38,14 +38,14 @@ export function StatCard({ label, value, accent = "muted", sub, onClick }: StatC
       onClick={onClick}
     >
       <div className="flex justify-between items-start mb-2">
-        <span className="font-label text-[10px] text-outline uppercase tracking-widest">{label}</span>
+        <span className="font-label text-[10px] text-outline uppercase tracking-widest">
+          {label}
+        </span>
       </div>
       <div className={cn("text-2xl font-headline font-extrabold uppercase", VALUE_COLORS[accent])}>
         {value}
       </div>
-      {sub && (
-        <div className="font-label text-[10px] text-outline mt-1">{sub}</div>
-      )}
+      {sub && <div className="font-label text-[10px] text-outline mt-1">{sub}</div>}
     </div>
   );
 }

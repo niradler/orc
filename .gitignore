@@ -18,3 +18,12 @@ tui-debug.log
 .cursor
 .vscode
 .demo
+
+# Playwright
+packages/*/test-results/
+packages/*/playwright-report/
+packages/*/playwright/.cache/
+
+# Local debugging artifacts
+tmp/
+qa-screenshot*.png

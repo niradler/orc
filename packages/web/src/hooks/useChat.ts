@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback } from "react";
-import { getApiUrl, getApiSecret } from "@/api/client";
+import { useCallback, useRef, useState } from "react";
+import { getApiSecret, getApiUrl } from "@/api/client";
 
 export type ChatMessage = {
   role: "user" | "assistant";
@@ -73,12 +73,8 @@ export function useChat() {
         });
 
         if (!res.ok) {
-          const err = await res
-            .json()
-            .catch(() => ({ error: `HTTP ${res.status}` }));
-          throw new Error(
-            (err as { error?: string }).error ?? `HTTP ${res.status}`,
-          );
+          const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+          throw new Error((err as { error?: string }).error ?? `HTTP ${res.status}`);
         }
 
         if (!res.body) throw new Error("No response body");
@@ -120,8 +116,7 @@ export function useChat() {
         if ((err as Error).name === "AbortError") {
           // User cancelled
         } else {
-          accumulated =
-            accumulated || `[Error] ${(err as Error).message}`;
+          accumulated = accumulated || `[Error] ${(err as Error).message}`;
         }
       } finally {
         abortRef.current = null;
