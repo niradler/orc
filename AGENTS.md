@@ -66,7 +66,7 @@ The web dev server proxies `/api/*` → `http://localhost:$ORC_API_PORT` (strips
 
 ### Running dev servers
 
-> **Do not use the global `orc daemon`** for development — it runs the published binary on port 7700. Always use `bun dev` which starts from source on the dev port configured in `.env`.
+> **Do not use the global `orc daemon`** for development — it runs the published binary on port 7700. Always use `bun dev` which starts from source on the dev port configured in `.env`. For production daemon setup (auto-start on boot, background service), see the "Running as a background service" section in `README.md`.
 
 ```bash
 bun dev                         # API + CLI + web in one shell (recommended)
