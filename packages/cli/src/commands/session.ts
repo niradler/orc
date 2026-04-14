@@ -37,9 +37,9 @@ function formatAgo(iso: string): string {
 function apiBase(): string {
   try {
     const c = loadConfig();
-    return `http://${c.api.host}:${c.api.port}`;
+    return `http://${c.api.host}:${c.api.port}/api`;
   } catch {
-    return process.env.ORC_API_BASE ?? "http://127.0.0.1:7700";
+    return (process.env.ORC_API_BASE ?? "http://127.0.0.1:7700") + "/api";
   }
 }
 
@@ -187,7 +187,7 @@ export function sessionCommand() {
     .option("--agent-version <v>", "Agent version string")
     .action(async (summary: string, opts) => {
       const config = loadConfig();
-      const base = `http://${config.api.host}:${config.api.port}`;
+      const base = `http://${config.api.host}:${config.api.port}/api`;
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (config.api.secret) headers.Authorization = `Bearer ${config.api.secret}`;
 

@@ -160,6 +160,14 @@ export function createWebStatic(): MiddlewareHandler {
       if (embeddedWeb?.[topLevel]) return sendEmbedded(c, embeddedWeb[topLevel], false);
     }
 
+    // SPA catch-all: browser navigation requests (Accept: text/html) that didn't
+    // match any static file get index.html so the client-side router can handle them.
+    const accept = c.req.header("Accept") ?? "";
+    if (accept.includes("text/html")) {
+      if (indexHtml) return sendFile(c, indexHtml, false);
+      if (embeddedWeb?.["index.html"]) return sendEmbedded(c, embeddedWeb["index.html"], false);
+    }
+
     await next();
   };
 }
