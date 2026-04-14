@@ -452,7 +452,7 @@ function EditProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="bg-surface border-surface-highest max-w-lg">
+      <DialogContent data-testid="edit-project-dialog" className="bg-surface border-surface-highest max-w-lg">
         <DialogHeader>
           <DialogTitle className="font-headline text-sm uppercase tracking-widest text-on-surface">
             Edit Project
@@ -467,6 +467,7 @@ function EditProjectDialog({
               Name *
             </Label>
             <Input
+              data-testid="edit-project-name-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="bg-background border-surface-highest text-on-surface font-body text-xs"
@@ -547,6 +548,7 @@ function EditProjectDialog({
               Cancel
             </Button>
             <Button
+              data-testid="edit-project-submit"
               type="submit"
               size="sm"
               disabled={updateProject.isPending || !name.trim()}

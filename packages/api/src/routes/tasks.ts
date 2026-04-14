@@ -75,12 +75,14 @@ const UpdateTaskSchema = z
     priority: TaskPrioritySchema.optional(),
     progress: z.number().int().min(0).max(100).optional(),
     project_id: z.string().nullable().optional(),
-    due_at: z.string().datetime().optional(),
+    due_at: z.string().datetime().nullable().optional(),
     tags: z.array(z.string()).nullable().optional(),
     comment: z.string().optional(),
-    agent_backend: AgentBackendSchema.optional(),
+    agent_backend: AgentBackendSchema.nullable().optional(),
     agent_model: z.string().optional(),
-    skill_name: z.string().optional(),
+    skill_name: z.string().nullable().optional(),
+    required_review: z.boolean().optional(),
+    max_review_rounds: z.number().int().min(1).optional(),
   })
   .openapi("UpdateTask");
 
@@ -401,7 +403,7 @@ app.openapi(updateRoute, async (c) => {
   const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!existing) throw new NotFoundError("Task", id);
 
-  if (body.status) {
+  if (body.status && body.status !== existing.status) {
     const result = await updateTaskStatus({
       taskId: id,
       status: body.status as TaskStatus,
@@ -419,11 +421,13 @@ app.openapi(updateRoute, async (c) => {
     ...(body.priority !== undefined ? { priority: body.priority } : {}),
     ...(body.progress !== undefined ? { progress: body.progress } : {}),
     ...(body.project_id !== undefined ? { project_id: body.project_id } : {}),
-    ...(body.due_at !== undefined ? { due_at: new Date(body.due_at) } : {}),
+    ...(body.due_at !== undefined ? { due_at: body.due_at ? new Date(body.due_at) : null } : {}),
     ...(body.tags !== undefined ? { tags: body.tags } : {}),
     ...(body.agent_backend !== undefined ? { agent_backend: body.agent_backend } : {}),
     ...(body.agent_model !== undefined ? { agent_model: body.agent_model } : {}),
     ...(body.skill_name !== undefined ? { skill_name: body.skill_name } : {}),
+    ...(body.required_review !== undefined ? { required_review: body.required_review } : {}),
+    ...(body.max_review_rounds !== undefined ? { max_review_rounds: body.max_review_rounds } : {}),
   };
   if (Object.keys(nonStatusFields).length > 0) {
     await db

@@ -88,7 +88,7 @@ test.describe("Kanban drag & drop", () => {
         .poll(
           async () => {
             const res = await request.get(
-              `http://localhost:${process.env.ORC_API_PORT ?? "7721"}/tasks/${task.id}`,
+              `http://127.0.0.1:${process.env.ORC_API_PORT ?? "7721"}/api/tasks/${task.id}`,
             );
             if (!res.ok()) return null;
             return ((await res.json()) as Task).status;
@@ -125,7 +125,7 @@ test.describe("Kanban drag & drop", () => {
         .poll(
           async () => {
             const res = await request.get(
-              `http://localhost:${process.env.ORC_API_PORT ?? "7721"}/tasks/${task.id}`,
+              `http://127.0.0.1:${process.env.ORC_API_PORT ?? "7721"}/api/tasks/${task.id}`,
             );
             if (!res.ok()) return null;
             return ((await res.json()) as Task).status;

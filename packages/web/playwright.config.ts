@@ -1,18 +1,48 @@
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
-const PW_API_PORT = process.env.PW_API_PORT ?? "9871";
-const PW_WEB_PORT = process.env.PW_WEB_PORT ?? "9872";
+function osPort(): Promise<number> {
+  return new Promise((resolve) => {
+    const s = createServer();
+    s.listen(0, "127.0.0.1", () => {
+      const port = (s.address() as { port: number }).port;
+      s.close(() => resolve(port));
+    });
+  });
+}
+
+async function getFreePort(preferred: number): Promise<number> {
+  // Playwright checks HTTP, not just TCP bind — skip ports with an HTTP server already
+  const httpUp = await fetch(`http://127.0.0.1:${preferred}`, {
+    signal: AbortSignal.timeout(300),
+  })
+    .then(() => true)
+    .catch(() => false);
+  if (httpUp) return osPort();
+
+  // Also check TCP bind
+  const canBind = await new Promise<boolean>((resolve) => {
+    const srv = createServer();
+    srv.once("listening", () => srv.close(() => resolve(true)));
+    srv.once("error", () => resolve(false));
+    srv.listen(preferred, "127.0.0.1");
+  });
+  return canBind ? preferred : osPort();
+}
+
+const PW_API_PORT =
+  process.env.PW_API_PORT ?? String(await getFreePort(Number(process.env.PW_API_PORT ?? 19871)));
 const PW_DB = join(tmpdir(), `orc-pw-${process.pid}-${Date.now()}.db`);
 
 // Make isolated ports visible to the test process (helpers.ts reads ORC_API_PORT)
 process.env.ORC_API_PORT = PW_API_PORT;
-process.env.ORC_WEB_PORT = PW_WEB_PORT;
 
 export default defineConfig({
   testDir: "./tests/e2e",
   testMatch: /.*\.e2e\.ts$/,
+  globalTimeout: 20 * 60_000,
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
@@ -20,10 +50,11 @@ export default defineConfig({
   workers: 1,
   reporter: [["list"]],
   use: {
-    baseURL: `http://localhost:${PW_WEB_PORT}`,
+    baseURL: `http://127.0.0.1:${PW_API_PORT}`,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     actionTimeout: 10_000,
+    navigationTimeout: 15_000,
   },
   projects: [
     {
@@ -34,35 +65,24 @@ export default defineConfig({
   ...(process.env.PW_NO_SERVER
     ? {}
     : {
-        webServer: [
-          {
-            // Run bun directly — avoids "bun --env-file ../../.env" in the dev
-            // script overriding the isolated ORC_API_PORT we pass here.
-            command: `bun run --hot packages/api/src/index.ts`,
-            cwd: "../..",
-            url: `http://localhost:${PW_API_PORT}/health`,
-            reuseExistingServer: false,
-            timeout: 60_000,
-            stdout: "pipe" as const,
-            stderr: "pipe" as const,
-            env: {
-              ORC_API_PORT: PW_API_PORT,
-              ORC_DB_PATH: PW_DB,
-            },
+        webServer: {
+          // E2E runs against the built dashboard served by the API itself.
+          // This avoids Vite + Bun hot child-process trees on Windows, which
+          // are the main source of orphaned listeners and stuck ports.
+          command: "bun packages/api/src/index.ts",
+          cwd: "../..",
+          url: `http://127.0.0.1:${PW_API_PORT}/api/health`,
+          reuseExistingServer: false,
+          timeout: 120_000,
+          stdout: "pipe" as const,
+          stderr: "pipe" as const,
+          env: {
+            ORC_API_HOST: "127.0.0.1",
+            ORC_API_PORT: PW_API_PORT,
+            ORC_API_SECRET: "",
+            ORC_DB_PATH: PW_DB,
+            ORC_E2E_CHAT_MOCK: "1",
           },
-          {
-            command: `bun vite`,
-            cwd: ".",
-            url: `http://localhost:${PW_WEB_PORT}`,
-            reuseExistingServer: false,
-            timeout: 60_000,
-            stdout: "pipe" as const,
-            stderr: "pipe" as const,
-            env: {
-              ORC_API_PORT: PW_API_PORT,
-              ORC_WEB_PORT: PW_WEB_PORT,
-            },
-          },
-        ],
+        },
       }),
 });

@@ -57,7 +57,7 @@ const UpdateProjectSchema = z
       .optional(),
     description: z.string().nullable().optional(),
     status: z.enum(["active", "archived", "paused"]).optional(),
-    scope: z.string().optional(),
+    scope: z.string().nullable().optional(),
     tags: z.array(z.string()).nullable().optional(),
     obsidian_path: z.string().optional(),
     max_workers: z.number().int().min(1).nullable().optional(),

@@ -73,6 +73,7 @@ export default function Skills() {
         meta={`${(skills ?? []).length} skills`}
         action={
           <Button
+            data-testid="new-skill-button"
             size="sm"
             onClick={() => setCreating(true)}
             className="font-label text-xs uppercase tracking-widest bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
@@ -150,6 +151,8 @@ export default function Skills() {
               {(skills ?? []).map((skill) => (
                 <TableRow
                   key={skill.name}
+                  data-testid="skill-row"
+                  data-skill-name={skill.name}
                   className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
                   onClick={() => openSkillDetail(skill.name)}
                 >
@@ -296,6 +299,7 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
               Name *
             </Label>
             <Input
+              data-testid="skill-name-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="my-skill"
@@ -308,6 +312,7 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
               Content *
             </Label>
             <Textarea
+              data-testid="skill-content-input"
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="# Skill content (Markdown)..."
@@ -326,6 +331,7 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
               Cancel
             </Button>
             <Button
+              data-testid="skill-submit"
               type="submit"
               size="sm"
               disabled={createSkill.isPending || !name.trim() || !content.trim()}

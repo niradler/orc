@@ -1,7 +1,7 @@
 import type { APIRequestContext, Page } from "@playwright/test";
 
 export const API_PORT = process.env.ORC_API_PORT ?? "9871";
-export const API_BASE = `http://localhost:${API_PORT}`;
+export const API_BASE = `http://127.0.0.1:${API_PORT}/api`;
 export const API_SECRET = process.env.ORC_API_SECRET ?? "";
 
 export const AUTH_HEADERS: Record<string, string> = API_SECRET
