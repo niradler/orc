@@ -1,4 +1,6 @@
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 function osPort(): Promise<number> {
   return new Promise((resolve) => {
@@ -52,11 +54,14 @@ async function run(cmd: string[], env: Record<string, string>, timeoutMs: number
 }
 
 const pwApiPort = process.env.PW_API_PORT ?? String(await getFreePort(19871));
+const pwDbPath = process.env.PW_DB_PATH ?? join(tmpdir(), `orc-pw-${process.pid}-${Date.now()}.db`);
 const env = {
   ...process.env,
   ORC_API_HOST: "127.0.0.1",
   PW_API_PORT: pwApiPort,
+  PW_DB_PATH: pwDbPath,
   ORC_API_PORT: pwApiPort,
+  ORC_DB_PATH: pwDbPath,
   ORC_API_SECRET: "",
   ORC_E2E_CHAT_MOCK: "1",
 } satisfies Record<string, string>;

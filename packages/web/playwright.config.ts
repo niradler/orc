@@ -32,9 +32,8 @@ async function getFreePort(preferred: number): Promise<number> {
   return canBind ? preferred : osPort();
 }
 
-const PW_API_PORT =
-  process.env.PW_API_PORT ?? String(await getFreePort(Number(process.env.PW_API_PORT ?? 19871)));
-const PW_DB = join(tmpdir(), `orc-pw-${process.pid}-${Date.now()}.db`);
+const PW_API_PORT = process.env.PW_API_PORT ?? String(await getFreePort(19871));
+const PW_DB = process.env.PW_DB_PATH ?? join(tmpdir(), `orc-pw-${process.pid}-${Date.now()}.db`);
 
 // Make isolated ports visible to the test process (helpers.ts reads ORC_API_PORT)
 process.env.ORC_API_PORT = PW_API_PORT;
