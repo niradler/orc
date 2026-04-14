@@ -253,17 +253,19 @@ export function daemonCommand() {
       console.log(`  Config:  ~/.orc/config.json`);
 
       // macOS (launchctl load) and Linux (systemctl --now) already started it.
-      // On Windows, start the daemon in a detached child process.
+      // On Windows, use WScript.Shell Run(cmd, 0) — window style 0 = SW_HIDE.
+      // This is the only reliable way to start a console process with no visible
+      // window on Windows regardless of Bun/Node version.
       if (os === "win32") {
         const bin = resolveOrcBin();
-        const { spawn } = await import("node:child_process");
-        const child = spawn(bin, ["daemon", "start"], {
-          detached: true,
-          stdio: "ignore",
-          cwd: homedir(),
-        });
-        child.unref();
-        console.log(`\n  Daemon started (pid ${child.pid}).`);
+        // Escape single quotes in path for PowerShell string
+        const binEsc = bin.replace(/'/g, "''");
+        const { execSync } = await import("node:child_process");
+        execSync(
+          `powershell -NonInteractive -NoProfile -WindowStyle Hidden -Command "(New-Object -ComObject WScript.Shell).Run('\\\"${binEsc}\\\" daemon start', 0, $false)"`,
+          { windowsHide: true },
+        );
+        console.log(`\n  Daemon started in background (silent).`);
       }
       console.log("  Daemon will also start automatically on next login.");
     });
