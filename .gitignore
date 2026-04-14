@@ -8,6 +8,7 @@ dist/
 drizzle/
 .orc/
 *.gen.ts
+*.generated.ts
 bun.lockb
 .claude/settings.local.json
 .worktrees/

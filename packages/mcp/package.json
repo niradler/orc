@@ -16,9 +16,11 @@
     "test": "bun test",
     "clean": "rm -rf dist"
   },
+  "optionalDependencies": {
+    "@tobilu/qmd": "^2.1.0"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@tobilu/qmd": "^2.1.0",
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
     "@orc/runner": "workspace:*",

@@ -4,6 +4,11 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import type { Context, MiddlewareHandler } from "hono";
 
+// Embedded web assets — set by standalone binary entry (bin-entry.ts).
+// Maps URL path (e.g. "index.html", "assets/foo.js") → $bunfs embedded path.
+const embeddedWeb: Record<string, string> | null =
+  (globalThis as any).__ORC_EMBEDDED_WEB__ ?? null;
+
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "application/javascript; charset=utf-8",
@@ -81,23 +86,35 @@ async function sendFile(_c: Context, filePath: string, cacheable: boolean): Prom
  * Returns a no-op middleware if no dist directory is found, letting the server
  * run in pure-API mode during development before a web build has been produced.
  */
+function sendEmbedded(_c: Context, bunfsPath: string, cacheable: boolean): Response {
+  const file = Bun.file(bunfsPath);
+  const headers: Record<string, string> = {
+    "Content-Type": guessContentType(bunfsPath),
+  };
+  if (cacheable) headers["Cache-Control"] = "public, max-age=31536000, immutable";
+  else headers["Cache-Control"] = "no-cache";
+  return new Response(file, { headers });
+}
+
 export function createWebStatic(): MiddlewareHandler {
   const dist = resolveWebDist();
-  if (!dist) {
+
+  // No filesystem dist AND no embedded assets → pure-API mode.
+  if (!dist && !embeddedWeb) {
     return async (_c, next) => {
       await next();
     };
   }
 
   // Precompute which files exist under /assets/ to avoid stat calls per request.
-  const assetsDir = join(dist, "assets");
+  const assetsDir = dist ? join(dist, "assets") : null;
   const assetFiles = new Set<string>();
-  if (existsSync(assetsDir)) {
+  if (assetsDir && existsSync(assetsDir)) {
     for (const name of readdirSync(assetsDir)) {
       if (statSync(join(assetsDir, name)).isFile()) assetFiles.add(name);
     }
   }
-  const indexHtml = join(dist, "index.html");
+  const indexHtml = dist ? join(dist, "index.html") : null;
 
   return async (c, next) => {
     if (c.req.method !== "GET" && c.req.method !== "HEAD") {
@@ -107,27 +124,41 @@ export function createWebStatic(): MiddlewareHandler {
     const url = new URL(c.req.url);
     const path = decodeURIComponent(url.pathname);
 
+    // --- index.html ---
     if (path === "/" || path === "/index.html") {
-      return sendFile(c, indexHtml, false);
-    }
-
-    if (path.startsWith("/assets/")) {
-      const name = path.slice("/assets/".length);
-      if (assetFiles.has(name)) {
-        const filePath = join(assetsDir, name);
-        if (isSafeChild(assetsDir, filePath)) return sendFile(c, filePath, true);
-      }
+      if (indexHtml) return sendFile(c, indexHtml, false);
+      if (embeddedWeb?.["index.html"]) return sendEmbedded(c, embeddedWeb["index.html"], false);
       await next();
       return;
     }
 
-    // Root-level public files (favicon, robots, etc.)
+    // --- /assets/* ---
+    if (path.startsWith("/assets/")) {
+      const name = path.slice("/assets/".length);
+      // Filesystem first
+      if (assetsDir && assetFiles.has(name)) {
+        const filePath = join(assetsDir, name);
+        if (isSafeChild(assetsDir, filePath)) return sendFile(c, filePath, true);
+      }
+      // Embedded fallback
+      const key = `assets/${name}`;
+      if (embeddedWeb?.[key]) return sendEmbedded(c, embeddedWeb[key], true);
+      await next();
+      return;
+    }
+
+    // --- Root-level public files (favicon, robots, etc.) ---
     const topLevel = path.replace(/^\//, "");
     if (topLevel && !topLevel.includes("/")) {
-      const candidate = join(dist, topLevel);
-      if (isSafeChild(dist, candidate) && existsSync(candidate) && statSync(candidate).isFile()) {
-        return sendFile(c, candidate, false);
+      // Filesystem first
+      if (dist) {
+        const candidate = join(dist, topLevel);
+        if (isSafeChild(dist, candidate) && existsSync(candidate) && statSync(candidate).isFile()) {
+          return sendFile(c, candidate, false);
+        }
       }
+      // Embedded fallback
+      if (embeddedWeb?.[topLevel]) return sendEmbedded(c, embeddedWeb[topLevel], false);
     }
 
     await next();
