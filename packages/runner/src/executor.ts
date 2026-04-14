@@ -100,6 +100,17 @@ export async function executeJob(opts: RunOptions): Promise<string> {
     const endedAt = new Date();
     const success = exitCode === 0;
 
+    // The job (and its run row) may have been deleted while we were executing.
+    // Skip all write-back to avoid FK constraint violations.
+    const runStillExists = await db.query.job_runs.findFirst({
+      where: eq(job_runs.id, runId),
+      columns: { id: true },
+    });
+    if (!runStillExists) {
+      logger.warn(`Job run ${runId} was deleted during execution, skipping write-back`);
+      return runId;
+    }
+
     if (logEntries.length > 0) {
       await db.insert(job_run_logs).values(logEntries);
     }

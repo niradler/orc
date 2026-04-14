@@ -48,6 +48,12 @@ export function scheduleCronJob(jobId: string, name: string, expr: string): void
     try {
       await executeJob({ jobId, triggerBy: "cron" });
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.startsWith("Job not found:")) {
+        logger.warn(`Cron job ${name} no longer exists, unscheduling`);
+        unscheduleJob(jobId);
+        return;
+      }
       logger.error(`Cron job failed: ${name}`, err);
     }
   });
@@ -77,7 +83,10 @@ export function scheduleOneShotJob(
     try {
       await executeJob({ jobId, triggerBy: "one-shot" });
     } catch (err) {
-      logger.error(`One-shot job failed: ${name}`, err);
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.startsWith("Job not found:")) {
+        logger.error(`One-shot job failed: ${name}`, err);
+      }
     }
   }, delayMs);
 
