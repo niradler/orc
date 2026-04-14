@@ -41,7 +41,9 @@ function installWindows(): void {
     { stdio: "inherit" },
   );
   console.log(`\n  Installed registry Run key "${TASK_NAME}" (runs at logon, no admin needed).`);
-  console.log(`  View:    reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "${TASK_NAME}"`);
+  console.log(
+    `  View:    reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" /v "${TASK_NAME}"`,
+  );
 }
 
 function installMacos(): void {
