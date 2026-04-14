@@ -1,8 +1,9 @@
 import { createServer } from "node:net";
+import { unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-function osPort(): Promise<number> {
+function freePort(): Promise<number> {
   return new Promise((resolve) => {
     const server = createServer();
     server.listen(0, "127.0.0.1", () => {
@@ -12,21 +13,33 @@ function osPort(): Promise<number> {
   });
 }
 
-async function getFreePort(preferred: number): Promise<number> {
-  const httpUp = await fetch(`http://127.0.0.1:${preferred}`, {
-    signal: AbortSignal.timeout(300),
-  })
-    .then(() => true)
-    .catch(() => false);
-  if (httpUp) return osPort();
-
-  const canBind = await new Promise<boolean>((resolve) => {
-    const server = createServer();
-    server.once("listening", () => server.close(() => resolve(true)));
-    server.once("error", () => resolve(false));
-    server.listen(preferred, "127.0.0.1");
+/** Throws immediately if something is already listening on the port. */
+function assertPortFree(port: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.once("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") {
+        reject(new Error(`Port ${port} is already in use — kill the process holding it and retry`));
+      } else {
+        reject(err);
+      }
+    });
+    probe.listen(port, "127.0.0.1", () => {
+      probe.close(() => resolve());
+    });
   });
-  return canBind ? preferred : osPort();
+}
+
+async function waitForReady(url: string, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+      if (res.ok) return;
+    } catch { /* not ready yet */ }
+    await Bun.sleep(200);
+  }
+  throw new Error(`Server at ${url} did not become ready within ${timeoutMs}ms`);
 }
 
 async function run(cmd: string[], env: Record<string, string>, timeoutMs: number): Promise<void> {
@@ -39,11 +52,7 @@ async function run(cmd: string[], env: Record<string, string>, timeoutMs: number
   });
 
   const timeout = setTimeout(() => {
-    try {
-      proc.kill();
-    } catch {
-      /* ignore */
-    }
+    try { proc.kill(); } catch { /* ignore */ }
   }, timeoutMs);
 
   const exitCode = await proc.exited;
@@ -53,8 +62,10 @@ async function run(cmd: string[], env: Record<string, string>, timeoutMs: number
   }
 }
 
-const pwApiPort = process.env.PW_API_PORT ?? String(await getFreePort(19871));
-const pwDbPath = process.env.PW_DB_PATH ?? join(tmpdir(), `orc-pw-${process.pid}-${Date.now()}.db`);
+const pwApiPort = process.env.PW_API_PORT ?? String(await freePort());
+await assertPortFree(Number(pwApiPort));
+const pwDbPath = process.env.PW_DB_PATH ?? join(tmpdir(), `orc-pw-${process.pid}.db`);
+
 const env = {
   ...process.env,
   ORC_API_HOST: "127.0.0.1",
@@ -64,7 +75,59 @@ const env = {
   ORC_DB_PATH: pwDbPath,
   ORC_API_SECRET: "",
   ORC_E2E_CHAT_MOCK: "1",
+  // We manage the server ourselves so playwright does not spawn a second one.
+  // This is the only reliable way to guarantee the port is freed on all
+  // platforms: keep the process handle in scope and kill it in finally.
+  PW_NO_SERVER: "1",
 } satisfies Record<string, string>;
 
-await run(["bun", "x", "vite", "build"], env, 5 * 60_000);
-await run(["bun", "x", "playwright", "test", ...process.argv.slice(2)], env, 25 * 60_000);
+// Start the API server before playwright so we own the process handle.
+// Playwright's webServer cannot be relied on to kill its child on Windows
+// when playwright itself is killed or times out.
+// import.meta.dir = packages/web/scripts  →  ../../.. = repo root
+const repoRoot = join(import.meta.dir, "../../..");
+const apiProc = Bun.spawn({
+  cmd: ["bun", "packages/api/src/index.ts"],
+  cwd: repoRoot,
+  env,
+  stdout: "inherit",
+  stderr: "inherit",
+  stdin: "ignore",
+});
+
+function killApiServer(): void {
+  if (apiProc.pid === undefined) return;
+  try {
+    if (process.platform === "win32") {
+      // proc.kill() only kills the direct child on Windows; /T terminates
+      // the entire tree so the inner bun runtime does not become an orphan.
+      Bun.spawnSync(["taskkill", "/F", "/T", "/PID", String(apiProc.pid)], {
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+    } else {
+      process.kill(-apiProc.pid, "SIGKILL");
+    }
+  } catch { /* already dead */ }
+}
+
+// SIGINT (Ctrl+C) and SIGTERM bypass finally blocks in Bun — register explicit
+// handlers so the port is freed even when the run is interrupted.
+process.once("SIGINT", () => { killApiServer(); process.exit(130); });
+process.once("SIGTERM", () => { killApiServer(); process.exit(143); });
+
+let exitCode = 0;
+try {
+  await waitForReady(`http://127.0.0.1:${pwApiPort}/api/health`, 30_000);
+  await run(["bun", "x", "vite", "build"], env, 5 * 60_000);
+  await run(["bun", "x", "playwright", "test", ...process.argv.slice(2)], env, 25 * 60_000);
+} catch (err) {
+  console.error(err instanceof Error ? err.message : err);
+  exitCode = 1;
+} finally {
+  killApiServer();
+  try { await apiProc.exited; } catch { /* ignore */ }
+  try { unlinkSync(pwDbPath); } catch { /* already gone */ }
+}
+
+process.exit(exitCode);

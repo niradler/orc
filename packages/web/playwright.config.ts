@@ -1,41 +1,14 @@
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
-function freePort(preferred: number): Promise<number> {
-  return new Promise((resolve) => {
-    const s = createServer();
-    s.listen(preferred, "127.0.0.1", () => {
-      const port = (s.address() as { port: number }).port;
-      s.close(() => resolve(port));
-    });
-    s.on("error", () => {
-      // preferred is taken — ask OS for any free port
-      const s2 = createServer();
-      s2.listen(0, "127.0.0.1", () => {
-        const port = (s2.address() as { port: number }).port;
-        s2.close(() => resolve(port));
-      });
-    });
-  });
-}
+// PW_API_PORT and PW_DB_PATH are always set by run-e2e.ts before playwright
+// is spawned. Worker processes re-evaluate this file but inherit the env, so
+// they read the same values. No freePort() call needed here.
+const PW_API_PORT = process.env.PW_API_PORT ?? "7799";
+const PW_DB = process.env.PW_DB_PATH ?? join(tmpdir(), "orc-pw-fallback.db");
 
-// Compute once in the main process and write back to process.env so that
-// Playwright worker processes (which re-evaluate this file) inherit the same
-// value rather than calling freePort() again and potentially getting a
-// different port (the preferred one is now occupied by the webServer).
-if (!process.env.PW_API_PORT) {
-  process.env.PW_API_PORT = String(await freePort(19871));
-}
-if (!process.env.PW_DB_PATH) {
-  process.env.PW_DB_PATH = join(tmpdir(), `orc-pw-${Date.now()}.db`);
-}
-
-const PW_API_PORT = process.env.PW_API_PORT;
-const PW_DB = process.env.PW_DB_PATH;
-
-// Expose to test workers (helpers.ts reads ORC_API_PORT for direct API calls)
+// Expose to test helpers that call the API directly.
 process.env.ORC_API_PORT = PW_API_PORT;
 
 export default defineConfig({
@@ -61,6 +34,11 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } },
     },
   ],
+  // webServer is intentionally absent: run-e2e.ts owns the server lifecycle.
+  // PW_NO_SERVER is set by run-e2e.ts. If you run `playwright test` directly
+  // without going through run-e2e.ts, start the API server manually first:
+  //   ORC_API_PORT=7799 ORC_DB_PATH=/tmp/test.db bun packages/api/src/index.ts
+  //   PW_API_PORT=7799 PW_NO_SERVER=1 bun x playwright test
   ...(process.env.PW_NO_SERVER
     ? {}
     : {
