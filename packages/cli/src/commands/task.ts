@@ -106,6 +106,7 @@ export function taskCommand() {
     .option("-b, --body <text>", "Task body")
     .option("--skill <name>", "Skill for agent execution (e.g. orc-coder)")
     .option("--backend <backend>", "Agent backend (claude|codex|cursor)")
+    .option("--model <model>", "Model override for the agent (e.g. gpt-5.4)")
     .action(async (title: string, opts) => {
       const client = createOrcClient();
       const noProject = opts.project === false;
@@ -118,6 +119,8 @@ export function taskCommand() {
         ...(project ? { project_id: project.id } : {}),
         priority: opts.priority,
         skill_name: opts.skill,
+        ...(opts.backend ? { agent_backend: opts.backend } : {}),
+        ...(opts.model ? { agent_model: opts.model } : {}),
       });
       if (error) {
         if (isJson()) return jsonErr(String(error));

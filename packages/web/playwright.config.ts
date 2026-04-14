@@ -1,7 +1,14 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
-const API_PORT = process.env.ORC_API_PORT ?? "7701";
-const WEB_PORT = process.env.ORC_WEB_PORT ?? "3077";
+const PW_API_PORT = process.env.PW_API_PORT ?? "9871";
+const PW_WEB_PORT = process.env.PW_WEB_PORT ?? "9872";
+const PW_DB = join(tmpdir(), `orc-pw-${process.pid}-${Date.now()}.db`);
+
+// Make isolated ports visible to the test process (helpers.ts reads ORC_API_PORT)
+process.env.ORC_API_PORT = PW_API_PORT;
+process.env.ORC_WEB_PORT = PW_WEB_PORT;
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -13,7 +20,7 @@ export default defineConfig({
   workers: 1,
   reporter: [["list"]],
   use: {
-    baseURL: `http://localhost:${WEB_PORT}`,
+    baseURL: `http://localhost:${PW_WEB_PORT}`,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     actionTimeout: 10_000,
@@ -24,26 +31,38 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } },
     },
   ],
-  webServer: process.env.PW_NO_SERVER
-    ? undefined
-    : [
-        {
-          command: "bun run --filter @orc/api dev",
-          cwd: "../..",
-          url: `http://localhost:${API_PORT}/health`,
-          reuseExistingServer: true,
-          timeout: 60_000,
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-        {
-          command: "bun run --filter @orc/web dev",
-          cwd: "../..",
-          url: `http://localhost:${WEB_PORT}`,
-          reuseExistingServer: true,
-          timeout: 60_000,
-          stdout: "pipe",
-          stderr: "pipe",
-        },
-      ],
+  ...(process.env.PW_NO_SERVER
+    ? {}
+    : {
+        webServer: [
+          {
+            // Run bun directly — avoids "bun --env-file ../../.env" in the dev
+            // script overriding the isolated ORC_API_PORT we pass here.
+            command: `bun run --hot packages/api/src/index.ts`,
+            cwd: "../..",
+            url: `http://localhost:${PW_API_PORT}/health`,
+            reuseExistingServer: false,
+            timeout: 60_000,
+            stdout: "pipe" as const,
+            stderr: "pipe" as const,
+            env: {
+              ORC_API_PORT: PW_API_PORT,
+              ORC_DB_PATH: PW_DB,
+            },
+          },
+          {
+            command: `bun vite`,
+            cwd: ".",
+            url: `http://localhost:${PW_WEB_PORT}`,
+            reuseExistingServer: false,
+            timeout: 60_000,
+            stdout: "pipe" as const,
+            stderr: "pipe" as const,
+            env: {
+              ORC_API_PORT: PW_API_PORT,
+              ORC_WEB_PORT: PW_WEB_PORT,
+            },
+          },
+        ],
+      }),
 });

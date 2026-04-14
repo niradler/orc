@@ -20,6 +20,7 @@ type PickedTask = {
   status: string;
   skill_name: string | null;
   agent_backend: string | null;
+  agent_model: string | null;
   tags: string | null;
   project_id: string | null;
 };
@@ -87,7 +88,7 @@ function findPreviousSession(
   const row = sqlite
     .query(
       `SELECT runtime_session_id, review_rounds, cwd FROM gateway_sessions
-       WHERE task_id = ? AND runtime_session_id IS NOT NULL AND status IN ('stopped', 'error')
+       WHERE task_id = ? AND runtime_session_id IS NOT NULL
        ORDER BY updated_at DESC LIMIT 1`,
     )
     .get(taskId) as { runtime_session_id: string; review_rounds: number; cwd: string } | null;
@@ -100,8 +101,8 @@ async function spawnWorker(task: PickedTask): Promise<void> {
   const sessionId = ulid();
 
   const backendName = (task.agent_backend ?? config.agent_loop.default_backend) as AgentBackendName;
-  const isResume = task.status === "changes_requested";
-  const prevSession = isResume ? findPreviousSession(task.id) : null;
+  const prevSession = findPreviousSession(task.id);
+  const isResume = !!prevSession;
 
   const claimResult = await updateTaskStatus({
     taskId: task.id,
@@ -185,6 +186,7 @@ async function driveWorkerLoop(
     const sessionOpts = {
       cwd,
       autoApprove: true,
+      ...(task.agent_model ? { model: task.agent_model } : {}),
       ...(isAcpxFallback ? { acpxAgent: backendName } : {}),
     };
 
@@ -476,7 +478,7 @@ function pickAllReviewTasks(): PickedTask[] {
   const sqlite = getSqlite();
   return sqlite
     .query(
-      `SELECT t.id, t.title, t.body, t.status, t.skill_name, t.agent_backend, t.tags, t.project_id
+      `SELECT t.id, t.title, t.body, t.status, t.skill_name, t.agent_backend, t.agent_model, t.tags, t.project_id
        FROM tasks t
        WHERE t.status = 'review'
          AND t.claimed_by IS NULL
@@ -492,7 +494,7 @@ function pickAllNextTasks(): PickedTask[] {
   const sqlite = getSqlite();
   return sqlite
     .query(
-      `SELECT t.id, t.title, t.body, t.status, t.skill_name, t.agent_backend, t.tags, t.project_id
+      `SELECT t.id, t.title, t.body, t.status, t.skill_name, t.agent_backend, t.agent_model, t.tags, t.project_id
        FROM tasks t
        WHERE (t.status = 'todo' OR t.status = 'changes_requested')
          AND t.claimed_by IS NULL

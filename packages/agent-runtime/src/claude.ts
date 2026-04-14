@@ -282,7 +282,9 @@ class ClaudeSession implements AgentSession {
       if (this.proc) {
         await this.close().catch(() => {});
       }
-      this.spawn([], prompt);
+      const resumeArgs = this.runtimeSessionId ? ["--resume", this.runtimeSessionId] : [];
+      this.runtimeSessionId = undefined;
+      this.spawn(resumeArgs, prompt);
       return;
     }
     const msg: ClaudeStdinMsg = {

@@ -1,6 +1,6 @@
 import type { APIRequestContext, Page } from "@playwright/test";
 
-export const API_PORT = process.env.ORC_API_PORT ?? "7721";
+export const API_PORT = process.env.ORC_API_PORT ?? "9871";
 export const API_BASE = `http://localhost:${API_PORT}`;
 export const API_SECRET = process.env.ORC_API_SECRET ?? "";
 

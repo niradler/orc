@@ -219,6 +219,7 @@ class AcpxSession implements AgentSession {
       "json",
       ...(this.autoApprove ? ["--approve-all"] : []),
       this.agent,
+      ...(this.model ? ["--model", this.model] : []),
       "exec",
       prompt,
     ];
