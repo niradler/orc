@@ -1,7 +1,7 @@
 # ORC QA Checklist
 
-> **Version tested:** 0.1.14
-> **Last run:** 2026-04-12
+> **Version tested:** 0.1.17
+> **Last run:** 2026-04-14
 > **Method:** Automated e2e — `bash scripts/e2e.sh` starts API on isolated port, runs CLI + curl against it
 > **Test DB:** ephemeral (`/tmp/orc-e2e-*.db`), auth via random secret per run
 
@@ -52,9 +52,10 @@ curl -s -H "Authorization: Bearer $SECRET" http://127.0.0.1:$PORT/health
 - [x] Spec includes all route paths
 
 ### 1.4 Build Health
-- [ ] `bun typecheck` — FAILS: TS errors in `packages/api/src/__tests__/tasks.test.ts` (`'body' is of type 'unknown'`)
-- [ ] `bun check` (biome lint) — has warnings
-- [~] `bun test` — mostly passing
+
+- [x] `bun typecheck` — all 9 packages pass
+- [~] `bun check` (biome lint) — 2 warnings (`noExplicitAny` on `globalThis as any` in `static.ts` and `bin-entry.ts` — unavoidable for embedding)
+- [x] `bun test` — 352 pass, 0 fail
 
 ---
 
@@ -408,8 +409,8 @@ Specs in `packages/web/tests/e2e/` cover: chat, dashboard, jobs, kanban, memorie
 | 1 | **MEDIUM** | Jobs | `job delete` fails with 500 if sessions reference job_runs (FK without cascade on sessions.job_run_id) | Open |
 | 2 | **MEDIUM** | Knowledge | `POST /knowledge/update` (re-index) returns 500 Internal Server Error | Open |
 | 3 | **LOW** | API | No pagination support (offset/cursor) on `GET /tasks`, `GET /memories` | Open |
-| 4 | **LOW** | Build | `bun typecheck` fails: TS errors in `tasks.test.ts` | Open |
-| 5 | **LOW** | Build | `bun check` (biome) has warnings | Open |
+| 4 | ~~LOW~~ | Build | ~~`bun typecheck` fails~~ | **Fixed** |
+| 5 | **LOW** | Build | `bun check` (biome) has 2 `noExplicitAny` warnings on `globalThis` casts — unavoidable | Open (won't fix) |
 | 6 | **LOW** | UX | Swagger UI (`/docs`) requires auth token — inconvenient for dev | Open |
 
 ### Fixed This Session

@@ -32,7 +32,7 @@ ORC fixes this. Shared memory across every session. A task board where agents su
 | **Task board** | `todo → queued → doing → review → done` with dependency tracking, priority, and automatic unblocking |
 | **Multi-backend routing** | Route to Claude Code, ACPX (Agent Communication Protocol, 14+ agents), or remote A2A endpoints; unknown names fall through to ACPX |
 | **Job runner** | Cron, file-watch, webhook, or manual triggers with full run history |
-| **MCP server** | 20 tools connect any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) compatible agent with one config line |
+| **MCP server** | 28 tools connect any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) compatible agent with one config line |
 | **Session continuity** | Snapshots survive context compaction so agents resume where they left off |
 | **Gateway** | Approve work, search memory, and chat with live agents from Telegram or Slack |
 | **Knowledge search** | Index document collections (markdown, notes, wikis) and search them via BM25 or hybrid (vector + reranking) |
@@ -406,14 +406,14 @@ Add custom skills by creating a `SKILL.md` in `~/.orc/skills/my-workflow/SKILL.m
 
 ## MCP tools
 
-**26 tools** available to any connected agent. Start every session with `context`.
+**28 tools** available to any connected agent. Start every session with `context`.
 
 | Category | Tools |
 |---|---|
 | **Project** | `project_list` |
-| **Memory** | `context`, `memory_search`, `memory_get`, `memory_store` |
+| **Memory** | `context`, `memory_search`, `memory_get`, `memory_store`, `memory_update` |
 | **Task** | `task_list`, `task_get`, `task_create`, `task_update`, `task_batch_create` |
-| **Skill** | `skill_list`, `skill_read` |
+| **Skill** | `skill_list`, `skill_read`, `skill_create` |
 | **Knowledge** | `knowledge_search`, `knowledge_get`, `knowledge_collections`, `knowledge_collection_add`, `knowledge_collection_remove`, `knowledge_update` |
 | **Search** | `search` |
 | **Job** | `job_list`, `job_run`, `job_status` |
