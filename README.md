@@ -459,6 +459,7 @@ Runs on port 7700 with auto-generated OpenAPI spec.
 
 ```
 orc daemon start|stop|status     Manage the daemon (API + scheduler + gateway)
+orc daemon install|uninstall     Register/remove auto-start on login/boot
 orc api                          Start the API server only
 orc mcp                          Start the MCP server (stdio)
 orc home                         Show ~/.orc directory and config
@@ -519,17 +520,35 @@ grep '"level":"error"' ~/.orc/logs/orc.log | tail -20
 tail -f ~/.orc/logs/orc.log | jq .
 ```
 
-### Running as a service
+### Running as a background service
+
+The daemon runs the API server, job scheduler, file watchers, and gateway in one process. To start it automatically on login/boot:
 
 ```bash
-# PM2 (any platform)
-pm2 start "orc daemon start" --name orc
-pm2 save && pm2 startup
+orc daemon install     # register auto-start for your OS
+orc daemon uninstall   # remove auto-start registration
 ```
 
-**macOS (launchd):** `ProgramArguments: ["/usr/local/bin/orc", "daemon", "start"]` with `RunAtLoad` and `KeepAlive`.
+| Platform | Mechanism | Auto-restart on crash |
+| --- | --- | --- |
+| **Windows** | Registry Run key (`HKCU\...\Run`) | No |
+| **macOS** | launchd (`~/Library/LaunchAgents/com.orc.daemon.plist`) | Yes |
+| **Linux** | systemd user service (`~/.config/systemd/user/orc-daemon.service`) | Yes |
 
-**Linux (systemd):** `ExecStart=/usr/local/bin/orc daemon start` with `Restart=on-failure`.
+No admin/root privileges required on any platform.
+
+```bash
+# Manual control
+orc daemon start       # start in foreground (API + scheduler + gateway)
+orc daemon stop        # stop a running daemon
+orc daemon status      # show scheduled jobs
+orc api                # start the API server only (no scheduler/gateway)
+
+# Check daemon health
+curl http://localhost:7700/health
+```
+
+Logs go to `~/.orc/daemon.log`. Config is read from `~/.orc/config.json`.
 
 ## Architecture
 
