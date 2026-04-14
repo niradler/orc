@@ -100,40 +100,38 @@ export async function executeJob(opts: RunOptions): Promise<string> {
     const endedAt = new Date();
     const success = exitCode === 0;
 
-    // The job (and its run row) may have been deleted while we were executing.
-    // Skip all write-back to avoid FK constraint violations.
-    const runStillExists = await db.query.job_runs.findFirst({
-      where: eq(job_runs.id, runId),
-      columns: { id: true },
-    });
-    if (!runStillExists) {
-      logger.warn(`Job run ${runId} was deleted during execution, skipping write-back`);
-      return runId;
+    try {
+      if (logEntries.length > 0) {
+        await db.insert(job_run_logs).values(logEntries);
+      }
+
+      await db
+        .update(job_runs)
+        .set({
+          status: success ? "success" : "failed",
+          exit_code: exitCode,
+          ended_at: endedAt,
+          stdout: stdoutLines.join("\n").slice(0, 65536),
+          stderr: stderrLines.join("\n").slice(0, 16384),
+        })
+        .where(eq(job_runs.id, runId));
+
+      const durSecs = Math.round((endedAt.getTime() - now.getTime()) / 1000);
+      await db.insert(sessions).values({
+        id: ulid(),
+        agent: "runner",
+        summary: `Job "${job.name}" ${success ? "succeeded" : "failed"} in ${durSecs}s (exit ${exitCode})`,
+        job_run_id: runId,
+        created_at: endedAt,
+      });
+    } catch (writeErr) {
+      const msg = writeErr instanceof Error ? writeErr.message : String(writeErr);
+      if (msg.includes("FOREIGN KEY")) {
+        logger.warn(`Job run ${runId} was deleted during execution, skipping write-back`);
+        return runId;
+      }
+      throw writeErr;
     }
-
-    if (logEntries.length > 0) {
-      await db.insert(job_run_logs).values(logEntries);
-    }
-
-    await db
-      .update(job_runs)
-      .set({
-        status: success ? "success" : "failed",
-        exit_code: exitCode,
-        ended_at: endedAt,
-        stdout: stdoutLines.join("\n").slice(0, 65536),
-        stderr: stderrLines.join("\n").slice(0, 16384),
-      })
-      .where(eq(job_runs.id, runId));
-
-    const durSecs = Math.round((endedAt.getTime() - now.getTime()) / 1000);
-    await db.insert(sessions).values({
-      id: ulid(),
-      agent: "runner",
-      summary: `Job "${job.name}" ${success ? "succeeded" : "failed"} in ${durSecs}s (exit ${exitCode})`,
-      job_run_id: runId,
-      created_at: endedAt,
-    });
 
     logger.info(
       `Job ${job.name} [${runId}] ${success ? "succeeded" : "failed"} (exit ${exitCode})`,

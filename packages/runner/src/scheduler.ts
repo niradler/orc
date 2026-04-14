@@ -44,16 +44,17 @@ export function scheduleCronJob(jobId: string, name: string, expr: string): void
   }
 
   const cron = new Cron(expr, async () => {
+    const db = getDb();
+    const still = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId), columns: { id: true } });
+    if (!still) {
+      logger.warn(`Cron job ${name} no longer exists, unscheduling`);
+      unscheduleJob(jobId);
+      return;
+    }
     logger.info(`Cron trigger: ${name}`);
     try {
       await executeJob({ jobId, triggerBy: "cron" });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.startsWith("Job not found:")) {
-        logger.warn(`Cron job ${name} no longer exists, unscheduling`);
-        unscheduleJob(jobId);
-        return;
-      }
       logger.error(`Cron job failed: ${name}`, err);
     }
   });
@@ -79,14 +80,17 @@ export function scheduleOneShotJob(
 
   const timer = setTimeout(async () => {
     activeTimers.delete(jobId);
+    const db = getDb();
+    const still = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId), columns: { id: true } });
+    if (!still) {
+      logger.warn(`One-shot job ${name} no longer exists, skipping`);
+      return;
+    }
     logger.info(`One-shot trigger: ${name}`);
     try {
       await executeJob({ jobId, triggerBy: "one-shot" });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.startsWith("Job not found:")) {
-        logger.error(`One-shot job failed: ${name}`, err);
-      }
+      logger.error(`One-shot job failed: ${name}`, err);
     }
   }, delayMs);
 
