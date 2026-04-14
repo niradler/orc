@@ -1,138 +1,130 @@
 ---
 name: orc-knowledge
-description: Use when storing project knowledge, decisions, rules, or discoveries in ORC, when searching for past context, when recalling architectural decisions or conventions, when multiple agents need shared knowledge, or when building a persistent knowledge base. Trigger on "remember", "recall", "what did we decide", "store this", when making architectural decisions, or when you need past context before starting work.
-allowed-tools: ["mcp__orc__memory_search", "mcp__orc__memory_get", "mcp__orc__memory_store", "mcp__orc__memory_update", "mcp__orc__search"]
+description: Use when searching indexed document collections, retrieving documentation or markdown files, managing knowledge collections (add/remove directories), or re-indexing after file changes. Trigger on "search the docs", "find in knowledge base", "index this directory", "what does the docs say about X", or when you need to look up reference material from project documentation.
+allowed-tools: ["mcp__orc__knowledge_search", "mcp__orc__knowledge_get", "mcp__orc__knowledge_collections", "mcp__orc__knowledge_collection_add", "mcp__orc__knowledge_collection_remove", "mcp__orc__knowledge_update"]
 ---
 
 # ORC Knowledge Workflow
 
-ORC's memory layer is a shared, searchable knowledge store backed by FTS5 full-text search. All agents read/write the same store, scoped by project.
+ORC's knowledge layer indexes directories of documents (markdown, code docs) and makes them searchable via BM25 full-text search or hybrid BM25+vector search. It is distinct from ORC memory — knowledge is for external reference material, memory is for decisions and discoveries made during work.
 
-## Why Use ORC Memory
+## Knowledge vs Memory
 
-CLAUDE.md is for static conventions. ORC memory is for living knowledge — decisions made during work, discoveries from debugging, rules that emerge from experience. It survives across sessions, is searchable by any agent, and important entries float to the top of every `context()` call.
+| Knowledge | Memory |
+|-----------|--------|
+| External reference documents (docs, wikis, specs) | Decisions and discoveries from working sessions |
+| Indexed from filesystem directories | Written by agents during work |
+| Read-only (index reflects filesystem) | Read-write (agents store and update) |
+| Searched by content similarity | Searched by keyword/concept |
+| `knowledge_search` / `knowledge_get` | `memory_search` / `memory_get` |
 
----
-
-## When to Store
-
-**Store as `rule`** (highest priority in context): Conventions and must-follow constraints.
-> "All IDs are ULIDs", "never use `any` in TypeScript"
-
-**Store as `decision`** (high priority): Choices with rationale — future agents need the *why*.
-> "Use Hono over Express — runs natively in Bun"
-
-**Store as `discovery`** (medium): Findings from debugging or exploration.
-> "FTS5 porter stemmer doesn't handle camelCase"
-
-**Store as `fact`** or **`event`** (low): General knowledge, things that happened.
-
-### Write good titles
-
-Title appears in search results and context — it's how agents decide which memories to read. One short sentence: what it is + when to use it.
-
-Good: `title: "JWT over sessions — check before touching auth"`
-Bad: `title: "auth decision"`
-
-### Before storing, always search first to avoid duplicates.
-
-If `memory_store` finds a similar existing memory, it will warn you. Use `memory_update` to merge instead of creating duplicates.
+Use knowledge when you need to look something up in reference material.
+Use memory when you need to recall what was decided or discovered.
 
 ---
 
-## Updating Memories
+## Core Workflow
 
-Use `memory_update(id, {fields})` to correct or evolve a memory in place. This preserves history (created_at, access_count) and is preferred over delete+recreate.
+### 1. Search first
 
-**Decisions and rules should rarely be deleted** — append corrections to the content instead. Future agents need the historical rationale.
+```
+knowledge_search(query, { collection?, mode?, limit? })
+```
 
----
+Returns: `docid`, `path`, `title`, `snippet`, `score` — compact results for scanning.
 
-## Source Metadata
+- Use `collection` to narrow to a specific set of docs
+- `mode: "lexical"` = fast BM25 (default); `mode: "hybrid"` = BM25 + vector reranking (better recall, costs more)
+- Never fetch full documents until you've identified the right one from search results
 
-The `source` field is auto-detected from the agent environment (e.g. "claude-code@session_abc"). You can override it with an explicit `source` param for more context (e.g. "code-review", "debugging-session").
+### 2. Fetch full content only when needed
 
----
+```
+knowledge_get(id)
+```
 
-## What NOT to Store
+`id` is the `docid` (e.g. `#abc123`) or the `path` from search results. Full document content is token-expensive — only call this after you know which document you need.
 
-Not everything belongs in memory. Skip:
-- **Code patterns and conventions** derivable from reading the codebase
-- **Git history** — use `git log` / `git blame` instead
-- **Debugging solutions** — the fix is in the code, the commit message has context
-- **Anything already in CLAUDE.md** or project docs
-- **Ephemeral task details** — use tasks for in-progress work
+### 3. List collections
 
-Store only what's surprising, non-obvious, or cross-session relevant.
+```
+knowledge_collections({ project? })
+```
 
----
-
-## Content Size
-
-Keep individual memories under ~2000 characters. If you need more, split into multiple related memories with the same scope and tags.
-
----
-
-## When to Search
-
-- Before starting work — check what decisions have been made
-- When you need to understand past context or rationale
-- When the user asks "what did we decide about X"
-- When you encounter something that might have been solved before
-
-The 3-layer cascade (porter stemming, trigram, LIKE) finds things even when wording varies. Use keywords, not exact phrases.
-
-The unified `search` tool searches across both memories and tasks in one call — use it when you're not sure where the information lives.
+Shows all indexed collections with name, path, glob pattern, document count, and last modified time.
 
 ---
 
-## Scopes
+## Managing Collections
 
-Use scopes to organize: `architecture`, `code-style`, `api`, `security`, `database`, `gateway`, `mcp`, `ops`, `bugs`. Scopes make search faster on large stores.
+### Add a collection
+
+```
+knowledge_collection_add({
+  name: "docs",
+  path: "/absolute/path/to/directory",
+  pattern: "**/*.md",   // default
+  project: "my-project" // optional
+})
+```
+
+- `name` is a short label used to filter searches (`collection: "docs"`)
+- `path` must be an absolute path to the directory
+- `pattern` controls which files get indexed (default: all `.md` files)
+- Indexing runs automatically after adding
+
+### Remove a collection
+
+```
+knowledge_collection_remove({ name: "docs" })
+```
+
+Removes the collection and its indexed documents. Does not delete files from disk.
+
+### Re-index after file changes
+
+```
+knowledge_update({ collections: ["docs"] })  // specific collections
+knowledge_update({})                          // all collections
+```
+
+Run this after adding, editing, or deleting files in an indexed directory. Returns counts: `indexed`, `updated`, `removed`.
 
 ---
 
-## Prompts as Knowledge
-
-Built-in skills (`skill_list`) encode workflow knowledge — how to do code review, planning, bug fixing. Use `skill_read` to load a specific workflow when you need structured guidance. Store project-specific workflow tweaks as `rule` memories.
-
----
-
-## ORC Memory vs CLAUDE.md
-
-| ORC memory | CLAUDE.md |
-|------------|-----------|
-| Runtime decisions during sessions | Up-front project conventions |
-| Findings from debugging | Static architectural docs |
-| Cross-agent shared knowledge | Agent-specific instructions |
-| Things that change | Things that rarely change |
-| "We decided X because Y" | "Always do X" |
-
----
-
-## CLI Fallbacks
+## CLI Equivalents
 
 ```bash
-orc mem search "why ULID" --scope architecture
-orc mem add "Always use strict mode" --type rule --scope code-style --importance critical
-orc mem list --limit 20
+orc kb search "authentication flow"
+orc kb get "#abc123"
+orc kb collections
+orc kb add docs /path/to/docs --pattern "**/*.md"
+orc kb remove docs
+orc kb update
+orc kb status
 ```
 
 ---
 
 ## Token Economics
 
-Know the cost of your actions:
-
 | Tool | Cost | Use when |
 |------|------|----------|
-| `context()` | ~200 tokens | Always call first — cheap overview |
-| `memory_search` | ~50-100 tokens/result | Targeted keyword search |
-| `search` | ~50-100 tokens/result | Unified search across memories + tasks |
-| `memory_get` | ~500-1000 tokens/item | Full content — **expensive, filter first** |
-| `memory_update` | ~50 tokens | Update fields in place — cheap |
+| `knowledge_search` | ~50-100 tokens/result | Always use first — cheap overview |
+| `knowledge_get` | ~500-5000 tokens | Full document — **expensive, filter first** |
+| `knowledge_collections` | ~50 tokens | See what's indexed |
+| `knowledge_update` | ~50 tokens | Trigger re-index after file changes |
 
-**NEVER call `memory_get` without filtering via `memory_search` or `search` first.** Always: search → pick IDs → `memory_get(ids)`. This is 10x more token-efficient than fetching everything.
+**Pattern: search → identify docid → get.** Never call `knowledge_get` blindly. The snippet in search results often has what you need without fetching the full document.
+
+---
+
+## Search Tips
+
+- Use keywords and phrases, not questions: `"JWT refresh token"` not `"how does JWT refresh work"`
+- Narrow with `collection` when you know which collection has the answer
+- Use `mode: "hybrid"` when lexical search returns poor results — it adds vector similarity
+- Scores above 0.5 are usually relevant; below 0.2 are likely noise
 
 ---
 
@@ -140,19 +132,16 @@ Know the cost of your actions:
 
 | Mistake | Fix |
 |---------|-----|
-| Storing everything as `fact` | Use `rule`/`decision` — they get priority in context |
-| Searching with exact phrases | Use keywords; the stemmer handles variations |
-| Storing duplicates | Search first |
-| Missing rationale in decisions | Future agents need the *why*, not just the *what* |
-| Skipping scopes | Scopes make search faster |
-| Calling `memory_get` without filtering | Search first, then fetch only the IDs you need |
-| Deleting decisions/rules to "fix" them | Use `memory_update` to correct — preserve the history |
-| Storing code patterns or git history | Derive from codebase/git — don't duplicate in memory |
+| Calling `knowledge_get` without searching first | Always search first, then fetch by docid |
+| Using relative paths when adding collections | `path` must be absolute |
+| Expecting stale results after file changes | Run `knowledge_update` after filesystem changes |
+| Storing agent decisions in knowledge | Use `memory_store` for decisions — knowledge is read-only reference |
+| Searching with full sentences | Use keywords; BM25 matches terms, not intent |
 
 ---
 
 ## Related
 
-- **orc-session** skill — session start protocol, recording events
+- **orc-memory** skill — storing and retrieving decisions, rules, and discoveries made during work
+- **orc-session** skill — session start protocol
 - **orc-tasks** skill — task lifecycle and HITL review
-- Built-in prompts: `orc-requirements` (skill) gathers requirements and stores in task body, `orc-report` (skill) builds status summaries from memories and tasks
