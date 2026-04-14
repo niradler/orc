@@ -7,6 +7,7 @@ import { Command } from "commander";
 import { daemonCommand, ORC_HOME, ORC_PID, readDaemonPid } from "./commands/daemon.js";
 import { gatewayCommand } from "./commands/gateway.js";
 import { jobCommand } from "./commands/job.js";
+import { kbCommand } from "./commands/kb.js";
 import { memCommand } from "./commands/mem.js";
 import { projectCommand } from "./commands/project.js";
 import { schemaCommand } from "./commands/schema.js";
@@ -67,6 +68,7 @@ program.addCommand(sessionCommand());
 program.addCommand(daemonCommand());
 program.addCommand(gatewayCommand());
 program.addCommand(skillCommand());
+program.addCommand(kbCommand());
 program.addCommand(statusCommand());
 program.addCommand(schemaCommand());
 

@@ -471,10 +471,11 @@ orc mem list|add|search
 orc job list|add|run|runs
 orc session list|show|log
 orc skill list|show
+orc kb search|get|collections|add|remove|update|status
 ```
 
 > [!NOTE]
-> All task/mem/job commands default to the active project. Use `-p <name>` to override or `--no-project` to see everything. Add `--json` for machine-readable output.
+> All task/mem/job/kb commands default to the active project. Use `-p <name>` to override or `--no-project` to see everything. Add `--json` for machine-readable output.
 
 ## Configuration
 
