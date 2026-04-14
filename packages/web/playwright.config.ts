@@ -1,11 +1,41 @@
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
-const PW_API_PORT = process.env.PW_API_PORT ?? "19871";
-const PW_DB = process.env.PW_DB_PATH ?? join(tmpdir(), "orc-pw-e2e.db");
+function freePort(preferred: number): Promise<number> {
+  return new Promise((resolve) => {
+    const s = createServer();
+    s.listen(preferred, "127.0.0.1", () => {
+      const port = (s.address() as { port: number }).port;
+      s.close(() => resolve(port));
+    });
+    s.on("error", () => {
+      // preferred is taken — ask OS for any free port
+      const s2 = createServer();
+      s2.listen(0, "127.0.0.1", () => {
+        const port = (s2.address() as { port: number }).port;
+        s2.close(() => resolve(port));
+      });
+    });
+  });
+}
 
-// Make isolated ports visible to the test process (helpers.ts reads ORC_API_PORT)
+// Compute once in the main process and write back to process.env so that
+// Playwright worker processes (which re-evaluate this file) inherit the same
+// value rather than calling freePort() again and potentially getting a
+// different port (the preferred one is now occupied by the webServer).
+if (!process.env.PW_API_PORT) {
+  process.env.PW_API_PORT = String(await freePort(19871));
+}
+if (!process.env.PW_DB_PATH) {
+  process.env.PW_DB_PATH = join(tmpdir(), `orc-pw-${Date.now()}.db`);
+}
+
+const PW_API_PORT = process.env.PW_API_PORT;
+const PW_DB = process.env.PW_DB_PATH;
+
+// Expose to test workers (helpers.ts reads ORC_API_PORT for direct API calls)
 process.env.ORC_API_PORT = PW_API_PORT;
 
 export default defineConfig({
@@ -35,9 +65,6 @@ export default defineConfig({
     ? {}
     : {
         webServer: {
-          // E2E runs against the built dashboard served by the API itself.
-          // This avoids Vite + Bun hot child-process trees on Windows, which
-          // are the main source of orphaned listeners and stuck ports.
           command: "bun packages/api/src/index.ts",
           cwd: "../..",
           url: `http://127.0.0.1:${PW_API_PORT}/api/health`,
