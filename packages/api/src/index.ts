@@ -19,8 +19,6 @@ logger.info(`API server running on http://${config.api.host}:${config.api.port}`
 logger.info(`OpenAPI spec: http://${config.api.host}:${config.api.port}/openapi.json`);
 logger.info(`Swagger UI:   http://${config.api.host}:${config.api.port}/docs`);
 
-startTaskLoop();
-
 let shuttingDown = false;
 async function shutdown(signal: string) {
   if (shuttingDown) return;

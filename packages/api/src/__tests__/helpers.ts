@@ -25,7 +25,8 @@ export async function req(
   path: string,
   body?: unknown,
 ): Promise<AnyJsonResponse> {
-  const res = await app.request(path, {
+  const fullPath = path.startsWith("/api") ? path : `/api${path}`;
+  const res = await app.request(fullPath, {
     method,
     headers: {
       "Content-Type": "application/json",

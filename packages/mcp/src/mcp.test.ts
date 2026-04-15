@@ -351,7 +351,7 @@ describe("MCP /mcp/tool HTTP endpoint", () => {
   });
 
   test("POST /mcp/tool executes memory_store via API", async () => {
-    const res = await app.request("/mcp/tool", {
+    const res = await app.request("/api/mcp/tool", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -369,7 +369,7 @@ describe("MCP /mcp/tool HTTP endpoint", () => {
   });
 
   test("POST /mcp/tool returns 400 for unknown tool name", async () => {
-    const res = await app.request("/mcp/tool", {
+    const res = await app.request("/api/mcp/tool", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
