@@ -342,7 +342,7 @@ async function spawnReviewer(task: PickedTask): Promise<void> {
     status: "running",
     auto_approve: true,
     task_id: task.id,
-    role: "worker",
+    role: "reviewer",
     pid: process.pid,
     project_id: task.project_id,
     review_rounds: 0,
