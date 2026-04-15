@@ -10,6 +10,21 @@ const logger = createLogger("gateway:runner");
 
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
+function toolEmoji(name: string): string {
+  const n = name.toLowerCase();
+  if (n.includes("read")) return "📖";
+  if (n.includes("write")) return "📝";
+  if (n.includes("edit")) return "✏️";
+  if (n.includes("bash") || n.includes("execute")) return "💻";
+  if (n.includes("glob") || n.includes("grep") || n.includes("search")) return "🔍";
+  if (n.includes("web")) return "🌐";
+  if (n.includes("todo")) return "📋";
+  if (n.includes("agent")) return "🤖";
+  if (n.includes("memory") || n.includes("mem")) return "🧠";
+  if (n.includes("task")) return "📌";
+  return "🔧";
+}
+
 export type RunnerContext = {
   chatKey: string;
   chatId: string;
@@ -140,9 +155,14 @@ async function driveEventLoop(
   preview: PreviewManager | null,
 ): Promise<RunResult> {
   let accumulated = "";
+  let statusLine = "";
   let runtimeSessionId: string | undefined;
 
   const idleTimer = startIdleWatchdog(ctx.session.id, session);
+
+  function previewText(): string {
+    return statusLine ? `${accumulated}\n${statusLine}` : accumulated;
+  }
 
   try {
     for await (const event of session.events()) {
@@ -150,6 +170,7 @@ async function driveEventLoop(
 
       if (event.type === "text") {
         accumulated += event.data;
+        statusLine = "";
         if (preview && previewMsgId) {
           await preview.update(ctx.session.id, accumulated);
         }
@@ -161,9 +182,9 @@ async function driveEventLoop(
       }
 
       if (event.type === "tool_use") {
-        const blurb = `🔧 ${event.data.name}`;
+        statusLine = `${toolEmoji(event.data.name)} ${event.data.name}…`;
         if (preview && previewMsgId) {
-          await preview.update(ctx.session.id, `${accumulated}\n${blurb}`);
+          await preview.update(ctx.session.id, previewText());
         }
         continue;
       }
