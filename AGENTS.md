@@ -66,6 +66,8 @@ The web dev server proxies `/api/*` → `http://localhost:$ORC_API_PORT` (strips
 
 ### Running dev servers
 
+> **Do not use the global `orc daemon`** for development — it runs the published binary on port 7700. Always use `bun dev` which starts from source on the dev port configured in `.env`. For production daemon setup (auto-start on boot, background service), see the "Running as a background service" section in `README.md`.
+
 ```bash
 bun dev                         # API + CLI + web in one shell (recommended)
 bun run --filter @orc/api dev   # API only
@@ -217,7 +219,7 @@ Additional statuses: `queued` (claimed by task loop, waiting to start), `paused`
 
 > `repeat` was removed — use `cron` with a 6-field expression for sub-minute intervals (e.g. `*/30 * * * * *` = every 30 s).
 
-## MCP Tools (20 tools in packages/mcp/src/tools.ts)
+## MCP Tools (28 tools in packages/mcp/src/tools.ts)
 
 **Call `context` first in every session** — returns active tasks + key memories in ~200 tokens.
 

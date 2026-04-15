@@ -87,7 +87,7 @@ export function createOrcClient(options?: OrcClientOptions) {
     path: string,
     body?: unknown,
     query?: Record<string, string | number | boolean | undefined>,
-  ) => call<T>(baseUrl, secret, method, path, body, query);
+  ) => call<T>(baseUrl, secret, method, `/api${path}`, body, query);
 
   return {
     tasks: {

@@ -42,7 +42,6 @@
 - **Web dashboard** — React SPA (Vite + Tailwind + shadcn + React Query) covering tasks, jobs, memories, projects, sessions, knowledge, skills, and chat
 - **Single-binary deployment** — CLI build bundles the prebuilt dashboard into `packages/cli/dist/web/`; `orc daemon start` serves the API at `/api/*` and the web UI at `/` from one process
 - **TUI removed** — all features migrated to the web dashboard; `@orc/tui` package and `orc tui` command deleted
-- **91+ automated tests**
 
 ### v0.1.x — Memory System Improvements
 
@@ -55,7 +54,13 @@
 - **Updated orc-knowledge skill** — guidance on what NOT to store, content size limits, title-as-description pattern, update-vs-delete convention
 - **API PATCH /memories/:id** — REST endpoint for partial memory updates
 - **SDK + CLI support** — `memories.update()` in SDK, `orc mem edit` in CLI
-- **326 tests** (10 new covering update, source, similarity, scoring)
+
+### v0.1.x — Standalone Binary & Daemon
+
+- **Embedded web assets** — standalone binaries include all web dashboard files via Bun's `import ... with { type: "file" }` embedding; GH release downloads are a single file, no `dist/web/` directory needed
+- **`orc daemon install/uninstall`** — cross-platform auto-start registration (Windows registry Run key, macOS launchd, Linux systemd user service); no admin/root privileges required
+- **`@tobilu/qmd` moved to optionalDependencies** — fixes deprecated `prebuild-install` warning; code already lazy-loads it
+- **352 automated tests** across 24 test files
 
 ## What's Next
 

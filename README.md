@@ -32,7 +32,7 @@ ORC fixes this. Shared memory across every session. A task board where agents su
 | **Task board** | `todo → queued → doing → review → done` with dependency tracking, priority, and automatic unblocking |
 | **Multi-backend routing** | Route to Claude Code, ACPX (Agent Communication Protocol, 14+ agents), or remote A2A endpoints; unknown names fall through to ACPX |
 | **Job runner** | Cron, file-watch, webhook, or manual triggers with full run history |
-| **MCP server** | 20 tools connect any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) compatible agent with one config line |
+| **MCP server** | 28 tools connect any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) compatible agent with one config line |
 | **Session continuity** | Snapshots survive context compaction so agents resume where they left off |
 | **Gateway** | Approve work, search memory, and chat with live agents from Telegram or Slack |
 | **Knowledge search** | Index document collections (markdown, notes, wikis) and search them via BM25 or hybrid (vector + reranking) |
@@ -406,14 +406,14 @@ Add custom skills by creating a `SKILL.md` in `~/.orc/skills/my-workflow/SKILL.m
 
 ## MCP tools
 
-**26 tools** available to any connected agent. Start every session with `context`.
+**28 tools** available to any connected agent. Start every session with `context`.
 
 | Category | Tools |
 |---|---|
 | **Project** | `project_list` |
-| **Memory** | `context`, `memory_search`, `memory_get`, `memory_store` |
+| **Memory** | `context`, `memory_search`, `memory_get`, `memory_store`, `memory_update` |
 | **Task** | `task_list`, `task_get`, `task_create`, `task_update`, `task_batch_create` |
-| **Skill** | `skill_list`, `skill_read` |
+| **Skill** | `skill_list`, `skill_read`, `skill_create` |
 | **Knowledge** | `knowledge_search`, `knowledge_get`, `knowledge_collections`, `knowledge_collection_add`, `knowledge_collection_remove`, `knowledge_update` |
 | **Search** | `search` |
 | **Job** | `job_list`, `job_run`, `job_status` |
@@ -459,6 +459,7 @@ Runs on port 7700 with auto-generated OpenAPI spec.
 
 ```
 orc daemon start|stop|status     Manage the daemon (API + scheduler + gateway)
+orc daemon install|uninstall     Register/remove auto-start on login/boot
 orc api                          Start the API server only
 orc mcp                          Start the MCP server (stdio)
 orc home                         Show ~/.orc directory and config
@@ -470,10 +471,11 @@ orc mem list|add|search
 orc job list|add|run|runs
 orc session list|show|log
 orc skill list|show
+orc kb search|get|collections|add|remove|update|status
 ```
 
 > [!NOTE]
-> All task/mem/job commands default to the active project. Use `-p <name>` to override or `--no-project` to see everything. Add `--json` for machine-readable output.
+> All task/mem/job/kb commands default to the active project. Use `-p <name>` to override or `--no-project` to see everything. Add `--json` for machine-readable output.
 
 ## Configuration
 
@@ -519,17 +521,35 @@ grep '"level":"error"' ~/.orc/logs/orc.log | tail -20
 tail -f ~/.orc/logs/orc.log | jq .
 ```
 
-### Running as a service
+### Running as a background service
+
+The daemon runs the API server, job scheduler, file watchers, and gateway in one process. To start it automatically on login/boot:
 
 ```bash
-# PM2 (any platform)
-pm2 start "orc daemon start" --name orc
-pm2 save && pm2 startup
+orc daemon install     # register auto-start for your OS
+orc daemon uninstall   # remove auto-start registration
 ```
 
-**macOS (launchd):** `ProgramArguments: ["/usr/local/bin/orc", "daemon", "start"]` with `RunAtLoad` and `KeepAlive`.
+| Platform | Mechanism | Auto-restart on crash |
+| --- | --- | --- |
+| **Windows** | Registry Run key (`HKCU\...\Run`) | No |
+| **macOS** | launchd (`~/Library/LaunchAgents/com.orc.daemon.plist`) | Yes |
+| **Linux** | systemd user service (`~/.config/systemd/user/orc-daemon.service`) | Yes |
 
-**Linux (systemd):** `ExecStart=/usr/local/bin/orc daemon start` with `Restart=on-failure`.
+No admin/root privileges required on any platform.
+
+```bash
+# Manual control
+orc daemon start       # start in foreground (API + scheduler + gateway)
+orc daemon stop        # stop a running daemon
+orc daemon status      # show scheduled jobs
+orc api                # start the API server only (no scheduler/gateway)
+
+# Check daemon health
+curl http://localhost:7700/health
+```
+
+Logs go to `~/.orc/daemon.log`. Config is read from `~/.orc/config.json`.
 
 ## Architecture
 

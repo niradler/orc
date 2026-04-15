@@ -90,6 +90,7 @@ export default function Knowledge({ projectId: savedProjectId }: { projectId: st
             Search
           </TabsTrigger>
           <TabsTrigger
+            data-testid="knowledge-collections-tab"
             value="collections"
             className="font-label text-[10px] uppercase tracking-widest px-4 py-2 rounded-none
               data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none
@@ -309,6 +310,7 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
             {reindex.isPending ? "Indexing..." : "Reindex All"}
           </Button>
           <Button
+            data-testid="add-collection-button"
             size="sm"
             onClick={() => setCreating(true)}
             className="font-label text-xs uppercase tracking-widest bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
@@ -358,6 +360,8 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
               {(collections ?? []).map((c) => (
                 <TableRow
                   key={c.name}
+                  data-testid="collection-row"
+                  data-collection-name={c.name}
                   className="border-b border-surface-highest/50 hover:bg-surface-low"
                 >
                   <TableCell className="font-label text-xs font-semibold text-primary">
@@ -389,6 +393,7 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
                       </button>
                       <button
                         type="button"
+                        data-testid="collection-delete"
                         onClick={() => setDeleting(c.name)}
                         className="text-outline hover:text-error transition-colors p-1"
                         title="Delete"
@@ -477,6 +482,7 @@ function AddCollectionDialog({
               Name *
             </Label>
             <Input
+              data-testid="collection-name-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="my-docs"
@@ -489,6 +495,7 @@ function AddCollectionDialog({
               Path *
             </Label>
             <Input
+              data-testid="collection-path-input"
               value={path}
               onChange={(e) => setPath(e.target.value)}
               placeholder="/path/to/documents"
@@ -530,6 +537,7 @@ function AddCollectionDialog({
               Cancel
             </Button>
             <Button
+              data-testid="collection-submit"
               type="submit"
               size="sm"
               disabled={addCollection.isPending || !name.trim() || !path.trim()}

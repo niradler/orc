@@ -30,6 +30,7 @@ const TaskSchema = z
     skill_name: z.string().nullable(),
     required_review: z.boolean(),
     agent_backend: z.string().nullable(),
+    agent_model: z.string().nullable(),
     max_review_rounds: z.number().int(),
     comments_count: z.number().int().optional(),
     created_at: z.string().datetime(),
@@ -61,6 +62,7 @@ const CreateTaskSchema = z
     skill_name: z.string().optional(),
     required_review: z.boolean().optional().default(true),
     agent_backend: AgentBackendSchema.optional(),
+    agent_model: z.string().optional(),
     max_review_rounds: z.number().int().min(1).optional().default(3),
   })
   .openapi("CreateTask");
@@ -73,11 +75,14 @@ const UpdateTaskSchema = z
     priority: TaskPrioritySchema.optional(),
     progress: z.number().int().min(0).max(100).optional(),
     project_id: z.string().nullable().optional(),
-    due_at: z.string().datetime().optional(),
+    due_at: z.string().datetime().nullable().optional(),
     tags: z.array(z.string()).nullable().optional(),
     comment: z.string().optional(),
-    agent_backend: AgentBackendSchema.optional(),
-    skill_name: z.string().optional(),
+    agent_backend: AgentBackendSchema.nullable().optional(),
+    agent_model: z.string().optional(),
+    skill_name: z.string().nullable().optional(),
+    required_review: z.boolean().optional(),
+    max_review_rounds: z.number().int().min(1).optional(),
   })
   .openapi("UpdateTask");
 
@@ -160,6 +165,7 @@ const BatchTaskItem = z.object({
   skill_name: z.string().optional(),
   required_review: z.boolean().optional().default(true),
   agent_backend: AgentBackendSchema.optional(),
+  agent_model: z.string().optional(),
   max_review_rounds: z.number().int().min(1).optional().default(3),
   depends_on: z.array(z.string()).optional().describe("Refs of tasks that block this one"),
   subtask_of: z.string().optional().describe("Ref of parent task"),
@@ -249,6 +255,7 @@ function toDto(t: typeof tasks.$inferSelect, commentsCount?: number) {
     claim_expires_at: t.claim_expires_at?.toISOString() ?? null,
     required_review: t.required_review,
     agent_backend: t.agent_backend ?? null,
+    agent_model: t.agent_model ?? null,
     max_review_rounds: t.max_review_rounds,
     comments_count: commentsCount ?? 0,
     created_at: t.created_at.toISOString(),
@@ -374,6 +381,7 @@ app.openapi(createRoute_, async (c) => {
     skill_name: body.skill_name,
     required_review: body.required_review ?? true,
     agent_backend: body.agent_backend as string | undefined,
+    agent_model: body.agent_model,
     max_review_rounds: body.max_review_rounds ?? 3,
     created_at: now,
     updated_at: now,
@@ -395,7 +403,7 @@ app.openapi(updateRoute, async (c) => {
   const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!existing) throw new NotFoundError("Task", id);
 
-  if (body.status) {
+  if (body.status && body.status !== existing.status) {
     const result = await updateTaskStatus({
       taskId: id,
       status: body.status as TaskStatus,
@@ -413,10 +421,13 @@ app.openapi(updateRoute, async (c) => {
     ...(body.priority !== undefined ? { priority: body.priority } : {}),
     ...(body.progress !== undefined ? { progress: body.progress } : {}),
     ...(body.project_id !== undefined ? { project_id: body.project_id } : {}),
-    ...(body.due_at !== undefined ? { due_at: new Date(body.due_at) } : {}),
+    ...(body.due_at !== undefined ? { due_at: body.due_at ? new Date(body.due_at) : null } : {}),
     ...(body.tags !== undefined ? { tags: body.tags } : {}),
     ...(body.agent_backend !== undefined ? { agent_backend: body.agent_backend } : {}),
+    ...(body.agent_model !== undefined ? { agent_model: body.agent_model } : {}),
     ...(body.skill_name !== undefined ? { skill_name: body.skill_name } : {}),
+    ...(body.required_review !== undefined ? { required_review: body.required_review } : {}),
+    ...(body.max_review_rounds !== undefined ? { max_review_rounds: body.max_review_rounds } : {}),
   };
   if (Object.keys(nonStatusFields).length > 0) {
     await db
@@ -502,6 +513,7 @@ app.openapi(batchCreateRoute, async (c) => {
         skill_name: item.skill_name,
         required_review: item.required_review ?? true,
         agent_backend: item.agent_backend as string | undefined,
+        agent_model: item.agent_model,
         max_review_rounds: item.max_review_rounds ?? 3,
         created_at: now,
         updated_at: now,

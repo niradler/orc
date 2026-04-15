@@ -75,6 +75,8 @@ export default function Sessions({ projectId: savedProjectId }: { projectId: str
               {visible.map((s) => (
                 <TableRow
                   key={s.id}
+                  data-testid="session-row"
+                  data-session-id={s.id}
                   className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
                   onClick={() => openDetail(s.id)}
                 >

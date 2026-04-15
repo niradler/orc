@@ -40,32 +40,26 @@ export function createApp() {
     return c.json({ error: "Internal server error", code: "INTERNAL_ERROR" }, 500);
   });
 
-  // Routers are registered at root for SDK/CLI/MCP backwards compatibility
-  // and under `/api` for the web dashboard (which calls `/api/*`).
-  const mountRouters = (prefix: string) => {
-    app.route(prefix, chatRouter);
-    app.route(prefix, healthRouter);
-    app.route(prefix, mcpToolRouter);
-    app.route(prefix, projectsRouter);
-    app.route(prefix, skillsRouter);
-    app.route(prefix, tasksRouter);
-    app.route(prefix, taskLinksRouter);
-    app.route(prefix, memoriesRouter);
-    app.route(prefix, knowledgeRouter);
-    app.route(prefix, sessionsRouter);
-    app.route(prefix, jobsRouter);
-    app.route(prefix, gatewayRouter);
-    app.route(prefix, tagsRouter);
-  };
-  mountRouters("/");
-  mountRouters("/api");
+  app.route("/api", chatRouter);
+  app.route("/api", healthRouter);
+  app.route("/api", mcpToolRouter);
+  app.route("/api", projectsRouter);
+  app.route("/api", skillsRouter);
+  app.route("/api", tasksRouter);
+  app.route("/api", taskLinksRouter);
+  app.route("/api", memoriesRouter);
+  app.route("/api", knowledgeRouter);
+  app.route("/api", sessionsRouter);
+  app.route("/api", jobsRouter);
+  app.route("/api", gatewayRouter);
+  app.route("/api", tagsRouter);
 
   app.doc("/openapi.json", {
     openapi: "3.1.0",
     info: {
       title: "Orc API",
       version: ORC_VERSION,
-      description: "Human + AI Orchestration Hub API",
+      description: "AI Orchestration Hub API",
     },
     servers: [{ url: `http://${config.api.host}:${config.api.port}`, description: "Local" }],
   });

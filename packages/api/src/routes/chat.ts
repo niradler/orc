@@ -28,6 +28,13 @@ type AcpxJsonRpc = {
   };
 };
 
+function buildMockReply(messages: ChatMessage[]): string {
+  const lastUser = [...messages].reverse().find((message) => message.role === "user");
+  const content = lastUser?.content.trim() ?? "";
+  const exactReply = content.match(/Reply with exactly:\s*([^.?!\n]+)[.?!]?/i);
+  return exactReply?.[1]?.trim() || content || "ok";
+}
+
 function parseTextFromLine(line: string): string | null {
   let msg: AcpxJsonRpc;
   try {
@@ -110,6 +117,17 @@ app.post("/chat/stream", async (c) => {
   }
   const systemPrompt = body.system;
   const autoApprove = body.autoApprove ?? true;
+
+  if (process.env.ORC_E2E_CHAT_MOCK === "1") {
+    const text = buildMockReply(messages);
+    return streamSSE(c, async (s) => {
+      await s.writeSSE({ data: JSON.stringify({ type: "open" }) });
+      await Bun.sleep(75);
+      await s.writeSSE({ data: JSON.stringify({ type: "text", text }) });
+      await Bun.sleep(75);
+      await s.writeSSE({ data: JSON.stringify({ type: "done" }) });
+    });
+  }
 
   const acpxPath = Bun.which("acpx");
   if (!acpxPath) {

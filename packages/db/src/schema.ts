@@ -56,6 +56,7 @@ export const tasks = sqliteTable("tasks", {
   skill_name: text("skill_name"),
   required_review: integer("required_review", { mode: "boolean" }).default(true).notNull(),
   agent_backend: text("agent_backend"),
+  agent_model: text("agent_model"),
   max_review_rounds: integer("max_review_rounds").default(3).notNull(),
   ...timestamps,
 });

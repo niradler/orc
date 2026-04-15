@@ -7,9 +7,9 @@
     "build": "bun --env-file ../../.env run tsc -b && bun --env-file ../../.env vite build",
     "preview": "bun --env-file ../../.env vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "bun --env-file=../../.env run playwright test",
-    "test:e2e": "bun --env-file=../../.env run playwright test",
-    "test:e2e:ui": "bun --env-file=../../.env run playwright test --ui",
+    "test": "bun run scripts/run-e2e.ts",
+    "test:e2e": "bun run scripts/run-e2e.ts",
+    "test:e2e:ui": "bun run scripts/run-e2e.ts --ui",
     "clean": "rm -rf dist"
   },
   "dependencies": {

@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { apiDelete, apiPatch, apiPost, gotoView, tid } from "./_helpers";
+import { API_BASE, apiDelete, apiPatch, apiPost, gotoView, tid } from "./_helpers";
 
 interface Task {
   id: string;
@@ -88,7 +88,7 @@ test.describe("Kanban drag & drop", () => {
         .poll(
           async () => {
             const res = await request.get(
-              `http://localhost:${process.env.ORC_API_PORT ?? "7721"}/tasks/${task.id}`,
+              `${API_BASE}/tasks/${task.id}`,
             );
             if (!res.ok()) return null;
             return ((await res.json()) as Task).status;
@@ -101,7 +101,7 @@ test.describe("Kanban drag & drop", () => {
     }
   });
 
-  test("free drag (done → doing) is allowed in Trello-like mode", async ({ page, request }) => {
+  test("free drag (done → doing) is allowed in kanban mode", async ({ page, request }) => {
     const title = tid("pw-kanban-free-drag");
     const task = await apiPost<Task>(request, "/tasks", {
       title,
@@ -125,7 +125,7 @@ test.describe("Kanban drag & drop", () => {
         .poll(
           async () => {
             const res = await request.get(
-              `http://localhost:${process.env.ORC_API_PORT ?? "7721"}/tasks/${task.id}`,
+              `${API_BASE}/tasks/${task.id}`,
             );
             if (!res.ok()) return null;
             return ((await res.json()) as Task).status;

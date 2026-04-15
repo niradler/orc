@@ -133,6 +133,10 @@ export const toolDefinitions = [
       agent_backend: AgentBackendSchema.optional().describe(
         "Agent backend for task execution (e.g. claude, codex, gemini, a2a)",
       ),
+      agent_model: z
+        .string()
+        .optional()
+        .describe("Model override for the agent (e.g. gpt-5.4, o3-mini)"),
       max_review_rounds: z
         .number()
         .int()
@@ -167,6 +171,10 @@ export const toolDefinitions = [
       agent_backend: AgentBackendSchema.optional().describe(
         "Agent backend for task execution (e.g. claude, acpx, a2a, gemini)",
       ),
+      agent_model: z
+        .string()
+        .optional()
+        .describe("Model override for the agent (e.g. gpt-5.4, o3-mini)"),
     }),
   },
   {
@@ -186,6 +194,7 @@ export const toolDefinitions = [
             skill_name: z.string().optional().describe("Skill for agent execution"),
             required_review: z.boolean().optional().default(true),
             agent_backend: AgentBackendSchema.optional(),
+            agent_model: z.string().optional().describe("Model override for the agent"),
             max_review_rounds: z.number().int().min(1).optional().default(3),
             depends_on: z
               .array(z.string())
@@ -584,6 +593,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         skill_name,
         required_review,
         agent_backend,
+        agent_model,
         max_review_rounds,
       } = args as {
         title: string;
@@ -595,6 +605,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         skill_name?: string;
         required_review?: boolean;
         agent_backend?: string;
+        agent_model?: string;
         max_review_rounds?: number;
       };
       const resolved = resolveProjectId(project);
@@ -612,6 +623,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         skill_name,
         required_review: required_review ?? true,
         agent_backend: agent_backend as string | undefined,
+        agent_model,
         max_review_rounds: max_review_rounds ?? 3,
         created_at: now,
         updated_at: now,
@@ -624,13 +636,14 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "task_update": {
-      const { id, status, body, priority, comment, agent_backend } = args as {
+      const { id, status, body, priority, comment, agent_backend, agent_model } = args as {
         id: string;
         status?: string;
         body?: string;
         priority?: string;
         comment?: string;
         agent_backend?: string;
+        agent_model?: string;
       };
       if (status) {
         const result = await updateTaskStatus({
@@ -643,13 +656,14 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       } else if (comment) {
         await addTaskComment(id, comment, "agent");
       }
-      if (body !== undefined || priority || agent_backend !== undefined) {
+      if (body !== undefined || priority || agent_backend !== undefined || agent_model !== undefined) {
         await db
           .update(tasks)
           .set({
             ...(body !== undefined ? { body } : {}),
             ...(priority ? { priority: priority as "low" } : {}),
             ...(agent_backend !== undefined ? { agent_backend } : {}),
+            ...(agent_model !== undefined ? { agent_model } : {}),
             updated_at: new Date(),
           })
           .where(eq(tasks.id, id));
@@ -980,6 +994,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           skill_name?: string;
           required_review?: boolean;
           agent_backend?: string;
+          agent_model?: string;
           max_review_rounds?: number;
           depends_on?: string[];
           subtask_of?: string;
@@ -1006,6 +1021,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           skill_name: item.skill_name,
           required_review: item.required_review ?? true,
           agent_backend: item.agent_backend as string | undefined,
+          agent_model: item.agent_model,
           max_review_rounds: item.max_review_rounds ?? 3,
           created_at: now,
           updated_at: now,

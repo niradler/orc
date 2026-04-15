@@ -571,7 +571,7 @@ function EditMemoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="bg-surface border-surface-highest max-w-lg">
+      <DialogContent data-testid="edit-memory-dialog" className="bg-surface border-surface-highest max-w-lg">
         <DialogHeader>
           <DialogTitle className="font-headline text-sm uppercase tracking-widest text-on-surface">
             Edit Memory
@@ -633,6 +633,7 @@ function EditMemoryDialog({
               Content *
             </Label>
             <Textarea
+              data-testid="edit-memory-content-input"
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="Memory content..."
@@ -686,6 +687,7 @@ function EditMemoryDialog({
               Cancel
             </Button>
             <Button
+              data-testid="edit-memory-submit"
               type="submit"
               size="sm"
               disabled={updateMemory.isPending || !content.trim()}

@@ -1,12 +1,9 @@
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { mkdirSync, readFileSync } from "node:fs";
 
 const pkg = JSON.parse(readFileSync("./package.json", "utf-8"));
 mkdirSync("dist", { recursive: true });
 
-// Ensure the web dashboard is built before we bundle the CLI. `bun build --compile`
-// cannot embed static HTML/JS assets, so we ship them as a `dist/web/` directory
-// alongside each binary and the API server serves them at runtime.
+// 1. Build the web dashboard
 console.log("Building web dashboard...");
 {
   const proc = Bun.spawnSync(["bun", "run", "--filter", "@orc/web", "build"], {
@@ -16,16 +13,17 @@ console.log("Building web dashboard...");
   if (proc.exitCode !== 0) process.exit(1);
 }
 
-const webDistSrc = join("..", "web", "dist");
-const webDistDest = join("dist", "web");
-if (!existsSync(join(webDistSrc, "index.html"))) {
-  console.error(`Expected ${webDistSrc}/index.html after web build — aborting.`);
-  process.exit(1);
+// 2. Generate the embedded-asset manifest (import with { type: "file" })
+console.log("Generating web asset manifest...");
+{
+  const proc = Bun.spawnSync(["bun", "run", "scripts/generate-web-manifest.ts"], {
+    stderr: "inherit",
+    stdout: "inherit",
+  });
+  if (proc.exitCode !== 0) process.exit(1);
 }
-rmSync(webDistDest, { recursive: true, force: true });
-cpSync(webDistSrc, webDistDest, { recursive: true });
-console.log(`Copied web dist → ${webDistDest}`);
 
+// 3. Cross-compile standalone binaries — each embeds the web dashboard.
 const targets = [
   { target: "bun-linux-x64", out: "dist/orc-linux-x64" },
   { target: "bun-linux-arm64", out: "dist/orc-linux-arm64" },
@@ -39,7 +37,7 @@ for (const { target, out } of targets) {
   const proc = Bun.spawnSync([
     "bun",
     "build",
-    "./src/index.ts",
+    "./src/bin-entry.ts",
     "--compile",
     "--minify",
     "--target",
@@ -62,4 +60,4 @@ for (const { target, out } of targets) {
   console.log(proc.stdout.toString());
 }
 
-console.log("All builds complete. Ship dist/web/ alongside each binary for the dashboard to work.");
+console.log("All builds complete. Each binary includes the web dashboard — no extra files needed.");

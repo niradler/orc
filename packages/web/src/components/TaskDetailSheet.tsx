@@ -394,6 +394,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                     </div>
                     <div className="flex justify-end">
                       <Button
+                        data-testid="task-comment-submit"
                         size="sm"
                         onClick={handleAddComment}
                         disabled={addComment.isPending || !commentText.trim()}
@@ -485,7 +486,7 @@ function EditTaskDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="bg-surface border-surface-highest max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent data-testid="edit-task-dialog" className="bg-surface border-surface-highest max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-headline text-sm uppercase tracking-widest text-on-surface">
             Edit Task
@@ -497,6 +498,7 @@ function EditTaskDialog({
               Title *
             </Label>
             <Input
+              data-testid="edit-task-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               className="bg-background border-surface-highest text-on-surface font-body text-xs"
@@ -662,6 +664,7 @@ function EditTaskDialog({
               Cancel
             </Button>
             <Button
+              data-testid="edit-task-submit"
               type="submit"
               size="sm"
               disabled={updateTask.isPending || !title.trim()}
