@@ -28,8 +28,10 @@ describe("clamp", () => {
 });
 
 describe("roundTo", () => {
-  test("rounds to 0 decimal places", () => {
-    expect(roundTo(3.7, 0)).toBe(4);
+  test("returns integer 4 when rounding 3.7 to 0 decimal places", () => {
+    const result = roundTo(3.7, 0);
+    expect(result).toBe(4);
+    expect(Number.isInteger(result)).toBe(true);
   });
 
   test("rounds to 2 decimal places", () => {
