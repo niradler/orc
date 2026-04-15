@@ -1,6 +1,6 @@
 import type { GatewayAdapter, SupportsMessageUpdate } from "./types.js";
 
-const MIN_INTERVAL_MS = 1500;
+const MIN_INTERVAL_MS = 600;
 const MIN_DELTA = 30;
 const MAX_LENGTH = 3000;
 

@@ -371,19 +371,23 @@ class GatewayManager {
       await (adapter as GatewayAdapter & SupportsTyping).showTyping(message.chatId).catch(() => {});
     }
 
-    const previewMsgId = await adapter.send(message.chatId, `${session.backend} is thinking…`, {
+    const thinkingMsg = `⏳ ${session.backend} is thinking…`;
+    const previewMsgId = await adapter.send(message.chatId, thinkingMsg, {
       threadId: message.threadId,
     });
 
     let preview: PreviewManager | null = null;
     if (previewMsgId && PreviewManager.supports(adapter)) {
       preview = new PreviewManager(adapter);
-      await preview.init(
-        session.id,
-        message.chatId,
-        previewMsgId,
-        `${session.backend} is thinking…`,
-      );
+      await preview.init(session.id, message.chatId, previewMsgId, thinkingMsg);
+    }
+
+    let typingInterval: ReturnType<typeof setInterval> | null = null;
+    if ("showTyping" in adapter) {
+      const typingAdapter = adapter as GatewayAdapter & SupportsTyping;
+      typingInterval = setInterval(() => {
+        typingAdapter.showTyping(message.chatId).catch(() => {});
+      }, 4000);
     }
 
     await updateGatewaySession(session.id, { status: "running", last_activity_at: new Date() });
@@ -413,6 +417,8 @@ class GatewayManager {
         previewMsgId,
         preview,
       );
+
+      if (typingInterval) { clearInterval(typingInterval); typingInterval = null; }
 
       await updateGatewaySession(session.id, {
         status: "idle",
@@ -445,6 +451,7 @@ class GatewayManager {
 
       if (message.fromVoice) await this.trySendVoiceReply(message, result.output);
     } catch (err) {
+      if (typingInterval) { clearInterval(typingInterval); typingInterval = null; }
       preview?.cleanup(session.id);
       const errorText = `Agent error: ${err instanceof Error ? err.message : String(err)}`;
       await updateGatewaySession(session.id, {
