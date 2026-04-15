@@ -438,6 +438,11 @@ app.openapi(updateRoute, async (c) => {
 
   const updated = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!updated) throw new Error("Expected updated to exist after write");
+
+  import("@orc/runner")
+    .then((m) => m.triggerTaskCheck())
+    .catch((err) => logger.warn("triggerTaskCheck failed", { err }));
+
   return c.json(toDto(updated, getCommentsCountForTask(id)));
 });
 

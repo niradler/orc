@@ -420,7 +420,7 @@ JOB_AFTER=$($ORC --json job list 2>&1)
 # Note: job delete fails if sessions reference job_runs (FK constraint without cascade)
 TOTAL=$((TOTAL + 1))
 if echo "$JOB_AFTER" | grep -q "e2e-job"; then
-  echo -e "  ${YELLOW}SKIP${NC} job delete (FK constraint — sessions reference job_runs)"
+  echo -e "  ${YELLOW}SKIP${NC} job delete (FK constraint - sessions reference job_runs)"
   PASS=$((PASS + 1))  # known issue, don't count as fail
 else
   PASS=$((PASS + 1))

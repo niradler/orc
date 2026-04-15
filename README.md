@@ -20,23 +20,23 @@ ORC coordinates Claude Code, Cursor, Codex, Gemini, and remote A2A agents throug
 
 Every AI agent session is an island. Start a new session and it knows nothing about the last one. Run two in parallel and they can't coordinate. Switch agents and you start from zero.
 
-ORC fixes this. Shared memory across every session. A task board where agents submit work and you approve it. A scheduler that runs agents on a cron. All backed by a single SQLite file — no cloud, no account, no subscription.
+ORC fixes this. Shared memory across every session. A task board where agents submit work and you approve it. A scheduler that runs agents on a cron. All backed by a single SQLite file - no cloud, no account, no subscription.
 
 ### Key features
 
-| Feature | What it does |
-|---|---|
-| **Agent orchestration** | Task loop spawns workers across backends (Claude Code, Codex, Gemini, Copilot, A2A), manages concurrency and review cycles |
-| **Human-in-the-loop** | Agents submit work for your approval via CLI, Telegram, or Slack before anything lands |
-| **Shared memory** | Decisions, rules, and discoveries stored once, searchable by any session via ranked full-text search |
-| **Task board** | `todo → queued → doing → review → done` with dependency tracking, priority, and automatic unblocking |
+| Feature                   | What it does                                                                                                                       |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **Agent orchestration**   | Task loop spawns workers across backends (Claude Code, Codex, Gemini, Copilot, A2A), manages concurrency and review cycles         |
+| **Human-in-the-loop**     | Agents submit work for your approval via CLI, Telegram, or Slack before anything lands                                             |
+| **Shared memory**         | Decisions, rules, and discoveries stored once, searchable by any session via ranked full-text search                               |
+| **Task board**            | `todo → queued → doing → review → done` with dependency tracking, priority, and automatic unblocking                               |
 | **Multi-backend routing** | Route to Claude Code, ACPX (Agent Communication Protocol, 14+ agents), or remote A2A endpoints; unknown names fall through to ACPX |
-| **Job runner** | Cron, file-watch, webhook, or manual triggers with full run history |
-| **MCP server** | 28 tools connect any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) compatible agent with one config line |
-| **Session continuity** | Snapshots survive context compaction so agents resume where they left off |
-| **Gateway** | Approve work, search memory, and chat with live agents from Telegram or Slack |
-| **Knowledge search** | Index document collections (markdown, notes, wikis) and search them via BM25 or hybrid (vector + reranking) |
-| **Skill library** | Discoverable workflow templates (coder, reviewer, planner, bugfix) that encode your standards |
+| **Job runner**            | Cron, file-watch, webhook, or manual triggers with full run history                                                                |
+| **MCP server**            | 28 tools connect any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) compatible agent with one config line         |
+| **Session continuity**    | Snapshots survive context compaction so agents resume where they left off                                                          |
+| **Gateway**               | Approve work, search memory, and chat with live agents from Telegram or Slack                                                      |
+| **Knowledge search**      | Index document collections (markdown, notes, wikis) and search them via BM25 or hybrid (vector + reranking)                        |
+| **Skill library**         | Discoverable workflow templates (coder, reviewer, planner, bugfix) that encode your standards                                      |
 
 ## Getting started
 
@@ -70,7 +70,7 @@ curl -L https://github.com/niradler/orc/releases/latest/download/orc-linux-x64 -
 # Linux (ARM64)
 curl -L https://github.com/niradler/orc/releases/latest/download/orc-linux-arm64 -o /usr/local/bin/orc && chmod +x /usr/local/bin/orc
 
-# Windows — download orc-windows-x64.exe from the release page and add to PATH
+# Windows - download orc-windows-x64.exe from the release page and add to PATH
 ```
 
 #### From source
@@ -85,14 +85,14 @@ cd orc && bun install && bun build
 ### Quick start
 
 ```bash
-# 1. Start the daemon — runs the REST API on :7700, task loop, job scheduler, gateway, and web UI
+# 1. Start the daemon - runs the REST API on :7700, task loop, job scheduler, gateway, and web UI
 orc daemon start
 
 # 2. Create a project
 orc project add my-app -d "My application"
 orc project use my-app
 
-# 3. Add tasks and memories — everything auto-scopes to my-app
+# 3. Add tasks and memories - everything auto-scopes to my-app
 orc task add "Fix the auth bug" --priority high
 orc mem add "Use RWMutex for token refresh" --type decision
 orc job add nightly --command "bun run test" --trigger cron --cron "0 22 * * *"
@@ -102,7 +102,7 @@ orc status
 orc task list
 ```
 
-Open `http://localhost:7700` to use the web dashboard — task board, kanban, jobs, memories, sessions, knowledge, and a live chat panel. The same server hosts both the REST API and the prebuilt React SPA, so there is no separate command to run for the UI.
+Open `http://localhost:7700` to use the web dashboard - task board, kanban, jobs, memories, sessions, knowledge, and a live chat panel. The same server hosts both the REST API and the prebuilt React SPA, so there is no separate command to run for the UI.
 
 > [!TIP]
 > The database is created automatically at `~/.orc/orc.db` on first run. No setup needed.
@@ -111,13 +111,13 @@ Open `http://localhost:7700` to use the web dashboard — task board, kanban, jo
 
 The web dashboard ships inside the `orc` binary and is served by the API process at the root path. Endpoints are still reachable at both `/<route>` (legacy SDK/CLI/MCP) and `/api/<route>` (used by the dashboard's browser client).
 
-| Route | Served from |
-|---|---|
-| `GET /` | `index.html` (web SPA shell) |
-| `GET /assets/*` | Built JS/CSS bundles |
-| `GET /api/*` | All REST routes (mirrors the root mount) |
-| `GET /openapi.json`, `GET /docs` | Swagger UI |
-| `GET /tasks`, `/memories`, … | Same handler as `/api/<...>`, kept for SDK/CLI/MCP backwards compat |
+| Route                            | Served from                                                         |
+| -------------------------------- | ------------------------------------------------------------------- |
+| `GET /`                          | `index.html` (web SPA shell)                                        |
+| `GET /assets/*`                  | Built JS/CSS bundles                                                |
+| `GET /api/*`                     | All REST routes (mirrors the root mount)                            |
+| `GET /openapi.json`, `GET /docs` | Swagger UI                                                          |
+| `GET /tasks`, `/memories`, …     | Same handler as `/api/<...>`, kept for SDK/CLI/MCP backwards compat |
 
 Override the served dist directory with `ORC_WEB_DIST=/path/to/web/dist` if you want to host a custom build (e.g. a fork). If no dist is found, the server runs in pure-API mode.
 
@@ -130,9 +130,39 @@ Add to `~/.claude/settings.json`:
 ```json
 {
   "hooks": {
-    "PostToolUse": [{ "matcher": "Write|Edit|MultiEdit|StrReplace|EditNotebook|Bash|Shell|Agent|EnterPlanMode|ExitPlanMode|mcp__orc__task_|mcp__orc__memory_store|mcp__orc__memory_delete|mcp__orc__job_run|mcp__orc__job_create|mcp__orc__job_update", "hooks": [{ "type": "command", "command": "bun /path/to/orc/hooks/post-tool-use.ts" }] }],
-    "PreCompact":  [{ "matcher": "", "hooks": [{ "type": "command", "command": "bun /path/to/orc/hooks/pre-compact.ts" }] }],
-    "SessionStart":[{ "matcher": "", "hooks": [{ "type": "command", "command": "bun /path/to/orc/hooks/session-start.ts" }] }]
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|StrReplace|EditNotebook|Bash|Shell|Agent|EnterPlanMode|ExitPlanMode|mcp__orc__task_|mcp__orc__memory_store|mcp__orc__memory_delete|mcp__orc__job_run|mcp__orc__job_create|mcp__orc__job_update",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun /path/to/orc/hooks/post-tool-use.ts"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun /path/to/orc/hooks/pre-compact.ts"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bun /path/to/orc/hooks/session-start.ts"
+          }
+        ]
+      }
+    ]
   },
   "env": { "ORC_API_BASE": "http://127.0.0.1:7700", "ORC_PROJECT": "" }
 }
@@ -151,7 +181,10 @@ Add to `.cursor/mcp.json`:
     "orc": {
       "command": "orc",
       "args": ["mcp"],
-      "env": { "ORC_API_BASE": "http://127.0.0.1:7700", "ORC_SESSION_ID": "cursor" }
+      "env": {
+        "ORC_API_BASE": "http://127.0.0.1:7700",
+        "ORC_SESSION_ID": "cursor"
+      }
     }
   }
 }
@@ -160,9 +193,9 @@ Add to `.cursor/mcp.json`:
 <details>
 <summary>Codex, Gemini CLI, and other MCP agents</summary>
 
-**Codex** — Copy `hooks/codex/settings.json` to `~/.codex/settings.json` and update the path.
+**Codex** - Copy `hooks/codex/settings.json` to `~/.codex/settings.json` and update the path.
 
-**Gemini CLI / any MCP agent** — Add to your MCP config:
+**Gemini CLI / any MCP agent** - Add to your MCP config:
 
 ```json
 {
@@ -170,7 +203,10 @@ Add to `.cursor/mcp.json`:
     "orc": {
       "command": "orc",
       "args": ["mcp"],
-      "env": { "ORC_API_BASE": "http://127.0.0.1:7700", "ORC_SESSION_ID": "gemini" }
+      "env": {
+        "ORC_API_BASE": "http://127.0.0.1:7700",
+        "ORC_SESSION_ID": "gemini"
+      }
     }
   }
 }
@@ -191,7 +227,7 @@ Add to `.cursor/mcp.json`:
 6. Session ends          → session_log() records what happened
 ```
 
-When a context window fills up, `session_snapshot` captures current state into a compact 2KB blob that `session_restore` injects back after compaction — the agent picks up where it left off.
+When a context window fills up, `session_snapshot` captures current state into a compact 2KB blob that `session_restore` injects back after compaction - the agent picks up where it left off.
 
 ### Agent orchestration
 
@@ -213,12 +249,12 @@ The loop handles concurrency, session resume on feedback, review round limits, s
 
 #### Agent backends
 
-| Backend | Description |
-|---|---|
-| `claude` | Native Claude Code CLI. Falls back to ACPX on error. |
-| `acpx` | 14+ agents via [ACP CLI](https://github.com/AgenTool/acpx) — Codex, Gemini, Copilot, Kiro, Cursor, and more. |
-| `a2a` | Remote agents via [Google A2A protocol](https://github.com/google/A2A) (JSON-RPC over HTTP). |
-| *anything else* | Routes through ACPX with the name as `--agent` flag. |
+| Backend         | Description                                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------------------------ |
+| `claude`        | Native Claude Code CLI. Falls back to ACPX on error.                                                         |
+| `acpx`          | 14+ agents via [ACP CLI](https://github.com/AgenTool/acpx) - Codex, Gemini, Copilot, Kiro, Cursor, and more. |
+| `a2a`           | Remote agents via [Google A2A protocol](https://github.com/google/A2A) (JSON-RPC over HTTP).                 |
+| _anything else_ | Routes through ACPX with the name as `--agent` flag.                                                         |
 
 Enable the task loop in `~/.orc/config.json`:
 
@@ -251,7 +287,7 @@ orc task list --no-project    # see everything
 
 **Resolution order:** explicit `-p <name>` > `activeProject` from config > error
 
-MCP tools follow the same logic — pass `project: "name"` to scope, or omit to use the active project.
+MCP tools follow the same logic - pass `project: "name"` to scope, or omit to use the active project.
 
 ### Memory
 
@@ -263,13 +299,13 @@ orc mem add "Use PostgreSQL for concurrent writes" --type decision
 orc mem search "authentication"
 ```
 
-| Type | Weight | Use for |
-|---|---|---|
-| `rule` | High | Conventions: "all IDs are ULIDs" |
-| `decision` | High | Choices: "use PostgreSQL for concurrent writes" |
-| `discovery` | Medium | Findings: "token refresh has a race condition" |
-| `event` | Low | Things that happened: "deployed v1.0" |
-| `fact` | Low | General knowledge (default) |
+| Type        | Weight | Use for                                         |
+| ----------- | ------ | ----------------------------------------------- |
+| `rule`      | High   | Conventions: "all IDs are ULIDs"                |
+| `decision`  | High   | Choices: "use PostgreSQL for concurrent writes" |
+| `discovery` | Medium | Findings: "token refresh has a race condition"  |
+| `event`     | Low    | Things that happened: "deployed v1.0"           |
+| `fact`      | Low    | General knowledge (default)                     |
 
 ### Knowledge
 
@@ -289,7 +325,7 @@ orc knowledge list
 orc knowledge update
 ```
 
-Knowledge uses [QMD](https://github.com/nicholasgriffintn/qmd) as the search engine. By default it runs BM25 full-text search (no LLM needed). Set `search_mode: "hybrid"` in config for vector search with reranking — embeddings are generated automatically when documents are indexed.
+Knowledge uses [QMD](https://github.com/nicholasgriffintn/qmd) as the search engine. By default it runs BM25 full-text search (no LLM needed). Set `search_mode: "hybrid"` in config for vector search with reranking - embeddings are generated automatically when documents are indexed.
 
 Collections can be scoped to projects. When scoped, searches and listing filter to only that project's collections.
 
@@ -380,27 +416,27 @@ npx skills add niradler/orc --all -g
 
 ### Agent workflow skills
 
-| Skill | Triggers on |
-|---|---|
-| `orc-session` | Session start, context compaction, resuming work |
-| `orc-tasks` | Task creation, status updates, HITL review, task decomposition |
+| Skill           | Triggers on                                                                |
+| --------------- | -------------------------------------------------------------------------- |
+| `orc-session`   | Session start, context compaction, resuming work                           |
+| `orc-tasks`     | Task creation, status updates, HITL review, task decomposition             |
 | `orc-knowledge` | Storing decisions, searching memory, "remember this", "what did we decide" |
-| `orc-gateway` | Telegram/Slack setup, remote approval, live agent sessions |
+| `orc-gateway`   | Telegram/Slack setup, remote approval, live agent sessions                 |
 
 ### Built-in skill templates
 
 Skill templates live in `skills/*/SKILL.md` (built-in) and `~/.orc/skills/` (user-defined). Agents discover them via `skill_list` and load with `skill_read`.
 
-| Skill | Type | Purpose |
-|---|---|---|
-| `orc-worker-base` | Base | Default worker behavior — ORC awareness, status updates, deliverable format |
-| `orc-main-base` | Base | Orchestration agent — planning, decomposition, monitoring |
-| `orc-coder` | Workflow | Implementation — understand, plan, implement, verify, submit |
-| `orc-planner` | Workflow | Task decomposition with dependencies and workflow assignment |
-| `orc-reviewer` | Workflow | Structured evaluation — correctness, tests, security, conventions |
-| `orc-bugfix` | Workflow | Bug investigation — reproduce, root-cause, fix, regression test |
-| `orc-requirements` | Skill | Requirements interview — outcome, criteria, constraints, scope |
-| `orc-report` | Skill | Project status report — health summary, blockers, active work |
+| Skill              | Type     | Purpose                                                                     |
+| ------------------ | -------- | --------------------------------------------------------------------------- |
+| `orc-worker-base`  | Base     | Default worker behavior - ORC awareness, status updates, deliverable format |
+| `orc-main-base`    | Base     | Orchestration agent - planning, decomposition, monitoring                   |
+| `orc-coder`        | Workflow | Implementation - understand, plan, implement, verify, submit                |
+| `orc-planner`      | Workflow | Task decomposition with dependencies and workflow assignment                |
+| `orc-reviewer`     | Workflow | Structured evaluation - correctness, tests, security, conventions           |
+| `orc-bugfix`       | Workflow | Bug investigation - reproduce, root-cause, fix, regression test             |
+| `orc-requirements` | Skill    | Requirements interview - outcome, criteria, constraints, scope              |
+| `orc-report`       | Skill    | Project status report - health summary, blockers, active work               |
 
 Add custom skills by creating a `SKILL.md` in `~/.orc/skills/my-workflow/SKILL.md`.
 
@@ -408,16 +444,16 @@ Add custom skills by creating a `SKILL.md` in `~/.orc/skills/my-workflow/SKILL.m
 
 **28 tools** available to any connected agent. Start every session with `context`.
 
-| Category | Tools |
-|---|---|
-| **Project** | `project_list` |
-| **Memory** | `context`, `memory_search`, `memory_get`, `memory_store`, `memory_update` |
-| **Task** | `task_list`, `task_get`, `task_create`, `task_update`, `task_batch_create` |
-| **Skill** | `skill_list`, `skill_read`, `skill_create` |
+| Category      | Tools                                                                                                                                       |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Project**   | `project_list`                                                                                                                              |
+| **Memory**    | `context`, `memory_search`, `memory_get`, `memory_store`, `memory_update`                                                                   |
+| **Task**      | `task_list`, `task_get`, `task_create`, `task_update`, `task_batch_create`                                                                  |
+| **Skill**     | `skill_list`, `skill_read`, `skill_create`                                                                                                  |
 | **Knowledge** | `knowledge_search`, `knowledge_get`, `knowledge_collections`, `knowledge_collection_add`, `knowledge_collection_remove`, `knowledge_update` |
-| **Search** | `search` |
-| **Job** | `job_list`, `job_run`, `job_status` |
-| **Session** | `session_event`, `session_snapshot`, `session_restore`, `session_log` |
+| **Search**    | `search`                                                                                                                                    |
+| **Job**       | `job_list`, `job_run`, `job_status`                                                                                                         |
+| **Session**   | `session_event`, `session_snapshot`, `session_restore`, `session_log`                                                                       |
 
 ## REST API
 
@@ -429,29 +465,29 @@ Runs on port 7700 with auto-generated OpenAPI spec.
 <details>
 <summary>Full endpoint list</summary>
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/health` | Health check |
-| `GET/POST/PATCH/DELETE` | `/projects` | CRUD projects |
-| `GET` | `/projects/by-name/{name}` | Lookup by name |
-| `GET` | `/projects/{id}/summary` | Task/memory/job counts |
-| `GET/POST/PATCH/DELETE` | `/tasks` | CRUD tasks |
-| `GET/POST` | `/tasks/{id}/notes` | Task notes |
-| `GET/POST/DELETE` | `/tasks/{id}/links` | Task dependencies |
-| `GET/POST/DELETE` | `/memories` | CRUD memories |
-| `GET` | `/memories/search` | BM25 search |
-| `GET` | `/knowledge/search` | Search documents (BM25/hybrid) |
-| `GET` | `/knowledge/documents/{id}` | Get document by docid |
-| `GET/POST/DELETE` | `/knowledge/collections` | CRUD collections |
-| `POST` | `/knowledge/update` | Re-index collections |
-| `GET` | `/knowledge/status` | Index status |
-| `GET/POST` | `/jobs` | CRUD jobs |
-| `POST` | `/jobs/{id}/trigger` | Trigger a job |
-| `GET` | `/jobs/{id}/runs` | Run history |
-| `GET` | `/jobs/{id}/runs/{runId}/logs` | Run logs |
-| `GET` | `/skills` | Skill templates |
-| `GET` | `/sessions` | Agent session logs |
-| `POST` | `/mcp/tool` | Execute any MCP tool via HTTP |
+| Method                  | Path                           | Description                    |
+| ----------------------- | ------------------------------ | ------------------------------ |
+| `GET`                   | `/health`                      | Health check                   |
+| `GET/POST/PATCH/DELETE` | `/projects`                    | CRUD projects                  |
+| `GET`                   | `/projects/by-name/{name}`     | Lookup by name                 |
+| `GET`                   | `/projects/{id}/summary`       | Task/memory/job counts         |
+| `GET/POST/PATCH/DELETE` | `/tasks`                       | CRUD tasks                     |
+| `GET/POST`              | `/tasks/{id}/notes`            | Task notes                     |
+| `GET/POST/DELETE`       | `/tasks/{id}/links`            | Task dependencies              |
+| `GET/POST/DELETE`       | `/memories`                    | CRUD memories                  |
+| `GET`                   | `/memories/search`             | BM25 search                    |
+| `GET`                   | `/knowledge/search`            | Search documents (BM25/hybrid) |
+| `GET`                   | `/knowledge/documents/{id}`    | Get document by docid          |
+| `GET/POST/DELETE`       | `/knowledge/collections`       | CRUD collections               |
+| `POST`                  | `/knowledge/update`            | Re-index collections           |
+| `GET`                   | `/knowledge/status`            | Index status                   |
+| `GET/POST`              | `/jobs`                        | CRUD jobs                      |
+| `POST`                  | `/jobs/{id}/trigger`           | Trigger a job                  |
+| `GET`                   | `/jobs/{id}/runs`              | Run history                    |
+| `GET`                   | `/jobs/{id}/runs/{runId}/logs` | Run logs                       |
+| `GET`                   | `/skills`                      | Skill templates                |
+| `GET`                   | `/sessions`                    | Agent session logs             |
+| `POST`                  | `/mcp/tool`                    | Execute any MCP tool via HTTP  |
 
 </details>
 
@@ -481,31 +517,31 @@ orc kb search|get|collections|add|remove|update|status
 
 ORC merges config in priority order (later wins):
 
-1. `~/.orc/config.json` — user global
-2. `./.orc/config.json` — project-local
+1. `~/.orc/config.json` - user global
+2. `./.orc/config.json` - project-local
 3. Environment variables
 
 <details>
 <summary>Environment variables</summary>
 
-| Variable | Default | Description |
-|---|---|---|
-| `ORC_DB_PATH` | `~/.orc/orc.db` | SQLite database path |
-| `ORC_API_PORT` | `7700` | API listen port |
-| `ORC_API_SECRET` | — | Bearer token for auth |
-| `ORC_SESSION_ID` | `default` | Per-agent session identifier |
-| `ORC_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `ORC_LOG_DIR` | `~/.orc/logs` | Log file directory |
-| `ORC_LOG_FILE` | `1` | Set to `0` to disable file logging |
-| `ORC_RUNNER_TIMEOUT` | `300` | Default job timeout (seconds) |
-| `ORC_AGENT_LOOP_ENABLED` | `false` | Enable the agent task loop |
-| `ORC_AGENT_LOOP_POLL_INTERVAL` | `5` | Task loop poll interval (minutes) |
-| `ORC_AGENT_LOOP_MAX_WORKERS` | `1` | Max concurrent worker agents |
-| `ORC_AGENT_LOOP_DEFAULT_BACKEND` | `claude` | Default agent backend |
-| `ORC_AGENT_LOOP_IDLE_TIMEOUT` | `20` | Session idle timeout (minutes) |
-| `ORC_AGENT_LOOP_AUTO_APPROVE` | `true` | Auto-approve worker tool permissions |
-| `ORC_KNOWLEDGE_DB_PATH` | `~/.orc/knowledge.db` | Knowledge search database path |
-| `ORC_KNOWLEDGE_SEARCH_MODE` | `lexical` | `lexical` (BM25) or `hybrid` (vector + reranking) |
+| Variable                         | Default               | Description                                       |
+| -------------------------------- | --------------------- | ------------------------------------------------- |
+| `ORC_DB_PATH`                    | `~/.orc/orc.db`       | SQLite database path                              |
+| `ORC_API_PORT`                   | `7700`                | API listen port                                   |
+| `ORC_API_SECRET`                 | -                     | Bearer token for auth                             |
+| `ORC_SESSION_ID`                 | `default`             | Per-agent session identifier                      |
+| `ORC_LOG_LEVEL`                  | `info`                | `debug`, `info`, `warn`, `error`                  |
+| `ORC_LOG_DIR`                    | `~/.orc/logs`         | Log file directory                                |
+| `ORC_LOG_FILE`                   | `1`                   | Set to `0` to disable file logging                |
+| `ORC_RUNNER_TIMEOUT`             | `300`                 | Default job timeout (seconds)                     |
+| `ORC_AGENT_LOOP_ENABLED`         | `false`               | Enable the agent task loop                        |
+| `ORC_AGENT_LOOP_POLL_INTERVAL`   | `5`                   | Task loop poll interval (minutes)                 |
+| `ORC_AGENT_LOOP_MAX_WORKERS`     | `1`                   | Max concurrent worker agents                      |
+| `ORC_AGENT_LOOP_DEFAULT_BACKEND` | `claude`              | Default agent backend                             |
+| `ORC_AGENT_LOOP_IDLE_TIMEOUT`    | `20`                  | Session idle timeout (minutes)                    |
+| `ORC_AGENT_LOOP_AUTO_APPROVE`    | `true`                | Auto-approve worker tool permissions              |
+| `ORC_KNOWLEDGE_DB_PATH`          | `~/.orc/knowledge.db` | Knowledge search database path                    |
+| `ORC_KNOWLEDGE_SEARCH_MODE`      | `lexical`             | `lexical` (BM25) or `hybrid` (vector + reranking) |
 
 </details>
 
@@ -530,11 +566,11 @@ orc daemon install     # register auto-start for your OS
 orc daemon uninstall   # remove auto-start registration
 ```
 
-| Platform | Mechanism | Auto-restart on crash |
-| --- | --- | --- |
-| **Windows** | Registry Run key (`HKCU\...\Run`) | No |
-| **macOS** | launchd (`~/Library/LaunchAgents/com.orc.daemon.plist`) | Yes |
-| **Linux** | systemd user service (`~/.config/systemd/user/orc-daemon.service`) | Yes |
+| Platform    | Mechanism                                                          | Auto-restart on crash |
+| ----------- | ------------------------------------------------------------------ | --------------------- |
+| **Windows** | Registry Run key (`HKCU\...\Run`)                                  | No                    |
+| **macOS**   | launchd (`~/Library/LaunchAgents/com.orc.daemon.plist`)            | Yes                   |
+| **Linux**   | systemd user service (`~/.config/systemd/user/orc-daemon.service`) | Yes                   |
 
 No admin/root privileges required on any platform.
 
@@ -585,7 +621,7 @@ See [AGENTS.md](./AGENTS.md) for the full development guide and coding conventio
 
 ## Learn more
 
-- [Usage Guide](./docs/usage-guide.md) — best practices for memory, tasks, multi-agent workflows, and configuration
-- [Vision](./docs/vision.md) — why ORC exists and the problem it solves
-- [Roadmap](./docs/roadmap.md) — what shipped and what's next
-- [Agent Orchestration Design](./docs/agent-orchestration-design.md) — architecture spec for the task loop and multi-agent workflow
+- [Usage Guide](./docs/usage-guide.md) - best practices for memory, tasks, multi-agent workflows, and configuration
+- [Vision](./docs/vision.md) - why ORC exists and the problem it solves
+- [Roadmap](./docs/roadmap.md) - what shipped and what's next
+- [Agent Orchestration Design](./docs/agent-orchestration-design.md) - architecture spec for the task loop and multi-agent workflow

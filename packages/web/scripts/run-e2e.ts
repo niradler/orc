@@ -1,5 +1,5 @@
-import { createServer } from "node:net";
 import { unlinkSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -19,7 +19,7 @@ function assertPortFree(port: number): Promise<void> {
     const probe = createServer();
     probe.once("error", (err: NodeJS.ErrnoException) => {
       if (err.code === "EADDRINUSE") {
-        reject(new Error(`Port ${port} is already in use — kill the process holding it and retry`));
+        reject(new Error(`Port ${port} is already in use - kill the process holding it and retry`));
       } else {
         reject(err);
       }
@@ -36,7 +36,9 @@ async function waitForReady(url: string, timeoutMs: number): Promise<void> {
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
       if (res.ok) return;
-    } catch { /* not ready yet */ }
+    } catch {
+      /* not ready yet */
+    }
     await Bun.sleep(200);
   }
   throw new Error(`Server at ${url} did not become ready within ${timeoutMs}ms`);
@@ -52,7 +54,11 @@ async function run(cmd: string[], env: Record<string, string>, timeoutMs: number
   });
 
   const timeout = setTimeout(() => {
-    try { proc.kill(); } catch { /* ignore */ }
+    try {
+      proc.kill();
+    } catch {
+      /* ignore */
+    }
   }, timeoutMs);
 
   const exitCode = await proc.exited;
@@ -108,13 +114,21 @@ function killApiServer(): void {
     } else {
       process.kill(-apiProc.pid, "SIGKILL");
     }
-  } catch { /* already dead */ }
+  } catch {
+    /* already dead */
+  }
 }
 
-// SIGINT (Ctrl+C) and SIGTERM bypass finally blocks in Bun — register explicit
+// SIGINT (Ctrl+C) and SIGTERM bypass finally blocks in Bun - register explicit
 // handlers so the port is freed even when the run is interrupted.
-process.once("SIGINT", () => { killApiServer(); process.exit(130); });
-process.once("SIGTERM", () => { killApiServer(); process.exit(143); });
+process.once("SIGINT", () => {
+  killApiServer();
+  process.exit(130);
+});
+process.once("SIGTERM", () => {
+  killApiServer();
+  process.exit(143);
+});
 
 let exitCode = 0;
 try {
@@ -126,8 +140,16 @@ try {
   exitCode = 1;
 } finally {
   killApiServer();
-  try { await apiProc.exited; } catch { /* ignore */ }
-  try { unlinkSync(pwDbPath); } catch { /* already gone */ }
+  try {
+    await apiProc.exited;
+  } catch {
+    /* ignore */
+  }
+  try {
+    unlinkSync(pwDbPath);
+  } catch {
+    /* already gone */
+  }
 }
 
 process.exit(exitCode);

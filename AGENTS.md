@@ -1,4 +1,4 @@
-# orc — Agent Guide
+# orc - Agent Guide
 
 Human + AI orchestration hub. Persistent memory · Task management (HITL) · Generic job runner · Telegram bridge · MCP server.
 
@@ -6,17 +6,17 @@ Human + AI orchestration hub. Persistent memory · Task management (HITL) · Gen
 
 ```
 packages/
-  core/           @orc/core           — config (Zod), types, logger, ULID IDs
-  db/             @orc/db             — Drizzle ORM schema + SQLite client (~/.orc/orc.db)
-  api/            @orc/api            — Hono REST API + auto-generated OpenAPI spec (:7701)
-  sdk/            @orc/sdk            — typed HTTP client generated from OpenAPI spec
-  cli/            @orc/cli            — commander CLI (`orc` binary) using the SDK
-  mcp/            @orc/mcp            — MCP server (stdio) for Claude/Cursor/Codex/Gemini
-  runner/         @orc/runner         — job executor + cron/watch/one-shot scheduler + task loop
-  gateway/        @orc/gateway        — multi-channel gateway (Telegram, Slack) + agent sessions
-  agent-runtime/  @orc/agent-runtime  — shared agent backend registry (claude, acpx, a2a)
-  task-service/   @orc/task-service   — task status transitions, side-effects, comments
-  web/            @orc/web            — React dashboard (Vite + Tailwind + shadcn + React Query)
+  core/           @orc/core           - config (Zod), types, logger, ULID IDs
+  db/             @orc/db             - Drizzle ORM schema + SQLite client (~/.orc/orc.db)
+  api/            @orc/api            - Hono REST API + auto-generated OpenAPI spec (:7701)
+  sdk/            @orc/sdk            - typed HTTP client generated from OpenAPI spec
+  cli/            @orc/cli            - commander CLI (`orc` binary) using the SDK
+  mcp/            @orc/mcp            - MCP server (stdio) for Claude/Cursor/Codex/Gemini
+  runner/         @orc/runner         - job executor + cron/watch/one-shot scheduler + task loop
+  gateway/        @orc/gateway        - multi-channel gateway (Telegram, Slack) + agent sessions
+  agent-runtime/  @orc/agent-runtime  - shared agent backend registry (claude, acpx, a2a)
+  task-service/   @orc/task-service   - task status transitions, side-effects, comments
+  web/            @orc/web            - React dashboard (Vite + Tailwind + shadcn + React Query)
 ```
 
 Data flow: `Agent → MCP → API → DB`. CLI goes via `CLI → SDK → API → DB`.
@@ -55,18 +55,18 @@ ORC_WEB_PORT=3077
 
 **Canonical ports** (use these, don't improvise):
 
-| Service | Port  | Env var         |
-|---------|-------|-----------------|
-| API     | 7701  | `ORC_API_PORT`  |
-| Web     | 3077  | `ORC_WEB_PORT`  |
+| Service | Port | Env var        |
+| ------- | ---- | -------------- |
+| API     | 7701 | `ORC_API_PORT` |
+| Web     | 3077 | `ORC_WEB_PORT` |
 
-Default ports when `.env` is absent: API → 7700, web → 9742. If you need a temporary alternate (e.g. zombie socket on 7701), prefer **7711 / 3087** — don't pick arbitrary numbers, and always update both `.env` and any running dev server together so the web proxy points at the right API.
+Default ports when `.env` is absent: API → 7700, web → 9742. If you need a temporary alternate (e.g. zombie socket on 7701), prefer **7711 / 3087** - don't pick arbitrary numbers, and always update both `.env` and any running dev server together so the web proxy points at the right API.
 
 The web dev server proxies `/api/*` → `http://localhost:$ORC_API_PORT` (strips the `/api` prefix). The API auth secret defaults to `""` (open). Set `ORC_API_SECRET` or `api.secret` in `~/.orc/config.json` to require a Bearer token.
 
 ### Running dev servers
 
-> **Do not use the global `orc daemon`** for development — it runs the published binary on port 7700. Always use `bun dev` which starts from source on the dev port configured in `.env`. For production daemon setup (auto-start on boot, background service), see the "Running as a background service" section in `README.md`.
+> **Do not use the global `orc daemon`** for development - it runs the published binary on port 7700. Always use `bun dev` which starts from source on the dev port configured in `.env`. For production daemon setup (auto-start on boot, background service), see the "Running as a background service" section in `README.md`.
 
 ```bash
 bun dev                         # API + CLI + web in one shell (recommended)
@@ -74,7 +74,7 @@ bun run --filter @orc/api dev   # API only
 bun run --filter @orc/web dev   # web only
 ```
 
-Before starting, run the pre-flight check below — starting a second copy of the API on a port already held by an old one is the #1 source of "my changes aren't taking effect" on this repo.
+Before starting, run the pre-flight check below - starting a second copy of the API on a port already held by an old one is the #1 source of "my changes aren't taking effect" on this repo.
 
 ### Pre-flight: is the port free?
 
@@ -90,7 +90,7 @@ powershell -Command "Get-NetTCPConnection -LocalPort 7701 -State Listen -EA Sile
 lsof -iTCP:7701 -sTCP:LISTEN
 ```
 
-- Port listed under a **live PID** → an API is running. Hit `curl -s http://localhost:7701/health` — if `uptime` is huge, it's stale; shut it down before you start a new one.
+- Port listed under a **live PID** → an API is running. Hit `curl -s http://localhost:7701/health` - if `uptime` is huge, it's stale; shut it down before you start a new one.
 - Port listed under a **dead PID** (Windows `Get-Process` returns nothing for it) → zombie socket (see below).
 
 ### Shutdown procedure (Windows-specific pitfall)
@@ -100,7 +100,7 @@ On Windows, `bun run --filter @orc/api dev` spawns a chain: `bun` (filter wrappe
 **Always** kill the whole tree, not just the launcher:
 
 ```bash
-# Windows — kill every orc API bun child, regardless of who spawned it
+# Windows - kill every orc API bun child, regardless of who spawned it
 powershell -Command "Get-CimInstance Win32_Process -Filter 'Name=\"bun.exe\"' | \
   Where-Object { \$_.CommandLine -like '*run --hot src/index.ts*' -and \$_.CommandLine -notlike '*--port 9742*' } | \
   ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }"
@@ -110,26 +110,26 @@ powershell -Command "Get-CimInstance Win32_Process -Filter 'Name=\"bun.exe\"' | 
   Where-Object { \$_.CommandLine -like '*packages/web*' -or \$_.CommandLine -like '*vite*' } | \
   ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }"
 
-# macOS / Linux — simpler, kill the whole process group
+# macOS / Linux - simpler, kill the whole process group
 pkill -f 'packages/api/src/index.ts'
 pkill -f 'packages/web'
 ```
 
-**Don't blanket-kill `bun.exe`** — MCP servers and the `--port 9742` service also run under `bun` and you'll break unrelated sessions. Match on the command line.
+**Don't blanket-kill `bun.exe`** - MCP servers and the `--port 9742` service also run under `bun` and you'll break unrelated sessions. Match on the command line.
 
 ### Zombie socket recovery
 
 If `netstat` shows port `7701` LISTENING under a dead PID and no child process can be found:
 
-1. First re-run the shutdown command above — there may be a grandchild whose `CommandLine` you missed.
+1. First re-run the shutdown command above - there may be a grandchild whose `CommandLine` you missed.
 2. If still stuck: either wait 2–4 min for TIME_WAIT, **or** start on `7711` and temporarily set `ORC_API_PORT=7711` in `.env` (restart the web dev server so its Vite proxy picks up the new target).
-3. Don't `Get-Process -Id <pid> | Stop-Process` on the PID reported by `netstat` — that PID is already gone; the socket is held by the kernel.
+3. Don't `Get-Process -Id <pid> | Stop-Process` on the PID reported by `netstat` - that PID is already gone; the socket is held by the kernel.
 
 ### Restart procedure after code changes
 
 - `src/routes/**` and most route handlers → Bun's `--hot` picks them up, **no restart needed**.
 - `src/index.ts`, `Bun.serve({...})` config, top-level imports, env var changes → full restart required. Use the shutdown command above, then start.
-- Chat streaming (`/chat/stream`) specifically — if it hangs with no output, check `tail -f /tmp/api-dev.log` for `[chat] acpx stderr:` lines; the route drains acpx's stderr into server logs on purpose.
+- Chat streaming (`/chat/stream`) specifically - if it hangs with no output, check `tail -f /tmp/api-dev.log` for `[chat] acpx stderr:` lines; the route drains acpx's stderr into server logs on purpose.
 
 ### When launching in the background
 
@@ -143,33 +143,33 @@ bun run --filter @orc/api dev > /tmp/orc-api-$(date +%s).log 2>&1 &
 
 ## Web Dashboard (packages/web)
 
-React SPA replacing the removed TUI. Same feature surface — Tasks, Kanban, Jobs, Memories, Projects, Sessions, Knowledge, Skills — plus Dashboard, Settings, and a streaming chat panel that spawns `acpx` via `POST /chat/stream`.
+React SPA replacing the removed TUI. Same feature surface - Tasks, Kanban, Jobs, Memories, Projects, Sessions, Knowledge, Skills - plus Dashboard, Settings, and a streaming chat panel that spawns `acpx` via `POST /chat/stream`.
 
 - **Stack**: React 19 + Vite 6 + TypeScript + Tailwind + shadcn/ui + React Query (30s refetch) + `@dnd-kit` (kanban DnD) + Playwright (e2e)
-- **API client**: `packages/web/src/api/client.ts` — calls `${getApiUrl()}/<route>`, default `getApiUrl()` is `/api`. Override via `localStorage.orc_api_url` / `orc_api_secret`.
-- **Hooks**: `packages/web/src/hooks/` — one React Query wrapper per resource (`useTasks`, `useJobs`, `useMemories`, `useProjects`, `useSessions`, `useKnowledge`, `useSkills`, `useChat`, `useHealth`)
+- **API client**: `packages/web/src/api/client.ts` - calls `${getApiUrl()}/<route>`, default `getApiUrl()` is `/api`. Override via `localStorage.orc_api_url` / `orc_api_secret`.
+- **Hooks**: `packages/web/src/hooks/` - one React Query wrapper per resource (`useTasks`, `useJobs`, `useMemories`, `useProjects`, `useSessions`, `useKnowledge`, `useSkills`, `useChat`, `useHealth`)
 - **API limit**: task list max is 100 per request (API enforces `max: 100` via Zod)
 
 ### Two ways to run the web UI
 
-| Mode | When | How |
-|---|---|---|
+| Mode                           | When                                                   | How                                                                                                                                      |
+| ------------------------------ | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | **Production (single server)** | After `bun build` or from a published `orc-ai` install | `orc daemon start` (or `orc api`). The API serves the built dashboard at `/`. Endpoints reachable at both `/<route>` and `/api/<route>`. |
-| **Vite dev server** | Local frontend development with hot reload | `bun run --filter @orc/web dev` (port `ORC_WEB_PORT`, default 3077). Vite proxies `/api/*` → `http://localhost:$ORC_API_PORT/*`. |
+| **Vite dev server**            | Local frontend development with hot reload             | `bun run --filter @orc/web dev` (port `ORC_WEB_PORT`, default 3077). Vite proxies `/api/*` → `http://localhost:$ORC_API_PORT/*`.         |
 
 The CLI build (`packages/cli`) runs `bun run --filter @orc/web build` first and copies `packages/web/dist/` into `packages/cli/dist/web/`. The API resolves the dist via `ORC_WEB_DIST` env, then a candidate path list (`packages/web/dist`, `dist/web` next to the bundle, etc.). If no dist is found, the server runs pure-API.
 
 ### Why API routes mount at both `/` and `/api`
 
-Historic clients (SDK, CLI, MCP, Claude Code hooks) call `/<route>` directly — `ORC_API_BASE=http://127.0.0.1:7700` + `/tasks`. The web dashboard calls `/api/<route>` so it can be served from the same origin without colliding with the SPA shell at `/`. Both prefixes share the same handler — no duplicated logic. See `packages/api/src/server.ts` `mountRouters()`.
+Historic clients (SDK, CLI, MCP, Claude Code hooks) call `/<route>` directly - `ORC_API_BASE=http://127.0.0.1:7700` + `/tasks`. The web dashboard calls `/api/<route>` so it can be served from the same origin without colliding with the SPA shell at `/`. Both prefixes share the same handler - no duplicated logic. See `packages/api/src/server.ts` `mountRouters()`.
 
 ### Static file serving
 
-`packages/api/src/static.ts` serves `index.html` at `/`, hashed bundles at `/assets/*` (with `Cache-Control: public, max-age=31536000, immutable`), and root-level files (favicon, robots) by name. It is mounted last so any conflicting API route wins. Web app uses state-based navigation (no React Router) — there is no SPA fallback for arbitrary paths, only the explicit static routes above.
+`packages/api/src/static.ts` serves `index.html` at `/`, hashed bundles at `/assets/*` (with `Cache-Control: public, max-age=31536000, immutable`), and root-level files (favicon, robots) by name. It is mounted last so any conflicting API route wins. Web app uses state-based navigation (no React Router) - there is no SPA fallback for arbitrary paths, only the explicit static routes above.
 
 ## Web UI e2e tests (Playwright)
 
-Playwright specs live in `packages/web/tests/e2e/`. Selectors are `data-testid` only — never rely on text or class names, which churn every design pass.
+Playwright specs live in `packages/web/tests/e2e/`. Selectors are `data-testid` only - never rely on text or class names, which churn every design pass.
 
 ```bash
 cd packages/web
@@ -194,74 +194,78 @@ agent-browser screenshot path/to/out.png   # capture screenshot
 agent-browser close                        # close browser
 ```
 
-Refs (`@e1`, `@e2`, …) are assigned per snapshot — always take a fresh snapshot after navigation before using refs. Check for `[OBJECT OBJECT]` or `RETRY` buttons in snapshots as signals of error states.
+Refs (`@e1`, `@e2`, …) are assigned per snapshot - always take a fresh snapshot after navigation before using refs. Check for `[OBJECT OBJECT]` or `RETRY` buttons in snapshots as signals of error states.
 
 ## Core Data Model (packages/db/src/schema.ts)
 
-| Table | Purpose |
-|---|---|
-| `tasks` | Work items with HITL review flow |
-| `comments` | Polymorphic comments (`resource_type` + `resource_id`) for tasks, projects, etc. |
-| `memories` | FTS5-indexed key/value knowledge store |
-| `jobs` / `job_runs` | Scheduled/triggered command execution |
-| `sessions` | Agent session logs + snapshots (`agent_version`, `job_run_id`) |
-| `projects` | Optional grouping for tasks/memories |
-| `skills` | Workflow skill templates (filesystem-based, `skills/*/SKILL.md` + `~/.orc/skills/`) |
-| `bridge_chats/messages/permissions` | Gateway HITL (Telegram/Slack) |
+| Table                               | Purpose                                                                             |
+| ----------------------------------- | ----------------------------------------------------------------------------------- |
+| `tasks`                             | Work items with HITL review flow                                                    |
+| `comments`                          | Polymorphic comments (`resource_type` + `resource_id`) for tasks, projects, etc.    |
+| `memories`                          | FTS5-indexed key/value knowledge store                                              |
+| `jobs` / `job_runs`                 | Scheduled/triggered command execution                                               |
+| `sessions`                          | Agent session logs + snapshots (`agent_version`, `job_run_id`)                      |
+| `projects`                          | Optional grouping for tasks/memories                                                |
+| `skills`                            | Workflow skill templates (filesystem-based, `skills/*/SKILL.md` + `~/.orc/skills/`) |
+| `bridge_chats/messages/permissions` | Gateway HITL (Telegram/Slack)                                                       |
 
-**Task status flow**: `todo → queued → doing → blocked → review → done/changes_requested → doing → …`
+**Task status flow**: `todo → doing → review → done`
 
-Additional statuses: `queued` (claimed by task loop, waiting to start), `paused` (exceeded review rounds or manually paused)
+On rejection: `review → changes_requested → doing → …`
+
+On blocker: `doing → blocked` (needs human intervention before resuming)
+
+Internal statuses (`queued`, `paused`, `cancelled`) are managed by the task loop - agents don't set these directly.
 
 **Task priorities**: `low | normal | high | critical`
 
 **Job trigger types**: `one-shot | cron | watch | webhook | manual | bridge-msg`
 
-> `repeat` was removed — use `cron` with a 6-field expression for sub-minute intervals (e.g. `*/30 * * * * *` = every 30 s).
+> `repeat` was removed - use `cron` with a 6-field expression for sub-minute intervals (e.g. `*/30 * * * * *` = every 30 s).
 
 ## MCP Tools (28 tools in packages/mcp/src/tools.ts)
 
-**Call `context` first in every session** — returns active tasks + key memories in ~200 tokens.
+**Call `context` first in every session** - returns active tasks + key memories in ~200 tokens.
 
 All tools that accept `project` take a **readable project name** (e.g. `"orc"`), not a ULID. Omit to use `activeProject` from config.
 
 For CRUD operations not in MCP (delete, project management, job creation), use the `orc` CLI.
 
-| Tool | When to use |
-|---|---|
-| `context` | Session start — compact overview. Pass `project: "name"` to scope. |
-| `memory_search` | Find facts/decisions — 3-layer BM25. Pass `project` to scope. |
-| `memory_get` | Fetch full content for specific IDs. Batch multiple IDs. Token-expensive — filter first. |
-| `memory_store` | Store a fact/decision/rule/event/discovery. Pass `project` to associate. Source auto-detected from agent env. |
-| `memory_update` | Update an existing memory by ID (partial). Preserves created_at and access_count. Prefer over delete+recreate. |
-| `search` | Unified search across tasks and memories. Use instead of separate calls. |
-| `task_list` | List active tasks (compact, no body). Pass `project` to filter. |
-| `task_get` | Fetch full task details by ID |
-| `task_create` | Create a task. Pass `project` to scope. Set `agent_backend` to route to a specific agent runtime. |
-| `task_update` | Update status/priority/body |
-| `task_batch_create` | Create multiple tasks with dependency links atomically. |
-| `job_list` | List all jobs + last run status. Pass `project` to filter. |
-| `job_run` | Trigger a job by name |
-| `job_status` | Get run status/exit code/error for a run ID |
-| `project_list` | Discover all projects (name, status, description) |
-| `skill_list` | Discover available skills. Filter by tags. |
-| `skill_read` | Load full skill content by name. Shows skill directory path + reference file paths — use Read to load them. |
-| `session_event` | Record significant action (file, task, decision, error, git, env, rule, plan). Deduped automatically. |
-| `session_snapshot` | Build ≤2KB XML snapshot — priority-tiered (P1: files/tasks, P2: decisions/git, P3: intent) |
-| `session_restore` | Restore session after compaction or agent restart |
-| `session_log` | Log session summary at end of work unit. Pass `project` to associate. |
+| Tool                | When to use                                                                                                    |
+| ------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `context`           | Session start - compact overview. Pass `project: "name"` to scope.                                             |
+| `memory_search`     | Find facts/decisions - 3-layer BM25. Pass `project` to scope.                                                  |
+| `memory_get`        | Fetch full content for specific IDs. Batch multiple IDs. Token-expensive - filter first.                       |
+| `memory_store`      | Store a fact/decision/rule/event/discovery. Pass `project` to associate. Source auto-detected from agent env.  |
+| `memory_update`     | Update an existing memory by ID (partial). Preserves created_at and access_count. Prefer over delete+recreate. |
+| `search`            | Unified search across tasks and memories. Use instead of separate calls.                                       |
+| `task_list`         | List active tasks (compact, no body). Pass `project` to filter.                                                |
+| `task_get`          | Fetch full task details by ID                                                                                  |
+| `task_create`       | Create a task. Pass `project` to scope. Set `agent_backend` to route to a specific agent runtime.              |
+| `task_update`       | Update status/priority/body                                                                                    |
+| `task_batch_create` | Create multiple tasks with dependency links atomically.                                                        |
+| `job_list`          | List all jobs + last run status. Pass `project` to filter.                                                     |
+| `job_run`           | Trigger a job by name                                                                                          |
+| `job_status`        | Get run status/exit code/error for a run ID                                                                    |
+| `project_list`      | Discover all projects (name, status, description)                                                              |
+| `skill_list`        | Discover available skills. Filter by tags.                                                                     |
+| `skill_read`        | Load full skill content by name. Shows skill directory path + reference file paths - use Read to load them.    |
+| `session_event`     | Record significant action (file, task, decision, error, git, env, rule, plan). Deduped automatically.          |
+| `session_snapshot`  | Build ≤2KB XML snapshot - priority-tiered (P1: files/tasks, P2: decisions/git, P3: intent)                     |
+| `session_restore`   | Restore session after compaction or agent restart                                                              |
+| `session_log`       | Log session summary at end of work unit. Pass `project` to associate.                                          |
 
 ### Memory types
 
-Use the `type` field in `memory_store` — it affects scoring in `context`:
+Use the `type` field in `memory_store` - it affects scoring in `context`:
 
-| Type | Score weight | Use for |
-|---|---|---|
-| `rule` | HIGH | Conventions: "all IDs are ULIDs", "never use `any`" |
-| `decision` | HIGH | Choices: "use PostgreSQL because of concurrent writes" |
-| `discovery` | MEDIUM | Findings: "token refresh has a race condition" |
-| `event` | LOW | Things that happened: "deployed to staging" |
-| `fact` | LOW (default) | General knowledge |
+| Type        | Score weight  | Use for                                                |
+| ----------- | ------------- | ------------------------------------------------------ |
+| `rule`      | HIGH          | Conventions: "all IDs are ULIDs", "never use `any`"    |
+| `decision`  | HIGH          | Choices: "use PostgreSQL because of concurrent writes" |
+| `discovery` | MEDIUM        | Findings: "token refresh has a race condition"         |
+| `event`     | LOW           | Things that happened: "deployed to staging"            |
+| `fact`      | LOW (default) | General knowledge                                      |
 
 ## Config
 
@@ -273,11 +277,11 @@ Key env vars: `ORC_DB_PATH`, `ORC_API_PORT` (default 7700), `ORC_API_SECRET`, `O
 
 All log output goes to **stderr** (human-readable, colored) and **`~/.orc/logs/orc.log`** (JSON lines, machine-readable).
 
-- **Rotation**: 10 MB max per file, keeps 3 rotated files (`orc.log.1`, `orc.log.2`, `orc.log.3`) — 30 MB total cap.
+- **Rotation**: 10 MB max per file, keeps 3 rotated files (`orc.log.1`, `orc.log.2`, `orc.log.3`) - 30 MB total cap.
 - **Format**: One JSON object per line: `{"ts":"...","level":"info","ns":"api:tasks","msg":"...","data":"..."}`.
 - **Disable file logging**: `ORC_LOG_FILE=0`.
 - **Custom log directory**: `ORC_LOG_DIR=/path/to/logs` (defaults to `~/.orc/logs`).
-- **Agents**: read `~/.orc/logs/orc.log` to inspect recent errors — e.g. `grep '"level":"error"' ~/.orc/logs/orc.log | tail -20`.
+- **Agents**: read `~/.orc/logs/orc.log` to inspect recent errors - e.g. `grep '"level":"error"' ~/.orc/logs/orc.log | tail -20`.
 
 ### Agent Loop Config
 
@@ -300,37 +304,37 @@ Env vars: `ORC_AGENT_LOOP_ENABLED`, `ORC_AGENT_LOOP_POLL_INTERVAL`, `ORC_AGENT_L
 
 Three built-in backends route tasks to different agent runtimes:
 
-| Backend | Description | Config |
-| ------- | ----------- | ------ |
-| `claude` | Native Claude Code CLI adapter. Falls back to ACPX on error. | Default. Requires `claude` on PATH. |
-| `acpx` | Wraps 14+ coding agents via Agent Communication Protocol (ACP) CLI. Supports codex, gemini, copilot, kiro, cursor, etc. | Requires `acpx` CLI on PATH. |
-| `a2a` | Connects to remote agents via Google Agent2Agent protocol (JSON-RPC over HTTP). | Requires `a2a_url` per task/session. |
+| Backend  | Description                                                                                                             | Config                               |
+| -------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `claude` | Native Claude Code CLI adapter. Falls back to ACPX on error.                                                            | Default. Requires `claude` on PATH.  |
+| `acpx`   | Wraps 14+ coding agents via Agent Communication Protocol (ACP) CLI. Supports codex, gemini, copilot, kiro, cursor, etc. | Requires `acpx` CLI on PATH.         |
+| `a2a`    | Connects to remote agents via Google Agent2Agent protocol (JSON-RPC over HTTP).                                         | Requires `a2a_url` per task/session. |
 
 **Custom backends**: `agent_backend` accepts any string. Unknown names route through ACPX with the name as the `--agent` flag.
 
 **Fallback routing** (gateway):
 
-1. `a2a` — direct A2A HTTP call
-2. `claude` — native CLI, falls back to ACPX on error
-3. Everything else — ACPX with backend name as agent
+1. `a2a` - direct A2A HTTP call
+2. `claude` - native CLI, falls back to ACPX on error
+3. Everything else - ACPX with backend name as agent
 
 Set default backend via `agent_loop.default_backend` in config. Per-task override: set `agent_backend` field when creating a task via API, MCP, or CLI.
 
 ### Built-in Skills
 
-Skills live in `skills/*/SKILL.md` (built-in, shipped with ORC) and `~/.orc/skills/` (user-defined). No database seeding — skills are loaded directly from the filesystem. Use `skill_list` to discover available skills, `skill_read` to load content. Skills can have reference files (e.g. `reference.md`, `examples.md`) alongside `SKILL.md` — `skill_read` shows their full paths so agents can Read them on demand. Assign to tasks via `skill_name`.
+Skills live in `skills/*/SKILL.md` (built-in, shipped with ORC) and `~/.orc/skills/` (user-defined). No database seeding - skills are loaded directly from the filesystem. Use `skill_list` to discover available skills, `skill_read` to load content. Skills can have reference files (e.g. `reference.md`, `examples.md`) alongside `SKILL.md` - `skill_read` shows their full paths so agents can Read them on demand. Assign to tasks via `skill_name`.
 
 ## Coding Conventions
 
-- **No barrel re-exports** — import directly from the package entry or specific module
-- **Zod schemas define the contract** — API routes, config, and CLI args all derive from Zod
-- **Types live in `@orc/core/types`** — shared enums/types are defined once there
-- **IDs are ULIDs** — use `ulid()` from `@orc/core/ids`
+- **No barrel re-exports** - import directly from the package entry or specific module
+- **Zod schemas define the contract** - API routes, config, and CLI args all derive from Zod
+- **Types live in `@orc/core/types`** - shared enums/types are defined once there
+- **IDs are ULIDs** - use `ulid()` from `@orc/core/ids`
 - **No comments** unless explaining non-obvious intent
-- **Biome** for all linting/formatting — run `bun check` before committing
-- **Aligned versions** — all `package.json` files (root + every package) must share the same version. Always patch bump all together.
-- **Publishing** — only `orc-ai` (packages/cli) is published to npm. It bundles all workspace packages into a single JS file via `bun build`. Other packages are internal workspace deps, never published separately.
-- **Releases** — push a `v*` tag to trigger the GitHub release workflow, which builds platform binaries (linux-x64, linux-arm64, mac-arm64, mac-x64, windows-x64) and creates a GitHub release with checksums.
+- **Biome** for all linting/formatting - run `bun check` before committing
+- **Aligned versions** - all `package.json` files (root + every package) must share the same version. Always patch bump all together.
+- **Publishing** - only `orc-ai` (packages/cli) is published to npm. It bundles all workspace packages into a single JS file via `bun build`. Other packages are internal workspace deps, never published separately.
+- **Releases** - push a `v*` tag to trigger the GitHub release workflow, which builds platform binaries (linux-x64, linux-arm64, mac-arm64, mac-x64, windows-x64) and creates a GitHub release with checksums.
 
 ## Adding a New MCP Tool
 
@@ -342,35 +346,38 @@ Skills live in `skills/*/SKILL.md` (built-in, shipped with ORC) and `~/.orc/skil
 ## Session Protocol for Agents
 
 **Claude Code** (hooks handle steps 2–4 automatically via `hooks/claude-code/settings.json`):
-1. `context({})` — at session start (injected by SessionStart hook, scoped to `ORC_PROJECT` if set)
-2. *(PostToolUse hook)* — automatically records file edits, git ops, MCP tool calls, subagent launches, plan mode changes
-3. *(PreCompact hook)* — automatically calls `session_snapshot`, stores to DB
-4. *(SessionStart hook, source=compact)* — automatically calls `session_restore`, injects into context
-5. `session_log({ agent: "claude-code", agent_version, summary })` — at end of work unit
 
-**Cursor** (no hook system — all manual; config at `hooks/cursor/mcp.json`):
-1. `context({})` — at session start
-2. `session_event({ type: "file", data: { path } })` — after significant edits
-3. `session_event({ type: "decision", data: { content } })` — after choices
-4. `memory_store({ content, type: "decision"|"rule" })` — for durable cross-session knowledge
-5. `session_log({ agent: "cursor", summary })` — at end of work unit
+1. `context({})` - at session start (injected by SessionStart hook, scoped to `ORC_PROJECT` if set)
+2. _(PostToolUse hook)_ - automatically records file edits, git ops, MCP tool calls, subagent launches, plan mode changes
+3. _(PreCompact hook)_ - automatically calls `session_snapshot`, stores to DB
+4. _(SessionStart hook, source=compact)_ - automatically calls `session_restore`, injects into context
+5. `session_log({ agent: "claude-code", agent_version, summary })` - at end of work unit
+
+**Cursor** (no hook system - all manual; config at `hooks/cursor/mcp.json`):
+
+1. `context({})` - at session start
+2. `session_event({ type: "file", data: { path } })` - after significant edits
+3. `session_event({ type: "decision", data: { content } })` - after choices
+4. `memory_store({ content, type: "decision"|"rule" })` - for durable cross-session knowledge
+5. `session_log({ agent: "cursor", summary })` - at end of work unit
 
 **Codex** (hooks available via `hooks/codex/settings.json`, same as Claude Code):
-1. `context({})` — at session start
+
+1. `context({})` - at session start
 2. Hooks handle events and snapshot automatically
-3. `session_log({ agent: "codex", agent_version, summary })` — at end of work unit
+3. `session_log({ agent: "codex", agent_version, summary })` - at end of work unit
 
 ## Session Event Types
 
-| Type | Priority | Record when |
-|---|---|---|
-| `file` | 1 (critical) | File written or edited |
-| `task` | 1 (critical) | Task created or status changed |
-| `rule` | 1 (critical) | Convention established (also store in memory) |
-| `decision` | 2 (high) | Choice made about approach or architecture |
-| `git` | 2 (high) | Git commit, push, branch |
-| `env` | 2 (high) | Dependency installed, env variable set |
-| `error` | 2 (high) | Tool error or failed command |
-| `plan` | 2 (high) | Plan mode entered or exited |
-| `intent` | 3 (normal) | Mode shift (investigate / implement / review) |
-| `subagent` | 3 (normal) | Sub-agent launched or completed |
+| Type       | Priority     | Record when                                   |
+| ---------- | ------------ | --------------------------------------------- |
+| `file`     | 1 (critical) | File written or edited                        |
+| `task`     | 1 (critical) | Task created or status changed                |
+| `rule`     | 1 (critical) | Convention established (also store in memory) |
+| `decision` | 2 (high)     | Choice made about approach or architecture    |
+| `git`      | 2 (high)     | Git commit, push, branch                      |
+| `env`      | 2 (high)     | Dependency installed, env variable set        |
+| `error`    | 2 (high)     | Tool error or failed command                  |
+| `plan`     | 2 (high)     | Plan mode entered or exited                   |
+| `intent`   | 3 (normal)   | Mode shift (investigate / implement / review) |
+| `subagent` | 3 (normal)   | Sub-agent launched or completed               |

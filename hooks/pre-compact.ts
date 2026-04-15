@@ -23,7 +23,7 @@ async function main() {
       body: JSON.stringify({ name: "session_snapshot", args: { session_id: sessionId } }),
     });
   } catch {
-    // API not running — passthrough silently
+    // API not running - passthrough silently
   }
 
   process.exit(0);

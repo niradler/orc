@@ -486,7 +486,10 @@ function EditTaskDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent data-testid="edit-task-dialog" className="bg-surface border-surface-highest max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent
+        data-testid="edit-task-dialog"
+        className="bg-surface border-surface-highest max-w-lg max-h-[85vh] overflow-y-auto"
+      >
         <DialogHeader>
           <DialogTitle className="font-headline text-sm uppercase tracking-widest text-on-surface">
             Edit Task

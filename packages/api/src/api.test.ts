@@ -6,7 +6,8 @@ let app: ReturnType<typeof createApp>;
 const AUTH = "Bearer test-secret";
 
 async function req(method: string, path: string, body?: unknown) {
-  return app.request(path, {
+  const fullPath = path.startsWith("/api") ? path : `/api${path}`;
+  return app.request(fullPath, {
     method,
     headers: {
       "Content-Type": "application/json",
@@ -209,7 +210,7 @@ describe("Sessions", () => {
   });
 
   test("POST /mcp/tool session_log writes a session with agent_version", async () => {
-    const res = await app.request("/mcp/tool", {
+    const res = await app.request("/api/mcp/tool", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: AUTH },
       body: JSON.stringify({
@@ -238,7 +239,7 @@ describe("Sessions", () => {
   });
 });
 
-describe("Sessions — job_run_id filter", () => {
+describe("Sessions - job_run_id filter", () => {
   let runId: string;
 
   test("POST /jobs/:id/trigger creates a run and auto-logs a session", async () => {
@@ -272,7 +273,7 @@ describe("Sessions — job_run_id filter", () => {
   });
 });
 
-describe("Jobs — cron trigger (no repeat_secs)", () => {
+describe("Jobs - cron trigger (no repeat_secs)", () => {
   let jobId: string;
 
   test("POST /jobs creates a cron job without repeat_secs", async () => {

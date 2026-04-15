@@ -1,5 +1,6 @@
 import type { AgentBackendName, AgentSession } from "@orc/agent-runtime";
 import { createBackend, hasBackend } from "@orc/agent-runtime";
+import type { PickedTask } from "@orc/core";
 import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
@@ -7,23 +8,12 @@ import type { SkillFull } from "@orc/core/skill-service";
 import { readSkill } from "@orc/core/skill-service";
 import { getDb, getSqlite } from "@orc/db/client";
 import { gateway_sessions, job_runs, jobs, tasks } from "@orc/db/schema";
-import { updateTaskStatus } from "@orc/task-service";
 import { Cron } from "croner";
 import { eq } from "drizzle-orm";
+import { OrcTaskProvider } from "./orc-task-provider.js";
 
 const logger = createLogger("runner:task-loop");
-
-type PickedTask = {
-  id: string;
-  title: string;
-  body: string | null;
-  status: string;
-  skill_name: string | null;
-  agent_backend: string | null;
-  agent_model: string | null;
-  tags: string | null;
-  project_id: string | null;
-};
+const provider = new OrcTaskProvider();
 
 function getActiveWorkerCount(projectId?: string | null): number {
   const sqlite = getSqlite();
@@ -51,7 +41,43 @@ function getProjectMaxWorkers(projectId: string): number | null {
   return row?.max_workers ?? null;
 }
 
-async function buildPrompt(task: PickedTask): Promise<string> {
+async function buildPrompt(
+  task: PickedTask,
+  prevSession?: { ended_at: number } | null,
+): Promise<string> {
+  const sqlite = getSqlite();
+
+  // Resuming after changes_requested: send only the feedback added since the
+  // worker's last session ended. The agent already has full task context from
+  // its previous run — resending the whole prompt wastes tokens and buries the
+  // reviewer's feedback inside noise.
+  if (prevSession) {
+    const newComments = sqlite
+      .query(
+        `SELECT content, author FROM comments
+         WHERE resource_type = 'task' AND resource_id = ? AND created_at > ?
+         ORDER BY created_at ASC`,
+      )
+      .all(task.id, prevSession.ended_at) as { content: string; author: string }[];
+
+    const parts = [
+      `You are resuming work on task "${task.title}" (ID: ${task.id}) after the reviewer requested changes.`,
+    ];
+    if (newComments.length > 0) {
+      parts.push("## Reviewer Feedback");
+      for (const c of newComments) {
+        parts.push(`[${c.author}]: ${c.content}`);
+      }
+    } else {
+      parts.push("(No new comments found — re-read the task history and address any open issues.)");
+    }
+    parts.push(
+      'Address the feedback above, then set the task status to "review" with a comment summarising exactly what you fixed.',
+    );
+    return parts.join("\n\n");
+  }
+
+  // Fresh start: full context
   const parts: string[] = [];
 
   const baseSkill = readSkill("orc-worker-base") as SkillFull | null;
@@ -65,7 +91,6 @@ async function buildPrompt(task: PickedTask): Promise<string> {
   parts.push(`\n---\n## Task: ${task.title}\nTask ID: ${task.id}`);
   if (task.body) parts.push(task.body);
 
-  const sqlite = getSqlite();
   const taskComments = sqlite
     .query(
       "SELECT content, author, created_at FROM comments WHERE resource_type = 'task' AND resource_id = ? ORDER BY created_at ASC",
@@ -81,17 +106,25 @@ async function buildPrompt(task: PickedTask): Promise<string> {
   return parts.join("\n\n");
 }
 
-function findPreviousSession(
-  taskId: string,
-): { runtime_session_id: string; review_rounds: number; cwd: string } | null {
+function findPreviousWorkerSession(taskId: string): {
+  runtime_session_id: string;
+  review_rounds: number;
+  cwd: string;
+  ended_at: number;
+} | null {
   const sqlite = getSqlite();
   const row = sqlite
     .query(
-      `SELECT runtime_session_id, review_rounds, cwd FROM gateway_sessions
-       WHERE task_id = ? AND runtime_session_id IS NOT NULL
+      `SELECT runtime_session_id, review_rounds, cwd, updated_at AS ended_at FROM gateway_sessions
+       WHERE task_id = ? AND role = 'worker' AND runtime_session_id IS NOT NULL
        ORDER BY updated_at DESC LIMIT 1`,
     )
-    .get(taskId) as { runtime_session_id: string; review_rounds: number; cwd: string } | null;
+    .get(taskId) as {
+    runtime_session_id: string;
+    review_rounds: number;
+    cwd: string;
+    ended_at: number;
+  } | null;
   return row;
 }
 
@@ -101,10 +134,10 @@ async function spawnWorker(task: PickedTask): Promise<void> {
   const sessionId = ulid();
 
   const backendName = (task.agent_backend ?? config.agent_loop.default_backend) as AgentBackendName;
-  const prevSession = findPreviousSession(task.id);
+  const prevSession = findPreviousWorkerSession(task.id);
   const isResume = !!prevSession;
 
-  const claimResult = await updateTaskStatus({
+  const claimResult = await provider.updateTaskStatus({
     taskId: task.id,
     status: "queued",
     claimedBy: sessionId,
@@ -118,7 +151,7 @@ async function spawnWorker(task: PickedTask): Promise<void> {
     return;
   }
 
-  const prompt = await buildPrompt(task);
+  const prompt = await buildPrompt(task, prevSession);
   let cwd = prevSession?.cwd ?? process.cwd();
   if (task.project_id) {
     const proj = getSqlite()
@@ -161,12 +194,11 @@ async function driveWorkerLoop(
   cwd: string,
   previousRuntimeSessionId?: string | undefined,
 ): Promise<void> {
-  const _db = getDb();
   const sqlite = getSqlite();
   let session: AgentSession | null = null;
 
   try {
-    const doingResult = await updateTaskStatus({
+    const doingResult = await provider.updateTaskStatus({
       taskId: task.id,
       status: "doing",
       claimedBy: sessionId,
@@ -220,7 +252,7 @@ async function driveWorkerLoop(
           session.respondPermission(event.data.requestId, "approved");
         } else {
           logger.info(
-            `Permission request for worker ${sessionId}: ${event.data.tool} — queuing for human`,
+            `Permission request for worker ${sessionId}: ${event.data.tool} - queuing for human`,
           );
           session.respondPermission(event.data.requestId, "denied");
         }
@@ -239,7 +271,7 @@ async function driveWorkerLoop(
         sqlite
           .query("UPDATE gateway_sessions SET last_error = ?, status = 'error' WHERE id = ?")
           .run(event.data, sessionId);
-        await updateTaskStatus({
+        await provider.updateTaskStatus({
           taskId: task.id,
           status: "blocked",
           comment: `Agent error: ${event.data}`,
@@ -254,9 +286,7 @@ async function driveWorkerLoop(
         "UPDATE gateway_sessions SET status = 'stopped', updated_at = unixepoch() WHERE id = ?",
       )
       .run(sessionId);
-    sqlite
-      .query("UPDATE tasks SET claimed_by = NULL, updated_at = unixepoch() WHERE id = ?")
-      .run(task.id);
+    await provider.releaseTask(task.id);
     logger.info(`Worker ${sessionId} completed for task ${task.id}`);
   } catch (err) {
     const errMsg = String(err);
@@ -266,7 +296,7 @@ async function driveWorkerLoop(
         "UPDATE gateway_sessions SET status = 'error', last_error = ?, updated_at = unixepoch() WHERE id = ?",
       )
       .run(errMsg, sessionId);
-    await updateTaskStatus({
+    await provider.updateTaskStatus({
       taskId: task.id,
       status: "blocked",
       comment: `Worker crashed: ${errMsg}`,
@@ -317,10 +347,7 @@ async function spawnReviewer(task: PickedTask): Promise<void> {
     );
     return;
   }
-  await db
-    .update(tasks)
-    .set({ claimed_by: sessionId, updated_at: new Date() })
-    .where(eq(tasks.id, task.id));
+  await provider.claimTask(task.id, sessionId);
 
   const prompt = await buildReviewPrompt(task);
   let cwd = process.cwd();
@@ -342,7 +369,7 @@ async function spawnReviewer(task: PickedTask): Promise<void> {
     status: "running",
     auto_approve: true,
     task_id: task.id,
-    role: "worker",
+    role: "reviewer",
     pid: process.pid,
     project_id: task.project_id,
     review_rounds: 0,
@@ -386,11 +413,7 @@ async function driveReviewerLoop(
         sqlite
           .query("UPDATE gateway_sessions SET last_error = ?, status = 'error' WHERE id = ?")
           .run(event.data, sessionId);
-        const reviewDb = getDb();
-        await reviewDb
-          .update(tasks)
-          .set({ claimed_by: null, updated_at: new Date() })
-          .where(eq(tasks.id, task.id));
+        await provider.releaseTask(task.id);
         return;
       }
     }
@@ -400,9 +423,7 @@ async function driveReviewerLoop(
         "UPDATE gateway_sessions SET status = 'stopped', updated_at = unixepoch() WHERE id = ?",
       )
       .run(sessionId);
-    sqlite
-      .query("UPDATE tasks SET claimed_by = NULL, updated_at = unixepoch() WHERE id = ?")
-      .run(task.id);
+    await provider.releaseTask(task.id);
     logger.info(`Reviewer ${sessionId} completed for task ${task.id}`);
   } catch (err) {
     const errMsg = String(err);
@@ -412,11 +433,7 @@ async function driveReviewerLoop(
         "UPDATE gateway_sessions SET status = 'error', last_error = ?, updated_at = unixepoch() WHERE id = ?",
       )
       .run(errMsg, sessionId);
-    const reviewDb = getDb();
-    await reviewDb
-      .update(tasks)
-      .set({ claimed_by: null, updated_at: new Date() })
-      .where(eq(tasks.id, task.id));
+    await provider.releaseTask(task.id);
   } finally {
     if (session?.alive()) {
       await session.close().catch(() => {});
@@ -449,12 +466,12 @@ export function cleanupStaleSessions(): number {
   const cutoff = Math.floor(Date.now() / 1000) - timeoutMinutes * 60;
   const stale = sqlite
     .query(
-      `SELECT id, task_id FROM gateway_sessions
-       WHERE role = 'worker' AND status = 'running'
+      `SELECT id, task_id, role FROM gateway_sessions
+       WHERE role IN ('worker', 'reviewer') AND status = 'running'
          AND (last_activity_at IS NOT NULL AND last_activity_at < ?
               OR last_activity_at IS NULL AND updated_at < ?)`,
     )
-    .all(cutoff, cutoff) as { id: string; task_id: string | null }[];
+    .all(cutoff, cutoff) as { id: string; task_id: string | null; role: string }[];
 
   for (const s of stale) {
     sqlite
@@ -463,56 +480,24 @@ export function cleanupStaleSessions(): number {
       )
       .run(s.id);
     if (s.task_id) {
-      sqlite
-        .query(
-          "UPDATE tasks SET claimed_by = NULL, status = CASE WHEN status IN ('doing','queued') THEN 'todo' ELSE status END, updated_at = unixepoch() WHERE id = ?",
-        )
-        .run(s.task_id);
+      if (s.role === "reviewer") {
+        // Reviewer timed out: unclaim the task so a new reviewer can be spawned.
+        // Don't touch status — task stays in 'review'.
+        sqlite
+          .query("UPDATE tasks SET claimed_by = NULL, updated_at = unixepoch() WHERE id = ?")
+          .run(s.task_id);
+      } else {
+        // Worker timed out: reset to 'todo' so the loop retries.
+        sqlite
+          .query(
+            "UPDATE tasks SET claimed_by = NULL, status = CASE WHEN status IN ('doing','queued') THEN 'todo' ELSE status END, updated_at = unixepoch() WHERE id = ?",
+          )
+          .run(s.task_id);
+      }
     }
-    logger.warn(`Cleaned up stale worker session ${s.id} (idle > ${timeoutMinutes}m)`);
+    logger.warn(`Cleaned up stale ${s.role} session ${s.id} (idle > ${timeoutMinutes}m)`);
   }
   return stale.length;
-}
-
-function pickAllReviewTasks(): PickedTask[] {
-  const sqlite = getSqlite();
-  return sqlite
-    .query(
-      `SELECT t.id, t.title, t.body, t.status, t.skill_name, t.agent_backend, t.agent_model, t.tags, t.project_id
-       FROM tasks t
-       WHERE t.status = 'review'
-         AND t.claimed_by IS NULL
-         AND EXISTS (SELECT 1 FROM json_each(t.tags) j WHERE j.value = 'agent-review')
-       ORDER BY
-         CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
-         t.updated_at ASC`,
-    )
-    .all() as PickedTask[];
-}
-
-function pickAllNextTasks(): PickedTask[] {
-  const sqlite = getSqlite();
-  return sqlite
-    .query(
-      `SELECT t.id, t.title, t.body, t.status, t.skill_name, t.agent_backend, t.agent_model, t.tags, t.project_id
-       FROM tasks t
-       WHERE (t.status = 'todo' OR t.status = 'changes_requested')
-         AND t.claimed_by IS NULL
-         AND (t.skill_name IS NOT NULL OR t.agent_backend IS NOT NULL
-              OR EXISTS (SELECT 1 FROM json_each(t.tags) j WHERE j.value = 'agent'))
-         AND NOT EXISTS (
-           SELECT 1 FROM (
-             SELECT tl.from_task_id AS blocker_id FROM task_links tl WHERE tl.to_task_id = t.id AND tl.link_type = 'blocks'
-             UNION
-             SELECT tl.to_task_id AS blocker_id FROM task_links tl WHERE tl.from_task_id = t.id AND tl.link_type = 'blocked_by'
-           ) b JOIN tasks blocker ON blocker.id = b.blocker_id
-           WHERE blocker.status NOT IN ('done', 'cancelled')
-         )
-       ORDER BY
-         CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
-         t.created_at ASC`,
-    )
-    .all() as PickedTask[];
 }
 
 async function runCycle(): Promise<string> {
@@ -526,14 +511,14 @@ async function runCycle(): Promise<string> {
   lines.push(`Active workers: ${globalActive}/${config.agent_loop.max_workers}`);
 
   if (globalActive >= config.agent_loop.max_workers) {
-    lines.push("At global capacity — skipping");
+    lines.push("At global capacity - skipping");
     return lines.join("\n");
   }
 
   let spawned = 0;
 
   // Review tasks run in parallel with work tasks and with each other
-  const reviewTasks = pickAllReviewTasks();
+  const reviewTasks = await provider.pickReviewTasks();
   for (const reviewTask of reviewTasks) {
     if (getActiveWorkerCount() >= config.agent_loop.max_workers) break;
     if (isAtCapacity(reviewTask)) continue;
@@ -545,7 +530,7 @@ async function runCycle(): Promise<string> {
 
   // Work tasks: one per project, different projects run in parallel
   const projectsWithWorker = new Set<string>();
-  const allTasks = pickAllNextTasks();
+  const allTasks = await provider.pickWorkTasks();
   for (const task of allTasks) {
     if (getActiveWorkerCount() >= config.agent_loop.max_workers) break;
     const projectKey = task.project_id ?? "__no_project__";
@@ -589,7 +574,7 @@ export async function ensureSystemJob(): Promise<string> {
   await db.insert(jobs).values({
     id,
     name: SYSTEM_JOB_NAME,
-    description: "Agent task loop — polls for tasks, spawns workers, cleans stale sessions",
+    description: "Agent task loop - polls for tasks, spawns workers, cleans stale sessions",
     command: "__internal:task-loop-cycle__",
     trigger_type: "cron",
     cron_expr: cronExpr,
@@ -606,7 +591,7 @@ let cycleRunning = false;
 
 export async function recordedCycle(): Promise<void> {
   if (cycleRunning) {
-    logger.debug("Skipping cycle — another cycle is already running");
+    logger.debug("Skipping cycle - another cycle is already running");
     return;
   }
   cycleRunning = true;

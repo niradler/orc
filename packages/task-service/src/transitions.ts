@@ -156,7 +156,7 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
               .run(parentLink.to_task_id);
             await addTaskComment(
               parentLink.to_task_id,
-              "All subtasks complete — auto-promoted to review",
+              "All subtasks complete - auto-promoted to review",
               "system",
             );
           }

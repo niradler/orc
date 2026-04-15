@@ -41,7 +41,7 @@ afterAll(() => {
   resetConfig();
 });
 
-describe("CLI — task commands", () => {
+describe("CLI - task commands", () => {
   test("orc task add creates a task", async () => {
     const result = await cli(
       "task",
@@ -68,7 +68,7 @@ describe("CLI — task commands", () => {
   });
 });
 
-describe("CLI — mem commands", () => {
+describe("CLI - mem commands", () => {
   test("orc mem add stores a memory", async () => {
     const result = await cli(
       "mem",

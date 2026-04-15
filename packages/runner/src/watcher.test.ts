@@ -24,7 +24,7 @@ afterAll(async () => {
   delete process.env.ORC_DB_PATH;
 });
 
-describe("File watcher — end-to-end", () => {
+describe("File watcher - end-to-end", () => {
   let jobId: string;
 
   test("sets up watch job in DB", async () => {

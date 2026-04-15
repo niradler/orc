@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 interface ChatPanelProps {
   open: boolean;
   onToggle: () => void;
-  /** When true, panel renders expanded and without the collapsed rail — used inside a mobile sheet. */
+  /** When true, panel renders expanded and without the collapsed rail - used inside a mobile sheet. */
   embedded?: boolean;
   /** Optional close handler used when embedded (falls back to onToggle). */
   onClose?: () => void;

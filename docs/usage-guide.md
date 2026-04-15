@@ -14,7 +14,7 @@ orc project add my-app -d "Main application"
 orc project use my-app
 ```
 
-Once the daemon is running, connect your agent (see [README — Connect your agent](../README.md#connect-your-agent)). Every MCP tool call and CLI command will auto-scope to the active project.
+Once the daemon is running, connect your agent (see [README - Connect your agent](../README.md#connect-your-agent)). Every MCP tool call and CLI command will auto-scope to the active project.
 
 ## Memory best practices
 
@@ -22,13 +22,13 @@ Memory is the shared context layer. What you store determines how useful ORC is 
 
 ### What to store
 
-| Type | Store when | Example |
-|---|---|---|
-| `rule` | A convention is established that all future work should follow | "All API responses use camelCase keys" |
-| `decision` | A choice was made with tradeoffs | "Use PostgreSQL over SQLite for the main app — need concurrent writes" |
-| `discovery` | Something non-obvious was found during investigation | "The token refresh endpoint has a 2-second race window under load" |
-| `event` | Something happened that future sessions might need to know | "Deployed v2.1 to production on 2026-03-15" |
-| `fact` | General context that doesn't fit other types | "The frontend repo is at github.com/team/frontend" |
+| Type        | Store when                                                     | Example                                                                |
+| ----------- | -------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `rule`      | A convention is established that all future work should follow | "All API responses use camelCase keys"                                 |
+| `decision`  | A choice was made with tradeoffs                               | "Use PostgreSQL over SQLite for the main app - need concurrent writes" |
+| `discovery` | Something non-obvious was found during investigation           | "The token refresh endpoint has a 2-second race window under load"     |
+| `event`     | Something happened that future sessions might need to know     | "Deployed v2.1 to production on 2026-03-15"                            |
+| `fact`      | General context that doesn't fit other types                   | "The frontend repo is at github.com/team/frontend"                     |
 
 ### What not to store
 
@@ -43,7 +43,7 @@ Memory is the shared context layer. What you store determines how useful ORC is 
 # BM25 full-text search
 orc mem search "authentication token"
 
-# Via MCP — agents should search before storing to avoid duplicates
+# Via MCP - agents should search before storing to avoid duplicates
 memory_search({ query: "auth", project: "my-app" })
 ```
 
@@ -75,6 +75,7 @@ orc task add "Review PR #42" --skill orc-reviewer --backend claude
 ```
 
 A task is picked up by the loop when **any** of these is true:
+
 - `skill_name` is set
 - `agent_backend` is set
 - Tagged with `"agent"`
@@ -109,7 +110,7 @@ orc task approve <id>                            # approve
 orc task reject <id> -m "Missing error handling" # request changes
 ```
 
-On rejection, the task goes to `changes_requested` and the loop picks it up again — resuming the previous agent session if possible, or starting fresh with all comments as context.
+On rejection, the task goes to `changes_requested` and the loop picks it up again - resuming the previous agent session if possible, or starting fresh with all comments as context.
 
 **Review round limits:** Tasks have `max_review_rounds` (default 3). If an agent exceeds this, the task is auto-paused and you get a notification. This prevents infinite token burn on tasks the agent can't resolve.
 
@@ -142,7 +143,7 @@ orc task add "Run security scan" --backend a2a
 
 For A2A backends, the remote agent URL is set via the `a2a_url` field on the task or session. The task loop sends JSON-RPC messages to that endpoint following the Google A2A protocol.
 
-Set `agent_loop.default_backend` in config for the fallback. Any unknown backend name routes through ACPX with the name as `--agent` flag — so `--backend gemini` runs `acpx --agent gemini`.
+Set `agent_loop.default_backend` in config for the fallback. Any unknown backend name routes through ACPX with the name as `--agent` flag - so `--backend gemini` runs `acpx --agent gemini`.
 
 ### Per-project concurrency
 
@@ -158,22 +159,22 @@ This prevents one project from starving others when the global `max_workers` is 
 
 ORC captures session state so agents survive context compaction:
 
-1. **During work** — hooks automatically record file edits, task updates, git operations, and decisions as session events
-2. **Before compaction** — `session_snapshot` builds a priority-tiered 2KB summary (P1: files/tasks, P2: decisions/git, P3: intent)
-3. **After compaction** — `session_restore` injects the snapshot back so the agent resumes with full context
+1. **During work** - hooks automatically record file edits, task updates, git operations, and decisions as session events
+2. **Before compaction** - `session_snapshot` builds a priority-tiered 2KB summary (P1: files/tasks, P2: decisions/git, P3: intent)
+3. **After compaction** - `session_restore` injects the snapshot back so the agent resumes with full context
 
 For Claude Code and Codex, this is automatic via hooks. For Cursor and other agents, call `session_event` and `session_snapshot` manually.
 
 ### What agents should record
 
-| Event type | When | Example |
-|---|---|---|
-| `file` | After writing/editing a file | `{ path: "src/auth.ts" }` |
-| `task` | After creating or updating a task | `{ id: "...", status: "doing" }` |
-| `decision` | After making an architectural choice | `{ content: "Using JWT over sessions" }` |
-| `rule` | After establishing a convention | `{ content: "All errors return { error, code }" }` |
-| `git` | After commit, push, branch | `{ action: "commit", ref: "abc123" }` |
-| `error` | After a tool error or failed command | `{ tool: "Bash", error: "..." }` |
+| Event type | When                                 | Example                                            |
+| ---------- | ------------------------------------ | -------------------------------------------------- |
+| `file`     | After writing/editing a file         | `{ path: "src/auth.ts" }`                          |
+| `task`     | After creating or updating a task    | `{ id: "...", status: "doing" }`                   |
+| `decision` | After making an architectural choice | `{ content: "Using JWT over sessions" }`           |
+| `rule`     | After establishing a convention      | `{ content: "All errors return { error, code }" }` |
+| `git`      | After commit, push, branch           | `{ action: "commit", ref: "abc123" }`              |
+| `error`    | After a tool error or failed command | `{ tool: "Bash", error: "..." }`                   |
 
 ## Jobs
 
@@ -257,8 +258,8 @@ This spawns a Claude Code session you can chat with directly from Telegram. Usef
 
 ### Config resolution
 
-1. `~/.orc/config.json` — user global
-2. `./.orc/config.json` — project-local (overrides global)
+1. `~/.orc/config.json` - user global
+2. `./.orc/config.json` - project-local (overrides global)
 3. Environment variables (override both)
 
 Project-local config is useful for setting `ORC_PROJECT` per-repo so agents auto-scope without you running `orc project use`.

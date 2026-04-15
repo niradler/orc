@@ -40,7 +40,7 @@ interface SidebarProps {
   onToggle: () => void;
   /** When true, render without outer width/border chrome (used inside a mobile drawer). */
   embedded?: boolean;
-  /** Called after a navigation action — used by the mobile drawer to auto-close. */
+  /** Called after a navigation action - used by the mobile drawer to auto-close. */
   onNavigate?: () => void;
 }
 
@@ -143,7 +143,7 @@ export function Sidebar({
         </div>
       )}
 
-      {/* Navigation — the only scroll region in the sidebar */}
+      {/* Navigation - the only scroll region in the sidebar */}
       <nav
         className={cn(
           "flex-1 min-h-0 overflow-y-auto space-y-0.5",
@@ -173,7 +173,7 @@ export function Sidebar({
           );
         })}
 
-        {/* Collapse toggle — hidden inside the mobile drawer (no rail mode there) */}
+        {/* Collapse toggle - hidden inside the mobile drawer (no rail mode there) */}
         {!embedded && (
           <button
             type="button"
@@ -192,7 +192,7 @@ export function Sidebar({
         )}
       </nav>
 
-      {/* Footer — pinned below nav */}
+      {/* Footer - pinned below nav */}
       <div className={cn("shrink-0 mt-auto space-y-3", collapsed && !embedded ? "px-1" : "px-3")}>
         <div className="pt-4 border-t border-surface-highest">
           <button

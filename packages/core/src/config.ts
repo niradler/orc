@@ -102,7 +102,7 @@ export const OrcConfigSchema = z.object({
 
   agent_loop: z
     .object({
-      enabled: z.boolean().default(false),
+      enabled: z.boolean().default(true),
       poll_interval_minutes: z.number().int().min(1).default(5),
       max_workers: z.number().int().min(1).default(1),
       default_backend: z.string().default("claude"),

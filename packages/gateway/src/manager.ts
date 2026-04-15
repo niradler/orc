@@ -107,7 +107,7 @@ class GatewayManager {
       const cfg = config2.gateway[platform];
       if (cfg.enabled && cfg.authorized_users.length === 0) {
         logger.warn(
-          `${platform}: authorized_users is empty — all users will be denied. Add user IDs to config.`,
+          `${platform}: authorized_users is empty - all users will be denied. Add user IDs to config.`,
         );
       }
     }
@@ -174,7 +174,7 @@ class GatewayManager {
     if (!chat.authorized) return;
 
     if (!this.rateLimiter.allow(chat.id)) {
-      await this.sendText(message, "⏸ Slow down — too many messages. Try again in a minute.");
+      await this.sendText(message, "⏸ Slow down - too many messages. Try again in a minute.");
       return;
     }
 
@@ -308,7 +308,7 @@ class GatewayManager {
     });
 
     if (!this.sessionLock.tryAcquire(session.id)) {
-      await this.sendText(message, `⏳ ${session.backend} is still processing — please wait.`);
+      await this.sendText(message, `⏳ ${session.backend} is still processing - please wait.`);
       return;
     }
 

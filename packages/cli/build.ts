@@ -23,7 +23,7 @@ console.log("Generating web asset manifest...");
   if (proc.exitCode !== 0) process.exit(1);
 }
 
-// 3. Cross-compile standalone binaries — each embeds the web dashboard.
+// 3. Cross-compile standalone binaries - each embeds the web dashboard.
 const targets = [
   { target: "bun-linux-x64", out: "dist/orc-linux-x64" },
   { target: "bun-linux-arm64", out: "dist/orc-linux-arm64" },
@@ -60,4 +60,4 @@ for (const { target, out } of targets) {
   console.log(proc.stdout.toString());
 }
 
-console.log("All builds complete. Each binary includes the web dashboard — no extra files needed.");
+console.log("All builds complete. Each binary includes the web dashboard - no extra files needed.");

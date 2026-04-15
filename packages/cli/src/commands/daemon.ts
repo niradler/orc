@@ -4,7 +4,14 @@ import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import { startGateway, stopGateway } from "@orc/gateway";
-import { startScheduler, startWatchers, stopScheduler, stopWatchers } from "@orc/runner";
+import {
+  startScheduler,
+  startTaskLoop,
+  startWatchers,
+  stopScheduler,
+  stopTaskLoop,
+  stopWatchers,
+} from "@orc/runner";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
 
@@ -18,11 +25,11 @@ const LAUNCHD_PLIST = join(homedir(), "Library", "LaunchAgents", `${LAUNCHD_LABE
 const SYSTEMD_UNIT = join(homedir(), ".config", "systemd", "user", "orc-daemon.service");
 
 function resolveOrcBin(): string {
-  // Standalone binary — process.execPath IS the orc binary
+  // Standalone binary - process.execPath IS the orc binary
   if (!process.execPath.includes("node") && !process.execPath.includes("bun")) {
     return process.execPath;
   }
-  // npm global install — find `orc` on PATH
+  // npm global install - find `orc` on PATH
   try {
     const p = execSync(platform() === "win32" ? "where orc" : "which orc", {
       encoding: "utf-8",
@@ -85,7 +92,7 @@ function installMacos(): void {
 function installLinux(): void {
   const bin = resolveOrcBin();
   const unit = `[Unit]
-Description=ORC Daemon — API + scheduler + gateway
+Description=ORC Daemon - API + scheduler + gateway
 After=network-online.target
 Wants=network-online.target
 
@@ -203,10 +210,12 @@ export function daemonCommand() {
       await startScheduler();
       await startWatchers();
       await startGateway();
-      console.log("[orc] Scheduler + watchers + gateway active. Ctrl+C to stop.\n");
+      startTaskLoop();
+      console.log("[orc] Scheduler + watchers + gateway + task loop active. Ctrl+C to stop.\n");
 
       const shutdown = async (signal: string) => {
         process.stdout.write(`\n[orc] ${signal} - shutting down...\n`);
+        stopTaskLoop();
         stopScheduler();
         await stopWatchers();
         await stopGateway();
@@ -253,7 +262,7 @@ export function daemonCommand() {
       console.log(`  Config:  ~/.orc/config.json`);
 
       // macOS (launchctl load) and Linux (systemctl --now) already started it.
-      // On Windows, use WScript.Shell Run(cmd, 0) — window style 0 = SW_HIDE.
+      // On Windows, use WScript.Shell Run(cmd, 0) - window style 0 = SW_HIDE.
       // This is the only reliable way to start a console process with no visible
       // window on Windows regardless of Bun/Node version.
       if (os === "win32") {
@@ -262,7 +271,7 @@ export function daemonCommand() {
         const binEsc = bin.replace(/'/g, "''");
         const { execSync } = await import("node:child_process");
         execSync(
-          `powershell -NonInteractive -NoProfile -WindowStyle Hidden -Command "(New-Object -ComObject WScript.Shell).Run('\\\"${binEsc}\\\" daemon start', 0, $false)"`,
+          `powershell -NonInteractive -NoProfile -WindowStyle Hidden -Command "(New-Object -ComObject WScript.Shell).Run('\\"${binEsc}\\" daemon start', 0, $false)"`,
           { windowsHide: true },
         );
         console.log(`\n  Daemon started in background (silent).`);

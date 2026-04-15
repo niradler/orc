@@ -103,7 +103,7 @@ export function kbCommand() {
       });
       if (error) return console.error("Error:", error);
       if (isJson()) return jsonOut(data);
-      console.log(`Added collection "${data?.name}" — indexed ${data?.indexed} documents`);
+      console.log(`Added collection "${data?.name}" - indexed ${data?.indexed} documents`);
     });
 
   cmd

@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 const ask = (marker: string) =>
   `Reply with exactly: ${marker}. Do not include any other words, punctuation, quotes, or whitespace around it.`;
 
-test.describe("Chat panel — end-to-end SSE round-trip", () => {
+test.describe("Chat panel - end-to-end SSE round-trip", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     const openBtn = page.getByTestId("chat-open-button");
@@ -26,7 +26,7 @@ test.describe("Chat panel — end-to-end SSE round-trip", () => {
 
     // Streaming flag should flip on (within action timeout)
     await expect(panel).toHaveAttribute("data-streaming", "true");
-    // Input locked while streaming — proves UI respects streaming state
+    // Input locked while streaming - proves UI respects streaming state
     await expect(input).toBeDisabled();
 
     // Wait for SSE 'done' -> flag flips back

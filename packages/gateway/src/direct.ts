@@ -58,32 +58,32 @@ function helpText(mode: GatewayMode): string {
     "<b>ORC Gateway Commands</b>",
     "",
     "<b>Navigation</b>",
-    "/help — this message",
-    "/status — system overview",
-    "/mode [direct|agent:&lt;name&gt;|multi|job:&lt;name&gt;] — switch mode",
-    "/cwd &lt;path&gt; — set working directory",
+    "/help - this message",
+    "/status - system overview",
+    "/mode [direct|agent:&lt;name&gt;|multi|job:&lt;name&gt;] - switch mode",
+    "/cwd &lt;path&gt; - set working directory",
     "",
     "<b>Tasks</b>",
-    "/tasks — list active tasks",
-    "/task &lt;id&gt; — task details",
-    "/approve &lt;id&gt; [note] — approve task or permission",
-    "/reject &lt;id&gt; [note] — reject task or deny permission",
-    "/assign &lt;task-id&gt; &lt;agent&gt; — assign task to agent session",
+    "/tasks - list active tasks",
+    "/task &lt;id&gt; - task details",
+    "/approve &lt;id&gt; [note] - approve task or permission",
+    "/reject &lt;id&gt; [note] - reject task or deny permission",
+    "/assign &lt;task-id&gt; &lt;agent&gt; - assign task to agent session",
     "",
     "<b>Jobs</b>",
-    "/jobs — list jobs",
-    "/run &lt;name&gt; — trigger a job",
+    "/jobs - list jobs",
+    "/run &lt;name&gt; - trigger a job",
     "",
     "<b>Memory</b>",
-    "/mem &lt;query&gt; — search memories",
+    "/mem &lt;query&gt; - search memories",
     "",
     "<b>Agents</b>",
-    "/agent &lt;name&gt; — switch active agent (claude, codex, gemini, copilot, a2a, ...)",
-    "/sessions — list all agent sessions",
-    "/session new|list|switch &lt;id&gt;|stop — session lifecycle",
+    "/agent &lt;name&gt; - switch active agent (claude, codex, gemini, copilot, a2a, ...)",
+    "/sessions - list all agent sessions",
+    "/session new|list|switch &lt;id&gt;|stop - session lifecycle",
   ];
   if (mode.startsWith("agent:") || mode === "multi") {
-    base.push("", "<i>Current mode: agent — send any text to the active agent</i>");
+    base.push("", "<i>Current mode: agent - send any text to the active agent</i>");
   }
   return base.join("\n");
 }
@@ -198,7 +198,7 @@ export async function handleDirectCommand(input: {
     const permission = await findPermission(id);
     if (permission) {
       return {
-        text: `Permission ${shortId(permission.id)} queued for approval — use the button or wait for agent context.`,
+        text: `Permission ${shortId(permission.id)} queued for approval - use the button or wait for agent context.`,
       };
     }
     const task = await findTask(id);
@@ -216,7 +216,7 @@ export async function handleDirectCommand(input: {
     const permission = await findPermission(id);
     if (permission) {
       return {
-        text: `Permission ${shortId(permission.id)} denial queued — use the button or wait for agent context.`,
+        text: `Permission ${shortId(permission.id)} denial queued - use the button or wait for agent context.`,
       };
     }
     const task = await findTask(id);
@@ -249,7 +249,7 @@ export async function handleDirectCommand(input: {
     const lines = ["<b>Jobs</b>", ""];
     for (const row of rows) {
       const status = row.last_run_at ? "ran" : "never";
-      lines.push(`• <code>${row.name}</code> (${row.trigger_type}) — ${status} × ${row.run_count}`);
+      lines.push(`• <code>${row.name}</code> (${row.trigger_type}) - ${status} × ${row.run_count}`);
     }
     return { html: lines.join("\n") };
   }

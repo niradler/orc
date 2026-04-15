@@ -24,7 +24,7 @@ export default function App() {
   );
 
   // Default to collapsed rail on tablet (<lg), expanded on desktop (≥lg).
-  // This is a one-shot initialization — after mount the user owns the toggle.
+  // This is a one-shot initialization - after mount the user owns the toggle.
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.innerWidth < BREAKPOINTS.lg;
@@ -40,7 +40,7 @@ export default function App() {
 
   return (
     <div className="h-dvh bg-background flex flex-col overflow-hidden">
-      {/* Mobile top bar — only rendered under md; also gated by `md:hidden` in the
+      {/* Mobile top bar - only rendered under md; also gated by `md:hidden` in the
           component itself so the CSS-driven layout works even before JS hydration. */}
       <MobileTopBar onOpenNav={() => setMobileNavOpen(true)} />
 
@@ -55,7 +55,7 @@ export default function App() {
           />
         </div>
 
-        {/* Main content — the only element that owns vertical scroll for page content. */}
+        {/* Main content - the only element that owns vertical scroll for page content. */}
         <main className="flex-1 min-w-0 min-h-0 overflow-y-auto">
           <div className="p-4 md:p-6 lg:p-8 min-h-full flex flex-col max-w-[1200px]">
             <Routes>

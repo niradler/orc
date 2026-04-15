@@ -257,7 +257,7 @@ class ClaudeSession implements AgentSession {
     if (this.state.hasReceivedResult || this.done) return;
     const stderr = this.stderrRing.join("\n");
     if (isAuthError(stderr)) {
-      this.push({ type: "error", data: "Authentication failed — check ANTHROPIC_API_KEY" });
+      this.push({ type: "error", data: "Authentication failed - check ANTHROPIC_API_KEY" });
     } else if (code !== 0) {
       const msg = stderr.trim() || `claude exited with code ${code}`;
       this.push({ type: "error", data: msg });

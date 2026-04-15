@@ -25,7 +25,7 @@ afterAll(() => {
  */
 describe("/chat/stream contract", () => {
   test("rejects empty messages array with 400", async () => {
-    const res = await app.request("/chat/stream", {
+    const res = await app.request("/api/chat/stream", {
       method: "POST",
       headers: AUTH,
       body: JSON.stringify({ messages: [] }),
@@ -36,7 +36,7 @@ describe("/chat/stream contract", () => {
   });
 
   test("rejects missing messages field with 400", async () => {
-    const res = await app.request("/chat/stream", {
+    const res = await app.request("/api/chat/stream", {
       method: "POST",
       headers: AUTH,
       body: JSON.stringify({ agent: "claude" }),
