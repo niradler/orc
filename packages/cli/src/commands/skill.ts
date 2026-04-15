@@ -32,7 +32,7 @@ export function skillCommand() {
       for (const s of skills) {
         const src = s.source === "user" ? color(" [user]", "36") : "";
         const name = s.name.length > 30 ? `${s.name.slice(0, 29)}…` : s.name;
-        const desc = s.description ? ` — ${s.description.slice(0, 50)}` : "";
+        const desc = s.description ? ` - ${s.description.slice(0, 50)}` : "";
         console.log(`  ${name.padEnd(32)}${src}${desc}`);
       }
     });

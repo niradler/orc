@@ -43,7 +43,7 @@ test.describe("Sidebar project scope", () => {
       await gotoView(page, "tasks");
       await page.getByTestId("tasks-view-table").click();
 
-      // Default is "all" — both tasks should be reachable
+      // Default is "all" - both tasks should be reachable
       await expect(
         page.locator(`[data-testid="task-row"][data-task-id="${scoped.id}"]`),
       ).toBeVisible();
@@ -62,7 +62,7 @@ test.describe("Sidebar project scope", () => {
         page.locator(`[data-testid="task-row"][data-task-id="${unscoped.id}"]`),
       ).toHaveCount(0);
 
-      // Back to All Projects — both visible again
+      // Back to All Projects - both visible again
       await page.getByTestId("sidebar-project-select").selectOption("all");
       await expect(
         page.locator(`[data-testid="task-row"][data-task-id="${unscoped.id}"]`),

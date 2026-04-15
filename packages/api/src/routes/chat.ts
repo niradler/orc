@@ -109,7 +109,7 @@ app.post("/chat/stream", async (c) => {
   }
 
   const agent = body.agent ?? "claude";
-  // Whitelist-style validation — `agent` is passed as an argv element to acpx,
+  // Whitelist-style validation - `agent` is passed as an argv element to acpx,
   // so a value like "--help" or "-v" would be interpreted as a flag. Reject
   // anything that isn't a plain identifier.
   if (!/^[a-z][a-z0-9-]{0,31}$/i.test(agent)) {
@@ -193,7 +193,7 @@ app.post("/chat/stream", async (c) => {
     // Bun stdin pipe can be closed before bytes are flushed.
     try {
       const bytes = new TextEncoder().encode(prompt);
-      // Bun's stdin is a FileSink — use its write/flush/end API directly.
+      // Bun's stdin is a FileSink - use its write/flush/end API directly.
       const sink = proc.stdin as unknown as {
         write: (chunk: Uint8Array | string) => number | Promise<number>;
         end: () => void | Promise<void>;

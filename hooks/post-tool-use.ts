@@ -133,7 +133,7 @@ async function main() {
       }),
     });
   } catch {
-    // API not running — silently skip
+    // API not running - silently skip
   }
 
   process.exit(0);

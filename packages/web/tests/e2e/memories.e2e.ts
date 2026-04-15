@@ -11,7 +11,7 @@ interface Memory {
 test.describe("Memories CRUD", () => {
   test("create via UI then delete via UI", async ({ page }) => {
     const marker = tid("pw-mem");
-    const body = `PW_MEMORY_CONTENT ${marker} — auto-cleaned by this test`;
+    const body = `PW_MEMORY_CONTENT ${marker} - auto-cleaned by this test`;
     await gotoView(page, "memories");
     await expect(page.getByTestId("view-title")).toHaveText(/memories/i);
 
@@ -19,7 +19,7 @@ test.describe("Memories CRUD", () => {
     await page.getByTestId("memory-content-input").fill(body);
     await page.getByTestId("memory-submit").click();
 
-    // Row appears — the title cell shows content text when no title is set
+    // Row appears - the title cell shows content text when no title is set
     const row = page.locator('[data-testid="memory-row"]').filter({ hasText: marker });
     await expect(row).toBeVisible();
 

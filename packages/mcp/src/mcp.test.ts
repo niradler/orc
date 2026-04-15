@@ -216,7 +216,7 @@ describe("MCP task tools", () => {
       author: "agent",
     });
     expect(result).toMatch(/^Created: /);
-    taskId = result.split(" — ")[0]?.replace("Created: ", "").trim() ?? "";
+    taskId = result.split(" - ")[0]?.replace("Created: ", "").trim() ?? "";
   });
 
   test("task_list shows the new task", async () => {

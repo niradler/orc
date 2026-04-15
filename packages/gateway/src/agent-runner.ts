@@ -246,7 +246,7 @@ function startIdleWatchdog(sessionId: string, session: AgentSession): IdleWatchd
     if (timer) clearTimeout(timer);
     if (paused) return;
     timer = setTimeout(async () => {
-      logger.warn("Idle timeout — closing agent session", { sessionId });
+      logger.warn("Idle timeout - closing agent session", { sessionId });
       await session.close().catch(() => {});
       activeSessions.delete(sessionId);
       await updateGatewaySession(sessionId, {

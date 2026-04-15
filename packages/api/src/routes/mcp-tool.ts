@@ -8,7 +8,7 @@ const mcpToolRoute = createRoute({
   method: "post",
   path: "/mcp/tool",
   tags: ["MCP"],
-  summary: "Execute an MCP tool by name — used by hook scripts",
+  summary: "Execute an MCP tool by name - used by hook scripts",
   request: {
     body: {
       content: {

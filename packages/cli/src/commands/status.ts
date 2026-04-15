@@ -7,7 +7,7 @@ export function statusCommand() {
     const client = createOrcClient();
     const { data, error } = await client.health.check();
     if (error) {
-      console.error("API unreachable — is `orc api` running?");
+      console.error("API unreachable - is `orc api` running?");
       return;
     }
     console.log(`orc API  ● running  v${data?.version}  uptime: ${data?.uptime}s`);

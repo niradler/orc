@@ -7,7 +7,7 @@
  * can serve the dashboard without a filesystem `dist/web/` directory.
  *
  * For the npm-published package and dev mode the normal `src/index.ts` entry is
- * used instead — it relies on the filesystem copy in `dist/web/`.
+ * used instead - it relies on the filesystem copy in `dist/web/`.
  */
 import { WEB_ASSETS } from "./_web-manifest.generated.js";
 

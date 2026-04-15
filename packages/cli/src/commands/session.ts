@@ -90,7 +90,7 @@ export function sessionCommand() {
         const id = shortId(s.id);
         const agent = s.agent.padEnd(16);
         const when = formatAgo(s.created_at).padEnd(10);
-        const summary = (s.summary ?? "—").slice(0, 40);
+        const summary = (s.summary ?? "-").slice(0, 40);
         console.log(`${id}  ${agent}  ${when}  ${summary}`);
       }
     });

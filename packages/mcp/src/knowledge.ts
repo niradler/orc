@@ -1,5 +1,5 @@
 /**
- * QmdKnowledgeEngine — implements KnowledgeEngine using @tobilu/qmd SDK.
+ * QmdKnowledgeEngine - implements KnowledgeEngine using @tobilu/qmd SDK.
  *
  * QMD manages its own SQLite DB at ~/.orc/knowledge.db (configurable).
  * Project scoping is stored in orc.db (knowledge_collections table).
@@ -27,7 +27,7 @@ const logger = createLogger("knowledge:qmd");
 // Lazy-load @tobilu/qmd so that its transitive static import of `node-llama-cpp`
 // (pulled in by `qmd/llm.js`) doesn't fire at module load. Compiled standalone
 // binaries and npm users without the optional native dep installed should still
-// be able to start the CLI — the knowledge feature surfaces a clear error on use
+// be able to start the CLI - the knowledge feature surfaces a clear error on use
 // instead of crashing on boot.
 let _qmd: typeof import("@tobilu/qmd") | null = null;
 async function loadQmd(): Promise<typeof import("@tobilu/qmd")> {
@@ -222,9 +222,9 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
     const store = await this.getStore();
     const result = await store.update(opts?.collections ? { collections: opts.collections } : {});
 
-    // Auto-embed when hybrid mode is configured — enables vector search + reranking
+    // Auto-embed when hybrid mode is configured - enables vector search + reranking
     if (config.knowledge.search_mode === "hybrid" && (result.indexed > 0 || result.updated > 0)) {
-      logger.info("Hybrid mode configured — generating embeddings for new/updated documents");
+      logger.info("Hybrid mode configured - generating embeddings for new/updated documents");
       try {
         const embedResult = await store.embed();
         logger.info("Embedding complete", {

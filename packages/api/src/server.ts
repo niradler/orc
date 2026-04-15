@@ -66,7 +66,7 @@ export function createApp() {
 
   app.get("/docs", swaggerUI({ url: "/openapi.json" }));
 
-  // Static web dashboard — mounted last so API routes take precedence.
+  // Static web dashboard - mounted last so API routes take precedence.
   app.use("*", createWebStatic());
 
   return app;

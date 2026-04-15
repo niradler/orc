@@ -1,4 +1,4 @@
-# ORC Agent Orchestration — Design Spec
+# ORC Agent Orchestration - Design Spec
 
 > **Date:** 2026-03-21
 > **Status:** Draft
@@ -12,13 +12,13 @@ ORC becomes the central brain that coordinates multiple coding agents (Claude Co
 
 ### Roles
 
-| Role | What it does | How it runs |
-|---|---|---|
-| **Human** | Defines requirements, reviews work, approves/rejects | Telegram, CLI, or direct conversation |
-| **Main agent** | General assistant. ORC-aware. Gathers requirements, creates tasks, reports status on request | Local Claude Code session or Telegram gateway |
-| **Planner worker** | Deep-dives a task, creates detailed plan + subtasks. Optional — skipped for simple tasks | Spawned by task loop |
-| **Coder worker** | Implements a plan. Writes code, tests, submits for review | Spawned by task loop |
-| **Reviewer worker** | Reviews code/work against requirements and DOD | Spawned by task loop |
+| Role                | What it does                                                                                 | How it runs                                   |
+| ------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| **Human**           | Defines requirements, reviews work, approves/rejects                                         | Telegram, CLI, or direct conversation         |
+| **Main agent**      | General assistant. ORC-aware. Gathers requirements, creates tasks, reports status on request | Local Claude Code session or Telegram gateway |
+| **Planner worker**  | Deep-dives a task, creates detailed plan + subtasks. Optional - skipped for simple tasks     | Spawned by task loop                          |
+| **Coder worker**    | Implements a plan. Writes code, tests, submits for review                                    | Spawned by task loop                          |
+| **Reviewer worker** | Reviews code/work against requirements and DOD                                               | Spawned by task loop                          |
 
 ### Flow
 
@@ -63,23 +63,23 @@ Done. Main agent reports status when asked (orc-report skill).
 
 ### New fields on `tasks` table
 
-| Field | Type | Default | Purpose |
-|---|---|---|---|
-| `skill_name` | text | null | Skill to load for this task's worker (references `skills/*/SKILL.md`) |
-| `required_review` | boolean | true | Whether human must review. false = auto-approve on agent review pass |
-| `agent_backend` | text | null | Preferred backend: `claude \| codex \| cursor`. null = use project/global default |
-| `max_review_rounds` | integer | 3 | Max times a task can cycle through changes_requested before escalating to human. Prevents infinite agent token burn. 0 = unlimited. |
+| Field               | Type    | Default | Purpose                                                                                                                             |
+| ------------------- | ------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `skill_name`        | text    | null    | Skill to load for this task's worker (references `skills/*/SKILL.md`)                                                               |
+| `required_review`   | boolean | true    | Whether human must review. false = auto-approve on agent review pass                                                                |
+| `agent_backend`     | text    | null    | Preferred backend: `claude \| codex \| cursor`. null = use project/global default                                                   |
+| `max_review_rounds` | integer | 3       | Max times a task can cycle through changes_requested before escalating to human. Prevents infinite agent token burn. 0 = unlimited. |
 
 ### Existing fields used for orchestration
 
-| Field | Current state | How we use it |
-|---|---|---|
-| `claimed_by` | Exists, text | Stores session ID of the agent working on this task |
-| `claim_expires_at` | Exists, timestamp | Timeout for stale claims |
-| `tags` | Exists, JSON array | General purpose filtering. Can tag tasks for agent pickup |
-| `blocked_by` (dependencies) | Exists via dependency system | Block tasks until prerequisites done |
-| `status` | Exists | Drive the entire workflow via status transitions |
-| `author` | Exists | `"human"` or `"agent"` — who created the task |
+| Field                       | Current state                | How we use it                                             |
+| --------------------------- | ---------------------------- | --------------------------------------------------------- |
+| `claimed_by`                | Exists, text                 | Stores session ID of the agent working on this task       |
+| `claim_expires_at`          | Exists, timestamp            | Timeout for stale claims                                  |
+| `tags`                      | Exists, JSON array           | General purpose filtering. Can tag tasks for agent pickup |
+| `blocked_by` (dependencies) | Exists via dependency system | Block tasks until prerequisites done                      |
+| `status`                    | Exists                       | Drive the entire workflow via status transitions          |
+| `author`                    | Exists                       | `"human"` or `"agent"` - who created the task             |
 
 ### Status flow expansion
 
@@ -87,17 +87,17 @@ Current: `todo → doing → review → done / changes_requested → blocked →
 
 Proposed:
 
-| Status | Meaning | Who sets it |
-|---|---|---|
-| `todo` | Ready to be picked up by loop or human | Main agent, planner, human |
-| `queued` | Claimed by loop, waiting for concurrency slot | Task loop |
-| `doing` | Agent actively working | Worker agent |
-| `review` | Submitted for review (agent review first if configured, then human) | Worker agent |
-| `changes_requested` | Sent back with feedback | Reviewer or human |
-| `done` | Approved and complete | Human or auto-approve |
-| `blocked` | Blocked by task dependency | Automatic (dependency system) |
-| `paused` | Manually held — loop won't touch it | Human |
-| `cancelled` | Dead | Human or main agent |
+| Status              | Meaning                                                             | Who sets it                   |
+| ------------------- | ------------------------------------------------------------------- | ----------------------------- |
+| `todo`              | Ready to be picked up by loop or human                              | Main agent, planner, human    |
+| `queued`            | Claimed by loop, waiting for concurrency slot                       | Task loop                     |
+| `doing`             | Agent actively working                                              | Worker agent                  |
+| `review`            | Submitted for review (agent review first if configured, then human) | Worker agent                  |
+| `changes_requested` | Sent back with feedback                                             | Reviewer or human             |
+| `done`              | Approved and complete                                               | Human or auto-approve         |
+| `blocked`           | Blocked by task dependency                                          | Automatic (dependency system) |
+| `paused`            | Manually held - loop won't touch it                                 | Human                         |
+| `cancelled`         | Dead                                                                | Human or main agent           |
 
 **Note:** There is no separate `human_review` status. The `review` status is used for both agent and human review. When a reviewer agent is configured, the loop picks up `review` tasks for agent review first. If the agent reviewer approves, it notifies the human (via gateway) for final approval while staying in `review` status. The task's `required_review` flag determines whether human approval is needed.
 
@@ -107,15 +107,15 @@ All notifications and automation are driven by status transitions through a **sh
 
 The task service lives in `packages/core` (or a new `packages/task-service`) and is imported by both `packages/mcp` and `packages/runner`.
 
-| Transition | Side-effect |
-|---|---|
-| `* → review` | Notify gateway (Telegram/Slack) if `required_review = true` |
-| `* → done` | Unblock dependent tasks. Update parent progress. |
+| Transition              | Side-effect                                                                                                                                                                                 |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `* → review`            | Notify gateway (Telegram/Slack) if `required_review = true`                                                                                                                                 |
+| `* → done`              | Unblock dependent tasks. Update parent progress.                                                                                                                                            |
 | `* → changes_requested` | Add comment with feedback. Task becomes eligible for loop pickup. Increment review round counter. If `review_rounds >= max_review_rounds`, set status to `paused` and notify human instead. |
-| `* → doing` | Set `claimed_by` to session ID. |
-| `doing → todo` | Clear `claimed_by` (agent crashed/timed out). |
-| `* → paused` | Clear `claimed_by`. Loop ignores this task. |
-| `paused → todo` | Task becomes eligible for pickup again. |
+| `* → doing`             | Set `claimed_by` to session ID.                                                                                                                                                             |
+| `doing → todo`          | Clear `claimed_by` (agent crashed/timed out).                                                                                                                                               |
+| `* → paused`            | Clear `claimed_by`. Loop ignores this task.                                                                                                                                                 |
+| `paused → todo`         | Task becomes eligible for pickup again.                                                                                                                                                     |
 
 ### `comment` parameter on `task_update`
 
@@ -131,14 +131,14 @@ Remove `task_submit_review` and `task_check_review`. Agents use `task_update({id
 
 ### Current state
 
-Skills are filesystem-based, living in `skills/*/SKILL.md` (built-in) and `~/.orc/skills/` (user-defined). No database table — loaded directly from the filesystem.
+Skills are filesystem-based, living in `skills/*/SKILL.md` (built-in) and `~/.orc/skills/` (user-defined). No database table - loaded directly from the filesystem.
 
 ### New MCP tools
 
-| Tool | Input | Output |
-|---|---|---|
+| Tool         | Input               | Output                               |
+| ------------ | ------------------- | ------------------------------------ |
 | `skill_list` | `{tags?: string[]}` | Array of `{name, description, tags}` |
-| `skill_read` | `{name: string}` | Full skill content + metadata |
+| `skill_read` | `{name: string}`    | Full skill content + metadata        |
 
 Two tools only. The task loop injects task context alongside the skill. Agents receive the skill as static text plus task details as separate context.
 
@@ -148,16 +148,16 @@ Two tools only. The task loop injects task context alongside the skill. Agents r
 
 Shipped with ORC, loaded from `skills/` directory:
 
-| Name | Description |
-|---|---|
-| `orc-main-base` | Base skill for main agent. ORC awareness, advise using ORC for state management, discover/load skills, create tasks for the loop. Injected into main agent sessions. |
-| `orc-worker-base` | Base skill for all worker sessions. ORC awareness, MCP tool usage, update status, post comments, store memories. Injected into every worker. |
-| `requirements-gathering` | Loaded on-demand by main agent. Interview human: clarifying questions, DOD, constraints, scope. |
-| `planner` | Deep-dive a task. Create implementation plan. Break into subtasks with clear descriptions. |
-| `coder` | Implement a plan. Write code, tests. Update task status and post comments as you go. |
-| `reviewer` | Review code/work against requirements, DOD, and project conventions. Approve or request specific changes. |
-| `bug-fix` | Investigate, reproduce, fix, verify. |
-| `orc-report` | Collect task statuses, session errors, worker activity across project. Build summary report. |
+| Name                     | Description                                                                                                                                                          |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `orc-main-base`          | Base skill for main agent. ORC awareness, advise using ORC for state management, discover/load skills, create tasks for the loop. Injected into main agent sessions. |
+| `orc-worker-base`        | Base skill for all worker sessions. ORC awareness, MCP tool usage, update status, post comments, store memories. Injected into every worker.                         |
+| `requirements-gathering` | Loaded on-demand by main agent. Interview human: clarifying questions, DOD, constraints, scope.                                                                      |
+| `planner`                | Deep-dive a task. Create implementation plan. Break into subtasks with clear descriptions.                                                                           |
+| `coder`                  | Implement a plan. Write code, tests. Update task status and post comments as you go.                                                                                 |
+| `reviewer`               | Review code/work against requirements, DOD, and project conventions. Approve or request specific changes.                                                            |
+| `bug-fix`                | Investigate, reproduce, fix, verify.                                                                                                                                 |
+| `orc-report`             | Collect task statuses, session errors, worker activity across project. Build summary report.                                                                         |
 
 Skills are all filesystem-based. The task loop loads the `SKILL.md` content and injects it. Tags in the skill metadata can be used for organization and filtering via `skill_list` output.
 
@@ -185,13 +185,14 @@ The agent receives all three sections and uses them as instructions + context. T
 
 ### Where it lives
 
-In `packages/runner` — extends the existing daemon/scheduler as a new loop type alongside cron/watch/webhook.
+In `packages/runner` - extends the existing daemon/scheduler as a new loop type alongside cron/watch/webhook.
 
 ### Agent runtime as shared infrastructure
 
 The agent spawning logic currently lives in `packages/gateway/src/agent-runtime/` (Claude, Codex, Cursor backends). The task loop needs the same infrastructure. To avoid circular dependencies:
 
 **Extract agent runtime into `packages/agent-runtime`** (new shared package):
+
 - `AgentBackend` interface: `startSession()`, `sendMessage()`, `getStatus()`
 - Backend implementations: `claude.ts`, `codex.ts`, `cursor.ts`
 - Session management: PID tracking, idle detection, cleanup
@@ -255,11 +256,12 @@ Global or per-project in ORC config:
 ### Task pickup eligibility
 
 A task is agent-eligible when ANY of these is true:
+
 - `skill_name` is set
 - `agent_backend` is set
 - Tagged with `"agent"`
 
-Tasks without any of these are human tasks — the loop ignores them.
+Tasks without any of these are human tasks - the loop ignores them.
 
 **Known limitation (Wave 1):** Global `max_workers` means one project's tasks could starve others. Per-project concurrency comes in Wave 3.
 
@@ -290,24 +292,24 @@ Instead of creating a new `agent_sessions` table, extend the existing `gateway_s
 
 **New fields to add:**
 
-| Field | Type | Purpose |
-|---|---|---|
-| `role` | `main \| worker` | Session role |
-| `pid` | integer | OS process ID for monitoring/cleanup |
-| `project_id` | FK to projects | Which project |
+| Field           | Type                | Purpose                                                         |
+| --------------- | ------------------- | --------------------------------------------------------------- |
+| `role`          | `main \| worker`    | Session role                                                    |
+| `pid`           | integer             | OS process ID for monitoring/cleanup                            |
+| `project_id`    | FK to projects      | Which project                                                   |
 | `review_rounds` | integer (default 0) | How many changes_requested cycles this session has been through |
 
 **Existing fields already sufficient:**
 
-| Field | Already exists | Used for |
-|---|---|---|
-| `id` | Yes | Session ULID |
-| `task_id` | Yes | Which task |
-| `backend` | Yes | `claude \| codex \| cursor` |
-| `runtime_session_id` | Yes | Backend's native session ID (for resume) |
-| `status` | Yes | `running \| idle \| finished \| crashed` → add `crashed` |
-| `last_activity_at` | Yes | Heartbeat for timeout detection |
-| `cwd` | Yes | Working directory for the agent |
+| Field                | Already exists | Used for                                                 |
+| -------------------- | -------------- | -------------------------------------------------------- |
+| `id`                 | Yes            | Session ULID                                             |
+| `task_id`            | Yes            | Which task                                               |
+| `backend`            | Yes            | `claude \| codex \| cursor`                              |
+| `runtime_session_id` | Yes            | Backend's native session ID (for resume)                 |
+| `status`             | Yes            | `running \| idle \| finished \| crashed` → add `crashed` |
+| `last_activity_at`   | Yes            | Heartbeat for timeout detection                          |
+| `cwd`                | Yes            | Working directory for the agent                          |
 
 ### Timeout unification
 
@@ -349,6 +351,7 @@ Coder finishes → status: "review"
 ```
 
 **No separate `human_review` status.** The `review` status serves both agent and human review. The flow is:
+
 1. Worker sets `review`
 2. If reviewer agent configured → loop spawns reviewer → reviewer either approves (notifies human) or requests changes
 3. Human sees notification, approves or rejects
@@ -356,13 +359,13 @@ Coder finishes → status: "review"
 
 ### Configurable per task
 
-| Config | Effect |
-|---|---|
-| `required_review: true` (default) | Human must approve |
-| `required_review: false` | Auto-approve when agent sets review |
-| Task has reviewer skill | Agent reviews first, then human |
-| `paused` status | Taken off the board entirely |
-| `max_review_rounds: 3` (default) | Escalate to human after N failed review cycles |
+| Config                            | Effect                                         |
+| --------------------------------- | ---------------------------------------------- |
+| `required_review: true` (default) | Human must approve                             |
+| `required_review: false`          | Auto-approve when agent sets review            |
+| Task has reviewer skill           | Agent reviews first, then human                |
+| `paused` status                   | Taken off the board entirely                   |
+| `max_review_rounds: 3` (default)  | Escalate to human after N failed review cycles |
 
 ---
 
@@ -370,47 +373,47 @@ Coder finishes → status: "review"
 
 ### New tools
 
-| Tool | Purpose |
-|---|---|
+| Tool         | Purpose                                        |
+| ------------ | ---------------------------------------------- |
 | `skill_list` | Discover available skills (name + description) |
-| `skill_read` | Load full skill content by name |
+| `skill_read` | Load full skill content by name                |
 
 ### Modified tools
 
-| Tool | Change |
-|---|---|
-| `task_update` | Support new statuses (`queued`, `paused`). Add `comment` param — creates a row in `comments` table (`resource_type: "task"`). All transitions go through shared task service for side-effects (notifications, unblocking). |
-| `task_create` | Add `skill_name`, `required_review`, `agent_backend`, `max_review_rounds` params |
-| `task_batch_create` | Same new params as `task_create` |
-| `task_list` | Update status filter enum to include `queued`, `paused` |
-| `context` | Include active agent sessions count and status summary in context output |
+| Tool                | Change                                                                                                                                                                                                                     |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `task_update`       | Support new statuses (`queued`, `paused`). Add `comment` param - creates a row in `comments` table (`resource_type: "task"`). All transitions go through shared task service for side-effects (notifications, unblocking). |
+| `task_create`       | Add `skill_name`, `required_review`, `agent_backend`, `max_review_rounds` params                                                                                                                                           |
+| `task_batch_create` | Same new params as `task_create`                                                                                                                                                                                           |
+| `task_list`         | Update status filter enum to include `queued`, `paused`                                                                                                                                                                    |
+| `context`           | Include active agent sessions count and status summary in context output                                                                                                                                                   |
 
 ### Removed tools
 
-| Tool | Reason | Migration |
-|---|---|---|
+| Tool                 | Reason                                                            | Migration                                                                                                 |
+| -------------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `task_submit_review` | Replaced by `task_update({status: "review", comment: "summary"})` | Deprecate first: log warning if called, internally redirect to task_update. Remove in next major version. |
-| `task_check_review` | Replaced by `task_get` — check status field directly | Same deprecation path. |
+| `task_check_review`  | Replaced by `task_get` - check status field directly              | Same deprecation path.                                                                                    |
 
 ---
 
 ## 7. Component Responsibilities
 
-| Component | Responsibility | Does NOT do |
-|---|---|---|
-| **Main agent** | Talk to human, gather requirements, create tasks, report status on request | Spawn workers, manage concurrency, push events |
-| **Task loop** (runner) | Watch board, spawn workers, manage concurrency, clean up crashes, handle timeouts | Review work, push updates to main agent |
-| **Task service** (core) | Status transitions, side-effects (notifications, unblocking, comments). Shared by MCP and runner. | Agent management, skill loading |
-| **Agent runtime** (new shared pkg) | Spawn agent sessions, manage backends, PID tracking. Shared by gateway and runner. | Task logic, review flow |
-| **Worker agents** | Execute task, post comments, update status | Coordinate with other workers, talk to human |
-| **Gateway** | Telegram/Slack for human review, approvals, notifications | Spawn agents, manage task board |
-| **Skills** | Define agent behavior, discoverable via MCP | Execute anything — they're templates |
+| Component                          | Responsibility                                                                                    | Does NOT do                                    |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| **Main agent**                     | Talk to human, gather requirements, create tasks, report status on request                        | Spawn workers, manage concurrency, push events |
+| **Task loop** (runner)             | Watch board, spawn workers, manage concurrency, clean up crashes, handle timeouts                 | Review work, push updates to main agent        |
+| **Task service** (core)            | Status transitions, side-effects (notifications, unblocking, comments). Shared by MCP and runner. | Agent management, skill loading                |
+| **Agent runtime** (new shared pkg) | Spawn agent sessions, manage backends, PID tracking. Shared by gateway and runner.                | Task logic, review flow                        |
+| **Worker agents**                  | Execute task, post comments, update status                                                        | Coordinate with other workers, talk to human   |
+| **Gateway**                        | Telegram/Slack for human review, approvals, notifications                                         | Spawn agents, manage task board                |
+| **Skills**                         | Define agent behavior, discoverable via MCP                                                       | Execute anything - they're templates           |
 
 ---
 
 ## 8. Implementation Waves
 
-### Wave 1 — Core Orchestration
+### Wave 1 - Core Orchestration
 
 - Extract agent runtime to `packages/agent-runtime` (from gateway)
 - Extract task service to shared layer (from MCP tools)
@@ -423,7 +426,7 @@ Coder finishes → status: "review"
 - Status transition side-effects via task service
 - `comment` param on `task_update` creating `comments` rows
 
-### Wave 2 — Session Resume & Review
+### Wave 2 - Session Resume & Review
 
 - Resume logic (try backend resume, fall back to fresh + ORC context)
 - Agent review step (reviewer worker before human review)
@@ -432,7 +435,7 @@ Coder finishes → status: "review"
 - Gateway review cards updated for new status flow
 - `max_review_rounds` enforcement with escalation to human
 
-### Wave 3 — Claude Code Channel & Polish
+### Wave 3 - Claude Code Channel & Polish
 
 - ORC channel MCP server for real-time task events into CC sessions
 - Per-project concurrency overrides
@@ -445,19 +448,19 @@ Coder finishes → status: "review"
 
 ## 9. Resolved Decisions
 
-| Decision | Resolution |
-|---|---|
-| Task pickup signal | `skill_name` OR `agent_backend` OR tag `"agent"` — any one makes a task agent-eligible |
-| Skill scoping | Globally unique names (directory name = skill name). Use tags for categorization. |
-| Agent session table | Extend existing `gateway_sessions`, don't create new table |
-| Side-effect execution | Shared task service layer, not embedded in MCP tools |
-| Worker spawn mechanism | Shared `packages/agent-runtime` extracted from gateway |
-| Template variables | No template syntax. Loop concatenates skill + task context as separate sections. |
-| Review status | Single `review` status for both agent and human review. No `human_review`. |
-| Timeout config | Unified `session_idle_timeout_minutes` used by both gateway and task loop |
+| Decision               | Resolution                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------------- |
+| Task pickup signal     | `skill_name` OR `agent_backend` OR tag `"agent"` - any one makes a task agent-eligible |
+| Skill scoping          | Globally unique names (directory name = skill name). Use tags for categorization.      |
+| Agent session table    | Extend existing `gateway_sessions`, don't create new table                             |
+| Side-effect execution  | Shared task service layer, not embedded in MCP tools                                   |
+| Worker spawn mechanism | Shared `packages/agent-runtime` extracted from gateway                                 |
+| Template variables     | No template syntax. Loop concatenates skill + task context as separate sections.       |
+| Review status          | Single `review` status for both agent and human review. No `human_review`.             |
+| Timeout config         | Unified `session_idle_timeout_minutes` used by both gateway and task loop              |
 
 ## 10. Open Questions
 
-1. **Planner → coder handoff** — When planner creates subtasks, should they auto-inherit the parent's `agent_backend` and review settings?
-2. **Concurrent planners** — Can two planner tasks run in parallel, or does planning always serialize?
-3. **Gateway notifications** — Should `paused` → `todo` transition notify the human that a task was unpaused and is back on the board?
+1. **Planner → coder handoff** - When planner creates subtasks, should they auto-inherit the parent's `agent_backend` and review settings?
+2. **Concurrent planners** - Can two planner tasks run in parallel, or does planning always serialize?
+3. **Gateway notifications** - Should `paused` → `todo` transition notify the human that a task was unpaused and is back on the board?

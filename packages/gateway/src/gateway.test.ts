@@ -63,7 +63,7 @@ describe("PermissionManager", () => {
     expect(pm.resolve("unknown", true)).toBe(false);
   });
 
-  it("resolve is idempotent — second call returns false", async () => {
+  it("resolve is idempotent - second call returns false", async () => {
     const pm = new PermissionManager();
     const p = pm.waitFor("r1");
     expect(pm.resolve("r1", true)).toBe(true);

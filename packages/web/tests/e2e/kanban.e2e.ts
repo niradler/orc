@@ -47,7 +47,7 @@ async function dragCardTo(page: Page, taskId: string, targetStatus: string): Pro
         dropped = true;
         break;
       }
-      // Hold the pointer near the edge toward the target — dnd-kit autoScroll
+      // Hold the pointer near the edge toward the target - dnd-kit autoScroll
       // only kicks in while an active drag pointer sits in the edge region.
       const edgeX = centerX < 0 ? 20 : viewport.width - 20;
       await page.mouse.move(edgeX, viewport.height / 2, { steps: 3 });
@@ -87,9 +87,7 @@ test.describe("Kanban drag & drop", () => {
       await expect
         .poll(
           async () => {
-            const res = await request.get(
-              `${API_BASE}/tasks/${task.id}`,
-            );
+            const res = await request.get(`${API_BASE}/tasks/${task.id}`);
             if (!res.ok()) return null;
             return ((await res.json()) as Task).status;
           },
@@ -118,15 +116,13 @@ test.describe("Kanban drag & drop", () => {
       const card = page.locator(`[data-testid="kanban-card"][data-task-id="${task.id}"]`);
       await expect(card).toHaveAttribute("data-task-status", "done");
 
-      // Drag from done back to doing — this used to be forbidden, now it's allowed
+      // Drag from done back to doing - this used to be forbidden, now it's allowed
       await dragCardTo(page, task.id, "doing");
 
       await expect
         .poll(
           async () => {
-            const res = await request.get(
-              `${API_BASE}/tasks/${task.id}`,
-            );
+            const res = await request.get(`${API_BASE}/tasks/${task.id}`);
             if (!res.ok()) return null;
             return ((await res.json()) as Task).status;
           },

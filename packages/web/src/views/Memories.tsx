@@ -571,7 +571,10 @@ function EditMemoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent data-testid="edit-memory-dialog" className="bg-surface border-surface-highest max-w-lg">
+      <DialogContent
+        data-testid="edit-memory-dialog"
+        className="bg-surface border-surface-highest max-w-lg"
+      >
         <DialogHeader>
           <DialogTitle className="font-headline text-sm uppercase tracking-widest text-on-surface">
             Edit Memory

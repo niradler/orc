@@ -22,11 +22,20 @@ orc gateway status     # Check health
 ```
 
 Config in `~/.orc/config.json`:
+
 ```json
 {
   "gateway": {
-    "telegram": { "enabled": true, "token": "BOT_TOKEN", "authorized_users": [123456789] },
-    "slack": { "enabled": true, "bot_token": "xoxb-...", "app_token": "xapp-..." }
+    "telegram": {
+      "enabled": true,
+      "token": "BOT_TOKEN",
+      "authorized_users": [123456789]
+    },
+    "slack": {
+      "enabled": true,
+      "bot_token": "xoxb-...",
+      "app_token": "xapp-..."
+    }
   }
 }
 ```
@@ -44,8 +53,8 @@ When an agent sets task status to `review`, the gateway sends a notification. Us
 ```
 /tasks            # See tasks awaiting review
 /task <id>        # View task details and worker summary
-/approve <id>     # Approve — task moves to done
-/reject <id>      # Request changes — task moves to changes_requested
+/approve <id>     # Approve - task moves to done
+/reject <id>      # Request changes - task moves to changes_requested
 ```
 
 The agent loop automatically resumes workers when tasks move to `changes_requested`.
@@ -66,27 +75,27 @@ Telegram voice messages are transcribed and sent to the agent. Responses are con
 ## Bot Commands (direct mode)
 
 ```
-/tasks, /task <id>, /approve <id>, /reject <id>    — Task management
-/jobs, /run <name>                                   — Job management
-/mem <query>                                         — Memory search
-/agent <backend>, /sessions, /session stop           — Agent sessions
-/status, /mode, /help                                — Status
+/tasks, /task <id>, /approve <id>, /reject <id>    - Task management
+/jobs, /run <name>                                   - Job management
+/mem <query>                                         - Memory search
+/agent <backend>, /sessions, /session stop           - Agent sessions
+/status, /mode, /help                                - Status
 ```
 
 ---
 
 ## Common Mistakes
 
-| Mistake | Fix |
-|---------|-----|
-| No review notifications arriving | Check `authorized_users` includes your Telegram ID |
-| Agent session won't start | Need `orc daemon start`, not just `orc api` |
-| Messages going nowhere | Check `/mode` — may be `direct` when you need `agent:claude` |
+| Mistake                          | Fix                                                          |
+| -------------------------------- | ------------------------------------------------------------ |
+| No review notifications arriving | Check `authorized_users` includes your Telegram ID           |
+| Agent session won't start        | Need `orc daemon start`, not just `orc api`                  |
+| Messages going nowhere           | Check `/mode` - may be `direct` when you need `agent:claude` |
 
 ---
 
 ## Related
 
-- **orc-tasks** skill — task lifecycle, HITL review patterns
-- **orc-session** skill — session management for live agent sessions
-- Built-in skills: workers spawned via `/agent` or the task loop follow skills like `orc-worker-base` and `orc-coder` — use `skill_list` to discover
+- **orc-tasks** skill - task lifecycle, HITL review patterns
+- **orc-session** skill - session management for live agent sessions
+- Built-in skills: workers spawned via `/agent` or the task loop follow skills like `orc-worker-base` and `orc-coder` - use `skill_list` to discover

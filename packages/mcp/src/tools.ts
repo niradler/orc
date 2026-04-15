@@ -35,7 +35,7 @@ export const toolDefinitions = [
       "Search memories (3-layer BM25: porter → trigram → fallback). Returns compact index: IDs + snippets. " +
       "Filter by type (fact|decision|event|rule|discovery) or scope. Use memory_get for full content.",
     inputSchema: z.object({
-      query: z.string().describe("Search query — keywords, phrases, or natural language"),
+      query: z.string().describe("Search query - keywords, phrases, or natural language"),
       scope: z.string().optional().describe("Scope filter (e.g. domain area)"),
       type: z
         .enum(["fact", "decision", "event", "rule", "discovery"])
@@ -49,7 +49,7 @@ export const toolDefinitions = [
     name: "memory_get",
     description:
       "Fetch full content of specific memories by IDs. Always batch multiple IDs in one call. " +
-      "~10x more token-expensive than memory_search — only call after filtering by ID.",
+      "~10x more token-expensive than memory_search - only call after filtering by ID.",
     inputSchema: z.object({
       ids: z.array(z.string()).min(1).max(20).describe("Memory IDs to fetch"),
     }),
@@ -65,7 +65,7 @@ export const toolDefinitions = [
       title: z
         .string()
         .optional()
-        .describe("Short label (≤60 chars) — what it is and when to use it"),
+        .describe("Short label (≤60 chars) - what it is and when to use it"),
       type: z.enum(["fact", "decision", "event", "rule", "discovery"]).optional().default("fact"),
       scope: z.string().optional().describe("Scope (e.g. domain area)"),
       tags: z.array(z.string()).optional(),
@@ -85,7 +85,7 @@ export const toolDefinitions = [
     inputSchema: z.object({
       id: z.string().describe("Memory ID to update"),
       content: z.string().optional().describe("New content"),
-      title: z.string().optional().describe("New title — what it is and when to use it"),
+      title: z.string().optional().describe("New title - what it is and when to use it"),
       type: z.enum(["fact", "decision", "event", "rule", "discovery"]).optional(),
       scope: z.string().optional().describe("New scope"),
       tags: z.array(z.string()).optional(),
@@ -95,7 +95,7 @@ export const toolDefinitions = [
   },
   {
     name: "task_list",
-    description: "List active tasks — compact layer-1 index. Does NOT include body/comments.",
+    description: "List active tasks - compact layer-1 index. Does NOT include body/comments.",
     inputSchema: z.object({
       project: projectParam,
       status: z
@@ -231,7 +231,7 @@ export const toolDefinitions = [
       "Returns compact index: docid + path + snippet + score. " +
       "Use knowledge_get for full content. Manage collections via knowledge_collection_add/remove.",
     inputSchema: z.object({
-      query: z.string().describe("Search query — keywords, phrases, or natural language"),
+      query: z.string().describe("Search query - keywords, phrases, or natural language"),
       collection: z.string().optional().describe("Filter to a specific collection name"),
       project: projectParam,
       mode: z
@@ -247,7 +247,7 @@ export const toolDefinitions = [
     name: "knowledge_get",
     description:
       "Fetch full document content by docid or path from knowledge store. " +
-      "Token-expensive — only call after filtering via knowledge_search.",
+      "Token-expensive - only call after filtering via knowledge_search.",
     inputSchema: z.object({
       id: z.string().describe("Document docid (#abc123) or display path from knowledge_search"),
     }),
@@ -262,7 +262,7 @@ export const toolDefinitions = [
   {
     name: "knowledge_collection_add",
     description:
-      "Add a new knowledge collection — a directory of documents to index. " +
+      "Add a new knowledge collection - a directory of documents to index. " +
       "Automatically indexes the files after adding.",
     inputSchema: z.object({
       name: z.string().describe("Collection name (e.g. 'docs', 'notes')"),
@@ -285,7 +285,7 @@ export const toolDefinitions = [
   {
     name: "knowledge_update",
     description:
-      "Re-index knowledge collections — scan filesystem for new, changed, or deleted files. " +
+      "Re-index knowledge collections - scan filesystem for new, changed, or deleted files. " +
       "Optionally scope to specific collections.",
     inputSchema: z.object({
       collections: z
@@ -319,7 +319,7 @@ export const toolDefinitions = [
   {
     name: "context",
     description:
-      "Compact context index — active tasks + important memories. ~200 tokens. Call at session start. " +
+      "Compact context index - active tasks + important memories. ~200 tokens. Call at session start. " +
       "Pass project name to scope, or omit to use activeProject from config. " +
       "Use task_get or memory_get to drill into specific items.",
     inputSchema: z.object({
@@ -346,7 +346,7 @@ export const toolDefinitions = [
         "subagent",
       ]),
       priority: z.number().int().min(1).max(4).optional().default(3),
-      data: z.record(z.string()).describe("Event payload — tool, path, content, etc."),
+      data: z.record(z.string()).describe("Event payload - tool, path, content, etc."),
     }),
   },
   {
@@ -450,7 +450,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         const typeLabel = m.type !== "fact" ? ` [${m.type}]` : "";
         const titleLabel = m.title ? ` "${m.title}"` : "";
         lines.push(
-          `[${m.rank}] ${m.id}${typeLabel}${titleLabel}  ${m.snippet}  scope:${m.scope ?? "—"}  ${m.age}  (${m.matchLayer})`,
+          `[${m.rank}] ${m.id}${typeLabel}${titleLabel}  ${m.snippet}  scope:${m.scope ?? "-"}  ${m.age}  (${m.matchLayer})`,
         );
       }
       lines.push("\nUse memory_timeline(id) for context, memory_get([ids]) for full content.");
@@ -578,7 +578,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       );
       return rows
         .filter(Boolean)
-        .map((t) => `[${t?.id}] ${t?.status} — ${t?.title}\n${t?.body ?? ""}`)
+        .map((t) => `[${t?.id}] ${t?.status} - ${t?.title}\n${t?.body ?? ""}`)
         .join("\n\n");
     }
 
@@ -632,7 +632,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       import("@orc/runner/task-loop")
         .then((m) => m.triggerTaskCheck())
         .catch((err) => logger.warn("triggerTaskCheck failed", { err }));
-      return `Created: ${id} — ${title}${proj}`;
+      return `Created: ${id} - ${title}${proj}`;
     }
 
     case "task_update": {
@@ -656,7 +656,12 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       } else if (comment) {
         await addTaskComment(id, comment, "agent");
       }
-      if (body !== undefined || priority || agent_backend !== undefined || agent_model !== undefined) {
+      if (
+        body !== undefined ||
+        priority ||
+        agent_backend !== undefined ||
+        agent_model !== undefined
+      ) {
         await db
           .update(tasks)
           .set({
@@ -1059,7 +1064,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         }
       }
 
-      const lines = items.map((item) => `  ${item.ref} → ${mapping[item.ref]} — ${item.title}`);
+      const lines = items.map((item) => `  ${item.ref} → ${mapping[item.ref]} - ${item.title}`);
       import("@orc/runner/task-loop")
         .then((m) => m.triggerTaskCheck())
         .catch((err) => logger.warn("triggerTaskCheck failed", { err }));
@@ -1126,7 +1131,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         if (taskRows.length > 0) {
           parts.push("## Tasks");
           for (const t of taskRows) {
-            parts.push(`  [task] ${t.id} ${t.status} — ${t.title}`);
+            parts.push(`  [task] ${t.id} ${t.status} - ${t.title}`);
           }
         }
       }
@@ -1146,7 +1151,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
             }
           }
         } catch {
-          // Knowledge store may not exist — silently skip
+          // Knowledge store may not exist - silently skip
         }
       }
 
@@ -1254,7 +1259,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       return skills
         .map((s) => {
           const src = s.source === "user" ? " [user]" : "";
-          const desc = s.description ? ` — ${s.description.slice(0, 80)}` : "";
+          const desc = s.description ? ` - ${s.description.slice(0, 80)}` : "";
           return `${s.name.padEnd(28)}${src}${desc}`;
         })
         .join("\n");

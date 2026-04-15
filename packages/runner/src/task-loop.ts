@@ -81,14 +81,14 @@ async function buildPrompt(task: PickedTask): Promise<string> {
   return parts.join("\n\n");
 }
 
-function findPreviousSession(
+function findPreviousWorkerSession(
   taskId: string,
 ): { runtime_session_id: string; review_rounds: number; cwd: string } | null {
   const sqlite = getSqlite();
   const row = sqlite
     .query(
       `SELECT runtime_session_id, review_rounds, cwd FROM gateway_sessions
-       WHERE task_id = ? AND runtime_session_id IS NOT NULL
+       WHERE task_id = ? AND role = 'worker' AND runtime_session_id IS NOT NULL
        ORDER BY updated_at DESC LIMIT 1`,
     )
     .get(taskId) as { runtime_session_id: string; review_rounds: number; cwd: string } | null;
@@ -101,7 +101,7 @@ async function spawnWorker(task: PickedTask): Promise<void> {
   const sessionId = ulid();
 
   const backendName = (task.agent_backend ?? config.agent_loop.default_backend) as AgentBackendName;
-  const prevSession = findPreviousSession(task.id);
+  const prevSession = findPreviousWorkerSession(task.id);
   const isResume = !!prevSession;
 
   const claimResult = await updateTaskStatus({
@@ -220,7 +220,7 @@ async function driveWorkerLoop(
           session.respondPermission(event.data.requestId, "approved");
         } else {
           logger.info(
-            `Permission request for worker ${sessionId}: ${event.data.tool} — queuing for human`,
+            `Permission request for worker ${sessionId}: ${event.data.tool} - queuing for human`,
           );
           session.respondPermission(event.data.requestId, "denied");
         }
@@ -526,7 +526,7 @@ async function runCycle(): Promise<string> {
   lines.push(`Active workers: ${globalActive}/${config.agent_loop.max_workers}`);
 
   if (globalActive >= config.agent_loop.max_workers) {
-    lines.push("At global capacity — skipping");
+    lines.push("At global capacity - skipping");
     return lines.join("\n");
   }
 
@@ -589,7 +589,7 @@ export async function ensureSystemJob(): Promise<string> {
   await db.insert(jobs).values({
     id,
     name: SYSTEM_JOB_NAME,
-    description: "Agent task loop — polls for tasks, spawns workers, cleans stale sessions",
+    description: "Agent task loop - polls for tasks, spawns workers, cleans stale sessions",
     command: "__internal:task-loop-cycle__",
     trigger_type: "cron",
     cron_expr: cronExpr,
@@ -606,7 +606,7 @@ let cycleRunning = false;
 
 export async function recordedCycle(): Promise<void> {
   if (cycleRunning) {
-    logger.debug("Skipping cycle — another cycle is already running");
+    logger.debug("Skipping cycle - another cycle is already running");
     return;
   }
   cycleRunning = true;

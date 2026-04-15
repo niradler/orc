@@ -1,6 +1,6 @@
 import type { TaskStatus } from "@/api/client";
 
-// Visible kanban columns — the 5 statuses users actively manage.
+// Visible kanban columns - the 5 statuses users actively manage.
 // Internal/edge statuses (queued, changes_requested, paused, cancelled)
 // are mapped into one of these for display via toVisibleStatus().
 export type VisibleStatus = "todo" | "doing" | "review" | "blocked" | "done";

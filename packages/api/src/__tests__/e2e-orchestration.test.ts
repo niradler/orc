@@ -94,7 +94,7 @@ describe("2. Skill Discovery", () => {
 
 // ─── 3. Planning Phase (Agent creates batch of subtasks) ─────────────────────
 
-describe("3. Planning Phase — Batch Task Creation", () => {
+describe("3. Planning Phase - Batch Task Creation", () => {
   test("agent creates parent + subtasks with dependencies", async () => {
     const result = await executeTool("task_batch_create", {
       project: "stretch-reminder",
@@ -210,9 +210,9 @@ describe("3. Planning Phase — Batch Task Creation", () => {
   });
 });
 
-// ─── 4. Execution — Happy Path T1 (agent works, human reviews) ──────────────
+// ─── 4. Execution - Happy Path T1 (agent works, human reviews) ──────────────
 
-describe("4. Execution — Happy Path (T1: Design API)", () => {
+describe("4. Execution - Happy Path (T1: Design API)", () => {
   test("agent starts working on T1", async () => {
     const result = await executeTool("task_update", {
       id: t1Id,
@@ -274,7 +274,7 @@ describe("5. Blocker / Unblock Side-Effects", () => {
   });
 });
 
-// ─── 6. Feedback Loop — T2 (human rejects, agent reworks) ───────────────────
+// ─── 6. Feedback Loop - T2 (human rejects, agent reworks) ───────────────────
 
 describe("6. Feedback Loop (T2: changes_requested cycle)", () => {
   test("agent submits T2 for review", async () => {
@@ -317,7 +317,7 @@ describe("6. Feedback Loop (T2: changes_requested cycle)", () => {
   test("human approves T2 on second round", async () => {
     const res = await req(app, "PATCH", `/tasks/${t2Id}`, {
       status: "done",
-      comment: "Approved — good interval options",
+      comment: "Approved - good interval options",
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { status: string };
@@ -380,9 +380,9 @@ describe("7. Parent Rollup", () => {
   });
 });
 
-// ─── 8. Max Review Rounds — Auto Pause ───────────────────────────────────────
+// ─── 8. Max Review Rounds - Auto Pause ───────────────────────────────────────
 
-describe("8. Max Review Rounds — Auto Pause", () => {
+describe("8. Max Review Rounds - Auto Pause", () => {
   let flakyId: string;
   let flakySessionId: string;
 
@@ -541,7 +541,7 @@ describe("9. New Status Transitions", () => {
   });
 });
 
-// ─── 10. Context Tool — Orchestration Awareness ──────────────────────────────
+// ─── 10. Context Tool - Orchestration Awareness ──────────────────────────────
 
 describe("10. Context Tool", () => {
   test("agent stores a project decision in memory", async () => {

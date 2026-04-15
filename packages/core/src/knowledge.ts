@@ -1,5 +1,5 @@
 /**
- * KnowledgeEngine — backend-agnostic interface for document search.
+ * KnowledgeEngine - backend-agnostic interface for document search.
  *
  * ORC wraps the search backend (currently QMD) behind this interface
  * so the implementation can be swapped without touching consumers.

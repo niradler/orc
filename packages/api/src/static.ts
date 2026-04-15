@@ -4,7 +4,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import type { Context, MiddlewareHandler } from "hono";
 
-// Embedded web assets — set by standalone binary entry (bin-entry.ts).
+// Embedded web assets - set by standalone binary entry (bin-entry.ts).
 // Maps URL path (e.g. "index.html", "assets/foo.js") → $bunfs embedded path.
 const embeddedWeb: Record<string, string> | null = (globalThis as any).__ORC_EMBEDDED_WEB__ ?? null;
 
@@ -31,10 +31,10 @@ const moduleDir = dirname(fileURLToPath(import.meta.url));
 // For `bun build --compile` standalone binaries, `import.meta.url` points at an
 // embedded virtual FS (e.g. `$bunfs/root/...`), and `process.argv[0]` is just
 // the string `"bun"`. Only `process.execPath` resolves to the real on-disk
-// executable path — use it so bundled `./web` alongside the exe is discoverable.
+// executable path - use it so bundled `./web` alongside the exe is discoverable.
 const execDir = process.execPath ? dirname(process.execPath) : moduleDir;
 
-// Candidate dist locations — first existing wins.
+// Candidate dist locations - first existing wins.
 // 1. Source dev / workspace install: packages/api/src → packages/web/dist
 // 2. Bundled CLI (packages/cli/dist/index.js): dist/web (copied by CLI build)
 // 3. Sibling install layout
@@ -78,7 +78,7 @@ async function sendFile(_c: Context, filePath: string, cacheable: boolean): Prom
 
 /**
  * Serves the built web dashboard from `packages/web/dist` (or an equivalent
- * bundled location). Mount LAST in the route chain — it only responds to GET/
+ * bundled location). Mount LAST in the route chain - it only responds to GET/
  * HEAD requests that don't match any API route, and always falls back to
  * `index.html` for the root path so the single-page app can bootstrap.
  *

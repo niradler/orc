@@ -238,7 +238,7 @@ describe("Sessions", () => {
   });
 });
 
-describe("Sessions — job_run_id filter", () => {
+describe("Sessions - job_run_id filter", () => {
   let runId: string;
 
   test("POST /jobs/:id/trigger creates a run and auto-logs a session", async () => {
@@ -272,7 +272,7 @@ describe("Sessions — job_run_id filter", () => {
   });
 });
 
-describe("Jobs — cron trigger (no repeat_secs)", () => {
+describe("Jobs - cron trigger (no repeat_secs)", () => {
   let jobId: string;
 
   test("POST /jobs creates a cron job without repeat_secs", async () => {

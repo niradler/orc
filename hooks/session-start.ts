@@ -61,7 +61,7 @@ async function main() {
       }
     }
   } catch {
-    // API not running — passthrough
+    // API not running - passthrough
   }
 
   process.exit(0);

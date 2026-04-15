@@ -45,7 +45,10 @@ export function scheduleCronJob(jobId: string, name: string, expr: string): void
 
   const cron = new Cron(expr, async () => {
     const db = getDb();
-    const still = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId), columns: { id: true } });
+    const still = await db.query.jobs.findFirst({
+      where: eq(jobs.id, jobId),
+      columns: { id: true },
+    });
     if (!still) {
       logger.warn(`Cron job ${name} no longer exists, unscheduling`);
       unscheduleJob(jobId);
@@ -81,7 +84,10 @@ export function scheduleOneShotJob(
   const timer = setTimeout(async () => {
     activeTimers.delete(jobId);
     const db = getDb();
-    const still = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId), columns: { id: true } });
+    const still = await db.query.jobs.findFirst({
+      where: eq(jobs.id, jobId),
+      columns: { id: true },
+    });
     if (!still) {
       logger.warn(`One-shot job ${name} no longer exists, skipping`);
       return;

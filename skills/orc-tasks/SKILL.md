@@ -1,7 +1,16 @@
 ---
 name: orc-tasks
-description: Use when creating, updating, or managing tasks in an ORC-backed project, when submitting work for human review (HITL), when polling for approval, when transitioning task status, or when coordinating multi-agent work. Trigger on any task lifecycle operation — create, claim, review, approve, reject, block, complete. Also trigger when the user asks to break work into steps, track progress, or checkpoint work for review.
-allowed-tools: ["mcp__orc__task_list", "mcp__orc__task_get", "mcp__orc__task_create", "mcp__orc__task_update", "mcp__orc__task_batch_create", "mcp__orc__task_submit_review", "mcp__orc__task_check_review"]
+description: Use when creating, updating, or managing tasks in an ORC-backed project, when submitting work for human review (HITL), when polling for approval, when transitioning task status, or when coordinating multi-agent work. Trigger on any task lifecycle operation - create, claim, review, approve, reject, block, complete. Also trigger when the user asks to break work into steps, track progress, or checkpoint work for review.
+allowed-tools:
+  [
+    "mcp__orc__task_list",
+    "mcp__orc__task_get",
+    "mcp__orc__task_create",
+    "mcp__orc__task_update",
+    "mcp__orc__task_batch_create",
+    "mcp__orc__task_submit_review",
+    "mcp__orc__task_check_review",
+  ]
 ---
 
 # ORC Task Workflow
@@ -17,23 +26,20 @@ Without tasks, agent work is invisible. ORC tasks give you a shared work queue w
 ## Task Lifecycle
 
 ```
-todo ──► queued ──► doing ──► review ──► done
-                      │          │
-                      ▼          ▼
-                   blocked    changes_requested ──► doing
-                      │
-                      ▼
-                    paused
+todo ──► doing ──► review ──► done
+           │           │
+           ▼           ▼
+        blocked    changes_requested ──► doing
 ```
 
-- `todo` — work defined, not yet claimed
-- `queued` — claimed by the task loop, waiting for a worker to start
-- `doing` — agent is actively working
-- `review` — work complete, waiting for human sign-off
-- `changes_requested` — human gave feedback, agent should resume and address it
-- `blocked` — can't proceed, needs human intervention
-- `paused` — exceeded max review rounds or manually paused
-- `done` — approved and complete
+- `todo` - work defined, not yet started
+- `doing` - agent is actively working
+- `review` - work complete, waiting for human sign-off
+- `changes_requested` - human gave feedback, agent should resume and address it
+- `blocked` - can't proceed, needs human intervention
+- `done` - approved and complete
+
+> Internal statuses (`queued`, `paused`, `cancelled`) are managed automatically by the task loop - agents don't set these directly.
 
 ---
 
@@ -41,8 +47,8 @@ todo ──► queued ──► doing ──► review ──► done
 
 ### Single task with HITL review
 
-1. `task_create` — define the work with acceptance criteria
-2. `task_update` status → `doing` — claim it
+1. `task_create` - define the work with acceptance criteria
+2. `task_update` status → `doing` - claim it
 3. Do the work, recording `session_event`s as you go
 4. `task_update` status → `review`, comment → summary of what you did
 5. Wait for human review (work on other tasks meanwhile)
@@ -62,14 +68,14 @@ Use `task_batch_create` to create multiple tasks with dependency links atomicall
 
 ### Multi-agent coordination
 
-`claimed_by` + auto-expiring claims prevent two agents from working the same task. The task loop handles this automatically. For manual workflows, check `task_get` before claiming — if `claimed_by` is set, skip and find another task.
+`claimed_by` + auto-expiring claims prevent two agents from working the same task. The task loop handles this automatically. For manual workflows, check `task_get` before claiming - if `claimed_by` is set, skip and find another task.
 
 ### Assigning prompts and backends
 
-- `skill_name` — assign a workflow skill (use `skill_list` to discover available ones)
-- `agent_backend` — choose which agent type executes: `claude`, `codex`, or `cursor`
-- `required_review` — whether the task needs human review (default: true)
-- `max_review_rounds` — how many review cycles before auto-pause (default: 3)
+- `skill_name` - assign a workflow skill (use `skill_list` to discover available ones)
+- `agent_backend` - choose which agent type executes: `claude`, `codex`, or `cursor`
+- `required_review` - whether the task needs human review (default: true)
+- `max_review_rounds` - how many review cycles before auto-pause (default: 3)
 
 ---
 
@@ -93,19 +99,19 @@ orc task delete <id>          # Delete task
 
 ## Common Mistakes
 
-| Mistake | Fix |
-|---------|-----|
-| Marking `done` without review | Use `review` → let human approve |
-| Not reading feedback after `changes_requested` | Always `task_get` to read comments |
-| Creating tasks with no body | Include acceptance criteria |
-| Skipping `session_event` for transitions | Without it, transitions are lost on compaction |
-| Not setting `skill_name` on tasks for the agent loop | Workers need a workflow to follow |
+| Mistake                                              | Fix                                            |
+| ---------------------------------------------------- | ---------------------------------------------- |
+| Marking `done` without review                        | Use `review` → let human approve               |
+| Not reading feedback after `changes_requested`       | Always `task_get` to read comments             |
+| Creating tasks with no body                          | Include acceptance criteria                    |
+| Skipping `session_event` for transitions             | Without it, transitions are lost on compaction |
+| Not setting `skill_name` on tasks for the agent loop | Workers need a workflow to follow              |
 
 ---
 
 ## Related
 
-- **orc-session** skill — session start protocol, event recording, snapshot/restore
-- **orc-knowledge** skill — when to store decisions and rules in memory
-- **orc-gateway** skill — remote task approval via Telegram/Slack
-- Built-in skills: `orc-coder`, `orc-planner`, `orc-reviewer`, `orc-bugfix` — use `skill_list` to discover, assign via `skill_name`
+- **orc-session** skill - session start protocol, event recording, snapshot/restore
+- **orc-knowledge** skill - when to store decisions and rules in memory
+- **orc-gateway** skill - remote task approval via Telegram/Slack
+- Built-in skills: `orc-coder`, `orc-planner`, `orc-reviewer`, `orc-bugfix` - use `skill_list` to discover, assign via `skill_name`

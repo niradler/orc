@@ -15,7 +15,7 @@ afterAll(() => {
   delete process.env.ORC_DB_PATH;
 });
 
-describe("Scheduler — one-shot jobs", () => {
+describe("Scheduler - one-shot jobs", () => {
   test("fires one-shot job at run_at time and records a run", async () => {
     const { getDb } = await import("@orc/db/client");
     const db = getDb();
@@ -53,7 +53,7 @@ describe("Scheduler — one-shot jobs", () => {
   });
 });
 
-describe("Scheduler — cron jobs", () => {
+describe("Scheduler - cron jobs", () => {
   test("startScheduler loads cron jobs from DB without error", async () => {
     const { getDb } = await import("@orc/db/client");
     const db = getDb();

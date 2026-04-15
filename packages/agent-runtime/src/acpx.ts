@@ -146,7 +146,7 @@ class AcpxSession implements AgentSession {
   }
 
   async ensureSession(): Promise<void> {
-    // No pre-creation needed — we use `exec` mode which handles session
+    // No pre-creation needed - we use `exec` mode which handles session
     // lifecycle internally per invocation.
   }
 
