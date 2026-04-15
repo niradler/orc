@@ -25,7 +25,7 @@ export function zodToJsonSchema(schema: ZodTypeAny): Record<string, unknown> {
   if (typeName === "ZodBoolean") return { type: "boolean" };
 
   if (typeName === "ZodArray") {
-    return { type: "array", items: zodToJsonSchema(def.type as ZodTypeAny) };
+    return { type: "array", items: zodToJsonSchema(def.element as ZodTypeAny) };
   }
 
   if (typeName === "ZodEnum") {
