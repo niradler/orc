@@ -139,203 +139,195 @@ test.describe("Real Agent Lifecycle Demo", () => {
   // Generous budget: 3 tasks × (worker + reviewer) at haiku speed ≈ 8–12 min.
   test.setTimeout(20 * 60_000);
 
-  test(
-    "full lifecycle: create → agent loop → worker → reviewer → done",
-    async ({ page, request }) => {
-      const projectName = tid("real-demo");
-      let projectId = "";
-      const taskIds: string[] = [];
+  test("full lifecycle: create → agent loop → worker → reviewer → done", async ({
+    page,
+    request,
+  }) => {
+    const projectName = tid("real-demo");
+    let projectId = "";
+    const taskIds: string[] = [];
 
-      // ── Preflight: verify agent loop is running ──────────────────────────
+    // ── Preflight: verify agent loop is running ──────────────────────────
+    //
+    // The system job "orc-task-loop" is created when startTaskLoop() runs.
+    // If it doesn't exist, the loop has never been started for this instance
+    // and real agents cannot be dispatched.
+
+    const { jobs } = await apiGet<JobList>(request, "/jobs?limit=100");
+    const loopJob = jobs.find((j) => j.name === "orc-task-loop");
+
+    if (!loopJob) {
+      // Self-skip with a clear diagnostic — do not fail.
+      test.skip(
+        true,
+        "Agent loop not running — set agent_loop.enabled=true in ~/.orc/config.json and restart the API",
+      );
+      return;
+    }
+
+    try {
+      // ── 1. Create project ──────────────────────────────────────────────
       //
-      // The system job "orc-task-loop" is created when startTaskLoop() runs.
-      // If it doesn't exist, the loop has never been started for this instance
-      // and real agents cannot be dispatched.
+      // Set scope to ORC_DEMO_SCOPE_DIR (injected by run-real-agent-demo.ts).
+      // That directory contains a .mcp.json pointing at the test daemon port,
+      // so worker agents resolve the ORC MCP server correctly regardless of
+      // what port the live system uses.
 
-      const { jobs } = await apiGet<JobList>(request, "/jobs?limit=100");
-      const loopJob = jobs.find((j) => j.name === "orc-task-loop");
+      const scopeDir = process.env.ORC_DEMO_SCOPE_DIR;
 
-      if (!loopJob) {
-        // Self-skip with a clear diagnostic — do not fail.
-        test.skip(
-          true,
-          "Agent loop not running — set agent_loop.enabled=true in ~/.orc/config.json and restart the API",
-        );
-        return;
+      const project = await apiPost<Project>(request, "/projects", {
+        name: projectName,
+        description: "ORC product positioning — real-agent demo project",
+        status: "active",
+        ...(scopeDir ? { scope: scopeDir } : {}),
+      });
+      projectId = project.id;
+
+      await gotoView(page, "projects");
+      await expect(
+        page.locator(`[data-testid="project-row"][data-project-id="${projectId}"]`),
+      ).toBeVisible();
+      await look(page, 1000);
+
+      // ── 2. Create tasks — agent_backend: "claude" makes them loop-eligible
+
+      for (const spec of DEMO_TASKS) {
+        const task = await apiPost<Task>(request, "/tasks", {
+          title: spec.title,
+          body: spec.body,
+          priority: spec.priority,
+          project_id: projectId,
+          agent_backend: "claude",
+          tags: ["demo"],
+          // The API calls triggerTaskCheck() after each create, so the loop
+          // is notified immediately — no manual trigger needed.
+        });
+        taskIds.push(task.id);
       }
 
-      try {
-        // ── 1. Create project ──────────────────────────────────────────────
-        //
-        // Set scope to ORC_DEMO_SCOPE_DIR (injected by run-real-agent-demo.ts).
-        // That directory contains a .mcp.json pointing at the test daemon port,
-        // so worker agents resolve the ORC MCP server correctly regardless of
-        // what port the live system uses.
+      // Navigate to kanban, scope to our project so only demo tasks show.
+      await gotoView(page, "tasks");
+      await page.getByTestId("sidebar-project-select").selectOption(projectId);
+      const boardBtn = page.getByTitle("Board view");
+      if (await boardBtn.isVisible().catch(() => false)) await boardBtn.click();
+      await page.reload();
+      await look(page, 1500);
 
-        const scopeDir = process.env.ORC_DEMO_SCOPE_DIR;
+      // All tasks start in "todo".
+      for (const id of taskIds) {
+        const card = page.locator(`[data-testid="kanban-card"][data-task-id="${id}"]`);
+        await expect(card).toBeVisible();
+      }
 
-        const project = await apiPost<Project>(request, "/projects", {
-          name: projectName,
-          description: "ORC product positioning — real-agent demo project",
-          status: "active",
-          ...(scopeDir ? { scope: scopeDir } : {}),
-        });
-        projectId = project.id;
+      // ── 3. Agent execution loop ────────────────────────────────────────
+      //
+      // With max_workers=1 (default), tasks run one at a time. We poll each
+      // task through the full lifecycle before checking the next, which
+      // matches the sequential dispatch order of the task loop.
 
-        await gotoView(page, "projects");
-        await expect(
-          page.locator(`[data-testid="project-row"][data-project-id="${projectId}"]`),
-        ).toBeVisible();
-        await look(page, 1000);
+      for (let i = 0; i < taskIds.length; i++) {
+        const id = taskIds[i];
 
-        // ── 2. Create tasks — agent_backend: "claude" makes them loop-eligible
+        // ── 3a. Wait for worker to claim task (todo → queued/doing) ───────
 
-        for (const spec of DEMO_TASKS) {
-          const task = await apiPost<Task>(request, "/tasks", {
-            title: spec.title,
-            body: spec.body,
-            priority: spec.priority,
-            project_id: projectId,
-            agent_backend: "claude",
-            tags: ["demo"],
-            // The API calls triggerTaskCheck() after each create, so the loop
-            // is notified immediately — no manual trigger needed.
-          });
-          taskIds.push(task.id);
-        }
+        await expect
+          .poll(
+            async () => {
+              const res = await request.get(`${API_BASE}/tasks/${id}`, {
+                headers: AUTH_HEADERS,
+              });
+              return ((await res.json()) as Task).status;
+            },
+            {
+              message: `Task ${i + 1} was not claimed within ${CLAIM_TIMEOUT_MS / 1000}s — is the agent loop running?`,
+              timeout: CLAIM_TIMEOUT_MS,
+              intervals: [POLL_INTERVAL_MS],
+            },
+          )
+          .toMatch(/^(queued|doing)$/);
 
-        // Navigate to kanban, scope to our project so only demo tasks show.
-        await gotoView(page, "tasks");
-        await page.getByTestId("sidebar-project-select").selectOption(projectId);
-        const boardBtn = page.getByTitle("Board view");
-        if (await boardBtn.isVisible().catch(() => false)) await boardBtn.click();
         await page.reload();
+        await look(page, 1200);
+
+        // ── 3b. Wait for worker to submit for review (doing → review) ─────
+
+        await expect
+          .poll(
+            async () => {
+              const res = await request.get(`${API_BASE}/tasks/${id}`, {
+                headers: AUTH_HEADERS,
+              });
+              return ((await res.json()) as Task).status;
+            },
+            {
+              message: `Worker did not submit task ${i + 1} for review within ${WORKER_TIMEOUT_MS / 1000}s`,
+              timeout: WORKER_TIMEOUT_MS,
+              intervals: [POLL_INTERVAL_MS],
+            },
+          )
+          .toBe("review");
+
+        await page.reload();
+        const reviewCard = page.locator(`[data-testid="kanban-card"][data-task-id="${id}"]`);
+        await expect(reviewCard).toHaveAttribute("data-task-status", "review");
         await look(page, 1500);
 
-        // All tasks start in "todo".
-        for (const id of taskIds) {
-          const card = page.locator(`[data-testid="kanban-card"][data-task-id="${id}"]`);
-          await expect(card).toBeVisible();
-        }
+        // ── 3c. Wait for reviewer to approve (review → done) ──────────────
 
-        // ── 3. Agent execution loop ────────────────────────────────────────
-        //
-        // With max_workers=1 (default), tasks run one at a time. We poll each
-        // task through the full lifecycle before checking the next, which
-        // matches the sequential dispatch order of the task loop.
+        await expect
+          .poll(
+            async () => {
+              const res = await request.get(`${API_BASE}/tasks/${id}`, {
+                headers: AUTH_HEADERS,
+              });
+              return ((await res.json()) as Task).status;
+            },
+            {
+              message: `Reviewer did not approve task ${i + 1} within ${REVIEWER_TIMEOUT_MS / 1000}s`,
+              timeout: REVIEWER_TIMEOUT_MS,
+              intervals: [POLL_INTERVAL_MS],
+            },
+          )
+          .toBe("done");
 
-        for (let i = 0; i < taskIds.length; i++) {
-          const id = taskIds[i];
-
-          // ── 3a. Wait for worker to claim task (todo → queued/doing) ───────
-
-          await expect
-            .poll(
-              async () => {
-                const res = await request.get(`${API_BASE}/tasks/${id}`, {
-                  headers: AUTH_HEADERS,
-                });
-                return ((await res.json()) as Task).status;
-              },
-              {
-                message: `Task ${i + 1} was not claimed within ${CLAIM_TIMEOUT_MS / 1000}s — is the agent loop running?`,
-                timeout: CLAIM_TIMEOUT_MS,
-                intervals: [POLL_INTERVAL_MS],
-              },
-            )
-            .toMatch(/^(queued|doing)$/);
-
-          await page.reload();
-          await look(page, 1200);
-
-          // ── 3b. Wait for worker to submit for review (doing → review) ─────
-
-          await expect
-            .poll(
-              async () => {
-                const res = await request.get(`${API_BASE}/tasks/${id}`, {
-                  headers: AUTH_HEADERS,
-                });
-                return ((await res.json()) as Task).status;
-              },
-              {
-                message: `Worker did not submit task ${i + 1} for review within ${WORKER_TIMEOUT_MS / 1000}s`,
-                timeout: WORKER_TIMEOUT_MS,
-                intervals: [POLL_INTERVAL_MS],
-              },
-            )
-            .toBe("review");
-
-          await page.reload();
-          const reviewCard = page.locator(
-            `[data-testid="kanban-card"][data-task-id="${id}"]`,
-          );
-          await expect(reviewCard).toHaveAttribute("data-task-status", "review");
-          await look(page, 1500);
-
-          // ── 3c. Wait for reviewer to approve (review → done) ──────────────
-
-          await expect
-            .poll(
-              async () => {
-                const res = await request.get(`${API_BASE}/tasks/${id}`, {
-                  headers: AUTH_HEADERS,
-                });
-                return ((await res.json()) as Task).status;
-              },
-              {
-                message: `Reviewer did not approve task ${i + 1} within ${REVIEWER_TIMEOUT_MS / 1000}s`,
-                timeout: REVIEWER_TIMEOUT_MS,
-                intervals: [POLL_INTERVAL_MS],
-              },
-            )
-            .toBe("done");
-
-          await page.reload();
-          const doneCard = page.locator(
-            `[data-testid="kanban-card"][data-task-id="${id}"]`,
-          );
-          await expect(doneCard).toHaveAttribute("data-task-status", "done");
-          await look(page, 1000);
-        }
-
-        // ── 4. Final view: all 3 tasks in the done column ─────────────────
-
-        await gotoView(page, "tasks");
-        await page.getByTestId("sidebar-project-select").selectOption(projectId);
-        await page.getByTestId("tasks-view-table").click();
-
-        const doneTab = page.getByRole("tab", { name: /^done/i });
-        if (await doneTab.isVisible().catch(() => false)) await doneTab.click();
-
-        for (const id of taskIds) {
-          await expect(
-            page.locator(`[data-testid="task-row"][data-task-id="${id}"]`),
-          ).toBeVisible();
-        }
-
-        await look(page, 2500);
-
-        // Sessions view: show the agent sessions that ran for this project.
-        await gotoView(page, "sessions");
-        await look(page, 2000);
-      } finally {
-        // ── Cleanup ───────────────────────────────────────────────────────
-        //
-        // Always runs, even on failure. Deletes tasks before the project so
-        // foreign-key constraints are satisfied.
-
-        for (const id of taskIds) {
-          await request
-            .delete(`${API_BASE}/tasks/${id}`, { headers: AUTH_HEADERS })
-            .catch(() => {});
-        }
-        if (projectId) {
-          await request
-            .delete(`${API_BASE}/projects/${projectId}`, { headers: AUTH_HEADERS })
-            .catch(() => {});
-        }
+        await page.reload();
+        const doneCard = page.locator(`[data-testid="kanban-card"][data-task-id="${id}"]`);
+        await expect(doneCard).toHaveAttribute("data-task-status", "done");
+        await look(page, 1000);
       }
-    },
-  );
+
+      // ── 4. Final view: all 3 tasks in the done column ─────────────────
+
+      await gotoView(page, "tasks");
+      await page.getByTestId("sidebar-project-select").selectOption(projectId);
+      await page.getByTestId("tasks-view-table").click();
+
+      const doneTab = page.getByRole("tab", { name: /^done/i });
+      if (await doneTab.isVisible().catch(() => false)) await doneTab.click();
+
+      for (const id of taskIds) {
+        await expect(page.locator(`[data-testid="task-row"][data-task-id="${id}"]`)).toBeVisible();
+      }
+
+      await look(page, 2500);
+
+      // Sessions view: show the agent sessions that ran for this project.
+      await gotoView(page, "sessions");
+      await look(page, 2000);
+    } finally {
+      // ── Cleanup ───────────────────────────────────────────────────────
+      //
+      // Always runs, even on failure. Deletes tasks before the project so
+      // foreign-key constraints are satisfied.
+
+      for (const id of taskIds) {
+        await request.delete(`${API_BASE}/tasks/${id}`, { headers: AUTH_HEADERS }).catch(() => {});
+      }
+      if (projectId) {
+        await request
+          .delete(`${API_BASE}/projects/${projectId}`, { headers: AUTH_HEADERS })
+          .catch(() => {});
+      }
+    }
+  });
 });

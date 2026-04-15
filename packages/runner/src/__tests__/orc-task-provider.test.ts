@@ -56,9 +56,7 @@ describe("OrcTaskProvider.pickWorkTasks()", () => {
     const provider = new OrcTaskProvider();
     const db = getDb();
     const id = ulid();
-    await db
-      .insert(tasks)
-      .values(makeTask({ id, title: "Backend task", agent_backend: "claude" }));
+    await db.insert(tasks).values(makeTask({ id, title: "Backend task", agent_backend: "claude" }));
     const result = await provider.pickWorkTasks();
     expect(result.find((t) => t.id === id)).toBeDefined();
   });
@@ -113,13 +111,13 @@ describe("OrcTaskProvider.pickWorkTasks()", () => {
     const blockedId = ulid();
 
     // blocker task — not done
-    await db.insert(tasks).values(
-      makeTask({ id: blockerId, title: "Blocker task", status: "todo" }),
-    );
+    await db
+      .insert(tasks)
+      .values(makeTask({ id: blockerId, title: "Blocker task", status: "todo" }));
     // blocked task — eligible otherwise
-    await db.insert(tasks).values(
-      makeTask({ id: blockedId, title: "Blocked task", skill_name: "my-skill" }),
-    );
+    await db
+      .insert(tasks)
+      .values(makeTask({ id: blockedId, title: "Blocked task", skill_name: "my-skill" }));
     // link: blockerId blocks blockedId
     await db.insert(task_links).values({
       id: ulid(),
@@ -141,11 +139,13 @@ describe("OrcTaskProvider.pickWorkTasks()", () => {
     const doneId = ulid();
     const doingId = ulid();
 
-    await db.insert(tasks).values([
-      makeTask({ id: reviewId, title: "Review task", status: "review", skill_name: "my-skill" }),
-      makeTask({ id: doneId, title: "Done task", status: "done", skill_name: "my-skill" }),
-      makeTask({ id: doingId, title: "Doing task", status: "doing", skill_name: "my-skill" }),
-    ]);
+    await db
+      .insert(tasks)
+      .values([
+        makeTask({ id: reviewId, title: "Review task", status: "review", skill_name: "my-skill" }),
+        makeTask({ id: doneId, title: "Done task", status: "done", skill_name: "my-skill" }),
+        makeTask({ id: doingId, title: "Doing task", status: "doing", skill_name: "my-skill" }),
+      ]);
 
     const result = await provider.pickWorkTasks();
     expect(result.find((t) => t.id === reviewId)).toBeUndefined();
@@ -170,10 +170,12 @@ describe("OrcTaskProvider.pickReviewTasks()", () => {
     const todoId = ulid();
     const doingId = ulid();
 
-    await db.insert(tasks).values([
-      makeTask({ id: todoId, title: "Todo task for review test", status: "todo" }),
-      makeTask({ id: doingId, title: "Doing task for review test", status: "doing" }),
-    ]);
+    await db
+      .insert(tasks)
+      .values([
+        makeTask({ id: todoId, title: "Todo task for review test", status: "todo" }),
+        makeTask({ id: doingId, title: "Doing task for review test", status: "doing" }),
+      ]);
 
     const result = await provider.pickReviewTasks();
     expect(result.find((t) => t.id === todoId)).toBeUndefined();
@@ -185,9 +187,11 @@ describe("OrcTaskProvider.pickReviewTasks()", () => {
     const db = getDb();
     const id = ulid();
     const sessionId = ulid();
-    await db.insert(tasks).values(
-      makeTask({ id, title: "Claimed review task", status: "review", claimed_by: sessionId }),
-    );
+    await db
+      .insert(tasks)
+      .values(
+        makeTask({ id, title: "Claimed review task", status: "review", claimed_by: sessionId }),
+      );
     const result = await provider.pickReviewTasks();
     expect(result.find((t) => t.id === id)).toBeUndefined();
   });
