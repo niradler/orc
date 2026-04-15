@@ -37,8 +37,6 @@ export const SpeechConfigSchema = z.object({
   qwen: SpeechProviderConfigSchema.default({}),
 });
 
-type SpeechConfig = z.infer<typeof SpeechConfigSchema>;
-
 export const TtsConfigSchema = z.object({
   enabled: z.boolean().default(false),
   provider: z.enum(["openai", "qwen"]).default("openai"),
@@ -49,14 +47,12 @@ export const TtsConfigSchema = z.object({
   qwen: SpeechProviderConfigSchema.default({}),
 });
 
-type TtsConfig = z.infer<typeof TtsConfigSchema>;
-
 export const OrcConfigSchema = z.object({
   db: z
     .object({
       path: z.string().default("~/.orc/orc.db"),
     })
-    .default({ path: "~/.orc/orc.db" }),
+    .default({}),
 
   api: z
     .object({
@@ -64,21 +60,21 @@ export const OrcConfigSchema = z.object({
       host: z.string().default("127.0.0.1"),
       secret: z.string().optional(),
     })
-    .default({ port: 7700, host: "127.0.0.1" }),
+    .default({}),
 
   mcp: z
     .object({
       transport: z.enum(["stdio", "http"]).default("stdio"),
       port: z.number().int().default(7701),
     })
-    .default({ transport: "stdio", port: 7701 }),
+    .default({}),
 
   gateway: z
     .object({
-      telegram: GatewayPlatformConfigSchema.default({} as GatewayPlatformConfig),
-      slack: GatewayPlatformConfigSchema.default({} as GatewayPlatformConfig),
+      telegram: GatewayPlatformConfigSchema.default({}),
+      slack: GatewayPlatformConfigSchema.default({}),
     })
-    .default({} as { telegram: GatewayPlatformConfig; slack: GatewayPlatformConfig }),
+    .default({}),
 
   runner: z
     .object({
@@ -86,7 +82,7 @@ export const OrcConfigSchema = z.object({
       max_concurrent_jobs: z.number().int().default(5),
       log_retention_days: z.number().int().default(30),
     })
-    .default({ default_timeout_secs: 300, max_concurrent_jobs: 5, log_retention_days: 30 }),
+    .default({}),
 
   context: z
     .object({
@@ -94,7 +90,7 @@ export const OrcConfigSchema = z.object({
       layer1_task_limit: z.number().int().default(10),
       layer1_memory_limit: z.number().int().default(5),
     })
-    .default({ snapshot_max_bytes: 2048, layer1_task_limit: 10, layer1_memory_limit: 5 }),
+    .default({}),
 
   knowledge: z
     .object({
@@ -102,7 +98,7 @@ export const OrcConfigSchema = z.object({
       default_limit: z.number().int().min(1).max(50).default(10),
       search_mode: z.enum(["hybrid", "lexical"]).default("lexical"),
     })
-    .default({ db_path: "~/.orc/knowledge.db", default_limit: 10, search_mode: "lexical" }),
+    .default({}),
 
   agent_loop: z
     .object({
@@ -113,17 +109,10 @@ export const OrcConfigSchema = z.object({
       session_idle_timeout_minutes: z.number().int().min(1).default(20),
       worker_auto_approve: z.boolean().default(true),
     })
-    .default({
-      enabled: true,
-      poll_interval_minutes: 5,
-      max_workers: 1,
-      default_backend: "claude",
-      session_idle_timeout_minutes: 20,
-      worker_auto_approve: true,
-    }),
+    .default({}),
 
-  speech: SpeechConfigSchema.default({} as SpeechConfig),
-  tts: TtsConfigSchema.default({} as TtsConfig),
+  speech: SpeechConfigSchema.default({}),
+  tts: TtsConfigSchema.default({}),
 
   activeProject: z.string().optional(),
 });

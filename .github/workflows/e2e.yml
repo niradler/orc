@@ -1,0 +1,34 @@
+name: E2E
+
+on:
+  # Uncomment to auto-trigger on web changes:
+  # pull_request:
+  #   branches:
+  #     - master
+  #   paths:
+  #     - 'packages/web/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        working-directory: packages/web
+        run: bunx playwright install --with-deps chromium
+
+      - name: E2E tests
+        working-directory: packages/web
+        run: bun run test
