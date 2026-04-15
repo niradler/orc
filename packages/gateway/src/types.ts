@@ -91,4 +91,5 @@ export type DirectCommandResult = {
   html?: string | undefined;
   mode?: GatewayMode | undefined;
   buttons?: Button[][] | undefined;
+  projectId?: string | null | undefined;
 };

@@ -1,21 +1,28 @@
 import { shortId, ulid } from "@orc/core/ids";
 import type { GatewayMode } from "@orc/core/types";
-import { executeJob } from "@orc/runner/executor";
 import {
-  approveTask,
+  apiApproveTask,
+  apiFindJobByName,
+  apiFindProjectById,
+  apiFindProjectByName,
+  apiFindTask,
+  apiListActiveTasks,
+  apiListJobs,
+  apiListProjects,
+  apiRejectTask,
+  apiSearchMemories,
+  apiCreateTask,
+  apiTriggerJob,
+} from "./api.js";
+import {
   assignTaskToSession,
   createGatewaySession,
-  findJobByName,
   findPermission,
-  findTask,
   getActiveGatewaySession,
-  listActiveTasks,
   listGatewaySessions,
-  listJobs,
-  rejectTask,
-  searchMemories,
   setActiveGatewaySession,
   updateChatMode,
+  updateChatProject,
   updateChatWorkingDir,
   updateGatewaySession,
 } from "./store.js";
@@ -53,9 +60,10 @@ function taskStatusEmoji(s: string): string {
   return "📋";
 }
 
-function helpText(mode: GatewayMode): string {
+function helpText(mode: GatewayMode, projectName?: string): string {
+  const projectLine = projectName ? `\n📁 Project: <b>${projectName}</b>` : "";
   const base = [
-    "<b>ORC Gateway Commands</b>",
+    "<b>ORC Gateway Commands</b>" + projectLine,
     "",
     "<b>Navigation</b>",
     "/help - this message",
@@ -63,19 +71,24 @@ function helpText(mode: GatewayMode): string {
     "/mode [direct|agent:&lt;name&gt;|multi|job:&lt;name&gt;] - switch mode",
     "/cwd &lt;path&gt; - set working directory",
     "",
+    "<b>Projects</b>",
+    "/projects - list and select active project",
+    "/project [name] - show or set active project",
+    "",
     "<b>Tasks</b>",
-    "/tasks - list active tasks",
+    "/tasks - list active tasks (scoped to project if set)",
     "/task &lt;id&gt; - task details",
+    "/create &lt;title&gt; - quick-create a task",
     "/approve &lt;id&gt; [note] - approve task or permission",
     "/reject &lt;id&gt; [note] - reject task or deny permission",
     "/assign &lt;task-id&gt; &lt;agent&gt; - assign task to agent session",
     "",
     "<b>Jobs</b>",
-    "/jobs - list jobs",
+    "/jobs - list jobs (scoped to project if set)",
     "/run &lt;name&gt; - trigger a job",
     "",
     "<b>Memory</b>",
-    "/mem &lt;query&gt; - search memories",
+    "/mem &lt;query&gt; - search memories (scoped to project if set)",
     "",
     "<b>Agents</b>",
     "/agent &lt;name&gt; - switch active agent (claude, codex, gemini, copilot, a2a, ...)",
@@ -83,7 +96,7 @@ function helpText(mode: GatewayMode): string {
     "/session new|list|switch &lt;id&gt;|stop - session lifecycle",
   ];
   if (mode.startsWith("agent:") || mode === "multi") {
-    base.push("", "<i>Current mode: agent - send any text to the active agent</i>");
+    base.push("", "<i>Current mode: agent — send any text to the active agent</i>");
   }
   return base.join("\n");
 }
@@ -93,6 +106,7 @@ export async function handleDirectCommand(input: {
   rawText: string;
   currentMode?: GatewayMode;
   currentWorkingDir?: string | null;
+  currentProjectId?: string | null;
 }): Promise<DirectCommandResult | null> {
   const text = input.rawText.trim();
   if (!text.startsWith("/")) return null;
@@ -102,22 +116,34 @@ export async function handleDirectCommand(input: {
   const argText = parts.slice(1).join(" ").trim();
 
   if (command === "/start" || command === "/help") {
-    return { html: helpText(input.currentMode ?? "direct") };
+    let projectName: string | undefined;
+    if (input.currentProjectId) {
+      const proj = await apiFindProjectById(input.currentProjectId).catch(() => null);
+      projectName = proj?.name;
+    }
+    return { html: helpText(input.currentMode ?? "direct", projectName) };
   }
 
   if (command === "/status") {
-    const activeTasks = await listActiveTasks(5);
-    const sessions = await listGatewaySessions(input.chatKey);
-    const jobs = await listJobs(5);
-    const activeSession = await getActiveGatewaySession(input.chatKey);
+    const [activeTasks, sessions, jobs, activeSession] = await Promise.all([
+      apiListActiveTasks(input.currentProjectId).catch(() => []),
+      listGatewaySessions(input.chatKey),
+      apiListJobs(input.currentProjectId).catch(() => []),
+      getActiveGatewaySession(input.chatKey),
+    ]);
+    let projectLine = "";
+    if (input.currentProjectId) {
+      const proj = await apiFindProjectById(input.currentProjectId).catch(() => null);
+      projectLine = proj ? `\n📁 Project: <b>${proj.name}</b>` : "";
+    }
     const lines = [
-      "<b>ORC Status</b>",
+      "<b>ORC Status</b>" + projectLine,
       "",
       `Mode: <code>${input.currentMode ?? "direct"}</code>`,
       `Working dir: <code>${input.currentWorkingDir ?? "(unset)"}</code>`,
       "",
-      `<b>Tasks</b>: ${activeTasks.length} active`,
-      `<b>Jobs</b>: ${jobs.length} defined`,
+      `<b>Tasks</b>: ${activeTasks.slice(0, 5).length} active`,
+      `<b>Jobs</b>: ${jobs.slice(0, 5).length} defined`,
       `<b>Sessions</b>: ${sessions.length} total`,
     ];
     if (activeSession) {
@@ -153,7 +179,7 @@ export async function handleDirectCommand(input: {
   }
 
   if (command === "/tasks") {
-    const rows = await listActiveTasks();
+    const rows = await apiListActiveTasks(input.currentProjectId).catch(() => []);
     if (rows.length === 0) return { text: "No active tasks." };
     const lines = ["<b>Active Tasks</b>", ""];
     for (const row of rows) {
@@ -167,7 +193,7 @@ export async function handleDirectCommand(input: {
 
   if (command === "/task") {
     if (!argText) return { text: "Usage: /task <id>" };
-    const task = await findTask(argText);
+    const task = await apiFindTask(argText);
     if (!task) return { text: `Task not found: ${argText}` };
     const lines = [
       `<b>${task.title}</b>`,
@@ -201,9 +227,9 @@ export async function handleDirectCommand(input: {
         text: `Permission ${shortId(permission.id)} queued for approval - use the button or wait for agent context.`,
       };
     }
-    const task = await findTask(id);
+    const task = await apiFindTask(id);
     if (!task) return { text: `No task or permission found for ${id}` };
-    await approveTask(task.id, note || "Approved from gateway");
+    await apiApproveTask(task.id, note || "Approved from gateway");
     return { text: `✅ Approved task [${shortId(task.id)}] ${task.title}` };
   }
 
@@ -219,16 +245,16 @@ export async function handleDirectCommand(input: {
         text: `Permission ${shortId(permission.id)} denial queued - use the button or wait for agent context.`,
       };
     }
-    const task = await findTask(id);
+    const task = await apiFindTask(id);
     if (!task) return { text: `No task or permission found for ${id}` };
-    await rejectTask(task.id, note || "Changes requested from gateway");
+    await apiRejectTask(task.id, note || "Changes requested from gateway");
     return { text: `🔁 Changes requested for [${shortId(task.id)}] ${task.title}` };
   }
 
   if (command === "/assign") {
     const [taskId, agent] = argText.split(/\s+/);
     if (!taskId || !agent) return { text: "Usage: /assign <task-id> <agent>" };
-    const task = await findTask(taskId);
+    const task = await apiFindTask(taskId);
     if (!task) return { text: `Task not found: ${taskId}` };
     const sessions = await listGatewaySessions(input.chatKey);
     const session = sessions.find((s) => s.backend === agent && s.status !== "stopped");
@@ -244,7 +270,7 @@ export async function handleDirectCommand(input: {
   }
 
   if (command === "/jobs") {
-    const rows = await listJobs();
+    const rows = await apiListJobs(input.currentProjectId).catch(() => []);
     if (rows.length === 0) return { text: "No jobs defined." };
     const lines = ["<b>Jobs</b>", ""];
     for (const row of rows) {
@@ -256,15 +282,15 @@ export async function handleDirectCommand(input: {
 
   if (command === "/run") {
     if (!argText) return { text: "Usage: /run <job-name>" };
-    const job = await findJobByName(argText);
+    const job = await apiFindJobByName(argText);
     if (!job) return { text: `Job not found: ${argText}` };
-    const runId = await executeJob({ jobId: job.id, triggerBy: "bridge-msg" });
+    const runId = await apiTriggerJob(job.id);
     return { text: `Triggered ${job.name} → run ${shortId(runId)}` };
   }
 
   if (command === "/mem") {
     if (!argText) return { text: "Usage: /mem <query>" };
-    const rows = await searchMemories(argText);
+    const rows = await apiSearchMemories(argText, input.currentProjectId).catch(() => []);
     if (rows.length === 0) return { text: "No matching memories." };
     const lines = ["<b>Memories</b>", ""];
     for (const row of rows) {
@@ -341,6 +367,59 @@ export async function handleDirectCommand(input: {
     }
 
     return { text: "Usage: /session <new|list|switch <id>|stop>" };
+  }
+
+  if (command === "/projects") {
+    const rows = await apiListProjects().catch(() => []);
+    if (rows.length === 0) {
+      return { text: "No active projects. Create one with: orc project add <name>" };
+    }
+    const active = input.currentProjectId;
+    const lines = ["<b>📁 Projects</b> — tap to activate", ""];
+    for (const row of rows) {
+      const marker = row.id === active ? "▶ " : "  ";
+      const desc = row.description ? ` — ${row.description}` : "";
+      lines.push(`${marker}<code>${row.name}</code>${desc}`);
+    }
+    const btnRows: Array<Array<{ label: string; value: string }>> = [];
+    let rowBuf: Array<{ label: string; value: string }> = [];
+    for (const row of rows) {
+      const marker = row.id === active ? "▶ " : "";
+      rowBuf.push({ label: `${marker}${row.name}`, value: `project:set:${row.id}` });
+      if (rowBuf.length === 3) {
+        btnRows.push(rowBuf);
+        rowBuf = [];
+      }
+    }
+    if (rowBuf.length > 0) btnRows.push(rowBuf);
+    if (active) {
+      btnRows.push([{ label: "🚫 Clear project", value: "project:clear" }]);
+    }
+    return { html: lines.join("\n"), buttons: btnRows };
+  }
+
+  if (command === "/project") {
+    if (!argText) {
+      if (!input.currentProjectId) {
+        return { text: "No active project. Use /projects to pick one." };
+      }
+      const proj = await apiFindProjectById(input.currentProjectId).catch(() => null);
+      return {
+        text: proj ? `📁 Active project: ${proj.name}` : "Project not found. Use /projects to pick one.",
+      };
+    }
+    const proj = await apiFindProjectByName(argText);
+    if (!proj) {
+      return { text: `Project not found: ${argText}\n\nUse /projects to see available projects.` };
+    }
+    await updateChatProject(input.chatKey, proj.id);
+    return { text: `✅ Active project: ${proj.name}`, projectId: proj.id };
+  }
+
+  if (command === "/create") {
+    if (!argText) return { text: "Usage: /create <task title>" };
+    const task = await apiCreateTask(argText, input.currentProjectId);
+    return { text: `✅ Created task [${shortId(task.id)}] ${task.title}` };
   }
 
   return { text: `Unknown command: ${command}\n\nType /help for available commands.` };

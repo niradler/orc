@@ -8,6 +8,7 @@ import { closeAgentSession, preflightBackends, runAgentTurn } from "./agent-runn
 import { RateLimiter } from "./rate-limiter.js";
 import { redactSecrets } from "./redact.js";
 import "./agent-runtime/index.js";
+import { apiFindProjectById, apiFindJobByName } from "./api.js";
 import { ensureAgentSession, handleDirectCommand } from "./direct.js";
 import { PermissionManager } from "./permission-manager.js";
 import { PreviewManager } from "./preview-manager.js";
@@ -17,10 +18,10 @@ import { synthesizeSpeech, transcribeAudio } from "./speech.js";
 import "./telegram.js";
 import {
   appendMessage,
-  findJobByName,
   getActiveGatewaySession,
   getOrCreateChat,
   listReviewTargets,
+  updateChatProject,
   updateGatewaySession,
 } from "./store.js";
 import type {
@@ -39,8 +40,11 @@ const logger = createLogger("gateway");
 const BOT_COMMANDS = [
   { command: "help", description: "Show available commands" },
   { command: "status", description: "System status and sessions" },
+  { command: "projects", description: "List and select active project" },
+  { command: "project", description: "Show or set active project: /project <name>" },
   { command: "tasks", description: "List active tasks" },
   { command: "task", description: "Task details: /task <id>" },
+  { command: "create", description: "Quick-create a task: /create <title>" },
   { command: "approve", description: "Approve task or permission" },
   { command: "reject", description: "Reject task or deny permission" },
   { command: "assign", description: "Assign task to agent: /assign <id> <agent>" },
@@ -155,6 +159,8 @@ class GatewayManager {
       this.pendingSessionApprove.add(id);
       return `__perm_resolved:${id}:session`;
     }
+    if (text.startsWith("project:set:")) return `__project_set:${text.slice("project:set:".length)}`;
+    if (text === "project:clear") return "__project_clear";
     return text;
   }
 
@@ -199,6 +205,22 @@ class GatewayManager {
         }
         return;
       }
+      if (text.startsWith("__project_set:")) {
+        const projectId = text.slice("__project_set:".length);
+        const proj = await apiFindProjectById(projectId).catch(() => null);
+        if (proj) {
+          await updateChatProject(chat.id, proj.id);
+          await this.sendText(message, `✅ Active project: ${proj.name}`);
+        } else {
+          await this.sendText(message, "Project not found.");
+        }
+        return;
+      }
+      if (text === "__project_clear") {
+        await updateChatProject(chat.id, null);
+        await this.sendText(message, "🚫 Project cleared.");
+        return;
+      }
     }
 
     if (!text && audio && config.speech.enabled) {
@@ -240,10 +262,12 @@ class GatewayManager {
       rawText: text,
       currentMode: chat.mode as GatewayMode,
       currentWorkingDir: chat.working_dir,
+      currentProjectId: chat.project_id,
     });
 
     if (commandResult) {
       if (commandResult.mode) chat.mode = commandResult.mode;
+      if (commandResult.projectId !== undefined) chat.project_id = commandResult.projectId;
       const outText = commandResult.html ?? commandResult.text ?? "";
       const plainText = commandResult.text ?? outText;
       const parseMode = commandResult.html ? ("html" as const) : undefined;
@@ -271,7 +295,7 @@ class GatewayManager {
 
     if (chat.mode.startsWith("job:")) {
       const jobName = chat.mode.slice(4);
-      const job = await findJobByName(jobName);
+      const job = await apiFindJobByName(jobName);
       const reply = job
         ? `Triggered ${job.name} → ${await executeJob({ jobId: job.id, triggerBy: "bridge-msg", envOverrides: { MSG: text } })}`
         : `Job not found: ${jobName}`;

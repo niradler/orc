@@ -5,12 +5,8 @@ import {
   bridge_chats,
   bridge_messages,
   bridge_permissions,
-  comments,
   gateway_sessions,
   job_runs,
-  jobs,
-  memories,
-  tasks,
 } from "@orc/db/schema";
 import { and, desc, eq, inArray } from "drizzle-orm";
 
@@ -239,93 +235,6 @@ export async function findPermission(input: string) {
     orderBy: [desc(bridge_permissions.created_at)],
   });
   return rows.find((row) => row.id.endsWith(input));
-}
-
-export async function findTask(input: string) {
-  const db = getDb();
-  if (input.length === 26) return db.query.tasks.findFirst({ where: eq(tasks.id, input) });
-  const rows = await db.query.tasks.findMany({ limit: 100, orderBy: [desc(tasks.updated_at)] });
-  return rows.find((row) => row.id.endsWith(input) || row.id === input);
-}
-
-export async function approveTask(
-  taskId: string,
-  note?: string,
-): Promise<typeof tasks.$inferSelect | null> {
-  const db = getDb();
-  const task = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
-  if (!task) return null;
-  const now = new Date();
-  await db.update(tasks).set({ status: "done", updated_at: now }).where(eq(tasks.id, taskId));
-  if (note) {
-    await db.insert(comments).values({
-      id: ulid(),
-      resource_type: "task",
-      resource_id: taskId,
-      content: note,
-      author: "human",
-      created_at: now,
-    });
-  }
-  return (await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) })) ?? null;
-}
-
-export async function rejectTask(
-  taskId: string,
-  note?: string,
-): Promise<typeof tasks.$inferSelect | null> {
-  const db = getDb();
-  const task = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
-  if (!task) return null;
-  const now = new Date();
-  await db
-    .update(tasks)
-    .set({ status: "changes_requested", updated_at: now })
-    .where(eq(tasks.id, taskId));
-  if (note) {
-    await db.insert(comments).values({
-      id: ulid(),
-      resource_type: "task",
-      resource_id: taskId,
-      content: note,
-      author: "human",
-      created_at: now,
-    });
-  }
-  return (await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) })) ?? null;
-}
-
-export async function listActiveTasks(limit = 8) {
-  const db = getDb();
-  const rows = await db.query.tasks.findMany({ limit, orderBy: [desc(tasks.updated_at)] });
-  return rows.filter((row) => !["done", "cancelled"].includes(row.status));
-}
-
-export async function searchMemories(query: string, limit = 5) {
-  const db = getDb();
-  const rows = await db.query.memories.findMany({
-    limit: limit * 3,
-    orderBy: [desc(memories.created_at)],
-  });
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  return rows
-    .filter((row) =>
-      terms.every(
-        (term) =>
-          row.content.toLowerCase().includes(term) || row.title?.toLowerCase().includes(term),
-      ),
-    )
-    .slice(0, limit);
-}
-
-export async function findJobByName(name: string) {
-  const db = getDb();
-  return db.query.jobs.findFirst({ where: eq(jobs.name, name) });
-}
-
-export async function listJobs(limit = 10) {
-  const db = getDb();
-  return db.query.jobs.findMany({ limit, orderBy: [desc(jobs.updated_at)] });
 }
 
 export async function listReviewTargets() {
