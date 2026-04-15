@@ -10,8 +10,8 @@ function client() {
 
 export async function apiListActiveTasks(projectId?: string | null) {
   const res = await client().tasks.list({
-    project_id: projectId ?? undefined,
     limit: 20,
+    ...(projectId ? { project_id: projectId } : {}),
   });
   if (res.error) throw new Error(res.error.error);
   return (res.data?.tasks ?? []).filter(
@@ -44,7 +44,7 @@ export async function apiRejectTask(taskId: string, note?: string) {
 export async function apiCreateTask(title: string, projectId?: string | null) {
   const res = await client().tasks.create({
     title,
-    project_id: projectId ?? undefined,
+    ...(projectId ? { project_id: projectId } : {}),
   });
   if (res.error) throw new Error(res.error.error);
   return res.data!;
@@ -52,8 +52,8 @@ export async function apiCreateTask(title: string, projectId?: string | null) {
 
 export async function apiSearchMemories(query: string, projectId?: string | null) {
   const res = await client().memories.search(query, {
-    project_id: projectId ?? undefined,
     limit: 5,
+    ...(projectId ? { project_id: projectId } : {}),
   });
   if (res.error) throw new Error(res.error.error);
   return res.data?.results ?? [];
@@ -61,9 +61,9 @@ export async function apiSearchMemories(query: string, projectId?: string | null
 
 export async function apiListJobs(projectId?: string | null) {
   const res = await client().jobs.list({
-    project_id: projectId ?? undefined,
     limit: 20,
     enabled: true,
+    ...(projectId ? { project_id: projectId } : {}),
   });
   if (res.error) throw new Error(res.error.error);
   return res.data?.jobs ?? [];

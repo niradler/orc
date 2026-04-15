@@ -357,6 +357,14 @@ export async function assignTaskToSession(sessionId: string, taskId: string): Pr
     .where(eq(gateway_sessions.id, sessionId));
 }
 
+export async function updateChatProject(chatKey: string, projectId: string | null): Promise<void> {
+  const db = getDb();
+  await db
+    .update(bridge_chats)
+    .set({ project_id: projectId, updated_at: new Date() })
+    .where(eq(bridge_chats.id, chatKey));
+}
+
 export async function resolveChatKey(platform: string, chatIdOrKey: string): Promise<string> {
   if (chatIdOrKey.includes(":")) return chatIdOrKey;
   const db = getDb();

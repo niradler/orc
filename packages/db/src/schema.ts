@@ -224,6 +224,7 @@ export const bridge_chats = sqliteTable(
     session_id: text("session_id"),
     thread_id: text("thread_id"),
     working_dir: text("working_dir"),
+    project_id: text("project_id").references(() => projects.id, { onDelete: "set null" }),
     updated_at: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
     created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
   },
