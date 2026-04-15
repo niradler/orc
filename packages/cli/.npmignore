@@ -3,3 +3,11 @@ src/
 tsconfig.json
 build.ts
 copy-web.ts
+dist/orc-linux-arm64
+dist/orc-linux-x64
+dist/orc-mac-arm64
+dist/orc-mac-x64
+dist/orc-mac-arm64.zip
+dist/orc-linux-x64.zip
+dist/orc-windows-x64.exe
+dist/orc-test.exe

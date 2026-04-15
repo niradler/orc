@@ -19,7 +19,9 @@
     "clean": "rm -rf dist"
   },
   "files": [
-    "dist/",
+    "dist/index.js",
+    "dist/checksums.txt",
+    "dist/web",
     "README.md"
   ],
   "devDependencies": {
