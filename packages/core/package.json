@@ -1,6 +1,6 @@
 {
   "name": "@orc/core",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
@@ -22,8 +22,5 @@
   },
   "dependencies": {
     "zod": "^4.3.6"
-  },
-  "devDependencies": {
-    "typescript": "^6.0.2"
   }
 }

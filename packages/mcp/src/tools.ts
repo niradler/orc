@@ -346,7 +346,7 @@ export const toolDefinitions = [
         "subagent",
       ]),
       priority: z.number().int().min(1).max(4).optional().default(3),
-      data: z.record(z.string()).describe("Event payload - tool, path, content, etc."),
+      data: z.record(z.string(), z.string()).describe("Event payload - tool, path, content, etc."),
     }),
   },
   {

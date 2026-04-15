@@ -16,7 +16,7 @@ const mcpToolRoute = createRoute({
           schema: z
             .object({
               name: z.string().min(1),
-              args: z.record(z.unknown()).optional().default({}),
+              args: z.record(z.string(), z.unknown()).optional().default({}),
             })
             .openapi("McpToolCall"),
         },

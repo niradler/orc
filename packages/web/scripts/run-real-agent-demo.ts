@@ -44,7 +44,9 @@ async function waitReady(url: string, timeoutMs: number): Promise<void> {
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
       if (res.ok) return;
-    } catch { /* not ready yet */ }
+    } catch {
+      /* not ready yet */
+    }
     await Bun.sleep(300);
   }
   throw new Error(`Server at ${url} did not become ready within ${timeoutMs}ms`);
@@ -54,7 +56,7 @@ async function waitReady(url: string, timeoutMs: number): Promise<void> {
 
 // scripts/ lives two levels below repo root (packages/web/scripts)
 const repoRoot = resolve(import.meta.dir, "../../..");
-const webRoot  = resolve(import.meta.dir, "..");
+const webRoot = resolve(import.meta.dir, "..");
 
 // ── preflight: claude CLI ─────────────────────────────────────────────────────
 
@@ -82,8 +84,8 @@ try {
 
 // ── allocate temp resources ───────────────────────────────────────────────────
 
-const port    = await freePort();
-const dbPath  = join(tmpdir(), `orc-demo-${process.pid}.db`);
+const port = await freePort();
+const dbPath = join(tmpdir(), `orc-demo-${process.pid}.db`);
 
 // Scope directory: worker agents use this as their cwd.
 // We write a .mcp.json here that points at the test daemon port so the ORC
@@ -93,38 +95,42 @@ const scopeDir = join(tmpdir(), `orc-demo-scope-${process.pid}`);
 mkdirSync(scopeDir, { recursive: true });
 writeFileSync(
   join(scopeDir, ".mcp.json"),
-  JSON.stringify({
-    mcpServers: {
-      orc: {
-        command: "bun",
-        args: ["run", join(repoRoot, "packages/cli/dist/index.js"), "mcp"],
-        env: {
-          ORC_API_BASE: `http://127.0.0.1:${port}`,
+  JSON.stringify(
+    {
+      mcpServers: {
+        orc: {
+          command: "bun",
+          args: ["run", join(repoRoot, "packages/cli/dist/index.js"), "mcp"],
+          env: {
+            ORC_API_BASE: `http://127.0.0.1:${port}`,
+          },
         },
       },
     },
-  }, null, 2),
+    null,
+    2,
+  ),
 );
 
 const env: Record<string, string> = {
   ...(process.env as Record<string, string>),
-  ORC_API_HOST:                  "127.0.0.1",
-  ORC_API_PORT:                  String(port),
-  ORC_DB_PATH:                   dbPath,
-  ORC_API_SECRET:                "",
-  ORC_AGENT_LOOP_ENABLED:        "true",
-  ORC_AGENT_LOOP_MAX_WORKERS:    "2",
-  ORC_AGENT_LOOP_AUTO_APPROVE:   "true",
-  ORC_AGENT_LOOP_POLL_INTERVAL:  "1",
-  ORC_AGENT_LOOP_IDLE_TIMEOUT:   "30",
-  ORC_GATEWAY_ENABLED:           "0",
-  ORC_E2E_CHAT_MOCK:             "0",
+  ORC_API_HOST: "127.0.0.1",
+  ORC_API_PORT: String(port),
+  ORC_DB_PATH: dbPath,
+  ORC_API_SECRET: "",
+  ORC_AGENT_LOOP_ENABLED: "true",
+  ORC_AGENT_LOOP_MAX_WORKERS: "2",
+  ORC_AGENT_LOOP_AUTO_APPROVE: "true",
+  ORC_AGENT_LOOP_POLL_INTERVAL: "1",
+  ORC_AGENT_LOOP_IDLE_TIMEOUT: "30",
+  ORC_GATEWAY_ENABLED: "0",
+  ORC_E2E_CHAT_MOCK: "0",
   // Playwright helpers
-  PW_API_PORT:                   String(port),
-  PW_NO_SERVER:                  "1",
-  ORC_RUN_DEMOS:                 "1",
+  PW_API_PORT: String(port),
+  PW_NO_SERVER: "1",
+  ORC_RUN_DEMOS: "1",
   // Passed to the Playwright test so it can set project.scope
-  ORC_DEMO_SCOPE_DIR:            scopeDir,
+  ORC_DEMO_SCOPE_DIR: scopeDir,
 };
 
 // ── start test daemon ─────────────────────────────────────────────────────────
@@ -148,16 +154,25 @@ function killDaemon(): void {
   try {
     if (process.platform === "win32") {
       Bun.spawnSync(["taskkill", "/F", "/T", "/PID", String(daemonProc.pid)], {
-        stdout: "ignore", stderr: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
       });
     } else {
       process.kill(-daemonProc.pid, "SIGKILL");
     }
-  } catch { /* already dead */ }
+  } catch {
+    /* already dead */
+  }
 }
 
-process.once("SIGINT",  () => { killDaemon(); process.exit(130); });
-process.once("SIGTERM", () => { killDaemon(); process.exit(143); });
+process.once("SIGINT", () => {
+  killDaemon();
+  process.exit(130);
+});
+process.once("SIGTERM", () => {
+  killDaemon();
+  process.exit(143);
+});
 
 // ── build + run tests ─────────────────────────────────────────────────────────
 
@@ -177,8 +192,12 @@ try {
   if ((await buildProc.exited) !== 0) throw new Error("vite build failed");
 
   const pwArgs = [
-    "bun", "x", "playwright", "test",
-    "--grep", "Real Agent",
+    "bun",
+    "x",
+    "playwright",
+    "test",
+    "--grep",
+    "Real Agent",
     ...process.argv.slice(2),
   ];
   console.log(`\n  Running: ${pwArgs.join(" ")}\n`);
@@ -196,13 +215,23 @@ try {
   exitCode = 1;
 } finally {
   killDaemon();
-  try { await daemonProc.exited; } catch { /* ignore */ }
-  try { unlinkSync(dbPath); }        catch { /* gone */ }
+  try {
+    await daemonProc.exited;
+  } catch {
+    /* ignore */
+  }
+  try {
+    unlinkSync(dbPath);
+  } catch {
+    /* gone */
+  }
   try {
     // scope dir cleanup
     const { rmSync } = await import("node:fs");
     rmSync(scopeDir, { recursive: true, force: true });
-  } catch { /* gone */ }
+  } catch {
+    /* gone */
+  }
   console.log("\n  Cleanup complete.");
 }
 

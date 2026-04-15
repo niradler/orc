@@ -32,9 +32,7 @@ const server = Bun.serve({
 await ensureSystemJob();
 startTaskLoop();
 
-logger.info(
-  `[test-daemon] API + task loop ready on http://${config.api.host}:${config.api.port}`,
-);
+logger.info(`[test-daemon] API + task loop ready on http://${config.api.host}:${config.api.port}`);
 
 function shutdown() {
   server.stop(true).catch(() => {});

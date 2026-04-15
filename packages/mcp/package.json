@@ -1,6 +1,6 @@
 {
   "name": "@orc/mcp",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
@@ -29,7 +29,6 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@orc/api": "workspace:*",
-    "typescript": "^6.0.2"
+    "@orc/api": "workspace:*"
   }
 }

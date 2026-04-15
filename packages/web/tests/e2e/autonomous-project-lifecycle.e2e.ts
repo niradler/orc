@@ -114,9 +114,7 @@ test.describe("Autonomous Project Lifecycle Demo", () => {
     // Navigate to Projects and verify it appears in the table.
     await gotoView(page, "projects");
     await expect(page.getByTestId("view-title")).toHaveText(/projects/i);
-    const projectRow = page.locator(
-      `[data-testid="project-row"][data-project-id="${projectId}"]`,
-    );
+    const projectRow = page.locator(`[data-testid="project-row"][data-project-id="${projectId}"]`);
     await expect(projectRow).toBeVisible();
     await expect(projectRow).toContainText(projectName);
     await pause(page, 1200);
@@ -147,9 +145,7 @@ test.describe("Autonomous Project Lifecycle Demo", () => {
 
     // All four tasks should appear in the "Todo" state.
     for (const id of taskIds) {
-      await expect(
-        page.locator(`[data-testid="task-row"][data-task-id="${id}"]`),
-      ).toBeVisible();
+      await expect(page.locator(`[data-testid="task-row"][data-task-id="${id}"]`)).toBeVisible();
     }
     await pause(page, 1500);
 
@@ -228,9 +224,7 @@ test.describe("Autonomous Project Lifecycle Demo", () => {
     if (await doneTab.isVisible().catch(() => false)) await doneTab.click();
 
     for (const id of taskIds) {
-      await expect(
-        page.locator(`[data-testid="task-row"][data-task-id="${id}"]`),
-      ).toBeVisible();
+      await expect(page.locator(`[data-testid="task-row"][data-task-id="${id}"]`)).toBeVisible();
     }
 
     // Linger on the completed board so the demo audience can take it in.

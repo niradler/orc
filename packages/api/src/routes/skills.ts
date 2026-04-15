@@ -17,7 +17,7 @@ const SkillMetaSchema = z
     description: z.string(),
     source: z.enum(["builtin", "user"]),
     path: z.string(),
-    metadata: z.record(z.unknown()),
+    metadata: z.record(z.string(), z.unknown()),
   })
   .openapi("SkillMeta");
 

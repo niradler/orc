@@ -1,6 +1,6 @@
 {
   "name": "@orc/runner",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
@@ -24,8 +24,5 @@
     "chokidar": "^5.0.0",
     "croner": "^10.0.1",
     "drizzle-orm": "^0.45.2"
-  },
-  "devDependencies": {
-    "typescript": "^6.0.2"
   }
 }

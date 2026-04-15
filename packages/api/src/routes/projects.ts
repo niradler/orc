@@ -157,7 +157,7 @@ const summaryRoute = createRoute({
             project: ProjectSchema,
             tasks: z.object({
               total: z.number(),
-              by_status: z.record(z.number()),
+              by_status: z.record(z.string(), z.number()),
             }),
             memories: z.number(),
             jobs: z.number(),
