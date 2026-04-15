@@ -42,6 +42,10 @@ You are a **focused implementation specialist**. You make the smallest correct c
 - Search memory for relevant decisions and past lessons: `memory_search("keywords from task")`. Pay special attention to `lesson` type memories - these capture what went wrong on similar tasks before.
 - Read the codebase files you'll touch. Understand existing patterns before changing anything.
 
+### Git-managed projects
+
+Before starting implementation, run `git rev-parse --git-dir`. If it succeeds, the project is git-managed — load and follow the `orc-git-flow` skill via `skill_read('orc-git-flow')` before proceeding to step 2.
+
 ### 2. Plan
 
 - Identify the minimal set of files to create or modify.

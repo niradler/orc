@@ -1,5 +1,6 @@
 import type { AgentBackendName, AgentSession } from "@orc/agent-runtime";
 import { createBackend, hasBackend } from "@orc/agent-runtime";
+import type { PickedTask } from "@orc/core";
 import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
@@ -7,23 +8,12 @@ import type { SkillFull } from "@orc/core/skill-service";
 import { readSkill } from "@orc/core/skill-service";
 import { getDb, getSqlite } from "@orc/db/client";
 import { gateway_sessions, job_runs, jobs, tasks } from "@orc/db/schema";
-import { updateTaskStatus } from "@orc/task-service";
 import { Cron } from "croner";
 import { eq } from "drizzle-orm";
+import { OrcTaskProvider } from "./orc-task-provider.js";
 
 const logger = createLogger("runner:task-loop");
-
-type PickedTask = {
-  id: string;
-  title: string;
-  body: string | null;
-  status: string;
-  skill_name: string | null;
-  agent_backend: string | null;
-  agent_model: string | null;
-  tags: string | null;
-  project_id: string | null;
-};
+const provider = new OrcTaskProvider();
 
 function getActiveWorkerCount(projectId?: string | null): number {
   const sqlite = getSqlite();
@@ -147,7 +137,7 @@ async function spawnWorker(task: PickedTask): Promise<void> {
   const prevSession = findPreviousWorkerSession(task.id);
   const isResume = !!prevSession;
 
-  const claimResult = await updateTaskStatus({
+  const claimResult = await provider.updateTaskStatus({
     taskId: task.id,
     status: "queued",
     claimedBy: sessionId,
@@ -204,12 +194,11 @@ async function driveWorkerLoop(
   cwd: string,
   previousRuntimeSessionId?: string | undefined,
 ): Promise<void> {
-  const _db = getDb();
   const sqlite = getSqlite();
   let session: AgentSession | null = null;
 
   try {
-    const doingResult = await updateTaskStatus({
+    const doingResult = await provider.updateTaskStatus({
       taskId: task.id,
       status: "doing",
       claimedBy: sessionId,
@@ -282,7 +271,7 @@ async function driveWorkerLoop(
         sqlite
           .query("UPDATE gateway_sessions SET last_error = ?, status = 'error' WHERE id = ?")
           .run(event.data, sessionId);
-        await updateTaskStatus({
+        await provider.updateTaskStatus({
           taskId: task.id,
           status: "blocked",
           comment: `Agent error: ${event.data}`,
@@ -297,9 +286,7 @@ async function driveWorkerLoop(
         "UPDATE gateway_sessions SET status = 'stopped', updated_at = unixepoch() WHERE id = ?",
       )
       .run(sessionId);
-    sqlite
-      .query("UPDATE tasks SET claimed_by = NULL, updated_at = unixepoch() WHERE id = ?")
-      .run(task.id);
+    await provider.releaseTask(task.id);
     logger.info(`Worker ${sessionId} completed for task ${task.id}`);
   } catch (err) {
     const errMsg = String(err);
@@ -309,7 +296,7 @@ async function driveWorkerLoop(
         "UPDATE gateway_sessions SET status = 'error', last_error = ?, updated_at = unixepoch() WHERE id = ?",
       )
       .run(errMsg, sessionId);
-    await updateTaskStatus({
+    await provider.updateTaskStatus({
       taskId: task.id,
       status: "blocked",
       comment: `Worker crashed: ${errMsg}`,
@@ -360,10 +347,7 @@ async function spawnReviewer(task: PickedTask): Promise<void> {
     );
     return;
   }
-  await db
-    .update(tasks)
-    .set({ claimed_by: sessionId, updated_at: new Date() })
-    .where(eq(tasks.id, task.id));
+  await provider.claimTask(task.id, sessionId);
 
   const prompt = await buildReviewPrompt(task);
   let cwd = process.cwd();
@@ -429,11 +413,7 @@ async function driveReviewerLoop(
         sqlite
           .query("UPDATE gateway_sessions SET last_error = ?, status = 'error' WHERE id = ?")
           .run(event.data, sessionId);
-        const reviewDb = getDb();
-        await reviewDb
-          .update(tasks)
-          .set({ claimed_by: null, updated_at: new Date() })
-          .where(eq(tasks.id, task.id));
+        await provider.releaseTask(task.id);
         return;
       }
     }
@@ -443,9 +423,7 @@ async function driveReviewerLoop(
         "UPDATE gateway_sessions SET status = 'stopped', updated_at = unixepoch() WHERE id = ?",
       )
       .run(sessionId);
-    sqlite
-      .query("UPDATE tasks SET claimed_by = NULL, updated_at = unixepoch() WHERE id = ?")
-      .run(task.id);
+    await provider.releaseTask(task.id);
     logger.info(`Reviewer ${sessionId} completed for task ${task.id}`);
   } catch (err) {
     const errMsg = String(err);
@@ -455,11 +433,7 @@ async function driveReviewerLoop(
         "UPDATE gateway_sessions SET status = 'error', last_error = ?, updated_at = unixepoch() WHERE id = ?",
       )
       .run(errMsg, sessionId);
-    const reviewDb = getDb();
-    await reviewDb
-      .update(tasks)
-      .set({ claimed_by: null, updated_at: new Date() })
-      .where(eq(tasks.id, task.id));
+    await provider.releaseTask(task.id);
   } finally {
     if (session?.alive()) {
       await session.close().catch(() => {});
@@ -526,46 +500,6 @@ export function cleanupStaleSessions(): number {
   return stale.length;
 }
 
-function pickAllReviewTasks(): PickedTask[] {
-  const sqlite = getSqlite();
-  return sqlite
-    .query(
-      `SELECT t.id, t.title, t.body, t.status, t.skill_name, t.agent_backend, t.agent_model, t.tags, t.project_id
-       FROM tasks t
-       WHERE t.status = 'review'
-         AND t.claimed_by IS NULL
-       ORDER BY
-         CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
-         t.updated_at ASC`,
-    )
-    .all() as PickedTask[];
-}
-
-function pickAllNextTasks(): PickedTask[] {
-  const sqlite = getSqlite();
-  return sqlite
-    .query(
-      `SELECT t.id, t.title, t.body, t.status, t.skill_name, t.agent_backend, t.agent_model, t.tags, t.project_id
-       FROM tasks t
-       WHERE (t.status = 'todo' OR t.status = 'changes_requested')
-         AND t.claimed_by IS NULL
-         AND (t.skill_name IS NOT NULL OR t.agent_backend IS NOT NULL
-              OR EXISTS (SELECT 1 FROM json_each(t.tags) j WHERE j.value = 'agent'))
-         AND NOT EXISTS (
-           SELECT 1 FROM (
-             SELECT tl.from_task_id AS blocker_id FROM task_links tl WHERE tl.to_task_id = t.id AND tl.link_type = 'blocks'
-             UNION
-             SELECT tl.to_task_id AS blocker_id FROM task_links tl WHERE tl.from_task_id = t.id AND tl.link_type = 'blocked_by'
-           ) b JOIN tasks blocker ON blocker.id = b.blocker_id
-           WHERE blocker.status NOT IN ('done', 'cancelled')
-         )
-       ORDER BY
-         CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
-         t.created_at ASC`,
-    )
-    .all() as PickedTask[];
-}
-
 async function runCycle(): Promise<string> {
   const config = loadConfig();
   const lines: string[] = [];
@@ -584,7 +518,7 @@ async function runCycle(): Promise<string> {
   let spawned = 0;
 
   // Review tasks run in parallel with work tasks and with each other
-  const reviewTasks = pickAllReviewTasks();
+  const reviewTasks = await provider.pickReviewTasks();
   for (const reviewTask of reviewTasks) {
     if (getActiveWorkerCount() >= config.agent_loop.max_workers) break;
     if (isAtCapacity(reviewTask)) continue;
@@ -596,7 +530,7 @@ async function runCycle(): Promise<string> {
 
   // Work tasks: one per project, different projects run in parallel
   const projectsWithWorker = new Set<string>();
-  const allTasks = pickAllNextTasks();
+  const allTasks = await provider.pickWorkTasks();
   for (const task of allTasks) {
     if (getActiveWorkerCount() >= config.agent_loop.max_workers) break;
     const projectKey = task.project_id ?? "__no_project__";

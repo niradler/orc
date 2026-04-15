@@ -46,6 +46,12 @@ A passing test suite does not excuse a security vulnerability. A style issue doe
 - Load the project's coding conventions from CLAUDE.md/AGENTS.md if present.
 - Check relevant memories: `memory_search("conventions, related decisions")`.
 
+**Git-managed projects**: If the task comments contain a branch or PR reference, use git tools before reading files:
+- `git diff main...{branch}` — see exactly what changed
+- `gh pr view {number} --json body,reviews,statusCheckRollup` — CI status, existing review comments (only if PR URL is in comments)
+
+Review the diff alongside full file context in `cwd`.
+
 ### 2. Evaluate
 
 Check these dimensions in priority order:

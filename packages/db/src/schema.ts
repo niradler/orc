@@ -284,7 +284,7 @@ export const gateway_sessions = sqliteTable(
     auto_approve: integer("auto_approve", { mode: "boolean" }).default(false).notNull(),
     task_id: text("task_id").references(() => tasks.id, { onDelete: "set null" }),
     last_error: text("last_error"),
-    role: text("role", { enum: ["main", "worker"] }),
+    role: text("role", { enum: ["main", "worker", "reviewer"] }),
     pid: integer("pid"),
     project_id: text("project_id").references(() => projects.id, { onDelete: "set null" }),
     review_rounds: integer("review_rounds").default(0).notNull(),
