@@ -22,6 +22,17 @@ export const GatewayPlatformConfigSchema = z.object({
   streaming_preview: z.boolean().default(true),
 });
 
+// Zod v4: .default(val) returns val as-is without running it through the inner schema,
+// so nested defaults are not applied. All default objects must be fully explicit.
+const DEFAULT_GATEWAY_PLATFORM = {
+  enabled: false,
+  authorized_users: [] as (string | number)[],
+  mode: "direct" as const,
+  allow_channel_mentions: true,
+  share_session_in_channel: false,
+  streaming_preview: true,
+};
+
 export const SpeechProviderConfigSchema = z.object({
   api_key: z.string().optional(),
   base_url: z.string().optional(),
@@ -71,10 +82,10 @@ export const OrcConfigSchema = z.object({
 
   gateway: z
     .object({
-      telegram: GatewayPlatformConfigSchema.default({} as GatewayPlatformConfig),
-      slack: GatewayPlatformConfigSchema.default({} as GatewayPlatformConfig),
+      telegram: GatewayPlatformConfigSchema.default(DEFAULT_GATEWAY_PLATFORM),
+      slack: GatewayPlatformConfigSchema.default(DEFAULT_GATEWAY_PLATFORM),
     })
-    .default({} as { telegram: GatewayPlatformConfig; slack: GatewayPlatformConfig }),
+    .default({ telegram: DEFAULT_GATEWAY_PLATFORM, slack: DEFAULT_GATEWAY_PLATFORM }),
 
   runner: z
     .object({
@@ -118,8 +129,23 @@ export const OrcConfigSchema = z.object({
       worker_auto_approve: true,
     }),
 
-  speech: SpeechConfigSchema.default({} as z.infer<typeof SpeechConfigSchema>),
-  tts: TtsConfigSchema.default({} as z.infer<typeof TtsConfigSchema>),
+  speech: SpeechConfigSchema.default({
+    enabled: false,
+    provider: "openai",
+    language: "",
+    openai: {},
+    groq: {},
+    qwen: {},
+  }),
+  tts: TtsConfigSchema.default({
+    enabled: false,
+    provider: "openai",
+    voice: "alloy",
+    mode: "voice_only",
+    max_text_len: 0,
+    openai: {},
+    qwen: {},
+  }),
 
   activeProject: z.string().optional(),
 });
