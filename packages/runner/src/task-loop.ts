@@ -51,7 +51,43 @@ function getProjectMaxWorkers(projectId: string): number | null {
   return row?.max_workers ?? null;
 }
 
-async function buildPrompt(task: PickedTask): Promise<string> {
+async function buildPrompt(
+  task: PickedTask,
+  prevSession?: { ended_at: number } | null,
+): Promise<string> {
+  const sqlite = getSqlite();
+
+  // Resuming after changes_requested: send only the feedback added since the
+  // worker's last session ended. The agent already has full task context from
+  // its previous run — resending the whole prompt wastes tokens and buries the
+  // reviewer's feedback inside noise.
+  if (prevSession) {
+    const newComments = sqlite
+      .query(
+        `SELECT content, author FROM comments
+         WHERE resource_type = 'task' AND resource_id = ? AND created_at > ?
+         ORDER BY created_at ASC`,
+      )
+      .all(task.id, prevSession.ended_at) as { content: string; author: string }[];
+
+    const parts = [
+      `You are resuming work on task "${task.title}" (ID: ${task.id}) after the reviewer requested changes.`,
+    ];
+    if (newComments.length > 0) {
+      parts.push("## Reviewer Feedback");
+      for (const c of newComments) {
+        parts.push(`[${c.author}]: ${c.content}`);
+      }
+    } else {
+      parts.push("(No new comments found — re-read the task history and address any open issues.)");
+    }
+    parts.push(
+      'Address the feedback above, then set the task status to "review" with a comment summarising exactly what you fixed.',
+    );
+    return parts.join("\n\n");
+  }
+
+  // Fresh start: full context
   const parts: string[] = [];
 
   const baseSkill = readSkill("orc-worker-base") as SkillFull | null;
@@ -65,7 +101,6 @@ async function buildPrompt(task: PickedTask): Promise<string> {
   parts.push(`\n---\n## Task: ${task.title}\nTask ID: ${task.id}`);
   if (task.body) parts.push(task.body);
 
-  const sqlite = getSqlite();
   const taskComments = sqlite
     .query(
       "SELECT content, author, created_at FROM comments WHERE resource_type = 'task' AND resource_id = ? ORDER BY created_at ASC",
@@ -81,17 +116,25 @@ async function buildPrompt(task: PickedTask): Promise<string> {
   return parts.join("\n\n");
 }
 
-function findPreviousWorkerSession(
-  taskId: string,
-): { runtime_session_id: string; review_rounds: number; cwd: string } | null {
+function findPreviousWorkerSession(taskId: string): {
+  runtime_session_id: string;
+  review_rounds: number;
+  cwd: string;
+  ended_at: number;
+} | null {
   const sqlite = getSqlite();
   const row = sqlite
     .query(
-      `SELECT runtime_session_id, review_rounds, cwd FROM gateway_sessions
+      `SELECT runtime_session_id, review_rounds, cwd, updated_at AS ended_at FROM gateway_sessions
        WHERE task_id = ? AND role = 'worker' AND runtime_session_id IS NOT NULL
        ORDER BY updated_at DESC LIMIT 1`,
     )
-    .get(taskId) as { runtime_session_id: string; review_rounds: number; cwd: string } | null;
+    .get(taskId) as {
+    runtime_session_id: string;
+    review_rounds: number;
+    cwd: string;
+    ended_at: number;
+  } | null;
   return row;
 }
 
@@ -118,7 +161,7 @@ async function spawnWorker(task: PickedTask): Promise<void> {
     return;
   }
 
-  const prompt = await buildPrompt(task);
+  const prompt = await buildPrompt(task, prevSession);
   let cwd = prevSession?.cwd ?? process.cwd();
   if (task.project_id) {
     const proj = getSqlite()
@@ -449,12 +492,12 @@ export function cleanupStaleSessions(): number {
   const cutoff = Math.floor(Date.now() / 1000) - timeoutMinutes * 60;
   const stale = sqlite
     .query(
-      `SELECT id, task_id FROM gateway_sessions
-       WHERE role = 'worker' AND status = 'running'
+      `SELECT id, task_id, role FROM gateway_sessions
+       WHERE role IN ('worker', 'reviewer') AND status = 'running'
          AND (last_activity_at IS NOT NULL AND last_activity_at < ?
               OR last_activity_at IS NULL AND updated_at < ?)`,
     )
-    .all(cutoff, cutoff) as { id: string; task_id: string | null }[];
+    .all(cutoff, cutoff) as { id: string; task_id: string | null; role: string }[];
 
   for (const s of stale) {
     sqlite
@@ -463,13 +506,22 @@ export function cleanupStaleSessions(): number {
       )
       .run(s.id);
     if (s.task_id) {
-      sqlite
-        .query(
-          "UPDATE tasks SET claimed_by = NULL, status = CASE WHEN status IN ('doing','queued') THEN 'todo' ELSE status END, updated_at = unixepoch() WHERE id = ?",
-        )
-        .run(s.task_id);
+      if (s.role === "reviewer") {
+        // Reviewer timed out: unclaim the task so a new reviewer can be spawned.
+        // Don't touch status — task stays in 'review'.
+        sqlite
+          .query("UPDATE tasks SET claimed_by = NULL, updated_at = unixepoch() WHERE id = ?")
+          .run(s.task_id);
+      } else {
+        // Worker timed out: reset to 'todo' so the loop retries.
+        sqlite
+          .query(
+            "UPDATE tasks SET claimed_by = NULL, status = CASE WHEN status IN ('doing','queued') THEN 'todo' ELSE status END, updated_at = unixepoch() WHERE id = ?",
+          )
+          .run(s.task_id);
+      }
     }
-    logger.warn(`Cleaned up stale worker session ${s.id} (idle > ${timeoutMinutes}m)`);
+    logger.warn(`Cleaned up stale ${s.role} session ${s.id} (idle > ${timeoutMinutes}m)`);
   }
   return stale.length;
 }
@@ -482,7 +534,6 @@ function pickAllReviewTasks(): PickedTask[] {
        FROM tasks t
        WHERE t.status = 'review'
          AND t.claimed_by IS NULL
-         AND EXISTS (SELECT 1 FROM json_each(t.tags) j WHERE j.value = 'agent-review')
        ORDER BY
          CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
          t.updated_at ASC`,
