@@ -1,7 +1,8 @@
 import type { ZodTypeAny } from "zod";
 
 export function zodToJsonSchema(schema: ZodTypeAny): Record<string, unknown> {
-  const def = schema._def;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const def = schema._def as any;
   const typeName = def.typeName as string;
 
   if (typeName === "ZodObject") {
@@ -11,7 +12,7 @@ export function zodToJsonSchema(schema: ZodTypeAny): Record<string, unknown> {
 
     for (const [key, val] of Object.entries(shape)) {
       properties[key] = zodToJsonSchema(val);
-      const vDef = (val as ZodTypeAny)._def;
+      const vDef = (val as ZodTypeAny)._def as any;
       if (vDef.typeName !== "ZodOptional" && vDef.typeName !== "ZodDefault") {
         required.push(key);
       }

@@ -46,7 +46,7 @@ const CreateJobSchema = z
     max_retries: z.number().int().min(0).optional().default(0),
     overlap: JobOverlapSchema.optional().default("skip"),
     notify_on: z.enum(["never", "failure", "always"]).optional().default("failure"),
-    env_vars: z.record(z.string()).optional(),
+    env_vars: z.record(z.string(), z.string()).optional(),
     working_dir: z.string().optional(),
     project_id: z.string().optional(),
   })
@@ -132,7 +132,7 @@ const UpdateJobSchema = z
     overlap: JobOverlapSchema.optional(),
     notify_on: z.enum(["never", "failure", "always"]).optional(),
     enabled: z.boolean().optional(),
-    env_vars: z.record(z.string()).optional(),
+    env_vars: z.record(z.string(), z.string()).optional(),
     working_dir: z.string().optional(),
     project_id: z.string().optional(),
   })
