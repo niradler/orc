@@ -10,6 +10,7 @@
     "test": "bun run scripts/run-e2e.ts",
     "test:e2e": "bun run scripts/run-e2e.ts",
     "test:e2e:ui": "bun run scripts/run-e2e.ts --ui",
+    "test:e2e:real-agent": "bun run scripts/run-real-agent-demo.ts",
     "clean": "rm -rf dist"
   },
   "dependencies": {
