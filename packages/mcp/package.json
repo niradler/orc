@@ -29,7 +29,6 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@orc/api": "workspace:*",
-    "typescript": "^6.0.2"
+    "@orc/api": "workspace:*"
   }
 }

@@ -30,8 +30,7 @@
     "@orc/runner": "workspace:*",
     "@orc/sdk": "workspace:*",
     "@orc/web": "workspace:*",
-    "commander": "^14.0.3",
-    "typescript": "^6.0.2"
+    "commander": "^14.0.3"
   },
   "dependencies": {
     "@tobilu/qmd": "^2.1.0"

@@ -25,7 +25,4 @@
     "croner": "^10.0.1",
     "drizzle-orm": "^0.45.2"
   },
-  "devDependencies": {
-    "typescript": "^6.0.2"
-  }
 }

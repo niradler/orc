@@ -19,7 +19,6 @@
     "@orc/core": "workspace:*"
   },
   "devDependencies": {
-    "openapi-typescript": "^7.13.0",
-    "typescript": "^6.0.2"
+    "openapi-typescript": "^7.13.0"
   }
 }
