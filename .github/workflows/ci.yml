@@ -5,6 +5,10 @@ on:
     branches:
       - master
 
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   changes:
     runs-on: ubuntu-latest
@@ -35,7 +39,7 @@ jobs:
         run: bun run lint
 
       - name: Format check
-        run: bunx biome format --check ./packages
+        run: bunx biome format ./packages
 
       - name: Typecheck
         run: bun run typecheck
