@@ -8,7 +8,10 @@ export function validateTaskTitle(title: string): { valid: boolean; error?: stri
   }
 
   if (trimmed.length > MAX_TITLE_LENGTH) {
-    return { valid: false, error: `Title must not exceed ${MAX_TITLE_LENGTH} characters (got ${trimmed.length})` };
+    return {
+      valid: false,
+      error: `Title must not exceed ${MAX_TITLE_LENGTH} characters (got ${trimmed.length})`,
+    };
   }
 
   return { valid: true };

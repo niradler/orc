@@ -9,6 +9,6 @@ export function roundTo(value: number, decimals: number): number {
   if (decimals < 0) {
     throw new Error("roundTo: decimals must be >= 0");
   }
-  const factor = Math.pow(10, decimals);
+  const factor = 10 ** decimals;
   return Math.round(value * factor) / factor;
 }
