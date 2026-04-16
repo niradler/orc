@@ -8,7 +8,7 @@ import { closeAgentSession, preflightBackends, runAgentTurn } from "./agent-runn
 import { RateLimiter } from "./rate-limiter.js";
 import { redactSecrets } from "./redact.js";
 import "./agent-runtime/index.js";
-import { apiFindProjectById, apiFindJobByName } from "./api.js";
+import { apiFindJobByName, apiFindProjectById } from "./api.js";
 import { ensureAgentSession, handleDirectCommand } from "./direct.js";
 import { PermissionManager } from "./permission-manager.js";
 import { PreviewManager } from "./preview-manager.js";
@@ -159,7 +159,8 @@ class GatewayManager {
       this.pendingSessionApprove.add(id);
       return `__perm_resolved:${id}:session`;
     }
-    if (text.startsWith("project:set:")) return `__project_set:${text.slice("project:set:".length)}`;
+    if (text.startsWith("project:set:"))
+      return `__project_set:${text.slice("project:set:".length)}`;
     if (text === "project:clear") return "__project_clear";
     return text;
   }
@@ -353,6 +354,7 @@ class GatewayManager {
       model: string | null;
       runtime_session_id: string | null;
       auto_approve: boolean;
+      permission_mode: string | null;
       task_id: string | null;
       acpx_agent: string | null;
       a2a_url: string | null;
@@ -407,6 +409,7 @@ class GatewayManager {
             model: session.model,
             runtime_session_id: session.runtime_session_id,
             auto_approve: session.auto_approve,
+            permission_mode: session.permission_mode,
             task_id: session.task_id,
             acpx_agent: session.acpx_agent,
             a2a_url: session.a2a_url,
@@ -418,7 +421,10 @@ class GatewayManager {
         preview,
       );
 
-      if (typingInterval) { clearInterval(typingInterval); typingInterval = null; }
+      if (typingInterval) {
+        clearInterval(typingInterval);
+        typingInterval = null;
+      }
 
       await updateGatewaySession(session.id, {
         status: "idle",
@@ -451,7 +457,10 @@ class GatewayManager {
 
       if (message.fromVoice) await this.trySendVoiceReply(message, result.output);
     } catch (err) {
-      if (typingInterval) { clearInterval(typingInterval); typingInterval = null; }
+      if (typingInterval) {
+        clearInterval(typingInterval);
+        typingInterval = null;
+      }
       preview?.cleanup(session.id);
       const errorText = `Agent error: ${err instanceof Error ? err.message : String(err)}`;
       await updateGatewaySession(session.id, {

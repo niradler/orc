@@ -2,6 +2,7 @@ import { shortId, ulid } from "@orc/core/ids";
 import type { GatewayMode } from "@orc/core/types";
 import {
   apiApproveTask,
+  apiCreateTask,
   apiFindJobByName,
   apiFindProjectById,
   apiFindProjectByName,
@@ -11,7 +12,6 @@ import {
   apiListProjects,
   apiRejectTask,
   apiSearchMemories,
-  apiCreateTask,
   apiTriggerJob,
 } from "./api.js";
 import {
@@ -319,7 +319,7 @@ export async function handleDirectCommand(input: {
 
   if (command === "/session") {
     const [subcommand, ...args] = parts.slice(1);
-    if (!subcommand) return { text: "Usage: /session <new|list|switch <id>|stop>" };
+    if (!subcommand) return { text: "Usage: /session <new|list|switch <id>|stop|mode [default|plan|edit|bypass]>" };
 
     if (subcommand === "new") {
       const backend = backendFromMode(input.currentMode ?? "agent:claude");
@@ -366,7 +366,44 @@ export async function handleDirectCommand(input: {
       return { text: "Cleared active gateway session." };
     }
 
-    return { text: "Usage: /session <new|list|switch <id>|stop>" };
+    if (subcommand === "mode") {
+      const modeArg = args[0]?.toLowerCase();
+      const modeMap: Record<string, string> = {
+        default: "default",
+        plan: "plan",
+        edit: "acceptEdits",
+        edits: "acceptEdits",
+        bypass: "bypassPermissions",
+        auto: "bypassPermissions",
+      };
+      const modeLabels: Record<string, string> = {
+        default: "🔐 Default — prompts for each tool",
+        plan: "📋 Plan — read-only, no tool execution",
+        acceptEdits: "✏️ Edit — file edits auto-approved, bash still prompts",
+        bypassPermissions: "⚡ Bypass — skip all permission prompts",
+      };
+      const active = await getActiveGatewaySession(input.chatKey);
+      if (!active) return { text: "No active session. Start one with /agent <name>." };
+
+      if (!modeArg) {
+        const current = active.permission_mode ?? "default";
+        return { text: `Current mode: ${modeLabels[current] ?? current}` };
+      }
+
+      const resolved = modeMap[modeArg];
+      if (!resolved) return { text: "Unknown mode. Valid: default, plan, edit, bypass" };
+
+      await updateGatewaySession(active.id, { permission_mode: resolved });
+      if (resolved === "bypassPermissions") {
+        await updateGatewaySession(active.id, { auto_approve: true });
+      } else if (active.auto_approve) {
+        await updateGatewaySession(active.id, { auto_approve: false });
+      }
+
+      return { text: `Mode set: ${modeLabels[resolved]}` };
+    }
+
+    return { text: "Usage: /session <new|list|switch <id>|stop|mode [default|plan|edit|bypass]>" };
   }
 
   if (command === "/projects") {
@@ -405,7 +442,9 @@ export async function handleDirectCommand(input: {
       }
       const proj = await apiFindProjectById(input.currentProjectId).catch(() => null);
       return {
-        text: proj ? `📁 Active project: ${proj.name}` : "Project not found. Use /projects to pick one.",
+        text: proj
+          ? `📁 Active project: ${proj.name}`
+          : "Project not found. Use /projects to pick one.",
       };
     }
     const proj = await apiFindProjectByName(argText);

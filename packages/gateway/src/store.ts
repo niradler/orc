@@ -114,6 +114,7 @@ export async function createGatewaySession(input: {
   cwd?: string | undefined;
   mode: GatewayMode;
   title?: string | undefined;
+  permissionMode?: string | undefined;
 }): Promise<typeof gateway_sessions.$inferSelect> {
   const db = getDb();
   const id = ulid();
@@ -129,6 +130,7 @@ export async function createGatewaySession(input: {
     last_activity_at: now,
     created_at: now,
     updated_at: now,
+    ...(input.permissionMode ? { permission_mode: input.permissionMode } : {}),
   });
   await db
     .update(bridge_chats)

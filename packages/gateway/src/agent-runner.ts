@@ -1,6 +1,6 @@
 import { createLogger } from "@orc/core/logger";
 import { createBackend } from "./agent-runtime/index.js";
-import type { AgentSession } from "./agent-runtime/types.js";
+import type { AgentSession, SessionOpts } from "./agent-runtime/types.js";
 import type { PermissionManager } from "./permission-manager.js";
 import type { PreviewManager } from "./preview-manager.js";
 import { createPermission, updateGatewaySession } from "./store.js";
@@ -38,6 +38,7 @@ export type RunnerContext = {
     model: string | null;
     runtime_session_id: string | null;
     auto_approve: boolean;
+    permission_mode: string | null;
     task_id: string | null;
     acpx_agent: string | null;
     a2a_url: string | null;
@@ -101,27 +102,31 @@ async function createAgentSession(
   logger.info("Using ACPX backend", { agent: acpxAgent, cwd: ctx.session.cwd });
   if (runtimeId) {
     try {
-      const resumed = await acpxBackend.resumeSession(runtimeId, {
-        cwd: ctx.session.cwd,
-        model: ctx.session.model ?? undefined,
-        acpxAgent,
-        autoApprove: ctx.session.auto_approve,
-        runtimeSessionId: runtimeId,
-      });
+      const resumed = await acpxBackend.resumeSession(
+        runtimeId,
+        claudeSessionOpts(ctx, { acpxAgent, runtimeSessionId: runtimeId }),
+      );
       await resumed.send(initialPrompt);
       return resumed;
     } catch (err) {
       logger.warn(`Failed to resume ACPX session for ${acpxAgent}, starting fresh`, { err });
     }
   }
-  const session = await acpxBackend.startSession({
-    cwd: ctx.session.cwd,
-    model: ctx.session.model ?? undefined,
-    acpxAgent,
-    autoApprove: ctx.session.auto_approve,
-  });
+  const session = await acpxBackend.startSession(claudeSessionOpts(ctx, { acpxAgent }));
   await session.send(initialPrompt);
   return session;
+}
+
+function claudeSessionOpts(ctx: RunnerContext, extra?: Partial<SessionOpts>): SessionOpts {
+  return {
+    cwd: ctx.session.cwd,
+    model: ctx.session.model ?? undefined,
+    autoApprove: ctx.session.auto_approve,
+    ...(ctx.session.permission_mode
+      ? { permissionMode: ctx.session.permission_mode as SessionOpts["permissionMode"] }
+      : {}),
+    ...extra,
+  };
 }
 
 async function startNativeClaudeSession(
@@ -132,23 +137,17 @@ async function startNativeClaudeSession(
   const backendImpl = createBackend("claude");
   if (runtimeId) {
     try {
-      const resumed = await backendImpl.resumeSession(runtimeId, {
-        cwd: ctx.session.cwd,
-        model: ctx.session.model ?? undefined,
-        runtimeSessionId: runtimeId,
-        autoApprove: ctx.session.auto_approve,
-      });
+      const resumed = await backendImpl.resumeSession(
+        runtimeId,
+        claudeSessionOpts(ctx, { runtimeSessionId: runtimeId }),
+      );
       await resumed.send(initialPrompt);
       return resumed;
     } catch (err) {
       logger.warn("Failed to resume native claude session, starting fresh", { err });
     }
   }
-  const session = await backendImpl.startSession({
-    cwd: ctx.session.cwd,
-    model: ctx.session.model ?? undefined,
-    autoApprove: ctx.session.auto_approve,
-  });
+  const session = await backendImpl.startSession(claudeSessionOpts(ctx));
   await session.send(initialPrompt);
   return session;
 }
@@ -188,6 +187,14 @@ async function driveEventLoop(
 
       if (event.type === "tool_use") {
         statusLine = `${toolEmoji(event.data.name)} ${event.data.name}…`;
+        if (preview && previewMsgId) {
+          await preview.update(ctx.session.id, previewText());
+        }
+        continue;
+      }
+
+      if (event.type === "system_status") {
+        statusLine = event.data;
         if (preview && previewMsgId) {
           await preview.update(ctx.session.id, previewText());
         }

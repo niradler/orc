@@ -283,6 +283,7 @@ export const gateway_sessions = sqliteTable(
       .default("idle")
       .notNull(),
     auto_approve: integer("auto_approve", { mode: "boolean" }).default(false).notNull(),
+    permission_mode: text("permission_mode"),
     task_id: text("task_id").references(() => tasks.id, { onDelete: "set null" }),
     last_error: text("last_error"),
     role: text("role", { enum: ["main", "worker", "reviewer"] }),
