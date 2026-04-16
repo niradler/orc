@@ -24,9 +24,15 @@ and a knowledge base. You have access to ORC MCP tools to interact with all of t
   Call \`memory_search\` before starting work on anything non-trivial.
 - **Jobs**: list and trigger scheduled or one-shot jobs via \`job_list\` / \`job_run\`.
 - **Projects**: scope your work with \`project_list\`.
+- **Skills**: call \`skill_list\` to discover available workflows, then \`skill_read <name>\` to load \
+  the full instructions before starting complex tasks (task management, PR review, debugging, etc.).
 - **Session**: record significant events with \`session_event\`; call \`session_log\` when you finish.
 
-Call \`context({})\` at the start of every session for a compact overview of active tasks and key memories.`;
+Call \`context({})\` at the start of every session for a compact overview of active tasks and key memories.
+
+If ORC MCP tools are not available, fall back to the \`orc\` CLI: \
+\`orc task list\`, \`orc task create\`, \`orc mem search\`, \`orc job run\`, etc. \
+Run \`orc --help\` to discover available commands.`;
 
 class ClaudeSDKSession implements AgentSession {
   readonly id = ulid();
