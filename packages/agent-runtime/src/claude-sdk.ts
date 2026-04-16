@@ -194,9 +194,9 @@ function createClaudeSDKBackend(): AgentBackend {
     async preflight() {
       try {
         await import("@anthropic-ai/claude-agent-sdk");
-        if (!process.env.ANTHROPIC_API_KEY) {
-          return { ok: false, error: "ANTHROPIC_API_KEY not set" };
-        }
+        // SDK uses the claude CLI's stored credentials — no ANTHROPIC_API_KEY needed
+        const claudePath = Bun.which("claude");
+        if (!claudePath) return { ok: false, error: "claude CLI not found on PATH" };
         return { ok: true };
       } catch (err) {
         return { ok: false, error: `Claude SDK not available: ${String(err)}` };
