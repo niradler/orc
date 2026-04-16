@@ -98,15 +98,18 @@ async function createAgentSession(
 
   const acpxBackend = createBackend("acpx");
   const acpxAgent = ctx.session.acpx_agent ?? backend;
+  logger.info("Using ACPX backend", { agent: acpxAgent, cwd: ctx.session.cwd });
   if (runtimeId) {
     try {
-      return await acpxBackend.resumeSession(runtimeId, {
+      const resumed = await acpxBackend.resumeSession(runtimeId, {
         cwd: ctx.session.cwd,
         model: ctx.session.model ?? undefined,
         acpxAgent,
         autoApprove: ctx.session.auto_approve,
         runtimeSessionId: runtimeId,
       });
+      await resumed.send(initialPrompt);
+      return resumed;
     } catch (err) {
       logger.warn(`Failed to resume ACPX session for ${acpxAgent}, starting fresh`, { err });
     }
@@ -129,12 +132,14 @@ async function startNativeClaudeSession(
   const backendImpl = createBackend("claude");
   if (runtimeId) {
     try {
-      return await backendImpl.resumeSession(runtimeId, {
+      const resumed = await backendImpl.resumeSession(runtimeId, {
         cwd: ctx.session.cwd,
         model: ctx.session.model ?? undefined,
         runtimeSessionId: runtimeId,
         autoApprove: ctx.session.auto_approve,
       });
+      await resumed.send(initialPrompt);
+      return resumed;
     } catch (err) {
       logger.warn("Failed to resume native claude session, starting fresh", { err });
     }
@@ -267,7 +272,7 @@ function startIdleWatchdog(sessionId: string, session: AgentSession): IdleWatchd
     if (timer) clearTimeout(timer);
     if (paused) return;
     timer = setTimeout(async () => {
-      logger.warn("Idle timeout - closing agent session", { sessionId });
+      logger.warn("Idle timeout — force-closing agent session", { sessionId });
       await session.close().catch(() => {});
       activeSessions.delete(sessionId);
       await updateGatewaySession(sessionId, {

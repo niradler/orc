@@ -8,6 +8,8 @@
   },
   "scripts": {
     "dev": "bun --env-file ../../.env --watch src/index.ts",
+    "dev-daemon:start": "bun --env-file ../../.env --watch src/index.ts daemon start",
+    "daemon:stop": "bun --env-file ../../.env src/index.ts daemon stop",
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
     "build:web": "cd ../web && bun run build",

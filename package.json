@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "dev": "bun run --filter @orc/api dev & bun run --filter @orc/cli dev & bun run --filter @orc/web dev",
+    "dev-daemon": "bun run --filter orc-ai dev-daemon:start & bun run --filter @orc/web dev",
     "build": "bun run --filter '*' build",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "biome lint ./packages",
