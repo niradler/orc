@@ -32,7 +32,7 @@ ORC fixes this. Shared memory across every session. A task board where agents su
 | **Task board**            | `todo → queued → doing → review → done` with dependency tracking, priority, and automatic unblocking                               |
 | **Multi-backend routing** | Route to Claude Code, ACPX (Agent Communication Protocol, 14+ agents), or remote A2A endpoints; unknown names fall through to ACPX |
 | **Job runner**            | Cron, file-watch, webhook, or manual triggers with full run history                                                                |
-| **MCP server**            | 28 tools connect any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) compatible agent with one config line         |
+| **MCP server**            | 28 tools connect any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) compatible agent — stdio or Streamable HTTP   |
 | **Session continuity**    | Snapshots survive context compaction so agents resume where they left off                                                          |
 | **Gateway**               | Approve work, search memory, and chat with live agents from Telegram or Slack                                                      |
 | **Knowledge search**      | Index document collections (markdown, notes, wikis) and search them via BM25 or hybrid (vector + reranking)                        |
@@ -120,6 +120,35 @@ The web dashboard ships inside the `orc` binary and is served by the API process
 | `GET /tasks`, `/memories`, …     | Same handler as `/api/<...>`, kept for SDK/CLI/MCP backwards compat |
 
 Override the served dist directory with `ORC_WEB_DIST=/path/to/web/dist` if you want to host a custom build (e.g. a fork). If no dist is found, the server runs in pure-API mode.
+
+## Docker
+
+Run ORC in a container with the published image:
+
+```bash
+docker run -d --name orc \
+  -p 7700:7700 \
+  -v orc-data:/data \
+  -e ORC_API_SECRET=changeme \
+  -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
+  niradler/orc:latest
+```
+
+Or with [docker-compose.yml](docker-compose.yml):
+
+```bash
+docker compose up -d
+```
+
+The container defaults to the `claude` backend (direct Anthropic API via SDK — no host CLI needed). To delegate to an agent running on the host instead, set `ORC_AGENT_LOOP_DEFAULT_BACKEND=agentapi` and run [coder/agentapi](https://github.com/coder/agentapi) on the host:
+
+```bash
+agentapi server --allowed-hosts '*' -- \
+  claude --allowedTools all \
+         --mcp-config '{"mcpServers":{"orc":{"type":"http","url":"http://localhost:7700/mcp"}}}'
+```
+
+The `--mcp-config` flag wires the host agent back to ORC's [HTTP MCP endpoint](#mcp-tools) so it can call `task_update`, `memory_*`, `knowledge_*`, etc. `host.docker.internal` lets the container reach agentapi on the host.
 
 ## Connect your agent
 
@@ -251,7 +280,8 @@ The loop handles concurrency, session resume on feedback, review round limits, s
 
 | Backend         | Description                                                                                                  |
 | --------------- | ------------------------------------------------------------------------------------------------------------ |
-| `claude`        | Native Claude Code CLI. Falls back to ACPX on error.                                                         |
+| `claude`        | Anthropic Claude via [@anthropic-ai/claude-agent-sdk](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk) — no host CLI needed. Requires `ANTHROPIC_API_KEY`. |
+| `agentapi`      | Delegates to a [coder/agentapi](https://github.com/coder/agentapi) server on the host (HTTP+SSE) — wraps any local coding agent (`claude`, `codex`, `aider`, …). Auth is whatever the host agent uses. |
 | `acpx`          | 14+ agents via [ACP CLI](https://github.com/AgenTool/acpx) - Codex, Gemini, Copilot, Kiro, Cursor, and more. |
 | `a2a`           | Remote agents via [Google A2A protocol](https://github.com/google/A2A) (JSON-RPC over HTTP).                 |
 | _anything else_ | Routes through ACPX with the name as `--agent` flag.                                                         |
@@ -527,8 +557,12 @@ ORC merges config in priority order (later wins):
 | Variable                         | Default               | Description                                       |
 | -------------------------------- | --------------------- | ------------------------------------------------- |
 | `ORC_DB_PATH`                    | `~/.orc/orc.db`       | SQLite database path                              |
+| `ORC_API_HOST`                   | `127.0.0.1`           | API listen host (set to `0.0.0.0` in Docker)      |
 | `ORC_API_PORT`                   | `7700`                | API listen port                                   |
 | `ORC_API_SECRET`                 | -                     | Bearer token for auth                             |
+| `ORC_TELEGRAM_TOKEN`             | -                     | Enables the Telegram gateway when set             |
+| `AGENTAPI_URL`                   | `http://127.0.0.1:3284` | URL of host agentapi server (for `agentapi` backend) |
+| `ANTHROPIC_API_KEY`              | -                     | Required for the `claude` backend (Anthropic SDK) |
 | `ORC_SESSION_ID`                 | `default`             | Per-agent session identifier                      |
 | `ORC_LOG_LEVEL`                  | `info`                | `debug`, `info`, `warn`, `error`                  |
 | `ORC_LOG_DIR`                    | `~/.orc/logs`         | Log file directory                                |
@@ -596,7 +630,7 @@ packages/
   api/            Hono REST API + OpenAPI spec (:7700)
   sdk/            Typed HTTP client from OpenAPI
   cli/            Commander CLI (the `orc` binary)
-  mcp/            MCP server (stdio)
+  mcp/            MCP server (stdio + Streamable HTTP at /mcp)
   runner/         Job executor + cron/watch scheduler + task loop
   gateway/        Telegram + Slack bridge + agent sessions
   agent-runtime/  Agent backend registry (claude, acpx, a2a)

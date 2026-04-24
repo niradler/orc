@@ -1,11 +1,8 @@
 {
   "mcpServers": {
     "orc": {
-      "command": "bun",
-      "args": ["run", "packages/cli/dist/index.js", "mcp"],
-      "env": {
-        "ORC_API_BASE": "http://127.0.0.1:7700"
-      }
+      "type": "http",
+      "url": "http://localhost:7700/mcp"
     }
   }
 }

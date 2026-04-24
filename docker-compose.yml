@@ -8,10 +8,10 @@ services:
     environment:
       # Anthropic API key (required only for the "claude" backend; not needed for "agentapi")
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      # Optional: shared secret for API auth
-      - ORC_SECRET=${ORC_SECRET:-changeme}
+      # Optional: shared secret for API bearer auth
+      - ORC_API_SECRET=${ORC_API_SECRET:-changeme}
       # Telegram gateway (optional)
-      - ORC_TELEGRAM_BOT_TOKEN=${ORC_TELEGRAM_BOT_TOKEN:-}
+      - ORC_TELEGRAM_TOKEN=${ORC_TELEGRAM_TOKEN:-}
 
       # ── Agent backend ──────────────────────────────────────────────────────
       # "agentapi" → delegates task execution to a coder/agentapi server running
@@ -25,13 +25,15 @@ services:
       #
       # ── MCP for the host agent ─────────────────────────────────────────────
       # ORC exposes MCP over Streamable HTTP at http://localhost:7700/mcp so the
-      # host agent (e.g. claude via agentapi) can call task_update, memory_*,
-      # knowledge_*, etc. Add this to ~/.claude.json (or `claude mcp add`):
-      #   {
-      #     "mcpServers": {
-      #       "orc": { "type": "http", "url": "http://localhost:7700/mcp" }
-      #     }
-      #   }
+      # host agent can call task_update, memory_*, knowledge_*, etc.
+      #
+      # Pass the server explicitly to the host claude process — agentapi does
+      # not auto-load project/local .mcp.json entries for its claude subprocess,
+      # so rely on --mcp-config rather than `claude mcp add`:
+      #
+      #   agentapi server --allowed-hosts '*' -- \
+      #     claude --allowedTools all \
+      #            --mcp-config '{"mcpServers":{"orc":{"type":"http","url":"http://localhost:7700/mcp"}}}'
       #
       - ORC_API_HOST=0.0.0.0
       - ORC_AGENT_LOOP_DEFAULT_BACKEND=${ORC_AGENT_LOOP_DEFAULT_BACKEND:-agentapi}

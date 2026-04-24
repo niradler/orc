@@ -67,7 +67,7 @@ Done. Main agent reports status when asked (orc-report skill).
 | ------------------- | ------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `skill_name`        | text    | null    | Skill to load for this task's worker (references `skills/*/SKILL.md`)                                                               |
 | `required_review`   | boolean | true    | Whether human must review. false = auto-approve on agent review pass                                                                |
-| `agent_backend`     | text    | null    | Preferred backend: `claude \| codex \| cursor`. null = use project/global default                                                   |
+| `agent_backend`     | text    | null    | Preferred backend: `claude \| agentapi \| acpx \| a2a`. null = use project/global default                                           |
 | `max_review_rounds` | integer | 3       | Max times a task can cycle through changes_requested before escalating to human. Prevents infinite agent token burn. 0 = unlimited. |
 
 ### Existing fields used for orchestration
@@ -189,12 +189,11 @@ In `packages/runner` - extends the existing daemon/scheduler as a new loop type 
 
 ### Agent runtime as shared infrastructure
 
-The agent spawning logic currently lives in `packages/gateway/src/agent-runtime/` (Claude, Codex, Cursor backends). The task loop needs the same infrastructure. To avoid circular dependencies:
-
-**Extract agent runtime into `packages/agent-runtime`** (new shared package):
+Shared agent runtime lives in `packages/agent-runtime` — imported by both `packages/gateway` (live Telegram/Slack sessions) and `packages/runner` (task loop workers):
 
 - `AgentBackend` interface: `startSession()`, `sendMessage()`, `getStatus()`
-- Backend implementations: `claude.ts`, `codex.ts`, `cursor.ts`
+- Registered backends: `claude` (Anthropic SDK), `agentapi` (coder/agentapi HTTP+SSE), `acpx` (14+ agents via ACP CLI), `a2a` (remote JSON-RPC)
+- Session selection via `openAgentSession(backendName, opts)` — single entry point used by all call sites
 - Session management: PID tracking, idle detection, cleanup
 
 Both `packages/gateway` and `packages/runner` import from `packages/agent-runtime`. The gateway uses it for live Telegram/Slack sessions. The runner uses it for task loop workers.
@@ -305,7 +304,7 @@ Instead of creating a new `agent_sessions` table, extend the existing `gateway_s
 | -------------------- | -------------- | -------------------------------------------------------- |
 | `id`                 | Yes            | Session ULID                                             |
 | `task_id`            | Yes            | Which task                                               |
-| `backend`            | Yes            | `claude \| codex \| cursor`                              |
+| `backend`            | Yes            | `claude \| agentapi \| acpx \| a2a`                      |
 | `runtime_session_id` | Yes            | Backend's native session ID (for resume)                 |
 | `status`             | Yes            | `running \| idle \| finished \| crashed` → add `crashed` |
 | `last_activity_at`   | Yes            | Heartbeat for timeout detection                          |
