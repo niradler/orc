@@ -11,6 +11,7 @@ export {
   createBackend,
   hasBackend,
   listRegisteredBackends,
+  openAgentSession,
   registerBackend,
 } from "@orc/agent-runtime";
 

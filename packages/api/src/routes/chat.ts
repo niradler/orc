@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { createBackend, hasBackend } from "@orc/agent-runtime";
+import { pickAvailableBackend } from "@orc/agent-runtime";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 
@@ -136,8 +136,8 @@ app.post("/chat/stream", async (c) => {
   // When acpx is not available (e.g. running in Docker), fall back to the
   // first available registered backend: agentapi → claude.
   if (!acpxPath) {
-    const fallback = ["agentapi", "claude"].find(hasBackend);
-    if (!fallback) {
+    const fallbackBackend = pickAvailableBackend(["agentapi", "claude"]);
+    if (!fallbackBackend) {
       return c.json(
         { error: "No agent backend available (acpx not on PATH, agentapi/claude not configured)" },
         503,
@@ -146,8 +146,7 @@ app.post("/chat/stream", async (c) => {
     return streamSSE(c, async (s) => {
       await s.writeSSE({ data: JSON.stringify({ type: "open" }) });
       try {
-        const backend = createBackend(fallback);
-        const session = await backend.startSession({ cwd: process.cwd(), autoApprove });
+        const session = await fallbackBackend.startSession({ cwd: process.cwd(), autoApprove });
         await session.send(prompt);
         for await (const event of session.events()) {
           if (event.type === "text") {

@@ -1,5 +1,5 @@
-import type { AgentBackendName, AgentSession } from "@orc/agent-runtime";
-import { createBackend, hasBackend } from "@orc/agent-runtime";
+import type { AgentSession } from "@orc/agent-runtime";
+import { openAgentSession } from "@orc/agent-runtime";
 import type { PickedTask } from "@orc/core";
 import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
@@ -133,7 +133,7 @@ async function spawnWorker(task: PickedTask): Promise<void> {
   const db = getDb();
   const sessionId = ulid();
 
-  const backendName = (task.agent_backend ?? config.agent_loop.default_backend) as AgentBackendName;
+  const backendName = task.agent_backend ?? config.agent_loop.default_backend;
   const prevSession = findPreviousWorkerSession(task.id);
   const isResume = !!prevSession;
 
@@ -189,7 +189,7 @@ async function spawnWorker(task: PickedTask): Promise<void> {
 async function driveWorkerLoop(
   sessionId: string,
   task: PickedTask,
-  backendName: AgentBackendName,
+  backendName: string,
   prompt: string,
   cwd: string,
   previousRuntimeSessionId?: string | undefined,
@@ -212,31 +212,14 @@ async function driveWorkerLoop(
       return;
     }
 
-    const isAcpxFallback = !hasBackend(backendName);
-    const resolvedBackend = isAcpxFallback ? ("acpx" as AgentBackendName) : backendName;
-    const backend = createBackend(resolvedBackend);
     const sessionOpts = {
       cwd,
       autoApprove: true,
       ...(task.agent_model ? { model: task.agent_model } : {}),
-      ...(isAcpxFallback ? { acpxAgent: backendName } : {}),
     };
 
-    if (previousRuntimeSessionId) {
-      logger.info(`Attempting resume of session ${previousRuntimeSessionId} for task ${task.id}`);
-      try {
-        session = await backend.resumeSession(previousRuntimeSessionId, sessionOpts);
-        await session.send(prompt);
-        logger.info(`Resume succeeded for task ${task.id}`);
-      } catch (resumeErr) {
-        logger.warn(`Resume failed for task ${task.id}: ${String(resumeErr)}, starting fresh`);
-        session = await backend.startSession(sessionOpts);
-        await session.send(prompt);
-      }
-    } else {
-      session = await backend.startSession(sessionOpts);
-      await session.send(prompt);
-    }
+    session = await openAgentSession(backendName, sessionOpts, previousRuntimeSessionId);
+    await session.send(prompt);
 
     const autoApprove = loadConfig().agent_loop.worker_auto_approve;
 
@@ -338,7 +321,7 @@ async function spawnReviewer(task: PickedTask): Promise<void> {
   const config = loadConfig();
   const db = getDb();
   const sessionId = ulid();
-  const backendName = (task.agent_backend ?? config.agent_loop.default_backend) as AgentBackendName;
+  const backendName = task.agent_backend ?? config.agent_loop.default_backend;
 
   const current = await db.query.tasks.findFirst({ where: eq(tasks.id, task.id) });
   if (!current || current.status !== "review" || current.claimed_by) {
@@ -385,7 +368,7 @@ async function spawnReviewer(task: PickedTask): Promise<void> {
 async function driveReviewerLoop(
   sessionId: string,
   task: PickedTask,
-  backendName: AgentBackendName,
+  backendName: string,
   prompt: string,
   cwd: string,
 ): Promise<void> {
@@ -393,8 +376,7 @@ async function driveReviewerLoop(
   let session: AgentSession | null = null;
 
   try {
-    const backend = createBackend(backendName);
-    session = await backend.startSession({ cwd, autoApprove: true });
+    session = await openAgentSession(backendName, { cwd, autoApprove: true });
     await session.send(prompt);
 
     for await (const event of session.events()) {

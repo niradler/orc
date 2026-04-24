@@ -1,5 +1,5 @@
 import { createLogger } from "@orc/core/logger";
-import { createBackend, hasBackend } from "./agent-runtime/index.js";
+import { openAgentSession } from "./agent-runtime/index.js";
 import type { AgentSession, SessionOpts } from "./agent-runtime/types.js";
 import type { PermissionManager } from "./permission-manager.js";
 import type { PreviewManager } from "./preview-manager.js";
@@ -75,65 +75,15 @@ async function createAgentSession(
   ctx: RunnerContext,
   initialPrompt: string,
 ): Promise<AgentSession> {
-  const backend = ctx.session.backend;
-  const runtimeId = ctx.session.runtime_session_id ?? undefined;
-
-  if (backend === "a2a") {
-    const a2aBackend = createBackend("a2a");
-    const session = await a2aBackend.startSession({
-      cwd: ctx.session.cwd,
-      a2aUrl: ctx.session.a2a_url ?? undefined,
-      runtimeSessionId: runtimeId,
-    });
-    await session.send(initialPrompt);
-    return session;
-  }
-
-  if (backend === "claude") {
-    try {
-      return await startNativeClaudeSession(ctx, initialPrompt, runtimeId);
-    } catch (err) {
-      logger.warn("Native claude backend failed, falling back to ACPX", { err });
-    }
-  }
-
-  // If the backend name is registered in the registry (e.g. "agentapi"), use it directly.
-  // Mirrors the same pattern used in task-loop.ts — avoids hard-coding every backend here.
-  if (backend !== "claude" && hasBackend(backend)) {
-    logger.info("Using registered backend", { backend, cwd: ctx.session.cwd });
-    const b = createBackend(backend);
-    const opts = claudeSessionOpts(ctx, { runtimeSessionId: runtimeId });
-    if (runtimeId) {
-      try {
-        const resumed = await b.resumeSession(runtimeId, opts);
-        await resumed.send(initialPrompt);
-        return resumed;
-      } catch (err) {
-        logger.warn(`Failed to resume ${backend} session, starting fresh`, { err });
-      }
-    }
-    const session = await b.startSession(opts);
-    await session.send(initialPrompt);
-    return session;
-  }
-
-  // Unknown backend name → treat as ACPX agent (e.g. backend="codex" → acpx agent codex)
-  const acpxBackend = createBackend("acpx");
-  const acpxAgent = ctx.session.acpx_agent ?? backend;
-  logger.info("Using ACPX backend", { agent: acpxAgent, cwd: ctx.session.cwd });
-  if (runtimeId) {
-    try {
-      const resumed = await acpxBackend.resumeSession(
-        runtimeId,
-        claudeSessionOpts(ctx, { acpxAgent, runtimeSessionId: runtimeId }),
-      );
-      await resumed.send(initialPrompt);
-      return resumed;
-    } catch (err) {
-      logger.warn(`Failed to resume ACPX session for ${acpxAgent}, starting fresh`, { err });
-    }
-  }
-  const session = await acpxBackend.startSession(claudeSessionOpts(ctx, { acpxAgent }));
+  const opts = claudeSessionOpts(ctx, {
+    a2aUrl: ctx.session.a2a_url ?? undefined,
+    acpxAgent: ctx.session.acpx_agent ?? undefined,
+  });
+  const session = await openAgentSession(
+    ctx.session.backend,
+    opts,
+    ctx.session.runtime_session_id ?? undefined,
+  );
   await session.send(initialPrompt);
   return session;
 }
@@ -148,29 +98,6 @@ function claudeSessionOpts(ctx: RunnerContext, extra?: Partial<SessionOpts>): Se
       : {}),
     ...extra,
   };
-}
-
-async function startNativeClaudeSession(
-  ctx: RunnerContext,
-  initialPrompt: string,
-  runtimeId: string | undefined,
-): Promise<AgentSession> {
-  const backendImpl = createBackend("claude");
-  if (runtimeId) {
-    try {
-      const resumed = await backendImpl.resumeSession(
-        runtimeId,
-        claudeSessionOpts(ctx, { runtimeSessionId: runtimeId }),
-      );
-      await resumed.send(initialPrompt);
-      return resumed;
-    } catch (err) {
-      logger.warn("Failed to resume native claude session, starting fresh", { err });
-    }
-  }
-  const session = await backendImpl.startSession(claudeSessionOpts(ctx));
-  await session.send(initialPrompt);
-  return session;
 }
 
 async function driveEventLoop(
