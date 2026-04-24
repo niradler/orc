@@ -7,6 +7,7 @@ export type SessionOpts = {
   autoApprove?: boolean | undefined;
   acpxAgent?: string | undefined;
   a2aUrl?: string | undefined;
+  agentApiUrl?: string | undefined;
   permissionMode?: "default" | "plan" | "acceptEdits" | "bypassPermissions" | undefined;
   systemPromptAppend?: string | undefined;
 };

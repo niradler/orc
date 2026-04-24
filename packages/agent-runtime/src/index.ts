@@ -12,3 +12,4 @@ export type {
 import "./claude-sdk.js"; // replaces ./claude.js
 import "./acpx.js";
 import "./a2a.js";
+import "./agentapi.js";
