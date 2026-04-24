@@ -10,6 +10,7 @@ import { gatewayRouter } from "./routes/gateway.js";
 import { healthRouter } from "./routes/health.js";
 import { jobsRouter } from "./routes/jobs.js";
 import { knowledgeRouter } from "./routes/knowledge.js";
+import { mcpRouter } from "./routes/mcp.js";
 import { mcpToolRouter } from "./routes/mcp-tool.js";
 import { memoriesRouter } from "./routes/memories.js";
 import { projectsRouter } from "./routes/projects.js";
@@ -43,6 +44,7 @@ export function createApp() {
   app.route("/api", chatRouter);
   app.route("/api", healthRouter);
   app.route("/api", mcpToolRouter);
+  app.route("/", mcpRouter);
   app.route("/api", projectsRouter);
   app.route("/api", skillsRouter);
   app.route("/api", tasksRouter);

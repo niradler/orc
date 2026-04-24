@@ -23,6 +23,16 @@ services:
       #
       # "claude"   → calls the Anthropic API directly via SDK (no host CLI needed).
       #
+      # ── MCP for the host agent ─────────────────────────────────────────────
+      # ORC exposes MCP over Streamable HTTP at http://localhost:7700/mcp so the
+      # host agent (e.g. claude via agentapi) can call task_update, memory_*,
+      # knowledge_*, etc. Add this to ~/.claude.json (or `claude mcp add`):
+      #   {
+      #     "mcpServers": {
+      #       "orc": { "type": "http", "url": "http://localhost:7700/mcp" }
+      #     }
+      #   }
+      #
       - ORC_API_HOST=0.0.0.0
       - ORC_AGENT_LOOP_DEFAULT_BACKEND=${ORC_AGENT_LOOP_DEFAULT_BACKEND:-agentapi}
       - AGENTAPI_URL=${AGENTAPI_URL:-http://host.docker.internal:3284}
