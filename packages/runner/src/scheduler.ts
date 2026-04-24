@@ -1,14 +1,19 @@
+import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
-import { getDb } from "@orc/db/client";
-import { jobs } from "@orc/db/schema";
+import { getDb, getSqlite } from "@orc/db/client";
+import { comments, job_runs, jobs } from "@orc/db/schema";
 import { Cron } from "croner";
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { executeJob } from "./executor.js";
 
 const logger = createLogger("runner:scheduler");
 
 const activeCrons = new Map<string, Cron>();
 const activeTimers = new Map<string, Timer>();
+let cleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+const CIRCUIT_BREAKER_THRESHOLD = 3;
+const HISTORY_RETENTION_DAYS = 7;
 
 export async function startScheduler(): Promise<void> {
   const db = getDb();
@@ -26,6 +31,8 @@ export async function startScheduler(): Promise<void> {
   }
 
   for (const job of allJobs) {
+    // Internal commands are managed by their own mechanisms (e.g. task loop), not the scheduler.
+    if (job.command.startsWith("__internal:")) continue;
     if (job.trigger_type === "cron" && job.cron_expr) {
       scheduleCronJob(job.id, job.name, job.cron_expr);
     } else if (job.trigger_type === "one-shot" && job.run_at) {
@@ -35,6 +42,66 @@ export async function startScheduler(): Promise<void> {
 
   logger.info(
     `Scheduler started. ${activeCrons.size} cron + ${activeTimers.size} one-shot jobs scheduled.`,
+  );
+
+  pruneHistory();
+  cleanupInterval = setInterval(() => pruneHistory(), 24 * 60 * 60 * 1000);
+}
+
+function pruneHistory(): void {
+  try {
+    const sqlite = getSqlite();
+    const cutoffTs = Math.floor((Date.now() - HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000) / 1000);
+
+    // Delete runner sessions first — they hold a FK ref to job_runs.
+    sqlite.query("DELETE FROM sessions WHERE agent = 'runner' AND created_at < ?").run(cutoffTs);
+
+    // Nullify FK refs in other tables before deleting the runs themselves.
+    sqlite
+      .query(
+        "UPDATE bridge_messages SET job_run_id = NULL WHERE job_run_id IN (SELECT id FROM job_runs WHERE created_at < ?)",
+      )
+      .run(cutoffTs);
+    sqlite
+      .query(
+        "UPDATE bridge_permissions SET job_run_id = NULL WHERE job_run_id IN (SELECT id FROM job_runs WHERE created_at < ?)",
+      )
+      .run(cutoffTs);
+
+    // Deleting job_runs cascades to job_run_logs.
+    const result = sqlite.query("DELETE FROM job_runs WHERE created_at < ?").run(cutoffTs);
+    if (result.changes > 0) {
+      logger.info(`Pruned ${result.changes} job runs older than ${HISTORY_RETENTION_DAYS} days`);
+    }
+  } catch (err) {
+    logger.warn("Failed to prune job history", err);
+  }
+}
+
+async function checkCircuitBreaker(jobId: string, name: string): Promise<void> {
+  const db = getDb();
+  const recent = await db
+    .select({ status: job_runs.status })
+    .from(job_runs)
+    .where(eq(job_runs.job_id, jobId))
+    .orderBy(desc(job_runs.created_at))
+    .limit(CIRCUIT_BREAKER_THRESHOLD);
+
+  if (recent.length < CIRCUIT_BREAKER_THRESHOLD) return;
+  if (!recent.every((r) => r.status === "failed")) return;
+
+  await db.update(jobs).set({ enabled: false, updated_at: new Date() }).where(eq(jobs.id, jobId));
+  await db.insert(comments).values({
+    id: ulid(),
+    resource_type: "job",
+    resource_id: jobId,
+    content: `Auto-disabled after ${CIRCUIT_BREAKER_THRESHOLD} consecutive failures. Fix the error and re-enable to resume.`,
+    author: "system",
+    created_at: new Date(),
+  });
+  unscheduleJob(jobId);
+  logger.warn(
+    `Job "${name}" auto-disabled after ${CIRCUIT_BREAKER_THRESHOLD} consecutive failures`,
   );
 }
 
@@ -60,6 +127,9 @@ export function scheduleCronJob(jobId: string, name: string, expr: string): void
     } catch (err) {
       logger.error(`Cron job failed: ${name}`, err);
     }
+    await checkCircuitBreaker(jobId, name).catch((err) =>
+      logger.warn(`Circuit breaker check failed for ${name}`, err),
+    );
   });
 
   activeCrons.set(jobId, cron);
@@ -123,5 +193,9 @@ export function stopScheduler(): void {
   activeCrons.clear();
   for (const [, timer] of activeTimers) clearTimeout(timer);
   activeTimers.clear();
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    cleanupInterval = null;
+  }
   logger.info("Scheduler stopped.");
 }

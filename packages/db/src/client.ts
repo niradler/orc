@@ -358,6 +358,7 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE tasks ADD COLUMN skill_name TEXT",
     "ALTER TABLE jobs ADD COLUMN skill_name TEXT",
     "ALTER TABLE tasks ADD COLUMN agent_model TEXT",
+    "ALTER TABLE gateway_sessions ADD COLUMN permission_mode TEXT",
   ];
   for (const statement of migrations) {
     try {
