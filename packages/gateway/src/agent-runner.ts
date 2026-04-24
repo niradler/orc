@@ -1,5 +1,5 @@
 import { createLogger } from "@orc/core/logger";
-import { createBackend } from "./agent-runtime/index.js";
+import { createBackend, hasBackend } from "./agent-runtime/index.js";
 import type { AgentSession, SessionOpts } from "./agent-runtime/types.js";
 import type { PermissionManager } from "./permission-manager.js";
 import type { PreviewManager } from "./preview-manager.js";
@@ -97,6 +97,27 @@ async function createAgentSession(
     }
   }
 
+  // If the backend name is registered in the registry (e.g. "agentapi"), use it directly.
+  // Mirrors the same pattern used in task-loop.ts — avoids hard-coding every backend here.
+  if (backend !== "claude" && hasBackend(backend)) {
+    logger.info("Using registered backend", { backend, cwd: ctx.session.cwd });
+    const b = createBackend(backend);
+    const opts = claudeSessionOpts(ctx, { runtimeSessionId: runtimeId });
+    if (runtimeId) {
+      try {
+        const resumed = await b.resumeSession(runtimeId, opts);
+        await resumed.send(initialPrompt);
+        return resumed;
+      } catch (err) {
+        logger.warn(`Failed to resume ${backend} session, starting fresh`, { err });
+      }
+    }
+    const session = await b.startSession(opts);
+    await session.send(initialPrompt);
+    return session;
+  }
+
+  // Unknown backend name → treat as ACPX agent (e.g. backend="codex" → acpx agent codex)
   const acpxBackend = createBackend("acpx");
   const acpxAgent = ctx.session.acpx_agent ?? backend;
   logger.info("Using ACPX backend", { agent: acpxAgent, cwd: ctx.session.cwd });

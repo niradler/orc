@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { createBackend, hasBackend } from "@orc/agent-runtime";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 
@@ -130,8 +131,40 @@ app.post("/chat/stream", async (c) => {
   }
 
   const acpxPath = Bun.which("acpx");
+  const prompt = buildPrompt(messages, systemPrompt);
+
+  // When acpx is not available (e.g. running in Docker), fall back to the
+  // first available registered backend: agentapi → claude.
   if (!acpxPath) {
-    return c.json({ error: "acpx CLI not found on PATH" }, 503);
+    const fallback = ["agentapi", "claude"].find(hasBackend);
+    if (!fallback) {
+      return c.json(
+        { error: "No agent backend available (acpx not on PATH, agentapi/claude not configured)" },
+        503,
+      );
+    }
+    return streamSSE(c, async (s) => {
+      await s.writeSSE({ data: JSON.stringify({ type: "open" }) });
+      try {
+        const backend = createBackend(fallback);
+        const session = await backend.startSession({ cwd: process.cwd(), autoApprove });
+        await session.send(prompt);
+        for await (const event of session.events()) {
+          if (event.type === "text") {
+            await s.writeSSE({ data: JSON.stringify({ type: "text", text: event.data }) });
+          } else if (event.type === "error") {
+            await s.writeSSE({ data: JSON.stringify({ type: "error", message: event.data }) });
+          } else if (event.type === "result") {
+            break;
+          }
+        }
+        await session.close().catch(() => {});
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await s.writeSSE({ data: JSON.stringify({ type: "error", message }) });
+      }
+      await s.writeSSE({ data: JSON.stringify({ type: "done" }) });
+    });
   }
 
   // On Windows, Bun.which returns a `.cmd` shim that wraps `node cli.js`. Driving
@@ -147,8 +180,6 @@ app.post("/chat/stream", async (c) => {
       spawnPrefix.push(cliJs);
     }
   }
-
-  const prompt = buildPrompt(messages, systemPrompt);
 
   return streamSSE(c, async (s) => {
     const args = [

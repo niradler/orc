@@ -9,6 +9,7 @@ export type {
 } from "@orc/agent-runtime";
 export {
   createBackend,
+  hasBackend,
   listRegisteredBackends,
   registerBackend,
 } from "@orc/agent-runtime";
