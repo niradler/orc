@@ -223,15 +223,16 @@ class AcpxSession implements AgentSession {
       "json",
       ...(this.autoApprove ? ["--approve-all"] : []),
       this.agent,
-      ...(this.model ? ["--model", this.model] : []),
-      "exec",
+      "-s",
+      this.sessionName,
+      "prompt",
       prompt,
     ];
 
     logger.info("Spawning ACPX process", {
       agent: this.agent,
       cwd: this.cwd,
-      cmd: args.slice(0, -1).join(" ") + " <prompt>",
+      cmd: `${args.slice(0, -1).join(" ")} <prompt>`,
     });
 
     this.proc = Bun.spawn({

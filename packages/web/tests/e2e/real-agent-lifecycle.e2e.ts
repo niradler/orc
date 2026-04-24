@@ -16,7 +16,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { expect, type Page, test } from "@playwright/test";
-import { API_BASE, apiDelete, apiGet, apiPost, AUTH_HEADERS, gotoView, tid } from "./_helpers";
+import { API_BASE, AUTH_HEADERS, apiGet, apiPost, gotoView, tid } from "./_helpers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

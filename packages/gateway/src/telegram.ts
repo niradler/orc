@@ -181,25 +181,35 @@ export function createTelegramAdapter(startTime: number): TelegramAdapter {
       });
 
       bot.on("callback_query:data", async (ctx: Context) => {
-        if (!ctx.from || !isAuthorized(ctx.from.id) || !ctx.callbackQuery) return;
+        // Answer immediately — Telegram expires the query after 10 seconds
+        await ctx.answerCallbackQuery().catch(() => {});
+
+        const authorized = ctx.from ? isAuthorized(ctx.from.id) : false;
+        logger.info("callback_query received", {
+          userId: ctx.from?.id,
+          authorized,
+          data: ctx.callbackQuery?.data?.slice(0, 60),
+        });
+        if (!ctx.from || !authorized || !ctx.callbackQuery) return;
         const cbId = ctx.callbackQuery.id;
-        if (dedup(`cb:${cbId}`)) {
-          await ctx.answerCallbackQuery();
-          return;
-        }
+        if (dedup(`cb:${cbId}`)) return;
         const chatId = String(ctx.callbackQuery.message?.chat.id ?? ctx.chat?.id ?? "");
         const platformMessageId = `${chatId}:${ctx.callbackQuery.message?.message_id}`;
-        await dispatch({
-          platform: "telegram",
-          chatId,
-          userId: String(ctx.from.id),
-          username: ctx.from.username,
-          displayName:
-            [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ").trim() || undefined,
-          text: ctx.callbackQuery.data ?? "",
-          platformMessageId,
-        });
-        await ctx.answerCallbackQuery();
+        try {
+          await dispatch({
+            platform: "telegram",
+            chatId,
+            userId: String(ctx.from.id),
+            username: ctx.from.username,
+            displayName:
+              [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ").trim() ||
+              undefined,
+            text: ctx.callbackQuery.data ?? "",
+            platformMessageId,
+          });
+        } catch (err) {
+          logger.error("callback_query dispatch error", { err });
+        }
       });
 
       logger.info("Starting Telegram gateway adapter");

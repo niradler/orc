@@ -39,13 +39,13 @@ describe("validateTaskTitle", () => {
   });
 
   test("title that is 201 chars after trimming is rejected", () => {
-    const result = validateTaskTitle("  " + "a".repeat(201) + "  ");
+    const result = validateTaskTitle(`  ${"a".repeat(201)}  `);
     expect(result.valid).toBe(false);
     expect(result.error).toBeTruthy();
   });
 
   test("padded title that trims to exactly 200 characters is accepted", () => {
-    const result = validateTaskTitle("  " + "a".repeat(200) + "  ");
+    const result = validateTaskTitle(`  ${"a".repeat(200)}  `);
     expect(result.valid).toBe(true);
     expect(result.error).toBeUndefined();
   });

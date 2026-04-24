@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resetConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
-import { closeDb, createTestDb, getDb, getSqlite } from "@orc/db/client";
+import { closeDb, createTestDb, getDb, } from "@orc/db/client";
 import { comments, task_links, tasks } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
 import { OrcTaskProvider } from "../orc-task-provider.js";

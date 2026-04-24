@@ -4,7 +4,7 @@ export * from "./ids.js";
 export * from "./logger.js";
 export * from "./math.js";
 export * from "./strings.js";
-export * from "./types.js";
 export * from "./task-provider.js";
+export * from "./types.js";
 export * from "./validate.js";
 export * from "./version.js";

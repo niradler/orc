@@ -63,7 +63,7 @@ function taskStatusEmoji(s: string): string {
 function helpText(mode: GatewayMode, projectName?: string): string {
   const projectLine = projectName ? `\n📁 Project: <b>${projectName}</b>` : "";
   const base = [
-    "<b>ORC Gateway Commands</b>" + projectLine,
+    `<b>ORC Gateway Commands</b>${projectLine}`,
     "",
     "<b>Navigation</b>",
     "/help - this message",
@@ -137,7 +137,7 @@ export async function handleDirectCommand(input: {
       projectLine = proj ? `\n📁 Project: <b>${proj.name}</b>` : "";
     }
     const lines = [
-      "<b>ORC Status</b>" + projectLine,
+      `<b>ORC Status</b>${projectLine}`,
       "",
       `Mode: <code>${input.currentMode ?? "direct"}</code>`,
       `Working dir: <code>${input.currentWorkingDir ?? "(unset)"}</code>`,
@@ -319,7 +319,10 @@ export async function handleDirectCommand(input: {
 
   if (command === "/session") {
     const [subcommand, ...args] = parts.slice(1);
-    if (!subcommand) return { text: "Usage: /session <new|list|switch <id>|stop|mode [default|plan|edit|bypass]>" };
+    if (!subcommand)
+      return {
+        text: "Usage: /session <new|list|switch <id>|stop|mode [default|plan|edit|bypass]>",
+      };
 
     if (subcommand === "new") {
       const backend = backendFromMode(input.currentMode ?? "agent:claude");

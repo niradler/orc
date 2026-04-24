@@ -1,4 +1,4 @@
-const PERMISSION_TIMEOUT_MS = 5 * 60 * 1000;
+const PERMISSION_TIMEOUT_MS = 30 * 60 * 1000;
 
 type PendingPermission = {
   resolve: (approved: boolean) => void;

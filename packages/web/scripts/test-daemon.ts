@@ -15,8 +15,8 @@
 import { createApp } from "@orc/api/server";
 import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
+import { startTaskLoop } from "@orc/runner";
 import { ensureSystemJob } from "@orc/runner/task-loop";
-import { startScheduler, startTaskLoop } from "@orc/runner";
 
 const logger = createLogger("test-daemon");
 const config = loadConfig();

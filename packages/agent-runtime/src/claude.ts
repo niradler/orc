@@ -116,28 +116,16 @@ class ClaudeSession implements AgentSession {
   }
 
   private spawn(extraArgs: string[] = [], printPrompt?: string | undefined): void {
-    const args = this.autoApprove
-      ? [
-          this.claudePath,
-          "-p",
-          printPrompt ?? "",
-          "--output-format",
-          "stream-json",
-          "--verbose",
-          "--dangerously-skip-permissions",
-          ...extraArgs,
-        ]
-      : [
-          this.claudePath,
-          "--output-format",
-          "stream-json",
-          "--input-format",
-          "stream-json",
-          "--permission-prompt-tool",
-          "stdio",
-          "--no-color",
-          ...extraArgs,
-        ];
+    const args = [
+      this.claudePath,
+      "-p",
+      printPrompt ?? "",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      ...(this.autoApprove ? ["--dangerously-skip-permissions"] : []),
+      ...extraArgs,
+    ];
 
     this.proc = Bun.spawn({
       cmd: args,
@@ -180,10 +168,8 @@ class ClaudeSession implements AgentSession {
     }
   }
 
-  async start(opts: SessionOpts): Promise<void> {
-    if (this.autoApprove) return;
-    const extraArgs = opts.runtimeSessionId ? ["--resume", opts.runtimeSessionId] : [];
-    this.spawn(extraArgs);
+  async start(_opts: SessionOpts): Promise<void> {
+    // Spawn happens on first send() so the prompt can be passed as -p arg
   }
 
   private handleStdoutLine(msg: ClaudeStdoutMsg): void {
@@ -278,20 +264,16 @@ class ClaudeSession implements AgentSession {
   }
 
   async send(prompt: string): Promise<void> {
-    if (this.autoApprove) {
-      if (this.proc) {
-        await this.close().catch(() => {});
-      }
-      const resumeArgs = this.runtimeSessionId ? ["--resume", this.runtimeSessionId] : [];
-      this.runtimeSessionId = undefined;
-      this.spawn(resumeArgs, prompt);
-      return;
+    if (this.proc) {
+      await this.close().catch(() => {});
     }
-    const msg: ClaudeStdinMsg = {
-      type: "user",
-      message: { role: "user", content: prompt },
-    };
-    writeToStdin(this.proc?.stdin, new TextEncoder().encode(`${JSON.stringify(msg)}\n`));
+    const resumeArgs = this.runtimeSessionId ? ["--resume", this.runtimeSessionId] : [];
+    this.runtimeSessionId = undefined;
+    this.done = false;
+    this.state.hasReceivedResult = false;
+    this.state.hasStreamedText = false;
+    this.eventQueue.length = 0;
+    this.spawn(resumeArgs, prompt);
   }
 
   respondPermission(requestId: string, result: PermissionResult): void {

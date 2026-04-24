@@ -145,17 +145,22 @@ class GatewayManager {
     if (text.startsWith("task:reject:")) return `/reject ${text.slice("task:reject:".length)}`;
     if (text.startsWith("perm:approve:")) {
       const id = text.slice("perm:approve:".length);
-      if (this.permissionManager.resolve(id, true)) return `__perm_resolved:${id}:approved`;
-      return `/approve ${id}`;
+      const resolved = this.permissionManager.resolve(id, true);
+      logger.info("perm:approve callback", { id, resolved });
+      if (resolved) return `__perm_resolved:${id}:approved`;
+      return "__perm_expired";
     }
     if (text.startsWith("perm:deny:")) {
       const id = text.slice("perm:deny:".length);
-      if (this.permissionManager.resolve(id, false)) return `__perm_resolved:${id}:denied`;
-      return `/reject ${id}`;
+      const resolved = this.permissionManager.resolve(id, false);
+      logger.info("perm:deny callback", { id, resolved });
+      if (resolved) return `__perm_resolved:${id}:denied`;
+      return "__perm_expired";
     }
     if (text.startsWith("perm:session:")) {
       const id = text.slice("perm:session:".length);
-      this.permissionManager.resolve(id, true);
+      const resolved = this.permissionManager.resolve(id, true);
+      if (!resolved) return "__perm_expired";
       this.pendingSessionApprove.add(id);
       return `__perm_resolved:${id}:session`;
     }
@@ -190,6 +195,13 @@ class GatewayManager {
 
     if (text) {
       text = this.normalizeCallbackText(text);
+      if (text === "__perm_expired") {
+        await this.sendText(
+          message,
+          "⚠️ This permission request has already expired or been resolved.",
+        );
+        return;
+      }
       if (text.startsWith("__perm_resolved:")) {
         const parts = text.split(":");
         const resolution = parts[2];

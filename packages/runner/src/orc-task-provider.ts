@@ -6,7 +6,7 @@ import type {
 } from "@orc/core";
 import { getDb, getSqlite } from "@orc/db/client";
 import { tasks } from "@orc/db/schema";
-import { addTaskComment, updateTaskStatus as _updateTaskStatus } from "@orc/task-service";
+import { updateTaskStatus as _updateTaskStatus, addTaskComment } from "@orc/task-service";
 import { eq } from "drizzle-orm";
 
 export class OrcTaskProvider implements TaskProvider {

@@ -39,7 +39,7 @@ function apiBase(): string {
     const c = loadConfig();
     return `http://${c.api.host}:${c.api.port}/api`;
   } catch {
-    return (process.env.ORC_API_BASE ?? "http://127.0.0.1:7700") + "/api";
+    return `${process.env.ORC_API_BASE ?? "http://127.0.0.1:7700"}/api`;
   }
 }
 

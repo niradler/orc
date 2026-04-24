@@ -91,6 +91,7 @@ class ClaudeSDKSession implements AgentSession {
           canUseTool: async (toolName, input) => {
             const requestId = ulid();
             const command = JSON.stringify(input);
+            logger.info("canUseTool called", { toolName, requestId });
             this.push({ type: "permission_request", data: { requestId, tool: toolName, command } });
             const result = await new Promise<PermissionResult>((resolve) => {
               this.permissionResolvers.set(requestId, resolve);

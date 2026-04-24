@@ -14,9 +14,7 @@ export async function apiListActiveTasks(projectId?: string | null) {
     ...(projectId ? { project_id: projectId } : {}),
   });
   if (res.error) throw new Error(res.error.error);
-  return (res.data?.tasks ?? []).filter(
-    (t) => !["done", "cancelled"].includes(t.status),
-  );
+  return (res.data?.tasks ?? []).filter((t) => !["done", "cancelled"].includes(t.status));
 }
 
 export async function apiFindTask(input: string) {
@@ -47,7 +45,8 @@ export async function apiCreateTask(title: string, projectId?: string | null) {
     ...(projectId ? { project_id: projectId } : {}),
   });
   if (res.error) throw new Error(res.error.error);
-  return res.data!;
+  if (!res.data) throw new Error("No task data returned");
+  return res.data;
 }
 
 export async function apiSearchMemories(query: string, projectId?: string | null) {
@@ -78,7 +77,7 @@ export async function apiFindJobByName(name: string) {
 export async function apiTriggerJob(jobId: string) {
   const res = await client().jobs.trigger(jobId);
   if (res.error) throw new Error(res.error.error);
-  return res.data!.run_id;
+  return res.data?.run_id;
 }
 
 export async function apiListProjects() {

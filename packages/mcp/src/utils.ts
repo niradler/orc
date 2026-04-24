@@ -1,7 +1,7 @@
 import type { ZodTypeAny } from "zod";
 
 export function zodToJsonSchema(schema: ZodTypeAny): Record<string, unknown> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: Zod internal _def has no public type
   const def = schema._def as any;
   const typeName = def.typeName as string;
 
@@ -12,6 +12,7 @@ export function zodToJsonSchema(schema: ZodTypeAny): Record<string, unknown> {
 
     for (const [key, val] of Object.entries(shape)) {
       properties[key] = zodToJsonSchema(val);
+      // biome-ignore lint/suspicious/noExplicitAny: Zod internal _def has no public type
       const vDef = (val as ZodTypeAny)._def as any;
       if (vDef.typeName !== "ZodOptional" && vDef.typeName !== "ZodDefault") {
         required.push(key);

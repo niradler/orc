@@ -203,6 +203,7 @@ async function driveEventLoop(
 
       if (event.type === "permission_request") {
         const { requestId, tool, command } = event.data;
+        logger.info("permission_request received", { requestId, tool });
 
         if (ctx.session.auto_approve) {
           session.respondPermission(requestId, "approved");
@@ -218,7 +219,7 @@ async function driveEventLoop(
           tool,
           command,
           scope: "once",
-          expiresAt: new Date(Date.now() + 5 * 60 * 1000),
+          expiresAt: new Date(Date.now() + 30 * 60 * 1000),
         });
 
         const buttons = [
@@ -245,7 +246,20 @@ async function driveEventLoop(
           });
         }
 
+        logger.info("waiting for permission", { requestId });
         const approved = await ctx.permissionManager.waitFor(requestId);
+        logger.info("permission resolved", { requestId, approved });
+
+        if (!approved) {
+          await ctx.adapter.send(
+            ctx.chatId,
+            "⏰ Permission request timed out or was denied. The agent will continue without that tool.",
+            {
+              threadId: ctx.threadId,
+            },
+          );
+        }
+
         session.respondPermission(requestId, approved ? "approved" : "denied");
 
         if (preview) preview.unfreeze(ctx.session.id);

@@ -35,7 +35,7 @@ describe("roundTo", () => {
   });
 
   test("rounds to 2 decimal places", () => {
-    expect(roundTo(3.14159, 2)).toBe(3.14);
+    expect(roundTo(Math.PI, 2)).toBe(3.14);
   });
 
   test("rounds up at midpoint", () => {

@@ -47,7 +47,7 @@ async function waitForReady(url: string, timeoutMs: number): Promise<void> {
 async function run(cmd: string[], env: Record<string, string>, timeoutMs: number): Promise<void> {
   const proc = Bun.spawn({
     cmd,
-    cwd: import.meta.dir + "/..",
+    cwd: `${import.meta.dir}/..`,
     env,
     stdout: "inherit",
     stderr: "inherit",
