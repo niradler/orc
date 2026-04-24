@@ -9,6 +9,6 @@ export type {
   SessionOpts,
 } from "./types.js";
 
-import "./claude.js";
+import "./claude-sdk.js"; // replaces ./claude.js
 import "./acpx.js";
 import "./a2a.js";

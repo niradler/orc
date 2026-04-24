@@ -1,6 +1,6 @@
 import { createLogger } from "@orc/core/logger";
 import { createBackend } from "./agent-runtime/index.js";
-import type { AgentSession } from "./agent-runtime/types.js";
+import type { AgentSession, SessionOpts } from "./agent-runtime/types.js";
 import type { PermissionManager } from "./permission-manager.js";
 import type { PreviewManager } from "./preview-manager.js";
 import { createPermission, updateGatewaySession } from "./store.js";
@@ -9,6 +9,21 @@ import type { GatewayAdapter, SupportsInlineButtons } from "./types.js";
 const logger = createLogger("gateway:runner");
 
 const IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+
+function toolEmoji(name: string): string {
+  const n = name.toLowerCase();
+  if (n.includes("read")) return "📖";
+  if (n.includes("write")) return "📝";
+  if (n.includes("edit")) return "✏️";
+  if (n.includes("bash") || n.includes("execute")) return "💻";
+  if (n.includes("glob") || n.includes("grep") || n.includes("search")) return "🔍";
+  if (n.includes("web")) return "🌐";
+  if (n.includes("todo")) return "📋";
+  if (n.includes("agent")) return "🤖";
+  if (n.includes("memory") || n.includes("mem")) return "🧠";
+  if (n.includes("task")) return "📌";
+  return "🔧";
+}
 
 export type RunnerContext = {
   chatKey: string;
@@ -23,6 +38,7 @@ export type RunnerContext = {
     model: string | null;
     runtime_session_id: string | null;
     auto_approve: boolean;
+    permission_mode: string | null;
     task_id: string | null;
     acpx_agent: string | null;
     a2a_url: string | null;
@@ -83,27 +99,34 @@ async function createAgentSession(
 
   const acpxBackend = createBackend("acpx");
   const acpxAgent = ctx.session.acpx_agent ?? backend;
+  logger.info("Using ACPX backend", { agent: acpxAgent, cwd: ctx.session.cwd });
   if (runtimeId) {
     try {
-      return await acpxBackend.resumeSession(runtimeId, {
-        cwd: ctx.session.cwd,
-        model: ctx.session.model ?? undefined,
-        acpxAgent,
-        autoApprove: ctx.session.auto_approve,
-        runtimeSessionId: runtimeId,
-      });
+      const resumed = await acpxBackend.resumeSession(
+        runtimeId,
+        claudeSessionOpts(ctx, { acpxAgent, runtimeSessionId: runtimeId }),
+      );
+      await resumed.send(initialPrompt);
+      return resumed;
     } catch (err) {
       logger.warn(`Failed to resume ACPX session for ${acpxAgent}, starting fresh`, { err });
     }
   }
-  const session = await acpxBackend.startSession({
-    cwd: ctx.session.cwd,
-    model: ctx.session.model ?? undefined,
-    acpxAgent,
-    autoApprove: ctx.session.auto_approve,
-  });
+  const session = await acpxBackend.startSession(claudeSessionOpts(ctx, { acpxAgent }));
   await session.send(initialPrompt);
   return session;
+}
+
+function claudeSessionOpts(ctx: RunnerContext, extra?: Partial<SessionOpts>): SessionOpts {
+  return {
+    cwd: ctx.session.cwd,
+    model: ctx.session.model ?? undefined,
+    autoApprove: ctx.session.auto_approve,
+    ...(ctx.session.permission_mode
+      ? { permissionMode: ctx.session.permission_mode as SessionOpts["permissionMode"] }
+      : {}),
+    ...extra,
+  };
 }
 
 async function startNativeClaudeSession(
@@ -114,21 +137,17 @@ async function startNativeClaudeSession(
   const backendImpl = createBackend("claude");
   if (runtimeId) {
     try {
-      return await backendImpl.resumeSession(runtimeId, {
-        cwd: ctx.session.cwd,
-        model: ctx.session.model ?? undefined,
-        runtimeSessionId: runtimeId,
-        autoApprove: ctx.session.auto_approve,
-      });
+      const resumed = await backendImpl.resumeSession(
+        runtimeId,
+        claudeSessionOpts(ctx, { runtimeSessionId: runtimeId }),
+      );
+      await resumed.send(initialPrompt);
+      return resumed;
     } catch (err) {
       logger.warn("Failed to resume native claude session, starting fresh", { err });
     }
   }
-  const session = await backendImpl.startSession({
-    cwd: ctx.session.cwd,
-    model: ctx.session.model ?? undefined,
-    autoApprove: ctx.session.auto_approve,
-  });
+  const session = await backendImpl.startSession(claudeSessionOpts(ctx));
   await session.send(initialPrompt);
   return session;
 }
@@ -140,9 +159,14 @@ async function driveEventLoop(
   preview: PreviewManager | null,
 ): Promise<RunResult> {
   let accumulated = "";
+  let statusLine = "";
   let runtimeSessionId: string | undefined;
 
   const idleTimer = startIdleWatchdog(ctx.session.id, session);
+
+  function previewText(): string {
+    return statusLine ? `${accumulated}\n${statusLine}` : accumulated;
+  }
 
   try {
     for await (const event of session.events()) {
@@ -150,6 +174,7 @@ async function driveEventLoop(
 
       if (event.type === "text") {
         accumulated += event.data;
+        statusLine = "";
         if (preview && previewMsgId) {
           await preview.update(ctx.session.id, accumulated);
         }
@@ -161,9 +186,17 @@ async function driveEventLoop(
       }
 
       if (event.type === "tool_use") {
-        const blurb = `🔧 ${event.data.name}`;
+        statusLine = `${toolEmoji(event.data.name)} ${event.data.name}…`;
         if (preview && previewMsgId) {
-          await preview.update(ctx.session.id, `${accumulated}\n${blurb}`);
+          await preview.update(ctx.session.id, previewText());
+        }
+        continue;
+      }
+
+      if (event.type === "system_status") {
+        statusLine = event.data;
+        if (preview && previewMsgId) {
+          await preview.update(ctx.session.id, previewText());
         }
         continue;
       }
@@ -246,7 +279,7 @@ function startIdleWatchdog(sessionId: string, session: AgentSession): IdleWatchd
     if (timer) clearTimeout(timer);
     if (paused) return;
     timer = setTimeout(async () => {
-      logger.warn("Idle timeout - closing agent session", { sessionId });
+      logger.warn("Idle timeout — force-closing agent session", { sessionId });
       await session.close().catch(() => {});
       activeSessions.delete(sessionId);
       await updateGatewaySession(sessionId, {

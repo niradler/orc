@@ -8,6 +8,7 @@ import { closeAgentSession, preflightBackends, runAgentTurn } from "./agent-runn
 import { RateLimiter } from "./rate-limiter.js";
 import { redactSecrets } from "./redact.js";
 import "./agent-runtime/index.js";
+import { apiFindJobByName, apiFindProjectById } from "./api.js";
 import { ensureAgentSession, handleDirectCommand } from "./direct.js";
 import { PermissionManager } from "./permission-manager.js";
 import { PreviewManager } from "./preview-manager.js";
@@ -17,10 +18,10 @@ import { synthesizeSpeech, transcribeAudio } from "./speech.js";
 import "./telegram.js";
 import {
   appendMessage,
-  findJobByName,
   getActiveGatewaySession,
   getOrCreateChat,
   listReviewTargets,
+  updateChatProject,
   updateGatewaySession,
 } from "./store.js";
 import type {
@@ -39,8 +40,11 @@ const logger = createLogger("gateway");
 const BOT_COMMANDS = [
   { command: "help", description: "Show available commands" },
   { command: "status", description: "System status and sessions" },
+  { command: "projects", description: "List and select active project" },
+  { command: "project", description: "Show or set active project: /project <name>" },
   { command: "tasks", description: "List active tasks" },
   { command: "task", description: "Task details: /task <id>" },
+  { command: "create", description: "Quick-create a task: /create <title>" },
   { command: "approve", description: "Approve task or permission" },
   { command: "reject", description: "Reject task or deny permission" },
   { command: "assign", description: "Assign task to agent: /assign <id> <agent>" },
@@ -155,6 +159,9 @@ class GatewayManager {
       this.pendingSessionApprove.add(id);
       return `__perm_resolved:${id}:session`;
     }
+    if (text.startsWith("project:set:"))
+      return `__project_set:${text.slice("project:set:".length)}`;
+    if (text === "project:clear") return "__project_clear";
     return text;
   }
 
@@ -199,6 +206,22 @@ class GatewayManager {
         }
         return;
       }
+      if (text.startsWith("__project_set:")) {
+        const projectId = text.slice("__project_set:".length);
+        const proj = await apiFindProjectById(projectId).catch(() => null);
+        if (proj) {
+          await updateChatProject(chat.id, proj.id);
+          await this.sendText(message, `✅ Active project: ${proj.name}`);
+        } else {
+          await this.sendText(message, "Project not found.");
+        }
+        return;
+      }
+      if (text === "__project_clear") {
+        await updateChatProject(chat.id, null);
+        await this.sendText(message, "🚫 Project cleared.");
+        return;
+      }
     }
 
     if (!text && audio && config.speech.enabled) {
@@ -240,10 +263,12 @@ class GatewayManager {
       rawText: text,
       currentMode: chat.mode as GatewayMode,
       currentWorkingDir: chat.working_dir,
+      currentProjectId: chat.project_id,
     });
 
     if (commandResult) {
       if (commandResult.mode) chat.mode = commandResult.mode;
+      if (commandResult.projectId !== undefined) chat.project_id = commandResult.projectId;
       const outText = commandResult.html ?? commandResult.text ?? "";
       const plainText = commandResult.text ?? outText;
       const parseMode = commandResult.html ? ("html" as const) : undefined;
@@ -271,7 +296,7 @@ class GatewayManager {
 
     if (chat.mode.startsWith("job:")) {
       const jobName = chat.mode.slice(4);
-      const job = await findJobByName(jobName);
+      const job = await apiFindJobByName(jobName);
       const reply = job
         ? `Triggered ${job.name} → ${await executeJob({ jobId: job.id, triggerBy: "bridge-msg", envOverrides: { MSG: text } })}`
         : `Job not found: ${jobName}`;
@@ -329,6 +354,7 @@ class GatewayManager {
       model: string | null;
       runtime_session_id: string | null;
       auto_approve: boolean;
+      permission_mode: string | null;
       task_id: string | null;
       acpx_agent: string | null;
       a2a_url: string | null;
@@ -347,19 +373,23 @@ class GatewayManager {
       await (adapter as GatewayAdapter & SupportsTyping).showTyping(message.chatId).catch(() => {});
     }
 
-    const previewMsgId = await adapter.send(message.chatId, `${session.backend} is thinking…`, {
+    const thinkingMsg = `⏳ ${session.backend} is thinking…`;
+    const previewMsgId = await adapter.send(message.chatId, thinkingMsg, {
       threadId: message.threadId,
     });
 
     let preview: PreviewManager | null = null;
     if (previewMsgId && PreviewManager.supports(adapter)) {
       preview = new PreviewManager(adapter);
-      await preview.init(
-        session.id,
-        message.chatId,
-        previewMsgId,
-        `${session.backend} is thinking…`,
-      );
+      await preview.init(session.id, message.chatId, previewMsgId, thinkingMsg);
+    }
+
+    let typingInterval: ReturnType<typeof setInterval> | null = null;
+    if ("showTyping" in adapter) {
+      const typingAdapter = adapter as GatewayAdapter & SupportsTyping;
+      typingInterval = setInterval(() => {
+        typingAdapter.showTyping(message.chatId).catch(() => {});
+      }, 4000);
     }
 
     await updateGatewaySession(session.id, { status: "running", last_activity_at: new Date() });
@@ -379,6 +409,7 @@ class GatewayManager {
             model: session.model,
             runtime_session_id: session.runtime_session_id,
             auto_approve: session.auto_approve,
+            permission_mode: session.permission_mode,
             task_id: session.task_id,
             acpx_agent: session.acpx_agent,
             a2a_url: session.a2a_url,
@@ -389,6 +420,11 @@ class GatewayManager {
         previewMsgId,
         preview,
       );
+
+      if (typingInterval) {
+        clearInterval(typingInterval);
+        typingInterval = null;
+      }
 
       await updateGatewaySession(session.id, {
         status: "idle",
@@ -421,6 +457,10 @@ class GatewayManager {
 
       if (message.fromVoice) await this.trySendVoiceReply(message, result.output);
     } catch (err) {
+      if (typingInterval) {
+        clearInterval(typingInterval);
+        typingInterval = null;
+      }
       preview?.cleanup(session.id);
       const errorText = `Agent error: ${err instanceof Error ? err.message : String(err)}`;
       await updateGatewaySession(session.id, {

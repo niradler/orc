@@ -224,6 +224,7 @@ export const bridge_chats = sqliteTable(
     session_id: text("session_id"),
     thread_id: text("thread_id"),
     working_dir: text("working_dir"),
+    project_id: text("project_id").references(() => projects.id, { onDelete: "set null" }),
     updated_at: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
     created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
   },
@@ -282,6 +283,7 @@ export const gateway_sessions = sqliteTable(
       .default("idle")
       .notNull(),
     auto_approve: integer("auto_approve", { mode: "boolean" }).default(false).notNull(),
+    permission_mode: text("permission_mode"),
     task_id: text("task_id").references(() => tasks.id, { onDelete: "set null" }),
     last_error: text("last_error"),
     role: text("role", { enum: ["main", "worker", "reviewer"] }),

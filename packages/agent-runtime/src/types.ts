@@ -7,6 +7,8 @@ export type SessionOpts = {
   autoApprove?: boolean | undefined;
   acpxAgent?: string | undefined;
   a2aUrl?: string | undefined;
+  permissionMode?: "default" | "plan" | "acceptEdits" | "bypassPermissions" | undefined;
+  systemPromptAppend?: string | undefined;
 };
 
 export type ImageAttachment = {
@@ -23,7 +25,8 @@ export type AgentEvent =
   | { type: "tool_result"; data: { toolUseId: string; content: string; isError: boolean } }
   | { type: "permission_request"; data: { requestId: string; tool: string; command: string } }
   | { type: "result"; data: { runtimeSessionId?: string | undefined; usage?: unknown } }
-  | { type: "error"; data: string };
+  | { type: "error"; data: string }
+  | { type: "system_status"; data: string };
 
 export interface AgentSession {
   readonly id: string;

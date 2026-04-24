@@ -176,6 +176,9 @@ class AcpxSession implements AgentSession {
 
   private handleEof(): void {
     if (!this.gotResult && !this.done) {
+      logger.warn("ACPX stdout closed without a result event — synthesising empty result", {
+        agent: this.agent,
+      });
       this.push({
         type: "result",
         data: { runtimeSessionId: this.sessionName },
@@ -189,11 +192,12 @@ class AcpxSession implements AgentSession {
   private async watchExit(): Promise<void> {
     if (!this.proc) return;
     const code = await this.proc.exited;
+    logger.info("ACPX process exited", { agent: this.agent, code });
     if (this.done) return;
     if (code !== 0) {
       const detail = this.stderrBuf.trim();
       const msg = `acpx exited with code ${code}${detail ? `: ${detail}` : ""}`;
-      logger.error(msg, { agent: this.agent });
+      logger.error(msg, { agent: this.agent, stderr: detail });
       this.push({ type: "error", data: msg });
     }
     this.done = true;
@@ -224,6 +228,12 @@ class AcpxSession implements AgentSession {
       prompt,
     ];
 
+    logger.info("Spawning ACPX process", {
+      agent: this.agent,
+      cwd: this.cwd,
+      cmd: args.slice(0, -1).join(" ") + " <prompt>",
+    });
+
     this.proc = Bun.spawn({
       cmd: args,
       cwd: this.cwd,
@@ -231,6 +241,8 @@ class AcpxSession implements AgentSession {
       stderr: "pipe",
       stdin: "ignore",
     });
+
+    logger.info("ACPX process started", { agent: this.agent, pid: this.proc.pid });
 
     if (this.proc.stdout) {
       void readLines(this.proc.stdout, (line) => this.handleLine(line))
@@ -244,6 +256,7 @@ class AcpxSession implements AgentSession {
 
     if (this.proc.stderr) {
       void readLines(this.proc.stderr, (line) => {
+        logger.debug("ACPX stderr", { agent: this.agent, line });
         this.stderrBuf += `${line}\n`;
       }).catch(() => {});
     }

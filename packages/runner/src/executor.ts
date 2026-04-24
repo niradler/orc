@@ -62,8 +62,13 @@ export async function executeJob(opts: RunOptions): Promise<string> {
       stderr: "pipe",
     });
 
+    const MAX_STREAM_BYTES = 100 * 1024 * 1024; // 100 MB per stream
     const stdoutLines: string[] = [];
     const stderrLines: string[] = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let stdoutCapped = false;
+    let stderrCapped = false;
     const logEntries: Array<{
       run_id: string;
       ts: Date;
@@ -81,9 +86,29 @@ export async function executeJob(opts: RunOptions): Promise<string> {
         const lines = buf.split("\n");
         buf = lines.pop() ?? "";
         for (const line of lines) {
-          if (stream === "stdout") stdoutLines.push(line);
-          else stderrLines.push(line);
-          logEntries.push({ run_id: runId, ts: new Date(), stream, line });
+          if (stream === "stdout") {
+            if (stdoutBytes < MAX_STREAM_BYTES) {
+              stdoutLines.push(line);
+              stdoutBytes += line.length;
+              logEntries.push({ run_id: runId, ts: new Date(), stream, line });
+            } else if (!stdoutCapped) {
+              stdoutCapped = true;
+              logger.warn(
+                `Job ${job.name} [${runId}] stdout exceeded 100 MB — dropping remaining output`,
+              );
+            }
+          } else {
+            if (stderrBytes < MAX_STREAM_BYTES) {
+              stderrLines.push(line);
+              stderrBytes += line.length;
+              logEntries.push({ run_id: runId, ts: new Date(), stream, line });
+            } else if (!stderrCapped) {
+              stderrCapped = true;
+              logger.warn(
+                `Job ${job.name} [${runId}] stderr exceeded 100 MB — dropping remaining output`,
+              );
+            }
+          }
         }
       }
     };
