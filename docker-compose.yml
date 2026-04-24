@@ -6,8 +6,8 @@ services:
     ports:
       - "7700:7700"
     environment:
-      # Required: Anthropic API key (used by all agent backends)
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # Anthropic API key (required only for the "claude" backend; not needed for "agentapi")
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       # Optional: shared secret for API auth
       - ORC_SECRET=${ORC_SECRET:-changeme}
       # Telegram gateway (optional)
@@ -23,6 +23,7 @@ services:
       #
       # "claude"   → calls the Anthropic API directly via SDK (no host CLI needed).
       #
+      - ORC_API_HOST=0.0.0.0
       - ORC_AGENT_LOOP_DEFAULT_BACKEND=${ORC_AGENT_LOOP_DEFAULT_BACKEND:-agentapi}
       - AGENTAPI_URL=${AGENTAPI_URL:-http://host.docker.internal:3284}
 

@@ -45,6 +45,7 @@ RUN mkdir -p /data && chown orc:orc /data
 # ── Environment defaults ───────────────────────────────────────────────────────
 ENV ORC_HOME=/data
 ENV NODE_ENV=production
+ENV ORC_API_HOST=0.0.0.0
 # Default backend: claude (Anthropic SDK, direct API — no CLI tooling required).
 # Override with ORC_AGENT_LOOP_DEFAULT_BACKEND=acpx if running a host-side
 # agent bridge. Disable the task loop entirely with ORC_AGENT_LOOP_ENABLED=false
