@@ -1,8 +1,11 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pickAvailableBackend } from "@orc/agent-runtime";
+import { createLogger } from "@orc/core/logger";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
+
+const logger = createLogger("api:chat");
 
 type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
 
@@ -103,10 +106,22 @@ async function readLines(
 const app = new Hono();
 
 app.post("/chat/stream", async (c) => {
-  const body = (await c.req.json()) as ChatRequestBody;
+  let body: ChatRequestBody;
+  try {
+    body = (await c.req.json()) as ChatRequestBody;
+  } catch {
+    return c.json({ error: "invalid JSON body" }, 400);
+  }
   const messages = body.messages;
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return c.json({ error: "messages array is required and must not be empty" }, 400);
+  }
+  if (messages.length > 200) {
+    return c.json({ error: "messages array too large (max 200)" }, 400);
+  }
+  const totalLen = messages.reduce((n, m) => n + (m?.content?.length ?? 0), 0);
+  if (totalLen > 500_000) {
+    return c.json({ error: "messages content too large (max 500k chars)" }, 400);
   }
 
   const agent = body.agent ?? "claude";
@@ -193,7 +208,7 @@ app.post("/chat/stream", async (c) => {
       "-",
     ];
 
-    console.log("[chat] spawning acpx:", args.join(" "));
+    logger.debug("spawning acpx", { agent, autoApprove });
 
     const proc = Bun.spawn(args, {
       stdin: "pipe",

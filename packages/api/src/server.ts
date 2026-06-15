@@ -23,9 +23,19 @@ import { createWebStatic } from "./static.js";
 
 const logger = createLogger("api");
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
+
 export function createApp() {
   const config = loadConfig();
   const app = new OpenAPIHono();
+
+  if (!config.api.secret && !LOOPBACK_HOSTS.has(config.api.host)) {
+    logger.warn(
+      `SECURITY: API is bound to ${config.api.host} with NO authentication. ` +
+        "Every endpoint — including job execution (arbitrary shell commands) and MCP tools — is open to the network. " +
+        "Set ORC_API_SECRET (or api.secret in config.json) before exposing ORC beyond localhost.",
+    );
+  }
 
   app.use("*", bearerAuth(config.api.secret));
 

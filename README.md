@@ -129,10 +129,14 @@ Run ORC in a container with the published image:
 docker run -d --name orc \
   -p 7700:7700 \
   -v orc-data:/data \
-  -e ORC_API_SECRET=changeme \
+  -e ORC_API_SECRET=$(openssl rand -hex 32) \
   -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
   niradler/orc:latest
 ```
+
+> The container binds `0.0.0.0`. Set a strong `ORC_API_SECRET` before exposing the
+> mapped port beyond localhost — without it, every endpoint (including job execution,
+> which runs arbitrary shell commands) is open to anyone who can reach the port.
 
 Or with [docker-compose.yml](docker-compose.yml):
 

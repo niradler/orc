@@ -8,8 +8,11 @@ services:
     environment:
       # Anthropic API key (required only for the "claude" backend; not needed for "agentapi")
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      # Optional: shared secret for API bearer auth
-      - ORC_API_SECRET=${ORC_API_SECRET:-changeme}
+      # Shared secret for API bearer auth. The container binds 0.0.0.0, so set
+      # this to a strong value (e.g. `openssl rand -hex 32`) before exposing the
+      # mapped port beyond localhost — every endpoint, including job execution,
+      # is otherwise unauthenticated. Empty = no auth (localhost-only use).
+      - ORC_API_SECRET=${ORC_API_SECRET:-}
       # Telegram gateway (optional)
       - ORC_TELEGRAM_TOKEN=${ORC_TELEGRAM_TOKEN:-}
 

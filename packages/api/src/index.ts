@@ -40,4 +40,12 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 // Windows: Ctrl+Break
 process.on("SIGBREAK" as NodeJS.Signals, () => shutdown("SIGBREAK"));
 
+// Keep fire-and-forget rejections from crashing the server with an opaque trace.
+process.on("unhandledRejection", (reason) => {
+  logger.error("Unhandled promise rejection", reason);
+});
+process.on("uncaughtException", (err) => {
+  logger.error("Uncaught exception", err);
+});
+
 export { app };

@@ -1,4 +1,6 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { ValidationError } from "@orc/core/errors";
+import { PathValidationError, validateCollectionPath } from "@orc/core/validate";
 import { getKnowledgeEngine } from "@orc/mcp/knowledge";
 
 const app = new OpenAPIHono();
@@ -178,9 +180,16 @@ const addCollectionRoute = createRoute({
 
 app.openapi(addCollectionRoute, async (c) => {
   const { name, path, pattern, project_id } = c.req.valid("json");
+  let safePath: string;
+  try {
+    safePath = validateCollectionPath(path);
+  } catch (err) {
+    if (err instanceof PathValidationError) throw new ValidationError(err.message);
+    throw err;
+  }
   const engine = getKnowledgeEngine();
   await engine.addCollection(name, {
-    path,
+    path: safePath,
     ...(pattern ? { pattern } : {}),
     ...(project_id ? { project_id } : {}),
   });

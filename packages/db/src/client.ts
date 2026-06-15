@@ -363,7 +363,20 @@ function setupDb(sqlite: Database): void {
   for (const statement of migrations) {
     try {
       sqlite.exec(statement);
-    } catch {}
+    } catch (err) {
+      const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+      // Idempotent migrations: a column/table/index already exists, or a legacy
+      // source table for a data-copy migration was never created. Anything else
+      // (disk full, locked DB, malformed SQL, corruption) is a real failure.
+      const expected =
+        msg.includes("duplicate column name") ||
+        msg.includes("already exists") ||
+        msg.includes("no such table") ||
+        msg.includes("no such column");
+      if (!expected) {
+        throw new Error(`DB migration failed: ${statement}\n  → ${msg}`);
+      }
+    }
   }
 
   try {
