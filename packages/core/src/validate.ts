@@ -24,6 +24,14 @@ function sensitiveRoots(): string[] {
 
 export class PathValidationError extends Error {}
 
+// Windows paths are case-insensitive, so compare case-folded there to stop
+// `c:\windows\...` from slipping past a `C:\Windows` block.
+const CASE_INSENSITIVE_FS = process.platform === "win32";
+
+function normForCompare(p: string): string {
+  return CASE_INSENSITIVE_FS ? p.toLowerCase() : p;
+}
+
 // Validates a user-supplied directory path before it is indexed or read.
 // Requires an absolute path to an existing directory, outside known-sensitive
 // system/credential locations. Returns the resolved (normalized) path.
@@ -32,8 +40,10 @@ export function validateCollectionPath(path: string): string {
     throw new PathValidationError(`Path must be absolute: ${path}`);
   }
   const resolved = resolve(path);
+  const cmp = normForCompare(resolved);
   for (const root of sensitiveRoots()) {
-    if (resolved === root || resolved.startsWith(`${root}/`) || resolved.startsWith(`${root}\\`)) {
+    const r = normForCompare(root);
+    if (cmp === r || cmp.startsWith(`${r}/`) || cmp.startsWith(`${r}\\`)) {
       throw new PathValidationError(`Refusing to index sensitive directory: ${resolved}`);
     }
   }

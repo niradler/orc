@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resetConfig } from "@orc/core/config";
+import { OrcError } from "@orc/core/errors";
 import { closeDb, createTestDb } from "@orc/db/client";
+import { Hono } from "hono";
+import { mcpRouter } from "../routes/mcp.js";
 import { createApp } from "../server.js";
 
 let app: ReturnType<typeof createApp>;
@@ -50,5 +53,22 @@ describe("MCP HTTP endpoint auth", () => {
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
     });
     expect(res.status).not.toBe(401);
+  });
+
+  test("the mcpRouter sub-app enforces auth on its own (not just via parent)", async () => {
+    // Mount the router in isolation to prove its own bearerAuth guards /mcp,
+    // independent of the parent app's wildcard middleware.
+    const isolated = new Hono();
+    isolated.onError((err, c) => {
+      const status = err instanceof OrcError ? err.statusCode : 500;
+      return c.json({ error: err.message }, status as 401 | 500);
+    });
+    isolated.route("/", mcpRouter);
+    const res = await isolated.request("/mcp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    });
+    expect(res.status).toBe(401);
   });
 });

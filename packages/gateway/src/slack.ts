@@ -205,28 +205,43 @@ export function createSlackAdapter(startTime: number): SlackAdapter {
             /* ignore */
           }
         }
-        const generation = ++socketGeneration;
+        // openSocket() can throw on a transient failure; do this BEFORE claiming
+        // a new generation so a failed attempt leaves socketGeneration unchanged
+        // and reconnectWithRetry's loop guard stays true (keeps retrying).
         const ws = await openSocket();
+        const generation = ++socketGeneration;
         socket = ws;
         ws.addEventListener("message", (event) => {
           void handleEnvelope(event as MessageEvent<string>);
         });
-        ws.addEventListener("close", async () => {
+        ws.addEventListener("close", () => {
           // Ignore if this socket has already been superseded or we're stopping.
           if (!shouldRun || generation !== socketGeneration) return;
-          logger.warn("Slack socket closed; reconnecting in 5s");
-          await new Promise((r) => setTimeout(r, 5000));
-          if (!shouldRun || generation !== socketGeneration) return;
-          try {
-            await connect();
-          } catch (err) {
-            logger.error("Slack reconnect failed", { err });
-          }
+          void reconnectWithRetry(generation);
         });
         ws.addEventListener("error", (err) => {
           logger.warn("Slack socket error", { err });
         });
         logger.info("Slack gateway adapter connected");
+      }
+
+      // Reconnect with capped backoff, retrying through transient openSocket
+      // failures so a single failed attempt can't leave the adapter dead.
+      async function reconnectWithRetry(fromGeneration: number): Promise<void> {
+        let delayMs = 5000;
+        while (shouldRun && fromGeneration === socketGeneration) {
+          await new Promise((r) => setTimeout(r, delayMs));
+          if (!shouldRun || fromGeneration !== socketGeneration) return;
+          try {
+            await connect();
+            return;
+          } catch (err) {
+            logger.error(`Slack reconnect failed; retrying in ${Math.round(delayMs / 1000)}s`, {
+              err,
+            });
+            delayMs = Math.min(delayMs * 2, 60_000);
+          }
+        }
       }
 
       await connect();

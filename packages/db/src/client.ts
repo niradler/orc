@@ -433,5 +433,20 @@ export function checkpointWal(): void {
 }
 
 export function closeDb(): void {
+  if (_db) {
+    try {
+      const sqlite = getSqlite(_db);
+      // Final checkpoint so the -wal file is folded back into the DB and doesn't
+      // linger after shutdown, then release the handle.
+      try {
+        sqlite.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+      } catch {
+        /* checkpoint is best-effort */
+      }
+      sqlite.close();
+    } catch {
+      /* already closed / nothing to release */
+    }
+  }
   _db = null;
 }
