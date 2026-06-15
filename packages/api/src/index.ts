@@ -10,9 +10,13 @@ const server = Bun.serve({
   port: config.api.port,
   hostname: config.api.host,
   fetch: app.fetch,
-  // SSE streams (e.g. /chat/stream) can idle between agent chunks for longer
-  // than Bun's 10s default. 0 disables the idle timeout for the whole server.
-  idleTimeout: 0,
+  // SSE streams (/chat/stream) can idle between agent chunks longer than Bun's
+  // 10s default, so we raise the idle timeout to Bun's max (255s) rather than
+  // disabling it. Disabling it (0) let half-open/abandoned sockets accumulate
+  // forever — a slow leak that wedged the daemon after ~a day. The stream
+  // handlers send periodic keepalives so legitimate long-running streams stay
+  // active, and enforce their own max-duration backstop.
+  idleTimeout: 255,
 });
 
 logger.info(`API server running on http://${config.api.host}:${config.api.port}`);

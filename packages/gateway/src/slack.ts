@@ -29,6 +29,10 @@ export function createSlackAdapter(startTime: number): SlackAdapter {
   let socket: WebSocket | null = null;
   let listener: ((message: IncomingMessage) => Promise<void>) | null = null;
   let shouldRun = false;
+  // Monotonic counter so a stale socket's late 'close' event can't trigger a
+  // reconnect after a newer socket has already replaced it (prevents stacked
+  // reconnect chains accumulating orphaned sockets/listeners over time).
+  let socketGeneration = 0;
   const seenIds = new Map<string, number>();
 
   function isAuthorized(userId: string): boolean {
@@ -192,21 +196,34 @@ export function createSlackAdapter(startTime: number): SlackAdapter {
       shouldRun = true;
 
       async function connect(): Promise<void> {
-        socket = await openSocket();
-        socket.addEventListener("message", (event) => {
+        // Tear down any prior socket before replacing it, so its listeners are
+        // released and it can't fire a competing 'close' → reconnect chain.
+        if (socket) {
+          try {
+            socket.close();
+          } catch {
+            /* ignore */
+          }
+        }
+        const generation = ++socketGeneration;
+        const ws = await openSocket();
+        socket = ws;
+        ws.addEventListener("message", (event) => {
           void handleEnvelope(event as MessageEvent<string>);
         });
-        socket.addEventListener("close", async () => {
-          if (!shouldRun) return;
+        ws.addEventListener("close", async () => {
+          // Ignore if this socket has already been superseded or we're stopping.
+          if (!shouldRun || generation !== socketGeneration) return;
           logger.warn("Slack socket closed; reconnecting in 5s");
           await new Promise((r) => setTimeout(r, 5000));
+          if (!shouldRun || generation !== socketGeneration) return;
           try {
             await connect();
           } catch (err) {
             logger.error("Slack reconnect failed", { err });
           }
         });
-        socket.addEventListener("error", (err) => {
+        ws.addEventListener("error", (err) => {
           logger.warn("Slack socket error", { err });
         });
         logger.info("Slack gateway adapter connected");

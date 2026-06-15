@@ -1,6 +1,6 @@
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
-import { getDb, getSqlite } from "@orc/db/client";
+import { checkpointWal, getDb, getSqlite } from "@orc/db/client";
 import { comments, job_runs, jobs } from "@orc/db/schema";
 import { Cron } from "croner";
 import { desc, eq } from "drizzle-orm";
@@ -11,6 +11,9 @@ const logger = createLogger("runner:scheduler");
 const activeCrons = new Map<string, Cron>();
 const activeTimers = new Map<string, Timer>();
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
+let checkpointInterval: ReturnType<typeof setInterval> | null = null;
+
+const WAL_CHECKPOINT_INTERVAL_MS = 60 * 60 * 1000; // hourly
 
 const CIRCUIT_BREAKER_THRESHOLD = 3;
 const HISTORY_RETENTION_DAYS = 7;
@@ -46,6 +49,13 @@ export async function startScheduler(): Promise<void> {
 
   pruneHistory();
   cleanupInterval = setInterval(() => pruneHistory(), 24 * 60 * 60 * 1000);
+  checkpointInterval = setInterval(() => {
+    try {
+      checkpointWal();
+    } catch (err) {
+      logger.warn("WAL checkpoint failed", err);
+    }
+  }, WAL_CHECKPOINT_INTERVAL_MS);
 }
 
 function pruneHistory(): void {
@@ -72,6 +82,16 @@ function pruneHistory(): void {
     const result = sqlite.query("DELETE FROM job_runs WHERE created_at < ?").run(cutoffTs);
     if (result.changes > 0) {
       logger.info(`Pruned ${result.changes} job runs older than ${HISTORY_RETENTION_DAYS} days`);
+    }
+
+    // Terminal gateway sessions are only ever status-flipped, never deleted —
+    // they accumulate forever and are the dominant WAL-write source. Prune the
+    // old finished ones (keep active 'running' rows regardless of age).
+    const sessResult = sqlite
+      .query("DELETE FROM gateway_sessions WHERE status IN ('stopped','error') AND updated_at < ?")
+      .run(cutoffTs);
+    if (sessResult.changes > 0) {
+      logger.info(`Pruned ${sessResult.changes} terminal gateway sessions`);
     }
   } catch (err) {
     logger.warn("Failed to prune job history", err);
@@ -110,7 +130,7 @@ export function scheduleCronJob(jobId: string, name: string, expr: string): void
     activeCrons.get(jobId)?.stop();
   }
 
-  const cron = new Cron(expr, async () => {
+  const cron = new Cron(expr, { protect: true }, async () => {
     const db = getDb();
     const still = await db.query.jobs.findFirst({
       where: eq(jobs.id, jobId),
@@ -196,6 +216,10 @@ export function stopScheduler(): void {
   if (cleanupInterval) {
     clearInterval(cleanupInterval);
     cleanupInterval = null;
+  }
+  if (checkpointInterval) {
+    clearInterval(checkpointInterval);
+    checkpointInterval = null;
   }
   logger.info("Scheduler stopped.");
 }

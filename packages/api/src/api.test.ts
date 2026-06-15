@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { resetConfig } from "@orc/core/config";
+import { closeDb, createTestDb } from "@orc/db/client";
 import { createApp } from "./server.js";
 
 let app: ReturnType<typeof createApp>;
@@ -20,10 +22,17 @@ async function req(method: string, path: string, body?: unknown) {
 beforeAll(() => {
   process.env.ORC_API_SECRET = "test-secret";
   process.env.ORC_DB_PATH = ":memory:";
+  resetConfig();
+  // Force an in-memory DB regardless of any config cached by a sibling test
+  // file — otherwise getDb() can open the real ~/.orc/orc.db and tests both
+  // pollute and depend on real user data.
+  createTestDb();
   app = createApp();
 });
 
 afterAll(() => {
+  closeDb();
+  resetConfig();
   delete process.env.ORC_API_SECRET;
   delete process.env.ORC_DB_PATH;
 });

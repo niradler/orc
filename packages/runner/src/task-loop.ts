@@ -186,6 +186,32 @@ async function spawnWorker(task: PickedTask): Promise<void> {
   );
 }
 
+// Throttle per-event session activity writes. Agents can emit many events per
+// second; writing last_activity_at on every one was the dominant WAL-write
+// source feeding unbounded WAL growth. A few seconds of lag is harmless — the
+// idle-cleanup cutoff is minutes-scale.
+const SESSION_TOUCH_THROTTLE_MS = 5_000;
+const lastSessionTouch = new Map<string, number>();
+
+// In-memory handles to live worker/reviewer agent sessions. Without this,
+// cleanupStaleSessions could only flip DB rows — the hung agent child process
+// and the suspended `for await (session.events())` frame leaked forever. The
+// registry lets cleanup actually close the session (kill the process), which
+// ends the event loop and releases the worker slot.
+const liveSessions = new Map<string, AgentSession>();
+
+function touchSessionActivity(sessionId: string): void {
+  const now = Date.now();
+  const last = lastSessionTouch.get(sessionId) ?? 0;
+  if (now - last < SESSION_TOUCH_THROTTLE_MS) return;
+  lastSessionTouch.set(sessionId, now);
+  getSqlite()
+    .query(
+      "UPDATE gateway_sessions SET last_activity_at = unixepoch(), updated_at = unixepoch() WHERE id = ?",
+    )
+    .run(sessionId);
+}
+
 async function driveWorkerLoop(
   sessionId: string,
   task: PickedTask,
@@ -219,16 +245,13 @@ async function driveWorkerLoop(
     };
 
     session = await openAgentSession(backendName, sessionOpts, previousRuntimeSessionId);
+    liveSessions.set(sessionId, session);
     await session.send(prompt);
 
     const autoApprove = loadConfig().agent_loop.worker_auto_approve;
 
     for await (const event of session.events()) {
-      sqlite
-        .query(
-          "UPDATE gateway_sessions SET last_activity_at = unixepoch(), updated_at = unixepoch() WHERE id = ?",
-        )
-        .run(sessionId);
+      touchSessionActivity(sessionId);
 
       if (event.type === "permission_request") {
         if (autoApprove) {
@@ -286,6 +309,8 @@ async function driveWorkerLoop(
       author: "system",
     });
   } finally {
+    lastSessionTouch.delete(sessionId);
+    liveSessions.delete(sessionId);
     if (session?.alive()) {
       await session.close().catch(() => {});
     }
@@ -377,14 +402,11 @@ async function driveReviewerLoop(
 
   try {
     session = await openAgentSession(backendName, { cwd, autoApprove: true });
+    liveSessions.set(sessionId, session);
     await session.send(prompt);
 
     for await (const event of session.events()) {
-      sqlite
-        .query(
-          "UPDATE gateway_sessions SET last_activity_at = unixepoch(), updated_at = unixepoch() WHERE id = ?",
-        )
-        .run(sessionId);
+      touchSessionActivity(sessionId);
 
       if (event.type === "permission_request") {
         session.respondPermission(event.data.requestId, "approved");
@@ -417,6 +439,8 @@ async function driveReviewerLoop(
       .run(errMsg, sessionId);
     await provider.releaseTask(task.id);
   } finally {
+    lastSessionTouch.delete(sessionId);
+    liveSessions.delete(sessionId);
     if (session?.alive()) {
       await session.close().catch(() => {});
     }
@@ -446,16 +470,34 @@ export function cleanupStaleSessions(): number {
   const timeoutMinutes = config.agent_loop.session_idle_timeout_minutes;
   const sqlite = getSqlite();
   const cutoff = Math.floor(Date.now() / 1000) - timeoutMinutes * 60;
+  // Absolute-age ceiling, independent of activity: a chatty-but-hung agent
+  // refreshes last_activity_at every event and would never hit the idle cutoff,
+  // permanently holding a worker slot. Reap any session running past this cap.
+  const absoluteCutoff = Math.floor(Date.now() / 1000) - timeoutMinutes * 60 * 2;
   const stale = sqlite
     .query(
-      `SELECT id, task_id, role FROM gateway_sessions
+      `SELECT id, task_id, role, created_at FROM gateway_sessions
        WHERE role IN ('worker', 'reviewer') AND status = 'running'
-         AND (last_activity_at IS NOT NULL AND last_activity_at < ?
-              OR last_activity_at IS NULL AND updated_at < ?)`,
+         AND ((last_activity_at IS NOT NULL AND last_activity_at < ?
+              OR last_activity_at IS NULL AND updated_at < ?)
+              OR created_at < ?)`,
     )
-    .all(cutoff, cutoff) as { id: string; task_id: string | null; role: string }[];
+    .all(cutoff, cutoff, absoluteCutoff) as {
+    id: string;
+    task_id: string | null;
+    role: string;
+    created_at: number;
+  }[];
 
   for (const s of stale) {
+    // Kill the live agent process (if we still hold a handle) so the suspended
+    // event loop unblocks and the worker slot is genuinely freed — not just
+    // flagged in the DB.
+    const live = liveSessions.get(s.id);
+    if (live) {
+      liveSessions.delete(s.id);
+      void live.close().catch(() => {});
+    }
     sqlite
       .query(
         "UPDATE gateway_sessions SET status = 'error', last_error = 'idle timeout', updated_at = unixepoch() WHERE id = ?",
@@ -638,7 +680,8 @@ export async function startTaskLoop(): Promise<void> {
   // Run first cycle immediately
   recordedCycle().catch((err) => logger.error(`Cycle error: ${String(err)}`));
 
-  loopCron = new Cron(cronExpr, async () => {
+  loopCron?.stop();
+  loopCron = new Cron(cronExpr, { protect: true }, async () => {
     recordedCycle().catch((err) => logger.error(`Cycle error: ${String(err)}`));
   });
 }
