@@ -1,8 +1,17 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pickAvailableBackend } from "@orc/agent-runtime";
+import { createLogger } from "@orc/core/logger";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
+
+const logger = createLogger("api:chat");
+
+// Keep the SSE socket active so a long-but-quiet agent run isn't reaped by the
+// server idle timeout, and cap total stream lifetime so an abandoned client +
+// hung backend can't pin a socket/child process indefinitely.
+const KEEPALIVE_MS = 25_000;
+const CHAT_STREAM_MAX_MS = 15 * 60_000;
 
 type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
 
@@ -103,10 +112,22 @@ async function readLines(
 const app = new Hono();
 
 app.post("/chat/stream", async (c) => {
-  const body = (await c.req.json()) as ChatRequestBody;
+  let body: ChatRequestBody;
+  try {
+    body = (await c.req.json()) as ChatRequestBody;
+  } catch {
+    return c.json({ error: "invalid JSON body" }, 400);
+  }
   const messages = body.messages;
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return c.json({ error: "messages array is required and must not be empty" }, 400);
+  }
+  if (messages.length > 200) {
+    return c.json({ error: "messages array too large (max 200)" }, 400);
+  }
+  const totalLen = messages.reduce((n, m) => n + (m?.content?.length ?? 0), 0);
+  if (totalLen > 500_000) {
+    return c.json({ error: "messages content too large (max 500k chars)" }, 400);
   }
 
   const agent = body.agent ?? "claude";
@@ -145,8 +166,17 @@ app.post("/chat/stream", async (c) => {
     }
     return streamSSE(c, async (s) => {
       await s.writeSSE({ data: JSON.stringify({ type: "open" }) });
+      let session: Awaited<ReturnType<typeof fallbackBackend.startSession>> | null = null;
+      const keepalive = setInterval(() => {
+        void s.writeSSE({ data: JSON.stringify({ type: "ping" }) }).catch(() => {});
+      }, KEEPALIVE_MS);
+      const maxTimer = setTimeout(() => {
+        logger.warn("chat stream exceeded max duration; closing");
+        void session?.close().catch(() => {});
+      }, CHAT_STREAM_MAX_MS);
+      s.onAbort(() => void session?.close().catch(() => {}));
       try {
-        const session = await fallbackBackend.startSession({ cwd: process.cwd(), autoApprove });
+        session = await fallbackBackend.startSession({ cwd: process.cwd(), autoApprove });
         await session.send(prompt);
         for await (const event of session.events()) {
           if (event.type === "text") {
@@ -157,10 +187,13 @@ app.post("/chat/stream", async (c) => {
             break;
           }
         }
-        await session.close().catch(() => {});
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         await s.writeSSE({ data: JSON.stringify({ type: "error", message }) });
+      } finally {
+        clearInterval(keepalive);
+        clearTimeout(maxTimer);
+        await session?.close().catch(() => {});
       }
       await s.writeSSE({ data: JSON.stringify({ type: "done" }) });
     });
@@ -193,7 +226,7 @@ app.post("/chat/stream", async (c) => {
       "-",
     ];
 
-    console.log("[chat] spawning acpx:", args.join(" "));
+    logger.debug("spawning acpx", { agent, autoApprove });
 
     const proc = Bun.spawn(args, {
       stdin: "pipe",
@@ -214,9 +247,21 @@ app.post("/chat/stream", async (c) => {
     s.onAbort(cleanup);
     c.req.raw.signal.addEventListener("abort", cleanup);
 
+    // Keepalive keeps the socket active; max-duration backstop guarantees the
+    // child + readers are reaped even if the client vanished without an abort
+    // (half-open socket) and acpx never closes its stdout.
+    const keepalive = setInterval(() => {
+      if (aborted) return;
+      void s.writeSSE({ data: JSON.stringify({ type: "ping" }) }).catch(() => {});
+    }, KEEPALIVE_MS);
+    const maxTimer = setTimeout(() => {
+      logger.warn("chat stream exceeded max duration; killing acpx");
+      cleanup();
+    }, CHAT_STREAM_MAX_MS);
+
     // Drain stderr into server logs so failures are visible (not silently hung).
     const stderrTask = readLines(proc.stderr as ReadableStream<Uint8Array>, (line) => {
-      console.error("[chat] acpx stderr:", line);
+      logger.debug("acpx stderr", { line });
     }).catch(() => undefined);
 
     // Write the prompt and await the write before closing stdin, otherwise the
@@ -234,9 +279,11 @@ app.post("/chat/stream", async (c) => {
       await Promise.resolve(sink.end());
     } catch (err) {
       const message = err instanceof Error ? err.message : "stdin write failed";
-      console.error("[chat] stdin error:", message);
+      logger.error("stdin error", { message });
       await s.writeSSE({ data: JSON.stringify({ type: "error", message }) });
       cleanup();
+      clearInterval(keepalive);
+      clearTimeout(maxTimer);
       await s.writeSSE({ data: JSON.stringify({ type: "done" }) });
       return;
     }
@@ -256,6 +303,9 @@ app.post("/chat/stream", async (c) => {
       const message = err instanceof Error ? err.message : "Unknown streaming error";
       console.error("[chat] stdout read error:", message);
       await s.writeSSE({ data: JSON.stringify({ type: "error", message }) });
+    } finally {
+      clearInterval(keepalive);
+      clearTimeout(maxTimer);
     }
 
     await stderrTask;

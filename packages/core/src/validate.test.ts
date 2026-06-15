@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { validateTaskTitle } from "./validate.js";
+import { tmpdir } from "node:os";
+import { PathValidationError, validateCollectionPath, validateTaskTitle } from "./validate.js";
 
 describe("validateTaskTitle", () => {
   test("rejects empty string", () => {
@@ -53,5 +54,25 @@ describe("validateTaskTitle", () => {
   test("error message for too-long title includes actual length", () => {
     const result = validateTaskTitle("a".repeat(201));
     expect(result.error).toContain("got 201");
+  });
+});
+
+describe("validateCollectionPath", () => {
+  test("rejects relative paths", () => {
+    expect(() => validateCollectionPath("./docs")).toThrow(PathValidationError);
+  });
+
+  test("rejects empty path", () => {
+    expect(() => validateCollectionPath("")).toThrow(PathValidationError);
+  });
+
+  test("rejects non-existent directory", () => {
+    const missing = `${tmpdir()}/orc-does-not-exist-${Date.now()}`;
+    expect(() => validateCollectionPath(missing)).toThrow(PathValidationError);
+  });
+
+  test("accepts an existing absolute directory and returns a resolved path", () => {
+    const resolved = validateCollectionPath(tmpdir());
+    expect(resolved.length).toBeGreaterThan(0);
   });
 });

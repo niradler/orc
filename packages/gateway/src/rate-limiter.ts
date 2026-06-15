@@ -15,7 +15,19 @@ export class RateLimiter {
     }
     timestamps.push(now);
     this.windows.set(chatKey, timestamps);
+    this.sweep(cutoff);
     return true;
+  }
+
+  // Drop keys whose window has fully aged out so the map doesn't grow one entry
+  // per distinct chat forever over long uptime.
+  private sweep(cutoff: number): void {
+    for (const [key, ts] of this.windows) {
+      const newest = ts[ts.length - 1];
+      if (newest === undefined || newest <= cutoff) {
+        this.windows.delete(key);
+      }
+    }
   }
 
   clear(chatKey: string): void {

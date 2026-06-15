@@ -363,7 +363,20 @@ function setupDb(sqlite: Database): void {
   for (const statement of migrations) {
     try {
       sqlite.exec(statement);
-    } catch {}
+    } catch (err) {
+      const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+      // Idempotent migrations: a column/table/index already exists, or a legacy
+      // source table for a data-copy migration was never created. Anything else
+      // (disk full, locked DB, malformed SQL, corruption) is a real failure.
+      const expected =
+        msg.includes("duplicate column name") ||
+        msg.includes("already exists") ||
+        msg.includes("no such table") ||
+        msg.includes("no such column");
+      if (!expected) {
+        throw new Error(`DB migration failed: ${statement}\n  → ${msg}`);
+      }
+    }
   }
 
   try {
@@ -384,6 +397,13 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   sqlite.exec("PRAGMA journal_mode=WAL;");
   sqlite.exec("PRAGMA foreign_keys=ON;");
   sqlite.exec("PRAGMA synchronous=NORMAL;");
+  // Wait for the write lock instead of throwing SQLITE_BUSY under concurrent
+  // writers (task loop, gateway, scheduler all share this connection's DB).
+  sqlite.exec("PRAGMA busy_timeout=5000;");
+  // Auto-checkpoint the WAL every ~1000 pages. Continuous overlapping readers
+  // can still defer it, so the scheduler also runs a periodic TRUNCATE
+  // checkpoint (see checkpointWal) to stop the WAL growing unbounded.
+  sqlite.exec("PRAGMA wal_autocheckpoint=1000;");
 
   setupDb(sqlite);
 
@@ -403,6 +423,13 @@ export function createTestDb(): OrcDb {
 export function getSqlite(db?: OrcDb): Database {
   const d = db ?? getDb();
   return (d as unknown as { $client: Database }).$client;
+}
+
+// Force a WAL checkpoint and truncate the -wal file. Safe to call periodically;
+// TRUNCATE only shrinks the file when no reader is mid-transaction, otherwise
+// it checkpoints what it can and leaves the rest.
+export function checkpointWal(): void {
+  getSqlite().exec("PRAGMA wal_checkpoint(TRUNCATE);");
 }
 
 export function closeDb(): void {

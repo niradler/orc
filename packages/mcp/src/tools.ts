@@ -11,6 +11,7 @@ import {
 } from "@orc/core/skill-service";
 import type { TaskStatus } from "@orc/core/types";
 import { AgentBackendSchema } from "@orc/core/types";
+import { PathValidationError, validateCollectionPath } from "@orc/core/validate";
 import { getDb, getSqlite } from "@orc/db/client";
 import { job_runs, jobs, memories, projects, sessions, tasks } from "@orc/db/schema";
 import { executeJob } from "@orc/runner/executor";
@@ -1011,58 +1012,66 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const now = new Date();
       const mapping: Record<string, string> = {};
 
-      for (const item of items) {
-        const id = ulid();
-        mapping[item.ref] = id;
-        await db.insert(tasks).values({
-          id,
-          title: item.title,
-          body: item.body,
-          project_id: resolved?.id,
-          priority: (item.priority ?? "normal") as "low" | "normal" | "high" | "critical",
-          author: author ?? "agent",
-          status: "todo",
-          tags: item.tags,
-          skill_name: item.skill_name,
-          required_review: item.required_review ?? true,
-          agent_backend: item.agent_backend as string | undefined,
-          agent_model: item.agent_model,
-          max_review_rounds: item.max_review_rounds ?? 3,
-          created_at: now,
-          updated_at: now,
-        });
-      }
-
       const sqlite = getSqlite();
-      for (const item of items) {
-        const taskId = mapping[item.ref] as string;
-        if (item.depends_on) {
-          for (const dep of item.depends_on) {
-            const blockerId = mapping[dep];
-            if (!blockerId) continue;
-            sqlite
-              .query(
-                "INSERT INTO task_links (id, from_task_id, to_task_id, link_type, created_at) VALUES (?, ?, ?, 'blocks', unixepoch())",
-              )
-              .run(ulid(), blockerId, taskId);
+      // Atomic batch: all tasks + their dependency links commit together or not
+      // at all. bun:sqlite transactions are synchronous, so drizzle inserts run
+      // via .run() (sync) on the same underlying connection inside the txn.
+      const runBatch = sqlite.transaction(() => {
+        for (const item of items) {
+          const id = ulid();
+          mapping[item.ref] = id;
+          db.insert(tasks)
+            .values({
+              id,
+              title: item.title,
+              body: item.body,
+              project_id: resolved?.id,
+              priority: (item.priority ?? "normal") as "low" | "normal" | "high" | "critical",
+              author: author ?? "agent",
+              status: "todo",
+              tags: item.tags,
+              skill_name: item.skill_name,
+              required_review: item.required_review ?? true,
+              agent_backend: item.agent_backend as string | undefined,
+              agent_model: item.agent_model,
+              max_review_rounds: item.max_review_rounds ?? 3,
+              created_at: now,
+              updated_at: now,
+            })
+            .run();
+        }
+
+        for (const item of items) {
+          const taskId = mapping[item.ref] as string;
+          if (item.depends_on) {
+            for (const dep of item.depends_on) {
+              const blockerId = mapping[dep];
+              if (!blockerId) continue;
+              sqlite
+                .query(
+                  "INSERT INTO task_links (id, from_task_id, to_task_id, link_type, created_at) VALUES (?, ?, ?, 'blocks', unixepoch())",
+                )
+                .run(ulid(), blockerId, taskId);
+            }
+          }
+          if (item.subtask_of) {
+            const parentId = mapping[item.subtask_of];
+            if (parentId) {
+              sqlite
+                .query(
+                  "INSERT INTO task_links (id, from_task_id, to_task_id, link_type, created_at) VALUES (?, ?, ?, 'subtask_of', unixepoch())",
+                )
+                .run(ulid(), taskId, parentId);
+              sqlite
+                .query(
+                  "INSERT INTO task_links (id, from_task_id, to_task_id, link_type, created_at) VALUES (?, ?, ?, 'parent_of', unixepoch())",
+                )
+                .run(ulid(), parentId, taskId);
+            }
           }
         }
-        if (item.subtask_of) {
-          const parentId = mapping[item.subtask_of];
-          if (parentId) {
-            sqlite
-              .query(
-                "INSERT INTO task_links (id, from_task_id, to_task_id, link_type, created_at) VALUES (?, ?, ?, 'subtask_of', unixepoch())",
-              )
-              .run(ulid(), taskId, parentId);
-            sqlite
-              .query(
-                "INSERT INTO task_links (id, from_task_id, to_task_id, link_type, created_at) VALUES (?, ?, ?, 'parent_of', unixepoch())",
-              )
-              .run(ulid(), parentId, taskId);
-          }
-        }
-      }
+      });
+      runBatch();
 
       const lines = items.map((item) => `  ${item.ref} → ${mapping[item.ref]} - ${item.title}`);
       import("@orc/runner/task-loop")
@@ -1222,9 +1231,17 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         project?: string;
       };
       const resolved = resolveProjectId(project);
+      let safeColPath: string;
+      try {
+        safeColPath = validateCollectionPath(colPath);
+      } catch (err) {
+        return err instanceof PathValidationError
+          ? `Error: ${err.message}`
+          : `Error: invalid path: ${colPath}`;
+      }
       const engine = getKnowledgeEngine();
       await engine.addCollection(colName, {
-        path: colPath,
+        path: safeColPath,
         ...(pattern ? { pattern } : {}),
         ...(resolved ? { project_id: resolved.id } : {}),
       });

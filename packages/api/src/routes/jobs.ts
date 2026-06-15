@@ -1,16 +1,29 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import { NotFoundError } from "@orc/core/errors";
+import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { JobOverlapSchema, JobStatusSchema, JobTriggerTypeSchema } from "@orc/core/types";
 import { getDb } from "@orc/db/client";
 import { job_run_logs, job_runs, jobs } from "@orc/db/schema";
 import { executeJob } from "@orc/runner/executor";
+import { Cron } from "croner";
 import { and, asc, desc, eq } from "drizzle-orm";
 
 const logger = createLogger("api:jobs");
 
 const app = new OpenAPIHono();
+
+// Reject invalid cron expressions at write time instead of letting the scheduler
+// throw later and leave a silently-broken job stored in the DB.
+function assertValidCron(triggerType: string, cronExpr: string | undefined): void {
+  if (triggerType !== "cron") return;
+  if (!cronExpr) throw new ValidationError("cron_expr is required for cron trigger_type");
+  try {
+    new Cron(cronExpr, { paused: true }).stop();
+  } catch {
+    throw new ValidationError(`Invalid cron expression: ${cronExpr}`);
+  }
+}
 
 const JobSchema = z
   .object({
@@ -38,7 +51,10 @@ const CreateJobSchema = z
   .object({
     name: z.string().min(1).max(100),
     description: z.string().optional(),
-    command: z.string().min(1),
+    command: z
+      .string()
+      .min(1)
+      .describe("Shell command executed via `sh -c`. Runs with the server's privileges."),
     trigger_type: JobTriggerTypeSchema,
     cron_expr: z.string().optional(),
     watch_path: z.string().optional(),
@@ -260,6 +276,7 @@ app.openapi(getRoute, async (c) => {
 app.openapi(createRoute_, async (c) => {
   const db = getDb();
   const body = c.req.valid("json");
+  assertValidCron(body.trigger_type, body.cron_expr);
   const now = new Date();
   const id = ulid();
 
@@ -294,6 +311,11 @@ app.openapi(updateRoute, async (c) => {
 
   const existing = await db.query.jobs.findFirst({ where: eq(jobs.id, id) });
   if (!existing) throw new NotFoundError("Job", id);
+
+  const effectiveTrigger = body.trigger_type ?? existing.trigger_type;
+  const effectiveCron =
+    body.cron_expr !== undefined ? body.cron_expr : (existing.cron_expr ?? undefined);
+  assertValidCron(effectiveTrigger, effectiveCron);
 
   await db
     .update(jobs)

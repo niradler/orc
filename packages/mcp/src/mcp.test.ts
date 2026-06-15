@@ -1,13 +1,20 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { resetConfig } from "@orc/core/config";
 import { shortId } from "@orc/core/ids";
+import { closeDb, createTestDb } from "@orc/db/client";
 import { executeTool } from "./tools.js";
 
 beforeAll(() => {
   process.env.ORC_API_SECRET = "test-secret";
   process.env.ORC_DB_PATH = ":memory:";
+  resetConfig();
+  // Force an in-memory DB so tools never touch the real ~/.orc/orc.db.
+  createTestDb();
 });
 
 afterAll(() => {
+  closeDb();
+  resetConfig();
   delete process.env.ORC_API_SECRET;
   delete process.env.ORC_DB_PATH;
 });

@@ -203,6 +203,11 @@ export class CodexSession implements AgentSession {
       await this.start({ cwd: this.cwd, runtimeSessionId: this.runtimeSessionId }, prompt);
       return;
     }
+    // Reusing a live process for a new turn: reset per-turn state so events from
+    // this turn aren't dropped by a stale `done` flag or mixed with prior output.
+    this.done = false;
+    this.state.hasReceivedResult = false;
+    this.eventQueue.length = 0;
     const msg = JSON.stringify({ type: "user_message", content: prompt });
     writeToStdin(this.proc?.stdin, new TextEncoder().encode(`${msg}\n`));
   }

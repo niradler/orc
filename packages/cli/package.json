@@ -66,6 +66,12 @@
     "url": "git+https://github.com/niradler/orc.git"
   },
   "homepage": "https://github.com/niradler/orc",
+  "bugs": {
+    "url": "https://github.com/niradler/orc/issues"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  },
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"

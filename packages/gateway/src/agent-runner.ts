@@ -62,6 +62,13 @@ export async function runAgentTurn(
   let agentSession = activeSessions.get(ctx.session.id);
 
   if (!agentSession?.alive()) {
+    // Close the dead session before replacing it — otherwise its child process,
+    // stdio pipes, and stream readers leak (the map overwrite drops the only
+    // reference without releasing the OS resources).
+    if (agentSession) {
+      await agentSession.close().catch(() => {});
+      activeSessions.delete(ctx.session.id);
+    }
     agentSession = await createAgentSession(ctx, prompt);
     activeSessions.set(ctx.session.id, agentSession);
   } else {

@@ -12,7 +12,8 @@
     "./errors": "./src/errors.ts",
     "./version": "./src/version.ts",
     "./skill-service": "./src/skill-service.ts",
-    "./knowledge": "./src/knowledge.ts"
+    "./knowledge": "./src/knowledge.ts",
+    "./validate": "./src/validate.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

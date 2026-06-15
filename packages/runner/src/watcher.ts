@@ -37,6 +37,9 @@ export function startWatcher(jobId: string, name: string, watchPath: string): vo
 
   watcher.on("add", (path) => triggerWatch(jobId, name, path));
   watcher.on("change", (path) => triggerWatch(jobId, name, path));
+  // An unhandled 'error' event on the watcher (permission denied, path removed,
+  // inotify limits) would otherwise crash the process.
+  watcher.on("error", (err) => logger.error(`Watcher error for ${name} (${watchPath})`, err));
 
   activeWatchers.set(jobId, watcher);
   logger.info(`Watching: ${watchPath} → ${name}`);
