@@ -118,6 +118,7 @@ export const OrcConfigSchema = z.object({
       max_workers: z.number().int().min(1).default(1),
       default_backend: z.string().default("claude"),
       session_idle_timeout_minutes: z.number().int().min(1).default(20),
+      session_max_lifetime_minutes: z.number().int().min(1).default(120),
       worker_auto_approve: z.boolean().default(true),
     })
     .default({
@@ -126,6 +127,7 @@ export const OrcConfigSchema = z.object({
       max_workers: 1,
       default_backend: "claude",
       session_idle_timeout_minutes: 20,
+      session_max_lifetime_minutes: 120,
       worker_auto_approve: true,
     }),
 
@@ -233,6 +235,8 @@ function fromEnv(): Record<string, unknown> {
     agent_loop.default_backend = process.env.ORC_AGENT_LOOP_DEFAULT_BACKEND;
   if (process.env.ORC_AGENT_LOOP_IDLE_TIMEOUT)
     agent_loop.session_idle_timeout_minutes = Number(process.env.ORC_AGENT_LOOP_IDLE_TIMEOUT);
+  if (process.env.ORC_AGENT_LOOP_MAX_LIFETIME)
+    agent_loop.session_max_lifetime_minutes = Number(process.env.ORC_AGENT_LOOP_MAX_LIFETIME);
   if (process.env.ORC_AGENT_LOOP_AUTO_APPROVE)
     agent_loop.worker_auto_approve = process.env.ORC_AGENT_LOOP_AUTO_APPROVE === "true";
   if (Object.keys(agent_loop).length) env.agent_loop = agent_loop;

@@ -468,12 +468,15 @@ export const SYSTEM_JOB_NAME = "orc-task-loop";
 export function cleanupStaleSessions(): number {
   const config = loadConfig();
   const timeoutMinutes = config.agent_loop.session_idle_timeout_minutes;
+  const maxLifetimeMinutes = config.agent_loop.session_max_lifetime_minutes;
   const sqlite = getSqlite();
-  const cutoff = Math.floor(Date.now() / 1000) - timeoutMinutes * 60;
-  // Absolute-age ceiling, independent of activity: a chatty-but-hung agent
+  const nowSecs = Math.floor(Date.now() / 1000);
+  const cutoff = nowSecs - timeoutMinutes * 60;
+  // Absolute-lifetime ceiling, independent of activity: a chatty-but-hung agent
   // refreshes last_activity_at every event and would never hit the idle cutoff,
-  // permanently holding a worker slot. Reap any session running past this cap.
-  const absoluteCutoff = Math.floor(Date.now() / 1000) - timeoutMinutes * 60 * 2;
+  // permanently holding a worker slot. This cap is a separate, generous config
+  // (default 120m) so it doesn't reap healthy long-running work.
+  const lifetimeCutoff = nowSecs - maxLifetimeMinutes * 60;
   const stale = sqlite
     .query(
       `SELECT id, task_id, role, created_at FROM gateway_sessions
@@ -482,7 +485,7 @@ export function cleanupStaleSessions(): number {
               OR last_activity_at IS NULL AND updated_at < ?)
               OR created_at < ?)`,
     )
-    .all(cutoff, cutoff, absoluteCutoff) as {
+    .all(cutoff, cutoff, lifetimeCutoff) as {
     id: string;
     task_id: string | null;
     role: string;
@@ -490,6 +493,7 @@ export function cleanupStaleSessions(): number {
   }[];
 
   for (const s of stale) {
+    const reason = s.created_at < lifetimeCutoff ? "max lifetime exceeded" : "idle timeout";
     // Kill the live agent process (if we still hold a handle) so the suspended
     // event loop unblocks and the worker slot is genuinely freed — not just
     // flagged in the DB.
@@ -500,9 +504,9 @@ export function cleanupStaleSessions(): number {
     }
     sqlite
       .query(
-        "UPDATE gateway_sessions SET status = 'error', last_error = 'idle timeout', updated_at = unixepoch() WHERE id = ?",
+        "UPDATE gateway_sessions SET status = 'error', last_error = ?, updated_at = unixepoch() WHERE id = ?",
       )
-      .run(s.id);
+      .run(reason, s.id);
     if (s.task_id) {
       if (s.role === "reviewer") {
         // Reviewer timed out: unclaim the task so a new reviewer can be spawned.
@@ -519,7 +523,7 @@ export function cleanupStaleSessions(): number {
           .run(s.task_id);
       }
     }
-    logger.warn(`Cleaned up stale ${s.role} session ${s.id} (idle > ${timeoutMinutes}m)`);
+    logger.warn(`Cleaned up stale ${s.role} session ${s.id} (${reason})`);
   }
   return stale.length;
 }

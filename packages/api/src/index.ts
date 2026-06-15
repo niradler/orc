@@ -24,7 +24,7 @@ logger.info(`OpenAPI spec: http://${config.api.host}:${config.api.port}/openapi.
 logger.info(`Swagger UI:   http://${config.api.host}:${config.api.port}/docs`);
 
 let shuttingDown = false;
-async function shutdown(signal: string) {
+async function shutdown(signal: string, exitCode = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info(`Received ${signal}, shutting down…`);
@@ -35,7 +35,7 @@ async function shutdown(signal: string) {
   } catch (err) {
     logger.error("Error during shutdown", err);
   } finally {
-    process.exit(0);
+    process.exit(exitCode);
   }
 }
 
@@ -44,12 +44,17 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 // Windows: Ctrl+Break
 process.on("SIGBREAK" as NodeJS.Signals, () => shutdown("SIGBREAK"));
 
-// Keep fire-and-forget rejections from crashing the server with an opaque trace.
+// Unhandled rejections are usually recoverable (a stray fire-and-forget promise)
+// — log and keep serving rather than crash on an opaque trace.
 process.on("unhandledRejection", (reason) => {
   logger.error("Unhandled promise rejection", reason);
 });
+// An uncaught exception leaves the process in an undefined state; log and exit
+// non-zero so the supervisor (systemd/launchd/daemon) restarts it cleanly
+// instead of limping along corrupted.
 process.on("uncaughtException", (err) => {
-  logger.error("Uncaught exception", err);
+  logger.error("Uncaught exception — exiting for clean restart", err);
+  void shutdown("uncaughtException", 1);
 });
 
 export { app };

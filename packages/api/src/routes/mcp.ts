@@ -10,10 +10,10 @@ const logger = createLogger("api:mcp");
 const app = new Hono();
 
 // Defense-in-depth: the MCP HTTP endpoint exposes the full MCP tool surface
-// (job execution, skill/file writes, knowledge indexing). It runs on a separately
-// constructed Hono sub-app, so we apply auth here directly rather than relying on
-// the parent app's middleware propagating to mounted routers.
-app.use("/mcp", bearerAuth(loadConfig().api.secret));
+// (job execution, skill/file writes, knowledge indexing). Resolve the secret
+// per-request (loadConfig is cached) so the guard reflects live config rather
+// than whatever was set when this module was first imported.
+app.use("/mcp", (c, next) => bearerAuth(loadConfig().api.secret)(c, next));
 
 // Stateless mode: the SDK's WebStandardStreamableHTTPServerTransport explicitly
 // rejects reuse when sessionIdGenerator is unset, so we create a fresh
