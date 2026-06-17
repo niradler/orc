@@ -333,8 +333,10 @@ Skills live in `skills/*/SKILL.md` (built-in, shipped with ORC) and `~/.orc/skil
 - **No comments** unless explaining non-obvious intent
 - **Biome** for all linting/formatting - run `bun check` before committing
 - **Aligned versions** - all `package.json` files (root + every package) must share the same version. Always patch bump all together.
-- **Publishing** - only `orc-ai` (packages/cli) is published to npm. It bundles all workspace packages into a single JS file via `bun build`. Other packages are internal workspace deps, never published separately.
-- **Releases** - push a `v*` tag to trigger the GitHub release workflow, which builds platform binaries (linux-x64, linux-arm64, mac-arm64, mac-x64, windows-x64) and creates a GitHub release with checksums.
+- **Publishing** - only `orc-ai` (packages/cli) is published to npm, **manually and locally**. It bundles all workspace packages into a single JS file via `bun build`. Other packages are internal workspace deps, never published separately.
+  - Runtime deps that resolve files relative to their own package at runtime (e.g. `@anthropic-ai/claude-agent-sdk`, which locates its `cli.js` via `import.meta.url`) MUST be `--external` in the build script **and** declared in `dependencies` — never bundled, or the runtime path resolution breaks once inlined into `dist/index.js`.
+- **Validate before publish** - `npm publish` runs `prepublishOnly` (`build` + `validate:package`), which packs the real tarball, clean-installs it into a temp project, and asserts the externalized deps resolve. To check manually without publishing: `cd packages/cli && bun run build && bun run validate:package`.
+- **Releases** - done manually/locally; there is no auto-release workflow. Bump all `package.json` versions together, then `cd packages/cli && npm publish`.
 
 ## Adding a New MCP Tool
 

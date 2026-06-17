@@ -1,6 +1,6 @@
 {
   "name": "orc-ai",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "description": "Human + AI Orchestration Hub - persistent memory, task management, session continuity and multi-agent collaboration for Cursor, Claude Code, and Codex",
   "type": "module",
   "bin": {
@@ -14,9 +14,10 @@
     "typecheck": "tsc --noEmit",
     "build:web": "cd ../web && bun run build",
     "build:copy-web": "bun run copy-web.ts",
-    "build": "bun run build:web && bun build src/index.ts --outdir dist --target bun --minify --external '@tobilu/qmd' --external 'node-llama-cpp' --external '@node-llama-cpp/*' && bun run build:copy-web",
+    "build": "bun run build:web && bun build src/index.ts --outdir dist --target bun --minify --external '@tobilu/qmd' --external 'node-llama-cpp' --external '@node-llama-cpp/*' --external '@anthropic-ai/claude-agent-sdk' && bun run build:copy-web",
     "build:bin": "bun run build.ts",
-    "prepublishOnly": "cp ../../README.md . && bun run build",
+    "validate:package": "bun run scripts/validate-package.ts",
+    "prepublishOnly": "cp ../../README.md . && bun run build && bun run validate:package",
     "test": "bun test",
     "clean": "rm -rf dist"
   },
@@ -37,7 +38,9 @@
     "commander": "^14.0.3"
   },
   "dependencies": {
-    "@tobilu/qmd": "^2.1.0"
+    "@anthropic-ai/claude-agent-sdk": "^0.2.110",
+    "@tobilu/qmd": "^2.1.0",
+    "zod": "^4.3.6"
   },
   "peerDependencies": {
     "bun": ">=1.0.0"
