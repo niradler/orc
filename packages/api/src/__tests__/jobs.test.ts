@@ -1,4 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { ulid } from "@orc/core/ids";
+import { getDb } from "@orc/db/client";
+import { job_runs, sessions } from "@orc/db/schema";
+import { eq } from "drizzle-orm";
 import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -229,6 +233,31 @@ describe("Jobs CRUD", () => {
     test("returns 404 for non-existent job", async () => {
       const res = await req(app, "DELETE", "/jobs/nonexistent-id");
       expect(res.status).toBe(404);
+    });
+
+    test("deletes a job whose runs are referenced by a session", async () => {
+      const createRes = await req(app, "POST", "/jobs", {
+        name: "job-with-session-ref",
+        command: "echo hi",
+        trigger_type: "manual",
+      });
+      const created = await createRes.json();
+
+      // A finished run referenced by a session is the real-world state that
+      // previously made DELETE fail with a FK constraint violation (500).
+      const db = getDb();
+      const runId = ulid();
+      await db.insert(job_runs).values({ id: runId, job_id: created.id, status: "success" });
+      const sessionId = ulid();
+      await db.insert(sessions).values({ id: sessionId, agent: "test", job_run_id: runId });
+
+      const res = await req(app, "DELETE", `/jobs/${created.id}`);
+      expect(res.status).toBe(204);
+
+      // The session survives with its run reference nulled out.
+      const session = await db.query.sessions.findFirst({ where: eq(sessions.id, sessionId) });
+      expect(session).toBeDefined();
+      expect(session?.job_run_id).toBeNull();
     });
   });
 });

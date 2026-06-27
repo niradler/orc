@@ -58,41 +58,70 @@ export async function startScheduler(): Promise<void> {
   }, WAL_CHECKPOINT_INTERVAL_MS);
 }
 
-function pruneHistory(): void {
+export function pruneHistory(): void {
   try {
     const sqlite = getSqlite();
     const cutoffTs = Math.floor((Date.now() - HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000) / 1000);
 
-    // Delete runner sessions first — they hold a FK ref to job_runs.
-    sqlite.query("DELETE FROM sessions WHERE agent = 'runner' AND created_at < ?").run(cutoffTs);
+    // Run as one transaction: nulling/deleting referrers and then the parent
+    // rows must commit together. Otherwise a FK error on the parent delete
+    // leaves orphaned NULLs committed and aborts the whole prune (caught below),
+    // so history would grow unbounded — the exact thing this prune prevents.
+    const prune = sqlite.transaction(() => {
+      // sessions hold a FK ref to job_runs with no ON DELETE action. Delete by
+      // run reference (not session age) so no surviving session can point at a
+      // run we're about to delete — a long run that started before the cutoff
+      // but ended after it would otherwise dangle and trip the FK.
+      sqlite
+        .query(
+          "DELETE FROM sessions WHERE job_run_id IN (SELECT id FROM job_runs WHERE created_at < ?)",
+        )
+        .run(cutoffTs);
 
-    // Nullify FK refs in other tables before deleting the runs themselves.
-    sqlite
-      .query(
-        "UPDATE bridge_messages SET job_run_id = NULL WHERE job_run_id IN (SELECT id FROM job_runs WHERE created_at < ?)",
-      )
-      .run(cutoffTs);
-    sqlite
-      .query(
-        "UPDATE bridge_permissions SET job_run_id = NULL WHERE job_run_id IN (SELECT id FROM job_runs WHERE created_at < ?)",
-      )
-      .run(cutoffTs);
+      // Nullify the remaining FK refs to job_runs before deleting the runs.
+      sqlite
+        .query(
+          "UPDATE bridge_messages SET job_run_id = NULL WHERE job_run_id IN (SELECT id FROM job_runs WHERE created_at < ?)",
+        )
+        .run(cutoffTs);
+      sqlite
+        .query(
+          "UPDATE bridge_permissions SET job_run_id = NULL WHERE job_run_id IN (SELECT id FROM job_runs WHERE created_at < ?)",
+        )
+        .run(cutoffTs);
 
-    // Deleting job_runs cascades to job_run_logs.
-    const result = sqlite.query("DELETE FROM job_runs WHERE created_at < ?").run(cutoffTs);
-    if (result.changes > 0) {
-      logger.info(`Pruned ${result.changes} job runs older than ${HISTORY_RETENTION_DAYS} days`);
-    }
+      // Deleting job_runs cascades to job_run_logs.
+      const result = sqlite.query("DELETE FROM job_runs WHERE created_at < ?").run(cutoffTs);
+      if (result.changes > 0) {
+        logger.info(`Pruned ${result.changes} job runs older than ${HISTORY_RETENTION_DAYS} days`);
+      }
 
-    // Terminal gateway sessions are only ever status-flipped, never deleted —
-    // they accumulate forever and are the dominant WAL-write source. Prune the
-    // old finished ones (keep active 'running' rows regardless of age).
-    const sessResult = sqlite
-      .query("DELETE FROM gateway_sessions WHERE status IN ('stopped','error') AND updated_at < ?")
-      .run(cutoffTs);
-    if (sessResult.changes > 0) {
-      logger.info(`Pruned ${sessResult.changes} terminal gateway sessions`);
-    }
+      // Terminal gateway sessions are only ever status-flipped, never deleted —
+      // they accumulate forever and are the dominant WAL-write source. Prune the
+      // old finished ones (keep active 'running' rows regardless of age).
+      // bridge_messages/bridge_permissions hold FK refs to gateway_sessions with
+      // no ON DELETE action, so null those for the sessions we're pruning first.
+      const gwPredicate = "status IN ('stopped','error') AND updated_at < ?";
+      sqlite
+        .query(
+          `UPDATE bridge_messages SET gateway_session_id = NULL WHERE gateway_session_id IN (SELECT id FROM gateway_sessions WHERE ${gwPredicate})`,
+        )
+        .run(cutoffTs);
+      sqlite
+        .query(
+          `UPDATE bridge_permissions SET gateway_session_id = NULL WHERE gateway_session_id IN (SELECT id FROM gateway_sessions WHERE ${gwPredicate})`,
+        )
+        .run(cutoffTs);
+
+      const sessResult = sqlite
+        .query(`DELETE FROM gateway_sessions WHERE ${gwPredicate}`)
+        .run(cutoffTs);
+      if (sessResult.changes > 0) {
+        logger.info(`Pruned ${sessResult.changes} terminal gateway sessions`);
+      }
+    });
+
+    prune();
   } catch (err) {
     logger.warn("Failed to prune job history", err);
   }

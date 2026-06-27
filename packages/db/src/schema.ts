@@ -203,7 +203,7 @@ export const sessions = sqliteTable("sessions", {
   agent: text("agent").notNull(),
   agent_version: text("agent_version"),
   project_id: text("project_id").references(() => projects.id),
-  job_run_id: text("job_run_id").references(() => job_runs.id),
+  job_run_id: text("job_run_id").references(() => job_runs.id, { onDelete: "set null" }),
   summary: text("summary"),
   events: text("events", { mode: "json" }).$type<unknown[]>(),
   snapshot: text("snapshot"),
@@ -239,7 +239,7 @@ export const bridge_messages = sqliteTable("bridge_messages", {
     .default("user")
     .notNull(),
   text: text("text"),
-  job_run_id: text("job_run_id").references(() => job_runs.id),
+  job_run_id: text("job_run_id").references(() => job_runs.id, { onDelete: "set null" }),
   gateway_session_id: text("gateway_session_id").references(() => gateway_sessions.id),
   platform_msg_id: text("platform_msg_id"),
   thread_id: text("thread_id"),
@@ -251,7 +251,7 @@ export const bridge_permissions = sqliteTable("bridge_permissions", {
   id: text("id").primaryKey(),
   chat_id: text("chat_id"),
   gateway_session_id: text("gateway_session_id").references(() => gateway_sessions.id),
-  job_run_id: text("job_run_id").references(() => job_runs.id),
+  job_run_id: text("job_run_id").references(() => job_runs.id, { onDelete: "set null" }),
   tool: text("tool").notNull(),
   command: text("command"),
   scope: text("scope", { enum: ["once", "session"] })

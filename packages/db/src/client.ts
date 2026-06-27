@@ -359,6 +359,11 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE jobs ADD COLUMN skill_name TEXT",
     "ALTER TABLE tasks ADD COLUMN agent_model TEXT",
     "ALTER TABLE gateway_sessions ADD COLUMN permission_mode TEXT",
+    // Drift fix: schema.ts has declared bridge_chats.project_id for a while, but
+    // it was only ever added to existing DBs out-of-band — fresh installs never
+    // got it, so any drizzle insert into bridge_chats failed. Skipped as a
+    // duplicate-column no-op on DBs that already have it.
+    "ALTER TABLE bridge_chats ADD COLUMN project_id TEXT REFERENCES projects(id)",
   ];
   for (const statement of migrations) {
     try {

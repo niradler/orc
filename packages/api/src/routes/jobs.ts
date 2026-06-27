@@ -4,10 +4,17 @@ import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { JobOverlapSchema, JobStatusSchema, JobTriggerTypeSchema } from "@orc/core/types";
 import { getDb } from "@orc/db/client";
-import { job_run_logs, job_runs, jobs } from "@orc/db/schema";
+import {
+  bridge_messages,
+  bridge_permissions,
+  job_run_logs,
+  job_runs,
+  jobs,
+  sessions,
+} from "@orc/db/schema";
 import { executeJob } from "@orc/runner/executor";
 import { Cron } from "croner";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
 const logger = createLogger("api:jobs");
 
@@ -348,7 +355,30 @@ app.openapi(deleteRoute, async (c) => {
   const { id } = c.req.valid("param");
   const existing = await db.query.jobs.findFirst({ where: eq(jobs.id, id) });
   if (!existing) throw new NotFoundError("Job", id);
-  await db.delete(jobs).where(eq(jobs.id, id));
+  const runIds = (
+    await db.select({ id: job_runs.id }).from(job_runs).where(eq(job_runs.job_id, id))
+  ).map((r) => r.id);
+  await db.transaction(async (tx) => {
+    // Deleting the job cascades to its job_runs, but sessions/bridge rows
+    // reference those runs with no ON DELETE action — null them first so the
+    // cascade doesn't trip a FK constraint. (Schema declares "set null" too,
+    // but existing DBs were created before that and can't be altered in place.)
+    if (runIds.length > 0) {
+      await tx
+        .update(sessions)
+        .set({ job_run_id: null })
+        .where(inArray(sessions.job_run_id, runIds));
+      await tx
+        .update(bridge_messages)
+        .set({ job_run_id: null })
+        .where(inArray(bridge_messages.job_run_id, runIds));
+      await tx
+        .update(bridge_permissions)
+        .set({ job_run_id: null })
+        .where(inArray(bridge_permissions.job_run_id, runIds));
+    }
+    await tx.delete(jobs).where(eq(jobs.id, id));
+  });
   return new Response(null, { status: 204 });
 });
 

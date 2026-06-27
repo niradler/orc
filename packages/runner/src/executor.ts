@@ -15,45 +15,50 @@ export type RunOptions = {
 
 export async function executeJob(opts: RunOptions): Promise<string> {
   const db = getDb();
-  const job = await db.query.jobs.findFirst({ where: eq(jobs.id, opts.jobId) });
-  if (!job) throw new Error(`Job not found: ${opts.jobId}`);
-
   const runId = opts.runId ?? ulid();
-  const now = new Date();
-
-  if (opts.runId) {
-    await db
-      .update(job_runs)
-      .set({ status: "running", started_at: now })
-      .where(eq(job_runs.id, runId));
-  } else {
-    await db.insert(job_runs).values({
-      id: runId,
-      job_id: job.id,
-      status: "running",
-      trigger_by: opts.triggerBy ?? "manual",
-      started_at: now,
-      created_at: now,
-    });
-  }
-
-  await db
-    .update(jobs)
-    .set({ last_run_at: now, run_count: job.run_count + 1, updated_at: now })
-    .where(eq(jobs.id, job.id));
-
-  logger.info(`Starting job: ${job.name} [${runId}]`);
-
-  const env = {
-    ...process.env,
-    ORC_JOB_RUN_ID: runId,
-    ...(job.env_vars ?? {}),
-    ...(opts.envOverrides ?? {}),
-  };
-
-  const timeout = (job.timeout_secs ?? 300) * 1000;
+  // The API trigger path pre-creates the run row as "pending" before calling
+  // us, so a row to mark "failed" exists even if setup below throws.
+  let runRowExists = Boolean(opts.runId);
 
   try {
+    const job = await db.query.jobs.findFirst({ where: eq(jobs.id, opts.jobId) });
+    if (!job) throw new Error(`Job not found: ${opts.jobId}`);
+
+    const now = new Date();
+
+    if (opts.runId) {
+      await db
+        .update(job_runs)
+        .set({ status: "running", started_at: now })
+        .where(eq(job_runs.id, runId));
+    } else {
+      await db.insert(job_runs).values({
+        id: runId,
+        job_id: job.id,
+        status: "running",
+        trigger_by: opts.triggerBy ?? "manual",
+        started_at: now,
+        created_at: now,
+      });
+      runRowExists = true;
+    }
+
+    await db
+      .update(jobs)
+      .set({ last_run_at: now, run_count: job.run_count + 1, updated_at: now })
+      .where(eq(jobs.id, job.id));
+
+    logger.info(`Starting job: ${job.name} [${runId}]`);
+
+    const env = {
+      ...process.env,
+      ORC_JOB_RUN_ID: runId,
+      ...(job.env_vars ?? {}),
+      ...(opts.envOverrides ?? {}),
+    };
+
+    const timeout = (job.timeout_secs ?? 300) * 1000;
+
     const proc = Bun.spawn({
       cmd: ["sh", "-c", job.command],
       cwd: job.working_dir ?? process.cwd(),
@@ -164,15 +169,21 @@ export async function executeJob(opts: RunOptions): Promise<string> {
     return runId;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await db
-      .update(job_runs)
-      .set({
-        status: "failed",
-        ended_at: new Date(),
-        error_msg: msg,
-      })
-      .where(eq(job_runs.id, runId));
-    logger.error(`Job ${job.name} [${runId}] crashed: ${msg}`);
+    // Resolve the run so it never dangles in "pending"/"running". The write-back
+    // can itself fail (e.g. the run row was deleted, or the DB is shutting down),
+    // so guard it — a failed status update must not mask the original error.
+    if (runRowExists) {
+      try {
+        await db
+          .update(job_runs)
+          .set({ status: "failed", ended_at: new Date(), error_msg: msg })
+          .where(eq(job_runs.id, runId));
+      } catch (markErr) {
+        const markMsg = markErr instanceof Error ? markErr.message : String(markErr);
+        logger.error(`Failed to mark run ${runId} as failed: ${markMsg}`);
+      }
+    }
+    logger.error(`Job run ${runId} crashed: ${msg}`);
     throw err;
   }
 }
