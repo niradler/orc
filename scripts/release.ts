@@ -48,7 +48,11 @@ function sh(cmd: string, cmdArgs: string[], cwd = ROOT): void {
     return;
   }
   console.log(`  $ ${printable}`);
-  const r = Bun.spawnSync([cmd, ...cmdArgs], {
+  // On Windows, npm/gh/docker are .cmd shims that Bun's spawn can't resolve via
+  // PATHEXT, so run everything through cmd.exe there. Real .exe commands (git,
+  // bun) work fine via cmd /c too.
+  const spawnCmd = isWin ? ["cmd", "/c", cmd, ...cmdArgs] : [cmd, ...cmdArgs];
+  const r = Bun.spawnSync(spawnCmd, {
     cwd,
     stdout: "inherit",
     stderr: "inherit",
