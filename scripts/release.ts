@@ -36,6 +36,9 @@ const args = new Set(process.argv.slice(2));
 const EXECUTE = args.has("--yes");
 const skip = (s: string) => args.has(`--skip-${s}`);
 const isWin = process.platform === "win32";
+// npm accounts with 2FA require a one-time password at publish time. Pass it as
+// --otp=<code> so the non-interactive `npm publish` below doesn't fail on EOTP.
+const otp = [...args].find((a) => a.startsWith("--otp="))?.slice("--otp=".length);
 
 function readJson(p: string): { version?: string } {
   return JSON.parse(readFileSync(p, "utf-8"));
@@ -62,6 +65,19 @@ function sh(cmd: string, cmdArgs: string[], cwd = ROOT): void {
     console.error(`\n✗ Command failed (exit ${r.exitCode}): ${printable}`);
     process.exit(1);
   }
+}
+
+// Like sh() but never aborts the release — used for best-effort setup steps
+// (e.g. creating a buildx builder that may already exist).
+function shSoft(cmd: string, cmdArgs: string[], cwd = ROOT): void {
+  const printable = `${cmd} ${cmdArgs.join(" ")}`;
+  if (!EXECUTE) {
+    console.log(`  [dry-run] ${printable}`);
+    return;
+  }
+  console.log(`  $ ${printable}`);
+  const spawnCmd = isWin ? ["cmd", "/c", cmd, ...cmdArgs] : [cmd, ...cmdArgs];
+  Bun.spawnSync(spawnCmd, { cwd, stdout: "inherit", stderr: "inherit", env: process.env });
 }
 
 function capture(cmd: string, cmdArgs: string[]): string {
@@ -140,7 +156,7 @@ console.log("\n[4/7] npm publish orc-ai (runs prepublishOnly = build + validate:
 if (skip("npm")) {
   console.log("  (skipped)");
 } else {
-  sh("npm", ["publish"], CLI_DIR);
+  sh("npm", ["publish", ...(otp ? [`--otp=${otp}`] : [])], CLI_DIR);
 }
 
 // ── 5. Git tag ────────────────────────────────────────────────────────────────
@@ -166,6 +182,19 @@ console.log("\n[7/7] Docker multi-arch build + push");
 if (skip("docker")) {
   console.log("  (skipped)");
 } else {
+  // The default 'docker' driver can't do multi-platform builds. Ensure a
+  // container-driver builder exists and is selected; tolerate "already exists".
+  shSoft("docker", [
+    "buildx",
+    "create",
+    "--name",
+    "orc-multiarch",
+    "--driver",
+    "docker-container",
+    "--bootstrap",
+    "--use",
+  ]);
+  sh("docker", ["buildx", "use", "orc-multiarch"]);
   sh("docker", [
     "buildx",
     "build",
