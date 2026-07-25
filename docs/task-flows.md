@@ -271,14 +271,14 @@ Human gates are first-class rather than bolted on:
 flow_runs
   id, task_id, project_id, flow_name, flow_source, definition (frozen snapshot),
   status (running|completed|halted|cancelled), active, visits, joins, vars,
-  node_executions, halt_reason, started_at, ended_at
+  node_executions, paused_secs, halt_reason, started_at, ended_at
 
 flow_node_runs
-  id, flow_run_id, task_id, node_id, node_kind, attempt,
+  id, flow_run_id, task_id, node_id, node_kind, attempt, retry,
   status (pending|running|awaiting_human|succeeded|failed|cancelled|skipped),
   outcome, summary, error, skill_name, gateway_session_id, resume_session,
   started_at, ended_at
-  UNIQUE (flow_run_id, node_id, attempt)
+  UNIQUE (flow_run_id, node_id, attempt, retry)
 
 tasks
   + flow_name TEXT

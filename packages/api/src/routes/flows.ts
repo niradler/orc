@@ -386,7 +386,7 @@ app.openapi(haltRoute, async (c) => {
   const { id } = c.req.valid("param");
   const { reason } = c.req.valid("json");
   const { haltFlowRunForTask } = await import("@orc/runner/flow-runner");
-  const halted = await haltFlowRunForTask(id, reason ?? "halted via API");
+  const halted = await haltFlowRunForTask(id, reason ?? "halted via API", "human");
   return c.json({ halted });
 });
 

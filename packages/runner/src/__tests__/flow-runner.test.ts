@@ -410,6 +410,50 @@ describe("recovery from infrastructure failure", () => {
     expect(taskStatus(taskId)).toBe("blocked");
   });
 
+  test("halting a run cancels the live retry, not the row it replaced", async () => {
+    // A visit can own several rows once retried. Cancelling by
+    // (run, node, attempt) alone picked one arbitrarily — the already-failed
+    // one — leaving an auto-approved agent working on a halted run and still
+    // counting against max_workers until the idle sweep noticed.
+    const taskId = await makeTask();
+    const started = await startFlowForTask(taskId);
+    if (!started.ok) throw new Error("expected a run");
+    const { cleanupStaleFlowSessions } = await import("../flow-runner.js");
+
+    const attachSession = (nodeRunId: string, ageSecs: number): string => {
+      const sessionId = ulid();
+      const ts = Math.floor(Date.now() / 1000) - ageSecs;
+      getSqlite()
+        .query(
+          `INSERT INTO gateway_sessions (id, chat_id, backend, mode, status, role, task_id, last_activity_at, created_at, updated_at)
+           VALUES (?, '__task-loop__', 'claude', 'agent:claude', 'running', 'worker', ?, ?, ?, ?)`,
+        )
+        .run(sessionId, taskId, ts, ts, ts);
+      getSqlite()
+        .query("UPDATE flow_node_runs SET status = 'running', gateway_session_id = ? WHERE id = ?")
+        .run(sessionId, nodeRunId);
+      return sessionId;
+    };
+
+    // Reap the first session so a retry is queued, then give the retry a live one.
+    attachSession(activeNodeRun(taskId).id, 100_000);
+    await cleanupStaleFlowSessions();
+    const liveSession = attachSession(activeNodeRun(taskId).id, 0);
+
+    // Blow the wall clock: the engine issues a cancel for this visit.
+    getSqlite()
+      .query("UPDATE flow_runs SET started_at = ? WHERE id = ?")
+      .run(Math.floor(Date.now() / 1000) - 100_000, started.flowRunId);
+    expect(await sweepFlowTimeouts()).toBe(1);
+
+    const retryRow = nodeRuns(taskId).find((r) => r.node_id === "build" && r.retry === 1);
+    expect(retryRow?.status).toBe("cancelled");
+    const session = getSqlite()
+      .query("SELECT status FROM gateway_sessions WHERE id = ?")
+      .get(liveSession) as { status: string };
+    expect(session.status).toBe("stopped");
+  });
+
   test("a node that was retried can still be revisited by the graph", async () => {
     // Retries and graph visits used to share the `attempt` column, so a node
     // that was retried and then revisited collided on the unique index — the

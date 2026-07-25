@@ -1,7 +1,7 @@
 import type { AgentSession } from "@orc/agent-runtime";
 import { openAgentSession } from "@orc/agent-runtime";
 import { loadConfig } from "@orc/core/config";
-import type { FlowCondition, FlowDefinition, FlowNode } from "@orc/core/flow";
+import type { FlowCondition, FlowDefinition, FlowNode, NumericOperand } from "@orc/core/flow";
 import { declaredOutcomes, resolvePlaceholder } from "@orc/core/flow";
 import type { FlowAction, FlowState, FlowStep } from "@orc/core/flow-engine";
 import { advanceFlow, checkFlowTimeout, describeHalt, startFlow } from "@orc/core/flow-engine";
@@ -284,13 +284,14 @@ function nodeModel(node: FlowNode, task: TaskRow): string | undefined {
 function renderLedger(flowRunId: string, excludeNodeRunId?: string): string | null {
   const rows = getSqlite()
     .query(
-      `SELECT node_id, attempt, status, outcome, summary, error FROM flow_node_runs
+      `SELECT node_id, attempt, retry, status, outcome, summary, error FROM flow_node_runs
        WHERE flow_run_id = ? AND id != ? AND status IN ('succeeded','failed','cancelled')
        ORDER BY created_at DESC LIMIT ?`,
     )
     .all(flowRunId, excludeNodeRunId ?? "", LEDGER_MAX_ENTRIES) as {
     node_id: string;
     attempt: number;
+    retry: number;
     status: string;
     outcome: string | null;
     summary: string | null;
@@ -302,7 +303,8 @@ function renderLedger(flowRunId: string, excludeNodeRunId?: string): string | nu
   const lines = ["## Flow Ledger", "", "What earlier nodes in this run did, in order:", ""];
   for (const r of rows) {
     const verdict = r.outcome ? `→ ${r.outcome}` : `(${r.status})`;
-    lines.push(`- **${r.node_id}** (attempt ${r.attempt}) ${verdict}`);
+    const label = r.retry > 0 ? `attempt ${r.attempt}, retry ${r.retry}` : `attempt ${r.attempt}`;
+    lines.push(`- **${r.node_id}** (${label}) ${verdict}`);
     if (r.summary) {
       for (const line of truncate(r.summary.trim(), LEDGER_MAX_SUMMARY).split("\n")) {
         lines.push(`  ${line}`);
@@ -376,11 +378,19 @@ function visitsBoundFor(
   vars: Record<string, unknown>,
 ): number | undefined {
   if ("visits" in cond) {
-    if (cond.visits.node !== undefined && cond.visits.node !== nodeId) return undefined;
-    const operand = cond.visits.lt ?? cond.visits.lte;
-    if (operand === undefined) return undefined;
-    const value = typeof operand === "number" ? operand : vars[operand.var];
-    return typeof value === "number" ? value : undefined;
+    // Only a guard that names this node counts. Without `node`, `visits` means
+    // the node the edge leaves *from*, which is a different node's budget.
+    if (cond.visits.node !== nodeId) return undefined;
+    const resolve = (operand: NumericOperand | undefined): number | undefined => {
+      if (operand === undefined) return undefined;
+      const value = typeof operand === "number" ? operand : vars[operand.var];
+      return typeof value === "number" ? value : undefined;
+    };
+    // `visits < N` permits N visits; `visits <= N` permits N + 1.
+    const lt = resolve(cond.visits.lt);
+    if (lt !== undefined) return lt;
+    const lte = resolve(cond.visits.lte);
+    return lte !== undefined ? lte + 1 : undefined;
   }
   if ("all" in cond) {
     for (const c of cond.all) {
@@ -720,30 +730,38 @@ async function applyAction(
     }
 
     case "cancel": {
-      const row = sqlite
+      // Every *live* row for this visit, not just one: a visit can have several
+      // rows once it has been retried, and picking one arbitrarily left the live
+      // retry running with its session open — an auto-approved agent still
+      // working on a run the graph had already halted, still counting against
+      // max_workers until the idle sweep noticed.
+      const rows = sqlite
         .query(
           `SELECT id, gateway_session_id FROM flow_node_runs
-           WHERE flow_run_id = ? AND node_id = ? AND attempt = ?`,
+           WHERE flow_run_id = ? AND node_id = ? AND attempt = ?
+             AND status IN ('pending','running','awaiting_human')`,
         )
-        .get(flowRunId, action.nodeId, action.attempt) as {
+        .all(flowRunId, action.nodeId, action.attempt) as {
         id: string;
         gateway_session_id: string | null;
-      } | null;
-      if (!row) return;
-      markNodeRunCancelled(row.id);
-      if (row.gateway_session_id) {
-        closeLiveSession(row.gateway_session_id);
+      }[];
+
+      for (const row of rows) {
+        markNodeRunCancelled(row.id);
+        if (row.gateway_session_id) {
+          closeLiveSession(row.gateway_session_id);
+          sqlite
+            .query(
+              "UPDATE gateway_sessions SET status = 'stopped', last_error = ?, updated_at = unixepoch() WHERE id = ?",
+            )
+            .run(`cancelled: ${action.reason}`, row.gateway_session_id);
+        }
         sqlite
           .query(
-            "UPDATE gateway_sessions SET status = 'stopped', last_error = ?, updated_at = unixepoch() WHERE id = ?",
+            "UPDATE flow_node_runs SET status = 'cancelled', error = ?, ended_at = unixepoch() WHERE id = ?",
           )
-          .run(`cancelled: ${action.reason}`, row.gateway_session_id);
+          .run(action.reason, row.id);
       }
-      sqlite
-        .query(
-          "UPDATE flow_node_runs SET status = 'cancelled', error = ?, ended_at = unixepoch() WHERE id = ? AND status IN ('pending','running','awaiting_human')",
-        )
-        .run(action.reason, row.id);
       return;
     }
 
@@ -853,9 +871,13 @@ async function startFlowForTaskUnlocked(
     const alreadySaid = getSqlite()
       .query(
         `SELECT 1 AS present FROM comments
-         WHERE resource_type = 'task' AND resource_id = ? AND content LIKE '%not converging%' LIMIT 1`,
+         WHERE resource_type = 'task' AND resource_id = ? AND content LIKE '%not converging%'
+           AND created_at > COALESCE(
+             (SELECT MAX(created_at) FROM comments
+              WHERE resource_type = 'task' AND resource_id = ? AND author = 'human'), 0)
+         LIMIT 1`,
       )
-      .get(taskId) as { present: number } | null;
+      .get(taskId, taskId) as { present: number } | null;
     if (!alreadySaid) {
       await addTaskComment(
         taskId,
@@ -1530,9 +1552,9 @@ export async function drainPendingNodes(): Promise<string[]> {
 
     const loaded = loadRun(nodeRun.flow_run_id);
     if (!loaded) continue;
-    if (runningNodesInFlow(nodeRun.flow_run_id) >= loaded.def.limits.max_parallel) continue;
 
     try {
+      if (runningNodesInFlow(nodeRun.flow_run_id) >= loaded.def.limits.max_parallel) continue;
       await spawnNodeSession(nodeRun);
       spawned.push(`${loaded.def.name}/${nodeRun.node_id} [${nodeRun.task_id}]`);
     } catch (err) {
@@ -1697,27 +1719,34 @@ export async function sweepFlowTimeouts(): Promise<number> {
     const taskId = taskIdForRun(id);
     if (!taskId) continue;
     const didHalt = await withTaskLock(taskId, async () => {
-      // A run parked on a person is not overrunning its agent budget. The wait
-      // is credited to paused_secs when the gate is answered; until then there
-      // is nothing to reap, and reaping would cancel the very node they are
-      // about to answer.
-      const awaitingHuman = getSqlite()
-        .query(
-          "SELECT 1 AS present FROM flow_node_runs WHERE flow_run_id = ? AND status = 'awaiting_human' LIMIT 1",
-        )
-        .get(id) as { present: number } | null;
-      if (awaitingHuman) return false;
+      try {
+        // A run parked on a person is not overrunning its agent budget. The wait
+        // is credited to paused_secs when the gate is answered; until then there
+        // is nothing to reap, and reaping would cancel the very node they are
+        // about to answer.
+        const awaitingHuman = getSqlite()
+          .query(
+            "SELECT 1 AS present FROM flow_node_runs WHERE flow_run_id = ? AND status = 'awaiting_human' LIMIT 1",
+          )
+          .get(id) as { present: number } | null;
+        if (awaitingHuman) return false;
 
-      // Re-read under the lock: the run may have advanced or finished while we
-      // were queued behind a node report.
-      const loaded = loadRun(id);
-      if (!loaded) return false;
-      const step = checkFlowTimeout(loaded.def, loaded.state, nowSecs());
-      if (!step) return false;
-      const task = getTask(loaded.row.task_id);
-      if (!task) return false;
-      await applyStep(id, loaded.def, task, loaded.state, step);
-      return true;
+        // Re-read under the lock: the run may have advanced or finished while we
+        // were queued behind a node report.
+        const loaded = loadRun(id);
+        if (!loaded) return false;
+        const step = checkFlowTimeout(loaded.def, loaded.state, nowSecs());
+        if (!step) return false;
+        const task = getTask(loaded.row.task_id);
+        if (!task) return false;
+        await applyStep(id, loaded.def, task, loaded.state, step);
+        return true;
+      } catch (err) {
+        // One run whose stored definition cannot be applied must not abort the
+        // sweep for every other run.
+        logger.error(`Timeout sweep failed for flow run ${id}: ${String(err)}`);
+        return false;
+      }
     });
     if (didHalt) halted++;
   }
@@ -1866,10 +1895,16 @@ export function getLatestFlowRunForTask(taskId: string): FlowRunView | null {
   return row ? getFlowRunView(row.id) : null;
 }
 
-export async function haltFlowRunForTask(taskId: string, reason: string): Promise<boolean> {
+export async function haltFlowRunForTask(
+  taskId: string,
+  reason: string,
+  author = "system",
+): Promise<boolean> {
   const run = getActiveFlowRunForTask(taskId);
   if (!run) return false;
   await cancelFlowRun(run.id, reason);
-  await addTaskComment(taskId, `Flow **${run.flow_name}** stopped: ${reason}`, "human");
+  // Author matters: a human comment forgives the cross-run budget, so an
+  // automated halt must not be recorded as one.
+  await addTaskComment(taskId, `Flow **${run.flow_name}** stopped: ${reason}`, author);
   return true;
 }

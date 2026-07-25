@@ -219,9 +219,15 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
   // flow, not just the three that end it.
   if (["done", "cancelled", "changes_requested", "blocked", "paused"].includes(opts.status)) {
     if (opts.source !== "flow") {
-      import("@orc/runner/flow-runner")
-        .then((m) => m.onTaskStatusChangedExternally(opts.taskId, opts.status, opts.author))
-        .catch((err) => logger.warn("flow notification failed", { err }));
+      // Awaited, not fire-and-forget: the caller must not see this return while
+      // the run is still live, or a drain in that window spawns a node for work
+      // the human just closed.
+      try {
+        const flowRunner = await import("@orc/runner/flow-runner");
+        await flowRunner.onTaskStatusChangedExternally(opts.taskId, opts.status, opts.author);
+      } catch (err) {
+        logger.warn("flow notification failed", { err });
+      }
     }
   }
   if (["done", "cancelled", "changes_requested"].includes(opts.status)) {
