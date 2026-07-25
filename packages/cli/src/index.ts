@@ -5,6 +5,7 @@ import { ORC_VERSION } from "@orc/core/version";
 import { Command } from "commander";
 
 import { daemonCommand, ORC_HOME, ORC_PID, readDaemonPid } from "./commands/daemon.js";
+import { flowCommand } from "./commands/flow.js";
 import { gatewayCommand } from "./commands/gateway.js";
 import { jobCommand } from "./commands/job.js";
 import { kbCommand } from "./commands/kb.js";
@@ -68,6 +69,7 @@ program.addCommand(sessionCommand());
 program.addCommand(daemonCommand());
 program.addCommand(gatewayCommand());
 program.addCommand(skillCommand());
+program.addCommand(flowCommand());
 program.addCommand(kbCommand());
 program.addCommand(statusCommand());
 program.addCommand(schemaCommand());

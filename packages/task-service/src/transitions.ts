@@ -14,6 +14,18 @@ export type TransitionOpts = {
   comment?: string | undefined;
   author?: string | undefined;
   claimedBy?: string | undefined;
+  /**
+   * "flow" marks a transition the flow engine is making itself. Anything else is
+   * treated as coming from outside the graph, and the running flow is told about
+   * it so a human (or a stray agent) can override a run in progress.
+   */
+  source?: "flow" | "external" | undefined;
+  /**
+   * Send the human review notification. The flow engine sets this only for a
+   * `human` gate node; agent reviewer nodes also move a task to `review` and
+   * must not page anyone.
+   */
+  notifyHuman?: boolean | undefined;
 };
 
 export type TransitionResult = {
@@ -21,6 +33,13 @@ export type TransitionResult = {
   error?: string | undefined;
   task?: typeof tasks.$inferSelect | undefined;
 };
+
+function hasRunningFlow(taskId: string): boolean {
+  const row = getSqlite()
+    .query("SELECT 1 AS present FROM flow_runs WHERE task_id = ? AND status = 'running' LIMIT 1")
+    .get(taskId) as { present: number } | null;
+  return row !== null;
+}
 
 export async function addTaskComment(
   taskId: string,
@@ -87,7 +106,8 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
     await addTaskComment(opts.taskId, opts.comment, opts.author ?? "agent");
   }
 
-  if (opts.status === "review") {
+  const shouldNotifyReview = opts.source !== "flow" || opts.notifyHuman === true;
+  if (opts.status === "review" && shouldNotifyReview) {
     const refreshed = await db.query.tasks.findFirst({ where: eq(tasks.id, opts.taskId) });
     if (refreshed?.required_review) {
       notifyReview(opts.taskId, task.title).catch((err) => {
@@ -165,7 +185,10 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
     }
   }
 
-  if (opts.status === "changes_requested") {
+  // Legacy review-round accounting, for tasks no flow owns. When a flow is
+  // running, its own graph limits govern the loop — two independent counters
+  // pausing the same task would fight each other.
+  if (opts.status === "changes_requested" && !hasRunningFlow(opts.taskId)) {
     const sqlite = getSqlite();
     const maxRounds = task.max_review_rounds ?? 3;
     const session = sqlite
@@ -192,6 +215,21 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
     }
   }
 
+  // Any status a human might set to take a task off the agents has to reach the
+  // flow, not just the three that end it.
+  if (["done", "cancelled", "changes_requested", "blocked", "paused"].includes(opts.status)) {
+    if (opts.source !== "flow") {
+      // Awaited, not fire-and-forget: the caller must not see this return while
+      // the run is still live, or a drain in that window spawns a node for work
+      // the human just closed.
+      try {
+        const flowRunner = await import("@orc/runner/flow-runner");
+        await flowRunner.onTaskStatusChangedExternally(opts.taskId, opts.status, opts.author);
+      } catch (err) {
+        logger.warn("flow notification failed", { err });
+      }
+    }
+  }
   if (["done", "cancelled", "changes_requested"].includes(opts.status)) {
     import("@orc/runner/task-loop")
       .then((m) => m.triggerTaskCheck())

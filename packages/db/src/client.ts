@@ -217,6 +217,55 @@ function setupDb(sqlite: Database): void {
       created_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
+    CREATE TABLE IF NOT EXISTS flow_runs (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+      flow_name TEXT NOT NULL,
+      flow_source TEXT NOT NULL,
+      definition TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'running',
+      active TEXT,
+      visits TEXT,
+      joins TEXT,
+      vars TEXT,
+      node_executions INTEGER NOT NULL DEFAULT 0,
+      paused_secs INTEGER NOT NULL DEFAULT 0,
+      halt_reason TEXT,
+      started_at INTEGER NOT NULL,
+      ended_at INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS flow_runs_task_idx ON flow_runs(task_id, status);
+    CREATE INDEX IF NOT EXISTS flow_runs_status_idx ON flow_runs(status);
+
+    CREATE TABLE IF NOT EXISTS flow_node_runs (
+      id TEXT PRIMARY KEY,
+      flow_run_id TEXT NOT NULL REFERENCES flow_runs(id) ON DELETE CASCADE,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      node_id TEXT NOT NULL,
+      node_kind TEXT NOT NULL,
+      attempt INTEGER NOT NULL DEFAULT 1,
+      retry INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending',
+      outcome TEXT,
+      summary TEXT,
+      error TEXT,
+      skill_name TEXT,
+      gateway_session_id TEXT REFERENCES gateway_sessions(id) ON DELETE SET NULL,
+      resume_session INTEGER NOT NULL DEFAULT 0,
+      started_at INTEGER,
+      ended_at INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS flow_node_runs_attempt_idx
+      ON flow_node_runs(flow_run_id, node_id, attempt, retry);
+    CREATE INDEX IF NOT EXISTS flow_node_runs_run_idx ON flow_node_runs(flow_run_id, created_at);
+    CREATE INDEX IF NOT EXISTS flow_node_runs_status_idx ON flow_node_runs(status);
+
     CREATE TABLE IF NOT EXISTS knowledge_collections (
       name TEXT PRIMARY KEY,
       project_id TEXT REFERENCES projects(id),
@@ -364,6 +413,16 @@ function setupDb(sqlite: Database): void {
     // got it, so any drizzle insert into bridge_chats failed. Skipped as a
     // duplicate-column no-op on DBs that already have it.
     "ALTER TABLE bridge_chats ADD COLUMN project_id TEXT REFERENCES projects(id)",
+    // Flow graphs: which graph a task runs, or an inline graph for that task alone.
+    "ALTER TABLE tasks ADD COLUMN flow_name TEXT",
+    "ALTER TABLE tasks ADD COLUMN flow_override TEXT",
+    // A retry re-runs one graph visit, so it needs its own coordinate: sharing
+    // `attempt` with the engine's visit counter made a later visit to the same
+    // node collide with the retry's row and strand the run.
+    "ALTER TABLE flow_node_runs ADD COLUMN retry INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE flow_runs ADD COLUMN paused_secs INTEGER NOT NULL DEFAULT 0",
+    "DROP INDEX IF EXISTS flow_node_runs_attempt_idx",
+    "CREATE UNIQUE INDEX IF NOT EXISTS flow_node_runs_attempt_idx ON flow_node_runs(flow_run_id, node_id, attempt, retry)",
   ];
   for (const statement of migrations) {
     try {

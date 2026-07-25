@@ -415,6 +415,91 @@ export const toolDefinitions = [
       content: z.string().describe("Full SKILL.md content including frontmatter"),
     }),
   },
+  {
+    name: "flow_report",
+    description:
+      "Report your outcome as a flow node. Call this when your node's work is done — it is what routes " +
+      "the flow to the next node. Only the outcomes your node declares are accepted (your prompt lists them). " +
+      "Pass vars when the flow's routing needs values from you.",
+    inputSchema: z.object({
+      task: z.string().describe("Task ID you are working on"),
+      outcome: z.string().describe("One of the outcomes your node prompt listed"),
+      node: z
+        .string()
+        .optional()
+        .describe("Your node id — required when several nodes are active on this task"),
+      summary: z
+        .string()
+        .optional()
+        .describe("What you did or found. Recorded in the ledger for later nodes to read."),
+      vars: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe("Values the flow's edges route on (e.g. { security_ok: false })"),
+    }),
+  },
+  {
+    name: "flow_status",
+    description:
+      "Inspect a task's flow run: which nodes are active, the ledger of node outcomes so far, " +
+      "visit counts, and why it halted if it did.",
+    inputSchema: z.object({
+      task: z.string().describe("Task ID"),
+    }),
+  },
+  {
+    name: "flow_list",
+    description:
+      "List available flow graphs (built-in + user). A flow defines the nodes, conditional edges and loops " +
+      "a task runs through. Use flow_read for the full definition.",
+    inputSchema: z.object({
+      q: z.string().optional().describe("Keyword search on name and description"),
+      source: z.enum(["builtin", "user", "project"]).optional(),
+    }),
+  },
+  {
+    name: "flow_read",
+    description: "Read a flow definition by name — its nodes, edges, limits and entry point.",
+    inputSchema: z.object({
+      name: z.string().describe("Flow name (e.g. 'orc-default')"),
+    }),
+  },
+  {
+    name: "flow_create",
+    description:
+      "Create a reusable user flow from a JSON definition. Written to ~/.orc/flows/<name>/flow.json. " +
+      "Validated before it is saved: unknown edge targets, unreachable nodes, a flow that can never finish, " +
+      "or a terminal with outgoing edges are all rejected. For a one-off graph use flow_attach with a definition instead.",
+    inputSchema: z.object({
+      definition: z
+        .record(z.string(), z.unknown())
+        .describe("Full flow definition: { name, description, entry, limits, nodes, edges }"),
+      overwrite: z.boolean().optional().describe("Replace an existing user flow of the same name"),
+      shadow_builtin: z
+        .boolean()
+        .optional()
+        .describe(
+          "Deliberately shadow a built-in flow of the same name. Without this, reusing a builtin's name is rejected — " +
+            "shadowing orc-default silently re-pipelines every task.",
+        ),
+    }),
+  },
+  {
+    name: "flow_attach",
+    description:
+      "Attach a flow to a task: either a named flow, or an inline definition for a bespoke graph for this " +
+      "task alone. Use this to build a custom multi-node pipeline per task. Takes effect on the task's next " +
+      "flow run — pass start:true to begin immediately.",
+    inputSchema: z.object({
+      task: z.string().describe("Task ID"),
+      name: z.string().optional().describe("Named flow to attach"),
+      definition: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe("Inline flow definition for this task only. Takes precedence over name."),
+      start: z.boolean().optional().describe("Start the flow now instead of waiting for the loop"),
+    }),
+  },
 ] as const;
 
 export type ToolName = (typeof toolDefinitions)[number]["name"];
@@ -1306,6 +1391,173 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       } catch (err) {
         return `Error: ${err instanceof Error ? err.message : String(err)}`;
       }
+    }
+
+    case "flow_report": {
+      const {
+        task: taskId,
+        outcome,
+        node,
+        summary,
+        vars,
+      } = args as {
+        task: string;
+        outcome: string;
+        node?: string;
+        summary?: string;
+        vars?: Record<string, unknown>;
+      };
+      const { reportNodeOutcome } = await import("@orc/runner/flow-runner");
+      const result = await reportNodeOutcome({
+        taskId,
+        outcome,
+        ...(node !== undefined ? { nodeId: node } : {}),
+        ...(summary !== undefined ? { summary } : {}),
+        ...(vars !== undefined ? { vars } : {}),
+      });
+      if (!result.ok) return `Error: ${result.error}`;
+      return (
+        `Reported "${outcome}"${node ? ` for node ${node}` : ""}.` +
+        (result.nextNodes.length > 0
+          ? ` The flow moved on to: ${result.nextNodes.join(", ")}.`
+          : " The flow routes when your session ends — finish up and stop.")
+      );
+    }
+
+    case "flow_status": {
+      const { task: taskId } = args as { task: string };
+      const { getLatestFlowRunForTask } = await import("@orc/runner/flow-runner");
+      const run = getLatestFlowRunForTask(taskId);
+      if (!run) return `No flow run for task ${taskId}.`;
+
+      const lines = [
+        `Flow: ${run.flow_name} (${run.flow_source})  run ${run.id}`,
+        `Status: ${run.status}${run.halt_description ? ` — ${run.halt_description}` : ""}`,
+        `Node executions: ${run.node_executions}`,
+      ];
+      if (run.active.length > 0) {
+        lines.push(`Active: ${run.active.map((a) => `${a.nodeId}#${a.attempt}`).join(", ")}`);
+      }
+      const visits = Object.entries(run.visits);
+      if (visits.length > 0) {
+        lines.push(`Visits: ${visits.map(([n, c]) => `${n}×${c}`).join(", ")}`);
+      }
+      const shownVars = Object.entries(run.vars).filter(
+        ([k]) => !["task_id", "task_title", "project_id"].includes(k),
+      );
+      if (shownVars.length > 0) {
+        lines.push(
+          `Vars: ${shownVars.map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`).join(", ")}`,
+        );
+      }
+      if (run.nodes.length > 0) {
+        lines.push("", "Ledger:");
+        for (const n of run.nodes) {
+          const verdict = n.outcome ? `→ ${n.outcome}` : `(${n.status})`;
+          lines.push(`  ${n.node_id}#${n.attempt} [${n.status}] ${verdict}`);
+          if (n.summary) lines.push(`    ${n.summary.split("\n")[0]}`);
+          if (n.error) lines.push(`    error: ${n.error}`);
+        }
+      }
+      return lines.join("\n");
+    }
+
+    case "flow_list": {
+      const { q, source } = args as { q?: string; source?: "builtin" | "user" | "project" };
+      const { listFlows, listBrokenFlows } = await import("@orc/core/flow-service");
+      const flows = listFlows({ ...(q ? { q } : {}), ...(source ? { source } : {}) });
+      if (flows.length === 0) return "No flows found.";
+      const lines = flows.map(
+        (f) =>
+          `${f.name} [${f.source}${f.shadows ? `, shadows ${f.shadows}` : ""}]  entry:${f.entry}  ` +
+          `${f.node_count} nodes, ${f.edge_count} edges` +
+          (f.description ? `\n  ${f.description}` : ""),
+      );
+      const broken = listBrokenFlows();
+      if (broken.length > 0) {
+        lines.push("", "Invalid flows (ignored):");
+        for (const b of broken) lines.push(`  ${b.name}: ${b.errors.join("; ")}`);
+      }
+      return lines.join("\n");
+    }
+
+    case "flow_read": {
+      const { name: flowName } = args as { name: string };
+      const { readFlow } = await import("@orc/core/flow-service");
+      const flow = readFlow(flowName);
+      if (!flow) return `Flow not found: ${flowName}`;
+      return [
+        `# ${flow.name} [${flow.source}] v${flow.version}`,
+        flow.description,
+        flow.path ? `path: ${flow.path}` : "path: (built in)",
+        "",
+        JSON.stringify(flow.definition, null, 2),
+      ].join("\n");
+    }
+
+    case "flow_create": {
+      const { definition, overwrite, shadow_builtin } = args as {
+        definition: Record<string, unknown>;
+        overwrite?: boolean;
+        shadow_builtin?: boolean;
+      };
+      const { createFlow } = await import("@orc/core/flow-service");
+      try {
+        const flow = createFlow(definition, {
+          overwrite: overwrite ?? false,
+          shadowBuiltin: shadow_builtin ?? false,
+        });
+        return `Created flow: ${flow.name} at ${flow.path} (${flow.node_count} nodes, ${flow.edge_count} edges)`;
+      } catch (err) {
+        return `Error: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    }
+
+    case "flow_attach": {
+      const {
+        task: taskId,
+        name: flowName,
+        definition,
+        start,
+      } = args as {
+        task: string;
+        name?: string;
+        definition?: Record<string, unknown>;
+        start?: boolean;
+      };
+      if (!flowName && !definition) return "Error: pass either name or definition.";
+
+      const target = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
+      if (!target) return `Task not found: ${taskId}`;
+
+      if (definition) {
+        const { parseFlowDefinition } = await import("@orc/core/flow");
+        const parsed = parseFlowDefinition(definition);
+        if (!parsed.ok) return `Error: invalid flow definition:\n  ${parsed.errors.join("\n  ")}`;
+        await db
+          .update(tasks)
+          .set({ flow_override: parsed.definition, flow_name: null, updated_at: new Date() })
+          .where(eq(tasks.id, taskId));
+      } else {
+        const { readFlow } = await import("@orc/core/flow-service");
+        if (!readFlow(flowName as string)) return `Flow not found: ${flowName}`;
+        await db
+          .update(tasks)
+          .set({ flow_name: flowName, flow_override: null, updated_at: new Date() })
+          .where(eq(tasks.id, taskId));
+      }
+
+      const label = definition
+        ? `inline flow "${(definition.name as string) ?? "custom"}"`
+        : `flow "${flowName}"`;
+      if (!start)
+        return `Attached ${label} to task ${shortId(taskId)}. It runs on the next loop cycle.`;
+
+      const { startFlowForTask } = await import("@orc/runner/flow-runner");
+      const started = await startFlowForTask(taskId);
+      return started.ok
+        ? `Attached ${label} and started run ${started.flowRunId}.`
+        : `Attached ${label}, but could not start it: ${started.error}`;
     }
 
     default:

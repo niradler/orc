@@ -40,6 +40,8 @@ export type Task = {
   required_review: boolean;
   agent_backend: string | null;
   max_review_rounds: number;
+  flow_name?: string | null;
+  flow_override?: unknown;
   comments_count?: number;
   created_at: string;
   updated_at: string;
@@ -165,6 +167,8 @@ export type CreateTaskInput = {
   required_review?: boolean;
   agent_backend?: string;
   max_review_rounds?: number;
+  flow_name?: string;
+  flow_override?: Record<string, unknown>;
 };
 
 export type UpdateTaskInput = {
@@ -181,6 +185,8 @@ export type UpdateTaskInput = {
   agent_backend?: string | null;
   max_review_rounds?: number;
   claimed_by?: string | null;
+  flow_name?: string | null;
+  flow_override?: Record<string, unknown> | null;
 };
 
 export type TaskClaimInput = {
@@ -342,3 +348,78 @@ export type UpdateProjectInput = {
 export type ApiError = { error: string; code: string };
 
 export type ApiResult<T> = { data: T; error: null } | { data: null; error: ApiError };
+
+export type FlowSource = "builtin" | "user" | "project";
+
+export type FlowMeta = {
+  name: string;
+  description: string;
+  source: FlowSource;
+  path: string | null;
+  version: number;
+  entry: string;
+  node_count: number;
+  edge_count: number;
+  shadows: FlowSource | null;
+};
+
+export type FlowFull = FlowMeta & {
+  definition: Record<string, unknown>;
+};
+
+export type BrokenFlow = {
+  name: string;
+  path: string;
+  errors: string[];
+};
+
+export type FlowNodeRun = {
+  node_id: string;
+  node_kind: string;
+  attempt: number;
+  retry: number;
+  status: string;
+  outcome: string | null;
+  summary: string | null;
+  error: string | null;
+  gateway_session_id: string | null;
+  started_at: number | null;
+  ended_at: number | null;
+};
+
+export type FlowRun = {
+  id: string;
+  task_id: string;
+  flow_name: string;
+  flow_source: string;
+  status: string;
+  halt_reason: string | null;
+  halt_description: string | null;
+  active: { nodeId: string; attempt: number }[];
+  visits: Record<string, number>;
+  node_executions: number;
+  vars: Record<string, unknown>;
+  started_at: number;
+  ended_at: number | null;
+  definition: Record<string, unknown> | null;
+  nodes: FlowNodeRun[];
+};
+
+export type CreateFlowInput = {
+  definition: Record<string, unknown>;
+  overwrite?: boolean;
+  shadow_builtin?: boolean;
+};
+
+export type AttachFlowInput = {
+  name?: string;
+  definition?: Record<string, unknown> | null;
+  start?: boolean;
+};
+
+export type ResumeFlowInput = {
+  outcome: string;
+  summary?: string;
+  vars?: Record<string, unknown>;
+  author?: string;
+};

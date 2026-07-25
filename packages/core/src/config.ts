@@ -120,6 +120,19 @@ export const OrcConfigSchema = z.object({
       session_idle_timeout_minutes: z.number().int().min(1).default(20),
       session_max_lifetime_minutes: z.number().int().min(1).default(120),
       worker_auto_approve: z.boolean().default(true),
+      // Flow run for a task that names none. Every task runs a flow graph;
+      // orc-default reproduces the original build → review → done pipeline.
+      default_flow: z.string().default("orc-default"),
+      // Flow for a task a human moves straight to `review`.
+      review_flow: z.string().default("orc-review-only"),
+      // Times a single flow node may be re-queued after an infrastructure
+      // failure (idle timeout, lifetime cap, backend crash) before the graph is
+      // told it failed. Retries do not consume the flow's loop budget.
+      max_node_retries: z.number().int().min(0).max(10).default(2),
+      // Flow runs one task may go through before it is parked for a human. A
+      // terminal that sets `changes_requested` makes the task eligible again, so
+      // without this a reject-loop flow could restart forever.
+      max_flow_runs_per_task: z.number().int().min(1).max(100).default(6),
     })
     .default({
       enabled: true,
@@ -129,6 +142,10 @@ export const OrcConfigSchema = z.object({
       session_idle_timeout_minutes: 20,
       session_max_lifetime_minutes: 120,
       worker_auto_approve: true,
+      default_flow: "orc-default",
+      review_flow: "orc-review-only",
+      max_node_retries: 2,
+      max_flow_runs_per_task: 6,
     }),
 
   speech: SpeechConfigSchema.default({
@@ -239,6 +256,14 @@ function fromEnv(): Record<string, unknown> {
     agent_loop.session_max_lifetime_minutes = Number(process.env.ORC_AGENT_LOOP_MAX_LIFETIME);
   if (process.env.ORC_AGENT_LOOP_AUTO_APPROVE)
     agent_loop.worker_auto_approve = process.env.ORC_AGENT_LOOP_AUTO_APPROVE === "true";
+  if (process.env.ORC_AGENT_LOOP_DEFAULT_FLOW)
+    agent_loop.default_flow = process.env.ORC_AGENT_LOOP_DEFAULT_FLOW;
+  if (process.env.ORC_AGENT_LOOP_REVIEW_FLOW)
+    agent_loop.review_flow = process.env.ORC_AGENT_LOOP_REVIEW_FLOW;
+  if (process.env.ORC_AGENT_LOOP_MAX_NODE_RETRIES)
+    agent_loop.max_node_retries = Number(process.env.ORC_AGENT_LOOP_MAX_NODE_RETRIES);
+  if (process.env.ORC_AGENT_LOOP_MAX_FLOW_RUNS)
+    agent_loop.max_flow_runs_per_task = Number(process.env.ORC_AGENT_LOOP_MAX_FLOW_RUNS);
   if (Object.keys(agent_loop).length) env.agent_loop = agent_loop;
 
   const gateway: Record<string, unknown> = {};

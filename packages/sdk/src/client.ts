@@ -1,12 +1,19 @@
 import { loadConfig } from "@orc/core/config";
 import type {
   ApiResult,
+  AttachFlowInput,
+  BrokenFlow,
+  CreateFlowInput,
   CreateJobInput,
   CreateMemoryInput,
   CreateProjectInput,
   CreateSkillInput,
   CreateTaskInput,
   CreateTaskLinkInput,
+  FlowFull,
+  FlowMeta,
+  FlowRun,
+  FlowSource,
   HealthResponse,
   Job,
   JobRun,
@@ -14,6 +21,7 @@ import type {
   Memory,
   Project,
   ProjectSummary,
+  ResumeFlowInput,
   Session,
   SessionDetail,
   SkillFull,
@@ -135,6 +143,22 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<TaskLink>("POST", `/tasks/${id}/links`, input),
 
       deleteLink: (id: string, linkId: string) => c<null>("DELETE", `/tasks/${id}/links/${linkId}`),
+
+      flow: (id: string) => c<FlowRun>("GET", `/tasks/${id}/flow`),
+
+      attachFlow: (id: string, input: AttachFlowInput) =>
+        c<{
+          attached: string;
+          started: boolean;
+          flow_run_id: string | null;
+          error: string | null;
+        }>("POST", `/tasks/${id}/flow`, input),
+
+      resumeFlow: (id: string, input: ResumeFlowInput) =>
+        c<{ ok: boolean; next_nodes: string[] }>("POST", `/tasks/${id}/flow/resume`, input),
+
+      haltFlow: (id: string, reason?: string) =>
+        c<{ halted: boolean }>("POST", `/tasks/${id}/flow/halt`, { reason }),
     },
 
     memories: {
@@ -215,6 +239,23 @@ export function createOrcClient(options?: OrcClientOptions) {
         ),
 
       create: (input: CreateSkillInput) => c<SkillFull>("POST", "/skills", input),
+    },
+
+    flows: {
+      list: (params?: { q?: string; source?: FlowSource; reload?: boolean }) =>
+        c<{ flows: FlowMeta[]; broken: BrokenFlow[] }>(
+          "GET",
+          "/flows",
+          undefined,
+          params as Record<string, string | number | boolean | undefined>,
+        ),
+
+      read: (name: string) => c<FlowFull>("GET", `/flows/${encodeURIComponent(name)}`),
+
+      create: (input: CreateFlowInput) => c<FlowFull>("POST", "/flows", input),
+
+      validate: (definition: Record<string, unknown>) =>
+        c<{ valid: boolean; errors: string[] }>("POST", "/flows/validate", { definition }),
     },
 
     projects: {

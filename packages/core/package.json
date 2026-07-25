@@ -12,6 +12,9 @@
     "./errors": "./src/errors.ts",
     "./version": "./src/version.ts",
     "./skill-service": "./src/skill-service.ts",
+    "./flow": "./src/flow.ts",
+    "./flow-engine": "./src/flow-engine.ts",
+    "./flow-service": "./src/flow-service.ts",
     "./knowledge": "./src/knowledge.ts",
     "./validate": "./src/validate.ts"
   },

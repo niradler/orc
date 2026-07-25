@@ -1,5 +1,7 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
+import { parseFlowDefinition } from "@orc/core/flow";
+import { readFlow } from "@orc/core/flow-service";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import type { TaskStatus } from "@orc/core/types";
@@ -32,6 +34,8 @@ const TaskSchema = z
     agent_backend: z.string().nullable(),
     agent_model: z.string().nullable(),
     max_review_rounds: z.number().int(),
+    flow_name: z.string().nullable(),
+    flow_override: z.unknown().nullable(),
     comments_count: z.number().int().optional(),
     created_at: z.string().datetime(),
     updated_at: z.string().datetime(),
@@ -64,6 +68,12 @@ const CreateTaskSchema = z
     agent_backend: AgentBackendSchema.optional(),
     agent_model: z.string().optional(),
     max_review_rounds: z.number().int().min(1).optional().default(3),
+    flow_name: z.string().optional().openapi({
+      description: "Flow graph this task runs (defaults to agent_loop.default_flow)",
+    }),
+    flow_override: z.record(z.string(), z.unknown()).optional().openapi({
+      description: "Inline flow definition for this task alone. Takes precedence over flow_name.",
+    }),
   })
   .openapi("CreateTask");
 
@@ -83,6 +93,8 @@ const UpdateTaskSchema = z
     skill_name: z.string().nullable().optional(),
     required_review: z.boolean().optional(),
     max_review_rounds: z.number().int().min(1).optional(),
+    flow_name: z.string().nullable().optional(),
+    flow_override: z.record(z.string(), z.unknown()).nullable().optional(),
   })
   .openapi("UpdateTask");
 
@@ -248,6 +260,26 @@ const addCommentRoute = createRoute({
   },
 });
 
+/**
+ * Validate the flow fields before they are stored. Left unchecked, a bad
+ * `flow_name` or a malformed `flow_override` only surfaces when the task loop
+ * tries to run it — by which point the task just blocks itself.
+ */
+function validateFlowFields(body: {
+  flow_name?: string | null | undefined;
+  flow_override?: Record<string, unknown> | null | undefined;
+}): void {
+  if (body.flow_name) {
+    if (!readFlow(body.flow_name)) throw new NotFoundError("Flow", body.flow_name);
+  }
+  if (body.flow_override) {
+    const parsed = parseFlowDefinition(body.flow_override);
+    if (!parsed.ok) {
+      throw new ValidationError(`Invalid flow_override:\n  ${parsed.errors.join("\n  ")}`);
+    }
+  }
+}
+
 function toDto(t: typeof tasks.$inferSelect, commentsCount?: number) {
   return {
     ...t,
@@ -257,10 +289,22 @@ function toDto(t: typeof tasks.$inferSelect, commentsCount?: number) {
     agent_backend: t.agent_backend ?? null,
     agent_model: t.agent_model ?? null,
     max_review_rounds: t.max_review_rounds,
+    flow_name: t.flow_name ?? null,
+    flow_override: t.flow_override ?? null,
     comments_count: commentsCount ?? 0,
     created_at: t.created_at.toISOString(),
     updated_at: t.updated_at.toISOString(),
   };
+}
+
+/**
+ * List rows omit the inline graph: `flow_override` is a whole flow definition,
+ * and including it turned `GET /tasks` into megabytes. `GET /tasks/{id}` still
+ * returns it.
+ */
+function toListDto(t: typeof tasks.$inferSelect, commentsCount?: number) {
+  const { flow_override: _flow_override, ...rest } = toDto(t, commentsCount);
+  return { ...rest, flow_override: null };
 }
 
 function getCommentsCountMap(taskIds: string[]): Map<string, number> {
@@ -293,6 +337,8 @@ function rawToDto(row: Record<string, unknown>, commentsCount?: number) {
   return {
     ...row,
     tags: typeof row.tags === "string" ? JSON.parse(row.tags) : row.tags,
+    // Lists never carry the inline graph — see toListDto.
+    flow_override: null,
     comments_count: commentsCount ?? 0,
     due_at: row.due_at ? new Date((row.due_at as number) * 1000).toISOString() : null,
     claim_expires_at: row.claim_expires_at
@@ -349,7 +395,7 @@ app.openapi(listRoute, async (c) => {
 
   const counts = getCommentsCountMap(rows.map((r) => r.id));
   return c.json({
-    tasks: rows.map((r) => toDto(r, counts.get(r.id) ?? 0)),
+    tasks: rows.map((r) => toListDto(r, counts.get(r.id) ?? 0)),
     total: rows.length,
   });
 });
@@ -365,6 +411,7 @@ app.openapi(getRoute, async (c) => {
 app.openapi(createRoute_, async (c) => {
   const db = getDb();
   const body = c.req.valid("json");
+  validateFlowFields(body);
   const now = new Date();
   const id = ulid();
 
@@ -383,6 +430,8 @@ app.openapi(createRoute_, async (c) => {
     agent_backend: body.agent_backend as string | undefined,
     agent_model: body.agent_model,
     max_review_rounds: body.max_review_rounds ?? 3,
+    flow_name: body.flow_name,
+    flow_override: body.flow_override,
     created_at: now,
     updated_at: now,
   });
@@ -402,6 +451,7 @@ app.openapi(updateRoute, async (c) => {
 
   const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!existing) throw new NotFoundError("Task", id);
+  validateFlowFields(body);
 
   if (body.status && body.status !== existing.status) {
     const result = await updateTaskStatus({
@@ -428,6 +478,13 @@ app.openapi(updateRoute, async (c) => {
     ...(body.skill_name !== undefined ? { skill_name: body.skill_name } : {}),
     ...(body.required_review !== undefined ? { required_review: body.required_review } : {}),
     ...(body.max_review_rounds !== undefined ? { max_review_rounds: body.max_review_rounds } : {}),
+    // Setting one clears the other: the override always wins in resolution, so
+    // leaving a stale one behind makes `--flow x` look applied while changing
+    // nothing.
+    ...(body.flow_name !== undefined ? { flow_name: body.flow_name, flow_override: null } : {}),
+    ...(body.flow_override !== undefined
+      ? { flow_override: body.flow_override, flow_name: null }
+      : {}),
   };
   if (Object.keys(nonStatusFields).length > 0) {
     await db
@@ -451,6 +508,15 @@ app.openapi(deleteRoute, async (c) => {
   const { id } = c.req.valid("param");
   const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!existing) throw new NotFoundError("Task", id);
+
+  // Stop the flow first. The rows cascade, but a live agent session does not: it
+  // would keep working (auto-approved) on a task that no longer exists, and keep
+  // counting against max_workers until the idle sweep noticed 20 minutes later.
+  const { haltFlowRunForTask } = await import("@orc/runner/flow-runner");
+  await haltFlowRunForTask(id, "task was deleted").catch((err) =>
+    logger.warn("halting the task's flow before delete failed", { err }),
+  );
+
   await db.delete(tasks).where(eq(tasks.id, id));
   return new Response(null, { status: 204 });
 });

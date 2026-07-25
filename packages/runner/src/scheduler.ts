@@ -96,6 +96,22 @@ export function pruneHistory(): void {
         logger.info(`Pruned ${result.changes} job runs older than ${HISTORY_RETENTION_DAYS} days`);
       }
 
+      // Finished flow runs accumulate one row per run plus one per node visit,
+      // each carrying a frozen copy of the graph. Keep `running` rows whatever
+      // their age; flow_node_runs cascades from flow_runs.
+      const flowResult = sqlite
+        .query(
+          `DELETE FROM flow_runs
+           WHERE status IN ('completed','halted','cancelled')
+             AND COALESCE(ended_at, updated_at) < ?`,
+        )
+        .run(cutoffTs);
+      if (flowResult.changes > 0) {
+        logger.info(
+          `Pruned ${flowResult.changes} finished flow runs older than ${HISTORY_RETENTION_DAYS} days`,
+        );
+      }
+
       // Terminal gateway sessions are only ever status-flipped, never deleted —
       // they accumulate forever and are the dominant WAL-write source. Prune the
       // old finished ones (keep active 'running' rows regardless of age).

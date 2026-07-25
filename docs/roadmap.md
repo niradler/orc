@@ -36,6 +36,7 @@
 - **Filesystem-based skills** - `skills/*/SKILL.md` (built-in) and `~/.orc/skills/` (user), discoverable via `skill_list`/`skill_read`/`skill_create` MCP tools
 - **Built-in workflow skills** - orc-coder, orc-reviewer, orc-planner, orc-bugfix, orc-requirements, orc-report, orc-worker-base, orc-main-base
 - **Review flow** - configurable `required_review`, `max_review_rounds` with auto-pause on exceeded rounds
+- **Task flows** - per-task graphs replacing the hardcoded worker/reviewer pipeline: conditional edges, bounded loops, parallel fan-out with `all`/`any` joins, human gates, and a durable per-node ledger. Deterministic engine (`@orc/core/flow-engine`) with five independent termination rails; six built-in flows; user flows in `~/.orc/flows/` and inline per-task graphs. See [Task Flows](./task-flows.md)
 - **Per-project concurrency** - `max_workers` on projects to limit parallel agents
 - **Polymorphic comments** - `task_update` with `comment` param writes to shared comments table
 - **Skill installation** - `npx skills add niradler/orc` for agent skill distribution
