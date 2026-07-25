@@ -317,7 +317,7 @@ describe("termination rails", () => {
     const gateLoop = def({
       name: "gateloop",
       entry: "a",
-      limits: { max_node_executions: 1000 },
+      limits: { max_node_executions: 500 },
       nodes: {
         a: { kind: "gate" },
         b: { kind: "gate" },
@@ -484,6 +484,96 @@ describe("fan-out and joins", () => {
     expect(cancelled(next.actions)).toEqual(["b"]);
   });
 
+  test("an arrival from a previous round cannot satisfy a join in a later one", () => {
+    // `r2` can bypass the join and loop back to `build`, leaving `r1`'s arrival
+    // parked. Without generation stamps, that stale arrival satisfies the join
+    // on the next round — completing the flow and cancelling `r1`'s second
+    // review, whose findings were never read.
+    const bypassFlow = def({
+      name: "join-bypass",
+      entry: "build",
+      limits: { max_node_executions: 40 },
+      nodes: {
+        build: { kind: "gate", routing: "all" },
+        r1: { kind: "agent", skill: "s", outcomes: ["ok"] },
+        r2: { kind: "agent", skill: "s", outcomes: ["ok", "redo"] },
+        verdict: { kind: "gate", join: { mode: "all", from: ["r1", "r2"] } },
+        done: { kind: "terminal" },
+        gave_up: { kind: "terminal", task_status: "paused" },
+      },
+      edges: [
+        { from: "build", to: "r1" },
+        { from: "build", to: "r2" },
+        { from: "r1", to: "verdict", when: { always: true } },
+        { from: "r2", to: "verdict", when: { outcome: "ok" } },
+        { from: "r2", to: "build", when: { visits: { node: "build", lt: 3 } } },
+        { from: "r2", to: "gave_up", when: { always: true } },
+        { from: "verdict", to: "done", when: { always: true } },
+      ],
+    });
+
+    let step = startFlow(bypassFlow, { now: NOW });
+    expect(step.state.active.map((a) => a.nodeId).sort()).toEqual(["r1", "r2"]);
+
+    // Round 1: r1 parks at the join, r2 loops back to build.
+    const r1a = step.state.active.find((a) => a.nodeId === "r1");
+    const r2a = step.state.active.find((a) => a.nodeId === "r2");
+    if (!r1a || !r2a) throw new Error("expected both reviewers");
+    step = advanceFlow(bypassFlow, step.state, { ...r1a, outcome: "ok" }, { now: NOW });
+    expect(Object.keys(step.state.joins)).toEqual(["verdict"]);
+    step = advanceFlow(bypassFlow, step.state, { ...r2a, outcome: "redo" }, { now: NOW });
+    expect(spawned(step.actions).sort()).toEqual(["r1", "r2"]);
+
+    // Round 2: r2 alone reports ok. The round-1 arrival is stale, so the join
+    // must NOT fire and r1's second review must stay alive.
+    const r2b = step.state.active.find((a) => a.nodeId === "r2");
+    if (!r2b) throw new Error("expected r2 again");
+    step = advanceFlow(bypassFlow, step.state, { ...r2b, outcome: "ok" }, { now: NOW });
+    expect(step.state.status).toBe("running");
+    expect(cancelled(step.actions)).toEqual([]);
+    expect(step.state.active.map((a) => a.nodeId)).toEqual(["r1"]);
+
+    // It fires once the live r1 arrives.
+    const r1b = step.state.active.find((a) => a.nodeId === "r1");
+    if (!r1b) throw new Error("expected r1 again");
+    step = advanceFlow(bypassFlow, step.state, { ...r1b, outcome: "ok" }, { now: NOW });
+    expect(step.state.status).toBe("completed");
+  });
+
+  test("two branches converging on a non-join node is refused, not silently doubled", () => {
+    // Both copies would sit in `active` at once, and a reporting agent has no
+    // way to say which one it is — so one attempt's verdict lands on the other's
+    // row. A join is the construct for fan-in.
+    const fanInFlow = def({
+      name: "bad-fan-in",
+      entry: "start",
+      nodes: {
+        start: { kind: "gate", routing: "all" },
+        a: { kind: "agent", skill: "s", outcomes: ["ok"] },
+        b: { kind: "agent", skill: "s", outcomes: ["ok"] },
+        shared: { kind: "agent", skill: "s", outcomes: ["ok"] },
+        done: { kind: "terminal" },
+      },
+      edges: [
+        { from: "start", to: "a" },
+        { from: "start", to: "b" },
+        { from: "a", to: "shared", when: { always: true } },
+        { from: "b", to: "shared", when: { always: true } },
+        { from: "shared", to: "done", when: { always: true } },
+      ],
+    });
+
+    let step = startFlow(fanInFlow, { now: NOW });
+    const a = step.state.active.find((n) => n.nodeId === "a");
+    const b = step.state.active.find((n) => n.nodeId === "b");
+    if (!a || !b) throw new Error("expected both branches");
+    step = advanceFlow(fanInFlow, step.state, { ...a, outcome: "ok" }, { now: NOW });
+    expect(step.state.active.map((n) => n.nodeId)).toContain("shared");
+    step = advanceFlow(fanInFlow, step.state, { ...b, outcome: "ok" }, { now: NOW });
+    expect(step.state.status).toBe("halted");
+    expect(step.state.halt_reason).toBe("concurrent_reentry:shared");
+  });
+
   test("branches parked at a join that can never complete are a detected deadlock", () => {
     const deadFlow = def({
       name: "dead",
@@ -543,11 +633,39 @@ describe("revisit semantics", () => {
   });
 
   test("reset_on_revisit=true (the default) always starts a fresh session", () => {
+    const loop = def({
+      name: "fresh-each-time",
+      entry: "work",
+      nodes: {
+        work: { kind: "agent", skill: "s", max_visits: 3, outcomes: ["again"] },
+        done: { kind: "terminal" },
+      },
+      edges: [
+        { from: "work", to: "work", when: { outcome: "again" } },
+        { from: "work", to: "done", when: { always: true } },
+      ],
+    });
+    let step = startFlow(loop, { now: NOW });
+    const first = step.state.active[0];
+    if (!first) throw new Error("expected work");
+    step = advanceFlow(loop, step.state, { ...first, outcome: "again" }, { now: NOW });
+    expect(step.actions.find((a) => a.kind === "spawn")).toMatchObject({
+      nodeId: "work",
+      attempt: 2,
+      resume: false,
+    });
+  });
+
+  test("orc-default resumes the worker's session on a rework round", () => {
+    // The pre-flow loop resumed the worker and sent only the new feedback; this
+    // is what makes orc-default behaviour-preserving rather than merely similar.
     const flow = builtin("orc-default");
     const vars = { required_review: true, max_review_rounds: 3 };
     let step = startFlow(flow, { now: NOW, vars });
     const build = step.state.active[0];
     if (!build) throw new Error("expected build");
+    expect(step.actions[0]).toMatchObject({ nodeId: "build", attempt: 1, resume: false });
+
     step = advanceFlow(flow, step.state, { ...build, outcome: "submitted" }, { now: NOW });
     const review = step.state.active[0];
     if (!review) throw new Error("expected review");
@@ -555,7 +673,7 @@ describe("revisit semantics", () => {
     expect(step.actions.find((a) => a.kind === "spawn")).toMatchObject({
       nodeId: "build",
       attempt: 2,
-      resume: false,
+      resume: true,
     });
   });
 });

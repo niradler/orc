@@ -55,12 +55,19 @@ async function runCycle(): Promise<string> {
 
   for (const task of await provider.pickWorkTasks()) {
     if (getActiveFlowRunForTask(task.id)) continue;
-    const result = await startFlowForTask(task.id);
-    if (result.ok) {
-      lines.push(`Started ${result.flowName} for: [${task.id}] ${task.title}`);
-      started++;
-    } else {
-      lines.push(`Could not start flow for [${task.id}]: ${result.error}`);
+    // Per-task guard: one task with an unusable flow must not abort the cycle
+    // for every other task.
+    try {
+      const result = await startFlowForTask(task.id);
+      if (result.ok) {
+        lines.push(`Started ${result.flowName} for: [${task.id}] ${task.title}`);
+        started++;
+      } else {
+        lines.push(`Could not start flow for [${task.id}]: ${result.error}`);
+      }
+    } catch (err) {
+      logger.error(`Starting a flow for task ${task.id} threw: ${String(err)}`);
+      lines.push(`Error starting flow for [${task.id}]: ${String(err)}`);
     }
   }
 
@@ -68,12 +75,17 @@ async function runCycle(): Promise<string> {
   // the review-only graph rather than leaving it sitting there.
   for (const task of await provider.pickReviewTasks()) {
     if (getActiveFlowRunForTask(task.id)) continue;
-    const result = await startFlowForTask(task.id, { flowName: config.agent_loop.review_flow });
-    if (result.ok) {
-      lines.push(`Started ${result.flowName} for review: [${task.id}] ${task.title}`);
-      started++;
-    } else {
-      lines.push(`Could not start review flow for [${task.id}]: ${result.error}`);
+    try {
+      const result = await startFlowForTask(task.id, { flowName: config.agent_loop.review_flow });
+      if (result.ok) {
+        lines.push(`Started ${result.flowName} for review: [${task.id}] ${task.title}`);
+        started++;
+      } else {
+        lines.push(`Could not start review flow for [${task.id}]: ${result.error}`);
+      }
+    } catch (err) {
+      logger.error(`Starting a review flow for task ${task.id} threw: ${String(err)}`);
+      lines.push(`Error starting review flow for [${task.id}]: ${String(err)}`);
     }
   }
 

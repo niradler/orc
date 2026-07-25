@@ -28,6 +28,14 @@ const logger = createLogger("runner:flow");
 
 const liveSessions = new Map<string, AgentSession>();
 
+// Node runs cancelled while their session was still being opened. `liveSessions`
+// only gets a handle once `openAgentSession` resolves, so a cancel arriving in
+// that window has nothing to close; the spawn path consults this set the moment
+// it does have a handle and closes immediately. Without it the agent runs to
+// completion on cancelled work, unreapable (its session row says `stopped`, and
+// the stale sweep only looks at `running`).
+const cancelledNodeRuns = new Set<string>();
+
 const SESSION_TOUCH_THROTTLE_MS = 5_000;
 const lastSessionTouch = new Map<string, number>();
 
@@ -48,6 +56,15 @@ export function closeLiveSession(sessionId: string): void {
   if (!live) return;
   liveSessions.delete(sessionId);
   void live.close().catch(() => {});
+}
+
+function markNodeRunCancelled(nodeRunId: string): void {
+  cancelledNodeRuns.add(nodeRunId);
+  // Bounded: this only holds ids long enough for an in-flight open to notice.
+  if (cancelledNodeRuns.size > 512) {
+    const oldest = cancelledNodeRuns.values().next().value;
+    if (oldest !== undefined) cancelledNodeRuns.delete(oldest);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -152,7 +169,7 @@ function loadRun(flowRunId: string): LoadedRun | null {
       row.status === "running" ? "running" : row.status === "completed" ? "completed" : "halted",
     active: parseJson(row.active, [] as { nodeId: string; attempt: number }[]),
     visits: parseJson(row.visits, {} as Record<string, number>),
-    joins: parseJson(row.joins, {} as Record<string, Record<string, string>>),
+    joins: parseJson(row.joins, {} as FlowState["joins"]),
     vars: parseJson(row.vars, {} as Record<string, unknown>),
     executions: row.node_executions,
     started_at: row.started_at,
@@ -556,14 +573,30 @@ async function applyAction(
             action.resume ? 1 : 0,
           );
       } catch (err) {
-        logger.warn(
-          `Node run for ${action.nodeId}#${action.attempt} already exists: ${String(err)}`,
-        );
+        // Unique on (run, node, attempt): an existing row means this step is
+        // being replayed, which is fine. Anything else would leave the engine
+        // with an active node that has no row to drive it, so fail loudly.
+        const already = sqlite
+          .query(
+            "SELECT 1 AS present FROM flow_node_runs WHERE flow_run_id = ? AND node_id = ? AND attempt = ?",
+          )
+          .get(flowRunId, action.nodeId, action.attempt) as { present: number } | null;
+        if (!already) {
+          logger.error(`Could not queue node ${action.nodeId}#${action.attempt}: ${String(err)}`);
+          throw err;
+        }
+        logger.debug(`Node run ${action.nodeId}#${action.attempt} already recorded`);
         return;
       }
 
-      if (node.task_status) {
-        await setTaskStatus(task.id, node.task_status, undefined, flowRunId);
+      // A queued agent node is not being worked on yet: the task is `queued`
+      // until its session really starts (see spawnNodeSession). Applying the
+      // node's status here would show N tasks `doing` while max_workers allows
+      // one. Human nodes have no session, so they take their status now.
+      if (isHuman) {
+        if (node.task_status) await setTaskStatus(task.id, node.task_status, undefined, flowRunId);
+      } else {
+        await setTaskStatus(task.id, "queued", undefined, flowRunId);
       }
       if (isHuman) {
         await addTaskComment(
@@ -588,6 +621,7 @@ async function applyAction(
         gateway_session_id: string | null;
       } | null;
       if (!row) return;
+      markNodeRunCancelled(row.id);
       if (row.gateway_session_id) {
         closeLiveSession(row.gateway_session_id);
         sqlite
@@ -688,6 +722,24 @@ async function startFlowForTaskUnlocked(
   }
 
   const config = loadConfig();
+
+  // A per-run rail cannot see a loop made of whole runs: a terminal that sets
+  // `changes_requested` makes the task eligible again, and the next cycle starts
+  // a fresh run with its budgets reset. Bound the number of runs per task too.
+  const priorRuns = getSqlite()
+    .query("SELECT COUNT(*) AS count FROM flow_runs WHERE task_id = ?")
+    .get(taskId) as { count: number } | null;
+  if ((priorRuns?.count ?? 0) >= config.agent_loop.max_flow_runs_per_task) {
+    await addTaskComment(
+      taskId,
+      `This task has already been through ${priorRuns?.count} flow runs ` +
+        `(limit ${config.agent_loop.max_flow_runs_per_task}). Pausing for a human rather than starting another — ` +
+        "the flow is not converging.",
+      "system",
+    );
+    await setTaskStatus(taskId, "paused");
+    return { ok: false, error: "Task has exhausted its flow-run budget" };
+  }
   const resolved = resolveFlowForTask({
     flowOverride: opts?.flowName ? undefined : parseJson<unknown>(task.flow_override, undefined),
     flowName: opts?.flowName ?? task.flow_name,
@@ -735,9 +787,15 @@ async function startFlowForTaskUnlocked(
       updated_at: new Date(),
     });
 
-  getSqlite()
-    .query("UPDATE tasks SET claimed_by = ?, updated_at = unixepoch() WHERE id = ?")
+  const claimed = getSqlite()
+    .query(
+      "UPDATE tasks SET claimed_by = ?, updated_at = unixepoch() WHERE id = ? AND claimed_by IS NULL",
+    )
     .run(flowRunId, task.id);
+  if (claimed.changes === 0) {
+    getSqlite().query("DELETE FROM flow_runs WHERE id = ?").run(flowRunId);
+    return { ok: false, error: "Task was claimed concurrently" };
+  }
 
   const emptyBefore: FlowState = {
     status: "running",
@@ -990,6 +1048,11 @@ async function spawnNodeSession(nodeRun: NodeRunRow): Promise<void> {
     return;
   }
 
+  // Now that an agent is really running, the node's declared status is honest.
+  if (node.task_status) {
+    await setTaskStatus(task.id, node.task_status, undefined, nodeRun.flow_run_id);
+  }
+
   driveNodeSession({
     sessionId,
     nodeRunId: nodeRun.id,
@@ -1030,6 +1093,26 @@ async function driveNodeSession(opts: {
       { cwd: opts.cwd, autoApprove: true, ...(opts.model ? { model: opts.model } : {}) },
       opts.previousRuntimeSessionId,
     );
+
+    // The graph may have cancelled this node while the backend was starting.
+    // Closing here is the only chance to stop it: nothing else holds a handle,
+    // and a cancelled node's session row is not `running` so the stale sweep
+    // will never look at it again.
+    const stillWanted = sqlite
+      .query("SELECT status FROM flow_node_runs WHERE id = ?")
+      .get(opts.nodeRunId) as { status: string } | null;
+    if (cancelledNodeRuns.has(opts.nodeRunId) || stillWanted?.status !== "running") {
+      cancelledNodeRuns.delete(opts.nodeRunId);
+      logger.info(`Node ${opts.nodeId} was cancelled while its session opened; closing it`);
+      await session.close().catch(() => {});
+      sqlite
+        .query(
+          "UPDATE gateway_sessions SET status = 'stopped', last_error = 'cancelled during startup', updated_at = unixepoch() WHERE id = ?",
+        )
+        .run(opts.sessionId);
+      return;
+    }
+
     liveSessions.set(opts.sessionId, session);
     await session.send(opts.prompt);
 
@@ -1116,11 +1199,22 @@ async function finishNodeRunUnlocked(nodeRunId: string, error: string | null): P
     }
   }
 
+  // An outcome the node actually reported wins over a session that ended badly
+  // afterwards. A worker that reports `submitted` and then trips
+  // `error_max_turns` has still done the work and said so — routing its
+  // `on_error` instead would silently discard the verdict and, on orc-default,
+  // block the task. The failure is still recorded on the row for the ledger.
+  const errored = failure !== null && !outcome;
   sqlite
     .query(
       "UPDATE flow_node_runs SET status = ?, error = COALESCE(?, error), ended_at = unixepoch() WHERE id = ?",
     )
-    .run(failure ? "failed" : "succeeded", failure, nodeRunId);
+    .run(errored ? "failed" : "succeeded", failure, nodeRunId);
+  if (failure && outcome) {
+    logger.warn(
+      `Node ${row.node_id} reported "${outcome}" before failing (${failure}); routing on the reported outcome`,
+    );
+  }
 
   // With neither an outcome nor an error the engine halts on `no_outcome:<node>`
   // — better a human looks than the graph guesses a verdict.
@@ -1128,8 +1222,88 @@ async function finishNodeRunUnlocked(nodeRunId: string, error: string | null): P
     nodeId: row.node_id,
     attempt: row.attempt,
     ...(outcome ? { outcome } : {}),
-    ...(failure ? { error: failure } : {}),
+    ...(errored ? { error: failure } : {}),
   });
+}
+
+/**
+ * A session died for infrastructure reasons (idle timeout, lifetime cap, backend
+ * crash) rather than because the agent decided something. Re-queue the same node
+ * as a fresh attempt instead of routing `on_error`.
+ *
+ * The old loop retried these automatically — a worker timeout reset the task to
+ * `todo`, a reviewer timeout just unclaimed it. Routing `on_error` instead would
+ * end orc-default at `blocked` on the first network blip and never come back.
+ *
+ * Bounded by `agent_loop.max_node_retries`: retries do not advance the graph, so
+ * they consume no `visits` and no loop budget, which is exactly why they need
+ * their own cap. Retries used = rows for this node − graph visits to it.
+ */
+async function retryNodeRun(nodeRunId: string, reason: string): Promise<boolean> {
+  const sqlite = getSqlite();
+  const row = sqlite
+    .query("SELECT * FROM flow_node_runs WHERE id = ?")
+    .get(nodeRunId) as NodeRunRow | null;
+  if (!row) return false;
+
+  const loaded = loadRun(row.flow_run_id);
+  if (!loaded || loaded.state.status !== "running") return false;
+  if (!loaded.state.active.some((a) => a.nodeId === row.node_id && a.attempt === row.attempt)) {
+    return false;
+  }
+
+  const attempts = sqlite
+    .query(
+      "SELECT COUNT(*) AS count, COALESCE(MAX(attempt), 0) AS last FROM flow_node_runs WHERE flow_run_id = ? AND node_id = ?",
+    )
+    .get(row.flow_run_id, row.node_id) as { count: number; last: number };
+  const graphVisits = loaded.state.visits[row.node_id] ?? 1;
+  const retriesUsed = Math.max(0, attempts.count - graphVisits);
+  const maxRetries = loadConfig().agent_loop.max_node_retries;
+  if (retriesUsed >= maxRetries) return false;
+
+  sqlite
+    .query(
+      "UPDATE flow_node_runs SET status = 'failed', error = COALESCE(?, error), ended_at = unixepoch() WHERE id = ?",
+    )
+    .run(reason, nodeRunId);
+
+  const nextAttempt = attempts.last + 1;
+  sqlite
+    .query(
+      `INSERT INTO flow_node_runs
+         (id, flow_run_id, task_id, node_id, node_kind, attempt, status, skill_name, resume_session, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, 0, unixepoch())`,
+    )
+    .run(
+      ulid(),
+      row.flow_run_id,
+      row.task_id,
+      row.node_id,
+      loaded.def.nodes[row.node_id]?.kind ?? "agent",
+      nextAttempt,
+      row.skill_name,
+    );
+
+  // Point the engine's active entry at the new attempt so its eventual report is
+  // accepted. Visits and executions are deliberately untouched.
+  const state = {
+    ...loaded.state,
+    active: loaded.state.active.map((a) =>
+      a.nodeId === row.node_id && a.attempt === row.attempt ? { ...a, attempt: nextAttempt } : a,
+    ),
+  };
+  saveState(row.flow_run_id, state);
+
+  await addTaskComment(
+    row.task_id,
+    `Node **${row.node_id}** was reclaimed (${reason}); retrying it (${retriesUsed + 1}/${maxRetries}).`,
+    "system",
+  );
+  logger.warn(
+    `Node ${row.node_id} reclaimed (${reason}); queued attempt ${nextAttempt} (retry ${retriesUsed + 1}/${maxRetries})`,
+  );
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1262,6 +1436,7 @@ async function cancelFlowRunUnlocked(flowRunId: string, reason: string): Promise
     .all(flowRunId) as { id: string; gateway_session_id: string | null }[];
 
   for (const node of nodes) {
+    markNodeRunCancelled(node.id);
     if (node.gateway_session_id) {
       closeLiveSession(node.gateway_session_id);
       sqlite
@@ -1277,10 +1452,14 @@ async function cancelFlowRunUnlocked(flowRunId: string, reason: string): Promise
       .run(reason, node.id);
   }
 
+  // Only a live run can be cancelled: this can be queued behind a step that
+  // already completed the run, and overwriting a finished run's status would
+  // corrupt its history.
   sqlite
     .query(
       `UPDATE flow_runs SET status = 'cancelled', halt_reason = ?, active = '[]',
-              ended_at = unixepoch(), updated_at = unixepoch() WHERE id = ?`,
+              ended_at = unixepoch(), updated_at = unixepoch()
+       WHERE id = ? AND status = 'running'`,
     )
     .run(reason, flowRunId);
 
@@ -1334,11 +1513,15 @@ export async function onTaskStatusChangedExternally(
 
   // An agent node that is mid-session setting the task status is the normal
   // in-flow protocol, not interference — its own report is what routes the
-  // graph, so leave the run alone.
-  const running = sqlite
-    .query("SELECT id FROM flow_node_runs WHERE flow_run_id = ? AND status = 'running' LIMIT 1")
+  // graph, so leave the run alone. `pending` counts too: a node waiting for a
+  // worker slot is still the flow's own business, and discarding the run there
+  // would restart the graph and reset its loop budget.
+  const live = sqlite
+    .query(
+      "SELECT id FROM flow_node_runs WHERE flow_run_id = ? AND status IN ('pending','running') LIMIT 1",
+    )
     .get(run.id) as { id: string } | null;
-  if (running) return;
+  if (live) return;
 
   if (status === "done") {
     await cancelFlowRun(run.id, "task was marked done out of band");
@@ -1435,7 +1618,12 @@ export async function cleanupStaleFlowSessions(): Promise<number> {
       .get(session.id) as { id: string } | null;
 
     if (nodeRun) {
-      await finishNodeRun(nodeRun.id, reason);
+      // Try to retry the node in place first; only let the graph see a failure
+      // once the retry budget is gone.
+      const retried = await withTaskLock(session.task_id ?? nodeRun.id, () =>
+        retryNodeRun(nodeRun.id, reason),
+      );
+      if (!retried) await finishNodeRun(nodeRun.id, reason);
     } else if (session.task_id) {
       // A session with no node run predates flows (or its run was deleted):
       // release the task the way the old loop did so it is not stuck claimed.

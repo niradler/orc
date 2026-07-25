@@ -73,7 +73,7 @@ Edges are evaluated **in order** and the first match wins (unless the node sets 
 { "from": "verify", "to": "escalated", "when": { "always": true } }
 ```
 
-Conditions are **data, never code** — a definition is JSON that a user or an agent authored, so it must not be able to execute anything. There is no `eval`, no expression language:
+Conditions are **data, never code** — a definition is JSON that a user or an agent authored, so it must not be able to execute anything. There is no `eval`, no expression language. Every condition object is *strict*: an unknown key is rejected rather than stripped, because a silently stripped key is what turns a guarded loopback into an unguarded one.
 
 | Condition      | Example                                                       |
 | -------------- | ------------------------------------------------------------- |
@@ -85,7 +85,17 @@ Conditions are **data, never code** — a definition is JSON that a user or an a
 | `var`          | `{ "var": "tests_ok", "eq": true }`, also `ne`/`lt`/`gte`/`contains`/`exists` |
 | `all`/`any`/`not` | `{ "all": [ ..., ... ] }`                                  |
 
-Numeric comparators take a number **or** `{ "var": "name" }`. That indirection is what lets a shipped flow say "loop while under the task's own budget" instead of baking in a constant. A var operand that is missing or non-numeric makes the comparison **false** — fail closed, so a typo can never be the thing that opens an unbounded loop.
+Numeric comparators take a number **or** `{ "var": "name" }`. That indirection is what lets a shipped flow say "loop while under the task's own budget" instead of baking in a constant.
+
+Three layers keep a mistyped guard from quietly becoming an unconditional edge:
+
+- an unknown key (`lessThan` where `lt` was meant) is **rejected**, not stripped;
+- a `var` with no predicate at all is **rejected**, since it would match whenever it was evaluated;
+- a `visits: { node: … }` naming a node that does not exist is **rejected**, since a missing node reads as 0 visits and would always satisfy an `lt` guard.
+
+What remains is the *resolvable* case: a `{ var }` operand whose var is absent or non-numeric at runtime makes the comparison **false** — fail closed, so an unresolvable budget shortens a loop rather than unbounding it.
+
+Definitions are bounded in shape too — nesting depth, value count, node and edge counts, prompt length, and each `limits` field all have caps — and parsing is total: `parseFlowDefinition` returns errors and never throws, so one unusable definition cannot abort the loop cycle for every other task.
 
 ### Run vars
 
@@ -101,7 +111,8 @@ Injected at start: `task_id`, `task_title`, `project_id`, `skill_name`, `require
 ```
 
 - `mode: "all"` waits for every listed source. `mode: "any"` fires on the first arrival and, by default, cancels its siblings — that is the race/first-answer-wins pattern.
-- Arrival state resets once a join fires, so joins work correctly inside loops.
+- Arrival state resets once a join fires, so joins work correctly inside loops. Arrivals are also stamped with their source's visit count, so a branch that loops back *past* a join cannot leave an arrival behind that satisfies it on the next round.
+- Fan-**in** to a node that is not a join is refused (`concurrent_reentry`): two copies of one node cannot be told apart by a reporting agent, so a join is the construct for converging branches.
 - Fan-out never exceeds capacity. Extra nodes sit as `pending` rows and drain as worker slots free up, honouring `agent_loop.max_workers`, the project's `max_workers`, and the flow's `max_parallel`. A single-worker install runs the branches one after another instead of failing.
 - Reaching **any** terminal ends the whole run and cancels branches still in flight.
 
@@ -133,6 +144,8 @@ flow_report(task: "<id>", node: "verify", outcome: "fail",
 
 The node's prompt is assembled from its skill plus **exactly the outcomes its outgoing edges can route**, so the agent is told which verdicts are legal rather than inventing one the graph cannot use. Anything else is rejected with the valid list.
 
+The node's prompt lists exactly the outcomes its outgoing edges can route, and anything else is rejected — with one honest exception: a node whose only outgoing edge is a catch-all has no derivable outcome list, so it accepts whatever it is given.
+
 **Fallback inference.** Skills written against the old protocol drive the task status instead of the flow. If a node's session ends without a report, the outcome is inferred from the status the agent left behind:
 
 | Task status         | Candidate outcomes (first routable wins)                   |
@@ -141,6 +154,7 @@ The node's prompt is assembled from its skill plus **exactly the outcomes its ou
 | `review`            | `submitted`, `reviewed`, `milestone`, `ready`              |
 | `done`              | `approved`, `pass`, `verified`, `complete`, `submitted`     |
 | `changes_requested` | `changes_requested`, `fail`, `reject`                      |
+| `cancelled`         | `blocked`                                                  |
 
 If nothing matches and the node has exactly one declared outcome, that one is used. Otherwise the run halts for a human — an ambiguous guess is worse than a pause.
 
@@ -155,7 +169,7 @@ This is the durable-communication idea from the octopus-skill loop-graph pattern
 | Source    | Location                             | Notes                                                    |
 | --------- | ------------------------------------ | -------------------------------------------------------- |
 | `builtin` | `packages/core/src/flows/builtin.ts` | Compiled in — the published package ships only `dist/index.js`, so a filesystem-only default flow would leave npm installs with nothing to run |
-| `user`    | `~/.orc/flows/<name>/flow.json`      | Shadows a builtin of the same name                       |
+| `user`    | `~/.orc/flows/<name>/flow.json`      | Shadows a builtin of the same name — which `flow_create` requires you to ask for explicitly, since shadowing `orc-default` re-pipelines every task |
 | `project` | `./.orc/flows/<name>/flow.json`      | Shadows user and builtin                                 |
 | `task`    | `tasks.flow_override` (JSON column)  | An inline graph for one task; beats all of the above     |
 
@@ -191,6 +205,7 @@ Fan-out and join, exercising the concurrent path.
 ```mermaid
 flowchart LR
   build[build] -->|submitted| fan{fan_out<br/>routing: all}
+  build -->|blocked| blocked_out([blocked])
   fan --> c[review_correctness]
   fan --> s[review_security]
   fan --> t[review_tests]

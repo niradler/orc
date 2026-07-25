@@ -29,6 +29,10 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
         model: "$task.agent_model",
         role: "worker",
         task_status: "doing",
+        // Resume the worker's own session on a rework round, so it gets just the
+        // reviewer's feedback instead of the whole task again. This is what the
+        // pre-flow loop did, and it is why orc-default is behaviour-preserving.
+        reset_on_revisit: false,
         outcomes: ["submitted", "blocked"],
         on_error: "blocked",
         prompt:

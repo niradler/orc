@@ -3,7 +3,9 @@ import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors"
 import { parseFlowDefinition } from "@orc/core/flow";
 import {
   createFlow,
+  FlowConflictError,
   type FlowSource,
+  FlowValidationError,
   listBrokenFlows,
   listFlows,
   readFlow,
@@ -24,6 +26,7 @@ const FlowMetaSchema = z
     entry: z.string(),
     node_count: z.number().int(),
     edge_count: z.number().int(),
+    shadows: z.enum(["builtin", "user", "project"]).nullable(),
   })
   .openapi("FlowMeta");
 
@@ -77,6 +80,10 @@ const CreateFlowSchema = z
   .object({
     definition: z.record(z.string(), z.unknown()),
     overwrite: z.boolean().optional(),
+    shadow_builtin: z
+      .boolean()
+      .optional()
+      .openapi({ description: "Deliberately shadow a built-in flow of the same name" }),
   })
   .openapi("CreateFlow");
 
@@ -112,7 +119,11 @@ const listRoute = createRoute({
     query: z.object({
       q: z.string().optional(),
       source: z.enum(["builtin", "user", "project"]).optional(),
-      reload: z.coerce.boolean().optional(),
+      // Not z.coerce.boolean(): that turns "false" and "0" into true.
+      reload: z
+        .enum(["true", "false", "1", "0"])
+        .optional()
+        .transform((v) => v === "true" || v === "1"),
     }),
   },
   responses: {
@@ -279,14 +290,19 @@ app.openapi(validateRoute, (c) => {
 });
 
 app.openapi(createFlowRoute, (c) => {
-  const { definition, overwrite } = c.req.valid("json");
+  const { definition, overwrite, shadow_builtin } = c.req.valid("json");
   try {
-    const flow = createFlow(definition, { overwrite: overwrite ?? false });
+    const flow = createFlow(definition, {
+      overwrite: overwrite ?? false,
+      shadowBuiltin: shadow_builtin ?? false,
+    });
     return c.json({ ...flow, definition: flow.definition as Record<string, unknown> }, 201);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("already exists")) throw new ConflictError(msg);
-    throw new ValidationError(msg);
+    // Typed, not substring-matched: a definition whose text happens to contain
+    // "already exists" is a validation error, not a conflict.
+    if (err instanceof FlowConflictError) throw new ConflictError(err.message);
+    if (err instanceof FlowValidationError) throw new ValidationError(err.message);
+    throw err;
   }
 });
 
@@ -332,6 +348,12 @@ app.openapi(attachRoute, async (c) => {
   }
 
   if (!start) return c.json({ attached, started: false, flow_run_id: null, error: null });
+
+  if (["done", "cancelled"].includes(task.status)) {
+    throw new ValidationError(
+      `Task is ${task.status}; move it back to todo before starting a flow on it`,
+    );
+  }
 
   const { startFlowForTask } = await import("@orc/runner/flow-runner");
   const result = await startFlowForTask(id);

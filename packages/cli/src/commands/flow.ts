@@ -2,7 +2,14 @@ import { readFileSync } from "node:fs";
 import { createOrcClient } from "@orc/sdk/client";
 import type { FlowRun } from "@orc/sdk/types";
 import { Command } from "commander";
-import { isJson, jsonOut } from "../output.js";
+import { isJson, jsonErr, jsonOut } from "../output.js";
+
+/** Report a failure the way task.ts does: non-zero exit, --json aware. */
+function fail(message: string): void {
+  process.exitCode = 1;
+  if (isJson()) jsonErr(message);
+  else console.error("Error:", message);
+}
 
 function color(text: string, code: string) {
   return `\x1b[${code}m${text}\x1b[0m`;
@@ -103,14 +110,17 @@ export function flowCommand() {
         source: opts.source,
         reload: opts.reload,
       });
-      if (error) return console.error("Error:", error.error);
+      if (error) return fail(error.error);
       const flows = data?.flows ?? [];
       if (isJson()) return jsonOut(data);
       if (flows.length === 0) return console.log("No flows found.");
 
       for (const f of flows) {
+        const shadowNote = f.shadows ? `, shadows ${f.shadows}` : "";
         const src =
-          f.source === "builtin" ? color(" [builtin]", "90") : color(` [${f.source}]`, "36");
+          f.source === "builtin"
+            ? color(" [builtin]", "90")
+            : color(` [${f.source}${shadowNote}]`, "36");
         console.log(`  ${f.name.padEnd(24)}${src}  ${f.node_count} nodes, ${f.edge_count} edges`);
         if (f.description) console.log(`    ${color(f.description, "90")}`);
       }
@@ -125,8 +135,8 @@ export function flowCommand() {
     .action(async (name: string) => {
       const client = createOrcClient();
       const { data, error } = await client.flows.read(name);
-      if (error) return console.error("Error:", error.error);
-      if (!data) return console.error("Flow not found.");
+      if (error) return fail(error.error);
+      if (!data) return fail("Flow not found.");
       if (isJson()) return jsonOut(data);
 
       console.log(color(`# ${data.name}`, "1") + color(` v${data.version} [${data.source}]`, "90"));
@@ -147,16 +157,17 @@ export function flowCommand() {
       try {
         definition = await readDefinition(opts);
       } catch (err) {
-        return console.error("Error:", err instanceof Error ? err.message : String(err));
+        return fail(err instanceof Error ? err.message : String(err));
       }
       const client = createOrcClient();
       const { data, error } = await client.flows.validate(definition);
-      if (error) return console.error("Error:", error.error);
+      if (error) return fail(error.error);
+      // Invalid is a non-zero exit in both modes, so scripts can gate on it.
+      if (!data?.valid) process.exitCode = 1;
       if (isJson()) return jsonOut(data);
-      if (data?.valid) return console.log(color("Valid flow definition.", "32"));
+      if (data.valid) return console.log(color("Valid flow definition.", "32"));
       console.error(color("Invalid flow definition:", "31"));
-      for (const e of data?.errors ?? []) console.error(`  ${e}`);
-      process.exitCode = 1;
+      for (const e of data.errors ?? []) console.error(`  ${e}`);
     });
 
   cmd
@@ -165,20 +176,22 @@ export function flowCommand() {
     .option("-f, --file <path>", "Read the definition from a JSON file")
     .option("-d, --definition <json>", "Inline JSON definition")
     .option("--overwrite", "Replace an existing user flow of the same name")
+    .option("--shadow-builtin", "Deliberately shadow a built-in flow of the same name")
     .action(async (opts) => {
       let definition: Record<string, unknown>;
       try {
         definition = await readDefinition(opts);
       } catch (err) {
-        return console.error("Error:", err instanceof Error ? err.message : String(err));
+        return fail(err instanceof Error ? err.message : String(err));
       }
       const client = createOrcClient();
       const { data, error } = await client.flows.create({
         definition,
         overwrite: opts.overwrite,
+        shadow_builtin: opts.shadowBuiltin,
       });
-      if (error) return console.error("Error:", error.error);
-      if (!data) return console.error("Failed to create flow.");
+      if (error) return fail(error.error);
+      if (!data) return fail("Failed to create flow.");
       if (isJson()) return jsonOut(data);
       console.log(`Created flow: ${data.name} at ${data.path}`);
     });
@@ -192,7 +205,7 @@ export function flowCommand() {
     .option("--start", "Start the flow immediately instead of waiting for the loop")
     .action(async (taskId: string, opts) => {
       if (!opts.name && !opts.file && !opts.definition) {
-        return console.error("Error: pass --name, or --file/--definition for an inline flow.");
+        return fail("pass --name, or --file/--definition for an inline flow.");
       }
       let definition: Record<string, unknown> | undefined;
       if (opts.file || opts.definition) {
@@ -208,11 +221,11 @@ export function flowCommand() {
         ...(definition ? { definition } : {}),
         start: Boolean(opts.start),
       });
-      if (error) return console.error("Error:", error.error);
+      if (error) return fail(error.error);
       if (isJson()) return jsonOut(data);
       console.log(`Attached flow "${data?.attached}" to task ${taskId}.`);
       if (data?.started) console.log(`Started run ${data.flow_run_id}.`);
-      else if (data?.error) console.error(`Could not start: ${data.error}`);
+      else if (data?.error) fail(`Could not start: ${data.error}`);
       else console.log("It starts on the next loop cycle.");
     });
 
@@ -222,8 +235,8 @@ export function flowCommand() {
     .action(async (taskId: string) => {
       const client = createOrcClient();
       const { data, error } = await client.tasks.flow(taskId);
-      if (error) return console.error("Error:", error.error);
-      if (!data) return console.error("No flow run for this task.");
+      if (error) return fail(error.error);
+      if (!data) return fail("No flow run for this task.");
       if (isJson()) return jsonOut(data);
       printRun(data);
     });
@@ -238,7 +251,7 @@ export function flowCommand() {
       const vars: Record<string, unknown> = {};
       for (const pair of (opts.var ?? []) as string[]) {
         const idx = pair.indexOf("=");
-        if (idx === -1) return console.error(`Error: --var expects key=value, got "${pair}"`);
+        if (idx === -1) return fail(`--var expects key=value, got "${pair}"`);
         const key = pair.slice(0, idx);
         const raw = pair.slice(idx + 1);
         vars[key] =
@@ -257,7 +270,7 @@ export function flowCommand() {
         ...(Object.keys(vars).length > 0 ? { vars } : {}),
         author: "human",
       });
-      if (error) return console.error("Error:", error.error);
+      if (error) return fail(error.error);
       if (isJson()) return jsonOut(data);
       const next = data?.next_nodes ?? [];
       const running = next.length > 0 ? ` Now running: ${next.join(", ")}` : "";
@@ -271,7 +284,7 @@ export function flowCommand() {
     .action(async (taskId: string, opts) => {
       const client = createOrcClient();
       const { data, error } = await client.tasks.haltFlow(taskId, opts.reason);
-      if (error) return console.error("Error:", error.error);
+      if (error) return fail(error.error);
       if (isJson()) return jsonOut(data);
       console.log(data?.halted ? "Flow halted." : "No running flow on that task.");
     });

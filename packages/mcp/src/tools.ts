@@ -475,6 +475,13 @@ export const toolDefinitions = [
         .record(z.string(), z.unknown())
         .describe("Full flow definition: { name, description, entry, limits, nodes, edges }"),
       overwrite: z.boolean().optional().describe("Replace an existing user flow of the same name"),
+      shadow_builtin: z
+        .boolean()
+        .optional()
+        .describe(
+          "Deliberately shadow a built-in flow of the same name. Without this, reusing a builtin's name is rejected — " +
+            "shadowing orc-default silently re-pipelines every task.",
+        ),
     }),
   },
   {
@@ -1410,8 +1417,10 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       });
       if (!result.ok) return `Error: ${result.error}`;
       return (
-        `Reported "${outcome}"${node ? ` for node ${node}` : ""}. ` +
-        "The flow routes when your session ends — finish up and stop."
+        `Reported "${outcome}"${node ? ` for node ${node}` : ""}.` +
+        (result.nextNodes.length > 0
+          ? ` The flow moved on to: ${result.nextNodes.join(", ")}.`
+          : " The flow routes when your session ends — finish up and stop.")
       );
     }
 
@@ -1460,7 +1469,8 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       if (flows.length === 0) return "No flows found.";
       const lines = flows.map(
         (f) =>
-          `${f.name} [${f.source}]  entry:${f.entry}  ${f.node_count} nodes, ${f.edge_count} edges` +
+          `${f.name} [${f.source}${f.shadows ? `, shadows ${f.shadows}` : ""}]  entry:${f.entry}  ` +
+          `${f.node_count} nodes, ${f.edge_count} edges` +
           (f.description ? `\n  ${f.description}` : ""),
       );
       const broken = listBrokenFlows();
@@ -1486,13 +1496,17 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "flow_create": {
-      const { definition, overwrite } = args as {
+      const { definition, overwrite, shadow_builtin } = args as {
         definition: Record<string, unknown>;
         overwrite?: boolean;
+        shadow_builtin?: boolean;
       };
       const { createFlow } = await import("@orc/core/flow-service");
       try {
-        const flow = createFlow(definition, { overwrite: overwrite ?? false });
+        const flow = createFlow(definition, {
+          overwrite: overwrite ?? false,
+          shadowBuiltin: shadow_builtin ?? false,
+        });
         return `Created flow: ${flow.name} at ${flow.path} (${flow.node_count} nodes, ${flow.edge_count} edges)`;
       } catch (err) {
         return `Error: ${err instanceof Error ? err.message : String(err)}`;

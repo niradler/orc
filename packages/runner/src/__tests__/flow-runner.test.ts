@@ -174,7 +174,10 @@ describe("orc-default end to end", () => {
     await startFlowForTask(taskId);
 
     await completeNode(taskId, "submitted");
-    expect(taskStatus(taskId)).toBe("review");
+    // The review node is queued but has no session yet, so the task is `queued`
+    // rather than claiming to be under review. It becomes `review` when the
+    // reviewer actually starts (spawnNodeSession).
+    expect(taskStatus(taskId)).toBe("queued");
     expect(activeNodeRun(taskId).node_id).toBe("review");
 
     await completeNode(taskId, "approved");
@@ -204,7 +207,8 @@ describe("orc-default end to end", () => {
     await completeNode(taskId, "submitted");
     await completeNode(taskId, "changes_requested");
 
-    expect(taskStatus(taskId)).toBe("doing");
+    // Queued for rework — `doing` only once the worker session is up.
+    expect(taskStatus(taskId)).toBe("queued");
     const rebuild = activeNodeRun(taskId);
     expect(rebuild).toMatchObject({ node_id: "build", attempt: 2, status: "pending" });
 
@@ -287,6 +291,152 @@ describe("orc-default end to end", () => {
     expect(ambiguous.ok).toBe(false);
     if (ambiguous.ok) return;
     expect(ambiguous.error).toContain("pass the node id");
+  });
+});
+
+describe("a verdict survives a session that dies after reporting it", () => {
+  test("a reported outcome beats the session error", async () => {
+    // The common trigger is not exotic: the Claude adapter emits an `error`
+    // event for any final result with is_error, which includes
+    // error_max_turns. A worker that reported `submitted` and then ran out of
+    // turns has still done the work and said so.
+    const taskId = await makeTask();
+    await startFlowForTask(taskId);
+    const build = activeNodeRun(taskId);
+
+    await reportNodeOutcome({ taskId, nodeId: "build", outcome: "submitted", summary: "done" });
+    await finishNodeRun(build.id, "error_max_turns");
+
+    // Routed on the report, not on build.on_error (which would be `blocked`).
+    expect(taskStatus(taskId)).not.toBe("blocked");
+    expect(activeNodeRun(taskId).node_id).toBe("review");
+
+    // The failure is still on the record for whoever reads the ledger.
+    const row = nodeRuns(taskId).find((r) => r.node_id === "build");
+    expect(row?.outcome).toBe("submitted");
+    expect(row?.status).toBe("succeeded");
+    const err = getSqlite()
+      .query("SELECT error FROM flow_node_runs WHERE id = ?")
+      .get(build.id) as { error: string | null };
+    expect(err.error).toBe("error_max_turns");
+  });
+
+  test("an approved review is not thrown away by a tail error", async () => {
+    const taskId = await makeTask();
+    await startFlowForTask(taskId);
+    await completeNode(taskId, "submitted");
+
+    const review = activeNodeRun(taskId);
+    await reportNodeOutcome({ taskId, nodeId: "review", outcome: "approved" });
+    await finishNodeRun(review.id, "error_max_turns");
+
+    expect(taskStatus(taskId)).toBe("done");
+    expect(getLatestFlowRunForTask(taskId)?.status).toBe("completed");
+  });
+
+  test("a session error with no reported outcome still routes on_error", async () => {
+    const taskId = await makeTask();
+    await startFlowForTask(taskId);
+    const build = activeNodeRun(taskId);
+    await finishNodeRun(build.id, "agent crashed");
+    expect(taskStatus(taskId)).toBe("blocked");
+  });
+});
+
+describe("recovery from infrastructure failure", () => {
+  test("a reaped node is retried in place rather than routed to on_error", async () => {
+    // The old loop reset a timed-out worker's task to `todo` so the next cycle
+    // retried it. Routing on_error instead would end orc-default at `blocked`
+    // on the first network blip and never come back.
+    const taskId = await makeTask();
+    await startFlowForTask(taskId);
+    const build = activeNodeRun(taskId);
+
+    const { cleanupStaleFlowSessions } = await import("../flow-runner.js");
+    // Give the node a session and backdate it past the idle cutoff.
+    const sessionId = ulid();
+    const stale = Math.floor(Date.now() / 1000) - 100_000;
+    getSqlite()
+      .query(
+        `INSERT INTO gateway_sessions (id, chat_id, backend, mode, status, role, task_id, last_activity_at, created_at, updated_at)
+         VALUES (?, '__task-loop__', 'claude', 'agent:claude', 'running', 'worker', ?, ?, ?, ?)`,
+      )
+      .run(sessionId, taskId, stale, stale, stale);
+    getSqlite()
+      .query("UPDATE flow_node_runs SET status = 'running', gateway_session_id = ? WHERE id = ?")
+      .run(sessionId, build.id);
+
+    expect(await cleanupStaleFlowSessions()).toBe(1);
+
+    // Same node, fresh attempt, still the flow's business — not blocked.
+    const retry = activeNodeRun(taskId);
+    expect(retry).toMatchObject({ node_id: "build", attempt: 2, status: "pending" });
+    expect(taskStatus(taskId)).not.toBe("blocked");
+    const run = getLatestFlowRunForTask(taskId);
+    expect(run?.status).toBe("running");
+    // A retry is not a graph visit, so it must not consume the loop budget.
+    expect(run?.visits.build).toBe(1);
+  });
+
+  test("retries are bounded, then the graph is told it failed", async () => {
+    const taskId = await makeTask();
+    await startFlowForTask(taskId);
+    const { cleanupStaleFlowSessions } = await import("../flow-runner.js");
+
+    // max_node_retries defaults to 2 → attempts 1,2,3 then on_error.
+    for (let round = 0; round < 4; round++) {
+      const node = nodeRuns(taskId).find((r) => ["pending", "running"].includes(r.status));
+      if (!node) break;
+      const sessionId = ulid();
+      const stale = Math.floor(Date.now() / 1000) - 100_000;
+      getSqlite()
+        .query(
+          `INSERT INTO gateway_sessions (id, chat_id, backend, mode, status, role, task_id, last_activity_at, created_at, updated_at)
+           VALUES (?, '__task-loop__', 'claude', 'agent:claude', 'running', 'worker', ?, ?, ?, ?)`,
+        )
+        .run(sessionId, taskId, stale, stale, stale);
+      getSqlite()
+        .query("UPDATE flow_node_runs SET status = 'running', gateway_session_id = ? WHERE id = ?")
+        .run(sessionId, node.id);
+      await cleanupStaleFlowSessions();
+    }
+
+    const attempts = nodeRuns(taskId).filter((r) => r.node_id === "build");
+    expect(attempts).toHaveLength(3);
+    // Budget spent → on_error routed → orc-default's blocked terminal.
+    expect(taskStatus(taskId)).toBe("blocked");
+  });
+});
+
+describe("cross-run rail", () => {
+  test("a reject-loop flow cannot restart forever", async () => {
+    // orc-review-only's `rejected` terminal sets changes_requested, which makes
+    // the task eligible again. Per-run rails cannot see a loop made of runs.
+    const taskId = await makeTask({ flow_name: "orc-review-only" });
+    let started = 0;
+    for (let round = 0; round < 10; round++) {
+      const result = await startFlowForTask(taskId);
+      if (!result.ok) break;
+      started++;
+      await completeNode(taskId, "changes_requested");
+    }
+    // Default max_flow_runs_per_task is 6.
+    expect(started).toBe(6);
+    expect(taskStatus(taskId)).toBe("paused");
+    const comments = getSqlite()
+      .query("SELECT content FROM comments WHERE resource_id = ?")
+      .all(taskId) as { content: string }[];
+    expect(comments.some((c) => c.content.includes("not converging"))).toBe(true);
+  });
+});
+
+describe("queued node visibility", () => {
+  test("a task is queued, not doing, until its node's session actually starts", async () => {
+    // Otherwise the board shows N tasks in progress while max_workers allows one.
+    const taskId = await makeTask();
+    await startFlowForTask(taskId);
+    expect(activeNodeRun(taskId).status).toBe("pending");
+    expect(taskStatus(taskId)).toBe("queued");
   });
 });
 
@@ -557,9 +707,9 @@ describe("external interference", () => {
     await completeNode(taskId, "submitted");
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    // The flow moved the task to `review` itself — that must not read as interference.
+    // The flow moved the task itself — that must not read as interference.
     expect(getActiveFlowRunForTask(taskId)).not.toBeNull();
-    expect(taskStatus(taskId)).toBe("review");
+    expect(taskStatus(taskId)).toBe("queued");
   });
 
   test("cancelFlowRun releases the task and stops every node", async () => {

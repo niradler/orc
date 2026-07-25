@@ -1,5 +1,7 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
+import { parseFlowDefinition } from "@orc/core/flow";
+import { readFlow } from "@orc/core/flow-service";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import type { TaskStatus } from "@orc/core/types";
@@ -258,6 +260,26 @@ const addCommentRoute = createRoute({
   },
 });
 
+/**
+ * Validate the flow fields before they are stored. Left unchecked, a bad
+ * `flow_name` or a malformed `flow_override` only surfaces when the task loop
+ * tries to run it — by which point the task just blocks itself.
+ */
+function validateFlowFields(body: {
+  flow_name?: string | null | undefined;
+  flow_override?: Record<string, unknown> | null | undefined;
+}): void {
+  if (body.flow_name) {
+    if (!readFlow(body.flow_name)) throw new NotFoundError("Flow", body.flow_name);
+  }
+  if (body.flow_override) {
+    const parsed = parseFlowDefinition(body.flow_override);
+    if (!parsed.ok) {
+      throw new ValidationError(`Invalid flow_override:\n  ${parsed.errors.join("\n  ")}`);
+    }
+  }
+}
+
 function toDto(t: typeof tasks.$inferSelect, commentsCount?: number) {
   return {
     ...t,
@@ -273,6 +295,16 @@ function toDto(t: typeof tasks.$inferSelect, commentsCount?: number) {
     created_at: t.created_at.toISOString(),
     updated_at: t.updated_at.toISOString(),
   };
+}
+
+/**
+ * List rows omit the inline graph: `flow_override` is a whole flow definition,
+ * and including it turned `GET /tasks` into megabytes. `GET /tasks/{id}` still
+ * returns it.
+ */
+function toListDto(t: typeof tasks.$inferSelect, commentsCount?: number) {
+  const { flow_override: _flow_override, ...rest } = toDto(t, commentsCount);
+  return { ...rest, flow_override: null };
 }
 
 function getCommentsCountMap(taskIds: string[]): Map<string, number> {
@@ -305,6 +337,8 @@ function rawToDto(row: Record<string, unknown>, commentsCount?: number) {
   return {
     ...row,
     tags: typeof row.tags === "string" ? JSON.parse(row.tags) : row.tags,
+    // Lists never carry the inline graph — see toListDto.
+    flow_override: null,
     comments_count: commentsCount ?? 0,
     due_at: row.due_at ? new Date((row.due_at as number) * 1000).toISOString() : null,
     claim_expires_at: row.claim_expires_at
@@ -361,7 +395,7 @@ app.openapi(listRoute, async (c) => {
 
   const counts = getCommentsCountMap(rows.map((r) => r.id));
   return c.json({
-    tasks: rows.map((r) => toDto(r, counts.get(r.id) ?? 0)),
+    tasks: rows.map((r) => toListDto(r, counts.get(r.id) ?? 0)),
     total: rows.length,
   });
 });
@@ -377,6 +411,7 @@ app.openapi(getRoute, async (c) => {
 app.openapi(createRoute_, async (c) => {
   const db = getDb();
   const body = c.req.valid("json");
+  validateFlowFields(body);
   const now = new Date();
   const id = ulid();
 
@@ -416,6 +451,7 @@ app.openapi(updateRoute, async (c) => {
 
   const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!existing) throw new NotFoundError("Task", id);
+  validateFlowFields(body);
 
   if (body.status && body.status !== existing.status) {
     const result = await updateTaskStatus({

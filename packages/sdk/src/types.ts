@@ -360,6 +360,7 @@ export type FlowMeta = {
   entry: string;
   node_count: number;
   edge_count: number;
+  shadows: FlowSource | null;
 };
 
 export type FlowFull = FlowMeta & {
@@ -405,6 +406,7 @@ export type FlowRun = {
 export type CreateFlowInput = {
   definition: Record<string, unknown>;
   overwrite?: boolean;
+  shadow_builtin?: boolean;
 };
 
 export type AttachFlowInput = {

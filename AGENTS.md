@@ -37,7 +37,7 @@ bun install          # install all workspace deps
 bun dev              # API + CLI + web in dev mode (reads .env)
 bun typecheck        # typecheck all packages
 bun check            # biome lint + format (auto-fix)
-bun test             # run all tests (91 passing)
+bun test             # run all tests
 bun db:push          # push Drizzle schema to SQLite (dev)
 bun db:generate      # generate migration files
 bun sdk:generate     # regenerate SDK types (API must be running)
@@ -217,7 +217,7 @@ On blocker: `doing → blocked` (needs human intervention before resuming)
 
 Internal statuses (`queued`, `paused`, `cancelled`) are managed by the task loop - agents don't set these directly.
 
-Task status is now a *consequence* of the flow graph a task runs, not the driver: nodes declare the status to set when they start, terminals declare the status the task ends in. See "Task Flows" below.
+Task status is now a *consequence* of the flow graph a task runs, not the driver: nodes declare the status to set when they start, terminals declare the status the task ends in. A task whose next node is queued but has no session yet sits in `queued` — it only moves to the node's declared status once an agent is really running, so the board never shows more tasks in progress than there are workers. See "Task Flows" below.
 
 **Task priorities**: `low | normal | high | critical`
 
@@ -381,7 +381,9 @@ The split that makes this work: **the graph is deterministic, only the nodes are
 
 **Edges are ordered and first-match-wins**, so the bounded-loop idiom is a guarded loopback followed by a catch-all escalation. A node with `routing: "all"` activates *every* matching edge instead - that is fan-out.
 
-**Conditions are data, never code** - no `eval`, no expressions. Available: `always`, `outcome`, `visits`, `executions`, `elapsed_secs`, `var`, and `all`/`any`/`not`. Numeric comparators (`lt`, `gte`, …) take a number or `{ "var": "name" }`; a var that is missing or non-numeric makes the comparison **false**, so a typo can never be what opens an unbounded loop.
+**Conditions are data, never code** - no `eval`, no expressions. Available: `always`, `outcome`, `visits`, `executions`, `elapsed_secs`, `var`, and `all`/`any`/`not`. Numeric comparators (`lt`, `gte`, …) take a number or `{ "var": "name" }`.
+
+Every condition object is strict, so a mistyped guard is rejected rather than silently stripped down to something that always matches: an unknown key, a predicate-less `var`, and a `visits.node` naming a node that does not exist are all validation errors. At runtime, a `{ var }` operand that is absent or non-numeric makes the comparison **false** — fail closed, so an unresolvable budget shortens a loop rather than unbounding it.
 
 **Placeholders**: `$task.skill_name`, `$task.agent_backend`, `$task.agent_model` let a shipped flow defer to the task's own fields.
 
@@ -410,7 +412,11 @@ A flow cannot loop forever. Five independent rails, each of which halts the run 
 4. no matching edge → `no_matching_edge`
 5. no active nodes left → `stalled`, or `join_deadlock` if branches are parked at an unsatisfiable join
 
-A node that dies routes through `on_error` if it declares one, otherwise the run halts. A node that ends without reporting anything halts with `no_outcome` rather than the graph guessing a verdict.
+Two more rails sit outside a single run, because a per-run rail cannot see a loop made of runs: `agent_loop.max_node_retries` (default 2) bounds re-queues of one node after an infrastructure failure, and `agent_loop.max_flow_runs_per_task` (default 6) bounds how many runs a task may go through before it is paused for a human.
+
+A node that dies routes through `on_error` if it declares one, otherwise the run halts. A node that ends without reporting anything halts with `no_outcome` rather than the graph guessing a verdict. A node that reported an outcome and *then* failed routes on the outcome — a verdict the agent actually gave is not discarded because its session ended badly afterwards.
+
+Infrastructure failures are not verdicts: a session reaped for idling or hitting its lifetime cap re-queues the same node as a fresh attempt (bounded by `max_node_retries`) instead of routing `on_error`, which is what keeps a network blip from parking the task.
 
 ### How a node reports its outcome
 
@@ -431,7 +437,7 @@ If a node's session ends without reporting, the outcome is **inferred** from the
 | `project` | `./.orc/flows/<name>/flow.json` | Shadows user and builtin                     |
 | `task`    | `tasks.flow_override` (JSON)    | An inline graph for one task, beats them all  |
 
-Definitions are validated on load - unknown edge targets, unreachable nodes, terminals with outgoing edges, a graph that can never finish, and shadowed (dead) edges are all rejected, and the offender is reported by `flow_list` rather than silently ignored. A run **freezes its definition** at start, so editing a flow never changes a run already in flight.
+Definitions are validated on load - unknown edge targets, unreachable nodes, terminals with outgoing edges, a graph that can never finish, and shadowed (dead) edges are all rejected, and the offender is reported by `flow_list` rather than silently ignored. Creating a user flow named after a builtin needs an explicit opt-in, since shadowing `orc-default` re-pipelines every task. A run **freezes its definition** at start, so editing a flow never changes a run already in flight.
 
 ### Built-in flows
 
@@ -465,12 +471,14 @@ Agents do the same with `flow_attach` (pass `definition` for inline) and `flow_c
 {
   "agent_loop": {
     "default_flow": "orc-default",
-    "review_flow": "orc-review-only"
+    "review_flow": "orc-review-only",
+    "max_node_retries": 2,
+    "max_flow_runs_per_task": 6
   }
 }
 ```
 
-Env: `ORC_AGENT_LOOP_DEFAULT_FLOW`, `ORC_AGENT_LOOP_REVIEW_FLOW`.
+Env: `ORC_AGENT_LOOP_DEFAULT_FLOW`, `ORC_AGENT_LOOP_REVIEW_FLOW`, `ORC_AGENT_LOOP_MAX_NODE_RETRIES`, `ORC_AGENT_LOOP_MAX_FLOW_RUNS`.
 
 ### Built-in Skills
 

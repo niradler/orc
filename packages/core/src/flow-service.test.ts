@@ -71,7 +71,7 @@ function withProjectFlow(name: string, definition: unknown, fn: () => void): voi
 }
 
 describe("listFlows", () => {
-  test("returns every builtin flow and none of them are broken", () => {
+  test("returns every builtin flow, and no builtin is broken", () => {
     const flows = listFlows();
     for (const name of BUILTIN_FLOW_NAMES) {
       expect(
@@ -79,14 +79,16 @@ describe("listFlows", () => {
         `${name} should be listed`,
       ).toBe(true);
     }
-    expect(listBrokenFlows()).toEqual([]);
+    // Scoped to builtins: a developer's own ~/.orc/flows may legitimately
+    // contain a work-in-progress flow, and that is not this suite's business.
+    expect(listBrokenFlows().filter((b) => b.path === "(builtin)")).toEqual([]);
   });
 
   test("filters by source and by keyword", () => {
     writeUserFlow(TEST_FLOW, VALID_FLOW);
-    expect(listFlows({ source: "user" }).map((f) => f.name)).toEqual([TEST_FLOW]);
+    expect(listFlows({ source: "user" }).map((f) => f.name)).toContain(TEST_FLOW);
     expect(listFlows({ source: "builtin" }).some((f) => f.name === TEST_FLOW)).toBe(false);
-    expect(listFlows({ q: "flow-service" }).map((f) => f.name)).toEqual([TEST_FLOW]);
+    expect(listFlows({ q: "flow-service tests" }).map((f) => f.name)).toEqual([TEST_FLOW]);
   });
 
   test("reports counts a caller can show without loading the definition", () => {

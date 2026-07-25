@@ -13,14 +13,21 @@ export type ActiveNode = { nodeId: string; attempt: number };
 
 export type FlowRunStatus = "running" | "completed" | "halted";
 
+/**
+ * A branch arriving at a join, stamped with the source node's visit count at
+ * arrival time. The stamp is what stops a stale arrival from a previous loop
+ * iteration satisfying the join in a later one.
+ */
+export type JoinArrival = { outcome: string; gen: number };
+
 export type FlowState = {
   status: FlowRunStatus;
   active: ActiveNode[];
   visits: Record<string, number>;
   executions: number;
   vars: Record<string, unknown>;
-  /** joinNodeId → (sourceNodeId → outcome it arrived with) */
-  joins: Record<string, Record<string, string>>;
+  /** joinNodeId → (sourceNodeId → its arrival) */
+  joins: Record<string, Record<string, JoinArrival>>;
   started_at: number;
   halt_reason?: string;
   task_status?: TaskStatus;
@@ -163,7 +170,12 @@ function cloneState(state: FlowState): FlowState {
     visits: { ...state.visits },
     executions: state.executions,
     vars: { ...state.vars },
-    joins: Object.fromEntries(Object.entries(state.joins).map(([k, v]) => [k, { ...v }])),
+    joins: Object.fromEntries(
+      Object.entries(state.joins).map(([k, v]) => [
+        k,
+        Object.fromEntries(Object.entries(v).map(([from, arrival]) => [from, { ...arrival }])),
+      ]),
+    ),
     started_at: state.started_at,
   };
   if (state.halt_reason !== undefined) next.halt_reason = state.halt_reason;
@@ -276,7 +288,21 @@ function activate(
     // Join nodes park each arriving branch until the join is satisfied.
     if (node.join) {
       const arrivals = { ...(state.joins[target.to] ?? {}) };
-      if (target.from) arrivals[target.from] = target.outcome;
+      if (target.from) {
+        arrivals[target.from] = {
+          outcome: target.outcome,
+          gen: state.visits[target.from] ?? 1,
+        };
+      }
+      // An arrival is only live while its source has not been re-entered since.
+      // Without this, a branch that loops back past the join leaves an arrival
+      // behind that satisfies the join on the next round, cancelling siblings
+      // whose work was never read.
+      const isLive = (from: string, arrival: JoinArrival): boolean =>
+        arrival.gen === (state.visits[from] ?? arrival.gen);
+      for (const [from, arrival] of Object.entries(arrivals)) {
+        if (!isLive(from, arrival)) delete arrivals[from];
+      }
       const satisfied =
         node.join.mode === "any"
           ? Object.keys(arrivals).length > 0
@@ -300,6 +326,15 @@ function activate(
       state.status = "completed";
       state.task_status = taskStatus;
       actions.push({ kind: "complete", nodeId: target.to, task_status: taskStatus });
+      return;
+    }
+
+    // Converging on a non-join node while it is still running would put two
+    // copies of it in `active`, and a reporting agent has no way to say which
+    // copy it is. A join is the construct for fan-in; refuse the alternative
+    // instead of silently cross-writing the two attempts' rows.
+    if (state.active.some((a) => a.nodeId === target.to)) {
+      haltRun(def, state, actions, `concurrent_reentry:${target.to}`);
       return;
     }
 
@@ -463,6 +498,8 @@ export function describeHalt(reason: string): string {
       return "no active nodes and nowhere left to go";
     case "gate_chain_limit":
       return "gate nodes routed into each other without reaching real work";
+    case "concurrent_reentry":
+      return `two branches reached "${detail}" at once — fan-in needs a join node`;
     case "unknown_node":
       return `edge pointed at undefined node "${detail}"`;
     default:

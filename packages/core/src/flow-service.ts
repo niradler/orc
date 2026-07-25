@@ -19,6 +19,8 @@ export type FlowMeta = {
   entry: string;
   node_count: number;
   edge_count: number;
+  /** The source this flow overrides, when it shadows one of the same name. */
+  shadows: FlowSource | null;
 };
 
 export type FlowFull = FlowMeta & { definition: FlowDefinition };
@@ -30,6 +32,25 @@ export type ListFlowsOpts = {
 };
 
 export type BrokenFlow = { name: string; path: string; errors: string[] };
+
+/** Distinguishes "already there" from "not valid" without string-matching a message. */
+export class FlowConflictError extends Error {
+  readonly shadows: FlowSource | null;
+  constructor(message: string, shadows: FlowSource | null = null) {
+    super(message);
+    this.name = "FlowConflictError";
+    this.shadows = shadows;
+  }
+}
+
+export class FlowValidationError extends Error {
+  readonly errors: string[];
+  constructor(errors: string[]) {
+    super(`Invalid flow definition:\n  ${errors.join("\n  ")}`);
+    this.name = "FlowValidationError";
+    this.errors = errors;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Directories
@@ -95,7 +116,11 @@ function scanDirectory(dir: string, source: FlowSource, into: ScanResult): void 
         });
         continue;
       }
-      into.flows.set(parsed.definition.name, toFull(parsed.definition, source, file));
+      const shadowed = into.flows.get(parsed.definition.name);
+      into.flows.set(
+        parsed.definition.name,
+        toFull(parsed.definition, source, file, shadowed?.source ?? null),
+      );
     } catch (err) {
       into.broken.push({
         name: entry,
@@ -106,7 +131,12 @@ function scanDirectory(dir: string, source: FlowSource, into: ScanResult): void 
   }
 }
 
-function toFull(definition: FlowDefinition, source: FlowSource, path: string | null): FlowFull {
+function toFull(
+  definition: FlowDefinition,
+  source: FlowSource,
+  path: string | null,
+  shadows: FlowSource | null = null,
+): FlowFull {
   return {
     name: definition.name,
     description: definition.description,
@@ -116,6 +146,7 @@ function toFull(definition: FlowDefinition, source: FlowSource, path: string | n
     entry: definition.entry,
     node_count: Object.keys(definition.nodes).length,
     edge_count: definition.edges.length,
+    shadows,
     definition,
   };
 }
@@ -184,27 +215,41 @@ export function flowExists(name: string): boolean {
   return ensureCache().flows.has(name);
 }
 
-export function createFlow(raw: unknown, opts?: { overwrite?: boolean }): FlowFull {
+export function createFlow(
+  raw: unknown,
+  opts?: { overwrite?: boolean; shadowBuiltin?: boolean },
+): FlowFull {
   const parsed = parseFlowDefinition(raw);
-  if (!parsed.ok) {
-    throw new Error(`Invalid flow definition:\n  ${parsed.errors.join("\n  ")}`);
-  }
+  if (!parsed.ok) throw new FlowValidationError(parsed.errors);
+
   const definition = parsed.definition;
   if (!FLOW_NAME_RE.test(definition.name)) {
-    throw new Error(`Invalid flow name: ${definition.name}`);
+    throw new FlowValidationError([`name: invalid flow name "${definition.name}"`]);
   }
 
   const dir = join(userFlowsDir(), definition.name);
   const file = flowFilePath(userFlowsDir(), definition.name);
   if (existsSync(file) && !opts?.overwrite) {
-    throw new Error(`Flow already exists: ${definition.name}`);
+    throw new FlowConflictError(`Flow already exists: ${definition.name}`, "user");
   }
+
+  // Writing a user flow named after a builtin silently re-pipelines every task
+  // that runs it — including orc-default. Require saying so on purpose.
+  if (!existsSync(file) && definition.name in BUILTIN_FLOW_SOURCES && !opts?.shadowBuiltin) {
+    throw new FlowConflictError(
+      `"${definition.name}" is a built-in flow. Creating a user flow with that name would shadow it ` +
+        "for every task that runs it — pass shadow_builtin to do that deliberately, or pick another name.",
+      "builtin",
+    );
+  }
+
+  const shadowedSource = ensureCache().flows.get(definition.name)?.source ?? null;
 
   mkdirSync(dir, { recursive: true });
   writeFileSync(file, `${JSON.stringify(definition, null, 2)}\n`, "utf-8");
   reloadFlows();
 
-  return toFull(definition, "user", file);
+  return toFull(definition, "user", file, shadowedSource === "user" ? null : shadowedSource);
 }
 
 /**
