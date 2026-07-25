@@ -29,6 +29,13 @@ export type FlowState = {
   /** joinNodeId → (sourceNodeId → its arrival) */
   joins: Record<string, Record<string, JoinArrival>>;
   started_at: number;
+  /**
+   * Seconds the run spent waiting on a human, excluded from the execution
+   * timeout. Without this, `execution_timeout_secs` is a fuse on every human
+   * gate — four hours on orc-default's defaults — and the halt would cancel the
+   * very node the human was about to answer.
+   */
+  paused_secs?: number;
   halt_reason?: string;
   task_status?: TaskStatus;
 };
@@ -178,9 +185,15 @@ function cloneState(state: FlowState): FlowState {
     ),
     started_at: state.started_at,
   };
+  if (state.paused_secs !== undefined) next.paused_secs = state.paused_secs;
   if (state.halt_reason !== undefined) next.halt_reason = state.halt_reason;
   if (state.task_status !== undefined) next.task_status = state.task_status;
   return next;
+}
+
+/** Wall-clock the run is accountable for, excluding time spent awaiting a human. */
+function elapsedSecs(state: FlowState, now: number): number {
+  return Math.max(0, now - state.started_at - (state.paused_secs ?? 0));
 }
 
 function routeFrom(
@@ -198,7 +211,7 @@ function routeFrom(
     visits: state.visits,
     executions: state.executions,
     vars: state.vars,
-    elapsed_secs: Math.max(0, now - state.started_at),
+    elapsed_secs: elapsedSecs(state, now),
     self: fromNode,
   };
 
@@ -427,14 +440,18 @@ export function advanceFlow(
 
   const actions: FlowAction[] = [];
 
-  if (opts.now - state.started_at > def.limits.execution_timeout_secs) {
+  if (elapsedSecs(state, opts.now) > def.limits.execution_timeout_secs) {
     haltRun(def, state, actions, "execution_timeout");
     return { state, actions };
   }
 
   const node = def.nodes[result.nodeId];
+  // A verdict the node actually reported wins over a failure that arrived
+  // afterwards — an agent that finished the work and then ran out of turns has
+  // still decided. Callers rely on this too, but keeping it here means a future
+  // caller cannot reintroduce the silent-verdict-loss bug.
   let outcome = result.outcome;
-  if (result.error) {
+  if (result.error && !outcome) {
     if (!node?.on_error) {
       haltRun(def, state, actions, `node_error:${result.nodeId}:${result.error}`);
       return { state, actions };
@@ -468,7 +485,7 @@ export function checkFlowTimeout(
   now: number,
 ): FlowStep | null {
   if (current.status !== "running") return null;
-  if (now - current.started_at <= def.limits.execution_timeout_secs) return null;
+  if (elapsedSecs(current, now) <= def.limits.execution_timeout_secs) return null;
   const state = cloneState(current);
   const actions: FlowAction[] = [];
   haltRun(def, state, actions, "execution_timeout");

@@ -412,7 +412,9 @@ A flow cannot loop forever. Five independent rails, each of which halts the run 
 4. no matching edge → `no_matching_edge`
 5. no active nodes left → `stalled`, or `join_deadlock` if branches are parked at an unsatisfiable join
 
-Two more rails sit outside a single run, because a per-run rail cannot see a loop made of runs: `agent_loop.max_node_retries` (default 2) bounds re-queues of one node after an infrastructure failure, and `agent_loop.max_flow_runs_per_task` (default 6) bounds how many runs a task may go through before it is paused for a human.
+Two more rails sit outside a single run, because a per-run rail cannot see a loop made of runs: `agent_loop.max_node_retries` (default 2) bounds re-queues of one node after an infrastructure failure, and `agent_loop.max_flow_runs_per_task` (default 6) bounds how many *self-ended* runs a task may go through before it is paused for a human (a human comment on the task forgives that budget).
+
+Time spent `awaiting_human` is excluded from `execution_timeout_secs`, and the timeout sweep skips a run parked on a person — otherwise the wall clock is a fuse on every human gate.
 
 A node that dies routes through `on_error` if it declares one, otherwise the run halts. A node that ends without reporting anything halts with `no_outcome` rather than the graph guessing a verdict. A node that reported an outcome and *then* failed routes on the outcome — a verdict the agent actually gave is not discarded because its session ended badly afterwards.
 

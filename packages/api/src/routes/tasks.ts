@@ -478,8 +478,13 @@ app.openapi(updateRoute, async (c) => {
     ...(body.skill_name !== undefined ? { skill_name: body.skill_name } : {}),
     ...(body.required_review !== undefined ? { required_review: body.required_review } : {}),
     ...(body.max_review_rounds !== undefined ? { max_review_rounds: body.max_review_rounds } : {}),
-    ...(body.flow_name !== undefined ? { flow_name: body.flow_name } : {}),
-    ...(body.flow_override !== undefined ? { flow_override: body.flow_override } : {}),
+    // Setting one clears the other: the override always wins in resolution, so
+    // leaving a stale one behind makes `--flow x` look applied while changing
+    // nothing.
+    ...(body.flow_name !== undefined ? { flow_name: body.flow_name, flow_override: null } : {}),
+    ...(body.flow_override !== undefined
+      ? { flow_override: body.flow_override, flow_name: null }
+      : {}),
   };
   if (Object.keys(nonStatusFields).length > 0) {
     await db
@@ -503,6 +508,15 @@ app.openapi(deleteRoute, async (c) => {
   const { id } = c.req.valid("param");
   const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
   if (!existing) throw new NotFoundError("Task", id);
+
+  // Stop the flow first. The rows cascade, but a live agent session does not: it
+  // would keep working (auto-approved) on a task that no longer exists, and keep
+  // counting against max_workers until the idle sweep noticed 20 minutes later.
+  const { haltFlowRunForTask } = await import("@orc/runner/flow-runner");
+  await haltFlowRunForTask(id, "task was deleted").catch((err) =>
+    logger.warn("halting the task's flow before delete failed", { err }),
+  );
+
   await db.delete(tasks).where(eq(tasks.id, id));
   return new Response(null, { status: 204 });
 });

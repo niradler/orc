@@ -36,6 +36,7 @@ type NodeRunRow = {
   node_id: string;
   node_kind: string;
   attempt: number;
+  retry: number;
   status: string;
   outcome: string | null;
 };
@@ -65,7 +66,7 @@ async function makeTask(overrides?: Partial<typeof tasks.$inferInsert>): Promise
 function nodeRuns(taskId: string): NodeRunRow[] {
   return getSqlite()
     .query(
-      `SELECT id, node_id, node_kind, attempt, status, outcome FROM flow_node_runs
+      `SELECT id, node_id, node_kind, attempt, retry, status, outcome FROM flow_node_runs
        WHERE task_id = ? ORDER BY created_at ASC`,
     )
     .all(taskId) as NodeRunRow[];
@@ -368,9 +369,10 @@ describe("recovery from infrastructure failure", () => {
 
     expect(await cleanupStaleFlowSessions()).toBe(1);
 
-    // Same node, fresh attempt, still the flow's business — not blocked.
+    // Same node, same graph visit, new session — retries have their own
+    // coordinate so a later visit to this node cannot collide with them.
     const retry = activeNodeRun(taskId);
-    expect(retry).toMatchObject({ node_id: "build", attempt: 2, status: "pending" });
+    expect(retry).toMatchObject({ node_id: "build", attempt: 1, retry: 1, status: "pending" });
     expect(taskStatus(taskId)).not.toBe("blocked");
     const run = getLatestFlowRunForTask(taskId);
     expect(run?.status).toBe("running");
@@ -403,8 +405,46 @@ describe("recovery from infrastructure failure", () => {
 
     const attempts = nodeRuns(taskId).filter((r) => r.node_id === "build");
     expect(attempts).toHaveLength(3);
+    expect(attempts.map((r) => r.retry)).toEqual([0, 1, 2]);
     // Budget spent → on_error routed → orc-default's blocked terminal.
     expect(taskStatus(taskId)).toBe("blocked");
+  });
+
+  test("a node that was retried can still be revisited by the graph", async () => {
+    // Retries and graph visits used to share the `attempt` column, so a node
+    // that was retried and then revisited collided on the unique index — the
+    // insert was swallowed and the run was left with an active node that had no
+    // row to drive it, stalling until the 4h wall clock.
+    const taskId = await makeTask();
+    await startFlowForTask(taskId);
+    const { cleanupStaleFlowSessions } = await import("../flow-runner.js");
+
+    const reapCurrentNode = async () => {
+      const node = nodeRuns(taskId).find((r) => ["pending", "running"].includes(r.status));
+      if (!node) throw new Error("expected a live node");
+      const sessionId = ulid();
+      const stale = Math.floor(Date.now() / 1000) - 100_000;
+      getSqlite()
+        .query(
+          `INSERT INTO gateway_sessions (id, chat_id, backend, mode, status, role, task_id, last_activity_at, created_at, updated_at)
+           VALUES (?, '__task-loop__', 'claude', 'agent:claude', 'running', 'worker', ?, ?, ?, ?)`,
+        )
+        .run(sessionId, taskId, stale, stale, stale);
+      getSqlite()
+        .query("UPDATE flow_node_runs SET status = 'running', gateway_session_id = ? WHERE id = ?")
+        .run(sessionId, node.id);
+      await cleanupStaleFlowSessions();
+    };
+
+    await reapCurrentNode(); // build visit 1 gets a retry
+    await completeNode(taskId, "submitted"); // the retry succeeds
+    await completeNode(taskId, "changes_requested"); // review sends it back
+
+    // The graph's second visit to build must have a live row of its own.
+    const rebuild = activeNodeRun(taskId);
+    expect(rebuild).toMatchObject({ node_id: "build", attempt: 2, retry: 0, status: "pending" });
+    expect(getLatestFlowRunForTask(taskId)?.status).toBe("running");
+    expect(getLatestFlowRunForTask(taskId)?.visits.build).toBe(2);
   });
 });
 
@@ -671,6 +711,121 @@ describe("human nodes", () => {
 
     expect(getLatestFlowRunForTask(taskId)?.status).toBe("completed");
     expect(taskStatus(taskId)).toBe("changes_requested");
+  });
+});
+
+describe("human authority", () => {
+  test("a human closing a task with a merely queued node still stops the flow", async () => {
+    // The guard used to key on node status, so a human closing a task whose node
+    // was queued (the common case at max_workers 1) was silently ignored and an
+    // agent was later spawned on work they had closed.
+    const taskId = await makeTask();
+    await startFlowForTask(taskId);
+    expect(activeNodeRun(taskId).status).toBe("pending");
+
+    await updateTaskStatus({ taskId, status: "done", author: "human" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(getLatestFlowRunForTask(taskId)?.status).toBe("cancelled");
+    expect(nodeRuns(taskId).every((r) => r.status === "cancelled")).toBe(true);
+  });
+
+  test("a human blocking a task stops the flow too", async () => {
+    // `blocked` and `paused` are how a human says "hold off"; they were not even
+    // reported to the flow before.
+    const taskId = await makeTask();
+    await startFlowForTask(taskId);
+    await updateTaskStatus({ taskId, status: "blocked", author: "human" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(getLatestFlowRunForTask(taskId)?.status).toBe("cancelled");
+  });
+
+  test("an agent moving the task is the in-flow protocol, not interference", async () => {
+    const taskId = await makeTask();
+    await startFlowForTask(taskId);
+    await updateTaskStatus({ taskId, status: "review", author: "agent" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(getActiveFlowRunForTask(taskId)).not.toBeNull();
+  });
+});
+
+describe("human gates and the wall clock", () => {
+  const gate = {
+    name: "test-gate-clock",
+    entry: "sign_off",
+    limits: { execution_timeout_secs: 3600 },
+    nodes: {
+      sign_off: {
+        kind: "human",
+        prompt: "Approve?",
+        task_status: "review",
+        outcomes: ["approved"],
+      },
+      done: { kind: "terminal", task_status: "done" },
+    },
+    edges: [{ from: "sign_off", to: "done", when: { outcome: "approved" } }],
+  };
+
+  test("a gate that waited longer than the timeout is not killed by it", async () => {
+    const taskId = await makeTask({ flow_override: gate });
+    const started = await startFlowForTask(taskId);
+    if (!started.ok) throw new Error("expected a run");
+    expect(activeNodeRun(taskId).status).toBe("awaiting_human");
+
+    // Backdate both the run and the gate: a human took two hours on a flow whose
+    // agent budget is one.
+    const twoHoursAgo = Math.floor(Date.now() / 1000) - 7200;
+    getSqlite()
+      .query("UPDATE flow_runs SET started_at = ? WHERE id = ?")
+      .run(twoHoursAgo, started.flowRunId);
+    getSqlite()
+      .query("UPDATE flow_node_runs SET created_at = ? WHERE task_id = ?")
+      .run(twoHoursAgo, taskId);
+
+    // The sweep must not reap a run that is only waiting on a person.
+    expect(await sweepFlowTimeouts()).toBe(0);
+
+    // And answering still works, because the wait was charged to paused_secs.
+    const resumed = await resumeHumanNode({ taskId, outcome: "approved", author: "human" });
+    expect(resumed.ok).toBe(true);
+    expect(taskStatus(taskId)).toBe("done");
+  });
+});
+
+describe("cross-run budget accounting", () => {
+  test("runs a human cancelled do not count toward the budget", async () => {
+    // Attaching and halting repeatedly is not a flow failing to converge, and
+    // counting those runs parked tasks nobody had looped.
+    const taskId = await makeTask();
+    const { haltFlowRunForTask } = await import("../flow-runner.js");
+    for (let i = 0; i < 8; i++) {
+      const started = await startFlowForTask(taskId);
+      expect(started.ok, `attach ${i + 1} should be allowed`).toBe(true);
+      await haltFlowRunForTask(taskId, "operator stopped it");
+    }
+    expect(taskStatus(taskId)).not.toBe("paused");
+  });
+
+  test("a human comment forgives the budget so a parked task can be restarted", async () => {
+    const taskId = await makeTask({ flow_name: "orc-review-only" });
+    for (let i = 0; i < 6; i++) {
+      const result = await startFlowForTask(taskId);
+      if (!result.ok) break;
+      await completeNode(taskId, "changes_requested");
+    }
+    expect((await startFlowForTask(taskId)).ok).toBe(false);
+    expect(taskStatus(taskId)).toBe("paused");
+
+    // A human weighing in resets the budget — otherwise the park is permanent
+    // and every cycle appends another "not converging" comment.
+    const { addTaskComment } = await import("@orc/task-service");
+    await addTaskComment(taskId, "Rebased on main, try again", "human");
+    await getDb()
+      .update(tasks)
+      .set({ status: "todo", claimed_by: null })
+      .where(eq(tasks.id, taskId));
+
+    expect((await startFlowForTask(taskId)).ok).toBe(true);
   });
 });
 

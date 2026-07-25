@@ -103,6 +103,13 @@ You're successful when:
 - Workflow prompts are assigned to every subtask
 - The human can approve the plan without further questions
 
+## Flow Protocol
+
+You run as a node in a flow graph. Your prompt names your node and lists the exact outcomes the
+graph can route from it. Setting the task status is still expected, but it is **not** what advances
+the flow — when your work is done, call `flow_report(task, node, outcome, summary)` with one of the
+listed outcomes and stop. See `orc-worker-base` for the full contract.
+
 ## Related
 
 - **orc-worker-base**: what workers need from task bodies

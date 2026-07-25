@@ -200,7 +200,11 @@ export const FlowDefinitionSchema = z.strictObject({
   version: z.number().int().min(1).default(1),
   entry: z.string().min(1),
   limits: FlowLimitsSchema.default(DEFAULT_FLOW_LIMITS),
-  nodes: z.record(z.string().min(1).max(64), FlowNodeSchema),
+  nodes: z
+    .record(z.string().min(1).max(64), FlowNodeSchema)
+    .refine((n) => Object.keys(n).length >= 1 && Object.keys(n).length <= 128, {
+      message: "a flow needs between 1 and 128 nodes",
+    }),
   edges: z.array(FlowEdgeSchema).max(256).default([]),
 });
 export type FlowDefinition = z.infer<typeof FlowDefinitionSchema>;
@@ -402,9 +406,11 @@ function guardShape(raw: unknown): string | null {
   let seen = 0;
   while (stack.length > 0) {
     const { value, depth } = stack.pop() as { value: unknown; depth: number };
+    // Count *every* value, scalars included. Counting only containers let a flat
+    // array of 300k numbers through, and Zod then produced one issue per element.
+    if (++seen > MAX_FLOW_KEYS) return `more than ${MAX_FLOW_KEYS} values`;
     if (value === null || typeof value !== "object") continue;
     if (depth > MAX_FLOW_DEPTH) return `nesting deeper than ${MAX_FLOW_DEPTH} levels`;
-    if (++seen > MAX_FLOW_KEYS) return `more than ${MAX_FLOW_KEYS} values`;
     for (const child of Array.isArray(value) ? value : Object.values(value)) {
       stack.push({ value: child, depth: depth + 1 });
     }

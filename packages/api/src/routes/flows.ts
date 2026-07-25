@@ -47,10 +47,12 @@ const FlowNodeRunSchema = z
     node_id: z.string(),
     node_kind: z.string(),
     attempt: z.number().int(),
+    retry: z.number().int(),
     status: z.string(),
     outcome: z.string().nullable(),
     summary: z.string().nullable(),
     error: z.string().nullable(),
+    gateway_session_id: z.string().nullable(),
     started_at: z.number().nullable(),
     ended_at: z.number().nullable(),
   })

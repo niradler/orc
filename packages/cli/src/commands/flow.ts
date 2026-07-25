@@ -31,6 +31,13 @@ function statusLabel(status: string): string {
   return color(status, STATUS_COLOR[status] ?? "0");
 }
 
+function formatDuration(secs: number): string {
+  if (secs < 60) return `${Math.round(secs)}s`;
+  if (secs < 3600) return `${Math.round(secs / 60)}m`;
+  const hours = Math.floor(secs / 3600);
+  return `${hours}h${Math.round((secs % 3600) / 60)}m`;
+}
+
 async function readDefinition(opts: {
   file?: string;
   definition?: string;
@@ -58,6 +65,12 @@ function printRun(run: FlowRun): void {
   console.log(`  status:   ${statusLabel(run.status)}`);
   if (run.halt_description) console.log(`  halted:   ${run.halt_description}`);
   console.log(`  executed: ${run.node_executions} node(s)`);
+  const started = new Date(run.started_at * 1000);
+  const endedAt = run.ended_at ? new Date(run.ended_at * 1000) : null;
+  const elapsed = Math.max(0, (endedAt ?? new Date()).getTime() / 1000 - run.started_at);
+  console.log(
+    `  started:  ${started.toISOString()}  (${formatDuration(elapsed)}${endedAt ? "" : " ago, still running"})`,
+  );
 
   if (run.active.length > 0) {
     console.log(`  active:   ${run.active.map((a) => `${a.nodeId}#${a.attempt}`).join(", ")}`);
@@ -82,14 +95,23 @@ function printRun(run: FlowRun): void {
     console.log(color("Ledger", "1"));
     for (const node of run.nodes) {
       const verdict = node.outcome ? color(`→ ${node.outcome}`, "32") : "";
+      const retry = node.retry > 0 ? color(`.r${node.retry}`, "33") : "";
+      const took =
+        node.started_at && node.ended_at
+          ? color(` ${formatDuration(node.ended_at - node.started_at)}`, "90")
+          : "";
       console.log(
-        `  ${node.node_id}#${node.attempt} ${color(`(${node.node_kind})`, "90")} ` +
-          `[${statusLabel(node.status)}] ${verdict}`,
+        `  ${node.node_id}#${node.attempt}${retry} ${color(`(${node.node_kind})`, "90")} ` +
+          `[${statusLabel(node.status)}]${took} ${verdict}`,
       );
       if (node.summary) {
         for (const line of node.summary.trim().split("\n")) console.log(`      ${line}`);
       }
       if (node.error) console.log(`      ${color(`error: ${node.error}`, "31")}`);
+      // The route from a suspicious node to the agent's actual transcript.
+      if (node.gateway_session_id) {
+        console.log(`      ${color(`session: ${node.gateway_session_id}`, "90")}`);
+      }
     }
   }
 }

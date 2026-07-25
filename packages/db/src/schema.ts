@@ -328,6 +328,8 @@ export const flow_runs = sqliteTable(
     joins: text("joins", { mode: "json" }).$type<unknown>(),
     vars: text("vars", { mode: "json" }).$type<Record<string, unknown>>(),
     node_executions: integer("node_executions").default(0).notNull(),
+    // Seconds spent awaiting a human, excluded from execution_timeout_secs.
+    paused_secs: integer("paused_secs").default(0).notNull(),
     halt_reason: text("halt_reason"),
     started_at: integer("started_at", { mode: "timestamp" }).notNull(),
     ended_at: integer("ended_at", { mode: "timestamp" }),
@@ -356,7 +358,12 @@ export const flow_node_runs = sqliteTable(
       .references(() => tasks.id, { onDelete: "cascade" }),
     node_id: text("node_id").notNull(),
     node_kind: text("node_kind", { enum: ["agent", "gate", "human", "terminal"] }).notNull(),
+    // The graph visit this row belongs to (the engine's attempt number).
     attempt: integer("attempt").default(1).notNull(),
+    // Which session for that visit. An infrastructure retry re-runs the same
+    // visit, so it must not consume an attempt number the engine will later
+    // hand out itself.
+    retry: integer("retry").default(0).notNull(),
     status: text("status", {
       enum: ["pending", "running", "awaiting_human", "succeeded", "failed", "cancelled", "skipped"],
     })
@@ -375,7 +382,7 @@ export const flow_node_runs = sqliteTable(
     created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
   },
   (t) => [
-    uniqueIndex("flow_node_runs_attempt_idx").on(t.flow_run_id, t.node_id, t.attempt),
+    uniqueIndex("flow_node_runs_attempt_idx").on(t.flow_run_id, t.node_id, t.attempt, t.retry),
     index("flow_node_runs_run_idx").on(t.flow_run_id, t.created_at),
     index("flow_node_runs_status_idx").on(t.status),
   ],

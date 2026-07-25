@@ -377,10 +377,12 @@ export type FlowNodeRun = {
   node_id: string;
   node_kind: string;
   attempt: number;
+  retry: number;
   status: string;
   outcome: string | null;
   summary: string | null;
   error: string | null;
+  gateway_session_id: string | null;
   started_at: number | null;
   ended_at: number | null;
 };

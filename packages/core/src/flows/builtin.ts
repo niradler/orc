@@ -137,12 +137,14 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
         backend: "$task.agent_backend",
         role: "worker",
         task_status: "doing",
-        outcomes: ["ready"],
+        outcomes: ["ready", "insufficient_context"],
         on_error: "plan_failed",
         max_visits: 2,
         prompt:
           "Do not implement anything. Produce a plan with explicit, checkable acceptance criteria, " +
-          "post it as a task comment, then report the outcome `ready`.",
+          "post it as a task comment, then report the outcome `ready`. " +
+          "If the task does not say enough to plan against, report `insufficient_context` " +
+          "with a comment listing exactly what you need — do not invent requirements.",
       },
       build: {
         kind: "agent",
@@ -173,10 +175,21 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
       },
       done: { kind: "terminal", task_status: "done" },
       blocked_out: { kind: "terminal", task_status: "blocked" },
+      needs_input: {
+        kind: "terminal",
+        description: "The task does not say enough to plan against",
+        task_status: "blocked",
+      },
       escalated: { kind: "terminal", task_status: "paused" },
     },
     edges: [
       { from: "plan", to: "build", when: { outcome: "ready" }, label: "plan ready" },
+      {
+        from: "plan",
+        to: "needs_input",
+        when: { outcome: "insufficient_context" },
+        label: "not enough to plan against",
+      },
       { from: "plan", to: "escalated", when: { always: true }, label: "planning failed" },
       { from: "build", to: "verify", when: { outcome: "submitted" }, label: "submitted" },
       { from: "build", to: "blocked_out", when: { outcome: "blocked" }, label: "blocked" },
@@ -246,7 +259,11 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
     description:
       "Long-horizon executor plus an independent supervisor that re-verifies from clean context each round and steers with a directive. For multi-milestone work where 'done' must mean verified.",
     entry: "execute",
-    limits: { max_node_executions: 24, execution_timeout_secs: 43_200 },
+    // 8 executor visits + 8 supervisions can each run to session_max_lifetime,
+    // so the wall clock has to allow for that or it trips first — and halting
+    // cancels the executor's node, discarding the accumulated context that
+    // reset_on_revisit: false exists to preserve.
+    limits: { max_node_executions: 24, execution_timeout_secs: 172_800, max_parallel: 1 },
     nodes: {
       execute: {
         kind: "agent",
@@ -347,6 +364,7 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
         skill: "orc-reviewer",
         backend: "$task.agent_backend",
         role: "reviewer",
+        task_status: "review",
         outcomes: ["reviewed"],
         on_error: "reviewed",
         prompt:
@@ -359,6 +377,7 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
         skill: "orc-reviewer",
         backend: "$task.agent_backend",
         role: "reviewer",
+        task_status: "review",
         outcomes: ["reviewed"],
         on_error: "reviewed",
         prompt:
@@ -370,6 +389,7 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
         skill: "orc-reviewer",
         backend: "$task.agent_backend",
         role: "reviewer",
+        task_status: "review",
         outcomes: ["reviewed"],
         on_error: "reviewed",
         prompt:

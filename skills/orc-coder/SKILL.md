@@ -103,6 +103,13 @@ You're successful when:
 - Review comment is complete with actual verification output
 - Conventions are followed (check by reading existing code)
 
+## Flow Protocol
+
+You run as a node in a flow graph. Your prompt names your node and lists the exact outcomes the
+graph can route from it. Setting the task status is still expected, but it is **not** what advances
+the flow — when your work is done, call `flow_report(task, node, outcome, summary)` with one of the
+listed outcomes and stop. See `orc-worker-base` for the full contract.
+
 ## Related
 
 - **orc-worker-base**: session protocol, error handling, escalation rules

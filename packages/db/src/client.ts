@@ -230,6 +230,7 @@ function setupDb(sqlite: Database): void {
       joins TEXT,
       vars TEXT,
       node_executions INTEGER NOT NULL DEFAULT 0,
+      paused_secs INTEGER NOT NULL DEFAULT 0,
       halt_reason TEXT,
       started_at INTEGER NOT NULL,
       ended_at INTEGER,
@@ -247,6 +248,7 @@ function setupDb(sqlite: Database): void {
       node_id TEXT NOT NULL,
       node_kind TEXT NOT NULL,
       attempt INTEGER NOT NULL DEFAULT 1,
+      retry INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'pending',
       outcome TEXT,
       summary TEXT,
@@ -260,7 +262,7 @@ function setupDb(sqlite: Database): void {
     );
 
     CREATE UNIQUE INDEX IF NOT EXISTS flow_node_runs_attempt_idx
-      ON flow_node_runs(flow_run_id, node_id, attempt);
+      ON flow_node_runs(flow_run_id, node_id, attempt, retry);
     CREATE INDEX IF NOT EXISTS flow_node_runs_run_idx ON flow_node_runs(flow_run_id, created_at);
     CREATE INDEX IF NOT EXISTS flow_node_runs_status_idx ON flow_node_runs(status);
 
@@ -414,6 +416,13 @@ function setupDb(sqlite: Database): void {
     // Flow graphs: which graph a task runs, or an inline graph for that task alone.
     "ALTER TABLE tasks ADD COLUMN flow_name TEXT",
     "ALTER TABLE tasks ADD COLUMN flow_override TEXT",
+    // A retry re-runs one graph visit, so it needs its own coordinate: sharing
+    // `attempt` with the engine's visit counter made a later visit to the same
+    // node collide with the retry's row and strand the run.
+    "ALTER TABLE flow_node_runs ADD COLUMN retry INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE flow_runs ADD COLUMN paused_secs INTEGER NOT NULL DEFAULT 0",
+    "DROP INDEX IF EXISTS flow_node_runs_attempt_idx",
+    "CREATE UNIQUE INDEX IF NOT EXISTS flow_node_runs_attempt_idx ON flow_node_runs(flow_run_id, node_id, attempt, retry)",
   ];
   for (const statement of migrations) {
     try {

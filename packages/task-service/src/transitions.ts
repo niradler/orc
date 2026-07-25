@@ -20,6 +20,12 @@ export type TransitionOpts = {
    * it so a human (or a stray agent) can override a run in progress.
    */
   source?: "flow" | "external" | undefined;
+  /**
+   * Send the human review notification. The flow engine sets this only for a
+   * `human` gate node; agent reviewer nodes also move a task to `review` and
+   * must not page anyone.
+   */
+  notifyHuman?: boolean | undefined;
 };
 
 export type TransitionResult = {
@@ -100,7 +106,8 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
     await addTaskComment(opts.taskId, opts.comment, opts.author ?? "agent");
   }
 
-  if (opts.status === "review") {
+  const shouldNotifyReview = opts.source !== "flow" || opts.notifyHuman === true;
+  if (opts.status === "review" && shouldNotifyReview) {
     const refreshed = await db.query.tasks.findFirst({ where: eq(tasks.id, opts.taskId) });
     if (refreshed?.required_review) {
       notifyReview(opts.taskId, task.title).catch((err) => {
@@ -208,12 +215,16 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
     }
   }
 
-  if (["done", "cancelled", "changes_requested"].includes(opts.status)) {
+  // Any status a human might set to take a task off the agents has to reach the
+  // flow, not just the three that end it.
+  if (["done", "cancelled", "changes_requested", "blocked", "paused"].includes(opts.status)) {
     if (opts.source !== "flow") {
       import("@orc/runner/flow-runner")
-        .then((m) => m.onTaskStatusChangedExternally(opts.taskId, opts.status))
+        .then((m) => m.onTaskStatusChangedExternally(opts.taskId, opts.status, opts.author))
         .catch((err) => logger.warn("flow notification failed", { err }));
     }
+  }
+  if (["done", "cancelled", "changes_requested"].includes(opts.status)) {
     import("@orc/runner/task-loop")
       .then((m) => m.triggerTaskCheck())
       .catch((err) => logger.warn("triggerTaskCheck failed", { err }));

@@ -116,7 +116,7 @@ Injected at start: `task_id`, `task_title`, `project_id`, `skill_name`, `require
 - Fan-out never exceeds capacity. Extra nodes sit as `pending` rows and drain as worker slots free up, honouring `agent_loop.max_workers`, the project's `max_workers`, and the flow's `max_parallel`. A single-worker install runs the branches one after another instead of failing.
 - Reaching **any** terminal ends the whole run and cancels branches still in flight.
 
-Fan-out costs roughly N× the tokens. Use it where one reviewer demonstrably misses things, not by default.
+Fan-out costs roughly N× the tokens. Use it where one reviewer demonstrably misses things, not by default — and note that with the default `agent_loop.max_workers` of 1 the branches run one after another, so you pay the tokens without gaining wall-clock. Raise `max_workers` before reaching for `orc-parallel-review`.
 
 ## Termination
 
@@ -224,7 +224,7 @@ Each reviewer sets its own `*_ok` var; the verdict gate routes on all three. `bu
 | Flow                    | Shape                                                                        |
 | ----------------------- | ---------------------------------------------------------------------------- |
 | `orc-review-only`       | One review pass, for a task a human moved straight to `review`               |
-| `orc-plan-build-verify` | planner → coder → reviewer, looping until the acceptance criteria pass       |
+| `orc-plan-build-verify` | planner → coder → reviewer, looping until the acceptance criteria pass. The planner can report `insufficient_context` rather than inventing requirements |
 | `orc-fix-verify`        | bugfix → independent confirmation the fix holds and a regression test exists |
 | `orc-supervisor`        | Executor keeps its session across rounds (`reset_on_revisit: false`); supervisor always gets a fresh one (`true`) so it cannot inherit the executor's blind spots |
 
@@ -248,7 +248,8 @@ Agents use `flow_list`, `flow_read`, `flow_create`, `flow_attach` (pass `definit
 
 - Every non-terminal node needs at least one outgoing edge, and a **catch-all last** unless every outcome is explicitly routed. Otherwise an unexpected verdict halts the run.
 - Put the guarded loopback **before** the escalation edge — first match wins.
-- Give every loop a bound: `max_visits`, or a `visits` guard on the loopback edge, or both.
+- Give every loop a bound: `max_visits`, or a `visits` guard on the loopback edge, or both. Whichever you use is shown to the node in its prompt, so a reviewer on its last allowed round knows a rejection escalates.
+- Declare a `task_status` on agent nodes. A node without one falls back to its role's natural status (`doing`, or `review` for a reviewer), but saying so is clearer than relying on that.
 - Declare `on_error` on any node whose failure has a sensible route. Without it, a crash halts the whole run.
 - Reset stale vars with `vars` on the node the loop returns to.
 - Name outcomes for what happened (`fail`, `blocked`), not for where they go (`go_to_build`) — the edges own the routing.
@@ -259,7 +260,10 @@ Human gates are first-class rather than bolted on:
 
 - A `human` node parks the run, sets the task status, and posts a comment saying exactly how to resolve it.
 - `orc flow resume <task> --outcome <x>` (or `POST /tasks/{id}/flow/resume`, or `flow_report`) continues the graph.
-- A human moving the task **out of band** is respected: cancelling a task always cancels its flow; marking it `done` or requesting changes resolves a waiting human node, or stops the run if no node is mid-session. An agent node that is actively working and sets the task status is *not* treated as interference — its own report is what routes the graph.
+- A human moving the task **out of band** always wins, whatever the nodes are doing. Authority is decided by *who* made the change, not by what the graph is up to: a change authored by a human stops the run (or, if a gate is waiting and can route the verdict, answers it), while one authored by an agent or by the flow itself is the normal in-flow protocol and is left alone. Guessing from node status meant a human closing a task whose node was merely queued got silently ignored — and an agent was then spawned on work they had closed.
+- `done`, `cancelled`, `changes_requested`, `blocked` and `paused` all reach the flow, not just the three that end a task.
+- **A human gate does not burn the execution timeout.** Time a run spends `awaiting_human` is excluded from `execution_timeout_secs`, and the timeout sweep skips a run parked on a person. Otherwise the wall clock would be a fuse on every gate — four hours on orc-default's defaults — and the halt would cancel the node the human was about to answer.
+- Only a `human` node pages a human. Agent reviewer nodes also move a task to `review`, and notifying on those meant one task sent "ready for review" once per review round, each time asking for an approval the flow would immediately override.
 
 ## Schema
 
@@ -282,6 +286,10 @@ tasks
 ```
 
 `status = completed` means the graph reached a terminal — including an escalation terminal that pauses the task. `status = halted` means a rail tripped. The two are worth distinguishing when reading a run: one is a designed outcome, the other is the safety net.
+
+Node rows are keyed `(flow_run_id, node_id, attempt, retry)`: `attempt` is the graph visit, `retry` distinguishes sessions within one visit. Finished runs are pruned with the rest of the history (`pruneHistory`, 30 days by default); `running` ones are kept whatever their age.
+
+For debugging, `GET /tasks/{id}/flow` and `orc flow status` carry each node's `gateway_session_id`, which is the route from a suspicious verdict to the agent's actual transcript, plus per-node timings and any error text.
 
 ## Prior art
 
