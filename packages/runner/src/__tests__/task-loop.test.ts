@@ -109,7 +109,7 @@ describe("cleanupStaleSessions", () => {
       )
       .run(sessionId, taskId, staleTime, staleTime, staleTime);
 
-    const cleaned = cleanupStaleSessions();
+    const cleaned = await cleanupStaleSessions();
     expect(cleaned).toBe(1);
 
     // Session should be marked as error
@@ -137,7 +137,7 @@ describe("cleanupStaleSessions", () => {
       )
       .run(sessionId, recentTime, recentTime, recentTime);
 
-    const cleaned = cleanupStaleSessions();
+    const cleaned = await cleanupStaleSessions();
     expect(cleaned).toBe(0);
 
     const session = sqlite

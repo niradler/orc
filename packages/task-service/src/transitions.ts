@@ -14,6 +14,12 @@ export type TransitionOpts = {
   comment?: string | undefined;
   author?: string | undefined;
   claimedBy?: string | undefined;
+  /**
+   * "flow" marks a transition the flow engine is making itself. Anything else is
+   * treated as coming from outside the graph, and the running flow is told about
+   * it so a human (or a stray agent) can override a run in progress.
+   */
+  source?: "flow" | "external" | undefined;
 };
 
 export type TransitionResult = {
@@ -21,6 +27,13 @@ export type TransitionResult = {
   error?: string | undefined;
   task?: typeof tasks.$inferSelect | undefined;
 };
+
+function hasRunningFlow(taskId: string): boolean {
+  const row = getSqlite()
+    .query("SELECT 1 AS present FROM flow_runs WHERE task_id = ? AND status = 'running' LIMIT 1")
+    .get(taskId) as { present: number } | null;
+  return row !== null;
+}
 
 export async function addTaskComment(
   taskId: string,
@@ -165,7 +178,10 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
     }
   }
 
-  if (opts.status === "changes_requested") {
+  // Legacy review-round accounting, for tasks no flow owns. When a flow is
+  // running, its own graph limits govern the loop — two independent counters
+  // pausing the same task would fight each other.
+  if (opts.status === "changes_requested" && !hasRunningFlow(opts.taskId)) {
     const sqlite = getSqlite();
     const maxRounds = task.max_review_rounds ?? 3;
     const session = sqlite
@@ -193,6 +209,11 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
   }
 
   if (["done", "cancelled", "changes_requested"].includes(opts.status)) {
+    if (opts.source !== "flow") {
+      import("@orc/runner/flow-runner")
+        .then((m) => m.onTaskStatusChangedExternally(opts.taskId, opts.status))
+        .catch((err) => logger.warn("flow notification failed", { err }));
+    }
     import("@orc/runner/task-loop")
       .then((m) => m.triggerTaskCheck())
       .catch((err) => logger.warn("triggerTaskCheck failed", { err }));

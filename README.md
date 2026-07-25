@@ -32,11 +32,12 @@ ORC fixes this. Shared memory across every session. A task board where agents su
 | **Task board**            | `todo → queued → doing → review → done` with dependency tracking, priority, and automatic unblocking                               |
 | **Multi-backend routing** | Route to Claude Code, ACPX (Agent Communication Protocol, 14+ agents), or remote A2A endpoints; unknown names fall through to ACPX |
 | **Job runner**            | Cron, file-watch, webhook, or manual triggers with full run history                                                                |
-| **MCP server**            | 28 tools connect any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) compatible agent — stdio or Streamable HTTP   |
+| **MCP server**            | 34 tools connect any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) compatible agent — stdio or Streamable HTTP   |
 | **Session continuity**    | Snapshots survive context compaction so agents resume where they left off                                                          |
 | **Gateway**               | Approve work, search memory, and chat with live agents from Telegram or Slack                                                      |
 | **Knowledge search**      | Index document collections (markdown, notes, wikis) and search them via BM25 or hybrid (vector + reranking)                        |
 | **Skill library**         | Discoverable workflow templates (coder, reviewer, planner, bugfix) that encode your standards                                      |
+| **Task flows**            | Per-task graphs: conditional edges, bounded loops, parallel fan-out with joins, and human gates — with hard termination rails      |
 
 ## Getting started
 
@@ -280,6 +281,8 @@ task_batch_create({ tasks: [
 
 The loop handles concurrency, session resume on feedback, review round limits, stale claim cleanup, and backend routing.
 
+Every task runs a **flow graph** (see [Task flows](#task-flows)); `orc-default` is the build → review → done pipeline described above.
+
 #### Agent backends
 
 | Backend         | Description                                                                                                  |
@@ -300,7 +303,9 @@ Enable the task loop in `~/.orc/config.json`:
     "max_workers": 1,
     "default_backend": "claude",
     "session_idle_timeout_minutes": 20,
-    "worker_auto_approve": true
+    "worker_auto_approve": true,
+    "default_flow": "orc-default",
+    "review_flow": "orc-review-only"
   }
 }
 ```
@@ -380,6 +385,47 @@ todo → queued → doing → review → done
 Tasks with `required_review: true` (default) need your approval before moving to `done`. Set `max_review_rounds` to auto-pause tasks that cycle through too many revision rounds.
 
 <img src="assets/TaskFlow.gif" alt="Task Flow" width="600" />
+
+### Task flows
+
+That pipeline is not hardcoded — it is a **flow graph** named `orc-default`. A flow is nodes joined by conditional edges that may cycle, so a task can run whatever shape its work actually needs: a plan → build → verify loop, a bug-fix-then-confirm loop, an executor with an independent supervisor, or three reviewers in parallel joined before a decision.
+
+The graph itself is deterministic; only the nodes are agents. That means loops, branches, and fan-out behave predictably and are fully unit-testable, while the agents just do the work and report a verdict.
+
+```bash
+orc flow list                                    # what graphs are available
+orc flow show orc-plan-build-verify              # nodes, edges, limits
+orc task add "Fix the flaky test" --flow orc-fix-verify
+orc flow status <taskId>                         # active nodes + the ledger of outcomes
+orc flow resume <taskId> --outcome approved      # resolve a human gate
+orc flow halt <taskId>                           # stop it and kill live nodes
+```
+
+| Built-in flow           | Shape                                                                        |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| `orc-default`           | build → review → done, looping back while `max_review_rounds` allows         |
+| `orc-review-only`       | A single review pass for a task you moved straight to `review`               |
+| `orc-plan-build-verify` | planner → coder → reviewer, looping until acceptance criteria pass           |
+| `orc-fix-verify`        | bugfix → independent confirmation the fix holds and a regression test exists  |
+| `orc-supervisor`        | Executor keeping its context, plus a supervisor re-verifying from a clean one |
+| `orc-parallel-review`   | Fan out to correctness / security / tests reviewers, join on all three       |
+
+**Nodes** are `agent` (runs a session with a skill), `gate` (deterministic branching, fan-out, join points), `human` (waits for you), or `terminal` (ends the run and sets the task's final status). **Edges** carry declarative conditions — `outcome`, `visits`, `var`, `elapsed_secs`, composed with `all`/`any`/`not` — which are data, never evaluated code.
+
+Loops always terminate. Per-node `max_visits`, a per-run node-execution budget, a wall clock, plus deadlock and stall detection each halt the run and hand the task back to you with an explanation of which rail tripped.
+
+#### Custom graphs per task
+
+For work no named flow fits, attach a bespoke graph to a single task:
+
+```bash
+orc flow validate --file ./my-graph.json          # catch mistakes before running anything
+orc flow attach <taskId> --file ./my-graph.json --start
+```
+
+Definitions are JSON, validated on load: unknown edge targets, unreachable nodes, a graph that can never finish, or an edge shadowed by an earlier catch-all are all rejected up front rather than discovered mid-run. Reusable flows go in `~/.orc/flows/<name>/flow.json` (or `./.orc/flows/` to pin one per repo), and a user flow shadows a built-in of the same name — that is how you customise `orc-default` without patching orc.
+
+Agents can do all of this themselves via the `flow_list`, `flow_read`, `flow_create`, `flow_attach`, `flow_status`, and `flow_report` MCP tools, so a planner can design the pipeline for the work it just decomposed.
 
 ### Jobs
 
@@ -476,7 +522,7 @@ Add custom skills by creating a `SKILL.md` in `~/.orc/skills/my-workflow/SKILL.m
 
 ## MCP tools
 
-**28 tools** available to any connected agent. Start every session with `context`.
+**34 tools** available to any connected agent. Start every session with `context`.
 
 | Category      | Tools                                                                                                                                       |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -484,6 +530,7 @@ Add custom skills by creating a `SKILL.md` in `~/.orc/skills/my-workflow/SKILL.m
 | **Memory**    | `context`, `memory_search`, `memory_get`, `memory_store`, `memory_update`                                                                   |
 | **Task**      | `task_list`, `task_get`, `task_create`, `task_update`, `task_batch_create`                                                                  |
 | **Skill**     | `skill_list`, `skill_read`, `skill_create`                                                                                                  |
+| **Flow**      | `flow_report`, `flow_status`, `flow_list`, `flow_read`, `flow_create`, `flow_attach`                                                        |
 | **Knowledge** | `knowledge_search`, `knowledge_get`, `knowledge_collections`, `knowledge_collection_add`, `knowledge_collection_remove`, `knowledge_update` |
 | **Search**    | `search`                                                                                                                                    |
 | **Job**       | `job_list`, `job_run`, `job_status`                                                                                                         |
@@ -520,6 +567,12 @@ Runs on port 7700 with auto-generated OpenAPI spec.
 | `GET`                   | `/jobs/{id}/runs`              | Run history                    |
 | `GET`                   | `/jobs/{id}/runs/{runId}/logs` | Run logs                       |
 | `GET`                   | `/skills`                      | Skill templates                |
+| `GET/POST`              | `/flows`                       | List/create flow graphs        |
+| `GET`                   | `/flows/{name}`                | Read a flow definition         |
+| `POST`                  | `/flows/validate`              | Validate without saving        |
+| `GET/POST`              | `/tasks/{id}/flow`             | Get a task's run / attach one  |
+| `POST`                  | `/tasks/{id}/flow/resume`      | Resolve a human node           |
+| `POST`                  | `/tasks/{id}/flow/halt`        | Stop a running flow            |
 | `GET`                   | `/sessions`                    | Agent session logs             |
 | `POST`                  | `/mcp/tool`                    | Execute any MCP tool via HTTP  |
 
@@ -541,6 +594,7 @@ orc mem list|add|search
 orc job list|add|run|runs
 orc session list|show|log
 orc skill list|show
+orc flow list|show|validate|create|attach|status|resume|halt
 orc kb search|get|collections|add|remove|update|status
 ```
 
@@ -663,3 +717,4 @@ See [AGENTS.md](./AGENTS.md) for the full development guide and coding conventio
 - [Vision](./docs/vision.md) - why ORC exists and the problem it solves
 - [Roadmap](./docs/roadmap.md) - what shipped and what's next
 - [Agent Orchestration Design](./docs/agent-orchestration-design.md) - architecture spec for the task loop and multi-agent workflow
+- [Task Flows](./docs/task-flows.md) - flow graphs: nodes, conditional edges, bounded loops, fan-out and joins, and how to author your own

@@ -107,6 +107,7 @@ export function taskCommand() {
     .option("--skill <name>", "Skill for agent execution (e.g. orc-coder)")
     .option("--backend <backend>", "Agent backend (claude|codex|cursor)")
     .option("--model <model>", "Model override for the agent (e.g. gpt-5.4)")
+    .option("--flow <name>", "Flow graph to run (default: orc-default)")
     .action(async (title: string, opts) => {
       const client = createOrcClient();
       const noProject = opts.project === false;
@@ -121,6 +122,7 @@ export function taskCommand() {
         skill_name: opts.skill,
         ...(opts.backend ? { agent_backend: opts.backend } : {}),
         ...(opts.model ? { agent_model: opts.model } : {}),
+        ...(opts.flow ? { flow_name: opts.flow } : {}),
       });
       if (error) {
         if (isJson()) return jsonErr(String(error));
@@ -290,6 +292,8 @@ export function taskCommand() {
     .option("--tags <csv>", "Comma-separated tags")
     .option("-p, --project <name>", "Move to project")
     .option("--no-project", "Remove from project")
+    .option("--skill <name>", "Skill for agent execution")
+    .option("--flow <name>", "Flow graph to run")
     .action(async (id: string, opts) => {
       const client = createOrcClient();
       const full = await resolveTaskId(client, id);
@@ -303,6 +307,8 @@ export function taskCommand() {
       if (opts.progress !== undefined && opts.progress !== true)
         updates.progress = Number(opts.progress);
       if (opts.tags) updates.tags = (opts.tags as string).split(",").map((t: string) => t.trim());
+      if (opts.skill) updates.skill_name = opts.skill;
+      if (opts.flow) updates.flow_name = opts.flow;
 
       // Handle project option
       const noProject = opts.project === false;

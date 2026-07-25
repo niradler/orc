@@ -1,0 +1,1531 @@
+import type { AgentSession } from "@orc/agent-runtime";
+import { openAgentSession } from "@orc/agent-runtime";
+import { loadConfig } from "@orc/core/config";
+import type { FlowDefinition, FlowNode } from "@orc/core/flow";
+import { declaredOutcomes, resolvePlaceholder } from "@orc/core/flow";
+import type { FlowAction, FlowState, FlowStep } from "@orc/core/flow-engine";
+import { advanceFlow, checkFlowTimeout, describeHalt, startFlow } from "@orc/core/flow-engine";
+import { resolveFlowForTask } from "@orc/core/flow-service";
+import { ulid } from "@orc/core/ids";
+import { createLogger } from "@orc/core/logger";
+import type { SkillFull } from "@orc/core/skill-service";
+import { readSkill } from "@orc/core/skill-service";
+import type { TaskStatus } from "@orc/core/types";
+import { getDb, getSqlite } from "@orc/db/client";
+import { flow_runs, gateway_sessions } from "@orc/db/schema";
+import { addTaskComment, updateTaskStatus } from "@orc/task-service";
+
+const logger = createLogger("runner:flow");
+
+// ---------------------------------------------------------------------------
+// Live session registry
+//
+// Without in-memory handles, cleanup could only flip DB rows: the hung agent
+// child process and the suspended `for await (session.events())` frame would
+// leak forever. The registry lets cleanup actually kill the session, which ends
+// the event loop and frees the worker slot.
+// ---------------------------------------------------------------------------
+
+const liveSessions = new Map<string, AgentSession>();
+
+const SESSION_TOUCH_THROTTLE_MS = 5_000;
+const lastSessionTouch = new Map<string, number>();
+
+function touchSessionActivity(sessionId: string): void {
+  const now = Date.now();
+  const last = lastSessionTouch.get(sessionId) ?? 0;
+  if (now - last < SESSION_TOUCH_THROTTLE_MS) return;
+  lastSessionTouch.set(sessionId, now);
+  getSqlite()
+    .query(
+      "UPDATE gateway_sessions SET last_activity_at = unixepoch(), updated_at = unixepoch() WHERE id = ?",
+    )
+    .run(sessionId);
+}
+
+export function closeLiveSession(sessionId: string): void {
+  const live = liveSessions.get(sessionId);
+  if (!live) return;
+  liveSessions.delete(sessionId);
+  void live.close().catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// Row types
+// ---------------------------------------------------------------------------
+
+type TaskRow = {
+  id: string;
+  title: string;
+  body: string | null;
+  status: string;
+  project_id: string | null;
+  skill_name: string | null;
+  agent_backend: string | null;
+  agent_model: string | null;
+  max_review_rounds: number;
+  required_review: number;
+  flow_name: string | null;
+  flow_override: string | null;
+};
+
+type FlowRunRow = {
+  id: string;
+  task_id: string;
+  project_id: string | null;
+  flow_name: string;
+  definition: string;
+  status: string;
+  active: string | null;
+  visits: string | null;
+  joins: string | null;
+  vars: string | null;
+  node_executions: number;
+  started_at: number;
+};
+
+type NodeRunRow = {
+  id: string;
+  flow_run_id: string;
+  task_id: string;
+  node_id: string;
+  attempt: number;
+  status: string;
+  outcome: string | null;
+  summary: string | null;
+  skill_name: string | null;
+  gateway_session_id: string | null;
+  resume_session: number;
+};
+
+function getTask(taskId: string): TaskRow | null {
+  return (
+    (getSqlite()
+      .query(
+        `SELECT id, title, body, status, project_id, skill_name, agent_backend, agent_model,
+                max_review_rounds, required_review, flow_name, flow_override
+         FROM tasks WHERE id = ?`,
+      )
+      .get(taskId) as TaskRow | null) ?? null
+  );
+}
+
+function getFlowRunRow(flowRunId: string): FlowRunRow | null {
+  return (
+    (getSqlite()
+      .query("SELECT * FROM flow_runs WHERE id = ?")
+      .get(flowRunId) as FlowRunRow | null) ?? null
+  );
+}
+
+export function getActiveFlowRunForTask(taskId: string): FlowRunRow | null {
+  return (
+    (getSqlite()
+      .query(
+        "SELECT * FROM flow_runs WHERE task_id = ? AND status = 'running' ORDER BY started_at DESC LIMIT 1",
+      )
+      .get(taskId) as FlowRunRow | null) ?? null
+  );
+}
+
+function parseJson<T>(raw: string | null, fallback: T): T {
+  if (raw === null) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+type LoadedRun = { row: FlowRunRow; def: FlowDefinition; state: FlowState };
+
+function loadRun(flowRunId: string): LoadedRun | null {
+  const row = getFlowRunRow(flowRunId);
+  if (!row) return null;
+  const def = parseJson<FlowDefinition | null>(row.definition, null);
+  if (!def) {
+    logger.error(`Flow run ${flowRunId} has an unreadable definition snapshot`);
+    return null;
+  }
+  const state: FlowState = {
+    status:
+      row.status === "running" ? "running" : row.status === "completed" ? "completed" : "halted",
+    active: parseJson(row.active, [] as { nodeId: string; attempt: number }[]),
+    visits: parseJson(row.visits, {} as Record<string, number>),
+    joins: parseJson(row.joins, {} as Record<string, Record<string, string>>),
+    vars: parseJson(row.vars, {} as Record<string, unknown>),
+    executions: row.node_executions,
+    started_at: row.started_at,
+  };
+  return { row, def, state };
+}
+
+function saveState(flowRunId: string, state: FlowState): void {
+  const status =
+    state.status === "running" ? "running" : state.status === "completed" ? "completed" : "halted";
+  getSqlite()
+    .query(
+      `UPDATE flow_runs SET status = ?, active = ?, visits = ?, joins = ?, vars = ?,
+              node_executions = ?, halt_reason = ?, ended_at = ?, updated_at = unixepoch()
+       WHERE id = ?`,
+    )
+    .run(
+      status,
+      JSON.stringify(state.active),
+      JSON.stringify(state.visits),
+      JSON.stringify(state.joins),
+      JSON.stringify(state.vars),
+      state.executions,
+      state.halt_reason ?? null,
+      state.status === "running" ? null : Math.floor(Date.now() / 1000),
+      flowRunId,
+    );
+}
+
+function nowSecs(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
+// ---------------------------------------------------------------------------
+// Per-task serialization
+//
+// Advancing a flow is read-state → compute → write-state, with awaits in the
+// middle (comments, task transitions). Fan-out means several node sessions can
+// end at the same moment, and without this lock each would read the same state
+// and the last write would clobber the others — resurrecting finished nodes and
+// losing join arrivals. A task's flow is the unit of serialization; the daemon
+// is one process, so an in-process queue is enough.
+// ---------------------------------------------------------------------------
+
+const taskLocks = new Map<string, Promise<void>>();
+
+function withTaskLock<T>(taskId: string, fn: () => Promise<T>): Promise<T> {
+  const prior = taskLocks.get(taskId) ?? Promise.resolve();
+  const result = prior.then(fn);
+  // The queued tail never rejects, so one failed operation cannot poison the
+  // queue for every later one.
+  const tail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  taskLocks.set(taskId, tail);
+  void tail.then(() => {
+    if (taskLocks.get(taskId) === tail) taskLocks.delete(taskId);
+  });
+  return result;
+}
+
+function taskIdForRun(flowRunId: string): string | null {
+  const row = getSqlite().query("SELECT task_id FROM flow_runs WHERE id = ?").get(flowRunId) as {
+    task_id: string;
+  } | null;
+  return row?.task_id ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Prompt assembly
+// ---------------------------------------------------------------------------
+
+function nodeSkillName(node: FlowNode, task: TaskRow): string | undefined {
+  return resolvePlaceholder(node.skill, {
+    skill_name: task.skill_name,
+    agent_backend: task.agent_backend,
+    agent_model: task.agent_model,
+  });
+}
+
+function nodeBackend(node: FlowNode, task: TaskRow): string {
+  const config = loadConfig();
+  return (
+    resolvePlaceholder(node.backend, {
+      skill_name: task.skill_name,
+      agent_backend: task.agent_backend,
+      agent_model: task.agent_model,
+    }) ??
+    task.agent_backend ??
+    config.agent_loop.default_backend
+  );
+}
+
+function nodeModel(node: FlowNode, task: TaskRow): string | undefined {
+  return (
+    resolvePlaceholder(node.model, {
+      skill_name: task.skill_name,
+      agent_backend: task.agent_backend,
+      agent_model: task.agent_model,
+    }) ??
+    task.agent_model ??
+    undefined
+  );
+}
+
+/** The ledger: what every earlier node in this run was asked and what it said. */
+function renderLedger(flowRunId: string, excludeNodeRunId?: string): string | null {
+  const rows = getSqlite()
+    .query(
+      `SELECT node_id, attempt, status, outcome, summary FROM flow_node_runs
+       WHERE flow_run_id = ? AND id != ? AND status IN ('succeeded','failed','cancelled')
+       ORDER BY created_at ASC`,
+    )
+    .all(flowRunId, excludeNodeRunId ?? "") as {
+    node_id: string;
+    attempt: number;
+    status: string;
+    outcome: string | null;
+    summary: string | null;
+  }[];
+  if (rows.length === 0) return null;
+
+  const lines = ["## Flow Ledger", "", "What earlier nodes in this run did, in order:", ""];
+  for (const r of rows) {
+    const verdict = r.outcome ? `→ ${r.outcome}` : `(${r.status})`;
+    lines.push(`- **${r.node_id}** (attempt ${r.attempt}) ${verdict}`);
+    if (r.summary) {
+      for (const line of r.summary.trim().split("\n")) lines.push(`  ${line}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function renderVars(vars: Record<string, unknown>): string | null {
+  const entries = Object.entries(vars).filter(
+    ([key, value]) => value !== null && value !== undefined && !RESERVED_VARS.has(key),
+  );
+  if (entries.length === 0) return null;
+  const lines = ["## Flow State", ""];
+  for (const [key, value] of entries) {
+    lines.push(`- \`${key}\`: ${typeof value === "string" ? value : JSON.stringify(value)}`);
+  }
+  return lines.join("\n");
+}
+
+const RESERVED_VARS = new Set([
+  "task_id",
+  "task_title",
+  "project_id",
+  "skill_name",
+  "required_review",
+  "max_review_rounds",
+]);
+
+function outcomeContract(def: FlowDefinition, nodeId: string): string {
+  const outcomes = declaredOutcomes(def, nodeId);
+  const lines = [
+    "## Reporting Your Outcome",
+    "",
+    `You are node **${nodeId}** in flow **${def.name}**. When your work is finished you MUST call the`,
+    "`flow_report` MCP tool so the flow can route to the next node:",
+    "",
+    "```",
+    `flow_report(node: "${nodeId}", outcome: "<one of below>", summary: "<what you did / found>")`,
+    "```",
+    "",
+  ];
+  if (outcomes.length > 0) {
+    lines.push("Valid outcomes for this node:");
+    for (const o of outcomes) lines.push(`- \`${o}\``);
+  } else {
+    lines.push("This node has no declared outcomes — report `done`.");
+  }
+  lines.push(
+    "",
+    "Report exactly one outcome, and only once. Pass `vars` if the flow's routing needs values from you",
+    "(the instructions above will say so). Do not invent an outcome that is not listed.",
+  );
+  return lines.join("\n");
+}
+
+function taskComments(taskId: string, since?: number): { content: string; author: string }[] {
+  const sqlite = getSqlite();
+  if (since !== undefined) {
+    return sqlite
+      .query(
+        `SELECT content, author FROM comments
+         WHERE resource_type = 'task' AND resource_id = ? AND created_at > ?
+         ORDER BY created_at ASC`,
+      )
+      .all(taskId, since) as { content: string; author: string }[];
+  }
+  return sqlite
+    .query(
+      `SELECT content, author FROM comments WHERE resource_type = 'task' AND resource_id = ?
+       ORDER BY created_at ASC`,
+    )
+    .all(taskId) as { content: string; author: string }[];
+}
+
+function buildNodePrompt(opts: {
+  def: FlowDefinition;
+  node: FlowNode;
+  nodeId: string;
+  attempt: number;
+  task: TaskRow;
+  flowRunId: string;
+  nodeRunId: string;
+  vars: Record<string, unknown>;
+  resumeSince?: number | undefined;
+}): string {
+  const { def, node, nodeId, task, vars } = opts;
+  const parts: string[] = [];
+
+  // Resuming the same session: it already has the task and its own history, so
+  // send only what changed plus the contract. Re-sending everything would bury
+  // the new instruction in noise it has already read.
+  if (opts.resumeSince !== undefined) {
+    parts.push(
+      `You are resuming as node **${nodeId}** of flow **${def.name}** on task "${task.title}" (ID: ${task.id}), attempt ${opts.attempt}.`,
+    );
+    const ledger = renderLedger(opts.flowRunId, opts.nodeRunId);
+    if (ledger) parts.push(ledger);
+    const varsBlock = renderVars(vars);
+    if (varsBlock) parts.push(varsBlock);
+    const fresh = taskComments(task.id, opts.resumeSince);
+    if (fresh.length > 0) {
+      parts.push("## New Comments Since Your Last Session");
+      for (const c of fresh) parts.push(`[${c.author}]: ${c.content}`);
+    }
+    if (node.prompt) parts.push(`## Node Instructions\n${node.prompt}`);
+    parts.push(outcomeContract(def, nodeId));
+    return parts.join("\n\n");
+  }
+
+  // Worker nodes get the base worker contract; reviewer nodes deliberately do
+  // not — a reviewer told to "submit for review and stop" reviews itself.
+  if ((node.role ?? "worker") === "worker") {
+    const baseSkill = readSkill("orc-worker-base") as SkillFull | null;
+    if (baseSkill) parts.push(baseSkill.content);
+  }
+
+  const skillName = nodeSkillName(node, task);
+  if (skillName) {
+    const skill = readSkill(skillName) as SkillFull | null;
+    if (skill) parts.push(`\n---\n## Workflow: ${skill.name}\n${skill.content}`);
+    else logger.warn(`Node ${nodeId} references unknown skill "${skillName}"`);
+  }
+
+  if (node.prompt) parts.push(`\n---\n## Node Instructions (${nodeId})\n${node.prompt}`);
+
+  parts.push(`\n---\n## Task: ${task.title}\nTask ID: ${task.id}`);
+  if (task.body) parts.push(task.body);
+
+  const ledger = renderLedger(opts.flowRunId, opts.nodeRunId);
+  if (ledger) parts.push(`\n---\n${ledger}`);
+
+  const varsBlock = renderVars(vars);
+  if (varsBlock) parts.push(`\n---\n${varsBlock}`);
+
+  const comments = taskComments(task.id);
+  if (comments.length > 0) {
+    parts.push("\n## Comments");
+    for (const c of comments) parts.push(`[${c.author}]: ${c.content}`);
+  }
+
+  parts.push(`\n---\n${outcomeContract(def, nodeId)}`);
+  return parts.join("\n\n");
+}
+
+// ---------------------------------------------------------------------------
+// Applying engine actions
+// ---------------------------------------------------------------------------
+
+async function setTaskStatus(
+  taskId: string,
+  status: TaskStatus,
+  comment?: string,
+  claimedBy?: string,
+): Promise<void> {
+  const current = getSqlite().query("SELECT status FROM tasks WHERE id = ?").get(taskId) as {
+    status: string;
+  } | null;
+  // Re-entering a node whose task_status is already current (build → build) is
+  // normal; the transition matrix rejects same-to-same, so don't ask.
+  if (current?.status === status) {
+    if (comment) await addTaskComment(taskId, comment, "system");
+    return;
+  }
+
+  const result = await updateTaskStatus({
+    taskId,
+    status,
+    ...(comment !== undefined ? { comment } : {}),
+    ...(claimedBy !== undefined ? { claimedBy } : {}),
+    author: "system",
+    // Mark it as ours so the transition hook does not treat the flow's own
+    // moves as outside interference and cancel the run.
+    source: "flow",
+  });
+  if (!result.ok) {
+    logger.warn(`Task ${taskId} → ${status} rejected: ${result.error}`);
+  }
+}
+
+/**
+ * Gates and terminals never become active nodes, so they would otherwise leave
+ * no trace. Diff the visit counters to record them in the ledger.
+ */
+function recordPassiveVisits(
+  flowRunId: string,
+  taskId: string,
+  def: FlowDefinition,
+  before: Record<string, number>,
+  after: Record<string, number>,
+): void {
+  const sqlite = getSqlite();
+  for (const [nodeId, count] of Object.entries(after)) {
+    const node = def.nodes[nodeId];
+    if (!node || node.kind === "agent" || node.kind === "human") continue;
+    const previous = before[nodeId] ?? 0;
+    for (let attempt = previous + 1; attempt <= count; attempt++) {
+      try {
+        sqlite
+          .query(
+            `INSERT INTO flow_node_runs
+               (id, flow_run_id, task_id, node_id, node_kind, attempt, status, outcome, started_at, ended_at)
+             VALUES (?, ?, ?, ?, ?, ?, 'succeeded', 'entered', unixepoch(), unixepoch())`,
+          )
+          .run(ulid(), flowRunId, taskId, nodeId, node.kind, attempt);
+      } catch {
+        // Unique index on (run, node, attempt) — already recorded.
+      }
+    }
+  }
+}
+
+async function applyStep(
+  flowRunId: string,
+  def: FlowDefinition,
+  task: TaskRow,
+  before: FlowState,
+  step: FlowStep,
+): Promise<void> {
+  const sqlite = getSqlite();
+  recordPassiveVisits(flowRunId, task.id, def, before.visits, step.state.visits);
+
+  for (const action of step.actions) {
+    await applyAction(flowRunId, def, task, step.state, action);
+  }
+
+  saveState(flowRunId, step.state);
+
+  if (step.state.status === "running" && step.state.active.length === 0) {
+    // Should not happen — the engine halts on a stall — but never leave a run
+    // claiming to be running with nothing to run.
+    logger.warn(`Flow run ${flowRunId} is running with no active nodes`);
+  }
+
+  if (step.state.status !== "running") {
+    sqlite
+      .query(
+        "UPDATE tasks SET claimed_by = NULL, updated_at = unixepoch() WHERE id = ? AND claimed_by = ?",
+      )
+      .run(task.id, flowRunId);
+  }
+}
+
+async function applyAction(
+  flowRunId: string,
+  def: FlowDefinition,
+  task: TaskRow,
+  state: FlowState,
+  action: FlowAction,
+): Promise<void> {
+  const sqlite = getSqlite();
+
+  switch (action.kind) {
+    case "spawn": {
+      const node = def.nodes[action.nodeId];
+      if (!node) return;
+      const isHuman = node.kind === "human";
+      const nodeRunId = ulid();
+      try {
+        sqlite
+          .query(
+            `INSERT INTO flow_node_runs
+               (id, flow_run_id, task_id, node_id, node_kind, attempt, status, skill_name, resume_session, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch())`,
+          )
+          .run(
+            nodeRunId,
+            flowRunId,
+            task.id,
+            action.nodeId,
+            node.kind,
+            action.attempt,
+            isHuman ? "awaiting_human" : "pending",
+            nodeSkillName(node, task) ?? null,
+            action.resume ? 1 : 0,
+          );
+      } catch (err) {
+        logger.warn(
+          `Node run for ${action.nodeId}#${action.attempt} already exists: ${String(err)}`,
+        );
+        return;
+      }
+
+      if (node.task_status) {
+        await setTaskStatus(task.id, node.task_status, undefined, flowRunId);
+      }
+      if (isHuman) {
+        await addTaskComment(
+          task.id,
+          `Flow **${def.name}** is waiting for a human at node **${action.nodeId}**.` +
+            (node.prompt ? `\n\n${node.prompt}` : "") +
+            `\n\nResolve with: \`orc flow resume ${task.id} --outcome <${declaredOutcomes(def, action.nodeId).join("|") || "done"}>\``,
+          "system",
+        );
+      }
+      return;
+    }
+
+    case "cancel": {
+      const row = sqlite
+        .query(
+          `SELECT id, gateway_session_id FROM flow_node_runs
+           WHERE flow_run_id = ? AND node_id = ? AND attempt = ?`,
+        )
+        .get(flowRunId, action.nodeId, action.attempt) as {
+        id: string;
+        gateway_session_id: string | null;
+      } | null;
+      if (!row) return;
+      if (row.gateway_session_id) {
+        closeLiveSession(row.gateway_session_id);
+        sqlite
+          .query(
+            "UPDATE gateway_sessions SET status = 'stopped', last_error = ?, updated_at = unixepoch() WHERE id = ?",
+          )
+          .run(`cancelled: ${action.reason}`, row.gateway_session_id);
+      }
+      sqlite
+        .query(
+          "UPDATE flow_node_runs SET status = 'cancelled', error = ?, ended_at = unixepoch() WHERE id = ? AND status IN ('pending','running','awaiting_human')",
+        )
+        .run(action.reason, row.id);
+      return;
+    }
+
+    case "complete": {
+      // A terminal ends the graph before it takes a visit counter, so it has to
+      // be written to the ledger from here or it would leave no trace of where
+      // the run actually finished.
+      const terminal = def.nodes[action.nodeId];
+      if (terminal) {
+        const previous = sqlite
+          .query(
+            "SELECT COALESCE(MAX(attempt), 0) AS last FROM flow_node_runs WHERE flow_run_id = ? AND node_id = ?",
+          )
+          .get(flowRunId, action.nodeId) as { last: number } | null;
+        try {
+          sqlite
+            .query(
+              `INSERT INTO flow_node_runs
+                 (id, flow_run_id, task_id, node_id, node_kind, attempt, status, outcome, started_at, ended_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'succeeded', ?, unixepoch(), unixepoch())`,
+            )
+            .run(
+              ulid(),
+              flowRunId,
+              task.id,
+              action.nodeId,
+              terminal.kind,
+              (previous?.last ?? 0) + 1,
+              action.task_status,
+            );
+        } catch {
+          // Already recorded.
+        }
+      }
+
+      await addTaskComment(
+        task.id,
+        `Flow **${def.name}** finished at **${action.nodeId}** → task \`${action.task_status}\`.` +
+          ` ${state.executions} node execution(s).`,
+        "system",
+      );
+      await setTaskStatus(task.id, action.task_status);
+      return;
+    }
+
+    case "halt": {
+      await addTaskComment(
+        task.id,
+        `Flow **${def.name}** halted: ${describeHalt(action.reason)}.` +
+          ` ${state.executions} node execution(s) ran. Needs a human — resume by moving the task back to \`todo\`` +
+          " (a fresh flow run starts) or attach a different flow.",
+        "system",
+      );
+      await setTaskStatus(task.id, action.task_status);
+      return;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Starting a flow
+// ---------------------------------------------------------------------------
+
+export type StartFlowResult =
+  | { ok: true; flowRunId: string; flowName: string }
+  | { ok: false; error: string };
+
+export function startFlowForTask(
+  taskId: string,
+  opts?: { flowName?: string | undefined; vars?: Record<string, unknown> | undefined },
+): Promise<StartFlowResult> {
+  return withTaskLock(taskId, () => startFlowForTaskUnlocked(taskId, opts));
+}
+
+async function startFlowForTaskUnlocked(
+  taskId: string,
+  opts?: { flowName?: string | undefined; vars?: Record<string, unknown> | undefined },
+): Promise<StartFlowResult> {
+  const task = getTask(taskId);
+  if (!task) return { ok: false, error: `Task not found: ${taskId}` };
+
+  const existing = getActiveFlowRunForTask(taskId);
+  if (existing) {
+    return { ok: false, error: `Task already has a running flow (${existing.flow_name})` };
+  }
+
+  const config = loadConfig();
+  const resolved = resolveFlowForTask({
+    flowOverride: opts?.flowName ? undefined : parseJson<unknown>(task.flow_override, undefined),
+    flowName: opts?.flowName ?? task.flow_name,
+    defaultFlowName: config.agent_loop.default_flow,
+  });
+  if ("error" in resolved) {
+    await addTaskComment(taskId, `Cannot start flow: ${resolved.error}`, "system");
+    await setTaskStatus(taskId, "blocked", undefined);
+    return { ok: false, error: resolved.error };
+  }
+
+  const { definition, source, name } = resolved;
+  const flowRunId = ulid();
+  const startedAt = nowSecs();
+
+  const vars: Record<string, unknown> = {
+    task_id: task.id,
+    task_title: task.title,
+    project_id: task.project_id,
+    skill_name: task.skill_name,
+    required_review: task.required_review === 1,
+    max_review_rounds: task.max_review_rounds,
+    ...(opts?.vars ?? {}),
+  };
+
+  const step = startFlow(definition, { now: startedAt, vars });
+
+  await getDb()
+    .insert(flow_runs)
+    .values({
+      id: flowRunId,
+      task_id: task.id,
+      project_id: task.project_id,
+      flow_name: name,
+      flow_source: source,
+      definition,
+      status: "running",
+      active: [],
+      visits: {},
+      joins: {},
+      vars,
+      node_executions: 0,
+      started_at: new Date(startedAt * 1000),
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+  getSqlite()
+    .query("UPDATE tasks SET claimed_by = ?, updated_at = unixepoch() WHERE id = ?")
+    .run(flowRunId, task.id);
+
+  const emptyBefore: FlowState = {
+    status: "running",
+    active: [],
+    visits: {},
+    executions: 0,
+    vars,
+    joins: {},
+    started_at: startedAt,
+  };
+  await applyStep(flowRunId, definition, task, emptyBefore, step);
+
+  logger.info(`Flow ${name} started for task ${task.id} (run ${flowRunId})`);
+  return { ok: true, flowRunId, flowName: name };
+}
+
+// ---------------------------------------------------------------------------
+// Advancing a flow
+// ---------------------------------------------------------------------------
+
+type AdvanceInput = {
+  nodeId: string;
+  attempt: number;
+  outcome?: string | undefined;
+  vars?: Record<string, unknown> | undefined;
+  error?: string | undefined;
+};
+
+/** Caller must already hold the task lock. */
+async function advanceUnlocked(flowRunId: string, result: AdvanceInput): Promise<void> {
+  const loaded = loadRun(flowRunId);
+  if (!loaded) return;
+  if (loaded.state.status !== "running") return;
+  const task = getTask(loaded.row.task_id);
+  if (!task) return;
+
+  const step = advanceFlow(loaded.def, loaded.state, result, { now: nowSecs() });
+  if (step.actions.length === 0 && step.state === loaded.state) return;
+  await applyStep(flowRunId, loaded.def, task, loaded.state, step);
+}
+
+export type ReportOutcomeResult = { ok: true; nextNodes: string[] } | { ok: false; error: string };
+
+/**
+ * A node agent reporting its verdict. This is the one place a node's opinion
+ * enters the graph; everything downstream of it is deterministic.
+ */
+export function reportNodeOutcome(opts: {
+  taskId: string;
+  nodeId?: string | undefined;
+  outcome: string;
+  summary?: string | undefined;
+  vars?: Record<string, unknown> | undefined;
+}): Promise<ReportOutcomeResult> {
+  return withTaskLock(opts.taskId, () => reportNodeOutcomeUnlocked(opts));
+}
+
+async function reportNodeOutcomeUnlocked(opts: {
+  taskId: string;
+  nodeId?: string | undefined;
+  outcome: string;
+  summary?: string | undefined;
+  vars?: Record<string, unknown> | undefined;
+}): Promise<ReportOutcomeResult> {
+  const run = getActiveFlowRunForTask(opts.taskId);
+  if (!run) return { ok: false, error: `Task ${opts.taskId} has no running flow` };
+
+  const sqlite = getSqlite();
+  const candidates = sqlite
+    .query(
+      `SELECT * FROM flow_node_runs WHERE flow_run_id = ? AND status IN ('running','pending','awaiting_human')
+       ORDER BY created_at ASC`,
+    )
+    .all(run.id) as NodeRunRow[];
+
+  const node = opts.nodeId
+    ? candidates.find((c) => c.node_id === opts.nodeId)
+    : candidates.length === 1
+      ? candidates[0]
+      : undefined;
+
+  if (!node) {
+    if (opts.nodeId) {
+      return { ok: false, error: `No active node "${opts.nodeId}" in flow run ${run.id}` };
+    }
+    return {
+      ok: false,
+      error: `${candidates.length} nodes are active — pass the node id you are: ${candidates.map((c) => c.node_id).join(", ")}`,
+    };
+  }
+
+  const def = parseJson<FlowDefinition | null>(run.definition, null);
+  const valid = def ? declaredOutcomes(def, node.node_id) : [];
+  if (valid.length > 0 && !valid.includes(opts.outcome)) {
+    return {
+      ok: false,
+      error: `Outcome "${opts.outcome}" is not routable from node "${node.node_id}". Valid: ${valid.join(", ")}`,
+    };
+  }
+
+  sqlite
+    .query("UPDATE flow_node_runs SET outcome = ?, summary = COALESCE(?, summary) WHERE id = ?")
+    .run(opts.outcome, opts.summary ?? null, node.id);
+
+  // A human node has no session to finish, so its report advances the graph
+  // immediately. An agent node's report is recorded here and consumed when its
+  // session ends, so the agent can keep working after reporting.
+  if (node.status === "awaiting_human") {
+    sqlite
+      .query("UPDATE flow_node_runs SET status = 'succeeded', ended_at = unixepoch() WHERE id = ?")
+      .run(node.id);
+    await advanceUnlocked(run.id, {
+      nodeId: node.node_id,
+      attempt: node.attempt,
+      outcome: opts.outcome,
+      ...(opts.vars ? { vars: opts.vars } : {}),
+    });
+  } else if (opts.vars) {
+    // Vars have to land now: routing may need them even if the session lingers.
+    const loaded = loadRun(run.id);
+    if (loaded) {
+      const merged = { ...loaded.state.vars, ...opts.vars };
+      sqlite
+        .query("UPDATE flow_runs SET vars = ?, updated_at = unixepoch() WHERE id = ?")
+        .run(JSON.stringify(merged), run.id);
+    }
+  }
+
+  const after = loadRun(run.id);
+  return { ok: true, nextNodes: after?.state.active.map((a) => a.nodeId) ?? [] };
+}
+
+/**
+ * Best-effort outcome for a node whose session ended without calling
+ * flow_report. Existing skills drive the task status rather than the flow, so
+ * map the status the agent left behind onto a routable outcome. Ambiguity is
+ * not guessed at: the flow halts and a human picks it up.
+ */
+const STATUS_OUTCOME_HINTS: Record<string, string[]> = {
+  blocked: ["blocked"],
+  review: ["submitted", "reviewed", "milestone", "ready"],
+  done: ["approved", "pass", "verified", "complete", "submitted"],
+  changes_requested: ["changes_requested", "fail", "reject"],
+  cancelled: ["blocked"],
+};
+
+function inferOutcome(def: FlowDefinition, nodeId: string, taskStatus: string): string | undefined {
+  const routable = declaredOutcomes(def, nodeId);
+  if (routable.length === 0) return undefined;
+  for (const candidate of STATUS_OUTCOME_HINTS[taskStatus] ?? []) {
+    if (routable.includes(candidate)) return candidate;
+  }
+  if (routable.length === 1) return routable[0];
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Spawning node sessions
+// ---------------------------------------------------------------------------
+
+function projectScope(projectId: string | null): string | undefined {
+  if (!projectId) return undefined;
+  const row = getSqlite().query("SELECT scope FROM projects WHERE id = ?").get(projectId) as {
+    scope: string | null;
+  } | null;
+  return row?.scope ?? undefined;
+}
+
+function previousNodeSession(
+  flowRunId: string,
+  nodeId: string,
+): { runtime_session_id: string; cwd: string; ended_at: number } | null {
+  return (
+    (getSqlite()
+      .query(
+        `SELECT gs.runtime_session_id, gs.cwd, gs.updated_at AS ended_at
+         FROM flow_node_runs fnr JOIN gateway_sessions gs ON gs.id = fnr.gateway_session_id
+         WHERE fnr.flow_run_id = ? AND fnr.node_id = ? AND gs.runtime_session_id IS NOT NULL
+         ORDER BY fnr.created_at DESC LIMIT 1`,
+      )
+      .get(flowRunId, nodeId) as {
+      runtime_session_id: string;
+      cwd: string;
+      ended_at: number;
+    } | null) ?? null
+  );
+}
+
+async function spawnNodeSession(nodeRun: NodeRunRow): Promise<void> {
+  const loaded = loadRun(nodeRun.flow_run_id);
+  if (!loaded) return;
+  const task = getTask(nodeRun.task_id);
+  if (!task) return;
+  const node = loaded.def.nodes[nodeRun.node_id];
+  if (!node || node.kind !== "agent") return;
+
+  const sqlite = getSqlite();
+  const sessionId = ulid();
+  const backendName = nodeBackend(node, task);
+  const model = nodeModel(node, task);
+
+  const prev =
+    nodeRun.resume_session === 1 ? previousNodeSession(nodeRun.flow_run_id, nodeRun.node_id) : null;
+  const cwd = projectScope(task.project_id) ?? prev?.cwd ?? process.cwd();
+
+  const prompt = buildNodePrompt({
+    def: loaded.def,
+    node,
+    nodeId: nodeRun.node_id,
+    attempt: nodeRun.attempt,
+    task,
+    flowRunId: nodeRun.flow_run_id,
+    nodeRunId: nodeRun.id,
+    vars: loaded.state.vars,
+    ...(prev ? { resumeSince: prev.ended_at } : {}),
+  });
+
+  const now = new Date();
+  await getDb()
+    .insert(gateway_sessions)
+    .values({
+      id: sessionId,
+      chat_id: "__task-loop__",
+      backend: backendName,
+      mode: `agent:${backendName}`,
+      cwd,
+      title: `${loaded.def.name}/${nodeRun.node_id}: ${task.title}`,
+      status: "running",
+      auto_approve: true,
+      task_id: task.id,
+      role: node.role ?? "worker",
+      pid: process.pid,
+      project_id: task.project_id,
+      ...(model ? { model } : {}),
+      review_rounds: 0,
+      created_at: now,
+      updated_at: now,
+    });
+
+  // Conditional claim: if another drain already took this node, drop the session
+  // row we just made and leave it alone.
+  const claimed = sqlite
+    .query(
+      "UPDATE flow_node_runs SET status = 'running', gateway_session_id = ?, started_at = unixepoch() WHERE id = ? AND status = 'pending'",
+    )
+    .run(sessionId, nodeRun.id);
+  if (claimed.changes === 0) {
+    logger.debug(`Node run ${nodeRun.id} was already claimed; skipping`);
+    sqlite.query("DELETE FROM gateway_sessions WHERE id = ?").run(sessionId);
+    return;
+  }
+
+  driveNodeSession({
+    sessionId,
+    nodeRunId: nodeRun.id,
+    flowRunId: nodeRun.flow_run_id,
+    taskId: task.id,
+    nodeId: nodeRun.node_id,
+    attempt: nodeRun.attempt,
+    backendName,
+    prompt,
+    cwd,
+    ...(model ? { model } : {}),
+    ...(prev ? { previousRuntimeSessionId: prev.runtime_session_id } : {}),
+  }).catch((err) => {
+    logger.error(`Node session ${sessionId} failed: ${String(err)}`);
+  });
+}
+
+async function driveNodeSession(opts: {
+  sessionId: string;
+  nodeRunId: string;
+  flowRunId: string;
+  taskId: string;
+  nodeId: string;
+  attempt: number;
+  backendName: string;
+  prompt: string;
+  cwd: string;
+  model?: string | undefined;
+  previousRuntimeSessionId?: string | undefined;
+}): Promise<void> {
+  const sqlite = getSqlite();
+  let session: AgentSession | null = null;
+  let sessionError: string | null = null;
+
+  try {
+    session = await openAgentSession(
+      opts.backendName,
+      { cwd: opts.cwd, autoApprove: true, ...(opts.model ? { model: opts.model } : {}) },
+      opts.previousRuntimeSessionId,
+    );
+    liveSessions.set(opts.sessionId, session);
+    await session.send(opts.prompt);
+
+    const autoApprove = loadConfig().agent_loop.worker_auto_approve;
+
+    for await (const event of session.events()) {
+      touchSessionActivity(opts.sessionId);
+
+      if (event.type === "permission_request") {
+        if (autoApprove) {
+          session.respondPermission(event.data.requestId, "approved");
+        } else {
+          logger.info(
+            `Permission request for ${opts.nodeId} (${opts.sessionId}): ${event.data.tool} - denied, no human in the loop`,
+          );
+          session.respondPermission(event.data.requestId, "denied");
+        }
+      }
+
+      if (event.type === "result" && event.data.runtimeSessionId) {
+        sqlite
+          .query("UPDATE gateway_sessions SET runtime_session_id = ? WHERE id = ?")
+          .run(event.data.runtimeSessionId, opts.sessionId);
+      }
+
+      if (event.type === "error") {
+        sessionError = event.data;
+        logger.error(`Node ${opts.nodeId} (${opts.sessionId}) error: ${event.data}`);
+        break;
+      }
+    }
+  } catch (err) {
+    sessionError = String(err);
+    logger.error(`Node ${opts.nodeId} (${opts.sessionId}) crashed: ${sessionError}`);
+  } finally {
+    lastSessionTouch.delete(opts.sessionId);
+    liveSessions.delete(opts.sessionId);
+    if (session?.alive()) await session.close().catch(() => {});
+  }
+
+  sqlite
+    .query(
+      "UPDATE gateway_sessions SET status = ?, last_error = ?, updated_at = unixepoch() WHERE id = ?",
+    )
+    .run(sessionError ? "error" : "stopped", sessionError, opts.sessionId);
+
+  await finishNodeRun(opts.nodeRunId, sessionError);
+}
+
+/**
+ * Close out a node run and hand its verdict to the engine. Called when a
+ * session ends, and by cleanup when one is reaped.
+ */
+export function finishNodeRun(nodeRunId: string, error: string | null): Promise<void> {
+  const owner = getSqlite()
+    .query("SELECT task_id FROM flow_node_runs WHERE id = ?")
+    .get(nodeRunId) as { task_id: string } | null;
+  if (!owner) return Promise.resolve();
+  return withTaskLock(owner.task_id, () => finishNodeRunUnlocked(nodeRunId, error));
+}
+
+async function finishNodeRunUnlocked(nodeRunId: string, error: string | null): Promise<void> {
+  const sqlite = getSqlite();
+  const row = sqlite
+    .query("SELECT * FROM flow_node_runs WHERE id = ?")
+    .get(nodeRunId) as NodeRunRow | null;
+  if (!row) return;
+  if (!["running", "pending", "awaiting_human"].includes(row.status)) return;
+
+  const loaded = loadRun(row.flow_run_id);
+  if (!loaded) return;
+
+  let outcome = row.outcome ?? undefined;
+  const failure = error;
+
+  if (!failure && !outcome) {
+    const task = getTask(row.task_id);
+    outcome = task ? inferOutcome(loaded.def, row.node_id, task.status) : undefined;
+    if (outcome) {
+      logger.info(
+        `Node ${row.node_id} ended without flow_report; inferred "${outcome}" from task status`,
+      );
+      sqlite.query("UPDATE flow_node_runs SET outcome = ? WHERE id = ?").run(outcome, nodeRunId);
+    }
+  }
+
+  sqlite
+    .query(
+      "UPDATE flow_node_runs SET status = ?, error = COALESCE(?, error), ended_at = unixepoch() WHERE id = ?",
+    )
+    .run(failure ? "failed" : "succeeded", failure, nodeRunId);
+
+  // With neither an outcome nor an error the engine halts on `no_outcome:<node>`
+  // — better a human looks than the graph guesses a verdict.
+  await advanceUnlocked(row.flow_run_id, {
+    nodeId: row.node_id,
+    attempt: row.attempt,
+    ...(outcome ? { outcome } : {}),
+    ...(failure ? { error: failure } : {}),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Draining pending nodes
+// ---------------------------------------------------------------------------
+
+function runningWorkerCount(projectId?: string | null): number {
+  const sqlite = getSqlite();
+  if (projectId) {
+    const row = sqlite
+      .query(
+        "SELECT COUNT(*) as count FROM gateway_sessions WHERE role IN ('worker','reviewer') AND status = 'running' AND project_id = ?",
+      )
+      .get(projectId) as { count: number } | null;
+    return row?.count ?? 0;
+  }
+  const row = sqlite
+    .query(
+      "SELECT COUNT(*) as count FROM gateway_sessions WHERE role IN ('worker','reviewer') AND status = 'running'",
+    )
+    .get() as { count: number } | null;
+  return row?.count ?? 0;
+}
+
+export function getActiveWorkerCount(projectId?: string | null): number {
+  return runningWorkerCount(projectId);
+}
+
+function projectMaxWorkers(projectId: string): number | null {
+  const row = getSqlite().query("SELECT max_workers FROM projects WHERE id = ?").get(projectId) as {
+    max_workers: number | null;
+  } | null;
+  return row?.max_workers ?? null;
+}
+
+function runningNodesInFlow(flowRunId: string): number {
+  const row = getSqlite()
+    .query(
+      "SELECT COUNT(*) as count FROM flow_node_runs WHERE flow_run_id = ? AND status = 'running'",
+    )
+    .get(flowRunId) as { count: number } | null;
+  return row?.count ?? 0;
+}
+
+/**
+ * Spawn queued agent nodes up to capacity. Fan-out is queued rather than
+ * rejected: a node that fans out three ways on a single-worker install runs its
+ * branches one after another instead of failing.
+ */
+export async function drainPendingNodes(): Promise<string[]> {
+  const config = loadConfig();
+  const maxWorkers = config.agent_loop.max_workers;
+  const spawned: string[] = [];
+
+  const pending = getSqlite()
+    .query(
+      `SELECT fnr.* FROM flow_node_runs fnr
+       JOIN flow_runs fr ON fr.id = fnr.flow_run_id
+       WHERE fnr.status = 'pending' AND fnr.node_kind = 'agent' AND fr.status = 'running'
+       ORDER BY fnr.created_at ASC`,
+    )
+    .all() as NodeRunRow[];
+
+  for (const nodeRun of pending) {
+    if (runningWorkerCount() >= maxWorkers) break;
+
+    const task = getTask(nodeRun.task_id);
+    if (!task) continue;
+
+    if (task.project_id) {
+      const max = projectMaxWorkers(task.project_id);
+      if (max !== null && runningWorkerCount(task.project_id) >= max) continue;
+    }
+
+    const loaded = loadRun(nodeRun.flow_run_id);
+    if (!loaded) continue;
+    if (runningNodesInFlow(nodeRun.flow_run_id) >= loaded.def.limits.max_parallel) continue;
+
+    await spawnNodeSession(nodeRun);
+    spawned.push(`${loaded.def.name}/${nodeRun.node_id} [${nodeRun.task_id}]`);
+  }
+
+  return spawned;
+}
+
+// ---------------------------------------------------------------------------
+// Human-in-the-loop and external interference
+// ---------------------------------------------------------------------------
+
+export async function resumeHumanNode(opts: {
+  taskId: string;
+  outcome: string;
+  summary?: string | undefined;
+  vars?: Record<string, unknown> | undefined;
+  author?: string | undefined;
+}): Promise<ReportOutcomeResult> {
+  const run = getActiveFlowRunForTask(opts.taskId);
+  if (!run) return { ok: false, error: `Task ${opts.taskId} has no running flow` };
+  const waiting = getSqlite()
+    .query(
+      "SELECT * FROM flow_node_runs WHERE flow_run_id = ? AND status = 'awaiting_human' ORDER BY created_at ASC LIMIT 1",
+    )
+    .get(run.id) as NodeRunRow | null;
+  if (!waiting) return { ok: false, error: "No node is waiting for a human on this task" };
+
+  if (opts.summary) {
+    await addTaskComment(opts.taskId, opts.summary, opts.author ?? "human");
+  }
+  return reportNodeOutcome({
+    taskId: opts.taskId,
+    nodeId: waiting.node_id,
+    outcome: opts.outcome,
+    ...(opts.summary !== undefined ? { summary: opts.summary } : {}),
+    ...(opts.vars !== undefined ? { vars: opts.vars } : {}),
+  });
+}
+
+export function cancelFlowRun(flowRunId: string, reason: string): Promise<void> {
+  const taskId = taskIdForRun(flowRunId);
+  if (!taskId) return Promise.resolve();
+  return withTaskLock(taskId, () => cancelFlowRunUnlocked(flowRunId, reason));
+}
+
+async function cancelFlowRunUnlocked(flowRunId: string, reason: string): Promise<void> {
+  const sqlite = getSqlite();
+  const nodes = sqlite
+    .query(
+      "SELECT id, gateway_session_id FROM flow_node_runs WHERE flow_run_id = ? AND status IN ('pending','running','awaiting_human')",
+    )
+    .all(flowRunId) as { id: string; gateway_session_id: string | null }[];
+
+  for (const node of nodes) {
+    if (node.gateway_session_id) {
+      closeLiveSession(node.gateway_session_id);
+      sqlite
+        .query(
+          "UPDATE gateway_sessions SET status = 'stopped', updated_at = unixepoch() WHERE id = ?",
+        )
+        .run(node.gateway_session_id);
+    }
+    sqlite
+      .query(
+        "UPDATE flow_node_runs SET status = 'cancelled', error = ?, ended_at = unixepoch() WHERE id = ?",
+      )
+      .run(reason, node.id);
+  }
+
+  sqlite
+    .query(
+      `UPDATE flow_runs SET status = 'cancelled', halt_reason = ?, active = '[]',
+              ended_at = unixepoch(), updated_at = unixepoch() WHERE id = ?`,
+    )
+    .run(reason, flowRunId);
+
+  const run = getFlowRunRow(flowRunId);
+  if (run) {
+    sqlite
+      .query(
+        "UPDATE tasks SET claimed_by = NULL, updated_at = unixepoch() WHERE id = ? AND claimed_by = ?",
+      )
+      .run(run.task_id, flowRunId);
+  }
+}
+
+/**
+ * A human moved a task while a flow owned it. The human wins: a task they
+ * finished, cancelled or sent back must not keep being driven by a graph that
+ * thinks it is mid-review.
+ */
+export async function onTaskStatusChangedExternally(
+  taskId: string,
+  status: TaskStatus,
+): Promise<void> {
+  const run = getActiveFlowRunForTask(taskId);
+  if (!run) return;
+  const sqlite = getSqlite();
+
+  // Cancelling is unconditional: a cancelled task must not keep burning agents.
+  if (status === "cancelled") {
+    await cancelFlowRun(run.id, "task was cancelled");
+    await addTaskComment(
+      taskId,
+      `Flow **${run.flow_name}** cancelled along with the task.`,
+      "system",
+    );
+    return;
+  }
+
+  const waiting = sqlite
+    .query(
+      "SELECT node_id FROM flow_node_runs WHERE flow_run_id = ? AND status = 'awaiting_human' LIMIT 1",
+    )
+    .get(run.id) as { node_id: string } | null;
+
+  if (waiting && (status === "changes_requested" || status === "done")) {
+    const outcome = status === "done" ? "approved" : "changes_requested";
+    const result = await resumeHumanNode({ taskId, outcome, author: "human" });
+    if (result.ok) return;
+    // The waiting node cannot route that verdict; fall through and treat it as
+    // an out-of-band override.
+  }
+
+  // An agent node that is mid-session setting the task status is the normal
+  // in-flow protocol, not interference — its own report is what routes the
+  // graph, so leave the run alone.
+  const running = sqlite
+    .query("SELECT id FROM flow_node_runs WHERE flow_run_id = ? AND status = 'running' LIMIT 1")
+    .get(run.id) as { id: string } | null;
+  if (running) return;
+
+  if (status === "done") {
+    await cancelFlowRun(run.id, "task was marked done out of band");
+    await addTaskComment(
+      taskId,
+      `Flow **${run.flow_name}** stopped — the task was marked \`done\` outside the flow.`,
+      "system",
+    );
+    return;
+  }
+
+  if (status === "changes_requested") {
+    await cancelFlowRun(run.id, "changes requested out of band");
+    await addTaskComment(
+      taskId,
+      `Flow **${run.flow_name}** stopped — changes were requested outside the flow. A fresh run starts on the next cycle.`,
+      "system",
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sweeps
+// ---------------------------------------------------------------------------
+
+/** Halt runs that blew their wall clock while a node sat there doing nothing. */
+export async function sweepFlowTimeouts(): Promise<number> {
+  const runs = getSqlite().query("SELECT id FROM flow_runs WHERE status = 'running'").all() as {
+    id: string;
+  }[];
+  let halted = 0;
+
+  for (const { id } of runs) {
+    const taskId = taskIdForRun(id);
+    if (!taskId) continue;
+    const didHalt = await withTaskLock(taskId, async () => {
+      // Re-read under the lock: the run may have advanced or finished while we
+      // were queued behind a node report.
+      const loaded = loadRun(id);
+      if (!loaded) return false;
+      const step = checkFlowTimeout(loaded.def, loaded.state, nowSecs());
+      if (!step) return false;
+      const task = getTask(loaded.row.task_id);
+      if (!task) return false;
+      await applyStep(id, loaded.def, task, loaded.state, step);
+      return true;
+    });
+    if (didHalt) halted++;
+  }
+  return halted;
+}
+
+/**
+ * Reap sessions that went idle or blew their absolute lifetime, then let the
+ * flow react: the node fails, and the graph either routes through on_error or
+ * halts for a human.
+ */
+export async function cleanupStaleFlowSessions(): Promise<number> {
+  const config = loadConfig();
+  const sqlite = getSqlite();
+  const now = nowSecs();
+  const idleCutoff = now - config.agent_loop.session_idle_timeout_minutes * 60;
+  // A chatty-but-hung agent refreshes last_activity_at on every event and would
+  // never hit the idle cutoff, holding a worker slot forever. This ceiling is
+  // separate and generous so it does not reap healthy long-running work.
+  const lifetimeCutoff = now - config.agent_loop.session_max_lifetime_minutes * 60;
+
+  const stale = sqlite
+    .query(
+      `SELECT id, task_id, role, created_at FROM gateway_sessions
+       WHERE role IN ('worker', 'reviewer') AND status = 'running'
+         AND ((last_activity_at IS NOT NULL AND last_activity_at < ?
+              OR last_activity_at IS NULL AND updated_at < ?)
+              OR created_at < ?)`,
+    )
+    .all(idleCutoff, idleCutoff, lifetimeCutoff) as {
+    id: string;
+    task_id: string | null;
+    role: string;
+    created_at: number;
+  }[];
+
+  for (const session of stale) {
+    const reason = session.created_at < lifetimeCutoff ? "max lifetime exceeded" : "idle timeout";
+    closeLiveSession(session.id);
+    sqlite
+      .query(
+        "UPDATE gateway_sessions SET status = 'error', last_error = ?, updated_at = unixepoch() WHERE id = ?",
+      )
+      .run(reason, session.id);
+
+    const nodeRun = sqlite
+      .query("SELECT id FROM flow_node_runs WHERE gateway_session_id = ? LIMIT 1")
+      .get(session.id) as { id: string } | null;
+
+    if (nodeRun) {
+      await finishNodeRun(nodeRun.id, reason);
+    } else if (session.task_id) {
+      // A session with no node run predates flows (or its run was deleted):
+      // release the task the way the old loop did so it is not stuck claimed.
+      sqlite
+        .query(
+          "UPDATE tasks SET claimed_by = NULL, status = CASE WHEN status IN ('doing','queued') THEN 'todo' ELSE status END, updated_at = unixepoch() WHERE id = ?",
+        )
+        .run(session.task_id);
+    }
+    logger.warn(`Cleaned up stale ${session.role} session ${session.id} (${reason})`);
+  }
+
+  return stale.length;
+}
+
+// ---------------------------------------------------------------------------
+// Inspection
+// ---------------------------------------------------------------------------
+
+export type FlowRunView = {
+  id: string;
+  task_id: string;
+  flow_name: string;
+  flow_source: string;
+  status: string;
+  halt_reason: string | null;
+  halt_description: string | null;
+  active: { nodeId: string; attempt: number }[];
+  visits: Record<string, number>;
+  node_executions: number;
+  vars: Record<string, unknown>;
+  started_at: number;
+  ended_at: number | null;
+  definition: FlowDefinition | null;
+  nodes: {
+    node_id: string;
+    node_kind: string;
+    attempt: number;
+    status: string;
+    outcome: string | null;
+    summary: string | null;
+    error: string | null;
+    started_at: number | null;
+    ended_at: number | null;
+  }[];
+};
+
+export function getFlowRunView(flowRunId: string): FlowRunView | null {
+  const row = getSqlite().query("SELECT * FROM flow_runs WHERE id = ?").get(flowRunId) as
+    | (FlowRunRow & { flow_source: string; halt_reason: string | null; ended_at: number | null })
+    | null;
+  if (!row) return null;
+
+  const nodes = getSqlite()
+    .query(
+      `SELECT node_id, node_kind, attempt, status, outcome, summary, error, started_at, ended_at
+       FROM flow_node_runs WHERE flow_run_id = ? ORDER BY created_at ASC`,
+    )
+    .all(flowRunId) as FlowRunView["nodes"];
+
+  return {
+    id: row.id,
+    task_id: row.task_id,
+    flow_name: row.flow_name,
+    flow_source: row.flow_source,
+    status: row.status,
+    halt_reason: row.halt_reason,
+    halt_description: row.halt_reason ? describeHalt(row.halt_reason) : null,
+    active: parseJson(row.active, [] as { nodeId: string; attempt: number }[]),
+    visits: parseJson(row.visits, {} as Record<string, number>),
+    node_executions: row.node_executions,
+    vars: parseJson(row.vars, {} as Record<string, unknown>),
+    started_at: row.started_at,
+    ended_at: row.ended_at,
+    definition: parseJson<FlowDefinition | null>(row.definition, null),
+    nodes,
+  };
+}
+
+export function getLatestFlowRunForTask(taskId: string): FlowRunView | null {
+  const row = getSqlite()
+    .query("SELECT id FROM flow_runs WHERE task_id = ? ORDER BY started_at DESC LIMIT 1")
+    .get(taskId) as { id: string } | null;
+  return row ? getFlowRunView(row.id) : null;
+}
+
+export async function haltFlowRunForTask(taskId: string, reason: string): Promise<boolean> {
+  const run = getActiveFlowRunForTask(taskId);
+  if (!run) return false;
+  await cancelFlowRun(run.id, reason);
+  await addTaskComment(taskId, `Flow **${run.flow_name}** stopped: ${reason}`, "human");
+  return true;
+}

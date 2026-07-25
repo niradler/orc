@@ -32,6 +32,8 @@ const TaskSchema = z
     agent_backend: z.string().nullable(),
     agent_model: z.string().nullable(),
     max_review_rounds: z.number().int(),
+    flow_name: z.string().nullable(),
+    flow_override: z.unknown().nullable(),
     comments_count: z.number().int().optional(),
     created_at: z.string().datetime(),
     updated_at: z.string().datetime(),
@@ -64,6 +66,12 @@ const CreateTaskSchema = z
     agent_backend: AgentBackendSchema.optional(),
     agent_model: z.string().optional(),
     max_review_rounds: z.number().int().min(1).optional().default(3),
+    flow_name: z.string().optional().openapi({
+      description: "Flow graph this task runs (defaults to agent_loop.default_flow)",
+    }),
+    flow_override: z.record(z.string(), z.unknown()).optional().openapi({
+      description: "Inline flow definition for this task alone. Takes precedence over flow_name.",
+    }),
   })
   .openapi("CreateTask");
 
@@ -83,6 +91,8 @@ const UpdateTaskSchema = z
     skill_name: z.string().nullable().optional(),
     required_review: z.boolean().optional(),
     max_review_rounds: z.number().int().min(1).optional(),
+    flow_name: z.string().nullable().optional(),
+    flow_override: z.record(z.string(), z.unknown()).nullable().optional(),
   })
   .openapi("UpdateTask");
 
@@ -257,6 +267,8 @@ function toDto(t: typeof tasks.$inferSelect, commentsCount?: number) {
     agent_backend: t.agent_backend ?? null,
     agent_model: t.agent_model ?? null,
     max_review_rounds: t.max_review_rounds,
+    flow_name: t.flow_name ?? null,
+    flow_override: t.flow_override ?? null,
     comments_count: commentsCount ?? 0,
     created_at: t.created_at.toISOString(),
     updated_at: t.updated_at.toISOString(),
@@ -383,6 +395,8 @@ app.openapi(createRoute_, async (c) => {
     agent_backend: body.agent_backend as string | undefined,
     agent_model: body.agent_model,
     max_review_rounds: body.max_review_rounds ?? 3,
+    flow_name: body.flow_name,
+    flow_override: body.flow_override,
     created_at: now,
     updated_at: now,
   });
@@ -428,6 +442,8 @@ app.openapi(updateRoute, async (c) => {
     ...(body.skill_name !== undefined ? { skill_name: body.skill_name } : {}),
     ...(body.required_review !== undefined ? { required_review: body.required_review } : {}),
     ...(body.max_review_rounds !== undefined ? { max_review_rounds: body.max_review_rounds } : {}),
+    ...(body.flow_name !== undefined ? { flow_name: body.flow_name } : {}),
+    ...(body.flow_override !== undefined ? { flow_override: body.flow_override } : {}),
   };
   if (Object.keys(nonStatusFields).length > 0) {
     await db

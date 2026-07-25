@@ -6,13 +6,13 @@ Human + AI orchestration hub. Persistent memory · Task management (HITL) · Gen
 
 ```
 packages/
-  core/           @orc/core           - config (Zod), types, logger, ULID IDs
+  core/           @orc/core           - config (Zod), types, logger, ULID IDs, flow graph engine
   db/             @orc/db             - Drizzle ORM schema + SQLite client (~/.orc/orc.db)
   api/            @orc/api            - Hono REST API + auto-generated OpenAPI spec (:7701)
   sdk/            @orc/sdk            - typed HTTP client generated from OpenAPI spec
   cli/            @orc/cli            - commander CLI (`orc` binary) using the SDK
   mcp/            @orc/mcp            - MCP server (stdio) for Claude/Cursor/Codex/Gemini
-  runner/         @orc/runner         - job executor + cron/watch/one-shot scheduler + task loop
+  runner/         @orc/runner         - job executor + cron/watch/one-shot scheduler + task loop + flow runner
   gateway/        @orc/gateway        - multi-channel gateway (Telegram, Slack) + agent sessions
   agent-runtime/  @orc/agent-runtime  - shared agent backend registry (claude, acpx, a2a)
   task-service/   @orc/task-service   - task status transitions, side-effects, comments
@@ -217,13 +217,15 @@ On blocker: `doing → blocked` (needs human intervention before resuming)
 
 Internal statuses (`queued`, `paused`, `cancelled`) are managed by the task loop - agents don't set these directly.
 
+Task status is now a *consequence* of the flow graph a task runs, not the driver: nodes declare the status to set when they start, terminals declare the status the task ends in. See "Task Flows" below.
+
 **Task priorities**: `low | normal | high | critical`
 
 **Job trigger types**: `one-shot | cron | watch | webhook | manual | bridge-msg`
 
 > `repeat` was removed - use `cron` with a 6-field expression for sub-minute intervals (e.g. `*/30 * * * * *` = every 30 s).
 
-## MCP Tools (28 tools in packages/mcp/src/tools.ts)
+## MCP Tools (34 tools in packages/mcp/src/tools.ts)
 
 **Call `context` first in every session** - returns active tasks + key memories in ~200 tokens.
 
@@ -254,6 +256,12 @@ For CRUD operations not in MCP (delete, project management, job creation), use t
 | `session_snapshot`  | Build ≤2KB XML snapshot - priority-tiered (P1: files/tasks, P2: decisions/git, P3: intent)                     |
 | `session_restore`   | Restore session after compaction or agent restart                                                              |
 | `session_log`       | Log session summary at end of work unit. Pass `project` to associate.                                          |
+| `flow_report`       | **Report your node's outcome.** This is what routes the flow. Only declared outcomes are accepted.              |
+| `flow_status`       | Inspect a task's flow run: active nodes, ledger, visit counts, halt reason.                                     |
+| `flow_list`         | Discover available flow graphs.                                                                                |
+| `flow_read`         | Read a flow definition (nodes, edges, limits).                                                                 |
+| `flow_create`       | Save a reusable user flow to `~/.orc/flows/<name>/flow.json`. Validated before writing.                        |
+| `flow_attach`       | Attach a named flow, or an inline graph for one task only, then optionally start it.                            |
 
 ### Memory types
 
@@ -298,7 +306,11 @@ All log output goes to **stderr** (human-readable, colored) and **`~/.orc/logs/o
 }
 ```
 
-Env vars: `ORC_AGENT_LOOP_ENABLED`, `ORC_AGENT_LOOP_POLL_INTERVAL`, `ORC_AGENT_LOOP_MAX_WORKERS`, `ORC_AGENT_LOOP_DEFAULT_BACKEND`, `ORC_AGENT_LOOP_IDLE_TIMEOUT`, `ORC_AGENT_LOOP_AUTO_APPROVE`.
+Env vars: `ORC_AGENT_LOOP_ENABLED`, `ORC_AGENT_LOOP_POLL_INTERVAL`, `ORC_AGENT_LOOP_MAX_WORKERS`, `ORC_AGENT_LOOP_DEFAULT_BACKEND`, `ORC_AGENT_LOOP_IDLE_TIMEOUT`, `ORC_AGENT_LOOP_AUTO_APPROVE`, `ORC_AGENT_LOOP_DEFAULT_FLOW`, `ORC_AGENT_LOOP_REVIEW_FLOW`.
+
+> `max_workers` now bounds **every** agent session the loop owns, reviewers included. It previously counted only `role = 'worker'`, so a `max_workers: 1` install could run one worker plus any number of reviewers. Since a flow can contain several reviewer nodes (and fan out to them), the cap has to mean "concurrent agents" to be a real limit. Bump `max_workers` if you were relying on the old behaviour for throughput.
+
+Each cycle: reap stale sessions → halt flows past their wall clock → start flows for eligible tasks → drain queued flow nodes up to capacity. Starting a flow is cheap and happens even at capacity; its nodes queue as `pending` and spawn as slots free up.
 
 ### Agent Backends
 
@@ -319,6 +331,146 @@ Three built-in backends route tasks to different agent runtimes:
 3. Everything else - ACPX with backend name as agent
 
 Set default backend via `agent_loop.default_backend` in config. Per-task override: set `agent_backend` field when creating a task via API, MCP, or CLI.
+
+## Task Flows (graphs and loops)
+
+Every task runs a **flow**: a graph of nodes joined by conditional edges, which may cycle. This replaced the hardcoded worker → reviewer pipeline - `orc-default` is the graph that reproduces it, so behaviour is unchanged unless a task names a different flow.
+
+The split that makes this work: **the graph is deterministic, only the nodes are agents.** `packages/core/src/flow-engine.ts` is pure - given a state and a node result it returns the next state and a list of actions, touching no DB, clock, or agent. `packages/runner/src/flow-runner.ts` is the impure half that applies those actions: spawning sessions, writing the ledger, moving task status.
+
+### Anatomy
+
+```jsonc
+{
+  "name": "my-flow",
+  "entry": "build",
+  "limits": {
+    "max_node_executions": 24,      // total node runs before the flow halts
+    "execution_timeout_secs": 14400, // wall clock for the whole run
+    "max_parallel": 4,               // concurrent nodes per task (fan-out width)
+    "reset_on_revisit": true,        // re-entering a node starts a fresh session
+    "halt_task_status": "paused"     // where the task lands if a rail trips
+  },
+  "nodes": {
+    "build":  { "kind": "agent", "skill": "$task.skill_name", "task_status": "doing",
+                "outcomes": ["submitted", "blocked"], "on_error": "blocked" },
+    "gate":   { "kind": "gate", "routing": "all" },
+    "verify": { "kind": "agent", "skill": "orc-reviewer", "role": "reviewer", "max_visits": 4 },
+    "signoff":{ "kind": "human", "prompt": "Approve?", "task_status": "review" },
+    "done":   { "kind": "terminal", "task_status": "done" }
+  },
+  "edges": [
+    { "from": "build", "to": "verify", "when": { "outcome": "submitted" } },
+    { "from": "verify", "to": "done", "when": { "outcome": "pass" } },
+    { "from": "verify", "to": "build",
+      "when": { "all": [{ "outcome": "fail" },
+                        { "visits": { "node": "build", "lt": { "var": "max_review_rounds" } } }] } },
+    { "from": "verify", "to": "escalated", "when": { "always": true } }
+  ]
+}
+```
+
+**Node kinds**
+
+| Kind       | Runs                                | Notes                                                            |
+| ---------- | ----------------------------------- | ---------------------------------------------------------------- |
+| `agent`    | An agent session                    | `skill`, `prompt`, `backend`, `model`, `role` (worker\|reviewer)  |
+| `gate`     | Nothing - routes immediately        | Deterministic branching, fan-out (`routing: "all"`), join points  |
+| `human`    | Nothing - waits                     | `orc flow resume <task> --outcome <x>` to continue                |
+| `terminal` | Nothing - ends the run              | `task_status` is where the task lands                            |
+
+**Edges are ordered and first-match-wins**, so the bounded-loop idiom is a guarded loopback followed by a catch-all escalation. A node with `routing: "all"` activates *every* matching edge instead - that is fan-out.
+
+**Conditions are data, never code** - no `eval`, no expressions. Available: `always`, `outcome`, `visits`, `executions`, `elapsed_secs`, `var`, and `all`/`any`/`not`. Numeric comparators (`lt`, `gte`, …) take a number or `{ "var": "name" }`; a var that is missing or non-numeric makes the comparison **false**, so a typo can never be what opens an unbounded loop.
+
+**Placeholders**: `$task.skill_name`, `$task.agent_backend`, `$task.agent_model` let a shipped flow defer to the task's own fields.
+
+**Run vars** are injected at start (`task_id`, `task_title`, `project_id`, `skill_name`, `required_review`, `max_review_rounds`) and extended by nodes via `flow_report(vars: …)`. A node's `vars` are merged when it is *entered*, which is how a loopback clears last round's verdicts.
+
+### Fan-out and joins
+
+`routing: "all"` activates several branches at once. A node with a `join` parks each arriving branch until the join is satisfied:
+
+```jsonc
+"verdict": { "kind": "gate", "join": { "mode": "all", "from": ["review_a", "review_b"] } }
+```
+
+- `mode: "all"` waits for every listed source; `mode: "any"` fires on the first arrival and (by default) cancels its siblings.
+- Arrivals reset once the join fires, so joins work inside loops.
+- Fan-out never exceeds capacity: extra nodes sit as `pending` rows and drain as worker slots free up, so a `max_workers: 1` install runs the branches sequentially rather than failing.
+- Reaching any terminal ends the whole run and cancels branches still in flight.
+
+### Termination
+
+A flow cannot loop forever. Five independent rails, each of which halts the run and (by default) pauses the task with an explanatory comment:
+
+1. `max_visits` per node
+2. `limits.max_node_executions` for the run
+3. `limits.execution_timeout_secs` wall clock (also swept from outside, for hung nodes)
+4. no matching edge → `no_matching_edge`
+5. no active nodes left → `stalled`, or `join_deadlock` if branches are parked at an unsatisfiable join
+
+A node that dies routes through `on_error` if it declares one, otherwise the run halts. A node that ends without reporting anything halts with `no_outcome` rather than the graph guessing a verdict.
+
+### How a node reports its outcome
+
+Call `flow_report`. The node's prompt lists exactly which outcomes its outgoing edges can route, and anything else is rejected:
+
+```
+flow_report(task: "<id>", node: "verify", outcome: "fail", summary: "...", vars: { tests_ok: false })
+```
+
+If a node's session ends without reporting, the outcome is **inferred** from the task status the agent left behind (`review → submitted`, `blocked → blocked`, `done → approved`, …) so skills written against the old status-driven protocol keep working. Inference only fires when the mapping is unambiguous; otherwise the flow halts for a human.
+
+### Where flows live
+
+| Source    | Location                        | Notes                                        |
+| --------- | ------------------------------- | -------------------------------------------- |
+| `builtin` | `packages/core/src/flows/builtin.ts` | Compiled in, so they exist in npm installs   |
+| `user`    | `~/.orc/flows/<name>/flow.json` | Shadows a builtin of the same name           |
+| `project` | `./.orc/flows/<name>/flow.json` | Shadows user and builtin                     |
+| `task`    | `tasks.flow_override` (JSON)    | An inline graph for one task, beats them all  |
+
+Definitions are validated on load - unknown edge targets, unreachable nodes, terminals with outgoing edges, a graph that can never finish, and shadowed (dead) edges are all rejected, and the offender is reported by `flow_list` rather than silently ignored. A run **freezes its definition** at start, so editing a flow never changes a run already in flight.
+
+### Built-in flows
+
+| Flow                    | Shape                                                                       |
+| ----------------------- | --------------------------------------------------------------------------- |
+| `orc-default`           | build → review → done, loops back while `max_review_rounds` allows          |
+| `orc-review-only`       | A single review pass, for a task a human moved straight to `review`         |
+| `orc-plan-build-verify` | planner → coder → reviewer, looping until acceptance criteria pass          |
+| `orc-fix-verify`        | bugfix → independent confirmation the fix holds and a regression test exists |
+| `orc-supervisor`        | Executor keeping its context + supervisor re-verifying from clean context   |
+| `orc-parallel-review`   | Fan-out to correctness/security/tests reviewers, join on all three          |
+
+### Custom per-task graphs
+
+For work no named flow fits, attach an inline graph to the single task:
+
+```bash
+orc flow attach <taskId> --file ./my-graph.json --start   # bespoke, this task only
+orc flow attach <taskId> --name orc-supervisor             # a named flow
+orc flow validate --file ./my-graph.json                   # check before attaching
+orc flow status <taskId>                                   # active nodes + ledger
+orc flow resume <taskId> --outcome approved                # resolve a human node
+orc flow halt <taskId>                                     # stop it and kill live nodes
+```
+
+Agents do the same with `flow_attach` (pass `definition` for inline) and `flow_create` for a reusable one. A planner deciding a task needs plan → build → three parallel reviews → sign-off can author that graph itself.
+
+### Flow config
+
+```json
+{
+  "agent_loop": {
+    "default_flow": "orc-default",
+    "review_flow": "orc-review-only"
+  }
+}
+```
+
+Env: `ORC_AGENT_LOOP_DEFAULT_FLOW`, `ORC_AGENT_LOOP_REVIEW_FLOW`.
 
 ### Built-in Skills
 

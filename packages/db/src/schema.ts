@@ -58,6 +58,10 @@ export const tasks = sqliteTable("tasks", {
   agent_backend: text("agent_backend"),
   agent_model: text("agent_model"),
   max_review_rounds: integer("max_review_rounds").default(3).notNull(),
+  flow_name: text("flow_name"),
+  // An inline graph for this task alone, for work whose shape no named flow
+  // covers. Takes precedence over flow_name.
+  flow_override: text("flow_override", { mode: "json" }).$type<unknown>(),
   ...timestamps,
 });
 
@@ -297,6 +301,86 @@ export const gateway_sessions = sqliteTable(
   (t) => [index("gateway_sessions_chat_idx").on(t.chat_id, t.updated_at)],
 );
 
+/**
+ * One execution of a flow graph against one task.
+ *
+ * `definition` is a frozen snapshot of the graph as it was when the run
+ * started: editing a flow file (or a user shadowing a builtin) must not change
+ * the shape of a run already in flight.
+ */
+export const flow_runs = sqliteTable(
+  "flow_runs",
+  {
+    id: text("id").primaryKey(),
+    task_id: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    project_id: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    flow_name: text("flow_name").notNull(),
+    flow_source: text("flow_source", { enum: ["builtin", "user", "project", "task"] }).notNull(),
+    definition: text("definition", { mode: "json" }).$type<unknown>().notNull(),
+    status: text("status", { enum: ["running", "completed", "halted", "cancelled"] })
+      .default("running")
+      .notNull(),
+    // Engine state, persisted so a daemon restart resumes mid-graph.
+    active: text("active", { mode: "json" }).$type<unknown>(),
+    visits: text("visits", { mode: "json" }).$type<Record<string, number>>(),
+    joins: text("joins", { mode: "json" }).$type<unknown>(),
+    vars: text("vars", { mode: "json" }).$type<Record<string, unknown>>(),
+    node_executions: integer("node_executions").default(0).notNull(),
+    halt_reason: text("halt_reason"),
+    started_at: integer("started_at", { mode: "timestamp" }).notNull(),
+    ended_at: integer("ended_at", { mode: "timestamp" }),
+    ...timestamps,
+  },
+  (t) => [
+    index("flow_runs_task_idx").on(t.task_id, t.status),
+    index("flow_runs_status_idx").on(t.status),
+  ],
+);
+
+/**
+ * One visit to one node. This is the ledger: a durable, inspectable record of
+ * what each node was asked to do and what verdict it came back with, readable
+ * by a later node (or a human) without replaying anyone's context.
+ */
+export const flow_node_runs = sqliteTable(
+  "flow_node_runs",
+  {
+    id: text("id").primaryKey(),
+    flow_run_id: text("flow_run_id")
+      .notNull()
+      .references(() => flow_runs.id, { onDelete: "cascade" }),
+    task_id: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    node_id: text("node_id").notNull(),
+    node_kind: text("node_kind", { enum: ["agent", "gate", "human", "terminal"] }).notNull(),
+    attempt: integer("attempt").default(1).notNull(),
+    status: text("status", {
+      enum: ["pending", "running", "awaiting_human", "succeeded", "failed", "cancelled", "skipped"],
+    })
+      .default("pending")
+      .notNull(),
+    outcome: text("outcome"),
+    summary: text("summary"),
+    error: text("error"),
+    skill_name: text("skill_name"),
+    gateway_session_id: text("gateway_session_id").references(() => gateway_sessions.id, {
+      onDelete: "set null",
+    }),
+    resume_session: integer("resume_session", { mode: "boolean" }).default(false).notNull(),
+    started_at: integer("started_at", { mode: "timestamp" }),
+    ended_at: integer("ended_at", { mode: "timestamp" }),
+    created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+  },
+  (t) => [
+    uniqueIndex("flow_node_runs_attempt_idx").on(t.flow_run_id, t.node_id, t.attempt),
+    index("flow_node_runs_run_idx").on(t.flow_run_id, t.created_at),
+    index("flow_node_runs_status_idx").on(t.status),
+  ],
+);
+
 export const webhooks = sqliteTable("webhooks", {
   id: text("id").primaryKey(),
   job_id: text("job_id")
@@ -335,3 +419,7 @@ export type GatewaySession = typeof gateway_sessions.$inferSelect;
 export type GatewaySessionNew = typeof gateway_sessions.$inferInsert;
 export type KnowledgeCollectionRow = typeof knowledge_collections.$inferSelect;
 export type Webhook = typeof webhooks.$inferSelect;
+export type FlowRun = typeof flow_runs.$inferSelect;
+export type NewFlowRun = typeof flow_runs.$inferInsert;
+export type FlowNodeRun = typeof flow_node_runs.$inferSelect;
+export type NewFlowNodeRun = typeof flow_node_runs.$inferInsert;

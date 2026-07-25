@@ -6,6 +6,7 @@ import { createLogger } from "@orc/core/logger";
 import { ORC_VERSION } from "@orc/core/version";
 import { bearerAuth } from "./middleware/auth.js";
 import { chatRouter } from "./routes/chat.js";
+import { flowsRouter } from "./routes/flows.js";
 import { gatewayRouter } from "./routes/gateway.js";
 import { healthRouter } from "./routes/health.js";
 import { jobsRouter } from "./routes/jobs.js";
@@ -57,6 +58,7 @@ export function createApp() {
   app.route("/", mcpRouter);
   app.route("/api", projectsRouter);
   app.route("/api", skillsRouter);
+  app.route("/api", flowsRouter);
   app.route("/api", tasksRouter);
   app.route("/api", taskLinksRouter);
   app.route("/api", memoriesRouter);
