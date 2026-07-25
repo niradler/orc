@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createFlow,
   flowExists,
+  getProjectFlowsDir,
   getUserFlowsDir,
   listBrokenFlows,
   listFlows,
@@ -13,10 +15,12 @@ import {
 } from "./flow-service.js";
 import { BUILTIN_FLOW_NAMES } from "./flows/builtin.js";
 
-// Test flows are written into the real user flow dir under a distinctive name,
-// the same way the skill-service tests do, and removed afterwards.
+// User-dir tests use a distinctive name and clean up after themselves, the same
+// way the skill-service tests do. Shadowing a *builtin* name is exercised
+// through a throwaway project dir instead: a crashed run must never be able to
+// leave a bogus `orc-default` behind in a developer's real ~/.orc, where the
+// daemon would pick it up and run it.
 const TEST_FLOW = "zz-test-flow-service";
-const SHADOW_FLOW = "orc-default";
 
 function writeUserFlow(name: string, definition: unknown): void {
   const dir = join(getUserFlowsDir(), name);
@@ -43,8 +47,28 @@ const VALID_FLOW = {
 
 afterEach(() => {
   removeUserFlow(TEST_FLOW);
-  removeUserFlow(SHADOW_FLOW);
 });
+
+/** Run `fn` with cwd inside a throwaway dir holding ./.orc/flows/<name>/flow.json. */
+function withProjectFlow(name: string, definition: unknown, fn: () => void): void {
+  const cwd = process.cwd();
+  const temp = mkdtempSync(join(tmpdir(), "orc-flow-project-"));
+  try {
+    process.chdir(temp);
+    mkdirSync(join(getProjectFlowsDir(), name), { recursive: true });
+    writeFileSync(
+      join(getProjectFlowsDir(), name, "flow.json"),
+      JSON.stringify(definition, null, 2),
+      "utf-8",
+    );
+    reloadFlows();
+    fn();
+  } finally {
+    process.chdir(cwd);
+    rmSync(temp, { recursive: true, force: true });
+    reloadFlows();
+  }
+}
 
 describe("listFlows", () => {
   test("returns every builtin flow and none of them are broken", () => {
@@ -89,13 +113,29 @@ describe("readFlow", () => {
 });
 
 describe("user flows", () => {
-  test("a user flow shadows a builtin of the same name", () => {
-    expect(readFlow(SHADOW_FLOW)?.source).toBe("builtin");
-    writeUserFlow(SHADOW_FLOW, { ...VALID_FLOW, name: SHADOW_FLOW, description: "mine" });
-    const shadowed = readFlow(SHADOW_FLOW);
-    expect(shadowed?.source).toBe("user");
-    expect(shadowed?.description).toBe("mine");
-    expect(shadowed?.definition.entry).toBe("work");
+  test("a flow file shadows a builtin of the same name", () => {
+    expect(readFlow("orc-default")?.source).toBe("builtin");
+    withProjectFlow(
+      "orc-default",
+      { ...VALID_FLOW, name: "orc-default", description: "mine" },
+      () => {
+        const shadowed = readFlow("orc-default");
+        expect(shadowed?.source).toBe("project");
+        expect(shadowed?.description).toBe("mine");
+        expect(shadowed?.definition.entry).toBe("work");
+      },
+    );
+    // And the builtin is back once the shadowing file is gone.
+    expect(readFlow("orc-default")?.source).toBe("builtin");
+  });
+
+  test("a project flow shadows a user flow of the same name", () => {
+    writeUserFlow(TEST_FLOW, VALID_FLOW);
+    expect(readFlow(TEST_FLOW)?.source).toBe("user");
+    withProjectFlow(TEST_FLOW, { ...VALID_FLOW, description: "from the repo" }, () => {
+      expect(readFlow(TEST_FLOW)?.source).toBe("project");
+      expect(readFlow(TEST_FLOW)?.description).toBe("from the repo");
+    });
   });
 
   test("an invalid user flow is reported, not silently loaded", () => {
