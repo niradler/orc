@@ -89,6 +89,9 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
           sub="needs attention"
           onClick={() => navigate("/tasks")}
         />
+        {/* queued counts as pending, not in progress: a queued task is waiting for
+            a worker slot and no agent has started on it. The kanban board maps it
+            into Todo for the same reason (see board-utils.toVisibleStatus). */}
         <StatCard
           label="Todo"
           value={(byStatus.todo ?? 0) + (byStatus.queued ?? 0)}

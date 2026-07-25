@@ -7,6 +7,7 @@ import {
   ChevronRight,
   ChevronsUpDown,
   Folder,
+  GitBranch,
   History,
   Settings,
   TerminalSquare,
@@ -31,6 +32,7 @@ const NAV_ITEMS: {
   { id: "sessions", path: "/sessions", label: "Sessions", icon: History },
   { id: "knowledge", path: "/knowledge", label: "Knowledge", icon: BookOpen },
   { id: "skills", path: "/skills", label: "Skills", icon: Zap },
+  { id: "flows", path: "/flows", label: "Flows", icon: GitBranch },
 ];
 
 interface SidebarProps {

@@ -3,7 +3,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { MessageSquare, Trash2 } from "lucide-react";
 import { useRef } from "react";
 import type { Task } from "@/api/client";
-import { PRIORITY_COLORS } from "./board-utils";
+import { mappedStatusLabel, PRIORITY_COLORS } from "./board-utils";
 
 interface KanbanCardProps {
   task: Task;
@@ -27,6 +27,9 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
   };
 
   const accentColor = PRIORITY_COLORS[task.priority] ?? PRIORITY_COLORS.normal;
+  // `queued` sits in Todo and `paused` in Blocked - say so on the card rather
+  // than letting the column silently rename the task's real status.
+  const statusLabel = mappedStatusLabel(task.status);
 
   // Chain our click-detection with dnd-kit's drag listeners so we don't clobber them.
   const dragPointerDown = listeners?.onPointerDown as
@@ -88,6 +91,16 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
             >
               {task.author?.[0] ?? "?"}
             </span>
+
+            {statusLabel && (
+              <span
+                data-testid="kanban-card-status"
+                className="text-[9px] font-label uppercase tracking-wider text-on-surface-variant
+                  bg-surface-highest px-1.5 py-0.5 rounded-sm flex-shrink-0"
+              >
+                {statusLabel}
+              </span>
+            )}
 
             {task.tags?.slice(0, 2).map((tag) => (
               <span

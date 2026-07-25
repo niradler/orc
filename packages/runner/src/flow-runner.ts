@@ -1852,6 +1852,9 @@ export type FlowRunView = {
     summary: string | null;
     error: string | null;
     gateway_session_id: string | null;
+    /** When the row was written - a node that is queued or parked has no
+     *  started_at yet, and this is the only clock a reader can use for it. */
+    created_at: number;
     started_at: number | null;
     ended_at: number | null;
   }[];
@@ -1866,7 +1869,7 @@ export function getFlowRunView(flowRunId: string): FlowRunView | null {
   const nodes = getSqlite()
     .query(
       `SELECT node_id, node_kind, attempt, retry, status, outcome, summary, error,
-              gateway_session_id, started_at, ended_at
+              gateway_session_id, created_at, started_at, ended_at
        FROM flow_node_runs WHERE flow_run_id = ? ORDER BY created_at ASC`,
     )
     .all(flowRunId) as FlowRunView["nodes"];

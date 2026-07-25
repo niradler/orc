@@ -243,7 +243,7 @@ export function createOrcClient(options?: OrcClientOptions) {
 
     flows: {
       list: (params?: { q?: string; source?: FlowSource; reload?: boolean }) =>
-        c<{ flows: FlowMeta[]; broken: BrokenFlow[] }>(
+        c<{ flows: FlowMeta[]; broken: BrokenFlow[]; default_flow: string }>(
           "GET",
           "/flows",
           undefined,
