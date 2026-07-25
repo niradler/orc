@@ -1560,7 +1560,9 @@ export async function drainPendingNodes(): Promise<string[]> {
     } catch (err) {
       // One node that cannot be spawned must not stop every other queued node
       // in this cycle from starting.
-      logger.error(`Spawning ${loaded.def.name}/${nodeRun.node_id} failed: ${String(err)}`);
+      logger.error(
+        `Spawning node ${nodeRun.node_id} of flow run ${nodeRun.flow_run_id} failed: ${String(err)}`,
+      );
     }
   }
 

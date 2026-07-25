@@ -767,8 +767,9 @@ describe("human authority", () => {
     await startFlowForTask(taskId);
     expect(activeNodeRun(taskId).status).toBe("pending");
 
+    // The notification is awaited inside updateTaskStatus, so the run is already
+    // cancelled by the time it returns — no settling delay needed.
     await updateTaskStatus({ taskId, status: "done", author: "human" });
-    await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(getLatestFlowRunForTask(taskId)?.status).toBe("cancelled");
     expect(nodeRuns(taskId).every((r) => r.status === "cancelled")).toBe(true);
@@ -780,7 +781,6 @@ describe("human authority", () => {
     const taskId = await makeTask();
     await startFlowForTask(taskId);
     await updateTaskStatus({ taskId, status: "blocked", author: "human" });
-    await new Promise((resolve) => setTimeout(resolve, 50));
     expect(getLatestFlowRunForTask(taskId)?.status).toBe("cancelled");
   });
 
@@ -788,7 +788,6 @@ describe("human authority", () => {
     const taskId = await makeTask();
     await startFlowForTask(taskId);
     await updateTaskStatus({ taskId, status: "review", author: "agent" });
-    await new Promise((resolve) => setTimeout(resolve, 50));
     expect(getActiveFlowRunForTask(taskId)).not.toBeNull();
   });
 });
@@ -837,7 +836,7 @@ describe("human gates and the wall clock", () => {
 });
 
 describe("cross-run budget accounting", () => {
-  test("runs a human cancelled do not count toward the budget", async () => {
+  test("cancelled runs do not count toward the budget", async () => {
     // Attaching and halting repeatedly is not a flow failing to converge, and
     // counting those runs parked tasks nobody had looped.
     const taskId = await makeTask();
@@ -894,9 +893,6 @@ describe("external interference", () => {
     await startFlowForTask(taskId);
 
     await updateTaskStatus({ taskId, status: "cancelled", author: "human" });
-    // The hook is fired without awaiting, so let the microtask queue drain.
-    await new Promise((resolve) => setTimeout(resolve, 50));
-
     expect(getLatestFlowRunForTask(taskId)?.status).toBe("cancelled");
   });
 
@@ -904,7 +900,6 @@ describe("external interference", () => {
     const taskId = await makeTask();
     await startFlowForTask(taskId);
     await completeNode(taskId, "submitted");
-    await new Promise((resolve) => setTimeout(resolve, 50));
 
     // The flow moved the task itself — that must not read as interference.
     expect(getActiveFlowRunForTask(taskId)).not.toBeNull();
