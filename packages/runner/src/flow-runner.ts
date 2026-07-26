@@ -1165,7 +1165,7 @@ async function spawnNodeSession(nodeRun: NodeRunRow): Promise<void> {
   const task = getTask(nodeRun.task_id);
   if (!task) return;
   const node = loaded.def.nodes[nodeRun.node_id];
-  if (!node || node.kind !== "agent") return;
+  if (node?.kind !== "agent") return;
 
   const sqlite = getSqlite();
   const sessionId = ulid();
@@ -1424,7 +1424,7 @@ async function retryNodeRun(nodeRunId: string, reason: string): Promise<boolean>
   if (!row) return false;
 
   const loaded = loadRun(row.flow_run_id);
-  if (!loaded || loaded.state.status !== "running") return false;
+  if (loaded?.state.status !== "running") return false;
   if (!loaded.state.active.some((a) => a.nodeId === row.node_id && a.attempt === row.attempt)) {
     return false;
   }

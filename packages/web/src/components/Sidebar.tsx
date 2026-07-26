@@ -63,13 +63,6 @@ export function Sidebar({
   const { data: health, isError } = useHealth();
   const { data: projects } = useProjects();
 
-  const _selectedLabel =
-    projectId === "all"
-      ? "All Projects"
-      : projectId === "unassigned"
-        ? "Unassigned"
-        : (projects?.find((p) => p.id === projectId)?.name ?? "...");
-
   const settingsActive = isPathActive(pathname, "/settings");
 
   const handleNav = (path: string) => {

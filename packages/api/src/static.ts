@@ -6,7 +6,12 @@ import type { Context, MiddlewareHandler } from "hono";
 
 // Embedded web assets - set by standalone binary entry (bin-entry.ts).
 // Maps URL path (e.g. "index.html", "assets/foo.js") → $bunfs embedded path.
-const embeddedWeb: Record<string, string> | null = (globalThis as any).__ORC_EMBEDDED_WEB__ ?? null;
+// Typed structurally rather than through `any`: the property only exists in a
+// compiled binary, so the optional shape is the honest description of it.
+type EmbeddedWebGlobal = { __ORC_EMBEDDED_WEB__?: Record<string, string> };
+
+const embeddedWeb: Record<string, string> | null =
+  (globalThis as EmbeddedWebGlobal).__ORC_EMBEDDED_WEB__ ?? null;
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",

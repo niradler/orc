@@ -17,7 +17,7 @@
     "clean": "rm -rf dist"
   },
   "optionalDependencies": {
-    "@tobilu/qmd": "^2.1.0"
+    "@tobilu/qmd": "^2.5.3"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -26,7 +26,7 @@
     "@orc/runner": "workspace:*",
     "@orc/task-service": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "zod": "^4.3.6"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@orc/api": "workspace:*"

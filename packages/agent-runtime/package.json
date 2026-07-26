@@ -8,7 +8,7 @@
     "./io": "./src/io.ts"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.110",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.141",
     "@orc/core": "workspace:*"
   }
 }
