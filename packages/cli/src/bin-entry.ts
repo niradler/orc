@@ -11,6 +11,7 @@
  */
 import { WEB_ASSETS } from "./_web-manifest.generated.js";
 
-(globalThis as any).__ORC_EMBEDDED_WEB__ = WEB_ASSETS;
+// Same structural shape the API's static middleware reads (packages/api/src/static.ts).
+(globalThis as { __ORC_EMBEDDED_WEB__?: typeof WEB_ASSETS }).__ORC_EMBEDDED_WEB__ = WEB_ASSETS;
 
 await import("./index.js");
