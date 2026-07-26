@@ -103,22 +103,23 @@ orc status
 orc task list
 ```
 
-Open `http://localhost:7700` to use the web dashboard - task board, kanban, jobs, memories, sessions, knowledge, and a live chat panel. The same server hosts both the REST API and the prebuilt React SPA, so there is no separate command to run for the UI.
+Open `http://localhost:7700` to use the web dashboard - task board, kanban, flow runs, jobs, memories, sessions, knowledge, and a live chat panel. The same server hosts both the REST API and the prebuilt React SPA, so there is no separate command to run for the UI.
 
 > [!TIP]
 > The database is created automatically at `~/.orc/orc.db` on first run. No setup needed.
 
 ### Web dashboard
 
-The web dashboard ships inside the `orc` binary and is served by the API process at the root path. Endpoints are still reachable at both `/<route>` (legacy SDK/CLI/MCP) and `/api/<route>` (used by the dashboard's browser client).
+The web dashboard ships inside the `orc` binary and is served by the API process at the root path. REST routes live under `/api/<route>` - the SDK, CLI and MCP clients add that prefix themselves - which leaves the root path free for the SPA.
 
-| Route                            | Served from                                                         |
-| -------------------------------- | ------------------------------------------------------------------- |
-| `GET /`                          | `index.html` (web SPA shell)                                        |
-| `GET /assets/*`                  | Built JS/CSS bundles                                                |
-| `GET /api/*`                     | All REST routes (mirrors the root mount)                            |
-| `GET /openapi.json`, `GET /docs` | Swagger UI                                                          |
-| `GET /tasks`, `/memories`, …     | Same handler as `/api/<...>`, kept for SDK/CLI/MCP backwards compat |
+| Route                              | Served from                                                                                                                    |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /`                            | `index.html` (web SPA shell)                                                                                                   |
+| `GET /assets/*`                    | Built JS/CSS bundles                                                                                                           |
+| `GET /api/*`                       | All REST routes                                                                                                                |
+| `GET /openapi.json`, `GET /docs`   | Swagger UI                                                                                                                     |
+| `GET /mcp`                         | MCP server (streamable HTTP)                                                                                                   |
+| `GET /tasks/<id>`, `/flows/<name>`, … | `index.html` again - a navigation request matching no static file falls back to the SPA shell, so dashboard links are shareable |
 
 Override the served dist directory with `ORC_WEB_DIST=/path/to/web/dist` if you want to host a custom build (e.g. a fork). If no dist is found, the server runs in pure-API mode.
 
@@ -384,6 +385,8 @@ todo → queued → doing → review → done
 
 Tasks with `required_review: true` (default) need your approval before moving to `done`. Set `max_review_rounds` to auto-pause tasks that cycle through too many revision rounds.
 
+`queued` means a node is waiting for a worker slot — the task is claimed but nothing is running on it yet, so it counts as pending rather than in progress (the dashboard's board shows it under Todo, labelled `queued`). It becomes `doing` when a session actually starts, which is what keeps the board from showing more work in flight than `agent_loop.max_workers` allows.
+
 <img src="assets/TaskFlow.gif" alt="Task Flow" width="600" />
 
 ### Task flows
@@ -426,6 +429,12 @@ orc flow attach <taskId> --file ./my-graph.json --start
 Definitions are JSON, validated on load: unknown edge targets, unreachable nodes, a graph that can never finish, or an edge shadowed by an earlier catch-all are all rejected up front rather than discovered mid-run. Reusable flows go in `~/.orc/flows/<name>/flow.json` (or `./.orc/flows/` to pin one per repo), and a user flow shadows a built-in of the same name — that is how you customise `orc-default` without patching orc.
 
 Agents can do all of this themselves via the `flow_list`, `flow_read`, `flow_create`, `flow_attach`, `flow_status`, and `flow_report` MCP tools, so a planner can design the pipeline for the work it just decomposed.
+
+#### In the web dashboard
+
+A task's **Flow** section draws the graph the run froze at start next to its ledger: which node is active, the verdict each visit produced, how many visits a node has spent of its budget, per-node timings and errors, a link to each node's agent transcript, and — when a rail tripped — which one and why. Loopbacks are drawn as edges that go backwards, so a rework cycle looks like one.
+
+When a run parks on a human gate, that panel is where you answer it: pick one of the outcomes the node's own edges can route, add a comment, and the flow continues. `Halt` stops a run and kills its live sessions. The **Flows** page lists every graph available with its source, marks the one a task with no flow of its own will run, shows any definition, and reports flows that failed validation along with the errors — so a broken graph is visible before a task tries to run it.
 
 ### Jobs
 

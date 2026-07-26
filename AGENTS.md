@@ -160,13 +160,13 @@ React SPA replacing the removed TUI. Same feature surface - Tasks, Kanban, Jobs,
 
 The CLI build (`packages/cli`) runs `bun run --filter @orc/web build` first and copies `packages/web/dist/` into `packages/cli/dist/web/`. The API resolves the dist via `ORC_WEB_DIST` env, then a candidate path list (`packages/web/dist`, `dist/web` next to the bundle, etc.). If no dist is found, the server runs pure-API.
 
-### Why API routes mount at both `/` and `/api`
+### Why every API route lives under `/api`
 
-Historic clients (SDK, CLI, MCP, Claude Code hooks) call `/<route>` directly - `ORC_API_BASE=http://127.0.0.1:7700` + `/tasks`. The web dashboard calls `/api/<route>` so it can be served from the same origin without colliding with the SPA shell at `/`. Both prefixes share the same handler - no duplicated logic. See `packages/api/src/server.ts` `mountRouters()`.
+`mountRouters()` (`packages/api/src/server.ts`) mounts every router at `/api` - only the MCP router also sits at `/`. That keeps the root path free for the SPA shell, so the dashboard and the API share one origin without colliding. Clients add the prefix themselves: the SDK appends `/api` to its base URL (`packages/sdk/src/client.ts`), so `ORC_API_BASE=http://127.0.0.1:7700` still works for the CLI, MCP and hooks. A browser hitting `/tasks` gets `index.html`, not JSON.
 
 ### Static file serving
 
-`packages/api/src/static.ts` serves `index.html` at `/`, hashed bundles at `/assets/*` (with `Cache-Control: public, max-age=31536000, immutable`), and root-level files (favicon, robots) by name. It is mounted last so any conflicting API route wins. The web app routes with React Router, so any navigation request (`Accept: text/html`) that matches no static file falls back to `index.html` - that is what makes deep links like `/flows/orc-default` work. API routes still win, which is why the dashboard calls `/api/<route>`.
+`packages/api/src/static.ts` serves `index.html` at `/`, hashed bundles at `/assets/*` (with `Cache-Control: public, max-age=31536000, immutable`), and root-level files (favicon, robots) by name. It is mounted last so any conflicting API route wins. The web app routes with React Router, so any navigation request (`Accept: text/html`) that matches no static file falls back to `index.html` - that is what makes deep links like `/flows/orc-default` and `/tasks/<id>` work.
 
 ## Web UI e2e tests (Playwright)
 
