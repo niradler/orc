@@ -76,10 +76,23 @@ export async function openAgentSession(
 }
 
 /**
- * Pick the first available backend from a priority list.
- * Used by callers that don't have a specific backend configured (e.g. chat fallback).
+ * Pick the first backend from a priority list that is registered **and** passes
+ * preflight. The previous version only checked registration and still called
+ * itself "available", so it happily returned a backend whose service was down
+ * or whose CLI was missing - the caller then failed at session start instead of
+ * moving on to the next candidate.
  */
-export function pickAvailableBackend(priority: string[]): AgentBackend | null {
-  const name = priority.find(hasBackend);
-  return name ? createBackend(name as AgentBackendName) : null;
+export async function pickUsableBackend(priority: string[]): Promise<AgentBackend | null> {
+  for (const name of priority) {
+    if (!hasBackend(name)) continue;
+    const backend = createBackend(name as AgentBackendName);
+    try {
+      const preflight = await backend.preflight();
+      if (preflight.ok) return backend;
+      logger.debug(`Backend ${name} is registered but not usable`, { error: preflight.error });
+    } catch (err) {
+      logger.debug(`Backend ${name} preflight threw`, { err });
+    }
+  }
+  return null;
 }

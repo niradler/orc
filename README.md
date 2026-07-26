@@ -30,7 +30,7 @@ ORC fixes this. Shared memory across every session. A task board where agents su
 | **Human-in-the-loop**     | Agents submit work for your approval via CLI, Telegram, or Slack before anything lands                                             |
 | **Shared memory**         | Decisions, rules, and discoveries stored once, searchable by any session via ranked full-text search                               |
 | **Task board**            | `todo → queued → doing → review → done` with dependency tracking, priority, and automatic unblocking                               |
-| **Multi-backend routing** | Route to Claude Code, ACPX (Agent Communication Protocol, 14+ agents), or remote A2A endpoints; unknown names fall through to ACPX |
+| **Multi-backend routing** | Route to Claude (in-process, nothing to install), ACPX (14+ agents), agentapi, or remote A2A endpoints — with `orc doctor` reporting which are usable |
 | **Job runner**            | Cron, file-watch, webhook, or manual triggers with full run history                                                                |
 | **MCP server**            | 34 tools connect any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) compatible agent — stdio or Streamable HTTP   |
 | **Session continuity**    | Snapshots survive context compaction so agents resume where they left off                                                          |
@@ -286,13 +286,24 @@ Every task runs a **flow graph** (see [Task flows](#task-flows)); `orc-default` 
 
 #### Agent backends
 
-| Backend         | Description                                                                                                  |
+| Backend         | Needs                                                                                                        |
 | --------------- | ------------------------------------------------------------------------------------------------------------ |
-| `claude`        | Anthropic Claude via [@anthropic-ai/claude-agent-sdk](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk) — no host CLI needed. Requires `ANTHROPIC_API_KEY`. |
-| `agentapi`      | Delegates to a [coder/agentapi](https://github.com/coder/agentapi) server on the host (HTTP+SSE) — wraps any local coding agent (`claude`, `codex`, `aider`, …). Auth is whatever the host agent uses. |
-| `acpx`          | 14+ agents via [ACP CLI](https://github.com/AgenTool/acpx) - Codex, Gemini, Copilot, Kiro, Cursor, and more. |
-| `a2a`           | Remote agents via [Google A2A protocol](https://github.com/google/A2A) (JSON-RPC over HTTP).                 |
-| _anything else_ | Routes through ACPX with the name as `--agent` flag.                                                         |
+| `claude`        | Nothing to install: runs **in-process** via [@anthropic-ai/claude-agent-sdk](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk), which ships with orc. Uses the Claude Code CLI's stored credentials, or `ANTHROPIC_API_KEY`. The default. |
+| `acpx`          | The [ACP CLI](https://github.com/openclaw/acpx) — 14+ agents (Codex, Gemini, Copilot, Kiro, Cursor, …). Installed as an optional dependency, so a normal `npm i -g orc-ai` gets it; orc finds it there even when it is not on your `PATH`. Point `ORC_ACPX_PATH` at a specific copy to override. |
+| `agentapi`      | A [coder/agentapi](https://github.com/coder/agentapi) server on the host (HTTP+SSE), wrapping any local coding agent. `AGENTAPI_URL` if it is not on the default port. |
+| `a2a`           | A remote [A2A](https://github.com/google/A2A) endpoint, supplied per task/session — nothing local.            |
+| `claude-cli`    | The `claude` binary on `PATH`. The pre-SDK path, kept for when driving the real CLI matters.                  |
+| `codex-cli`     | The `codex` binary on `PATH`, driven natively instead of through acpx.                                        |
+| _anything else_ | Passed to acpx as its agent name, so `--agent-backend gemini` means "acpx driving gemini".                    |
+
+Which of these actually work on a given machine depends on what is installed, so orc probes them rather than making you guess:
+
+```bash
+orc doctor          # per backend: usable or not, what it resolved to, what a missing one needs
+orc doctor --json   # same, machine-readable
+```
+
+The dashboard shows the same probe: the agent-backend field on a task is a picker that marks each backend ready or unavailable, and names the one a task with no backend of its own will use. `GET /api/backends` is the endpoint behind both.
 
 Enable the task loop in `~/.orc/config.json`:
 
@@ -576,6 +587,7 @@ Runs on port 7700 with auto-generated OpenAPI spec.
 | `GET`                   | `/jobs/{id}/runs`              | Run history                    |
 | `GET`                   | `/jobs/{id}/runs/{runId}/logs` | Run logs                       |
 | `GET`                   | `/skills`                      | Skill templates                |
+| `GET`                   | `/backends`                    | Agent backends + usability     |
 | `GET/POST`              | `/flows`                       | List/create flow graphs        |
 | `GET`                   | `/flows/{name}`                | Read a flow definition         |
 | `POST`                  | `/flows/validate`              | Validate without saving        |
@@ -596,6 +608,7 @@ orc api                          Start the API server only
 orc mcp                          Start the MCP server (stdio)
 orc home                         Show ~/.orc directory and config
 orc status                       Show API health and counts
+orc doctor                       Check which agent backends are usable here
 
 orc project list|add|show|use|update|archive
 orc task list|add|show|update|done|review|approve|reject|delete

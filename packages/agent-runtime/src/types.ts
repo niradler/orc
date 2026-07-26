@@ -38,10 +38,34 @@ export interface AgentSession {
   close(): Promise<void>;
 }
 
+/**
+ * How a backend reaches its agent, which is what decides whether a user has to
+ * install anything: `in-process` runs inside orc, `cli` shells out to a binary
+ * that must exist, `http` talks to a service that must be up.
+ */
+export type BackendKind = "in-process" | "cli" | "http";
+
+/** Extra detail for `orc doctor` and `GET /backends`, beyond ok/not-ok. */
+export type BackendDescription = {
+  kind: BackendKind;
+  /** What the backend needs, in one line, whether or not it is satisfied. */
+  requires: string;
+  /** Resolved binary or endpoint, when there is one. */
+  target?: string | null;
+  /** Where the target came from - PATH, a bundled install, config. */
+  source?: string | null;
+  version?: string | null;
+};
+
 export interface AgentBackend {
   readonly name: AgentBackendName;
   startSession(opts: SessionOpts): Promise<AgentSession>;
   resumeSession(runtimeSessionId: string, opts: SessionOpts): Promise<AgentSession>;
   preflight(): Promise<{ ok: boolean; error?: string }>;
   stop(): Promise<void>;
+  /**
+   * Optional: describe what this backend needs and what it resolved to.
+   * Backends that do not implement it are still reported, just with less detail.
+   */
+  describe?(): Promise<BackendDescription> | BackendDescription;
 }

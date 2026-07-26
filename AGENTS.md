@@ -147,7 +147,7 @@ React SPA replacing the removed TUI. Same feature surface - Tasks, Kanban, Jobs,
 
 - **Stack**: React 19 + Vite 6 + TypeScript + Tailwind + shadcn/ui + React Query (30s refetch) + `@dnd-kit` (kanban DnD) + Playwright (e2e)
 - **API client**: `packages/web/src/api/client.ts` - calls `${getApiUrl()}/<route>`, default `getApiUrl()` is `/api`. Override via `localStorage.orc_api_url` / `orc_api_secret`.
-- **Hooks**: `packages/web/src/hooks/` - one React Query wrapper per resource (`useTasks`, `useJobs`, `useMemories`, `useProjects`, `useSessions`, `useKnowledge`, `useSkills`, `useFlows`, `useChat`, `useHealth`)
+- **Hooks**: `packages/web/src/hooks/` - one React Query wrapper per resource (`useTasks`, `useJobs`, `useMemories`, `useProjects`, `useSessions`, `useKnowledge`, `useSkills`, `useFlows`, `useBackends`, `useChat`, `useHealth`)
 - **Flows**: the flow run panel in the task sheet and the `/flows` browser read `GET /tasks/{id}/flow` and `GET /flows`. The graph is drawn by hand (`src/lib/flow-graph.ts` - a pure, unit-tested layered layout, no graph library) so loopbacks are visible as edges that go backwards. See [docs/task-flows.md](docs/task-flows.md#in-the-web-dashboard).
 - **API limit**: task list max is 100 per request (API enforces `max: 100` via Zod)
 
@@ -179,7 +179,7 @@ bun run test:e2e                   # auto-starts API + web via webServer
 bun run test:e2e:ui                # headed, picker UI
 ```
 
-Specs cover chat round-trip, dashboard counts, jobs CRUD, kanban DnD, memories CRUD, projects CRUD, project scope filtering, tasks CRUD, the flows browser (`flows.e2e.ts`), and the task flow run panel including human gates and halts (`task-flow.e2e.ts`). Pure logic that needs no browser lives in `packages/web/tests/unit` and runs with `bun run --filter @orc/web test:unit`. An SSE contract test (empty messages → 400) lives at `packages/api/src/__tests__/chat-stream.test.ts` and runs as part of `bun test`.
+Specs cover chat round-trip, dashboard counts, jobs CRUD, kanban DnD, memories CRUD, projects CRUD, project scope filtering, tasks CRUD, the flows browser (`flows.e2e.ts`), the task flow run panel including human gates and halts (`task-flow.e2e.ts`), and agent-backend probing and picking (`backends.e2e.ts`). Pure logic that needs no browser lives in `packages/web/tests/unit` and runs with `bun run --filter @orc/web test:unit`. An SSE contract test (empty messages → 400) lives at `packages/api/src/__tests__/chat-stream.test.ts` and runs as part of `bun test`.
 
 ## Testing the Web UI with agent-browser
 
@@ -221,6 +221,26 @@ Internal statuses (`queued`, `paused`, `cancelled`) are managed by the task loop
 Task status is now a *consequence* of the flow graph a task runs, not the driver: nodes declare the status to set when they start, terminals declare the status the task ends in. A task whose next node is queued but has no session yet sits in `queued` — it only moves to the node's declared status once an agent is really running, so the board never shows more tasks in progress than there are workers. See "Task Flows" below.
 
 **Task priorities**: `low | normal | high | critical`
+
+## Agent backends
+
+`packages/agent-runtime` registers one backend per way of reaching an agent, and `probeBackends()` reports whether each is usable *right now*. That probe is the single source for `GET /api/backends`, `orc doctor`, the dashboard's backend picker, and the gateway's startup log - they cannot disagree.
+
+| Backend      | Kind         | Needs                                                                  |
+| ------------ | ------------ | ---------------------------------------------------------------------- |
+| `claude`     | `in-process` | `@anthropic-ai/claude-agent-sdk` (a real dependency) + claude CLI credentials or `ANTHROPIC_API_KEY`. The default, and the only one that needs no external tool. |
+| `acpx`       | `cli`        | The acpx CLI. An `optionalDependency` of `orc-ai`, so `resolveAcpxCli()` finds it in the package's own `node_modules` when it is not on `PATH`; `ORC_ACPX_PATH` overrides. Not available inside a `bun build --compile` binary unless installed separately. |
+| `agentapi`   | `http`       | An agentapi server (`AGENTAPI_URL`).                                    |
+| `a2a`        | `http`       | An endpoint per session — nothing local.                                |
+| `claude-cli` | `cli`        | The `claude` binary. The pre-SDK implementation.                        |
+| `codex-cli`  | `cli`        | The `codex` binary, driven natively.                                    |
+
+Two rules that are easy to get wrong:
+
+- **`createBackend(name)` throws for an unknown name.** It used to substitute acpx, which meant a typo silently ran acpx's *default* agent. Routing an unknown name to acpx-as-agent still happens, but in `resolveBackend()` (session-factory), which sets `acpxAgent` so the right agent actually runs.
+- **`pickUsableBackend(names)` preflights**; there is no registered-only "pick" any more. The old `pickAvailableBackend` only checked registration while claiming availability, so it returned backends whose service was down.
+
+A backend may implement the optional `describe()` to report its kind, what it requires, and what it resolved to. Anything without it is still probed, just with less detail.
 
 **Job trigger types**: `one-shot | cron | watch | webhook | manual | bridge-msg`
 

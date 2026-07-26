@@ -6,6 +6,7 @@ import type {
   AgentBackend,
   AgentEvent,
   AgentSession,
+  BackendDescription,
   PermissionResult,
   SessionOpts,
 } from "./types.js";
@@ -195,13 +196,33 @@ function createClaudeSDKBackend(): AgentBackend {
     async preflight() {
       try {
         await import("@anthropic-ai/claude-agent-sdk");
-        // SDK uses the claude CLI's stored credentials — no ANTHROPIC_API_KEY needed
+        // The SDK reuses the claude CLI's stored credentials, so the CLI has to
+        // be there even though the agent itself runs in-process. An API key is
+        // accepted as an alternative.
         const claudePath = Bun.which("claude");
-        if (!claudePath) return { ok: false, error: "claude CLI not found on PATH" };
+        if (!claudePath && !process.env.ANTHROPIC_API_KEY) {
+          return {
+            ok: false,
+            error:
+              "claude CLI not found on PATH and ANTHROPIC_API_KEY is unset — " +
+              "install Claude Code (npm i -g @anthropic-ai/claude-code) or set the key",
+          };
+        }
         return { ok: true };
       } catch (err) {
         return { ok: false, error: `Claude SDK not available: ${String(err)}` };
       }
+    },
+
+    describe(): BackendDescription {
+      const claudePath = Bun.which("claude");
+      return {
+        kind: "in-process",
+        requires: "@anthropic-ai/claude-agent-sdk (bundled) + claude CLI credentials",
+        target: claudePath ?? (process.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY" : null),
+        source: claudePath ? "path" : process.env.ANTHROPIC_API_KEY ? "env" : null,
+        version: null,
+      };
     },
 
     async startSession(opts) {

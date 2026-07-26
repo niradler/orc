@@ -6,6 +6,7 @@ import type {
   AgentBackend,
   AgentEvent,
   AgentSession,
+  BackendDescription,
   PermissionResult,
   SessionOpts,
 } from "./types.js";
@@ -324,7 +325,18 @@ class ClaudeSession implements AgentSession {
 
 function createClaudeBackend(): AgentBackend {
   return {
-    name: "claude",
+    name: "claude-cli",
+
+    describe(): BackendDescription {
+      const path = findClaudeCli();
+      return {
+        kind: "cli",
+        requires: "the claude CLI on PATH (npm i -g @anthropic-ai/claude-code)",
+        target: path ?? null,
+        source: path ? "path" : null,
+        version: null,
+      };
+    },
 
     async preflight() {
       const path = findClaudeCli();
@@ -364,4 +376,4 @@ function createClaudeBackend(): AgentBackend {
   };
 }
 
-registerBackend("claude", createClaudeBackend);
+registerBackend("claude-cli", createClaudeBackend);

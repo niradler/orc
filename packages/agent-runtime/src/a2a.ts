@@ -5,6 +5,7 @@ import type {
   AgentBackend,
   AgentEvent,
   AgentSession,
+  BackendDescription,
   PermissionResult,
   SessionOpts,
 } from "./types.js";
@@ -213,6 +214,18 @@ export class A2aSession implements AgentSession {
 function createA2aBackend(): AgentBackend {
   return {
     name: "a2a",
+
+    describe(): BackendDescription {
+      return {
+        kind: "http",
+        // Nothing to install: the endpoint is supplied per session, so this
+        // backend is "usable" in the sense that it needs no local tooling.
+        requires: "an A2A endpoint per session (a2aUrl on the task or session)",
+        target: null,
+        source: null,
+        version: null,
+      };
+    },
 
     async preflight() {
       return { ok: true };
