@@ -219,7 +219,7 @@ export async function resolvePermission(permissionId: string, approved: boolean)
   const permission = await db.query.bridge_permissions.findFirst({
     where: eq(bridge_permissions.id, permissionId),
   });
-  if (!permission || permission.status !== "pending") return false;
+  if (permission?.status !== "pending") return false;
   await db
     .update(bridge_permissions)
     .set({ status: approved ? "approved" : "denied", resolved_at: new Date() })

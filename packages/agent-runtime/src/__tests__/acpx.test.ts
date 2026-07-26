@@ -28,7 +28,7 @@ describe("parseAcpxLine", () => {
     });
     const event = parseAcpxLine(line);
     expect(event?.type).toBe("result");
-    expect((event?.data as Record<string, unknown>).usage).toEqual({
+    expect((event?.data as Record<string, unknown> | undefined)?.usage).toEqual({
       inputTokens: 100,
       outputTokens: 50,
     });

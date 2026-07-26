@@ -19,6 +19,6 @@
     "@orc/runner": "workspace:*",
     "@orc/sdk": "workspace:*",
     "drizzle-orm": "^0.45.2",
-    "grammy": "^1.42.0"
+    "grammy": "^1.45.1"
   }
 }

@@ -38,9 +38,9 @@
     "commander": "^14.0.3"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.110",
-    "@tobilu/qmd": "^2.1.0",
-    "zod": "^4.3.6"
+    "@anthropic-ai/claude-agent-sdk": "^0.2.141",
+    "@tobilu/qmd": "^2.5.3",
+    "zod": "^4.4.3"
   },
   "peerDependencies": {
     "bun": ">=1.0.0"
