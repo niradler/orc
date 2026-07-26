@@ -78,5 +78,8 @@
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
+  },
+  "optionalDependencies": {
+    "acpx": "^0.12.1"
   }
 }

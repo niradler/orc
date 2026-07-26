@@ -1,6 +1,11 @@
 import { Link2, MessageSquare, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Task, TaskLinkType, TaskPriority, TaskStatus } from "@/api/client";
+import {
+  BackendPicker,
+  USE_DEFAULT_BACKEND,
+  useEffectiveBackend,
+} from "@/components/BackendPicker";
 import { DetailField } from "@/components/DetailField";
 import { FlowPicker, USE_DEFAULT_FLOW, useEffectiveFlow } from "@/components/flow/FlowPicker";
 import { FlowRunPanel, FlowSectionHeading } from "@/components/flow/FlowRunPanel";
@@ -119,6 +124,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
   }, [links]);
 
   const effectiveFlow = useEffectiveFlow(task ?? {});
+  const effectiveBackend = useEffectiveBackend(task ?? {});
 
   const projectName = useMemo(() => {
     if (!task?.project_id || !projects) return null;
@@ -185,7 +191,15 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                   <DetailField label="Claimed By">{task.claimed_by ?? "-"}</DetailField>
                   <DetailField label="Project">{projectName ?? "-"}</DetailField>
                   <DetailField label="Skill">{task.skill_name ?? "-"}</DetailField>
-                  <DetailField label="Agent Backend">{task.agent_backend ?? "-"}</DetailField>
+                  <DetailField label="Agent Backend">
+                    <span data-testid="task-backend-name">{effectiveBackend.label}</span>
+                    {effectiveBackend.available === false && (
+                      <span className="text-error" title="This backend is not usable right now">
+                        {" "}
+                        ○
+                      </span>
+                    )}
+                  </DetailField>
                   <DetailField label="Flow">
                     <span data-testid="task-flow-name">{effectiveFlow.label}</span>
                   </DetailField>
@@ -467,7 +481,7 @@ function EditTaskDialog({
   const [tags, setTags] = useState((task.tags ?? []).join(", "));
   const [projectId, setProjectId] = useState(task.project_id ?? "");
   const [skillName, setSkillName] = useState(task.skill_name ?? "");
-  const [agentBackend, setAgentBackend] = useState(task.agent_backend ?? "");
+  const [agentBackend, setAgentBackend] = useState(task.agent_backend ?? USE_DEFAULT_BACKEND);
   const [requiredReview, setRequiredReview] = useState(task.required_review);
   const [maxReviewRounds, setMaxReviewRounds] = useState(String(task.max_review_rounds));
   const [flowName, setFlowName] = useState(task.flow_name ?? USE_DEFAULT_FLOW);
@@ -490,7 +504,7 @@ function EditTaskDialog({
         tags: parsedTags.length > 0 ? parsedTags : null,
         project_id: projectId || null,
         skill_name: skillName || null,
-        agent_backend: agentBackend || null,
+        agent_backend: agentBackend === USE_DEFAULT_BACKEND ? null : agentBackend,
         required_review: requiredReview,
         max_review_rounds: Number(maxReviewRounds) || 3,
         // null clears the name so the task falls back to the configured default.
@@ -635,17 +649,11 @@ function EditTaskDialog({
                 className="bg-background border-surface-highest text-on-surface font-body text-xs"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
-                Agent Backend
-              </Label>
-              <Input
-                value={agentBackend}
-                onChange={(e) => setAgentBackend(e.target.value)}
-                placeholder="e.g. claude"
-                className="bg-background border-surface-highest text-on-surface font-body text-xs"
-              />
-            </div>
+            <BackendPicker
+              value={agentBackend}
+              onChange={setAgentBackend}
+              testId="edit-task-backend"
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5 flex items-center gap-2 pt-4">

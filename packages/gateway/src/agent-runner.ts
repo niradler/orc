@@ -293,20 +293,20 @@ export async function closeAgentSession(sessionId: string): Promise<void> {
 }
 
 export async function preflightBackends(): Promise<void> {
-  const { listRegisteredBackends, createBackend: create } = await import(
-    "./agent-runtime/index.js"
-  );
-  for (const name of listRegisteredBackends()) {
-    try {
-      const backend = create(name);
-      const result = await backend.preflight();
-      if (!result.ok) {
-        logger.warn(`Agent backend preflight failed: ${name}`, { error: result.error });
-      } else {
-        logger.info(`Agent backend ready: ${name}`);
-      }
-    } catch (err) {
-      logger.warn(`Agent backend preflight error: ${name}`, { err });
+  // Same probe the API and `orc doctor` report, so the startup log and the UI
+  // cannot disagree about which backends are usable.
+  const { probeBackends } = await import("@orc/agent-runtime");
+  for (const probe of await probeBackends()) {
+    if (probe.available) {
+      logger.info(`Agent backend ready: ${probe.name}`, {
+        kind: probe.kind,
+        ...(probe.target ? { target: probe.target } : {}),
+      });
+    } else {
+      logger.warn(`Agent backend unavailable: ${probe.name}`, {
+        error: probe.error,
+        requires: probe.requires,
+      });
     }
   }
 }

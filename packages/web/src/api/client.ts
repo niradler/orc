@@ -4,6 +4,7 @@
 // Override via localStorage: orc_api_url, orc_api_secret
 
 export type {
+  AgentBackendInfo,
   BrokenFlow,
   Comment,
   CreateJobInput,
@@ -48,6 +49,7 @@ export type {
 } from "@orc/sdk/types";
 
 import type {
+  AgentBackendInfo,
   BrokenFlow,
   Comment,
   CreateJobInput,
@@ -156,6 +158,10 @@ export const api = {
       req<{ ok: boolean; next_nodes: string[] }>("POST", `/tasks/${id}/flow/resume`, data),
     haltFlow: (id: string, reason?: string) =>
       req<{ halted: boolean }>("POST", `/tasks/${id}/flow/halt`, { reason }),
+  },
+
+  backends: {
+    list: () => req<{ backends: AgentBackendInfo[]; default_backend: string }>("GET", "/backends"),
   },
 
   flows: {

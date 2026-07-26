@@ -1,5 +1,6 @@
 import { loadConfig } from "@orc/core/config";
 import type {
+  AgentBackendInfo,
   ApiResult,
   AttachFlowInput,
   BrokenFlow,
@@ -239,6 +240,10 @@ export function createOrcClient(options?: OrcClientOptions) {
         ),
 
       create: (input: CreateSkillInput) => c<SkillFull>("POST", "/skills", input),
+    },
+
+    backends: {
+      list: () => c<{ backends: AgentBackendInfo[]; default_backend: string }>("GET", "/backends"),
     },
 
     flows: {

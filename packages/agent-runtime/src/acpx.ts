@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { readLines } from "./io.js";
@@ -6,6 +9,7 @@ import type {
   AgentBackend,
   AgentEvent,
   AgentSession,
+  BackendDescription,
   PermissionResult,
   SessionOpts,
 } from "./types.js";
@@ -113,11 +117,101 @@ export function parseAcpxLine(line: string): AgentEvent | null {
   return null;
 }
 
-function findAcpxCli(): string | null {
-  const found = Bun.which("acpx");
-  if (!found) return null;
-  return found.replaceAll("\\", "/");
+/**
+ * How to invoke acpx, and where it came from.
+ *
+ * `cmd` is spawn-ready: acpx ships as a Node CLI (`bin: dist/cli.js`), so
+ * depending on how it was installed the invocation is either the binary itself
+ * or an interpreter plus that script.
+ */
+export type AcpxResolution = {
+  cmd: string[];
+  path: string;
+  source: "config" | "path" | "bundled";
+};
+
+/**
+ * Find acpx without requiring it on PATH.
+ *
+ * PATH alone was the old rule, which meant a global `orc` install could not use
+ * the acpx it depends on: npm links a dependency's bin into the *package's*
+ * node_modules/.bin, not the user's PATH. So: an explicit path wins, then PATH,
+ * then the copy installed alongside orc.
+ */
+export function resolveAcpxCli(): AcpxResolution | null {
+  // Only honour a configured path that is actually there: a stale ORC_ACPX_PATH
+  // would otherwise shadow a perfectly good install and fail at spawn time,
+  // where the error is a raw ENOENT rather than "acpx not found".
+  const configured = process.env.ORC_ACPX_PATH?.trim();
+  if (configured && existsSync(configured)) {
+    const path = normalizePath(configured);
+    return { cmd: interpreterFor(path), path, source: "config" };
+  }
+
+  const onPath = Bun.which("acpx");
+  if (onPath) {
+    const path = normalizePath(onPath);
+    return { cmd: interpreterFor(path), path, source: "path" };
+  }
+
+  const bundled = resolveBundledAcpx();
+  if (bundled) return { cmd: interpreterFor(bundled), path: bundled, source: "bundled" };
+
+  return null;
 }
+
+function normalizePath(path: string): string {
+  return path.replaceAll("\\", "/");
+}
+
+/**
+ * acpx installed as a dependency of orc. `import.meta.resolve` throws in a
+ * compiled standalone binary (the module is not there) and when acpx is simply
+ * not installed - both are ordinary "not found", not errors worth surfacing.
+ */
+function resolveBundledAcpx(): string | null {
+  try {
+    const manifestUrl = import.meta.resolve("acpx/package.json");
+    const manifestPath = fileURLToPath(manifestUrl);
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as {
+      bin?: string | Record<string, string>;
+    };
+    const rel = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.acpx;
+    if (!rel) return null;
+    const cli = join(dirname(manifestPath), rel);
+    return existsSync(cli) ? normalizePath(cli) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A `.js` entry point (or a Windows `.cmd` shim) cannot be spawned directly and
+ * driven over stdio reliably, so run it through an interpreter. acpx asks for
+ * Node >= 22.13, so prefer node and fall back to the bun we are already in.
+ */
+function interpreterFor(path: string): string[] {
+  const lower = path.toLowerCase();
+
+  if (lower.endsWith(".cmd") || lower.endsWith(".ps1")) {
+    // npm's Windows shim wraps `node cli.js`; drive the script directly.
+    const cliJs = join(dirname(path), "node_modules", "acpx", "dist", "cli.js");
+    const runtime = Bun.which("node") ?? process.execPath;
+    if (existsSync(cliJs)) return [runtime, normalizePath(cliJs)];
+    return [path];
+  }
+
+  if (lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".cjs")) {
+    return [Bun.which("node") ?? process.execPath, path];
+  }
+
+  return [path];
+}
+
+/** Message shown wherever acpx is needed and missing - it names the fix. */
+export const ACPX_MISSING_MESSAGE =
+  "acpx CLI not found. Install it with `npm install -g acpx`, or set ORC_ACPX_PATH " +
+  "to its location. Agents that do not need acpx (the built-in `claude` backend) still work.";
 
 class AcpxSession implements AgentSession {
   readonly id: string;
@@ -133,16 +227,17 @@ class AcpxSession implements AgentSession {
   private readonly cwd: string;
   private readonly model: string | undefined;
   private readonly autoApprove: boolean;
-  private readonly acpxPath: string;
+  /** Spawn-ready prefix: either [binary] or [interpreter, cli.js]. */
+  private readonly acpxCmd: string[];
 
-  constructor(opts: SessionOpts, acpxPath: string) {
+  constructor(opts: SessionOpts, acpxCmd: string[]) {
     this.id = ulid();
     this.agent = opts.acpxAgent ?? "claude";
     this.sessionName = opts.runtimeSessionId ?? `orc-${this.id}`;
     this.cwd = opts.cwd;
     this.model = opts.model;
     this.autoApprove = opts.autoApprove ?? true;
-    this.acpxPath = acpxPath;
+    this.acpxCmd = acpxCmd;
   }
 
   async ensureSession(): Promise<void> {
@@ -218,7 +313,7 @@ class AcpxSession implements AgentSession {
     this.eventQueue.length = 0;
 
     const args = [
-      this.acpxPath,
+      ...this.acpxCmd,
       "--format",
       "json",
       ...(this.autoApprove ? ["--approve-all"] : []),
@@ -296,35 +391,54 @@ class AcpxSession implements AgentSession {
   }
 }
 
+async function acpxVersion(cmd: string[]): Promise<string | null> {
+  try {
+    const proc = Bun.spawn({ cmd: [...cmd, "--version"], stdout: "pipe", stderr: "pipe" });
+    const [out] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+    if (proc.exitCode !== 0) return null;
+    return out.trim().split("\n")[0]?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 function createAcpxBackend(): AgentBackend {
   return {
     name: "acpx",
 
     async preflight() {
-      const path = findAcpxCli();
-      if (!path) return { ok: false, error: "acpx CLI not found on PATH" };
-      try {
-        const proc = Bun.spawn({ cmd: [path, "--version"], stdout: "pipe", stderr: "pipe" });
-        await proc.exited;
-        if (proc.exitCode !== 0) return { ok: false, error: "acpx --version failed" };
-        return { ok: true };
-      } catch (err) {
-        return { ok: false, error: String(err) };
+      const resolved = resolveAcpxCli();
+      if (!resolved) return { ok: false, error: ACPX_MISSING_MESSAGE };
+      const version = await acpxVersion(resolved.cmd);
+      if (!version) {
+        return { ok: false, error: `Found acpx at ${resolved.path} but \`--version\` failed` };
       }
+      return { ok: true };
+    },
+
+    async describe(): Promise<BackendDescription> {
+      const resolved = resolveAcpxCli();
+      return {
+        kind: "cli",
+        requires: "the acpx CLI (npm i -g acpx), or ORC_ACPX_PATH",
+        target: resolved?.path ?? null,
+        source: resolved?.source ?? null,
+        version: resolved ? await acpxVersion(resolved.cmd) : null,
+      };
     },
 
     async startSession(opts) {
-      const path = findAcpxCli();
-      if (!path) throw new Error("acpx CLI not found on PATH");
-      const session = new AcpxSession(opts, path);
+      const resolved = resolveAcpxCli();
+      if (!resolved) throw new Error(ACPX_MISSING_MESSAGE);
+      const session = new AcpxSession(opts, resolved.cmd);
       await session.ensureSession();
       return session;
     },
 
     async resumeSession(runtimeSessionId, opts) {
-      const path = findAcpxCli();
-      if (!path) throw new Error("acpx CLI not found on PATH");
-      const session = new AcpxSession({ ...opts, runtimeSessionId }, path);
+      const resolved = resolveAcpxCli();
+      if (!resolved) throw new Error(ACPX_MISSING_MESSAGE);
+      const session = new AcpxSession({ ...opts, runtimeSessionId }, resolved.cmd);
       return session;
     },
 

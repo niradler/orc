@@ -5,6 +5,7 @@ import { OrcError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
 import { ORC_VERSION } from "@orc/core/version";
 import { bearerAuth } from "./middleware/auth.js";
+import { backendsRouter } from "./routes/backends.js";
 import { chatRouter } from "./routes/chat.js";
 import { flowsRouter } from "./routes/flows.js";
 import { gatewayRouter } from "./routes/gateway.js";
@@ -52,6 +53,7 @@ export function createApp() {
     return c.json({ error: "Internal server error", code: "INTERNAL_ERROR" }, 500);
   });
 
+  app.route("/api", backendsRouter);
   app.route("/api", chatRouter);
   app.route("/api", healthRouter);
   app.route("/api", mcpToolRouter);

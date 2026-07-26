@@ -2,6 +2,7 @@ import { LayoutGrid, List, MessageSquare, Plus, Search, Trash2 } from "lucide-re
 import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { CreateTaskInput, Task, TaskPriority, TaskStatus } from "@/api/client";
+import { BackendPicker, USE_DEFAULT_BACKEND } from "@/components/BackendPicker";
 import { KanbanBoard } from "@/components/board/KanbanBoard";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
@@ -540,7 +541,7 @@ function CreateTaskDialog({
   const [projectId, setProjectId] = useState(defaultProjectId ?? "");
   const [author, setAuthor] = useState("");
   const [skillName, setSkillName] = useState("");
-  const [agentBackend, setAgentBackend] = useState("");
+  const [agentBackend, setAgentBackend] = useState(USE_DEFAULT_BACKEND);
   const [flowName, setFlowName] = useState(USE_DEFAULT_FLOW);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -560,7 +561,7 @@ function CreateTaskDialog({
       project_id: projectId || undefined,
       author: author.trim() || undefined,
       skill_name: skillName.trim() || undefined,
-      agent_backend: agentBackend.trim() || undefined,
+      ...(agentBackend === USE_DEFAULT_BACKEND ? {} : { agent_backend: agentBackend }),
       // Omitted, not null: no flow_name means "run the configured default".
       ...(flowName === USE_DEFAULT_FLOW ? {} : { flow_name: flowName }),
     };
@@ -574,7 +575,7 @@ function CreateTaskDialog({
         setTags("");
         setAuthor("");
         setSkillName("");
-        setAgentBackend("");
+        setAgentBackend(USE_DEFAULT_BACKEND);
         setFlowName(USE_DEFAULT_FLOW);
         onClose();
       },
@@ -722,17 +723,11 @@ function CreateTaskDialog({
               />
             </div>
           </div>
-          <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
-              Agent Backend
-            </Label>
-            <Input
-              value={agentBackend}
-              onChange={(e) => setAgentBackend(e.target.value)}
-              placeholder="e.g. claude, acpx, a2a"
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
-            />
-          </div>
+          <BackendPicker
+            value={agentBackend}
+            onChange={setAgentBackend}
+            testId="new-task-backend"
+          />
           <FlowPicker value={flowName} onChange={setFlowName} testId="new-task-flow" />
           <DialogFooter>
             <Button

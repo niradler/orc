@@ -5,6 +5,7 @@ import { ORC_VERSION } from "@orc/core/version";
 import { Command } from "commander";
 
 import { daemonCommand, ORC_HOME, ORC_PID, readDaemonPid } from "./commands/daemon.js";
+import { doctorCommand } from "./commands/doctor.js";
 import { flowCommand } from "./commands/flow.js";
 import { gatewayCommand } from "./commands/gateway.js";
 import { jobCommand } from "./commands/job.js";
@@ -72,6 +73,7 @@ program.addCommand(skillCommand());
 program.addCommand(flowCommand());
 program.addCommand(kbCommand());
 program.addCommand(statusCommand());
+program.addCommand(doctorCommand());
 program.addCommand(schemaCommand());
 
 program

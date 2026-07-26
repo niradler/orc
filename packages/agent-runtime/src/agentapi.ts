@@ -5,6 +5,7 @@ import type {
   AgentBackend,
   AgentEvent,
   AgentSession,
+  BackendDescription,
   PermissionResult,
   SessionOpts,
 } from "./types.js";
@@ -199,6 +200,17 @@ class AgentApiSession implements AgentSession {
 function createAgentApiBackend(): AgentBackend {
   return {
     name: "agentapi",
+
+    describe(): BackendDescription {
+      const url = process.env.AGENTAPI_URL ?? DEFAULT_URL;
+      return {
+        kind: "http",
+        requires: `an agentapi server (AGENTAPI_URL, default ${DEFAULT_URL})`,
+        target: url,
+        source: process.env.AGENTAPI_URL ? "env" : "default",
+        version: null,
+      };
+    },
 
     async preflight() {
       const url = process.env.AGENTAPI_URL ?? DEFAULT_URL;

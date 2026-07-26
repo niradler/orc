@@ -6,6 +6,7 @@ import type {
   AgentBackend,
   AgentEvent,
   AgentSession,
+  BackendDescription,
   PermissionResult,
   SessionOpts,
 } from "./types.js";
@@ -259,12 +260,25 @@ export class CodexSession implements AgentSession {
 
 function createCodexBackend(): AgentBackend {
   return {
-    name: "codex",
+    name: "codex-cli",
 
     async preflight() {
       const path = Bun.which("codex");
-      if (!path) return { ok: false, error: "codex CLI not found on PATH" };
+      if (!path) {
+        return { ok: false, error: "codex CLI not found on PATH (npm i -g @openai/codex)" };
+      }
       return { ok: true };
+    },
+
+    describe(): BackendDescription {
+      const path = Bun.which("codex");
+      return {
+        kind: "cli",
+        requires: "the codex CLI on PATH",
+        target: path ?? null,
+        source: path ? "path" : null,
+        version: null,
+      };
     },
 
     async startSession(opts) {
@@ -281,7 +295,7 @@ function createCodexBackend(): AgentBackend {
   };
 }
 
-registerBackend("codex", createCodexBackend);
+registerBackend("codex-cli", createCodexBackend);
 
 export async function startCodexSession(
   opts: SessionOpts,

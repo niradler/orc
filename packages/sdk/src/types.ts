@@ -349,6 +349,19 @@ export type ApiError = { error: string; code: string };
 
 export type ApiResult<T> = { data: T; error: null } | { data: null; error: ApiError };
 
+export type AgentBackendKind = "in-process" | "cli" | "http";
+
+export type AgentBackendInfo = {
+  name: string;
+  kind: AgentBackendKind;
+  available: boolean;
+  error: string | null;
+  requires: string;
+  target: string | null;
+  source: string | null;
+  version: string | null;
+};
+
 export type FlowSource = "builtin" | "user" | "project";
 
 export type FlowMeta = {

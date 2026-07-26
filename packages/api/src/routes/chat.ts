@@ -1,6 +1,9 @@
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { pickAvailableBackend } from "@orc/agent-runtime";
+import {
+  ACPX_MISSING_MESSAGE,
+  pickUsableBackend,
+  probeBackend,
+  resolveAcpxCli,
+} from "@orc/agent-runtime";
 import { createLogger } from "@orc/core/logger";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -151,19 +154,30 @@ app.post("/chat/stream", async (c) => {
     });
   }
 
-  const acpxPath = Bun.which("acpx");
   const prompt = buildPrompt(messages, systemPrompt);
 
-  // When acpx is not available (e.g. running in Docker), fall back to the
-  // first available registered backend: agentapi → claude.
-  if (!acpxPath) {
-    const fallbackBackend = pickAvailableBackend(["agentapi", "claude"]);
+  // Prefer the in-process backend when the requested agent is one orc ships
+  // natively: it spawns no external binary, so a fresh `npm i -g orc-ai` can
+  // chat immediately. acpx is what makes *other* agents (gemini, codex, …)
+  // reachable, so it stays the path for anything else.
+  const nativeBackend = agent === "claude" ? await pickUsableBackend(["claude"]) : null;
+  const acpx = nativeBackend ? null : resolveAcpxCli();
+
+  if (!acpx) {
+    // agentapi last: it is a service, so it only answers if someone set it up.
+    const fallbackBackend = nativeBackend ?? (await pickUsableBackend(["agentapi"]));
     if (!fallbackBackend) {
+      const claudeProbe = await probeBackend("claude");
       return c.json(
-        { error: "No agent backend available (acpx not on PATH, agentapi/claude not configured)" },
+        {
+          error:
+            `No agent backend can run "${agent}". ${ACPX_MISSING_MESSAGE}` +
+            (claudeProbe.error ? ` Built-in claude backend: ${claudeProbe.error}` : ""),
+        },
         503,
       );
     }
+    logger.debug("chat via in-process backend", { backend: fallbackBackend.name, agent });
     return streamSSE(c, async (s) => {
       await s.writeSSE({ data: JSON.stringify({ type: "open" }) });
       let session: Awaited<ReturnType<typeof fallbackBackend.startSession>> | null = null;
@@ -199,24 +213,12 @@ app.post("/chat/stream", async (c) => {
     });
   }
 
-  // On Windows, Bun.which returns a `.cmd` shim that wraps `node cli.js`. Driving
-  // stdin/stdout through the cmd.exe wrapper is unreliable under Bun.spawn, so
-  // resolve to the underlying `cli.js` and invoke node directly when possible.
-  let spawnBin = acpxPath;
-  const spawnPrefix: string[] = [];
-  if (process.platform === "win32" && acpxPath.toLowerCase().endsWith(".cmd")) {
-    const cliJs = join(dirname(acpxPath), "node_modules", "acpx", "dist", "cli.js");
-    const nodeExe = Bun.which("node");
-    if (nodeExe && existsSync(cliJs)) {
-      spawnBin = nodeExe;
-      spawnPrefix.push(cliJs);
-    }
-  }
-
+  // `resolveAcpxCli()` already returns a spawn-ready command: a bare binary, or
+  // an interpreter plus acpx's cli.js (which is what the Windows `.cmd` shim and
+  // a bundled install both need).
   return streamSSE(c, async (s) => {
     const args = [
-      spawnBin,
-      ...spawnPrefix,
+      ...acpx.cmd,
       "--format",
       "json",
       ...(autoApprove ? ["--approve-all"] : []),
@@ -226,7 +228,7 @@ app.post("/chat/stream", async (c) => {
       "-",
     ];
 
-    logger.debug("spawning acpx", { agent, autoApprove });
+    logger.debug("spawning acpx", { agent, autoApprove, source: acpx.source });
 
     const proc = Bun.spawn(args, {
       stdin: "pipe",
