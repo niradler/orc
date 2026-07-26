@@ -6,6 +6,7 @@ import { KanbanBoard } from "@/components/board/KanbanBoard";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { FlowPicker, USE_DEFAULT_FLOW } from "@/components/flow/FlowPicker";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TaskDetailSheet } from "@/components/TaskDetailSheet";
@@ -540,6 +541,7 @@ function CreateTaskDialog({
   const [author, setAuthor] = useState("");
   const [skillName, setSkillName] = useState("");
   const [agentBackend, setAgentBackend] = useState("");
+  const [flowName, setFlowName] = useState(USE_DEFAULT_FLOW);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -559,6 +561,8 @@ function CreateTaskDialog({
       author: author.trim() || undefined,
       skill_name: skillName.trim() || undefined,
       agent_backend: agentBackend.trim() || undefined,
+      // Omitted, not null: no flow_name means "run the configured default".
+      ...(flowName === USE_DEFAULT_FLOW ? {} : { flow_name: flowName }),
     };
     createTask.mutate(input, {
       onSuccess: () => {
@@ -571,6 +575,7 @@ function CreateTaskDialog({
         setAuthor("");
         setSkillName("");
         setAgentBackend("");
+        setFlowName(USE_DEFAULT_FLOW);
         onClose();
       },
     });
@@ -728,6 +733,7 @@ function CreateTaskDialog({
               className="bg-background border-surface-highest text-on-surface font-body text-xs"
             />
           </div>
+          <FlowPicker value={flowName} onChange={setFlowName} testId="new-task-flow" />
           <DialogFooter>
             <Button
               type="button"

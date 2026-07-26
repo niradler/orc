@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import type { APIRequestContext, Page } from "@playwright/test";
 
 export const API_PORT = process.env.ORC_API_PORT ?? "9871";
@@ -7,6 +9,30 @@ export const API_SECRET = process.env.ORC_API_SECRET ?? "";
 export const AUTH_HEADERS: Record<string, string> = API_SECRET
   ? { Authorization: `Bearer ${API_SECRET}`, "Content-Type": "application/json" }
   : { "Content-Type": "application/json" };
+
+/**
+ * Repo root, found by walking up to the workspace package.json. The API server
+ * under test runs with the repo root as its cwd, so project-scoped fixtures
+ * (`./.orc/flows/...`) have to be written there and not next to the specs.
+ */
+export function repoRoot(): string {
+  let dir = resolve(process.cwd());
+  for (let i = 0; i < 6; i++) {
+    const pkg = join(dir, "package.json");
+    if (existsSync(pkg)) {
+      try {
+        const parsed = JSON.parse(readFileSync(pkg, "utf-8")) as { workspaces?: unknown };
+        if (parsed.workspaces) return dir;
+      } catch {
+        /* keep walking */
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  throw new Error(`could not find the workspace root from ${process.cwd()}`);
+}
 
 /** Unique short id for test fixtures so multiple test runs don't collide. */
 export function tid(prefix: string): string {
@@ -25,6 +51,7 @@ export async function gotoView(
     | "sessions"
     | "knowledge"
     | "skills"
+    | "flows"
     | "settings",
 ): Promise<void> {
   if (API_SECRET) {

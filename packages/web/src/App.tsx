@@ -7,6 +7,7 @@ import { MobileTopBar } from "@/components/MobileTopBar";
 import { Sidebar } from "@/components/Sidebar";
 import { BREAKPOINTS } from "@/hooks/useMediaQuery";
 import Dashboard from "@/views/Dashboard";
+import Flows from "@/views/Flows";
 import Jobs from "@/views/Jobs";
 import Knowledge from "@/views/Knowledge";
 import Memories from "@/views/Memories";
@@ -74,6 +75,8 @@ export default function App() {
               <Route path="/knowledge" element={<Knowledge projectId={projectId} />} />
               <Route path="/skills" element={<Skills />} />
               <Route path="/skills/:skillName" element={<Skills />} />
+              <Route path="/flows" element={<Flows />} />
+              <Route path="/flows/:flowName" element={<Flows />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<Navigate to="/tasks" replace />} />
             </Routes>

@@ -7,11 +7,12 @@
     "build": "bun --env-file ../../.env run tsc -b && bun --env-file ../../.env vite build",
     "preview": "bun --env-file ../../.env vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "bun run scripts/run-e2e.ts",
+    "test": "bun test tests/unit && bun run scripts/run-e2e.ts",
     "test:e2e": "bun run scripts/run-e2e.ts",
     "test:e2e:ui": "bun run scripts/run-e2e.ts --ui",
     "test:e2e:real-agent": "bun run scripts/run-real-agent-demo.ts",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "test:unit": "bun test tests/unit"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -36,6 +37,7 @@
     "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {
+    "@orc/core": "workspace:*",
     "@playwright/test": "^1.59.1",
     "@types/node": "^25.0.0",
     "@types/react": "^19.0.0",

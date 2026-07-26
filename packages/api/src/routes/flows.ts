@@ -1,4 +1,5 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { parseFlowDefinition } from "@orc/core/flow";
 import {
@@ -53,6 +54,10 @@ const FlowNodeRunSchema = z
     summary: z.string().nullable(),
     error: z.string().nullable(),
     gateway_session_id: z.string().nullable(),
+    created_at: z.number().openapi({
+      description:
+        "When the visit was recorded. A queued or human-parked node has no started_at, so this is the only clock for how long it has been waiting.",
+    }),
     started_at: z.number().nullable(),
     ended_at: z.number().nullable(),
   })
@@ -136,6 +141,10 @@ const listRoute = createRoute({
           schema: z.object({
             flows: z.array(FlowMetaSchema),
             broken: z.array(BrokenFlowSchema),
+            default_flow: z.string().openapi({
+              description:
+                "Flow a task with no flow_name runs (config agent_loop.default_flow). Clients cannot know this otherwise, and 'which flow will this task run' is unanswerable without it.",
+            }),
           }),
         },
       },
@@ -275,7 +284,11 @@ const haltRoute = createRoute({
 app.openapi(listRoute, (c) => {
   const { q, source, reload } = c.req.valid("query");
   const flows = listFlows({ q, source: source as FlowSource | undefined, reload });
-  return c.json({ flows, broken: listBrokenFlows() });
+  return c.json({
+    flows,
+    broken: listBrokenFlows(),
+    default_flow: loadConfig().agent_loop.default_flow,
+  });
 });
 
 app.openapi(readRoute, (c) => {

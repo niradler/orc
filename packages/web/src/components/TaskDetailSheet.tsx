@@ -2,6 +2,8 @@ import { Link2, MessageSquare, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Task, TaskLinkType, TaskPriority, TaskStatus } from "@/api/client";
 import { DetailField } from "@/components/DetailField";
+import { FlowPicker, USE_DEFAULT_FLOW, useEffectiveFlow } from "@/components/flow/FlowPicker";
+import { FlowRunPanel, FlowSectionHeading } from "@/components/flow/FlowRunPanel";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -116,6 +118,8 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
     );
   }, [links]);
 
+  const effectiveFlow = useEffectiveFlow(task ?? {});
+
   const projectName = useMemo(() => {
     if (!task?.project_id || !projects) return null;
     return projects.find((p) => p.id === task.project_id)?.name ?? task.project_id.slice(-6);
@@ -134,7 +138,8 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent>
+        {/* Wider than the default sheet so the flow graph has somewhere to go. */}
+        <SheetContent className="w-[620px] max-w-[92vw]">
           <SheetHeader>
             {isLoading ? (
               <Skeleton className="h-5 w-48 bg-surface-highest" />
@@ -181,6 +186,9 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                   <DetailField label="Project">{projectName ?? "-"}</DetailField>
                   <DetailField label="Skill">{task.skill_name ?? "-"}</DetailField>
                   <DetailField label="Agent Backend">{task.agent_backend ?? "-"}</DetailField>
+                  <DetailField label="Flow">
+                    <span data-testid="task-flow-name">{effectiveFlow.label}</span>
+                  </DetailField>
                   <DetailField label="Required Review">
                     {task.required_review ? "Yes" : "No"}
                   </DetailField>
@@ -232,6 +240,11 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                     </div>
                   </div>
                 )}
+
+                <div className="border-t border-surface-highest pt-4 space-y-3">
+                  <FlowSectionHeading />
+                  <FlowRunPanel taskId={task.id} />
+                </div>
 
                 <div className="border-t border-surface-highest pt-4 space-y-3">
                   <div className="flex items-center justify-between">
@@ -457,6 +470,7 @@ function EditTaskDialog({
   const [agentBackend, setAgentBackend] = useState(task.agent_backend ?? "");
   const [requiredReview, setRequiredReview] = useState(task.required_review);
   const [maxReviewRounds, setMaxReviewRounds] = useState(String(task.max_review_rounds));
+  const [flowName, setFlowName] = useState(task.flow_name ?? USE_DEFAULT_FLOW);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -479,6 +493,12 @@ function EditTaskDialog({
         agent_backend: agentBackend || null,
         required_review: requiredReview,
         max_review_rounds: Number(maxReviewRounds) || 3,
+        // null clears the name so the task falls back to the configured default.
+        // A task carrying an inline flow_override shows no picker, so leave its
+        // name alone rather than clearing a field the override already beats.
+        ...(task.flow_override
+          ? {}
+          : { flow_name: flowName === USE_DEFAULT_FLOW ? null : flowName }),
       },
       { onSuccess: () => onClose() },
     );
@@ -656,6 +676,14 @@ function EditTaskDialog({
               />
             </div>
           </div>
+          {task.flow_override ? (
+            <p className="font-body text-[10px] text-outline" data-testid="task-flow-override-note">
+              This task carries an inline flow definition (flow_override), which beats any named
+              flow. Detach it with <code>orc flow attach</code> to use a named flow instead.
+            </p>
+          ) : (
+            <FlowPicker value={flowName} onChange={setFlowName} testId="edit-task-flow" />
+          )}
           <DialogFooter>
             <Button
               type="button"

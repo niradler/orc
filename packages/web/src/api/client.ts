@@ -4,6 +4,7 @@
 // Override via localStorage: orc_api_url, orc_api_secret
 
 export type {
+  BrokenFlow,
   Comment,
   CreateJobInput,
   CreateMemoryInput,
@@ -11,6 +12,11 @@ export type {
   CreateSkillInput,
   CreateTaskInput,
   CreateTaskLinkInput,
+  FlowFull,
+  FlowMeta,
+  FlowNodeRun,
+  FlowRun,
+  FlowSource,
   HealthResponse,
   Job,
   JobRun,
@@ -22,6 +28,7 @@ export type {
   Project,
   ProjectStatus,
   ProjectSummary,
+  ResumeFlowInput,
   Session,
   SessionDetail,
   SessionEvent,
@@ -41,6 +48,7 @@ export type {
 } from "@orc/sdk/types";
 
 import type {
+  BrokenFlow,
   Comment,
   CreateJobInput,
   CreateMemoryInput,
@@ -48,6 +56,10 @@ import type {
   CreateSkillInput,
   CreateTaskInput,
   CreateTaskLinkInput,
+  FlowFull,
+  FlowMeta,
+  FlowRun,
+  FlowSource,
   HealthResponse,
   Job,
   JobRun,
@@ -55,6 +67,7 @@ import type {
   Memory,
   Project,
   ProjectSummary,
+  ResumeFlowInput,
   Session,
   SessionDetail,
   SkillFull,
@@ -77,6 +90,7 @@ async function req<T>(
   path: string,
   body?: unknown,
   query?: Record<string, string | number | boolean | undefined>,
+  opts?: { nullOn404?: boolean },
 ): Promise<T> {
   let url = `${getApiUrl()}${path}`;
   if (query) {
@@ -96,6 +110,10 @@ async function req<T>(
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   if (res.status === 204) return null as T;
+  // "Not there yet" is a normal state for some resources (a task that has never
+  // run a flow), so callers can ask for null instead of a thrown error and skip
+  // string-matching the message to tell absence from failure.
+  if (res.status === 404 && opts?.nullOn404) return null as T;
   const json = (await res.json()) as unknown;
   if (!res.ok) {
     const e = json as { error?: unknown };
@@ -131,6 +149,24 @@ export const api = {
     addLink: (id: string, data: CreateTaskLinkInput) =>
       req<TaskLink>("POST", `/tasks/${id}/links`, data),
     deleteLink: (id: string, linkId: string) => req<null>("DELETE", `/tasks/${id}/links/${linkId}`),
+    // null (not an error) when the task has never run a flow.
+    flow: (id: string) =>
+      req<FlowRun | null>("GET", `/tasks/${id}/flow`, undefined, undefined, { nullOn404: true }),
+    resumeFlow: (id: string, data: ResumeFlowInput) =>
+      req<{ ok: boolean; next_nodes: string[] }>("POST", `/tasks/${id}/flow/resume`, data),
+    haltFlow: (id: string, reason?: string) =>
+      req<{ halted: boolean }>("POST", `/tasks/${id}/flow/halt`, { reason }),
+  },
+
+  flows: {
+    list: (params?: { q?: string; source?: FlowSource }) =>
+      req<{ flows: FlowMeta[]; broken: BrokenFlow[]; default_flow: string }>(
+        "GET",
+        "/flows",
+        undefined,
+        params as Record<string, string | number | boolean | undefined>,
+      ),
+    get: (name: string) => req<FlowFull>("GET", `/flows/${encodeURIComponent(name)}`),
   },
 
   memories: {

@@ -383,6 +383,8 @@ export type FlowNodeRun = {
   summary: string | null;
   error: string | null;
   gateway_session_id: string | null;
+  /** A queued or human-parked node has no `started_at`; this is its only clock. */
+  created_at: number;
   started_at: number | null;
   ended_at: number | null;
 };

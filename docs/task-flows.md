@@ -265,6 +265,19 @@ Human gates are first-class rather than bolted on:
 - **A human gate does not burn the execution timeout.** Time a run spends `awaiting_human` is excluded from `execution_timeout_secs`, and the timeout sweep skips a run parked on a person. Otherwise the wall clock would be a fuse on every gate — four hours on orc-default's defaults — and the halt would cancel the node the human was about to answer.
 - Only a `human` node pages a human. Agent reviewer nodes also move a task to `review`, and notifying on those meant one task sent "ready for review" once per review round, each time asking for an approval the flow would immediately override.
 
+## In the web dashboard
+
+`packages/web` reads flows through the same API the CLI and MCP use — it adds no flow state of its own.
+
+- **Task detail → Flow.** `GET /tasks/{id}/flow` gives the frozen definition plus the ordered ledger, and the panel draws both: the graph with the active node highlighted, the visit count and budget on each node, and one ledger row per visit carrying its verdict, summary, error, session link and timings. A halted run shows `halt_reason` with `describeHalt()`'s sentence. Clicking a node lists the edges leaving it, in routing order, with each condition rendered as prose.
+- **The graph is drawn, not laid out by a library** (`src/lib/flow-graph.ts`): a deterministic left-to-right layering with loopbacks classified as back edges and routed under the boxes, because "this edge goes backwards" is the thing a flow picture has to show and is exactly what a generic DAG layout hides. Flows are at most 128 nodes, so the layout stays a pure, unit-tested function with no dependency.
+- **Human gates are resolvable from the UI.** The offered outcomes are derived from the waiting node's outgoing edges — the same derivation `declaredOutcomes()` does server-side — so the menu is whatever the graph can actually route. A node with only a catch-all edge has no derivable list, and the form asks for a free-text outcome instead, matching the API, which accepts any outcome there. Submitting posts the comment and calls `POST /tasks/{id}/flow/resume`; `POST /tasks/{id}/flow/halt` sits behind a confirmation, since it kills live sessions.
+- **Flows browser** (`/flows`) lists every flow with its source, marks the one a task with no `flow_name` will run, flags a flow that shadows another of the same name, and renders the `broken[]` array from `GET /flows` with its validation errors — an invalid flow is visible before a task tries to run it.
+- **Flow picker** on task create and edit writes `flow_name` (clearing it falls back to the default). A task carrying an inline `flow_override` says so instead of offering a name, because the override wins.
+- **`queued` reads as pending, not in progress.** The board maps it into Todo and the dashboard counts it with todo, because the runner sets `queued` while a node waits for a worker slot. Cards whose real status differs from their column say which status they are in.
+
+The web UI needed two additions to the API, both additive: `GET /flows` returns `default_flow` (the configured `agent_loop.default_flow`, without which "which flow will this task run" is unanswerable from outside the server), and each ledger row carries `created_at` (a queued or human-parked node has no `started_at`, so it is the only clock for how long it has been waiting — the same `COALESCE` the runner uses).
+
 ## Schema
 
 ```
@@ -277,7 +290,7 @@ flow_node_runs
   id, flow_run_id, task_id, node_id, node_kind, attempt, retry,
   status (pending|running|awaiting_human|succeeded|failed|cancelled|skipped),
   outcome, summary, error, skill_name, gateway_session_id, resume_session,
-  started_at, ended_at
+  created_at, started_at, ended_at
   UNIQUE (flow_run_id, node_id, attempt, retry)
 
 tasks

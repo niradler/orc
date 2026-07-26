@@ -143,11 +143,12 @@ bun run --filter @orc/api dev > /tmp/orc-api-$(date +%s).log 2>&1 &
 
 ## Web Dashboard (packages/web)
 
-React SPA replacing the removed TUI. Same feature surface - Tasks, Kanban, Jobs, Memories, Projects, Sessions, Knowledge, Skills - plus Dashboard, Settings, and a streaming chat panel that spawns `acpx` via `POST /chat/stream`.
+React SPA replacing the removed TUI. Same feature surface - Tasks, Kanban, Jobs, Memories, Projects, Sessions, Knowledge, Skills, Flows - plus Dashboard, Settings, and a streaming chat panel that spawns `acpx` via `POST /chat/stream`.
 
 - **Stack**: React 19 + Vite 6 + TypeScript + Tailwind + shadcn/ui + React Query (30s refetch) + `@dnd-kit` (kanban DnD) + Playwright (e2e)
 - **API client**: `packages/web/src/api/client.ts` - calls `${getApiUrl()}/<route>`, default `getApiUrl()` is `/api`. Override via `localStorage.orc_api_url` / `orc_api_secret`.
-- **Hooks**: `packages/web/src/hooks/` - one React Query wrapper per resource (`useTasks`, `useJobs`, `useMemories`, `useProjects`, `useSessions`, `useKnowledge`, `useSkills`, `useChat`, `useHealth`)
+- **Hooks**: `packages/web/src/hooks/` - one React Query wrapper per resource (`useTasks`, `useJobs`, `useMemories`, `useProjects`, `useSessions`, `useKnowledge`, `useSkills`, `useFlows`, `useChat`, `useHealth`)
+- **Flows**: the flow run panel in the task sheet and the `/flows` browser read `GET /tasks/{id}/flow` and `GET /flows`. The graph is drawn by hand (`src/lib/flow-graph.ts` - a pure, unit-tested layered layout, no graph library) so loopbacks are visible as edges that go backwards. See [docs/task-flows.md](docs/task-flows.md#in-the-web-dashboard).
 - **API limit**: task list max is 100 per request (API enforces `max: 100` via Zod)
 
 ### Two ways to run the web UI
@@ -159,13 +160,13 @@ React SPA replacing the removed TUI. Same feature surface - Tasks, Kanban, Jobs,
 
 The CLI build (`packages/cli`) runs `bun run --filter @orc/web build` first and copies `packages/web/dist/` into `packages/cli/dist/web/`. The API resolves the dist via `ORC_WEB_DIST` env, then a candidate path list (`packages/web/dist`, `dist/web` next to the bundle, etc.). If no dist is found, the server runs pure-API.
 
-### Why API routes mount at both `/` and `/api`
+### Why every API route lives under `/api`
 
-Historic clients (SDK, CLI, MCP, Claude Code hooks) call `/<route>` directly - `ORC_API_BASE=http://127.0.0.1:7700` + `/tasks`. The web dashboard calls `/api/<route>` so it can be served from the same origin without colliding with the SPA shell at `/`. Both prefixes share the same handler - no duplicated logic. See `packages/api/src/server.ts` `mountRouters()`.
+`mountRouters()` (`packages/api/src/server.ts`) mounts every router at `/api` - only the MCP router also sits at `/`. That keeps the root path free for the SPA shell, so the dashboard and the API share one origin without colliding. Clients add the prefix themselves: the SDK appends `/api` to its base URL (`packages/sdk/src/client.ts`), so `ORC_API_BASE=http://127.0.0.1:7700` still works for the CLI, MCP and hooks. A browser hitting `/tasks` gets `index.html`, not JSON.
 
 ### Static file serving
 
-`packages/api/src/static.ts` serves `index.html` at `/`, hashed bundles at `/assets/*` (with `Cache-Control: public, max-age=31536000, immutable`), and root-level files (favicon, robots) by name. It is mounted last so any conflicting API route wins. Web app uses state-based navigation (no React Router) - there is no SPA fallback for arbitrary paths, only the explicit static routes above.
+`packages/api/src/static.ts` serves `index.html` at `/`, hashed bundles at `/assets/*` (with `Cache-Control: public, max-age=31536000, immutable`), and root-level files (favicon, robots) by name. It is mounted last so any conflicting API route wins. The web app routes with React Router, so any navigation request (`Accept: text/html`) that matches no static file falls back to `index.html` - that is what makes deep links like `/flows/orc-default` and `/tasks/<id>` work.
 
 ## Web UI e2e tests (Playwright)
 
@@ -178,7 +179,7 @@ bun run test:e2e                   # auto-starts API + web via webServer
 bun run test:e2e:ui                # headed, picker UI
 ```
 
-Specs cover chat round-trip, dashboard counts, jobs CRUD, kanban DnD, memories CRUD, projects CRUD, project scope filtering, and tasks CRUD. An SSE contract test (empty messages → 400) lives at `packages/api/src/__tests__/chat-stream.test.ts` and runs as part of `bun test`.
+Specs cover chat round-trip, dashboard counts, jobs CRUD, kanban DnD, memories CRUD, projects CRUD, project scope filtering, tasks CRUD, the flows browser (`flows.e2e.ts`), and the task flow run panel including human gates and halts (`task-flow.e2e.ts`). Pure logic that needs no browser lives in `packages/web/tests/unit` and runs with `bun run --filter @orc/web test:unit`. An SSE contract test (empty messages → 400) lives at `packages/api/src/__tests__/chat-stream.test.ts` and runs as part of `bun test`.
 
 ## Testing the Web UI with agent-browser
 
@@ -466,6 +467,10 @@ orc flow halt <taskId>                                     # stop it and kill li
 ```
 
 Agents do the same with `flow_attach` (pass `definition` for inline) and `flow_create` for a reusable one. A planner deciding a task needs plan → build → three parallel reviews → sign-off can author that graph itself.
+
+### In the web dashboard
+
+The task detail sheet draws the run's frozen graph plus its ledger (active node, per-visit verdicts, visit counts, halt reason, session links), resolves human gates - offering only the outcomes the waiting node's edges can route - and can halt a run. `/flows` lists every flow with source and shadowing badges, shows a definition, and surfaces the `broken[]` validation errors from `GET /flows`. Details in [docs/task-flows.md](docs/task-flows.md#in-the-web-dashboard).
 
 ### Flow config
 

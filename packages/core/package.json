@@ -15,6 +15,7 @@
     "./flow": "./src/flow.ts",
     "./flow-engine": "./src/flow-engine.ts",
     "./flow-service": "./src/flow-service.ts",
+    "./flows/builtin": "./src/flows/builtin.ts",
     "./knowledge": "./src/knowledge.ts",
     "./validate": "./src/validate.ts"
   },

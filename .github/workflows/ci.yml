@@ -33,3 +33,9 @@ jobs:
 
       - name: Test
         run: bun run --filter '!@orc/web' test
+
+      # @orc/web is excluded above because its `test` script drives Playwright,
+      # which needs a browser (see e2e.yml). Its browser-free unit tests still
+      # belong on every PR.
+      - name: Web unit tests
+        run: bun run --filter @orc/web test:unit
