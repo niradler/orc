@@ -22,14 +22,18 @@ app.use("/mcp", (c, next) => bearerAuth(loadConfig().api.secret)(c, next));
 app.all("/mcp", async (c) => {
   const server = createMcpServer();
   const transport = new WebStandardStreamableHTTPServerTransport({});
+  // handleRequest returns while the SSE body is still streaming, so the
+  // per-request server is released on transport close, never in a finally.
+  transport.onclose = () => {
+    void server.close().catch((err) => logger.warn("mcp server close failed", err));
+  };
   try {
     await server.connect(transport);
     return await transport.handleRequest(c.req.raw);
-  } finally {
-    // Stateless per-request server: release SDK-held resources/timers so they
-    // don't accumulate under load or on aborted connections.
-    void server.close().catch((err) => logger.warn("mcp server close failed", err));
+  } catch (err) {
+    void server.close().catch(() => {});
     void transport.close().catch(() => {});
+    throw err;
   }
 });
 
