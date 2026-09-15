@@ -72,3 +72,35 @@ describe("MCP HTTP endpoint auth", () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe("MCP HTTP endpoint response body", () => {
+  const rpc = (body: unknown) =>
+    app.request("/mcp", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+        Authorization: "Bearer test-secret",
+      },
+      body: JSON.stringify(body),
+    });
+
+  test("initialize streams a JSON-RPC result back, not an empty body", async () => {
+    const res = await rpc({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "test", version: "1" },
+      },
+    });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text.length).toBeGreaterThan(0);
+    const payload = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
+    expect(payload.id).toBe(1);
+    expect(payload.result.serverInfo.name).toBe("orc");
+  });
+});
