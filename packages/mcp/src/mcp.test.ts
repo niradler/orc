@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resetConfig } from "@orc/core/config";
 import { shortId } from "@orc/core/ids";
 import { closeDb, createTestDb } from "@orc/db/client";
+import { toolListing } from "./server.js";
 import { executeTool } from "./tools.js";
 
 beforeAll(() => {
@@ -537,5 +538,46 @@ describe("context() access-count scoring", () => {
     if (ctx.includes("Frequently accessed memory")) {
       expect(ctx).toContain("Frequently accessed memory");
     }
+  });
+});
+
+// ── Advertised tool schemas ─────────────────────────────────────────────────
+
+describe("MCP tool schemas", () => {
+  const advertised = () =>
+    toolListing().map((t) => ({
+      name: t.name,
+      schema: t.inputSchema as {
+        type?: string;
+        properties?: Record<string, unknown>;
+        required?: string[];
+      },
+    }));
+
+  test("every tool advertises an object schema", () => {
+    for (const { name, schema } of advertised()) {
+      expect(`${name}:${schema.type}`).toBe(`${name}:object`);
+    }
+  });
+
+  test("every tool that takes arguments advertises them", () => {
+    const argless = new Set(["project_list"]);
+    for (const { name, schema } of advertised()) {
+      if (argless.has(name)) continue;
+      const props = Object.keys(schema.properties ?? {});
+      expect(`${name}:${props.length > 0}`).toBe(`${name}:true`);
+    }
+  });
+
+  test("task_update advertises id as required and status as an enum", () => {
+    const schema = advertised().find((t) => t.name === "task_update")?.schema;
+    expect(schema?.required).toEqual(["id"]);
+    expect((schema?.properties?.status as { enum?: string[] })?.enum).toContain("review");
+  });
+
+  test("defaulted fields are optional on the input schema", () => {
+    const schema = advertised().find((t) => t.name === "task_list")?.schema;
+    expect(schema?.properties).toHaveProperty("limit");
+    expect(schema?.required ?? []).not.toContain("limit");
   });
 });
