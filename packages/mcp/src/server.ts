@@ -2,21 +2,23 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createLogger } from "@orc/core/logger";
+import { z } from "zod";
 import { executeTool, type ToolName, toolDefinitions } from "./tools.js";
-import { zodToJsonSchema } from "./utils.js";
 
 const logger = createLogger("mcp");
+
+export function toolListing() {
+  return toolDefinitions.map((t) => ({
+    name: t.name,
+    description: t.description,
+    inputSchema: z.toJSONSchema(t.inputSchema, { target: "draft-7", io: "input" }),
+  }));
+}
 
 export function createMcpServer() {
   const server = new Server({ name: "orc", version: "0.0.1" }, { capabilities: { tools: {} } });
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: toolDefinitions.map((t) => ({
-      name: t.name,
-      description: t.description,
-      inputSchema: zodToJsonSchema(t.inputSchema),
-    })),
-  }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: toolListing() }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
