@@ -1,5 +1,12 @@
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "@orc/core/config";
@@ -24,20 +31,64 @@ const LAUNCHD_LABEL = "com.orc.daemon";
 const LAUNCHD_PLIST = join(homedir(), "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`);
 const SYSTEMD_UNIT = join(homedir(), ".config", "systemd", "user", "orc-daemon.service");
 
+const VOLATILE_BIN_PATHS = [
+  "fnm_multishells",
+  "/.nvm/versions/",
+  "/.volta/tools/",
+  "/.asdf/installs/",
+  "nodenv/versions/",
+];
+
 function resolveOrcBin(): string {
   // Standalone binary - process.execPath IS the orc binary
   if (!process.execPath.includes("node") && !process.execPath.includes("bun")) {
     return process.execPath;
   }
   // npm global install - find `orc` on PATH
+  let bin: string;
   try {
     const p = execSync(platform() === "win32" ? "where orc" : "which orc", {
       encoding: "utf-8",
     }).trim();
-    return p.split(/\r?\n/)[0] ?? "orc";
+    bin = p.split(/\r?\n/)[0] ?? "orc";
   } catch {
     return "orc";
   }
+  try {
+    return realpathSync(bin);
+  } catch {
+    return bin;
+  }
+}
+
+export function volatileBinPath(bin: string): string | null {
+  const normalized = bin.replace(/\\/g, "/");
+  return VOLATILE_BIN_PATHS.find((p) => normalized.includes(p)) ?? null;
+}
+
+function assertStableBin(bin: string, force: boolean): void {
+  const hit = volatileBinPath(bin);
+  if (!hit) return;
+  const lines = [
+    "",
+    `  Refusing to install: the orc on PATH lives under a per-shell node path (${hit}).`,
+    `    ${bin}`,
+    "  That path disappears when the shell exits or the default node changes, so the",
+    "  service would silently fail to start at the next login.",
+    "",
+    "  Fix: install the standalone release binary somewhere stable, then re-run install.",
+    "  See the Install section of the README for the asset matching this machine, e.g.",
+    "    curl -L https://github.com/niradler/orc/releases/latest/download/orc-mac-arm64 -o /usr/local/bin/orc",
+    "    chmod +x /usr/local/bin/orc && hash -r && orc daemon install",
+    "",
+    "  Override (the service will break when that path goes away): orc daemon install --force",
+    "",
+  ];
+  if (!force) {
+    console.error(lines.join("\n"));
+    process.exit(1);
+  }
+  console.warn(lines.join("\n").replace("Refusing to install:", "WARNING:"));
 }
 
 function installWindows(): void {
@@ -251,8 +302,10 @@ export function daemonCommand() {
   cmd
     .command("install")
     .description("Register orc daemon to start on login/boot and start it now")
-    .action(async () => {
+    .option("--force", "Install even when the orc binary sits on a per-shell node path")
+    .action(async (opts) => {
       ensureOrcHome();
+      assertStableBin(resolveOrcBin(), Boolean(opts.force));
       const os = platform();
       console.log("[orc] Installing daemon auto-start...");
       if (os === "win32") installWindows();

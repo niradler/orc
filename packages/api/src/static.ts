@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -110,14 +110,7 @@ export function createWebStatic(): MiddlewareHandler {
     };
   }
 
-  // Precompute which files exist under /assets/ to avoid stat calls per request.
   const assetsDir = dist ? join(dist, "assets") : null;
-  const assetFiles = new Set<string>();
-  if (assetsDir && existsSync(assetsDir)) {
-    for (const name of readdirSync(assetsDir)) {
-      if (statSync(join(assetsDir, name)).isFile()) assetFiles.add(name);
-    }
-  }
   const indexHtml = dist ? join(dist, "index.html") : null;
 
   return async (c, next) => {
@@ -140,9 +133,15 @@ export function createWebStatic(): MiddlewareHandler {
     if (path.startsWith("/assets/")) {
       const name = path.slice("/assets/".length);
       // Filesystem first
-      if (assetsDir && assetFiles.has(name)) {
+      if (assetsDir) {
         const filePath = join(assetsDir, name);
-        if (isSafeChild(assetsDir, filePath)) return sendFile(c, filePath, true);
+        if (
+          isSafeChild(assetsDir, filePath) &&
+          existsSync(filePath) &&
+          statSync(filePath).isFile()
+        ) {
+          return sendFile(c, filePath, true);
+        }
       }
       // Embedded fallback
       const key = `assets/${name}`;

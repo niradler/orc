@@ -152,7 +152,12 @@ export type ProjectSummary = {
   jobs: number;
 };
 
-export type HealthResponse = { status: "ok"; version: string; uptime: number };
+export type HealthResponse = {
+  status: "ok";
+  version: string;
+  uptime: number;
+  agent_loop: { enabled: boolean; poll_interval_minutes: number; max_workers: number };
+};
 
 export type CreateTaskInput = {
   title: string;

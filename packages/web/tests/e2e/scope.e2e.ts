@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { apiDelete, apiPost, gotoView, tid } from "./_helpers";
+import { apiDelete, apiPatch, apiPost, gotoView, tid } from "./_helpers";
 
 interface Project {
   id: string;
@@ -70,6 +70,51 @@ test.describe("Sidebar project scope", () => {
     } finally {
       await apiDelete(request, `/tasks/${scoped.id}`);
       await apiDelete(request, `/tasks/${unscoped.id}`);
+      await apiDelete(request, `/projects/${project.id}`);
+    }
+  });
+
+  test("a stored project id that no longer resolves falls back to all, not an empty board", async ({
+    page,
+    request,
+  }) => {
+    const title = tid("pw-scope-orphan");
+    const task = await apiPost<Task>(request, "/tasks", {
+      title,
+      status: "todo",
+      priority: "normal",
+    });
+
+    try {
+      await page.addInitScript(() =>
+        localStorage.setItem("orc_selected_project", "deadbeefdeadbeefdeadbeefdb"),
+      );
+      await gotoView(page, "tasks");
+      await page.getByTestId("tasks-view-table").click();
+
+      await expect(page.getByTestId("sidebar-project-select")).toHaveValue("all");
+      await expect(
+        page.locator(`[data-testid="task-row"][data-task-id="${task.id}"]`),
+      ).toBeVisible();
+      expect(await page.evaluate(() => localStorage.getItem("orc_selected_project"))).toBe("all");
+    } finally {
+      await apiDelete(request, `/tasks/${task.id}`);
+    }
+  });
+
+  test("an archived project is not offered in the scope selector", async ({ page, request }) => {
+    const project = await apiPost<Project>(request, "/projects", {
+      name: tid("pw-scope-archived"),
+      status: "active",
+    });
+    await apiPatch(request, `/projects/${project.id}`, { status: "archived" });
+
+    try {
+      await gotoView(page, "tasks");
+      const select = page.getByTestId("sidebar-project-select");
+      await expect(select).toBeVisible();
+      await expect(select.locator(`option[value="${project.id}"]`)).toHaveCount(0);
+    } finally {
       await apiDelete(request, `/projects/${project.id}`);
     }
   });

@@ -68,6 +68,60 @@ describe("CLI - task commands", () => {
   });
 });
 
+describe("CLI - task comments", () => {
+  let taskId = "";
+
+  test("orc task add gives us a task to comment on", async () => {
+    const result = await cli("--json", "task", "add", "Commentable task", "--no-project");
+    expect(result.exitCode).toBe(0);
+    taskId = JSON.parse(result.stdout).id;
+    expect(taskId).toBeTruthy();
+  });
+
+  test("orc task comment adds a comment", async () => {
+    const result = await cli(
+      "task",
+      "comment",
+      taskId,
+      "root cause: stale claim",
+      "--author",
+      "claude",
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatch(/claude/);
+  });
+
+  test("orc task show renders the comment", async () => {
+    const result = await cli("task", "show", taskId);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatch(/Comments \(1\)/);
+    expect(result.stdout).toMatch(/root cause: stale claim/);
+  });
+
+  test("orc task show --no-comments hides them", async () => {
+    const result = await cli("task", "show", taskId, "--no-comments");
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).not.toMatch(/root cause: stale claim/);
+  });
+
+  test("orc --json task show carries comments for an agent", async () => {
+    const result = await cli("--json", "task", "show", taskId);
+    expect(result.exitCode).toBe(0);
+    const payload = JSON.parse(result.stdout);
+    expect(payload.comments).toHaveLength(1);
+    expect(payload.comments[0].content).toBe("root cause: stale claim");
+    expect(payload.comments[0].author).toBe("claude");
+  });
+});
+
+describe("CLI - status", () => {
+  test("orc status reports whether the agent loop is live", async () => {
+    const result = await cli("status");
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatch(/agent loop\s+[●○]\s+(on|off)/);
+  });
+});
+
 describe("CLI - mem commands", () => {
   test("orc mem add stores a memory", async () => {
     const result = await cli(

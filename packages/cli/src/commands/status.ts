@@ -12,6 +12,17 @@ export function statusCommand() {
     }
     console.log(`orc API  ● running  v${data?.version}  uptime: ${data?.uptime}s`);
 
+    const loop = data?.agent_loop;
+    if (!loop) {
+      console.log(`agent loop  ? unknown  this API predates /health reporting it`);
+    } else if (loop.enabled) {
+      console.log(
+        `agent loop  ● on  polling every ${loop.poll_interval_minutes}m, up to ${loop.max_workers} worker(s) - todo and changes_requested tasks are picked up automatically`,
+      );
+    } else {
+      console.log(`agent loop  ○ off  no task is picked up automatically`);
+    }
+
     const { data: tasks } = await client.tasks.list({ limit: 100 });
     const { data: jobs } = await client.jobs.list();
     const { data: mems } = await client.memories.list();

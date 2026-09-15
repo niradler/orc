@@ -113,7 +113,7 @@ export const OrcConfigSchema = z.object({
 
   agent_loop: z
     .object({
-      enabled: z.boolean().default(true),
+      enabled: z.boolean().default(false),
       poll_interval_minutes: z.number().int().min(1).default(5),
       max_workers: z.number().int().min(1).default(1),
       default_backend: z.string().default("claude"),
@@ -135,7 +135,7 @@ export const OrcConfigSchema = z.object({
       max_flow_runs_per_task: z.number().int().min(1).max(100).default(6),
     })
     .default({
-      enabled: true,
+      enabled: false,
       poll_interval_minutes: 5,
       max_workers: 1,
       default_backend: "claude",

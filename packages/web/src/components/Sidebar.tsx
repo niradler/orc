@@ -61,7 +61,7 @@ export function Sidebar({
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { data: health, isError } = useHealth();
-  const { data: projects } = useProjects();
+  const { data: projects } = useProjects({ status: "active" });
 
   const settingsActive = isPathActive(pathname, "/settings");
 
