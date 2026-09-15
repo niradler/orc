@@ -217,9 +217,27 @@ export function taskCommand() {
     });
 
   cmd
+    .command("comment <id> <text>")
+    .description("Add a comment to a task")
+    .option("--author <name>", "Comment author", "human")
+    .action(async (id: string, text: string, opts) => {
+      const client = createOrcClient();
+      const full = await resolveTaskId(client, id);
+      if (!full) return;
+      const { data, error } = await client.tasks.addComment(full, text, opts.author);
+      if (error) {
+        if (isJson()) return jsonErr(String(error));
+        return console.error("Error:", error);
+      }
+      if (isJson()) return jsonOut(data);
+      console.log(`Comment added to [${shortId(full)}] by ${data?.author}`);
+    });
+
+  cmd
     .command("show <id>")
     .description("Show task details")
-    .action(async (id: string) => {
+    .option("--no-comments", "Hide the comments section")
+    .action(async (id: string, opts) => {
       const client = createOrcClient();
       const full = await resolveTaskId(client, id);
       if (!full) return;
@@ -234,7 +252,9 @@ export function taskCommand() {
       if (isJson()) {
         const { data: linkData } = await client.tasks.listLinks(full);
         const links = linkData?.links ?? [];
-        return jsonOut({ ...task, links });
+        if (!opts.comments) return jsonOut({ ...task, links });
+        const { data: commentData } = await client.tasks.listComments(full);
+        return jsonOut({ ...task, links, comments: commentData?.comments ?? [] });
       }
 
       const label = (l: string, v: string | null | undefined) => {
@@ -273,6 +293,19 @@ export function taskCommand() {
         for (const link of links) {
           const target = link.from_task_id === full ? link.to_task_id : link.from_task_id;
           console.log(`    ${link.link_type} → [${shortId(target)}]`);
+        }
+      }
+
+      if (opts.comments) {
+        const { data: commentData } = await client.tasks.listComments(full);
+        const comments = commentData?.comments ?? [];
+        if (comments.length > 0) {
+          console.log();
+          console.log(`  ${color(`Comments (${comments.length})`, "2")}`);
+          for (const comment of comments) {
+            console.log(`    ${color(`${comment.author} · ${comment.created_at}`, "2")}`);
+            for (const line of comment.content.split("\n")) console.log(`    ${line}`);
+          }
         }
       }
       console.log();

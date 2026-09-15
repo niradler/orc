@@ -6,6 +6,7 @@ import { MobileChatFab } from "@/components/MobileChatFab";
 import { MobileTopBar } from "@/components/MobileTopBar";
 import { Sidebar } from "@/components/Sidebar";
 import { BREAKPOINTS } from "@/hooks/useMediaQuery";
+import { useProjects } from "@/hooks/useProjects";
 import Dashboard from "@/views/Dashboard";
 import Flows from "@/views/Flows";
 import Jobs from "@/views/Jobs";
@@ -38,6 +39,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, projectId);
   }, [projectId]);
+
+  const { data: selectableProjects } = useProjects({ status: "active" });
+  useEffect(() => {
+    if (!selectableProjects) return;
+    if (projectId === "all" || projectId === "unassigned") return;
+    if (selectableProjects.some((p) => p.id === projectId)) return;
+    setProjectId("all");
+  }, [selectableProjects, projectId]);
 
   return (
     <div className="h-dvh bg-background flex flex-col overflow-hidden">
