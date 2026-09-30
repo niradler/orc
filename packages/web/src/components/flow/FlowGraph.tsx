@@ -161,7 +161,7 @@ function EdgePath({ edge }: { edge: LaidOutEdge }) {
           x={edge.labelX}
           y={edge.labelY}
           textAnchor="middle"
-          className={`font-label text-[9px] ${isLoop ? "fill-tertiary/90" : "fill-outline"}`}
+          className={`font-label text-[10px] ${isLoop ? "fill-tertiary/90" : "fill-outline"}`}
         >
           {truncate(edge.text, 26)}
         </text>
@@ -219,22 +219,22 @@ function NodeBox({
         strokeWidth={selected ? 2 : 1.25}
         className={`${style.box} ${selected ? "stroke-on-surface" : ""}`}
       />
-      <text x={10} y={20} className={`font-label text-[10px] ${style.sub}`}>
+      <text x={10} y={20} className={`font-label text-[11px] ${style.sub}`}>
         {KIND_GLYPH[node.kind] ?? "•"}
       </text>
       <text x={26} y={21} className={`font-body text-[12px] font-medium ${style.title}`}>
         {truncate(node.id, 18)}
       </text>
-      <text x={10} y={38} className={`font-body text-[10px] ${style.sub}`}>
+      <text x={10} y={38} className={`font-body text-[11px] ${style.sub}`}>
         {truncate(nodeSubtitle(node, state), 24)}
       </text>
-      <text x={10} y={50} className="font-label text-[9px] fill-outline">
+      <text x={10} y={50} className="font-label text-[10px] fill-outline">
         {[isEntry ? "entry" : null, budget ? `visits ${budget}` : visits, node.task_status]
           .filter(Boolean)
           .join(" · ")}
       </text>
       {state?.latest.error && (
-        <text x={NODE_W - 8} y={20} textAnchor="end" className="font-label text-[10px] fill-error">
+        <text x={NODE_W - 8} y={20} textAnchor="end" className="font-label text-[11px] fill-error">
           !
         </text>
       )}
@@ -263,7 +263,7 @@ export function FlowGraphLegend() {
               className={STATE_STYLE[state].box}
             />
           </svg>
-          <span className="font-label text-[9px] uppercase tracking-widest text-outline">
+          <span className="font-label text-[10px] uppercase tracking-widest text-outline">
             {label}
           </span>
         </span>
@@ -280,7 +280,7 @@ export function FlowGraphLegend() {
             className="stroke-tertiary/70"
           />
         </svg>
-        <span className="font-label text-[9px] uppercase tracking-widest text-outline">
+        <span className="font-label text-[10px] uppercase tracking-widest text-outline">
           loopback
         </span>
       </span>

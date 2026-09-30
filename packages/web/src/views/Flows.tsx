@@ -71,7 +71,7 @@ export default function Flows() {
               type="button"
               data-testid={`flow-source-filter-${f.value}`}
               onClick={() => setSourceFilter(f.value)}
-              className={`font-label text-[10px] uppercase tracking-widest px-3 py-1.5 border transition-colors ${
+              className={`font-label text-[11px] uppercase tracking-widest px-3 py-1.5 border transition-colors ${
                 sourceFilter === f.value
                   ? "bg-primary/15 text-primary border-primary/30"
                   : "bg-surface-highest border-surface-highest text-outline hover:text-on-surface-variant"
@@ -101,7 +101,7 @@ export default function Flows() {
           className="mb-4 border border-error/40 rounded-sm bg-error/5"
           data-testid="broken-flows"
         >
-          <div className="flex items-center gap-1.5 px-3 py-2 border-b border-error/20 font-label text-[10px] uppercase tracking-widest text-error">
+          <div className="flex items-center gap-1.5 px-3 py-2 border-b border-error/20 font-label text-[11px] uppercase tracking-widest text-error">
             <AlertTriangle size={12} />
             {broken.length} invalid {broken.length === 1 ? "flow" : "flows"}
           </div>
@@ -115,7 +115,7 @@ export default function Flows() {
               >
                 <div className="flex items-center gap-2">
                   <span className="font-body text-xs text-on-surface">{b.name}</span>
-                  <code className="font-mono text-[10px] text-outline break-all">{b.path}</code>
+                  <code className="font-mono text-[11px] text-outline break-all">{b.path}</code>
                 </div>
                 <ul className="space-y-0.5">
                   {b.errors.map((err) => (
@@ -148,16 +148,16 @@ export default function Flows() {
           <Table>
             <TableHeader>
               <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
                   Name
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
                   Description
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-44">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-44">
                   Source
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-20">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-20">
                   Shape
                 </TableHead>
               </TableRow>
@@ -178,7 +178,7 @@ export default function Flows() {
                       {flow.name === data?.default_flow && (
                         <span
                           data-testid="flow-default-badge"
-                          className="px-1.5 py-0.5 font-label text-[9px] uppercase tracking-wider border bg-surface-highest border-outline-variant text-on-surface-variant"
+                          className="px-1.5 py-0.5 font-label text-[10px] uppercase tracking-wider border bg-surface-highest border-outline-variant text-on-surface-variant"
                         >
                           default
                         </span>
@@ -191,21 +191,21 @@ export default function Flows() {
                   <TableCell>
                     <div className="flex flex-wrap items-center gap-1">
                       <span
-                        className={`inline-flex px-2 py-0.5 font-label text-[10px] uppercase tracking-wider border ${SOURCE_COLORS[flow.source]}`}
+                        className={`inline-flex px-2 py-0.5 font-label text-[11px] uppercase tracking-wider border ${SOURCE_COLORS[flow.source]}`}
                       >
                         {flow.source}
                       </span>
                       {flow.shadows && (
                         <span
                           data-testid="flow-shadows-badge"
-                          className="inline-flex px-2 py-0.5 font-label text-[10px] uppercase tracking-wider border bg-surface-highest border-outline-variant text-on-surface-variant"
+                          className="inline-flex px-2 py-0.5 font-label text-[11px] uppercase tracking-wider border bg-surface-highest border-outline-variant text-on-surface-variant"
                         >
                           shadows {flow.shadows}
                         </span>
                       )}
                     </div>
                   </TableCell>
-                  <TableCell className="font-label text-[10px] text-outline whitespace-nowrap">
+                  <TableCell className="font-label text-[11px] text-outline whitespace-nowrap">
                     {flow.node_count}n · {flow.edge_count}e
                   </TableCell>
                 </TableRow>
@@ -260,17 +260,17 @@ function FlowDetailSheet({
               <div className="grid grid-cols-2 gap-4">
                 <DetailField label="Source">
                   <span
-                    className={`inline-flex px-2 py-0.5 font-label text-[10px] uppercase tracking-wider border ${SOURCE_COLORS[flow.source]}`}
+                    className={`inline-flex px-2 py-0.5 font-label text-[11px] uppercase tracking-wider border ${SOURCE_COLORS[flow.source]}`}
                   >
                     {flow.source}
                   </span>
                 </DetailField>
                 <DetailField label="Entry">
-                  <code className="font-mono text-[10px]">{definition.entry}</code>
+                  <code className="font-mono text-[11px]">{definition.entry}</code>
                 </DetailField>
                 <DetailField label="Version">{definition.version}</DetailField>
                 <DetailField label="Path">
-                  <code className="font-mono text-[10px] text-outline break-all">
+                  <code className="font-mono text-[11px] text-outline break-all">
                     {flow.path ?? "compiled in"}
                   </code>
                 </DetailField>
@@ -291,7 +291,7 @@ function FlowDetailSheet({
               </div>
 
               <div className="space-y-1">
-                <div className="font-label text-[10px] uppercase tracking-widest text-outline">
+                <div className="font-label text-[11px] uppercase tracking-widest text-outline">
                   Nodes ({definition.nodes.length})
                 </div>
                 {definition.nodes.map((node) => (
@@ -303,19 +303,19 @@ function FlowDetailSheet({
                   >
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-body text-xs text-on-surface">{node.id}</span>
-                      <span className="font-label text-[9px] uppercase tracking-wider text-outline">
+                      <span className="font-label text-[10px] uppercase tracking-wider text-outline">
                         {node.kind}
                       </span>
                       {node.skill && (
-                        <span className="font-mono text-[10px] text-primary">{node.skill}</span>
+                        <span className="font-mono text-[11px] text-primary">{node.skill}</span>
                       )}
                       {node.task_status && (
-                        <span className="font-label text-[9px] uppercase text-outline">
+                        <span className="font-label text-[10px] uppercase text-outline">
                           sets {node.task_status}
                         </span>
                       )}
                       {node.max_visits !== undefined && (
-                        <span className="font-label text-[9px] uppercase text-outline">
+                        <span className="font-label text-[10px] uppercase text-outline">
                           max {node.max_visits} visits
                         </span>
                       )}
@@ -330,7 +330,7 @@ function FlowDetailSheet({
               </div>
 
               <div className="space-y-1">
-                <div className="font-label text-[10px] uppercase tracking-widest text-outline">
+                <div className="font-label text-[11px] uppercase tracking-widest text-outline">
                   Edges ({definition.edges.length}) — evaluated in order
                 </div>
                 {/* Keyed by position: an edge has no id, two edges may share
@@ -342,7 +342,7 @@ function FlowDetailSheet({
                     <div
                       key={index}
                       data-testid="flow-detail-edge"
-                      className="font-mono text-[10px] text-on-surface-variant"
+                      className="font-mono text-[11px] text-on-surface-variant"
                     >
                       {index + 1}. {edge.from} → {edge.to}{" "}
                       <span className="text-outline">when {describeCondition(edge.when)}</span>
@@ -351,7 +351,7 @@ function FlowDetailSheet({
               </div>
 
               <div>
-                <div className="font-label text-[10px] uppercase tracking-widest text-outline mb-2">
+                <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-2">
                   Definition
                 </div>
                 <div className="border border-surface-highest rounded-sm overflow-hidden">

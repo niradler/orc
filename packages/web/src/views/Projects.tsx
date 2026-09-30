@@ -124,13 +124,13 @@ export default function Projects() {
             <TabsTrigger
               key={value}
               value={value}
-              className="font-label text-[10px] uppercase tracking-widest px-4 py-2 rounded-none
+              className="font-label text-[11px] uppercase tracking-widest px-4 py-2 rounded-none
                 data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none
                 text-outline hover:text-on-surface-variant"
             >
               {label}
               {value !== "all" && counts[value] != null && (
-                <span className="ml-1.5 text-[9px] bg-surface-highest px-1.5 py-0.5 rounded-sm">
+                <span className="ml-1.5 text-[10px] bg-surface-highest px-1.5 py-0.5 rounded-sm">
                   {counts[value]}
                 </span>
               )}
@@ -153,22 +153,22 @@ export default function Projects() {
           <Table>
             <TableHeader>
               <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
                   Name
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
                   Description
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-28">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-28">
                   Status
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-36">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-36">
                   Tags
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                   Max Workers
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                   Created
                 </TableHead>
                 <TableHead className="w-10" />
@@ -198,7 +198,7 @@ export default function Projects() {
                       {(p.tags ?? []).map((t) => (
                         <span
                           key={t}
-                          className="font-label text-[9px] px-1.5 py-0.5 bg-surface-highest text-outline border border-surface-highest/50"
+                          className="font-label text-[10px] px-1.5 py-0.5 bg-surface-highest text-outline border border-surface-highest/50"
                         >
                           {t}
                         </span>
@@ -208,7 +208,7 @@ export default function Projects() {
                   <TableCell className="font-label text-xs text-on-surface text-center">
                     {p.max_workers ?? "\u2014"}
                   </TableCell>
-                  <TableCell className="font-label text-[10px] text-outline">
+                  <TableCell className="font-label text-[11px] text-outline">
                     {new Date(p.created_at).toLocaleDateString()}
                   </TableCell>
                   <TableCell>
@@ -304,7 +304,7 @@ function CreateProjectDialog({ open, onClose }: { open: boolean; onClose: () => 
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Name *
             </Label>
             <Input
@@ -317,7 +317,7 @@ function CreateProjectDialog({ open, onClose }: { open: boolean; onClose: () => 
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Description
             </Label>
             <Textarea
@@ -330,7 +330,7 @@ function CreateProjectDialog({ open, onClose }: { open: boolean; onClose: () => 
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Status
               </Label>
               <Select value={status} onValueChange={(v) => setStatus(v as ProjectStatus)}>
@@ -347,7 +347,7 @@ function CreateProjectDialog({ open, onClose }: { open: boolean; onClose: () => 
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Max Workers
               </Label>
               <Input
@@ -361,7 +361,7 @@ function CreateProjectDialog({ open, onClose }: { open: boolean; onClose: () => 
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Tags (comma separated)
             </Label>
             <Input
@@ -372,7 +372,7 @@ function CreateProjectDialog({ open, onClose }: { open: boolean; onClose: () => 
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Scope
             </Label>
             <Input
@@ -466,7 +466,7 @@ function EditProjectDialog({
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Name *
             </Label>
             <Input
@@ -478,7 +478,7 @@ function EditProjectDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Description
             </Label>
             <Textarea
@@ -490,7 +490,7 @@ function EditProjectDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Status
               </Label>
               <Select value={status} onValueChange={(v) => setStatus(v as ProjectStatus)}>
@@ -507,7 +507,7 @@ function EditProjectDialog({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Max Workers
               </Label>
               <Input
@@ -521,7 +521,7 @@ function EditProjectDialog({
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Tags (comma separated)
             </Label>
             <Input
@@ -531,7 +531,7 @@ function EditProjectDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Scope
             </Label>
             <Input
@@ -572,7 +572,7 @@ function ProjectSummaryBar({ summary }: { summary: ProjectSummary }) {
       <DetailField label="Tasks">
         <span className="font-label text-xs text-primary">{summary.tasks.total}</span>
         {Object.keys(summary.tasks.by_status).length > 0 && (
-          <span className="text-outline text-[10px] ml-1">
+          <span className="text-outline text-[11px] ml-1">
             (
             {Object.entries(summary.tasks.by_status)
               .map(([s, n]) => `${n} ${s}`)

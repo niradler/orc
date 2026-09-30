@@ -74,7 +74,7 @@ function SheetDescription({ className, ...props }: React.HTMLAttributes<HTMLPara
   return <p className={cn("font-body text-xs text-outline mt-1", className)} {...props} />;
 }
 
-function SheetBody({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
+function SheetBody({ className, ...props }: React.ComponentPropsWithRef<"div">) {
   return <div className={cn("flex-1 overflow-y-auto px-6 py-4", className)} {...props} />;
 }
 

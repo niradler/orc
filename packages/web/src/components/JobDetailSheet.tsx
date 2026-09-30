@@ -56,13 +56,13 @@ export function JobDetailSheet({ jobId, open, onClose }: JobDetailSheetProps) {
                 </DetailField>
                 <div className="grid grid-cols-2 gap-4">
                   <DetailField label="Trigger Type">
-                    <span className="font-label text-[10px] uppercase tracking-wider px-2 py-0.5 bg-surface-highest text-on-surface-variant border border-surface-highest/50 inline-flex">
+                    <span className="font-label text-[11px] uppercase tracking-wider px-2 py-0.5 bg-surface-highest text-on-surface-variant border border-surface-highest/50 inline-flex">
                       {job.trigger_type}
                     </span>
                   </DetailField>
                   <DetailField label="Enabled">
                     <span
-                      className={`font-label text-[10px] font-bold uppercase ${job.enabled ? "text-secondary" : "text-outline"}`}
+                      className={`font-label text-[11px] font-bold uppercase ${job.enabled ? "text-secondary" : "text-outline"}`}
                     >
                       {job.enabled ? "\u25CF ON" : "\u25CB OFF"}
                     </span>
@@ -91,7 +91,7 @@ export function JobDetailSheet({ jobId, open, onClose }: JobDetailSheetProps) {
 
               {/* Recent runs */}
               <div>
-                <div className="font-label text-[10px] uppercase tracking-widest text-outline mb-3">
+                <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-3">
                   Recent Runs
                 </div>
                 {runsLoading ? (
@@ -102,7 +102,7 @@ export function JobDetailSheet({ jobId, open, onClose }: JobDetailSheetProps) {
                     ))}
                   </div>
                 ) : !runs?.length ? (
-                  <div className="font-label text-[10px] text-outline uppercase py-4 text-center">
+                  <div className="font-label text-[11px] text-outline uppercase py-4 text-center">
                     No runs yet
                   </div>
                 ) : (
@@ -164,7 +164,7 @@ function RunItem({
           <ChevronRight size={12} className="text-outline shrink-0" />
         )}
         <StatusBadge status={run.status} type="job" />
-        <span className="font-label text-[10px] text-outline flex-1">
+        <span className="font-label text-[11px] text-outline flex-1">
           {run.started_at ? new Date(run.started_at).toLocaleString() : "\u2014"}
           {run.ended_at && (
             <span className="ml-2">\u2192 {new Date(run.ended_at).toLocaleString()}</span>
@@ -172,7 +172,7 @@ function RunItem({
         </span>
         {run.exit_code !== null && (
           <span
-            className={`font-mono text-[10px] ${run.exit_code === 0 ? "text-secondary" : "text-error"}`}
+            className={`font-mono text-[11px] ${run.exit_code === 0 ? "text-secondary" : "text-error"}`}
           >
             exit {run.exit_code}
           </span>
@@ -180,7 +180,7 @@ function RunItem({
       </button>
       {run.error_msg && (
         <div className="px-3 pb-2">
-          <span className="font-body text-[10px] text-error">{run.error_msg}</span>
+          <span className="font-body text-[11px] text-error">{run.error_msg}</span>
         </div>
       )}
       {expanded && <RunLogViewer jobId={jobId} runId={run.id} />}
@@ -201,7 +201,7 @@ function RunLogViewer({ jobId, runId }: { jobId: string; runId: string }) {
 
   if (!logs?.length) {
     return (
-      <div className="px-3 pb-3 font-label text-[10px] text-outline uppercase">No log output</div>
+      <div className="px-3 pb-3 font-label text-[11px] text-outline uppercase">No log output</div>
     );
   }
 

@@ -11,6 +11,7 @@ import { FlowPicker, USE_DEFAULT_FLOW, useEffectiveFlow } from "@/components/flo
 import { FlowRunPanel, FlowSectionHeading } from "@/components/flow/FlowRunPanel";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { StatusBadge } from "@/components/StatusBadge";
+import { TaskSessions } from "@/components/TaskSessions";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -174,7 +175,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
               <div className="space-y-6">
                 {task.body && (
                   <div className="space-y-1">
-                    <div className="font-label text-[10px] uppercase tracking-widest text-outline">
+                    <div className="font-label text-[11px] uppercase tracking-widest text-outline">
                       Body
                     </div>
                     <div className="font-body text-xs text-on-surface whitespace-pre-wrap bg-surface-highest/50 p-3 rounded-sm border border-surface-highest">
@@ -185,7 +186,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
 
                 <div className="grid grid-cols-2 gap-4">
                   <DetailField label="ID">
-                    <span className="font-mono text-[10px]">{task.id}</span>
+                    <span className="font-mono text-[11px]">{task.id}</span>
                   </DetailField>
                   <DetailField label="Author">{task.author}</DetailField>
                   <DetailField label="Claimed By">{task.claimed_by ?? "-"}</DetailField>
@@ -222,7 +223,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
 
                 {task.progress > 0 && (
                   <div className="space-y-1">
-                    <div className="font-label text-[10px] uppercase tracking-widest text-outline">
+                    <div className="font-label text-[11px] uppercase tracking-widest text-outline">
                       Progress
                     </div>
                     <div className="flex items-center gap-2">
@@ -232,21 +233,21 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                           style={{ width: `${Math.min(100, task.progress)}%` }}
                         />
                       </div>
-                      <span className="font-label text-[10px] text-outline">{task.progress}%</span>
+                      <span className="font-label text-[11px] text-outline">{task.progress}%</span>
                     </div>
                   </div>
                 )}
 
                 {task.tags && task.tags.length > 0 && (
                   <div className="space-y-1">
-                    <div className="font-label text-[10px] uppercase tracking-widest text-outline">
+                    <div className="font-label text-[11px] uppercase tracking-widest text-outline">
                       Tags
                     </div>
                     <div className="flex flex-wrap gap-1">
                       {task.tags.map((tag) => (
                         <span
                           key={tag}
-                          className="px-2 py-0.5 text-[10px] font-label uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 rounded-sm"
+                          className="px-2 py-0.5 text-[11px] font-label uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 rounded-sm"
                         >
                           {tag}
                         </span>
@@ -255,6 +256,8 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                   </div>
                 )}
 
+                <TaskSessions taskId={task.id} />
+
                 <div className="border-t border-surface-highest pt-4 space-y-3">
                   <FlowSectionHeading />
                   <FlowRunPanel taskId={task.id} />
@@ -262,7 +265,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
 
                 <div className="border-t border-surface-highest pt-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 font-label text-[10px] uppercase tracking-widest text-outline">
+                    <div className="flex items-center gap-1.5 font-label text-[11px] uppercase tracking-widest text-outline">
                       <Link2 size={12} />
                       Links
                     </div>
@@ -279,7 +282,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                     <div className="space-y-2">
                       {Object.entries(linksByType).map(([type, typeLinks]) => (
                         <div key={type} className="space-y-1">
-                          <div className="font-label text-[9px] uppercase tracking-widest text-outline/70">
+                          <div className="font-label text-[10px] uppercase tracking-widest text-outline/70">
                             {type.replace(/_/g, " ")}
                           </div>
                           {typeLinks.map((link) => (
@@ -287,7 +290,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                               key={link.id}
                               className="flex items-center justify-between px-2 py-1 bg-surface-highest/50 rounded-sm"
                             >
-                              <span className="font-mono text-[10px] text-on-surface-variant">
+                              <span className="font-mono text-[11px] text-on-surface-variant">
                                 {link.from_task_id === taskId
                                   ? link.to_task_id.slice(-6)
                                   : link.from_task_id.slice(-6)}
@@ -317,7 +320,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                     <div className="space-y-2 p-2 bg-surface-highest/30 rounded-sm border border-surface-highest">
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
-                          <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+                          <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                             Link Type
                           </Label>
                           <Select
@@ -337,7 +340,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                           </Select>
                         </div>
                         <div className="space-y-1">
-                          <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+                          <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                             Target Task ID
                           </Label>
                           <Input
@@ -357,7 +360,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                             setShowAddLink(false);
                             setLinkToTaskId("");
                           }}
-                          className="font-label text-[10px] uppercase text-outline h-6 px-2"
+                          className="font-label text-[11px] uppercase text-outline h-6 px-2"
                         >
                           Cancel
                         </Button>
@@ -365,7 +368,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                           size="sm"
                           onClick={handleAddLink}
                           disabled={createLink.isPending || !linkToTaskId.trim()}
-                          className="font-label text-[10px] uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 h-6 px-2"
+                          className="font-label text-[11px] uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 h-6 px-2"
                         >
                           Add
                         </Button>
@@ -375,7 +378,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                 </div>
 
                 <div className="border-t border-surface-highest pt-4 space-y-3">
-                  <div className="flex items-center gap-1.5 font-label text-[10px] uppercase tracking-widest text-outline">
+                  <div className="flex items-center gap-1.5 font-label text-[11px] uppercase tracking-widest text-outline">
                     <MessageSquare size={12} />
                     Comments ({comments?.length ?? 0})
                   </div>
@@ -388,10 +391,10 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                           className="p-2 bg-surface-highest/50 rounded-sm border border-surface-highest space-y-1"
                         >
                           <div className="flex items-center justify-between">
-                            <span className="font-label text-[10px] uppercase tracking-wider text-primary">
+                            <span className="font-label text-[11px] uppercase tracking-wider text-primary">
                               {c.author}
                             </span>
-                            <span className="font-label text-[9px] text-outline">
+                            <span className="font-label text-[10px] text-outline">
                               {new Date(c.created_at).toLocaleString()}
                             </span>
                           </div>
@@ -425,7 +428,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                         size="sm"
                         onClick={handleAddComment}
                         disabled={addComment.isPending || !commentText.trim()}
-                        className="font-label text-[10px] uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 h-6 px-2"
+                        className="font-label text-[11px] uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 h-6 px-2"
                       >
                         {addComment.isPending ? "..." : "Comment"}
                       </Button>
@@ -531,7 +534,7 @@ function EditTaskDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Title *
             </Label>
             <Input
@@ -542,7 +545,7 @@ function EditTaskDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Body
             </Label>
             <Textarea
@@ -554,7 +557,7 @@ function EditTaskDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Status
               </Label>
               <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
@@ -571,7 +574,7 @@ function EditTaskDialog({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Priority
               </Label>
               <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
@@ -590,7 +593,7 @@ function EditTaskDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Due At
               </Label>
               <Input
@@ -603,7 +606,7 @@ function EditTaskDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Project
               </Label>
               <Select
@@ -627,7 +630,7 @@ function EditTaskDialog({
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Tags (comma-separated)
             </Label>
             <Input
@@ -639,7 +642,7 @@ function EditTaskDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Skill Name
               </Label>
               <Input
@@ -666,13 +669,13 @@ function EditTaskDialog({
               />
               <Label
                 htmlFor="edit-required-review"
-                className="font-label text-[10px] uppercase tracking-widest text-outline cursor-pointer"
+                className="font-label text-[11px] uppercase tracking-widest text-outline cursor-pointer"
               >
                 Required Review
               </Label>
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Max Review Rounds
               </Label>
               <Input
@@ -685,7 +688,7 @@ function EditTaskDialog({
             </div>
           </div>
           {task.flow_override ? (
-            <p className="font-body text-[10px] text-outline" data-testid="task-flow-override-note">
+            <p className="font-body text-[11px] text-outline" data-testid="task-flow-override-note">
               This task carries an inline flow definition (flow_override), which beats any named
               flow. Detach it with <code>orc flow attach</code> to use a named flow instead.
             </p>

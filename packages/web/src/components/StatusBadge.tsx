@@ -39,7 +39,7 @@ export function StatusBadge({ status, type = "task", className }: StatusBadgePro
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-label font-semibold uppercase tracking-wider border",
+        "inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-label font-semibold uppercase tracking-wider border",
         colors,
         className,
       )}

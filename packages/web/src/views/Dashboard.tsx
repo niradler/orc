@@ -134,7 +134,7 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
           <button
             type="button"
             onClick={() => navigate("/tasks")}
-            className="font-label text-[10px] text-primary hover:underline uppercase tracking-widest"
+            className="font-label text-[11px] text-primary hover:underline uppercase tracking-widest"
           >
             View all →
           </button>
@@ -153,16 +153,16 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
             <Table>
               <TableHeader>
                 <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                  <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">
+                  <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
                     Title
                   </TableHead>
-                  <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-32">
+                  <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-32">
                     Status
                   </TableHead>
-                  <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                  <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                     Priority
                   </TableHead>
-                  <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-28">
+                  <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-28">
                     Updated
                   </TableHead>
                 </TableRow>
@@ -183,7 +183,7 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
                     <TableCell>
                       <PriorityBadge priority={task.priority} />
                     </TableCell>
-                    <TableCell className="font-label text-[10px] text-outline">
+                    <TableCell className="font-label text-[11px] text-outline">
                       {new Date(task.updated_at).toLocaleDateString()}
                     </TableCell>
                   </TableRow>
@@ -205,7 +205,7 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
               <button
                 type="button"
                 onClick={() => navigate("/jobs")}
-                className="font-label text-[10px] text-primary hover:underline uppercase tracking-widest"
+                className="font-label text-[11px] text-primary hover:underline uppercase tracking-widest"
               >
                 View all →
               </button>
@@ -222,10 +222,10 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
                     <div className="font-label text-xs font-semibold text-on-surface">
                       {job.name}
                     </div>
-                    <span className="font-label text-[10px] text-outline">{job.trigger_type}</span>
+                    <span className="font-label text-[11px] text-outline">{job.trigger_type}</span>
                   </div>
                   {job.last_run_at && (
-                    <div className="font-body text-[10px] text-outline mt-1">
+                    <div className="font-body text-[11px] text-outline mt-1">
                       Last run: {new Date(job.last_run_at).toLocaleString()}
                     </div>
                   )}
@@ -245,7 +245,7 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
               <button
                 type="button"
                 onClick={() => navigate("/sessions")}
-                className="font-label text-[10px] text-primary hover:underline uppercase tracking-widest"
+                className="font-label text-[11px] text-primary hover:underline uppercase tracking-widest"
               >
                 View all →
               </button>
@@ -262,12 +262,12 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
                     <div className="font-label text-xs font-semibold text-on-surface">
                       {session.agent ?? "unknown"}
                     </div>
-                    <span className="font-label text-[10px] text-outline">
+                    <span className="font-label text-[11px] text-outline">
                       {new Date(session.created_at).toLocaleString()}
                     </span>
                   </div>
                   {session.summary && (
-                    <div className="font-body text-[10px] text-outline mt-1 truncate">
+                    <div className="font-body text-[11px] text-outline mt-1 truncate">
                       {session.summary}
                     </div>
                   )}
@@ -288,7 +288,7 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
             <button
               type="button"
               onClick={() => navigate("/projects")}
-              className="font-label text-[10px] text-primary hover:underline uppercase tracking-widest"
+              className="font-label text-[11px] text-primary hover:underline uppercase tracking-widest"
             >
               View all →
             </button>
@@ -308,7 +308,7 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
                     {p.name}
                   </div>
                   {p.description && (
-                    <div className="font-body text-[10px] text-outline mt-1 truncate">
+                    <div className="font-body text-[11px] text-outline mt-1 truncate">
                       {p.description}
                     </div>
                   )}

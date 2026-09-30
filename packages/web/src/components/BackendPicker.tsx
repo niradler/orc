@@ -32,7 +32,7 @@ export function BackendPicker({ value, onChange, testId }: BackendPickerProps) {
 
   return (
     <div className="space-y-1.5">
-      <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+      <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
         Agent Backend
       </Label>
       <Select value={value} onValueChange={onChange}>
@@ -61,7 +61,7 @@ export function BackendPicker({ value, onChange, testId }: BackendPickerProps) {
           ))}
         </SelectContent>
       </Select>
-      <p className="font-body text-[10px] text-outline" data-testid="backend-picker-hint">
+      <p className="font-body text-[11px] text-outline" data-testid="backend-picker-hint">
         {isLoading ? "" : hint(value, selected, defaultBackend, backends)}
       </p>
     </div>

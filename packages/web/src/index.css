@@ -12,6 +12,7 @@
     background-color: #090e1a;
     color: #e1e5f6;
     font-family: Inter, sans-serif;
+    font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -46,4 +47,9 @@
   50% {
     border-left-color: rgba(255, 113, 108, 1);
   }
+}
+
+::highlight(session-search) {
+  background-color: rgba(120, 176, 255, 0.35);
+  color: inherit;
 }

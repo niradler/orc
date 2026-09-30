@@ -135,7 +135,7 @@ export default function Memories({ projectId: savedProjectId }: { projectId: str
             key={tab.value}
             type="button"
             onClick={() => setTypeFilter(tab.value)}
-            className={`font-label text-[10px] uppercase tracking-widest px-3 py-1.5 border transition-colors ${
+            className={`font-label text-[11px] uppercase tracking-widest px-3 py-1.5 border transition-colors ${
               typeFilter === tab.value
                 ? "bg-primary/15 text-primary border-primary/30"
                 : "bg-surface-highest border-surface-highest text-outline hover:text-on-surface-variant"
@@ -195,22 +195,22 @@ export default function Memories({ projectId: savedProjectId }: { projectId: str
           <Table>
             <TableHeader>
               <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
                   Title
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                   Type
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                   Importance
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                   Source
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-36">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-36">
                   Tags
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                   Created
                 </TableHead>
                 <TableHead className="w-10" />
@@ -230,19 +230,19 @@ export default function Memories({ projectId: savedProjectId }: { projectId: str
                   </TableCell>
                   <TableCell>
                     <span
-                      className={`inline-flex px-2 py-0.5 font-label text-[10px] uppercase tracking-wider border ${TYPE_COLORS[mem.type] ?? ""}`}
+                      className={`inline-flex px-2 py-0.5 font-label text-[11px] uppercase tracking-wider border ${TYPE_COLORS[mem.type] ?? ""}`}
                     >
                       {mem.type}
                     </span>
                   </TableCell>
                   <TableCell>
                     <span
-                      className={`inline-flex px-2 py-0.5 font-label text-[10px] uppercase tracking-wider border ${IMPORTANCE_COLORS[mem.importance] ?? ""}`}
+                      className={`inline-flex px-2 py-0.5 font-label text-[11px] uppercase tracking-wider border ${IMPORTANCE_COLORS[mem.importance] ?? ""}`}
                     >
                       {mem.importance}
                     </span>
                   </TableCell>
-                  <TableCell className="font-label text-[10px] text-outline">
+                  <TableCell className="font-label text-[11px] text-outline">
                     {mem.source ?? "\u2014"}
                   </TableCell>
                   <TableCell>
@@ -250,14 +250,14 @@ export default function Memories({ projectId: savedProjectId }: { projectId: str
                       {(mem.tags ?? []).map((t) => (
                         <span
                           key={t}
-                          className="font-label text-[9px] px-1.5 py-0.5 bg-surface-highest text-outline border border-surface-highest/50"
+                          className="font-label text-[10px] px-1.5 py-0.5 bg-surface-highest text-outline border border-surface-highest/50"
                         >
                           {t}
                         </span>
                       ))}
                     </div>
                   </TableCell>
-                  <TableCell className="font-label text-[10px] text-outline">
+                  <TableCell className="font-label text-[11px] text-outline">
                     {new Date(mem.created_at).toLocaleDateString()}
                   </TableCell>
                   <TableCell>
@@ -368,7 +368,7 @@ function CreateMemoryDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3 mt-2">
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Title
             </Label>
             <Input
@@ -380,7 +380,7 @@ function CreateMemoryDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Type
               </Label>
               <Select value={type} onValueChange={(v) => setType(v as MemoryType)}>
@@ -397,7 +397,7 @@ function CreateMemoryDialog({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Importance
               </Label>
               <Select
@@ -418,7 +418,7 @@ function CreateMemoryDialog({
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Content *
             </Label>
             <Textarea
@@ -433,7 +433,7 @@ function CreateMemoryDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Source
               </Label>
               <Input
@@ -444,7 +444,7 @@ function CreateMemoryDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Scope
               </Label>
               <Input
@@ -457,7 +457,7 @@ function CreateMemoryDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Tags (comma-separated)
               </Label>
               <Input
@@ -468,7 +468,7 @@ function CreateMemoryDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Expires At
               </Label>
               <Input
@@ -480,7 +480,7 @@ function CreateMemoryDialog({
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Project
             </Label>
             <Select
@@ -582,7 +582,7 @@ function EditMemoryDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3 mt-2">
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Title
             </Label>
             <Input
@@ -594,7 +594,7 @@ function EditMemoryDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Type
               </Label>
               <Select value={type} onValueChange={(v) => setType(v as MemoryType)}>
@@ -611,7 +611,7 @@ function EditMemoryDialog({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Importance
               </Label>
               <Select
@@ -632,7 +632,7 @@ function EditMemoryDialog({
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Content *
             </Label>
             <Textarea
@@ -646,7 +646,7 @@ function EditMemoryDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Source
               </Label>
               <Input
@@ -657,7 +657,7 @@ function EditMemoryDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Scope
               </Label>
               <Input
@@ -669,7 +669,7 @@ function EditMemoryDialog({
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Tags (comma-separated)
             </Label>
             <Input

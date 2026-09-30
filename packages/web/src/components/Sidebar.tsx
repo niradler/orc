@@ -93,7 +93,7 @@ export function Sidebar({
           {collapsed && !embedded ? <span title="ORC">&#x25C8;</span> : "◈ ORC"}
         </div>
         {(!collapsed || embedded) && (
-          <div className="font-label text-[10px] tracking-widest text-outline uppercase mt-1">
+          <div className="font-label text-[11px] tracking-widest text-outline uppercase mt-1">
             Agent Orchestration
           </div>
         )}
@@ -104,7 +104,7 @@ export function Sidebar({
         <div className="shrink-0 px-3 mb-6">
           <label
             htmlFor="sidebar-project-select"
-            className="font-label text-[9px] uppercase tracking-widest text-outline px-3 mb-1 block"
+            className="font-label text-[10px] uppercase tracking-widest text-outline px-3 mb-1 block"
           >
             Scope
           </label>
@@ -220,7 +220,7 @@ export function Sidebar({
             )}
           />
           {(!collapsed || embedded) && (
-            <span className="font-label text-[9px] text-outline uppercase tracking-widest">
+            <span className="font-label text-[10px] text-outline uppercase tracking-widest">
               {isError ? "OFFLINE" : health ? `v${health.version}` : "CONNECTING..."}
             </span>
           )}

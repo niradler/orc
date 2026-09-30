@@ -126,6 +126,51 @@ export type Session = {
   updated_at: string;
 };
 
+export type LiveSessionStatus = "idle" | "running" | "stopped" | "error";
+export type LiveSession = {
+  id: string;
+  agent: string;
+  session_id: string | null;
+  name: string | null;
+  summary: string | null;
+  tokens_used: number | null;
+  tokens_estimated: boolean;
+  cwd: string | null;
+  pid: number | null;
+  status: LiveSessionStatus;
+  project_id: string | null;
+  task: { id: string; title: string; status: string } | null;
+  last_activity_at: string | null;
+  created_at: string;
+};
+
+export type LiveSessionHit = LiveSession & {
+  score: number;
+  matched: string[];
+  snippets: string[];
+};
+export type SessionSearchResult = { rg: boolean; ms: number; hits: LiveSessionHit[] };
+
+export type TranscriptBlock =
+  | { type: "text"; text: string }
+  | { type: "thinking"; text: string }
+  | { type: "tool_use"; name: string; input: string; id?: string; result?: string }
+  | { type: "tool_result"; text: string; forId?: string };
+export type TranscriptTurn = {
+  index: number;
+  role: "user" | "assistant" | "tool" | "system";
+  time: string | null;
+  blocks: TranscriptBlock[];
+};
+export type TranscriptPage = {
+  total: number;
+  offset: number;
+  matches: number[];
+  turns: TranscriptTurn[];
+};
+
+export type SessionSyncResult = { backend: string; seen: number; ms: number; error?: string };
+
 export type SessionDetail = Session & {
   events: SessionEvent[];
   snapshot: string | null;

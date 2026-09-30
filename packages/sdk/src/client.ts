@@ -19,18 +19,22 @@ import type {
   Job,
   JobRun,
   JobRunLog,
+  LiveSession,
   Memory,
   Project,
   ProjectSummary,
   ResumeFlowInput,
   Session,
   SessionDetail,
+  SessionSearchResult,
+  SessionSyncResult,
   SkillFull,
   SkillMeta,
   SkillRefContent,
   SkillSource,
   Task,
   TaskLink,
+  TranscriptPage,
   UpdateJobInput,
   UpdateMemoryInput,
   UpdateProjectInput,
@@ -319,6 +323,35 @@ export function createOrcClient(options?: OrcClientOptions) {
         ),
 
       get: (id: string) => c<SessionDetail>("GET", `/sessions/${id}`),
+
+      sync: () => c<{ results: SessionSyncResult[] }>("POST", "/sessions/live/sync"),
+
+      search: (params: { q: string; agent?: string; limit?: number }) =>
+        c<SessionSearchResult>(
+          "GET",
+          "/sessions/live/search",
+          undefined,
+          params as Record<string, string | number | boolean | undefined>,
+        ),
+
+      transcript: (id: string, params?: { offset?: number; limit?: number; q?: string }) =>
+        c<TranscriptPage>(
+          "GET",
+          `/sessions/live/${id}/transcript`,
+          undefined,
+          params as Record<string, string | number | boolean | undefined>,
+        ),
+
+      live: (params?: { agent?: string; task_id?: string; active?: boolean; limit?: number }) =>
+        c<{ sessions: LiveSession[] }>(
+          "GET",
+          "/sessions/live",
+          undefined,
+          params as Record<string, string | number | boolean | undefined>,
+        ),
+
+      linkTask: (id: string, task_id: string | null) =>
+        c<LiveSession>("PATCH", `/sessions/live/${id}`, { task_id }),
     },
 
     tags: {

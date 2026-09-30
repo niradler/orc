@@ -48,12 +48,12 @@ export function KanbanColumn({
               className="w-2 h-2 rounded-full flex-shrink-0"
               style={{ backgroundColor: color }}
             />
-            <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant">
+            <span className="font-label text-[11px] uppercase tracking-widest text-on-surface-variant">
               {label}
             </span>
           </div>
           <span
-            className="text-[10px] font-label px-1.5 py-0.5 rounded-sm
+            className="text-[11px] font-label px-1.5 py-0.5 rounded-sm
               bg-surface-highest text-outline"
           >
             {tasks.length}
@@ -74,7 +74,7 @@ export function KanbanColumn({
         ))}
 
         {tasks.length === 0 && (
-          <div className="flex items-center justify-center h-16 text-outline text-[10px] font-label uppercase tracking-widest">
+          <div className="flex items-center justify-center h-16 text-outline text-[11px] font-label uppercase tracking-widest">
             Empty
           </div>
         )}

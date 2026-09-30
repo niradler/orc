@@ -58,7 +58,7 @@ const NODE_STATUS_COLORS: Record<string, string> = {
 function Chip({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <span
-      className={`inline-flex px-2 py-0.5 font-label text-[10px] uppercase tracking-wider border ${
+      className={`inline-flex px-2 py-0.5 font-label text-[11px] uppercase tracking-wider border ${
         className ?? "bg-surface-highest border-surface-highest text-on-surface-variant"
       }`}
     >
@@ -134,7 +134,7 @@ function FlowRunBody({
             data-testid="flow-halt-button"
             size="sm"
             onClick={() => setHalting(true)}
-            className="font-label text-[10px] uppercase bg-error/10 text-error border border-error/30 hover:bg-error/20 h-6 px-2"
+            className="font-label text-[11px] uppercase bg-error/10 text-error border border-error/30 hover:bg-error/20 h-6 px-2"
           >
             <CircleStop size={11} className="mr-1" />
             Halt
@@ -148,7 +148,7 @@ function FlowRunBody({
           data-testid="flow-halt-reason"
           data-halt-reason={run.halt_reason}
         >
-          <div className="font-label text-[10px] uppercase tracking-widest text-error">
+          <div className="font-label text-[11px] uppercase tracking-widest text-error">
             Halted: {run.halt_reason.replace(/_/g, " ")}
           </div>
           {run.halt_description && (
@@ -202,7 +202,7 @@ function FlowRunBody({
 
       {flowVars.length > 0 && (
         <div className="space-y-1" data-testid="flow-run-vars">
-          <div className="font-label text-[10px] uppercase tracking-widest text-outline">
+          <div className="font-label text-[11px] uppercase tracking-widest text-outline">
             Run vars
           </div>
           <div className="flex flex-wrap gap-1">
@@ -237,7 +237,7 @@ function FlowRunBody({
 function RunFact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-0.5">
-      <div className="font-label text-[9px] uppercase tracking-widest text-outline">{label}</div>
+      <div className="font-label text-[10px] uppercase tracking-widest text-outline">{label}</div>
       <div className="font-body text-xs text-on-surface-variant">{children}</div>
     </div>
   );
@@ -273,7 +273,7 @@ function HumanGateForm({
       data-testid="flow-gate-form"
       data-gate-node={nodeRun.node_id}
     >
-      <div className="flex items-center gap-1.5 font-label text-[10px] uppercase tracking-widest text-tertiary">
+      <div className="flex items-center gap-1.5 font-label text-[11px] uppercase tracking-widest text-tertiary">
         <UserCheck size={12} />
         Waiting for you at “{nodeRun.node_id}”
       </div>
@@ -284,7 +284,7 @@ function HumanGateForm({
       )}
 
       <div className="space-y-1.5">
-        <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+        <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
           Outcome
         </Label>
         {outcomes.length > 0 ? (
@@ -312,7 +312,7 @@ function HumanGateForm({
               placeholder="e.g. approved"
               className="bg-background border-surface-highest text-on-surface font-body text-xs h-7"
             />
-            <p className="font-body text-[10px] text-outline">
+            <p className="font-body text-[11px] text-outline">
               This node routes everything through a catch-all edge, so any outcome continues the
               flow.
             </p>
@@ -321,7 +321,7 @@ function HumanGateForm({
       </div>
 
       <div className="space-y-1.5">
-        <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+        <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
           Comment (posted on the task)
         </Label>
         <Textarea
@@ -356,7 +356,7 @@ function HumanGateForm({
               { onSuccess: () => setComment("") },
             )
           }
-          className="font-label text-[10px] uppercase bg-tertiary/15 text-tertiary border border-tertiary/30 hover:bg-tertiary/25 h-6 px-2"
+          className="font-label text-[11px] uppercase bg-tertiary/15 text-tertiary border border-tertiary/30 hover:bg-tertiary/25 h-6 px-2"
         >
           {resume.isPending ? "…" : "Resume Flow"}
         </Button>
@@ -401,13 +401,13 @@ function NodeDetail({ definition, nodeId }: { definition: FlowGraphDefinition; n
       )}
       {outgoing.length > 0 && (
         <div className="space-y-0.5">
-          <div className="font-label text-[9px] uppercase tracking-widest text-outline">
+          <div className="font-label text-[10px] uppercase tracking-widest text-outline">
             Outgoing edges (first match wins)
           </div>
           {outgoing.map(({ edge, index }, i) => (
             <div
               key={index}
-              className="font-mono text-[10px] text-on-surface-variant"
+              className="font-mono text-[11px] text-on-surface-variant"
               data-testid="flow-node-detail-edge"
             >
               {i + 1}. → {edge.to}{" "}
@@ -432,7 +432,7 @@ function Ledger({
 }) {
   return (
     <div className="space-y-1">
-      <div className="font-label text-[10px] uppercase tracking-widest text-outline">
+      <div className="font-label text-[11px] uppercase tracking-widest text-outline">
         Ledger ({run.nodes.length} {run.nodes.length === 1 ? "visit" : "visits"})
       </div>
       {run.nodes.length === 0 ? (
@@ -458,26 +458,26 @@ function Ledger({
               }`}
             >
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-label text-[9px] text-outline">{index + 1}</span>
+                <span className="font-label text-[10px] text-outline">{index + 1}</span>
                 <span className="font-body text-xs text-on-surface">{nodeRun.node_id}</span>
-                <span className="font-label text-[9px] text-outline">
+                <span className="font-label text-[10px] text-outline">
                   visit {nodeRun.attempt}
                   {nodeRun.retry > 0 ? ` · retry ${nodeRun.retry}` : ""}
                 </span>
                 <span
-                  className={`font-label text-[9px] uppercase tracking-wider ${
+                  className={`font-label text-[10px] uppercase tracking-wider ${
                     NODE_STATUS_COLORS[nodeRun.status] ?? "text-outline"
                   }`}
                 >
                   {nodeRun.status.replace(/_/g, " ")}
                 </span>
                 {nodeRun.outcome && (
-                  <span className="font-label text-[9px] text-primary">→ {nodeRun.outcome}</span>
+                  <span className="font-label text-[10px] text-primary">→ {nodeRun.outcome}</span>
                 )}
                 {/* A queued or parked node has no started_at, so fall back to
                     when the row was written - the same COALESCE the runner uses
                     to decide how long a gate has been waiting. */}
-                <span className="font-label text-[9px] text-outline ml-auto">
+                <span className="font-label text-[10px] text-outline ml-auto">
                   {formatDuration(nodeRun.started_at ?? nodeRun.created_at, nodeRun.ended_at)}
                   {nodeRun.started_at === null && isLive(nodeRun.status) ? " waiting" : ""}
                 </span>
@@ -496,7 +496,7 @@ function Ledger({
                 <Link
                   to={`/sessions/${nodeRun.gateway_session_id}`}
                   onClick={(e) => e.stopPropagation()}
-                  className="font-mono text-[10px] text-primary hover:underline mt-1 inline-block"
+                  className="font-mono text-[11px] text-primary hover:underline mt-1 inline-block"
                   data-testid="flow-ledger-session-link"
                 >
                   session {nodeRun.gateway_session_id.slice(-8)}
@@ -513,7 +513,7 @@ function Ledger({
 /** Header used by the task sheet so the section reads as one thing. */
 export function FlowSectionHeading({ children }: { children?: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-1.5 font-label text-[10px] uppercase tracking-widest text-outline">
+    <div className="flex items-center gap-1.5 font-label text-[11px] uppercase tracking-widest text-outline">
       <GitBranch size={12} />
       Flow
       {children}

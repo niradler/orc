@@ -19,7 +19,7 @@ export function ViewHeader({ title, action, meta }: ViewHeaderProps) {
         {meta && (
           <span
             data-testid="view-meta"
-            className="font-label text-[10px] text-outline uppercase tracking-widest"
+            className="font-label text-[11px] text-outline uppercase tracking-widest"
           >
             {meta}
           </span>

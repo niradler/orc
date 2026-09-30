@@ -273,7 +273,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
               value={priorityFilter}
               onValueChange={(v) => setPriorityFilter(v as TaskPriority | "all")}
             >
-              <SelectTrigger className="bg-surface border-surface-highest text-on-surface font-label text-[10px] uppercase tracking-widest w-32 h-8">
+              <SelectTrigger className="bg-surface border-surface-highest text-on-surface font-label text-[11px] uppercase tracking-widest w-32 h-8">
                 <SelectValue placeholder="Priority" />
               </SelectTrigger>
               <SelectContent className="bg-surface-highest border-surface-highest">
@@ -299,18 +299,18 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
                 <TabsTrigger
                   key={value}
                   value={value}
-                  className="font-label text-[10px] uppercase tracking-widest px-4 py-2 rounded-none
+                  className="font-label text-[11px] uppercase tracking-widest px-4 py-2 rounded-none
                     data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none
                     text-outline hover:text-on-surface-variant"
                 >
                   {label}
                   {value !== "all" && counts[value] != null && (
-                    <span className="ml-1.5 text-[9px] bg-surface-highest px-1.5 py-0.5 rounded-sm">
+                    <span className="ml-1.5 text-[10px] bg-surface-highest px-1.5 py-0.5 rounded-sm">
                       {counts[value]}
                     </span>
                   )}
                   {value === "all" && (
-                    <span className="ml-1.5 text-[9px] bg-surface-highest px-1.5 py-0.5 rounded-sm">
+                    <span className="ml-1.5 text-[10px] bg-surface-highest px-1.5 py-0.5 rounded-sm">
                       {filteredByProject.length}
                     </span>
                   )}
@@ -333,34 +333,34 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
               <Table>
                 <TableHeader>
                   <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                    <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-16">
+                    <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-16">
                       ID
                     </TableHead>
-                    <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">
+                    <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
                       Title
                     </TableHead>
-                    <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-40">
+                    <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-40">
                       Status
                     </TableHead>
-                    <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-28">
+                    <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-28">
                       Priority
                     </TableHead>
-                    <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                    <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                       Tags
                     </TableHead>
                     <TableHead
-                      className="font-label text-[10px] uppercase tracking-widest text-outline w-16"
+                      className="font-label text-[11px] uppercase tracking-widest text-outline w-16"
                       title="Comments"
                     >
                       <MessageSquare size={12} className="inline" />
                     </TableHead>
-                    <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                    <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                       Due
                     </TableHead>
-                    <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                    <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                       Author
                     </TableHead>
-                    <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                    <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                       Updated
                     </TableHead>
                     <TableHead className="w-10" />
@@ -376,7 +376,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
                       className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
                       onClick={() => openDetail(task.id)}
                     >
-                      <TableCell className="font-label text-[10px] text-outline">
+                      <TableCell className="font-label text-[11px] text-outline">
                         {task.id.slice(-6)}
                       </TableCell>
                       <TableCell className="font-body text-xs text-on-surface max-w-xs truncate">
@@ -427,21 +427,23 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
                             task.tags.slice(0, 2).map((tag) => (
                               <span
                                 key={tag}
-                                className="px-1.5 py-0.5 text-[9px] font-label uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 rounded-sm"
+                                className="px-1.5 py-0.5 text-[10px] font-label uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 rounded-sm"
                               >
                                 {tag}
                               </span>
                             ))
                           ) : (
-                            <span className="text-outline text-[10px]">-</span>
+                            <span className="text-outline text-[11px]">-</span>
                           )}
                           {task.tags && task.tags.length > 2 && (
-                            <span className="text-outline text-[9px]">+{task.tags.length - 2}</span>
+                            <span className="text-outline text-[10px]">
+                              +{task.tags.length - 2}
+                            </span>
                           )}
                         </div>
                       </TableCell>
                       <TableCell
-                        className="font-label text-[10px] text-outline"
+                        className="font-label text-[11px] text-outline"
                         data-testid="task-comments-count"
                       >
                         {task.comments_count && task.comments_count > 0 ? (
@@ -454,16 +456,16 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
                         )}
                       </TableCell>
                       <TableCell
-                        className={`font-label text-[10px] ${
+                        className={`font-label text-[11px] ${
                           isOverdue(task.due_at, task.status) ? "text-error" : "text-outline"
                         }`}
                       >
                         {task.due_at ? new Date(task.due_at).toLocaleDateString() : "-"}
                       </TableCell>
-                      <TableCell className="font-label text-[10px] text-outline">
+                      <TableCell className="font-label text-[11px] text-outline">
                         {task.author}
                       </TableCell>
-                      <TableCell className="font-label text-[10px] text-outline">
+                      <TableCell className="font-label text-[11px] text-outline">
                         {new Date(task.updated_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell>
@@ -592,7 +594,7 @@ function CreateTaskDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Title *
             </Label>
             <Input
@@ -605,7 +607,7 @@ function CreateTaskDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Body
             </Label>
             <Textarea
@@ -618,7 +620,7 @@ function CreateTaskDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Status
               </Label>
               <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
@@ -635,7 +637,7 @@ function CreateTaskDialog({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Priority
               </Label>
               <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
@@ -654,7 +656,7 @@ function CreateTaskDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Due At
               </Label>
               <Input
@@ -665,7 +667,7 @@ function CreateTaskDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Project
               </Label>
               <Select
@@ -689,7 +691,7 @@ function CreateTaskDialog({
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Tags (comma-separated)
             </Label>
             <Input
@@ -701,7 +703,7 @@ function CreateTaskDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Author
               </Label>
               <Input
@@ -712,7 +714,7 @@ function CreateTaskDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Skill Name
               </Label>
               <Input

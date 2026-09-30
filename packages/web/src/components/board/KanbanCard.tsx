@@ -95,7 +95,7 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
             {statusLabel && (
               <span
                 data-testid="kanban-card-status"
-                className="text-[9px] font-label uppercase tracking-wider text-on-surface-variant
+                className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant
                   bg-surface-highest px-1.5 py-0.5 rounded-sm flex-shrink-0"
               >
                 {statusLabel}
@@ -105,7 +105,7 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
             {task.tags?.slice(0, 2).map((tag) => (
               <span
                 key={tag}
-                className="text-[9px] font-label text-outline bg-surface-highest
+                className="text-[10px] font-label text-outline bg-surface-highest
                   px-1.5 py-0.5 rounded-sm truncate max-w-[60px]"
               >
                 {tag}
@@ -116,14 +116,14 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
           <div className="flex items-center gap-1.5 flex-shrink-0">
             {task.comments_count != null && task.comments_count > 0 && (
               <span
-                className="flex items-center gap-0.5 text-[9px] font-label text-outline"
+                className="flex items-center gap-0.5 text-[10px] font-label text-outline"
                 title={`${task.comments_count} comment${task.comments_count === 1 ? "" : "s"}`}
               >
                 <MessageSquare size={9} />
                 {task.comments_count}
               </span>
             )}
-            <span className="text-[9px] font-label text-outline">
+            <span className="text-[10px] font-label text-outline">
               {formatRelative(task.updated_at)}
             </span>
 

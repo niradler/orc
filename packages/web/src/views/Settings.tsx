@@ -48,7 +48,7 @@ export default function Settings() {
           <Separator className="bg-surface-highest mb-4" />
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 API Base URL
               </Label>
               <Input
@@ -57,12 +57,12 @@ export default function Settings() {
                 placeholder="/api  or  http://localhost:7700"
                 className="bg-surface-highest border-surface-highest text-on-surface font-body text-sm"
               />
-              <p className="font-body text-[10px] text-outline">
+              <p className="font-body text-[11px] text-outline">
                 Use <code>/api</code> (dev proxy) or a direct URL when CORS is enabled.
               </p>
             </div>
             <div className="space-y-2">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 API Secret (Bearer Token)
               </Label>
               <Input
@@ -104,7 +104,7 @@ export default function Settings() {
         {/* Info */}
         <section>
           <Separator className="bg-surface-highest mb-4" />
-          <div className="font-label text-[9px] uppercase tracking-widest text-outline mb-2">
+          <div className="font-label text-[10px] uppercase tracking-widest text-outline mb-2">
             Storage
           </div>
           <p className="font-body text-xs text-outline">

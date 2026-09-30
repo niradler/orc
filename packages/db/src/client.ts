@@ -408,6 +408,9 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE jobs ADD COLUMN skill_name TEXT",
     "ALTER TABLE tasks ADD COLUMN agent_model TEXT",
     "ALTER TABLE gateway_sessions ADD COLUMN permission_mode TEXT",
+    "ALTER TABLE gateway_sessions ADD COLUMN summary TEXT",
+    "ALTER TABLE gateway_sessions ADD COLUMN transcript_path TEXT",
+    "ALTER TABLE gateway_sessions ADD COLUMN tokens_used INTEGER",
     // Drift fix: schema.ts has declared bridge_chats.project_id for a while, but
     // it was only ever added to existing DBs out-of-band — fresh installs never
     // got it, so any drizzle insert into bridge_chats failed. Skipped as a
@@ -446,6 +449,8 @@ function setupDb(sqlite: Database): void {
   try {
     sqlite.exec(`INSERT OR IGNORE INTO bridge_chats (id, platform, chat_id, mode, authorized, updated_at, created_at)
       VALUES ('__task-loop__', 'telegram', '__task-loop__', 'direct', 0, unixepoch(), unixepoch())`);
+    sqlite.exec(`INSERT OR IGNORE INTO bridge_chats (id, platform, chat_id, mode, authorized, updated_at, created_at)
+      VALUES ('__live-sessions__', 'telegram', '__live-sessions__', 'direct', 0, unixepoch(), unixepoch())`);
   } catch {}
 }
 
