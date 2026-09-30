@@ -54,22 +54,22 @@ export default function Sessions({ projectId: savedProjectId }: { projectId: str
           <Table>
             <TableHeader>
               <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
                   Agent
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                   Version
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
                   Summary
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                   Project
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-28">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-28">
                   Tokens Used
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-36">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-36">
                   Created
                 </TableHead>
               </TableRow>
@@ -86,19 +86,19 @@ export default function Sessions({ projectId: savedProjectId }: { projectId: str
                   <TableCell className="font-label text-xs text-primary">
                     {s.agent ?? "\u2014"}
                   </TableCell>
-                  <TableCell className="font-label text-[10px] text-outline">
+                  <TableCell className="font-label text-[11px] text-outline">
                     {s.agent_version ?? "\u2014"}
                   </TableCell>
                   <TableCell className="font-body text-xs text-on-surface-variant max-w-sm truncate">
                     {s.summary ?? "\u2014"}
                   </TableCell>
-                  <TableCell className="font-label text-[10px] text-outline">
+                  <TableCell className="font-label text-[11px] text-outline">
                     {s.project_id ? s.project_id.slice(-6) : "\u2014"}
                   </TableCell>
-                  <TableCell className="font-label text-[10px] text-outline text-right">
+                  <TableCell className="font-label text-[11px] text-outline text-right">
                     {s.tokens_used != null ? s.tokens_used.toLocaleString() : "\u2014"}
                   </TableCell>
-                  <TableCell className="font-label text-[10px] text-outline">
+                  <TableCell className="font-label text-[11px] text-outline">
                     {new Date(s.created_at).toLocaleString()}
                   </TableCell>
                 </TableRow>

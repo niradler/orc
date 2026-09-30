@@ -31,7 +31,7 @@ export function FlowPicker({ value, onChange, testId, disabled }: FlowPickerProp
 
   return (
     <div className="space-y-1.5">
-      <Label className="font-label text-[10px] uppercase tracking-widest text-outline">Flow</Label>
+      <Label className="font-label text-[11px] uppercase tracking-widest text-outline">Flow</Label>
       <Select value={value} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger
           data-testid={testId ?? "flow-picker"}
@@ -51,7 +51,7 @@ export function FlowPicker({ value, onChange, testId, disabled }: FlowPickerProp
           ))}
         </SelectContent>
       </Select>
-      <p className="font-body text-[10px] text-outline" data-testid="flow-picker-hint">
+      <p className="font-body text-[11px] text-outline" data-testid="flow-picker-hint">
         {/* Nothing until the list is in: "not in the flow list" would be a lie
             about a flow we simply have not fetched yet. */}
         {isLoading ? "" : flowHint(value, flows, defaultFlow)}

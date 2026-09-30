@@ -112,7 +112,7 @@ function ToolBox({
       data-testid="tool-box"
       className="rounded-sm border border-surface-highest bg-surface-lowest/60"
     >
-      <summary className="flex cursor-pointer items-center gap-2 px-2 py-1.5 font-label text-[10px] uppercase tracking-widest text-outline hover:text-on-surface">
+      <summary className="flex cursor-pointer items-center gap-2 px-2 py-1.5 font-label text-[11px] uppercase tracking-widest text-outline hover:text-on-surface">
         <span className="text-secondary shrink-0">{block.name}</span>
         <span className="min-w-0 flex-1 truncate font-mono normal-case tracking-normal text-on-surface-variant">
           {inputPreview(block.input)}
@@ -122,13 +122,15 @@ function ToolBox({
         </span>
       </summary>
       <div className="space-y-2 border-t border-surface-highest px-2 py-2">
-        <div className="font-label text-[9px] uppercase tracking-widest text-outline/70">input</div>
+        <div className="font-label text-[10px] uppercase tracking-widest text-outline/70">
+          input
+        </div>
         <pre className="max-h-72 overflow-auto rounded-sm bg-surface-lowest p-2 font-mono text-[11px] text-on-surface-variant whitespace-pre-wrap break-words">
           {prettyInput(block.input)}
         </pre>
         {done && (
           <>
-            <div className="font-label text-[9px] uppercase tracking-widest text-outline/70">
+            <div className="font-label text-[10px] uppercase tracking-widest text-outline/70">
               result
             </div>
             <pre className="max-h-96 overflow-auto rounded-sm bg-surface-lowest p-2 font-mono text-[11px] text-on-surface-variant whitespace-pre-wrap break-words">
@@ -147,7 +149,7 @@ function Block({ block, matched }: { block: TurnBlock; matched: boolean }) {
   const label = block.type === "thinking" ? "thinking" : "result";
   return (
     <details open={matched || undefined}>
-      <summary className="cursor-pointer font-label text-[10px] uppercase tracking-widest text-outline hover:text-on-surface">
+      <summary className="cursor-pointer font-label text-[11px] uppercase tracking-widest text-outline hover:text-on-surface">
         {label}
       </summary>
       {block.type === "thinking" ? (
@@ -218,27 +220,31 @@ export function LiveSessionDetail({
             {session?.name ?? "Session"}
           </SheetTitle>
           {session && (
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-label text-[10px] uppercase tracking-widest text-outline">
-              <span className="text-primary">{session.agent}</span>
-              <span className="inline-flex items-center gap-1">
+            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 font-body text-xs text-on-surface tabular-nums">
+              <span className="font-medium text-primary">{session.agent}</span>
+              <span className="inline-flex items-center gap-1.5">
                 <span className={`h-2 w-2 rounded-full ${STATUS[session.status].dot}`} />
                 {STATUS[session.status].label}
               </span>
-              <span>tokens {formatTokens(session)}</span>
-              <span>{formatWhen(session.last_activity_at)}</span>
+              <span>
+                <span className="text-on-surface-variant">tokens </span>
+                {formatTokens(session)}
+              </span>
+              <span>
+                <span className="text-on-surface-variant">active </span>
+                {formatWhen(session.last_activity_at)}
+              </span>
               {session.task && (
                 <Link
                   to={`/tasks/${session.task.id}`}
                   data-testid="detail-open-task"
-                  className="normal-case tracking-normal text-primary hover:text-on-surface"
+                  className="text-primary hover:text-on-surface"
                 >
                   task: {session.task.title}
                 </Link>
               )}
               <CopyResume session={session} />
-              <span className="normal-case tracking-normal text-outline/70 truncate max-w-full">
-                {session.cwd}
-              </span>
+              <span className="truncate max-w-full text-on-surface-variant">{session.cwd}</span>
             </div>
           )}
           <div className="mt-3 flex items-center gap-2">
@@ -258,7 +264,7 @@ export function LiveSessionDetail({
             {search && (
               <span
                 data-testid="transcript-match-count"
-                className="font-label text-[10px] uppercase tracking-widest text-outline"
+                className="font-label text-[11px] uppercase tracking-widest text-outline"
               >
                 {matches.length === 0 ? "no matches" : `${cursor + 1} / ${matches.length}`}
               </span>
@@ -286,7 +292,7 @@ export function LiveSessionDetail({
                 stick.current = true;
                 refetch();
               }}
-              className="inline-flex items-center gap-1 font-label text-[10px] uppercase tracking-widest text-primary hover:text-on-surface"
+              className="inline-flex items-center gap-1 font-label text-[11px] uppercase tracking-widest text-primary hover:text-on-surface"
             >
               <RefreshCw className={`h-3 w-3 ${isFetching ? "animate-spin" : ""}`} />
               Refresh
@@ -295,7 +301,7 @@ export function LiveSessionDetail({
           {data && (
             <div
               data-testid="transcript-status"
-              className="mt-2 font-label text-[10px] uppercase tracking-widest text-outline"
+              className="mt-2 font-body text-xs text-on-surface-variant tabular-nums"
             >
               {data.total} turns
               {live ? ` · live, updated ${new Date(dataUpdatedAt).toLocaleTimeString()}` : ""}
@@ -341,13 +347,13 @@ export function LiveSessionDetail({
                     style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
                     className={`rounded-sm border px-3 py-2 space-y-2 ${ROLE_STYLE[turn.role]} ${turn.index === target ? "ring-1 ring-primary" : ""}`}
                   >
-                    <div className="font-label text-[10px] uppercase tracking-widest text-outline">
+                    <div className="font-label text-[11px] uppercase tracking-widest text-outline">
                       {turn.role}
                       {turn.time ? ` · ${formatWhen(turn.time)}` : ""}
                     </div>
                     {turn.role === "system" ? (
                       <details open={matched || undefined}>
-                        <summary className="cursor-pointer font-label text-[10px] uppercase tracking-widest text-outline hover:text-on-surface">
+                        <summary className="cursor-pointer font-label text-[11px] uppercase tracking-widest text-outline hover:text-on-surface">
                           injected context
                         </summary>
                         <div className="mt-2 space-y-2">{blocks}</div>

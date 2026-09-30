@@ -83,7 +83,7 @@ export default function Knowledge({ projectId: savedProjectId }: { projectId: st
         <TabsList className="bg-surface-highest border border-surface-highest gap-0 h-auto p-0">
           <TabsTrigger
             value="search"
-            className="font-label text-[10px] uppercase tracking-widest px-4 py-2 rounded-none
+            className="font-label text-[11px] uppercase tracking-widest px-4 py-2 rounded-none
               data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none
               text-outline hover:text-on-surface-variant"
           >
@@ -92,7 +92,7 @@ export default function Knowledge({ projectId: savedProjectId }: { projectId: st
           <TabsTrigger
             data-testid="knowledge-collections-tab"
             value="collections"
-            className="font-label text-[10px] uppercase tracking-widest px-4 py-2 rounded-none
+            className="font-label text-[11px] uppercase tracking-widest px-4 py-2 rounded-none
               data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none
               text-outline hover:text-on-surface-variant"
           >
@@ -140,7 +140,7 @@ function SearchTab({ projectId }: { projectId?: string }) {
           />
         </div>
         <Select value={collection} onValueChange={setCollection}>
-          <SelectTrigger className="w-40 bg-surface-highest border-surface-highest text-on-surface font-label text-[10px]">
+          <SelectTrigger className="w-40 bg-surface-highest border-surface-highest text-on-surface font-label text-[11px]">
             <SelectValue placeholder="All collections" />
           </SelectTrigger>
           <SelectContent className="bg-surface-highest border-surface-highest">
@@ -178,7 +178,7 @@ function SearchTab({ projectId }: { projectId?: string }) {
 
       {query && (
         <div>
-          <div className="font-label text-[9px] uppercase tracking-widest text-outline mb-3">
+          <div className="font-label text-[10px] uppercase tracking-widest text-outline mb-3">
             Search Results
           </div>
           {isSearching ? (
@@ -203,16 +203,16 @@ function SearchTab({ projectId }: { projectId?: string }) {
                         </span>
                       </div>
                       {r.path && r.title && (
-                        <div className="font-mono text-[10px] text-outline truncate mb-1">
+                        <div className="font-mono text-[11px] text-outline truncate mb-1">
                           {r.path}
                         </div>
                       )}
-                      <div className="font-label text-[10px] text-primary mb-2">{r.collection}</div>
-                      <div className="font-body text-[10px] text-outline line-clamp-2">
+                      <div className="font-label text-[11px] text-primary mb-2">{r.collection}</div>
+                      <div className="font-body text-[11px] text-outline line-clamp-2">
                         {r.snippet}
                       </div>
                     </div>
-                    <span className="font-label text-[10px] text-outline bg-surface-highest px-1.5 py-0.5 rounded-sm flex-shrink-0">
+                    <span className="font-label text-[11px] text-outline bg-surface-highest px-1.5 py-0.5 rounded-sm flex-shrink-0">
                       {r.score.toFixed(2)}
                     </span>
                   </div>
@@ -251,21 +251,21 @@ function SearchTab({ projectId }: { projectId?: string }) {
                 <div className="grid grid-cols-2 gap-4">
                   <DetailField label="Collection">{document.collection}</DetailField>
                   <DetailField label="Path">
-                    <span className="font-mono text-[10px]">{document.path}</span>
+                    <span className="font-mono text-[11px]">{document.path}</span>
                   </DetailField>
                   <DetailField label="Modified">
                     {new Date(document.modifiedAt).toLocaleString()}
                   </DetailField>
                   <DetailField label="Doc ID">
-                    <span className="font-mono text-[10px]">{document.docid}</span>
+                    <span className="font-mono text-[11px]">{document.docid}</span>
                   </DetailField>
                 </div>
                 <div>
-                  <div className="font-label text-[10px] uppercase tracking-widest text-outline mb-2">
+                  <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-2">
                     Content
                   </div>
                   <ScrollArea className="h-[400px]">
-                    <pre className="font-mono text-[10px] text-on-surface-variant whitespace-pre-wrap bg-surface-highest/50 border border-surface-highest rounded-sm p-3">
+                    <pre className="font-mono text-[11px] text-on-surface-variant whitespace-pre-wrap bg-surface-highest/50 border border-surface-highest rounded-sm p-3">
                       {document.content}
                     </pre>
                   </ScrollArea>
@@ -295,7 +295,7 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <div className="font-label text-[9px] uppercase tracking-widest text-outline">
+        <div className="font-label text-[10px] uppercase tracking-widest text-outline">
           Collections
         </div>
         <div className="flex gap-2">
@@ -304,7 +304,7 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
             variant="ghost"
             onClick={() => reindex.mutate(undefined)}
             disabled={reindex.isPending}
-            className="font-label text-[10px] uppercase tracking-widest text-outline"
+            className="font-label text-[11px] uppercase tracking-widest text-outline"
           >
             <RefreshCw size={12} className={`mr-1 ${reindex.isPending ? "animate-spin" : ""}`} />
             {reindex.isPending ? "Indexing..." : "Reindex All"}
@@ -335,22 +335,22 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
           <Table>
             <TableHeader>
               <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
                   Name
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
                   Path
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                   Pattern
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-20">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-20">
                   Docs
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-36">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-36">
                   Last Modified
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                   Project
                 </TableHead>
                 <TableHead className="w-20" />
@@ -367,17 +367,17 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
                   <TableCell className="font-label text-xs font-semibold text-primary">
                     {c.name}
                   </TableCell>
-                  <TableCell className="font-body text-[10px] text-outline truncate max-w-xs">
+                  <TableCell className="font-body text-[11px] text-outline truncate max-w-xs">
                     {c.path}
                   </TableCell>
-                  <TableCell className="font-mono text-[10px] text-outline">{c.pattern}</TableCell>
+                  <TableCell className="font-mono text-[11px] text-outline">{c.pattern}</TableCell>
                   <TableCell className="font-label text-xs text-on-surface text-center">
                     {c.documentCount}
                   </TableCell>
-                  <TableCell className="font-label text-[10px] text-outline">
+                  <TableCell className="font-label text-[11px] text-outline">
                     {c.lastModified ? new Date(c.lastModified).toLocaleDateString() : "\u2014"}
                   </TableCell>
-                  <TableCell className="font-label text-[10px] text-outline">
+                  <TableCell className="font-label text-[11px] text-outline">
                     {c.projectId ? c.projectId.slice(-6) : "\u2014"}
                   </TableCell>
                   <TableCell>
@@ -478,7 +478,7 @@ function AddCollectionDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Name *
             </Label>
             <Input
@@ -491,7 +491,7 @@ function AddCollectionDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Path *
             </Label>
             <Input
@@ -504,7 +504,7 @@ function AddCollectionDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Pattern
               </Label>
               <Input
@@ -515,7 +515,7 @@ function AddCollectionDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Project ID
               </Label>
               <Input

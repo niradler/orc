@@ -8,7 +8,7 @@ export function TaskSessions({ taskId }: { taskId: string }) {
   const { data: sessions } = useTaskSessions(taskId);
   return (
     <div className="border-t border-surface-highest pt-4 space-y-3" data-testid="task-sessions">
-      <div className="flex items-center gap-1.5 font-label text-[10px] uppercase tracking-widest text-outline">
+      <div className="flex items-center gap-1.5 font-label text-[11px] uppercase tracking-widest text-outline">
         <Bot size={12} />
         Agent sessions{sessions && sessions.length > 0 ? ` · ${sessions.length}` : ""}
       </div>
@@ -28,7 +28,7 @@ export function TaskSessions({ taskId }: { taskId: string }) {
                 className={`h-2 w-2 shrink-0 rounded-full ${STATUS[s.status].dot}`}
                 title={STATUS[s.status].label}
               />
-              <span className="font-label text-[10px] uppercase tracking-widest text-primary w-14 shrink-0">
+              <span className="font-label text-[11px] uppercase tracking-widest text-primary w-14 shrink-0">
                 {s.agent}
               </span>
               <Link
@@ -39,10 +39,10 @@ export function TaskSessions({ taskId }: { taskId: string }) {
               >
                 {s.name ?? s.session_id}
               </Link>
-              <span className="font-label text-[10px] text-outline shrink-0">
+              <span className="font-label text-[11px] text-outline shrink-0">
                 {formatTokens(s)}
               </span>
-              <span className="font-label text-[10px] text-outline shrink-0">
+              <span className="font-label text-[11px] text-outline shrink-0">
                 {formatWhen(s.last_activity_at)}
               </span>
               <CopyResume session={s} />

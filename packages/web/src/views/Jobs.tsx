@@ -101,25 +101,25 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
           <Table>
             <TableHeader>
               <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
                   Name
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                   Trigger
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-48">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-48">
                   Command
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-16">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-16">
                   Enabled
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-36">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-36">
                   Last Run
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-16">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-16">
                   Runs
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-36">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-36">
                   Next Run
                 </TableHead>
                 <TableHead className="w-28" />
@@ -138,35 +138,35 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                   <TableCell>
                     <div className="font-body text-xs font-medium text-on-surface">{job.name}</div>
                     {job.description && (
-                      <div className="font-body text-[10px] text-outline mt-0.5 truncate max-w-[200px]">
+                      <div className="font-body text-[11px] text-outline mt-0.5 truncate max-w-[200px]">
                         {job.description}
                       </div>
                     )}
                   </TableCell>
                   <TableCell>
-                    <span className="font-label text-[10px] uppercase tracking-wider px-2 py-0.5 bg-surface-highest text-on-surface-variant border border-surface-highest/50 inline-flex">
+                    <span className="font-label text-[11px] uppercase tracking-wider px-2 py-0.5 bg-surface-highest text-on-surface-variant border border-surface-highest/50 inline-flex">
                       {job.trigger_type}
                     </span>
                   </TableCell>
                   <TableCell>
-                    <code className="font-mono text-[10px] text-outline truncate block max-w-[180px]">
+                    <code className="font-mono text-[11px] text-outline truncate block max-w-[180px]">
                       {job.command}
                     </code>
                   </TableCell>
                   <TableCell>
                     <span
-                      className={`font-label text-[10px] font-bold uppercase ${job.enabled ? "text-secondary" : "text-error"}`}
+                      className={`font-label text-[11px] font-bold uppercase ${job.enabled ? "text-secondary" : "text-error"}`}
                     >
                       {job.enabled ? "\u25CF" : "\u25CF"}
                     </span>
                   </TableCell>
-                  <TableCell className="font-label text-[10px] text-outline">
+                  <TableCell className="font-label text-[11px] text-outline">
                     {job.last_run_at ? new Date(job.last_run_at).toLocaleString() : "\u2014"}
                   </TableCell>
-                  <TableCell className="font-label text-[10px] text-outline">
+                  <TableCell className="font-label text-[11px] text-outline">
                     {job.run_count}
                   </TableCell>
-                  <TableCell className="font-label text-[10px] text-outline">
+                  <TableCell className="font-label text-[11px] text-outline">
                     {job.next_run_at ? new Date(job.next_run_at).toLocaleString() : "\u2014"}
                   </TableCell>
                   <TableCell>
@@ -178,7 +178,7 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                         size="sm"
                         disabled={triggerJob.isPending}
                         onClick={() => triggerJob.mutate(job.id)}
-                        className="font-label text-[10px] uppercase h-7 px-3 bg-secondary/10 text-secondary border border-secondary/30 hover:bg-secondary/20"
+                        className="font-label text-[11px] uppercase h-7 px-3 bg-secondary/10 text-secondary border border-secondary/30 hover:bg-secondary/20"
                       >
                         <Play size={10} className="mr-1" /> Run
                       </Button>
@@ -289,7 +289,7 @@ function CreateJobDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3 mt-2">
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Name *
             </Label>
             <Input
@@ -302,7 +302,7 @@ function CreateJobDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Description
             </Label>
             <Input
@@ -313,7 +313,7 @@ function CreateJobDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Command *
             </Label>
             <Textarea
@@ -327,7 +327,7 @@ function CreateJobDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Trigger Type
               </Label>
               <Select
@@ -348,7 +348,7 @@ function CreateJobDialog({
             </div>
             {triggerType === "cron" && (
               <div className="space-y-1.5">
-                <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+                <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                   Cron Expression
                 </Label>
                 <Input
@@ -362,7 +362,7 @@ function CreateJobDialog({
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Timeout (s)
               </Label>
               <Input
@@ -373,7 +373,7 @@ function CreateJobDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Max Retries
               </Label>
               <Input
@@ -384,7 +384,7 @@ function CreateJobDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Overlap
               </Label>
               <Select value={overlap} onValueChange={(v) => setOverlap(v as typeof overlap)}>
@@ -403,7 +403,7 @@ function CreateJobDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Notify On
               </Label>
               <Select value={notifyOn} onValueChange={(v) => setNotifyOn(v as typeof notifyOn)}>
@@ -420,7 +420,7 @@ function CreateJobDialog({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Working Dir
               </Label>
               <Input
@@ -432,7 +432,7 @@ function CreateJobDialog({
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Project
             </Label>
             <Select
@@ -525,7 +525,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3 mt-2">
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Name *
             </Label>
             <Input
@@ -535,7 +535,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Description
             </Label>
             <Input
@@ -545,7 +545,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Command *
             </Label>
             <Textarea
@@ -557,7 +557,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Trigger Type
               </Label>
               <Select
@@ -578,7 +578,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
             </div>
             {triggerType === "cron" && (
               <div className="space-y-1.5">
-                <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+                <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                   Cron Expression
                 </Label>
                 <Input
@@ -592,7 +592,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Timeout (s)
               </Label>
               <Input
@@ -603,7 +603,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Max Retries
               </Label>
               <Input
@@ -614,7 +614,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Overlap
               </Label>
               <Select value={overlap} onValueChange={(v) => setOverlap(v as typeof overlap)}>
@@ -633,7 +633,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Notify On
               </Label>
               <Select value={notifyOn} onValueChange={(v) => setNotifyOn(v as typeof notifyOn)}>
@@ -650,13 +650,13 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
                 Enabled
               </Label>
               <button
                 type="button"
                 onClick={() => setEnabled(!enabled)}
-                className={`w-full h-9 flex items-center justify-center border font-label text-[10px] uppercase tracking-widest transition-colors ${
+                className={`w-full h-9 flex items-center justify-center border font-label text-[11px] uppercase tracking-widest transition-colors ${
                   enabled
                     ? "bg-secondary/15 text-secondary border-secondary/30"
                     : "bg-surface-highest text-outline border-surface-highest"

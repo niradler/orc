@@ -44,11 +44,14 @@ export default {
         "on-surface": "#e1e5f6",
         "on-surface-variant": "#a6abbb",
         "outline-variant": "#434856",
-        outline: "#707584",
+        outline: "#8d93a5",
         error: {
           DEFAULT: "#ff716c",
           container: "#9f0519",
         },
+      },
+      letterSpacing: {
+        widest: "0.06em",
       },
       fontFamily: {
         headline: ["Manrope", "sans-serif"],

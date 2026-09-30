@@ -91,7 +91,7 @@ export default function Skills() {
               key={f.value}
               type="button"
               onClick={() => setSourceFilter(f.value)}
-              className={`font-label text-[10px] uppercase tracking-widest px-3 py-1.5 border transition-colors ${
+              className={`font-label text-[11px] uppercase tracking-widest px-3 py-1.5 border transition-colors ${
                 sourceFilter === f.value
                   ? "bg-primary/15 text-primary border-primary/30"
                   : "bg-surface-highest border-surface-highest text-outline hover:text-on-surface-variant"
@@ -136,13 +136,13 @@ export default function Skills() {
           <Table>
             <TableHeader>
               <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
                   Name
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
                   Description
                 </TableHead>
-                <TableHead className="font-label text-[10px] uppercase tracking-widest text-outline w-24">
+                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                   Source
                 </TableHead>
               </TableRow>
@@ -164,7 +164,7 @@ export default function Skills() {
                   </TableCell>
                   <TableCell>
                     <span
-                      className={`inline-flex px-2 py-0.5 font-label text-[10px] uppercase tracking-wider border ${SOURCE_COLORS[skill.source]}`}
+                      className={`inline-flex px-2 py-0.5 font-label text-[11px] uppercase tracking-wider border ${SOURCE_COLORS[skill.source]}`}
                     >
                       {skill.source}
                     </span>
@@ -221,18 +221,18 @@ function SkillDetailSheet({
               <div className="grid grid-cols-2 gap-4">
                 <DetailField label="Source">
                   <span
-                    className={`inline-flex px-2 py-0.5 font-label text-[10px] uppercase tracking-wider border ${SOURCE_COLORS[skill.source]}`}
+                    className={`inline-flex px-2 py-0.5 font-label text-[11px] uppercase tracking-wider border ${SOURCE_COLORS[skill.source]}`}
                   >
                     {skill.source}
                   </span>
                 </DetailField>
                 <DetailField label="Path">
-                  <code className="font-mono text-[10px] text-outline break-all">{skill.path}</code>
+                  <code className="font-mono text-[11px] text-outline break-all">{skill.path}</code>
                 </DetailField>
               </div>
 
               <div>
-                <div className="font-label text-[10px] uppercase tracking-widest text-outline mb-2">
+                <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-2">
                   Content
                 </div>
                 <div className="border border-surface-highest rounded-sm overflow-hidden">
@@ -246,7 +246,7 @@ function SkillDetailSheet({
 
               {skill.references?.length > 0 && (
                 <div>
-                  <div className="font-label text-[10px] uppercase tracking-widest text-outline mb-2">
+                  <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-2">
                     References
                   </div>
                   <div className="space-y-1">
@@ -258,7 +258,7 @@ function SkillDetailSheet({
                         <span className="font-body text-xs font-medium text-on-surface">
                           {ref.name}
                         </span>
-                        <code className="font-mono text-[10px] text-outline truncate">
+                        <code className="font-mono text-[11px] text-outline truncate">
                           {ref.path}
                         </code>
                       </div>
@@ -295,7 +295,7 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3 mt-2">
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Name *
             </Label>
             <Input
@@ -308,7 +308,7 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Content *
             </Label>
             <Textarea

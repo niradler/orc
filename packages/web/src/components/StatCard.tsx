@@ -36,7 +36,7 @@ export function StatCard({ label, value, accent = "muted", sub, onClick }: StatC
   const inner = (
     <>
       <div className="flex justify-between items-start mb-2">
-        <span className="font-label text-[10px] text-outline uppercase tracking-widest">
+        <span className="font-label text-[11px] text-outline uppercase tracking-widest">
           {label}
         </span>
       </div>
@@ -46,7 +46,7 @@ export function StatCard({ label, value, accent = "muted", sub, onClick }: StatC
       >
         {value}
       </div>
-      {sub && <div className="font-label text-[10px] text-outline mt-1">{sub}</div>}
+      {sub && <div className="font-label text-[11px] text-outline mt-1">{sub}</div>}
     </>
   );
   if (onClick) {

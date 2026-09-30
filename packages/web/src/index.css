@@ -12,6 +12,7 @@
     background-color: #090e1a;
     color: #e1e5f6;
     font-family: Inter, sans-serif;
+    font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
   }
 

@@ -55,7 +55,7 @@ export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPan
         >
           <MessageSquare size={16} />
         </button>
-        <span className="text-[9px] font-label text-outline uppercase tracking-widest [writing-mode:vertical-lr] rotate-180">
+        <span className="text-[10px] font-label text-outline uppercase tracking-widest [writing-mode:vertical-lr] rotate-180">
           Chat
         </span>
       </div>
@@ -78,10 +78,10 @@ export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPan
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-primary text-sm">&#x25C8;</span>
-            <span className="font-label text-[10px] uppercase tracking-widest text-on-surface-variant">
+            <span className="font-label text-[11px] uppercase tracking-widest text-on-surface-variant">
               Chat
             </span>
-            <span className="font-label text-[9px] text-outline">&middot; {config.agent}</span>
+            <span className="font-label text-[10px] text-outline">&middot; {config.agent}</span>
             <span
               className={`w-1.5 h-1.5 rounded-full ${streaming ? "bg-secondary animate-pulse" : "bg-outline"}`}
             />
@@ -105,7 +105,7 @@ export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPan
       >
         {messages.length === 0 && !streaming && (
           <div className="flex items-center justify-center h-full">
-            <p className="text-outline text-[10px] font-label uppercase tracking-widest text-center leading-relaxed">
+            <p className="text-outline text-[11px] font-label uppercase tracking-widest text-center leading-relaxed">
               Ask a question about
               <br />
               your tasks or agents
@@ -117,7 +117,7 @@ export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPan
           // biome-ignore lint/suspicious/noArrayIndexKey: append-only chat history
           <div key={i} data-testid="chat-message" data-role={msg.role}>
             <span
-              className={`font-label text-[9px] uppercase tracking-widest ${msg.role === "user" ? "text-primary" : "text-secondary"}`}
+              className={`font-label text-[10px] uppercase tracking-widest ${msg.role === "user" ? "text-primary" : "text-secondary"}`}
             >
               {msg.role === "user" ? "You" : config.agent}
             </span>
@@ -132,7 +132,7 @@ export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPan
 
         {streaming && streamText && (
           <div data-testid="chat-streaming">
-            <span className="font-label text-[9px] uppercase tracking-widest text-secondary">
+            <span className="font-label text-[10px] uppercase tracking-widest text-secondary">
               {config.agent}
             </span>
             <p
@@ -191,7 +191,7 @@ export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPan
           data-testid="chat-agent-select"
           value={config.agent}
           onChange={(e) => setConfig({ ...config, agent: e.target.value })}
-          className="bg-surface-highest text-outline font-label text-[9px] uppercase tracking-widest px-2 py-1 rounded-sm border border-surface-highest cursor-pointer"
+          className="bg-surface-highest text-outline font-label text-[10px] uppercase tracking-widest px-2 py-1 rounded-sm border border-surface-highest cursor-pointer"
         >
           {agents.map((a) => (
             <option key={a} value={a}>

@@ -26,7 +26,7 @@ import { formatTokens, formatWhen, STATUS } from "@/lib/live-sessions";
 
 const AGENTS = ["claude", "codex", "cursor"];
 const PAGE_SIZE = 200;
-const HEAD = "font-label text-[10px] uppercase tracking-widest text-outline";
+const HEAD = "font-label text-[11px] uppercase tracking-widest text-outline";
 
 type Row = LiveSession & { snippets?: string[]; matched?: string[] };
 
@@ -99,7 +99,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
         />
       </div>
       <div className="flex items-center justify-between mb-3">
-        <h2 className="font-label text-[10px] uppercase tracking-widest text-outline">
+        <h2 className="font-label text-[11px] uppercase tracking-widest text-outline">
           {searching ? "Search results" : "Agent sessions"} · {visible.length}
           {visible.length !== byAgent.length && (
             <span data-testid="scope-hint" className="normal-case tracking-normal">
@@ -119,7 +119,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
           <select
             data-testid="agent-filter"
             aria-label="Agent"
-            className="bg-surface-low border border-surface-highest rounded-sm px-2 py-1 font-label text-[10px] uppercase tracking-widest text-on-surface"
+            className="bg-surface-low border border-surface-highest rounded-sm px-2 py-1 font-label text-[11px] uppercase tracking-widest text-on-surface"
             value={agent}
             onChange={(e) => setParam("agent", e.target.value || null)}
           >
@@ -131,7 +131,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
             ))}
           </select>
           {!searching && (
-            <label className="flex items-center gap-2 font-label text-[10px] uppercase tracking-widest text-outline cursor-pointer">
+            <label className="flex items-center gap-2 font-label text-[11px] uppercase tracking-widest text-outline cursor-pointer">
               <input
                 type="checkbox"
                 checked={showEnded}
@@ -144,7 +144,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
             type="button"
             data-testid="sync-sessions"
             disabled={sync.isPending}
-            className="inline-flex items-center gap-1 font-label text-[10px] uppercase tracking-widest text-primary hover:text-on-surface disabled:opacity-50"
+            className="inline-flex items-center gap-1 font-label text-[11px] uppercase tracking-widest text-primary hover:text-on-surface disabled:opacity-50"
             onClick={() => sync.mutate()}
           >
             <RefreshCw className={`h-3 w-3 ${sync.isPending ? "animate-spin" : ""}`} />
@@ -191,7 +191,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                         {st.label}
                       </span>
                     </TableCell>
-                    <TableCell className="font-label text-[10px] uppercase tracking-widest text-primary">
+                    <TableCell className="font-label text-[11px] uppercase tracking-widest text-primary">
                       {s.agent}
                     </TableCell>
                     <TableCell className="max-w-md">
@@ -210,29 +210,29 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                         <div
                           key={snippet}
                           data-testid="search-snippet"
-                          className="font-mono text-[10px] text-on-surface-variant truncate"
+                          className="font-mono text-[11px] text-on-surface-variant truncate"
                           title={snippet}
                         >
                           <Highlight text={snippet} query={query} />
                         </div>
                       ))}
                       <div
-                        className="font-label text-[10px] text-outline/70 truncate"
+                        className="font-label text-[11px] text-outline/70 truncate"
                         title={s.cwd ?? undefined}
                       >
                         {s.cwd ?? ""}
                       </div>
                     </TableCell>
-                    <TableCell className="font-label text-[10px] text-outline">
+                    <TableCell className="font-label text-[11px] text-outline">
                       {(s.project_id && projectName.get(s.project_id)) || "—"}
                     </TableCell>
                     <TableCell
                       data-testid="live-tokens"
-                      className="font-label text-[10px] text-outline text-right"
+                      className="font-body text-xs text-on-surface-variant text-right"
                     >
                       {formatTokens(s)}
                     </TableCell>
-                    <TableCell className="font-label text-[10px] text-outline">
+                    <TableCell className="font-body text-xs text-on-surface-variant">
                       {formatWhen(s.last_activity_at)}
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
@@ -259,7 +259,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                             to={`/tasks/${s.task.id}`}
                             data-testid="open-task"
                             title={`Open task: ${s.task.title}`}
-                            className="shrink-0 font-label text-[10px] uppercase tracking-widest text-primary hover:text-on-surface"
+                            className="shrink-0 font-label text-[11px] uppercase tracking-widest text-primary hover:text-on-surface"
                           >
                             Open
                           </Link>
@@ -278,7 +278,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
             <button
               type="button"
               data-testid="show-more-sessions"
-              className="w-full py-3 font-label text-[10px] uppercase tracking-widest text-primary hover:text-on-surface"
+              className="w-full py-3 font-label text-[11px] uppercase tracking-widest text-primary hover:text-on-surface"
               onClick={() => setShown((n) => n + PAGE_SIZE)}
             >
               Show {Math.min(PAGE_SIZE, visible.length - shown)} more ({visible.length - shown}{" "}

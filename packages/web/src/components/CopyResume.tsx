@@ -12,7 +12,7 @@ export function CopyResume({ session }: { session: LiveSession }) {
       type="button"
       data-testid="copy-resume"
       title={command}
-      className="inline-flex items-center gap-1 font-label text-[10px] uppercase tracking-widest text-primary hover:text-on-surface"
+      className="inline-flex items-center gap-1 font-label text-[11px] uppercase tracking-widest text-primary hover:text-on-surface"
       onClick={(e) => {
         e.stopPropagation();
         navigator.clipboard.writeText(command).then(() => {
