@@ -2,19 +2,37 @@ import { Bot } from "lucide-react";
 import { Link } from "react-router-dom";
 import { CopyResume } from "@/components/CopyResume";
 import { useTaskSessions } from "@/hooks/useSessions";
-import { formatTokens, formatWhen, STATUS } from "@/lib/live-sessions";
+import { formatTokenCount, formatTokens, formatWhen, STATUS } from "@/lib/live-sessions";
 
 export function TaskSessions({ taskId }: { taskId: string }) {
   const { data: sessions } = useTaskSessions(taskId);
+  const withTokens = (sessions ?? []).filter((s) => s.tokens_used != null);
+  const tokens = withTokens.reduce((sum, s) => sum + (s.tokens_used ?? 0), 0);
+  const latest = (sessions ?? [])
+    .map((s) => s.last_activity_at ?? "")
+    .sort()
+    .pop();
   return (
     <div className="border-t border-surface-highest pt-4 space-y-3" data-testid="task-sessions">
       <div className="flex items-center gap-1.5 font-label text-[11px] uppercase tracking-widest text-outline">
         <Bot size={12} />
-        Agent sessions{sessions && sessions.length > 0 ? ` · ${sessions.length}` : ""}
+        Agent sessions
+        {sessions && sessions.length > 0 && (
+          <span className="font-body text-xs normal-case tracking-normal text-on-surface-variant">
+            {" "}
+            · {sessions.length} ·{" "}
+            {formatTokenCount(
+              tokens,
+              withTokens.some((s) => s.tokens_estimated),
+            )}{" "}
+            tokens · last active {formatWhen(latest ?? null)}
+          </span>
+        )}
       </div>
       {!sessions || sessions.length === 0 ? (
         <div className="font-body text-xs text-outline">
-          No session is linked. Pick this task on the Sessions page to link one.
+          No session yet. Add a session: line with the session id to the task body, or pick the task
+          on the Sessions page.
         </div>
       ) : (
         <div className="space-y-1">

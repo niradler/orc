@@ -15,16 +15,18 @@ export function resumeCommand(s: LiveSession): string | null {
   return null;
 }
 
-export function formatTokens(s: LiveSession): string {
-  if (s.tokens_used == null) return "—";
-  const n = s.tokens_used;
+export function formatTokenCount(n: number, estimated: boolean): string {
   const text =
     n >= 1_000_000
       ? `${(n / 1_000_000).toFixed(1)}M`
       : n >= 1000
         ? `${Math.round(n / 1000)}k`
         : `${n}`;
-  return s.tokens_estimated ? `~${text}` : text;
+  return estimated ? `~${text}` : text;
+}
+
+export function formatTokens(s: LiveSession): string {
+  return s.tokens_used == null ? "\u2014" : formatTokenCount(s.tokens_used, s.tokens_estimated);
 }
 
 export function formatWhen(iso: string | null): string {

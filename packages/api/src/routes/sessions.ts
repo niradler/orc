@@ -4,9 +4,10 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError } from "@orc/core/errors";
 import { getDb } from "@orc/db/client";
 import { gateway_sessions, sessions, tasks } from "@orc/db/schema";
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import { LIVE_CHAT_ID, syncNow } from "../session-watcher.js";
 import { searchSessions } from "../sessions/search.js";
+import { bodyLinkIndex, sessionIdsOfTask } from "../sessions/tasklinks.js";
 import { readTranscript } from "../sessions/transcript.js";
 
 const app = new OpenAPIHono();
@@ -273,8 +274,11 @@ async function toLiveDtos(rows: GatewayRow[]) {
       ? await getDb().query.tasks.findMany({ where: inArray(tasks.id, taskIds) })
       : [];
   const byId = new Map(linked.map((t) => [t.id, t]));
+  const fromBody = await bodyLinkIndex();
   return rows.map((r) => {
-    const t = r.task_id ? byId.get(r.task_id) : undefined;
+    const t = r.task_id
+      ? byId.get(r.task_id)
+      : fromBody.get((r.runtime_session_id ?? "").toLowerCase());
     return {
       id: r.id,
       agent: r.backend,
@@ -296,11 +300,22 @@ async function toLiveDtos(rows: GatewayRow[]) {
 
 app.openapi(liveListRoute, async (c) => {
   const { agent, task_id, active, limit } = c.req.valid("query");
+  const bodyIds = task_id ? await sessionIdsOfTask(task_id) : [];
   const rows = await getDb().query.gateway_sessions.findMany({
     where: and(
       eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
       agent ? eq(gateway_sessions.backend, agent) : undefined,
-      task_id ? eq(gateway_sessions.task_id, task_id) : undefined,
+      task_id
+        ? or(
+            eq(gateway_sessions.task_id, task_id),
+            bodyIds.length > 0
+              ? and(
+                  isNull(gateway_sessions.task_id),
+                  inArray(gateway_sessions.runtime_session_id, bodyIds),
+                )
+              : undefined,
+          )
+        : undefined,
       active ? ne(gateway_sessions.status, "stopped") : undefined,
     ),
     orderBy: [desc(gateway_sessions.last_activity_at)],
