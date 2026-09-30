@@ -2,7 +2,13 @@ import type { Config } from "tailwindcss";
 
 export default {
   darkMode: "class",
-  content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  content: [
+    "./index.html",
+    "./src/**/*.{ts,tsx}",
+    "../../node_modules/streamdown/dist/*.js",
+    "../../node_modules/@streamdown/code/dist/*.js",
+    "../../node_modules/@streamdown/mermaid/dist/*.js",
+  ],
   theme: {
     extend: {
       colors: {
@@ -14,7 +20,15 @@ export default {
           highest: "#1e2537",
           bright: "#242c3f",
         },
+        foreground: "#e1e5f6",
+        border: "#434856",
+        sidebar: "#0e1320",
+        muted: {
+          DEFAULT: "#1e2537",
+          foreground: "#a6abbb",
+        },
         primary: {
+          foreground: "#05152e",
           DEFAULT: "#78b0ff",
           container: "#5ba2ff",
           dim: "#549fff",

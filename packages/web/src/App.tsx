@@ -67,7 +67,7 @@ export default function App() {
 
         {/* Main content - the only element that owns vertical scroll for page content. */}
         <main className="flex-1 min-w-0 min-h-0 overflow-y-auto">
-          <div className="p-4 md:p-6 lg:p-8 min-h-full flex flex-col max-w-[1200px]">
+          <div className="p-4 md:p-6 lg:p-8 min-h-full flex flex-col">
             <Routes>
               <Route path="/" element={<Navigate to="/tasks" replace />} />
               <Route path="/dashboard" element={<Dashboard projectId={projectId} />} />

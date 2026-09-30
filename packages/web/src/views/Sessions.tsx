@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { LiveSessions } from "@/components/LiveSessions";
 import { SessionDetailSheet } from "@/components/SessionDetailSheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -35,7 +36,9 @@ export default function Sessions({ projectId: savedProjectId }: { projectId: str
 
   return (
     <div>
-      <ViewHeader title="Sessions" meta={`${visible.length} recent`} />
+      <ViewHeader title="Sessions" meta={`${visible.length} logged`} />
+
+      <LiveSessions projectId={projectId} />
 
       {isLoading ? (
         <div className="space-y-2">
@@ -45,7 +48,7 @@ export default function Sessions({ projectId: savedProjectId }: { projectId: str
           ))}
         </div>
       ) : visible.length === 0 ? (
-        <EmptyState message="No sessions" />
+        <EmptyState message="No logged sessions" />
       ) : (
         <div className="border border-surface-highest rounded-sm overflow-hidden">
           <Table>

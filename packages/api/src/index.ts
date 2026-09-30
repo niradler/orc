@@ -1,6 +1,7 @@
 import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
 import { createApp } from "./server.js";
+import { startSessionWatcher } from "./session-watcher.js";
 
 const logger = createLogger("api");
 const config = loadConfig();
@@ -19,6 +20,8 @@ const server = Bun.serve({
   idleTimeout: 255,
 });
 
+const stopSessionWatcher = startSessionWatcher();
+
 logger.info(`API server running on http://${config.api.host}:${config.api.port}`);
 logger.info(`OpenAPI spec: http://${config.api.host}:${config.api.port}/openapi.json`);
 logger.info(`Swagger UI:   http://${config.api.host}:${config.api.port}/docs`);
@@ -28,6 +31,7 @@ async function shutdown(signal: string, exitCode = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info(`Received ${signal}, shutting down…`);
+  stopSessionWatcher();
   try {
     // true = drop in-flight connections immediately so the port is released fast
     await server.stop(true);

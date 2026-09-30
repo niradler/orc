@@ -47,3 +47,8 @@
     border-left-color: rgba(255, 113, 108, 1);
   }
 }
+
+::highlight(session-search) {
+  background-color: rgba(120, 176, 255, 0.35);
+  color: inherit;
+}

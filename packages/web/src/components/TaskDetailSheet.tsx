@@ -11,6 +11,7 @@ import { FlowPicker, USE_DEFAULT_FLOW, useEffectiveFlow } from "@/components/flo
 import { FlowRunPanel, FlowSectionHeading } from "@/components/flow/FlowRunPanel";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { StatusBadge } from "@/components/StatusBadge";
+import { TaskSessions } from "@/components/TaskSessions";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -254,6 +255,8 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                     </div>
                   </div>
                 )}
+
+                <TaskSessions taskId={task.id} />
 
                 <div className="border-t border-surface-highest pt-4 space-y-3">
                   <FlowSectionHeading />
