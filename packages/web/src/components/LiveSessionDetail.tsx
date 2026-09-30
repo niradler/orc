@@ -1,5 +1,5 @@
-import { ChevronLeft, ChevronRight, RefreshCw, Search } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ArrowDown, ChevronLeft, ChevronRight, RefreshCw, Search } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { LiveSession, TranscriptPage } from "@/api/client";
 import { CopyResume } from "@/components/CopyResume";
@@ -189,6 +189,14 @@ export function LiveSessionDetail({
   const bodyRef = useRef<HTMLDivElement>(null);
   const turnsRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
+  const seenTotal = useRef(0);
+  const [atBottom, setAtBottom] = useState(true);
+  const scrollToEnd = useCallback(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight });
+    requestAnimationFrame(() => el.scrollTo({ top: el.scrollHeight }));
+  }, []);
   useSearchHighlight(turnsRef, search, data?.turns);
 
   const matches = data?.matches ?? [];
@@ -201,8 +209,12 @@ export function LiveSessionDetail({
       document.getElementById(`turn-${target}`)?.scrollIntoView({ block: "center" });
       return;
     }
-    if (stick.current && bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-  }, [target, data]);
+    if (stick.current) scrollToEnd();
+  }, [target, data, scrollToEnd]);
+
+  useEffect(() => {
+    if (data && atBottom) seenTotal.current = data.total;
+  }, [data, atBottom]);
 
   const go = (step: number) => {
     if (matches.length > 0) setCursor((c) => (c + step + matches.length) % matches.length);
@@ -308,65 +320,84 @@ export function LiveSessionDetail({
             </div>
           )}
         </SheetHeader>
-        <SheetBody
-          ref={bodyRef}
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
-          }}
-        >
-          {isLoading ? (
-            <div className="space-y-4">
-              {[...Array(5)].map((_, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
-                <Skeleton key={i} className="h-16 w-full bg-surface-highest" />
-              ))}
-            </div>
-          ) : error || !data ? (
-            <div
-              data-testid="transcript-unavailable"
-              className="font-body text-xs text-outline py-12 text-center"
-            >
-              The conversation isn&apos;t available for this session. Cursor IDE chats keep it
-              inside Cursor, and some sessions have no transcript file left on disk.
-            </div>
-          ) : (
-            <div ref={turnsRef} className="space-y-3">
-              {data.turns.map((turn) => {
-                const matched = matches.includes(turn.index);
-                const blocks = turn.blocks.map((block, i) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: blocks are positional
-                  <Block key={i} block={block} matched={matched} />
-                ));
-                return (
-                  <div
-                    key={turn.index}
-                    id={`turn-${turn.index}`}
-                    data-testid="transcript-turn"
-                    data-role={turn.role}
-                    style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
-                    className={`rounded-sm border px-3 py-2 space-y-2 ${ROLE_STYLE[turn.role]} ${turn.index === target ? "ring-1 ring-primary" : ""}`}
-                  >
-                    <div className="font-label text-[11px] uppercase tracking-widest text-outline">
-                      {turn.role}
-                      {turn.time ? ` · ${formatWhen(turn.time)}` : ""}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <SheetBody
+            ref={bodyRef}
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              const near = el.scrollHeight - el.scrollTop - el.clientHeight < 160;
+              stick.current = near;
+              setAtBottom(near);
+            }}
+          >
+            {isLoading ? (
+              <div className="space-y-4">
+                {[...Array(5)].map((_, i) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
+                  <Skeleton key={i} className="h-16 w-full bg-surface-highest" />
+                ))}
+              </div>
+            ) : error || !data ? (
+              <div
+                data-testid="transcript-unavailable"
+                className="font-body text-xs text-outline py-12 text-center"
+              >
+                The conversation isn&apos;t available for this session. Cursor IDE chats keep it
+                inside Cursor, and some sessions have no transcript file left on disk.
+              </div>
+            ) : (
+              <div ref={turnsRef} className="space-y-3">
+                {data.turns.map((turn) => {
+                  const matched = matches.includes(turn.index);
+                  const blocks = turn.blocks.map((block, i) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: blocks are positional
+                    <Block key={i} block={block} matched={matched} />
+                  ));
+                  return (
+                    <div
+                      key={turn.index}
+                      id={`turn-${turn.index}`}
+                      data-testid="transcript-turn"
+                      data-role={turn.role}
+                      style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
+                      className={`rounded-sm border px-3 py-2 space-y-2 ${ROLE_STYLE[turn.role]} ${turn.index === target ? "ring-1 ring-primary" : ""}`}
+                    >
+                      <div className="font-label text-[11px] uppercase tracking-widest text-outline">
+                        {turn.role}
+                        {turn.time ? ` · ${formatWhen(turn.time)}` : ""}
+                      </div>
+                      {turn.role === "system" ? (
+                        <details open={matched || undefined}>
+                          <summary className="cursor-pointer font-label text-[11px] uppercase tracking-widest text-outline hover:text-on-surface">
+                            injected context
+                          </summary>
+                          <div className="mt-2 space-y-2">{blocks}</div>
+                        </details>
+                      ) : (
+                        blocks
+                      )}
                     </div>
-                    {turn.role === "system" ? (
-                      <details open={matched || undefined}>
-                        <summary className="cursor-pointer font-label text-[11px] uppercase tracking-widest text-outline hover:text-on-surface">
-                          injected context
-                        </summary>
-                        <div className="mt-2 space-y-2">{blocks}</div>
-                      </details>
-                    ) : (
-                      blocks
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
+          </SheetBody>
+          {data && !atBottom && (
+            <button
+              type="button"
+              data-testid="jump-to-latest"
+              onClick={() => {
+                stick.current = true;
+                scrollToEnd();
+              }}
+              className="absolute bottom-4 right-6 inline-flex items-center gap-1.5 rounded-sm border border-primary/40 bg-surface-high px-3 py-1.5 font-body text-xs text-primary shadow-lg hover:bg-surface-bright"
+            >
+              <ArrowDown className="h-3.5 w-3.5" />
+              Jump to latest
+              {data.total > seenTotal.current && ` · ${data.total - seenTotal.current} new`}
+            </button>
           )}
-        </SheetBody>
+        </div>
       </SheetContent>
     </Sheet>
   );
