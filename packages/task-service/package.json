@@ -1,6 +1,6 @@
 {
   "name": "@orc/task-service",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
