@@ -299,8 +299,14 @@ export const api = {
   },
 
   sessions: {
-    list: (params?: { agent?: string; job_run_id?: string; limit?: number }) =>
-      req<{ sessions: Session[] }>(
+    list: (params?: {
+      agent?: string;
+      job_run_id?: string;
+      project_id?: string;
+      limit?: number;
+      offset?: number;
+    }) =>
+      req<{ sessions: Session[]; total: number }>(
         "GET",
         "/sessions",
         undefined,

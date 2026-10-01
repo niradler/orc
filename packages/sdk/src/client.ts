@@ -314,8 +314,14 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     sessions: {
-      list: (params?: { agent?: string; job_run_id?: string; limit?: number }) =>
-        c<{ sessions: Session[] }>(
+      list: (params?: {
+        agent?: string;
+        job_run_id?: string;
+        project_id?: string;
+        limit?: number;
+        offset?: number;
+      }) =>
+        c<{ sessions: Session[]; total: number }>(
           "GET",
           "/sessions",
           undefined,

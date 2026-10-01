@@ -22,6 +22,7 @@ test.describe("Sessions", () => {
     const sessionId = await seedSession(request, agent, summary);
 
     await gotoView(page, "sessions");
+    await page.getByTestId("sessions-orc-tab").click();
     await expect(page.getByTestId("view-title")).toHaveText(/sessions/i);
 
     const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`);
@@ -34,6 +35,7 @@ test.describe("Sessions", () => {
     const sessionId = await seedSession(request, agent, `Detail test ${agent}`);
 
     await gotoView(page, "sessions");
+    await page.getByTestId("sessions-orc-tab").click();
 
     const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`);
     await expect(row).toBeVisible();
@@ -51,10 +53,39 @@ test.describe("Sessions", () => {
     const sessionId = await seedSession(request, agent, `Count test ${agent}`);
 
     await gotoView(page, "sessions");
+    await page.getByTestId("sessions-orc-tab").click();
     await expect(page.getByTestId("view-title")).toHaveText(/sessions/i);
 
     const row = page.locator(`[data-testid="session-row"][data-session-id="${sessionId}"]`);
     await expect(row).toBeVisible();
     await expect(row).toContainText(agent);
+  });
+
+  test("agent sessions and ORC sessions are separate tabs", async ({ page }) => {
+    await gotoView(page, "sessions");
+    await expect(page.getByTestId("live-sessions")).toBeVisible();
+    await expect(page.getByTestId("logged-sessions")).toHaveCount(0);
+
+    await page.getByTestId("sessions-orc-tab").click();
+    await expect(page.getByTestId("logged-sessions")).toBeVisible();
+    await expect(page.getByTestId("live-sessions")).toHaveCount(0);
+  });
+
+  test("ORC sessions paginate", async ({ page, request }) => {
+    const agent = tid("pw-agent-page");
+    for (let i = 0; i < 26; i++) {
+      await seedSession(request, agent, `Pagination test ${agent} ${i}`);
+    }
+
+    await gotoView(page, "sessions");
+    await page.getByTestId("sessions-orc-tab").click();
+    await expect(page.getByTestId("session-row")).toHaveCount(25);
+
+    await page.getByTestId("pager-next").click();
+    await expect(page.getByTestId("pager")).toContainText("Page 2");
+    await expect(page.getByTestId("session-row").first()).toBeVisible();
+
+    await page.getByTestId("pager-prev").click();
+    await expect(page.getByTestId("pager")).toContainText("Page 1");
   });
 });

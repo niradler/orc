@@ -1,114 +1,53 @@
-import { useMemo } from "react";
-import { EmptyState } from "@/components/EmptyState";
-import { ErrorState } from "@/components/ErrorState";
+import { useSearchParams } from "react-router-dom";
 import { LiveSessions } from "@/components/LiveSessions";
-import { SessionDetailSheet } from "@/components/SessionDetailSheet";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { LoggedSessions } from "@/components/LoggedSessions";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ViewHeader } from "@/components/ViewHeader";
-import { useDetailRoute } from "@/hooks/useDetailRoute";
 import { useProjectScope } from "@/hooks/useProjectScope";
-import { useSessions } from "@/hooks/useSessions";
+
+type SessionsTab = "agent" | "orc";
+
+const TAB_TRIGGER = `font-label text-[11px] uppercase tracking-widest px-4 py-2 rounded-none
+  data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none
+  text-outline hover:text-on-surface-variant`;
 
 export default function Sessions({ projectId: savedProjectId }: { projectId: string }) {
   const projectId = useProjectScope(savedProjectId);
-  const { data: sessions, isLoading, error, refetch } = useSessions({ limit: 50 });
-  const {
-    selectedId: selected,
-    openDetail,
-    closeDetail,
-  } = useDetailRoute("/sessions", "sessionId");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab: SessionsTab = searchParams.get("tab") === "orc" ? "orc" : "agent";
 
-  const visible = useMemo(() => {
-    const all = sessions ?? [];
-    if (projectId === "all") return all;
-    return all.filter((s) => s.project_id === projectId);
-  }, [sessions, projectId]);
-
-  if (error) return <ErrorState message={(error as Error).message} onRetry={() => refetch()} />;
+  function setTab(value: SessionsTab): void {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (value === "agent") next.delete("tab");
+        else next.set("tab", value);
+        return next;
+      },
+      { replace: true },
+    );
+  }
 
   return (
     <div>
-      <ViewHeader title="Sessions" meta={`${visible.length} logged`} />
+      <ViewHeader title="Sessions" />
 
-      <LiveSessions projectId={projectId} />
+      <Tabs value={tab} onValueChange={(v) => setTab(v as SessionsTab)} className="mb-4">
+        <TabsList className="bg-surface-highest border border-surface-highest gap-0 h-auto p-0">
+          <TabsTrigger data-testid="sessions-agent-tab" value="agent" className={TAB_TRIGGER}>
+            Agent sessions
+          </TabsTrigger>
+          <TabsTrigger data-testid="sessions-orc-tab" value="orc" className={TAB_TRIGGER}>
+            ORC sessions
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-      {isLoading ? (
-        <div className="space-y-2">
-          {[...Array(5)].map((_, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
-            <Skeleton key={i} className="h-10 w-full bg-surface-highest" />
-          ))}
-        </div>
-      ) : visible.length === 0 ? (
-        <EmptyState message="No logged sessions" />
+      {tab === "agent" ? (
+        <LiveSessions key={projectId} projectId={projectId} />
       ) : (
-        <div className="border border-surface-highest rounded-sm overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
-                  Agent
-                </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
-                  Version
-                </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
-                  Summary
-                </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
-                  Project
-                </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-28">
-                  Tokens Used
-                </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-36">
-                  Created
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visible.map((s) => (
-                <TableRow
-                  key={s.id}
-                  data-testid="session-row"
-                  data-session-id={s.id}
-                  className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
-                  onClick={() => openDetail(s.id)}
-                >
-                  <TableCell className="font-label text-xs text-primary">
-                    {s.agent ?? "\u2014"}
-                  </TableCell>
-                  <TableCell className="font-label text-[11px] text-outline">
-                    {s.agent_version ?? "\u2014"}
-                  </TableCell>
-                  <TableCell className="font-body text-xs text-on-surface-variant max-w-sm truncate">
-                    {s.summary ?? "\u2014"}
-                  </TableCell>
-                  <TableCell className="font-label text-[11px] text-outline">
-                    {s.project_id ? s.project_id.slice(-6) : "\u2014"}
-                  </TableCell>
-                  <TableCell className="font-label text-[11px] text-outline text-right">
-                    {s.tokens_used != null ? s.tokens_used.toLocaleString() : "\u2014"}
-                  </TableCell>
-                  <TableCell className="font-label text-[11px] text-outline">
-                    {new Date(s.created_at).toLocaleString()}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <LoggedSessions key={projectId} projectId={projectId} />
       )}
-
-      <SessionDetailSheet sessionId={selected} open={Boolean(selected)} onClose={closeDetail} />
     </div>
   );
 }

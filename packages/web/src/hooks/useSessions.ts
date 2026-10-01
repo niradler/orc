@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type TranscriptPage } from "@/api/client";
 
 export function useSessions(params?: { agent?: string; limit?: number }) {
@@ -7,6 +7,15 @@ export function useSessions(params?: { agent?: string; limit?: number }) {
     queryFn: () => api.sessions.list({ ...params, limit: params?.limit ?? 50 }),
     refetchInterval: 30_000,
     select: (data) => data.sessions,
+  });
+}
+
+export function useLoggedSessions(params: { project_id?: string; limit: number; offset: number }) {
+  return useQuery({
+    queryKey: ["sessions", "logged", params],
+    queryFn: () => api.sessions.list(params),
+    refetchInterval: 30_000,
+    placeholderData: keepPreviousData,
   });
 }
 
