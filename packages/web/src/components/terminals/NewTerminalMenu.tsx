@@ -68,7 +68,7 @@ export function NewTerminalMenu({
               type="text"
               value={cwd}
               onChange={(e) => setCwd(e.target.value)}
-              placeholder="default"
+              placeholder="~ (home folder)"
               spellCheck={false}
               className="mt-1 w-full bg-surface-low border border-surface-highest rounded-sm px-2 py-1 font-body text-xs text-on-surface placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-primary/40"
             />

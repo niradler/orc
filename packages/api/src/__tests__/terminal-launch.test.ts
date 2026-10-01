@@ -21,6 +21,7 @@ function deps(over: Partial<LaunchDeps> = {}): LaunchDeps {
     env: { SHELL: "/bin/zsh", COMSPEC: "C:\\cmd.exe" },
     which: (c) => BIN[c] ?? null,
     isDirectory: (p) => p.startsWith("/work"),
+    home: "/home/me",
     ...over,
   };
 }
@@ -92,6 +93,12 @@ describe("fresh launches", () => {
   test("agents start with just their binary", () => {
     expect(buildLaunch({ kind: "cursor" }, deps()).argv).toEqual(["/bin/cursor-agent"]);
     expect(buildLaunch({ kind: "codex" }, deps()).argv).toEqual(["/bin/codex"]);
+  });
+
+  test("no cwd starts in the home folder", () => {
+    expect(buildLaunch({ kind: "shell" }, deps()).cwd).toBe("/home/me");
+    expect(buildLaunch({ kind: "codex", cwd: "" }, deps()).cwd).toBe("/home/me");
+    expect(buildLaunch({ kind: "shell", cwd: "/work/x" }, deps()).cwd).toBe("/work/x");
   });
 
   test("cwd must be a directory", () => {

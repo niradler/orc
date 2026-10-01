@@ -1,6 +1,8 @@
 import { ConflictError, NotFoundError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import type { Launch, LaunchKind } from "./launch.js";
+import { buildPtyEnv } from "./pty-env.js";
+import { TerminalQueryResponder } from "./queries.js";
 import type { PtyHandle, SpawnPty } from "./spawn.js";
 
 export const DEFAULT_COLS = 120;
@@ -38,12 +40,15 @@ export interface TerminalManagerOptions {
   env: Record<string, string | undefined>;
   max: number;
   scrollbackBytes: number;
+  /** Reply to DA1/DA2 on the terminal's behalf. Off where the PTY layer (ConPTY) already does. */
+  answerDeviceAttributes?: boolean | undefined;
   now?: (() => number) | undefined;
 }
 
 interface Entry {
   info: TerminalInfo;
   pty: PtyHandle;
+  responder: TerminalQueryResponder;
   sinks: Set<TerminalSink>;
   scrollback: Uint8Array[];
   scrollbackSize: number;
@@ -52,14 +57,6 @@ interface Entry {
 interface Ticket {
   terminalId: string;
   expiresAt: number;
-}
-
-function ptyEnv(env: Record<string, string | undefined>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(env)) if (v !== undefined) out[k] = v;
-  out.TERM = "xterm-256color";
-  out.COLORTERM = "truecolor";
-  return out;
 }
 
 function randomToken(): string {
@@ -113,13 +110,16 @@ export class TerminalManager {
         created_at: new Date(this.now()).toISOString(),
       },
       pty: undefined as unknown as PtyHandle,
+      responder: new TerminalQueryResponder({
+        answerDeviceAttributes: this.options.answerDeviceAttributes ?? false,
+      }),
       sinks,
       scrollback: [],
       scrollbackSize: 0,
     };
     entry.pty = this.options.spawn(input.launch.argv, {
       cwd: input.launch.cwd,
-      env: ptyEnv(this.options.env),
+      env: buildPtyEnv(this.options.env),
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
       onData: (data) => this.onData(entry, data),
@@ -206,6 +206,9 @@ export class TerminalManager {
       entry.scrollbackSize -= dropped?.length ?? 0;
     }
     for (const sink of entry.sinks) sink.output(chunk);
+    if (entry.info.status === "running") {
+      for (const reply of entry.responder.feed(chunk)) entry.pty.write(reply);
+    }
   }
 
   private onExit(entry: Entry, code: number | null): void {

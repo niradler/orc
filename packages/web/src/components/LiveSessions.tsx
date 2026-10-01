@@ -2,11 +2,10 @@ import { RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { LiveSession } from "@/api/client";
-import { CopyResume } from "@/components/CopyResume";
 import { EmptyState } from "@/components/EmptyState";
 import { Highlight } from "@/components/Highlight";
 import { LiveSessionDetail } from "@/components/LiveSessionDetail";
-import { OpenTerminalResume } from "@/components/OpenTerminalResume";
+import { ResumeActions } from "@/components/ResumeActions";
 import {
   Table,
   TableBody,
@@ -269,8 +268,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="inline-flex items-center gap-3">
-                        <OpenTerminalResume session={s} />
-                        <CopyResume session={s} />
+                        <ResumeActions session={s} />
                       </div>
                     </TableCell>
                   </TableRow>

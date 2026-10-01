@@ -17,6 +17,7 @@ export interface LaunchDeps {
   env: Record<string, string | undefined>;
   which: (command: string) => string | null;
   isDirectory: (path: string) => boolean;
+  home: string;
   shell?: string | undefined;
 }
 
@@ -93,7 +94,7 @@ export function buildLaunch(req: LaunchRequest, deps: LaunchDeps): Launch {
   if (req.live) return resumeLaunch(req.live, deps);
   const kind = req.kind ?? "shell";
   if (!LAUNCH_KINDS.includes(kind)) throw new ValidationError(`Unknown terminal kind: ${kind}`);
-  const cwd = checkedCwd(req.cwd, deps);
+  const cwd = checkedCwd(req.cwd, deps) ?? deps.home;
   if (kind === "shell") {
     const shell = defaultShell(deps);
     if (!shell) throw new ValidationError("No shell found on this machine");

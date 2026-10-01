@@ -50,9 +50,39 @@ export const TERMINAL_THEME: ITheme = {
   brightWhite: "#ffffff",
 };
 
-const FONT_FAMILY =
-  "'JetBrains Mono', 'Cascadia Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace";
+// Prompts and agent status lines (starship, oh-my-posh, Claude Code) draw icons from the
+// Private Use Area. Only a Nerd Font has them, so the common installed names come first.
+const DEFAULT_FONT_FAMILY = [
+  "'JetBrainsMono Nerd Font Mono'",
+  "'JetBrainsMono NFM'",
+  "'CaskaydiaCove Nerd Font Mono'",
+  "'CaskaydiaCove NFM'",
+  "'Cascadia Mono NF'",
+  "'Cascadia Code NF'",
+  "'FiraCode Nerd Font Mono'",
+  "'Hack Nerd Font Mono'",
+  "'MesloLGS NF'",
+  "'MesloLGM Nerd Font Mono'",
+  "'Symbols Nerd Font Mono'",
+  "'JetBrains Mono'",
+  "'Cascadia Mono'",
+  "Menlo",
+  "Consolas",
+  "'DejaVu Sans Mono'",
+  "monospace",
+].join(", ");
+export const TERMINAL_FONT_KEY = "orc_terminal_font";
 const MAX_BACKOFF_MS = 10_000;
+
+export function terminalFontFamily(): string {
+  let custom = "";
+  try {
+    custom = localStorage.getItem(TERMINAL_FONT_KEY)?.trim() ?? "";
+  } catch {}
+  if (!custom) return DEFAULT_FONT_FAMILY;
+  const quoted = custom.includes(",") || /^['"]/.test(custom) ? custom : `'${custom}'`;
+  return `${quoted}, ${DEFAULT_FONT_FAMILY}`;
+}
 
 let ghosttyReady: Promise<void> | null = null;
 
@@ -98,7 +128,7 @@ export function createRuntime(id: string): TerminalRuntime {
 
   const term = new GhosttyTerminal({
     fontSize: 13,
-    fontFamily: FONT_FAMILY,
+    fontFamily: terminalFontFamily(),
     cursorBlink: true,
     scrollback: 10_000,
     theme: TERMINAL_THEME,

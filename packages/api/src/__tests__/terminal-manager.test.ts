@@ -36,7 +36,14 @@ class FakePty implements PtyHandle {
   }
 }
 
-function setup(over: { max?: number; scrollbackBytes?: number; now?: () => number } = {}) {
+function setup(
+  over: {
+    max?: number;
+    scrollbackBytes?: number;
+    now?: () => number;
+    answerDeviceAttributes?: boolean;
+  } = {},
+) {
   const ptys: FakePty[] = [];
   const manager = new TerminalManager({
     spawn: (argv, options) => {
@@ -48,6 +55,7 @@ function setup(over: { max?: number; scrollbackBytes?: number; now?: () => numbe
     max: over.max ?? 8,
     scrollbackBytes: over.scrollbackBytes ?? 1024,
     now: over.now,
+    answerDeviceAttributes: over.answerDeviceAttributes,
   });
   return { manager, ptys };
 }
@@ -83,8 +91,33 @@ describe("TerminalManager", () => {
       PATH: "/bin",
       TERM: "xterm-256color",
       COLORTERM: "truecolor",
+      TERM_PROGRAM: "orc",
     });
     expect(ptys[0]?.options.cwd).toBe("/work/app");
+  });
+
+  test("answers device-attribute and colour queries a shell prints", () => {
+    const { manager, ptys } = setup({ answerDeviceAttributes: true });
+    const { id } = manager.create({ launch: launch() });
+    manager.attach(id, sink().s);
+    ptys[0]?.emit("\x1b[c\x1b]11;?\x07");
+    expect(ptys[0]?.written).toEqual(["\x1b[?62;22c", "\x1b]11;rgb:0909/0e0e/1a1a\x07"]);
+  });
+
+  test("leaves device attributes to the PTY layer when told to", () => {
+    const { manager, ptys } = setup();
+    manager.create({ launch: launch() });
+    ptys[0]?.emit("\x1b[c\x1b[>0q");
+    expect(ptys[0]?.written).toEqual(["\x1bP>|orc\x1b\\"]);
+  });
+
+  test("does not answer queries replayed from scrollback", () => {
+    const { manager, ptys } = setup({ answerDeviceAttributes: true });
+    const { id } = manager.create({ launch: launch() });
+    ptys[0]?.emit("\x1b[c");
+    ptys[0]?.written.splice(0);
+    manager.attach(id, sink().s);
+    expect(ptys[0]?.written).toEqual([]);
   });
 
   test("detaching a socket does not kill the process", () => {

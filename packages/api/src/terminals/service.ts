@@ -1,4 +1,5 @@
 import { statSync } from "node:fs";
+import { homedir } from "node:os";
 import { loadConfig, type OrcConfig } from "@orc/core/config";
 import { ForbiddenError } from "@orc/core/errors";
 import type { LaunchDeps } from "./launch.js";
@@ -46,6 +47,7 @@ export function launchDeps(config: OrcConfig): LaunchDeps {
         return false;
       }
     },
+    home: homedir(),
     shell: config.terminals.shell,
   };
 }
@@ -58,6 +60,7 @@ export function getTerminalManager(): TerminalManager {
       env: process.env,
       max: terminals.max,
       scrollbackBytes: terminals.scrollback_bytes,
+      answerDeviceAttributes: process.platform !== "win32",
     });
   }
   return manager;

@@ -9,12 +9,16 @@ import { TerminalList } from "@/components/terminals/TerminalList";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
+import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { TERMINAL_KINDS } from "@/lib/terminal-kinds";
 import type { ConnectionState } from "@/lib/terminal-runtime";
 import { useTerminals } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 
 const gitPanel: ReactNode = null;
+const SIDEBAR_DEFAULT = 208;
+const SIDEBAR_MIN = 160;
+const SIDEBAR_MAX = 480;
 
 function describeStatus(terminal: Terminal, connection: ConnectionState | undefined): string {
   if (terminal.status === "exited") {
@@ -75,6 +79,12 @@ export default function Terminals() {
     remove,
   } = useTerminals();
   const isDesktop = useBreakpoint("md");
+  const sidebar = usePanelWidth({
+    storageKey: "orc_terminal_sidebar_width",
+    initial: SIDEBAR_DEFAULT,
+    min: SIDEBAR_MIN,
+    max: SIDEBAR_MAX,
+  });
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -181,12 +191,30 @@ export default function Terminals() {
   return (
     <div className="flex h-full w-full min-h-0">
       {isDesktop && (
-        <aside className="w-60 shrink-0 flex flex-col min-h-0 border-r border-surface-highest bg-background">
+        <aside
+          data-testid="terminal-sidebar"
+          style={{ width: sidebar.width }}
+          className="relative shrink-0 flex flex-col min-h-0 border-r border-surface-highest bg-background"
+        >
           <div className="shrink-0 p-3">{newMenu}</div>
           <TerminalList
             terminals={terminals}
             activeId={terminalId ?? null}
             onClose={requestClose}
+          />
+          {/* biome-ignore lint/a11y/useSemanticElements: a draggable splitter has no native element */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize terminal list"
+            aria-valuenow={sidebar.width}
+            aria-valuemin={SIDEBAR_MIN}
+            aria-valuemax={SIDEBAR_MAX}
+            tabIndex={0}
+            data-testid="terminal-sidebar-resize"
+            title="Drag to resize, double-click to reset"
+            className="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none hover:bg-primary/30 focus-visible:bg-primary/40 focus-visible:outline-none"
+            {...sidebar.handleProps}
           />
         </aside>
       )}
