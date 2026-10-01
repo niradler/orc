@@ -2,15 +2,28 @@ import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
 import { createApp } from "./server.js";
 import { startSessionWatcher } from "./session-watcher.js";
+import { shutdownTerminals } from "./terminals/service.js";
+import {
+  handleTerminalUpgrade,
+  type TerminalSocketData,
+  terminalWebsocket,
+} from "./terminals/ws.js";
 
 const logger = createLogger("api");
 const config = loadConfig();
 const app = createApp();
 
-const server = Bun.serve({
+const server = Bun.serve<TerminalSocketData>({
   port: config.api.port,
   hostname: config.api.host,
-  fetch: app.fetch,
+  fetch(req, srv) {
+    if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+      const handled = handleTerminalUpgrade(req, srv);
+      if (handled !== null) return handled;
+    }
+    return app.fetch(req);
+  },
+  websocket: terminalWebsocket,
   // SSE streams (/chat/stream) can idle between agent chunks longer than Bun's
   // 10s default, so we raise the idle timeout to Bun's max (255s) rather than
   // disabling it. Disabling it (0) let half-open/abandoned sockets accumulate
@@ -32,6 +45,7 @@ async function shutdown(signal: string, exitCode = 0) {
   shuttingDown = true;
   logger.info(`Received ${signal}, shutting down…`);
   stopSessionWatcher();
+  shutdownTerminals();
   try {
     // true = drop in-flight connections immediately so the port is released fast
     await server.stop(true);

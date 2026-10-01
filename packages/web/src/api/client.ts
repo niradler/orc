@@ -1,6 +1,6 @@
 // Browser-compatible ORC API client.
 // Types imported from @orc/sdk for end-to-end type safety.
-// Dev: Vite proxies /api/* → http://localhost:7701/*
+// Dev: Vite proxies /api/* → http://localhost:7701/api/*
 // Override via localStorage: orc_api_url, orc_api_secret
 
 export type {
@@ -97,6 +97,49 @@ import type {
 export const getApiUrl = (): string => localStorage.getItem("orc_api_url") ?? "/api";
 
 export const getApiSecret = (): string => localStorage.getItem("orc_api_secret") ?? "";
+
+export type TerminalKind = "shell" | "claude" | "codex" | "cursor";
+
+export type Terminal = {
+  id: string;
+  name: string;
+  kind: TerminalKind;
+  cwd: string | null;
+  status: "running" | "exited";
+  exit_code: number | null;
+  pid: number | null;
+  live_session_id: string | null;
+  created_at: string;
+};
+
+export type TerminalsInfo = {
+  enabled: boolean;
+  ready: boolean;
+  reason: string | null;
+  launchers: TerminalKind[];
+  terminals: Terminal[];
+};
+
+export type CreateTerminalInput = {
+  kind: TerminalKind;
+  cwd?: string;
+  name?: string;
+  live_session_id?: string;
+};
+
+export function terminalSocketUrl(
+  id: string,
+  ticket: string,
+  apiUrl: string = getApiUrl(),
+  location: Pick<Location, "protocol" | "host"> = window.location,
+): string {
+  const path = `/terminals/${encodeURIComponent(id)}/ws?ticket=${encodeURIComponent(ticket)}`;
+  const base = apiUrl.replace(/\/+$/, "");
+  if (/^https?:\/\//i.test(base)) return `${base.replace(/^http/i, "ws")}${path}`;
+  const scheme = location.protocol === "https:" ? "wss:" : "ws:";
+  const prefix = base.startsWith("/") || base === "" ? base : `/${base}`;
+  return `${scheme}//${location.host}${prefix}${path}`;
+}
 
 async function req<T>(
   method: string,
@@ -387,6 +430,18 @@ export const api = {
         "/tags",
         undefined,
         params as Record<string, string | number | boolean | undefined>,
+      ),
+  },
+
+  terminals: {
+    list: () => req<TerminalsInfo>("GET", "/terminals"),
+    create: (data: CreateTerminalInput) => req<Terminal>("POST", "/terminals", data),
+    get: (id: string) => req<Terminal>("GET", `/terminals/${encodeURIComponent(id)}`),
+    remove: (id: string) => req<null>("DELETE", `/terminals/${encodeURIComponent(id)}`),
+    ticket: (id: string) =>
+      req<{ ticket: string; expires_in: number }>(
+        "POST",
+        `/terminals/${encodeURIComponent(id)}/ticket`,
       ),
   },
 

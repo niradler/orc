@@ -63,10 +63,15 @@ test.describe("Agent backends", () => {
 
     // One option per probed backend, plus the "Default (…)" entry.
     await expect(page.getByRole("option")).toHaveCount(backends.length + 1);
-    const claudeOption = page.getByRole("option", { name: /^claude ●/ });
-    await expect(claudeOption).toBeVisible();
-    // An unusable backend is offered but visibly marked, rather than hidden.
-    await expect(page.getByRole("option", { name: /^codex-cli ○/ })).toBeVisible();
+    // Every backend is offered with a marker that matches the API's verdict. An unusable
+    // backend is visibly marked rather than hidden. Which ones are installed depends on the
+    // machine, so the expectation comes from the API, not a hardcoded list.
+    for (const backend of backends) {
+      const marker = backend.available ? "●" : "○";
+      await expect(
+        page.getByRole("option", { name: new RegExp(`^${backend.name} ${marker}`) }),
+      ).toBeVisible();
+    }
 
     await page.keyboard.press("Escape");
     await expect(dialog.getByTestId("backend-picker-hint")).not.toHaveText("");

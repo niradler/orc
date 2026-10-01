@@ -1,4 +1,6 @@
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { apiDelete, apiPost, gotoView, tid } from "./_helpers";
 
@@ -9,15 +11,19 @@ async function gotoCollections(page: Parameters<typeof gotoView>[0]): Promise<vo
   await page.getByTestId("knowledge-collections-tab").click();
 }
 
+// A private empty directory, not the shared OS tmp dir: indexing that scans every entry in it,
+// and a machine can have unreadable folders there (e.g. Windows msdtadmin) that fail the scan.
+const collectionDir = mkdtempSync(join(tmpdir(), "orc-pw-collection-"));
+
 test.describe("Knowledge Collections", () => {
   test("collection seeded via API appears in collections tab", async ({ page, request }) => {
     const name = tid("pw-coll");
-    // Use the OS tmp dir as a path that's guaranteed to exist; pattern matches nothing
+    // An existing, empty directory; the pattern matches nothing
     // but the collection record is still created.
     const created = await apiPost<{ name: string; indexed: number }>(
       request,
       "/knowledge/collections",
-      { name, path: tmpdir(), pattern: "**/*.pwtest_nonexistent" },
+      { name, path: collectionDir, pattern: "**/*.pwtest_nonexistent" },
     );
     expect(created.name).toBe(name);
 
@@ -42,7 +48,7 @@ test.describe("Knowledge Collections", () => {
     await expect(dialog).toBeVisible();
 
     await dialog.getByTestId("collection-name-input").fill(name);
-    await dialog.getByTestId("collection-path-input").fill(tmpdir());
+    await dialog.getByTestId("collection-path-input").fill(collectionDir);
     await dialog.getByTestId("collection-submit").click();
 
     // Row appears in the table
@@ -60,7 +66,7 @@ test.describe("Knowledge Collections", () => {
     const name = tid("pw-coll-del");
     await apiPost(request, "/knowledge/collections", {
       name,
-      path: tmpdir(),
+      path: collectionDir,
       pattern: "**/*.pwtest_nonexistent",
     });
 

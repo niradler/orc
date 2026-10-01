@@ -1,6 +1,6 @@
 import { Bot } from "lucide-react";
 import { Link } from "react-router-dom";
-import { CopyResume } from "@/components/CopyResume";
+import { ResumeActions } from "@/components/ResumeActions";
 import { useTaskSessions } from "@/hooks/useSessions";
 import { formatTokenCount, formatTokens, formatWhen, STATUS } from "@/lib/live-sessions";
 
@@ -63,7 +63,7 @@ export function TaskSessions({ taskId }: { taskId: string }) {
               <span className="font-label text-[11px] text-outline shrink-0">
                 {formatWhen(s.last_activity_at)}
               </span>
-              <CopyResume session={s} />
+              <ResumeActions session={s} />
             </div>
           ))}
         </div>

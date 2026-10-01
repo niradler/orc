@@ -7,16 +7,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { ViewHeader } from "@/components/ViewHeader";
+import { TERMINAL_FONT_KEY } from "@/lib/terminal-runtime";
 
 export default function Settings() {
   const [apiUrl, setApiUrl] = useState(getApiUrl);
   const [apiSecret, setApiSecret] = useState(getApiSecret);
+  const [terminalFont, setTerminalFont] = useState(
+    () => localStorage.getItem(TERMINAL_FONT_KEY) ?? "",
+  );
   const [saved, setSaved] = useState(false);
   const qc = useQueryClient();
 
   const handleSave = () => {
     localStorage.setItem("orc_api_url", apiUrl.trim() || "/api");
     localStorage.setItem("orc_api_secret", apiSecret.trim());
+    if (terminalFont.trim()) localStorage.setItem(TERMINAL_FONT_KEY, terminalFont.trim());
+    else localStorage.removeItem(TERMINAL_FONT_KEY);
     qc.invalidateQueries();
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -25,8 +31,10 @@ export default function Settings() {
   const handleReset = () => {
     localStorage.removeItem("orc_api_url");
     localStorage.removeItem("orc_api_secret");
+    localStorage.removeItem(TERMINAL_FONT_KEY);
     setApiUrl("/api");
     setApiSecret("");
+    setTerminalFont("");
     qc.invalidateQueries();
   };
 
@@ -73,6 +81,30 @@ export default function Settings() {
                 className="bg-surface-highest border-surface-highest text-on-surface font-body text-sm"
               />
             </div>
+          </div>
+        </section>
+
+        {/* Terminal */}
+        <section>
+          <h2 className="font-headline font-bold text-xs uppercase tracking-widest text-on-surface mb-1">
+            Terminal
+          </h2>
+          <p className="font-body text-xs text-outline mb-4">
+            Prompt and agent status icons need a Nerd Font installed on this machine. Common ones
+            are tried automatically; set the exact family name if your icons show as empty boxes.
+            Applies to terminals opened after saving.
+          </p>
+          <Separator className="bg-surface-highest mb-4" />
+          <div className="space-y-2">
+            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
+              Terminal Font Family
+            </Label>
+            <Input
+              value={terminalFont}
+              onChange={(e) => setTerminalFont(e.target.value)}
+              placeholder="e.g. MesloLGS NF"
+              className="bg-surface-highest border-surface-highest text-on-surface font-body text-sm"
+            />
           </div>
         </section>
 

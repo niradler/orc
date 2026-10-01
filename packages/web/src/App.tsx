@@ -1,12 +1,14 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useState } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { ChatPanel } from "@/components/ChatPanel";
 import { MobileChatFab } from "@/components/MobileChatFab";
 import { MobileTopBar } from "@/components/MobileTopBar";
 import { Sidebar } from "@/components/Sidebar";
 import { BREAKPOINTS } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
+import { TerminalsProvider } from "@/lib/terminals";
+import { cn } from "@/lib/utils";
 import Dashboard from "@/views/Dashboard";
 import Flows from "@/views/Flows";
 import Jobs from "@/views/Jobs";
@@ -17,6 +19,7 @@ import Sessions from "@/views/Sessions";
 import Settings from "@/views/Settings";
 import Skills from "@/views/Skills";
 import Tasks from "@/views/Tasks";
+import Terminals from "@/views/Terminals";
 
 const STORAGE_KEY = "orc_selected_project";
 
@@ -36,6 +39,9 @@ export default function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
 
+  const { pathname } = useLocation();
+  const fullBleed = pathname === "/terminals" || pathname.startsWith("/terminals/");
+
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, projectId);
   }, [projectId]);
@@ -49,102 +55,115 @@ export default function App() {
   }, [selectableProjects, projectId]);
 
   return (
-    <div className="h-dvh bg-background flex flex-col overflow-hidden">
-      {/* Mobile top bar - only rendered under md; also gated by `md:hidden` in the
+    <TerminalsProvider>
+      <div className="h-dvh bg-background flex flex-col overflow-hidden">
+        {/* Mobile top bar - only rendered under md; also gated by `md:hidden` in the
           component itself so the CSS-driven layout works even before JS hydration. */}
-      <MobileTopBar onOpenNav={() => setMobileNavOpen(true)} />
+        <MobileTopBar onOpenNav={() => setMobileNavOpen(true)} />
 
-      <div className="flex-1 min-h-0 flex">
-        {/* Sidebar: visible on md+. On mobile we instead render a Dialog drawer below. */}
-        <div className="hidden md:flex">
-          <Sidebar
-            projectId={projectId}
-            onProjectChange={setProjectId}
-            collapsed={sidebarCollapsed}
-            onToggle={() => setSidebarCollapsed((v) => !v)}
-          />
-        </div>
-
-        {/* Main content - the only element that owns vertical scroll for page content. */}
-        <main className="flex-1 min-w-0 min-h-0 overflow-y-auto">
-          <div className="p-4 md:p-6 lg:p-8 min-h-full flex flex-col">
-            <Routes>
-              <Route path="/" element={<Navigate to="/tasks" replace />} />
-              <Route path="/dashboard" element={<Dashboard projectId={projectId} />} />
-              <Route path="/tasks" element={<Tasks projectId={projectId} />} />
-              <Route path="/tasks/:taskId" element={<Tasks projectId={projectId} />} />
-              <Route path="/jobs" element={<Jobs projectId={projectId} />} />
-              <Route path="/jobs/:jobId" element={<Jobs projectId={projectId} />} />
-              <Route path="/sessions" element={<Sessions projectId={projectId} />} />
-              <Route path="/sessions/:sessionId" element={<Sessions projectId={projectId} />} />
-              <Route path="/memories" element={<Memories projectId={projectId} />} />
-              <Route path="/memories/:memoryId" element={<Memories projectId={projectId} />} />
-              <Route path="/projects" element={<Projects />} />
-              <Route path="/projects/:projectId" element={<Projects />} />
-              <Route path="/knowledge" element={<Knowledge projectId={projectId} />} />
-              <Route path="/skills" element={<Skills />} />
-              <Route path="/skills/:skillName" element={<Skills />} />
-              <Route path="/flows" element={<Flows />} />
-              <Route path="/flows/:flowName" element={<Flows />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="*" element={<Navigate to="/tasks" replace />} />
-            </Routes>
-          </div>
-        </main>
-
-        {/* Chat rail/panel: visible on md+. Mobile uses the FAB + sheet below. */}
-        <div className="hidden md:flex">
-          <ChatPanel open={chatOpen} onToggle={() => setChatOpen((v) => !v)} />
-        </div>
-      </div>
-
-      {/* Mobile nav drawer (Radix Dialog, slides in from the left). */}
-      <Dialog.Root open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="md:hidden fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-          <Dialog.Content
-            data-testid="mobile-nav-drawer"
-            className="md:hidden fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-background border-r border-surface-highest shadow-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
-          >
-            <Dialog.Title className="sr-only">Navigation</Dialog.Title>
-            <Dialog.Description className="sr-only">
-              Main navigation and project selector
-            </Dialog.Description>
+        <div className="flex-1 min-h-0 flex">
+          {/* Sidebar: visible on md+. On mobile we instead render a Dialog drawer below. */}
+          <div className="hidden md:flex">
             <Sidebar
               projectId={projectId}
               onProjectChange={setProjectId}
-              collapsed={false}
-              onToggle={() => {}}
-              embedded
-              onNavigate={() => setMobileNavOpen(false)}
+              collapsed={sidebarCollapsed}
+              onToggle={() => setSidebarCollapsed((v) => !v)}
             />
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+          </div>
 
-      {/* Mobile chat sheet (full-screen on mobile). */}
-      <Dialog.Root open={mobileChatOpen} onOpenChange={setMobileChatOpen}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="md:hidden fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-          <Dialog.Content
-            data-testid="mobile-chat-sheet"
-            className="md:hidden fixed inset-0 z-50 flex flex-col data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom"
+          {/* Main content - the only element that owns vertical scroll for page content. */}
+          <main
+            className={cn(
+              "relative flex-1 min-w-0 min-h-0",
+              fullBleed ? "overflow-hidden" : "overflow-y-auto",
+            )}
           >
-            <Dialog.Title className="sr-only">Chat</Dialog.Title>
-            <Dialog.Description className="sr-only">
-              Chat with your configured agent
-            </Dialog.Description>
-            <ChatPanel
-              open
-              onToggle={() => setMobileChatOpen(false)}
-              embedded
-              onClose={() => setMobileChatOpen(false)}
-            />
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+            <div
+              className={cn(
+                fullBleed ? "absolute inset-0 flex" : "p-4 md:p-6 lg:p-8 min-h-full flex flex-col",
+              )}
+            >
+              <Routes>
+                <Route path="/" element={<Navigate to="/tasks" replace />} />
+                <Route path="/dashboard" element={<Dashboard projectId={projectId} />} />
+                <Route path="/tasks" element={<Tasks projectId={projectId} />} />
+                <Route path="/tasks/:taskId" element={<Tasks projectId={projectId} />} />
+                <Route path="/terminals" element={<Terminals />} />
+                <Route path="/terminals/:terminalId" element={<Terminals />} />
+                <Route path="/jobs" element={<Jobs projectId={projectId} />} />
+                <Route path="/jobs/:jobId" element={<Jobs projectId={projectId} />} />
+                <Route path="/sessions" element={<Sessions projectId={projectId} />} />
+                <Route path="/sessions/:sessionId" element={<Sessions projectId={projectId} />} />
+                <Route path="/memories" element={<Memories projectId={projectId} />} />
+                <Route path="/memories/:memoryId" element={<Memories projectId={projectId} />} />
+                <Route path="/projects" element={<Projects />} />
+                <Route path="/projects/:projectId" element={<Projects />} />
+                <Route path="/knowledge" element={<Knowledge projectId={projectId} />} />
+                <Route path="/skills" element={<Skills />} />
+                <Route path="/skills/:skillName" element={<Skills />} />
+                <Route path="/flows" element={<Flows />} />
+                <Route path="/flows/:flowName" element={<Flows />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="*" element={<Navigate to="/tasks" replace />} />
+              </Routes>
+            </div>
+          </main>
 
-      <MobileChatFab onClick={() => setMobileChatOpen(true)} />
-    </div>
+          {/* Chat rail/panel: visible on md+. Mobile uses the FAB + sheet below. */}
+          <div className="hidden md:flex">
+            <ChatPanel open={chatOpen} onToggle={() => setChatOpen((v) => !v)} />
+          </div>
+        </div>
+
+        {/* Mobile nav drawer (Radix Dialog, slides in from the left). */}
+        <Dialog.Root open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="md:hidden fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+            <Dialog.Content
+              data-testid="mobile-nav-drawer"
+              className="md:hidden fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-background border-r border-surface-highest shadow-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
+            >
+              <Dialog.Title className="sr-only">Navigation</Dialog.Title>
+              <Dialog.Description className="sr-only">
+                Main navigation and project selector
+              </Dialog.Description>
+              <Sidebar
+                projectId={projectId}
+                onProjectChange={setProjectId}
+                collapsed={false}
+                onToggle={() => {}}
+                embedded
+                onNavigate={() => setMobileNavOpen(false)}
+              />
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
+
+        {/* Mobile chat sheet (full-screen on mobile). */}
+        <Dialog.Root open={mobileChatOpen} onOpenChange={setMobileChatOpen}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="md:hidden fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+            <Dialog.Content
+              data-testid="mobile-chat-sheet"
+              className="md:hidden fixed inset-0 z-50 flex flex-col data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom"
+            >
+              <Dialog.Title className="sr-only">Chat</Dialog.Title>
+              <Dialog.Description className="sr-only">
+                Chat with your configured agent
+              </Dialog.Description>
+              <ChatPanel
+                open
+                onToggle={() => setMobileChatOpen(false)}
+                embedded
+                onClose={() => setMobileChatOpen(false)}
+              />
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
+
+        <MobileChatFab onClick={() => setMobileChatOpen(true)} />
+      </div>
+    </TerminalsProvider>
   );
 }

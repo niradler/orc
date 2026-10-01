@@ -36,3 +36,10 @@ export class UnauthorizedError extends OrcError {
     this.name = "UnauthorizedError";
   }
 }
+
+export class ForbiddenError extends OrcError {
+  constructor(message: string, code: string = "FORBIDDEN") {
+    super(message, code, 403);
+    this.name = "ForbiddenError";
+  }
+}

@@ -10,12 +10,14 @@ import {
   GitBranch,
   History,
   Settings,
+  Terminal,
   TerminalSquare,
   Zap,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useHealth } from "@/hooks/useHealth";
 import { useProjects } from "@/hooks/useProjects";
+import { useTerminals } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS: {
@@ -27,6 +29,7 @@ const NAV_ITEMS: {
   { id: "dashboard", path: "/dashboard", label: "Dashboard", icon: Activity },
   { id: "tasks", path: "/tasks", label: "Tasks", icon: CheckSquare },
   { id: "jobs", path: "/jobs", label: "Jobs", icon: TerminalSquare },
+  { id: "terminals", path: "/terminals", label: "Terminals", icon: Terminal },
   { id: "memories", path: "/memories", label: "Memories", icon: Brain },
   { id: "projects", path: "/projects", label: "Projects", icon: Folder },
   { id: "sessions", path: "/sessions", label: "Sessions", icon: History },
@@ -62,6 +65,8 @@ export function Sidebar({
   const { pathname } = useLocation();
   const { data: health, isError } = useHealth();
   const { data: projects } = useProjects({ status: "active" });
+  const { terminals } = useTerminals();
+  const runningTerminals = terminals.filter((t) => t.status === "running").length;
 
   const settingsActive = isPathActive(pathname, "/settings");
 
@@ -147,15 +152,17 @@ export function Sidebar({
       >
         {NAV_ITEMS.map(({ id, path, label, icon: Icon }) => {
           const active = isPathActive(pathname, path);
+          const badge = id === "terminals" && runningTerminals > 0 ? runningTerminals : 0;
+          const rail = collapsed && !embedded;
           return (
             <button
               key={id}
               type="button"
               data-testid={`nav-${id}`}
               onClick={() => handleNav(path)}
-              title={collapsed && !embedded ? label : undefined}
+              title={rail ? (badge ? `${label} (${badge} running)` : label) : undefined}
               className={cn(
-                "w-full flex items-center font-label text-xs tracking-tight uppercase transition-all duration-150",
+                "relative w-full flex items-center font-label text-xs tracking-tight uppercase transition-all duration-150",
                 collapsed && !embedded ? "justify-center px-0 py-2" : "gap-3 px-3 py-2",
                 active
                   ? "bg-surface-highest text-primary font-bold border-r-2 border-primary translate-x-0.5"
@@ -163,7 +170,21 @@ export function Sidebar({
               )}
             >
               <Icon size={16} strokeWidth={active ? 2.5 : 1.5} />
-              {(!collapsed || embedded) && label}
+              {!rail && label}
+              {badge > 0 &&
+                (rail ? (
+                  <span
+                    title={`${badge} running`}
+                    className="absolute top-1 right-2 h-2 w-2 rounded-full bg-secondary"
+                  />
+                ) : (
+                  <span
+                    title={`${badge} running`}
+                    className="ml-auto min-w-5 px-1.5 py-0.5 rounded-sm bg-secondary/15 text-secondary text-center text-[10px] font-bold leading-none"
+                  >
+                    {badge}
+                  </span>
+                ))}
             </button>
           );
         })}

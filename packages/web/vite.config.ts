@@ -15,7 +15,7 @@ export default defineConfig({
       "/api": {
         target: `http://localhost:${process.env.ORC_API_PORT ?? 7701}`,
         changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/api/, ""),
+        ws: true,
       },
     },
   },
