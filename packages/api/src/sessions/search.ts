@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { getDb } from "@orc/db/client";
 import { gateway_sessions } from "@orc/db/schema";
 import { and, desc, eq } from "drizzle-orm";
@@ -37,7 +37,7 @@ export function findRg(locations: string[] = RG_LOCATIONS): string | null {
 function roots(): string[] {
   const configured = process.env.ORC_SESSION_SEARCH_ROOTS;
   const all = configured
-    ? configured.split(":")
+    ? configured.split(delimiter)
     : [
         join(homedir(), ".claude", "projects"),
         join(homedir(), ".codex", "sessions"),

@@ -32,7 +32,12 @@ export function resolveSlugPath(slug: string): string | null {
     }
     return null;
   };
-  const resolved = walk("/", slug.split("-"));
+  const parts = slug.split("-");
+  // Windows slugs lead with the drive letter ("c-Users-me-proj"); POSIX ones start at "/".
+  const windowsDrive = process.platform === "win32" && /^[A-Za-z]$/.test(parts[0] ?? "");
+  const resolved = windowsDrive
+    ? walk(`${(parts[0] as string).toUpperCase()}:\\`, parts.slice(1))
+    : walk("/", parts);
   pathBySlug.set(slug, resolved);
   return resolved;
 }

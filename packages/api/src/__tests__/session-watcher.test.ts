@@ -59,7 +59,8 @@ beforeAll(() => {
 
 afterAll(() => {
   teardownTestApp();
-  rmSync(root, { recursive: true, force: true });
+  // Windows keeps a just-closed fs.watch handle on the directory for a moment.
+  rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 describe("claude adapter: live registry", () => {
@@ -241,6 +242,8 @@ describe("codex adapter", () => {
       0,
     );
     ins.run("cx-2", "archived", null, "/tmp/cx", "", "", 5, "/nope", 1, 1, 1, 1, 1);
+    // An unfinalized statement keeps the file open, which blocks removing it on Windows.
+    ins.finalize();
     db.close();
 
     await runSync([codexAdapter(dbPath)], { force: true });
@@ -264,7 +267,10 @@ describe("cursor adapter", () => {
     const dir = join(root, "cursor-target");
     const projects = join(root, "cursor-projects");
     mkdirSync(join(dir, "my-proj"), { recursive: true });
-    const slug = join(dir, "my-proj").slice(1).replaceAll("/", "-");
+    const slug = join(dir, "my-proj")
+      .replace(/^([A-Za-z]):/, "$1")
+      .replace(/^[\\/]/, "")
+      .replaceAll(/[\\/]/g, "-");
     expect(resolveSlugPath(slug)).toBe(join(dir, "my-proj"));
 
     const id = "c1adfec3-6b47-4794-af89-276b33218906";

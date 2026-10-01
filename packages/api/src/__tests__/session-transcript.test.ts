@@ -102,7 +102,8 @@ beforeAll(async () => {
 afterAll(() => {
   delete process.env.ORC_SESSION_SEARCH_ROOTS;
   teardownTestApp();
-  rmSync(root, { recursive: true, force: true });
+  // Windows keeps a just-closed fs.watch handle on the directory for a moment.
+  rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 describe("transcript readers", () => {

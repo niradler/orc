@@ -24,6 +24,7 @@ export interface TerminalRuntime {
   pendingStop: boolean;
   attempts: number;
   retryTimer: ReturnType<typeof setTimeout> | null;
+  resizeTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export const TERMINAL_THEME: ITheme = {
@@ -73,6 +74,9 @@ const DEFAULT_FONT_FAMILY = [
 ].join(", ");
 export const TERMINAL_FONT_KEY = "orc_terminal_font";
 const MAX_BACKOFF_MS = 10_000;
+// Dragging the side panel fires a fit per frame; a TUI redrawing for every one of them
+// interleaves with typed input, so only the settled size is sent.
+const RESIZE_SETTLE_MS = 120;
 
 export function terminalFontFamily(): string {
   let custom = "";
@@ -113,11 +117,18 @@ async function copyText(text: string): Promise<void> {
 }
 
 function sendResize(runtime: TerminalRuntime): void {
+  if (runtime.resizeTimer) clearTimeout(runtime.resizeTimer);
+  runtime.resizeTimer = null;
   const socket = runtime.socket;
   if (!socket || socket.readyState !== WebSocket.OPEN) return;
   const cols = Math.min(500, Math.max(2, runtime.term.cols));
   const rows = Math.min(300, Math.max(2, runtime.term.rows));
   socket.send(JSON.stringify({ type: "resize", cols, rows }));
+}
+
+function scheduleResize(runtime: TerminalRuntime): void {
+  if (runtime.resizeTimer) clearTimeout(runtime.resizeTimer);
+  runtime.resizeTimer = setTimeout(() => sendResize(runtime), RESIZE_SETTLE_MS);
 }
 
 export function createRuntime(id: string): TerminalRuntime {
@@ -150,13 +161,14 @@ export function createRuntime(id: string): TerminalRuntime {
     pendingStop: false,
     attempts: 0,
     retryTimer: null,
+    resizeTimer: null,
   };
 
   term.onData((data) => {
     const socket = runtime.socket;
     if (socket && socket.readyState === WebSocket.OPEN) socket.send(data);
   });
-  term.onResize(() => sendResize(runtime));
+  term.onResize(() => scheduleResize(runtime));
 
   const mac = isMacPlatform();
   term.attachCustomKeyEventHandler((event) => {
@@ -291,6 +303,8 @@ export function disposeRuntime(runtime: TerminalRuntime): void {
   runtime.disposed = true;
   if (runtime.retryTimer) clearTimeout(runtime.retryTimer);
   runtime.retryTimer = null;
+  if (runtime.resizeTimer) clearTimeout(runtime.resizeTimer);
+  runtime.resizeTimer = null;
   const socket = runtime.socket;
   runtime.socket = null;
   if (socket) {
