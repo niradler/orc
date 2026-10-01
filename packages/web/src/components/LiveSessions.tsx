@@ -6,6 +6,7 @@ import { CopyResume } from "@/components/CopyResume";
 import { EmptyState } from "@/components/EmptyState";
 import { Highlight } from "@/components/Highlight";
 import { LiveSessionDetail } from "@/components/LiveSessionDetail";
+import { OpenTerminalResume } from "@/components/OpenTerminalResume";
 import {
   Table,
   TableBody,
@@ -267,7 +268,10 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <CopyResume session={s} />
+                      <div className="inline-flex items-center gap-3">
+                        <OpenTerminalResume session={s} />
+                        <CopyResume session={s} />
+                      </div>
                     </TableCell>
                   </TableRow>
                 );

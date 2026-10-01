@@ -21,6 +21,7 @@ import { skillsRouter } from "./routes/skills.js";
 import { tagsRouter } from "./routes/tags.js";
 import { taskLinksRouter } from "./routes/task-links.js";
 import { tasksRouter } from "./routes/tasks.js";
+import { terminalsRouter } from "./routes/terminals.js";
 import { createWebStatic } from "./static.js";
 
 const logger = createLogger("api");
@@ -46,7 +47,7 @@ export function createApp() {
     if (orcErr) {
       return c.json(
         { error: orcErr.message, code: orcErr.code },
-        orcErr.statusCode as 400 | 401 | 404 | 409 | 500 | 503,
+        orcErr.statusCode as 400 | 401 | 403 | 404 | 409 | 500 | 503,
       );
     }
     logger.error("Unhandled error", err);
@@ -69,6 +70,7 @@ export function createApp() {
   app.route("/api", jobsRouter);
   app.route("/api", gatewayRouter);
   app.route("/api", tagsRouter);
+  app.route("/api", terminalsRouter);
 
   app.doc("/openapi.json", {
     openapi: "3.1.0",

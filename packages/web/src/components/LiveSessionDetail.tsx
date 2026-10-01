@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import type { LiveSession, TranscriptPage } from "@/api/client";
 import { CopyResume } from "@/components/CopyResume";
 import { Markdown } from "@/components/Markdown";
+import { OpenTerminalResume } from "@/components/OpenTerminalResume";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveSessions, useTranscript } from "@/hooks/useSessions";
@@ -255,6 +256,7 @@ export function LiveSessionDetail({
                   task: {session.task.title}
                 </Link>
               )}
+              <OpenTerminalResume session={session} />
               <CopyResume session={session} />
               <span className="truncate max-w-full text-on-surface-variant">{session.cwd}</span>
             </div>

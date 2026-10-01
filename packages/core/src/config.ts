@@ -73,6 +73,15 @@ export const OrcConfigSchema = z.object({
     })
     .default({ port: 7700, host: "127.0.0.1" }),
 
+  terminals: z
+    .object({
+      enabled: z.boolean().default(false),
+      max: z.number().int().min(1).max(64).default(8),
+      shell: z.string().optional(),
+      scrollback_bytes: z.number().int().min(0).default(524288),
+    })
+    .default({ enabled: false, max: 8, scrollback_bytes: 524288 }),
+
   mcp: z
     .object({
       transport: z.enum(["stdio", "http"]).default("stdio"),
@@ -216,6 +225,12 @@ function fromEnv(): Record<string, unknown> {
   if (process.env.ORC_API_HOST) api.host = process.env.ORC_API_HOST;
   if (process.env.ORC_API_SECRET) api.secret = process.env.ORC_API_SECRET;
   if (Object.keys(api).length) env.api = api;
+
+  const terminals: Record<string, unknown> = {};
+  if (process.env.ORC_TERMINALS_ENABLED)
+    terminals.enabled = ["1", "true"].includes(process.env.ORC_TERMINALS_ENABLED);
+  if (process.env.ORC_TERMINALS_SHELL) terminals.shell = process.env.ORC_TERMINALS_SHELL;
+  if (Object.keys(terminals).length) env.terminals = terminals;
 
   const runner: Record<string, unknown> = {};
   if (process.env.ORC_RUNNER_TIMEOUT)
