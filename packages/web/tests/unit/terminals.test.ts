@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import type { Terminal } from "../../src/api/client";
 import { terminalSocketUrl } from "../../src/api/client";
 import { resolveTerminalKey, type TerminalKeyInput } from "../../src/lib/terminal-keys";
 import { cwdTail } from "../../src/lib/terminal-kinds";
+import {
+  absoluteUrl,
+  runningTerminalForSession,
+  sessionTerminalPath,
+  shareablePath,
+} from "../../src/lib/terminal-links";
 
 const http = { protocol: "http:", host: "localhost:9742" };
 const https = { protocol: "https:", host: "orc.example.com" };
@@ -112,5 +119,40 @@ describe("cwdTail", () => {
   test("handles null and root", () => {
     expect(cwdTail(null)).toBe("");
     expect(cwdTail("/")).toBe("/");
+  });
+});
+
+describe("terminal links", () => {
+  const terminal = (over: Partial<Terminal>): Terminal =>
+    ({
+      id: "t1",
+      name: "t",
+      kind: "shell",
+      status: "running",
+      live_session_id: null,
+      ...over,
+    }) as Terminal;
+
+  test("a session link survives the terminal being reopened and encodes the id", () => {
+    expect(sessionTerminalPath("a b/c")).toBe("/terminals?session=a%20b%2Fc");
+    expect(shareablePath(terminal({ live_session_id: "s1" }))).toBe("/terminals?session=s1");
+    expect(shareablePath(terminal({}))).toBe("/terminals/t1");
+  });
+
+  test("only a running terminal answers a session link", () => {
+    const list = [
+      terminal({ id: "old", live_session_id: "s1", status: "exited" }),
+      terminal({ id: "other", live_session_id: "s2" }),
+      terminal({ id: "live", live_session_id: "s1" }),
+    ];
+    expect(runningTerminalForSession(list, "s1")?.id).toBe("live");
+    expect(runningTerminalForSession(list.slice(0, 2), "s1")).toBeUndefined();
+    expect(runningTerminalForSession(list, "missing")).toBeUndefined();
+  });
+
+  test("absoluteUrl prefixes the origin", () => {
+    expect(absoluteUrl("/terminals/t1", "https://orc.example.com")).toBe(
+      "https://orc.example.com/terminals/t1",
+    );
   });
 });

@@ -1,5 +1,6 @@
+import { Check, Link2 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { Terminal, TerminalKind } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
@@ -11,6 +12,12 @@ import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { useLiveSessions } from "@/hooks/useSessions";
 import { TERMINAL_KINDS } from "@/lib/terminal-kinds";
+import {
+  absoluteUrl,
+  runningTerminalForSession,
+  shareablePath,
+  terminalPath,
+} from "@/lib/terminal-links";
 import type { ConnectionState } from "@/lib/terminal-runtime";
 import { useTerminals } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
@@ -89,12 +96,90 @@ function SessionLinks({ liveSessionId }: { liveSessionId: string }) {
   );
 }
 
+function CopyLinkButton({ terminal }: { terminal: Terminal }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(absoluteUrl(shareablePath(terminal))).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <button
+      type="button"
+      data-testid="terminal-copy-link"
+      title="Copy a link to this terminal"
+      onClick={copy}
+      className={cn(LINK_CLASS, "inline-flex items-center gap-1")}
+    >
+      {copied ? <Check size={12} /> : <Link2 size={12} />}
+      {copied ? "Copied" : "Link"}
+    </button>
+  );
+}
+
+// Shown for a shared session link when no terminal is running that session.
+function NoSessionTerminal({ liveSessionId }: { liveSessionId: string }) {
+  const { openLiveSession } = useTerminals();
+  const { data: sessions, isLoading } = useLiveSessions(false);
+  const session = sessions?.find((s) => s.id === liveSessionId);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (isLoading) return <Skeleton className="h-24 w-full max-w-md" />;
+
+  const open = () => {
+    if (!session) return;
+    setPending(true);
+    setError(null);
+    openLiveSession(session)
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setPending(false));
+  };
+
+  return (
+    <div data-testid="no-session-terminal" className="max-w-md space-y-3 text-center">
+      <h2 className="font-headline text-sm uppercase tracking-widest text-on-surface">
+        {session ? "No terminal is open for this session" : "Session not found"}
+      </h2>
+      {session && (
+        <p className="truncate font-body text-sm text-on-surface-variant">
+          {session.name ?? session.summary ?? session.id}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="font-body text-xs text-error">
+          {error}
+        </p>
+      )}
+      <div className="flex items-center justify-center gap-3">
+        {session && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            onClick={open}
+            className="font-label text-xs uppercase"
+          >
+            {pending ? "Opening" : "Open in terminal"}
+          </Button>
+        )}
+        <Link to="/terminals" className={LINK_CLASS}>
+          All terminals
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 function Centered({ children }: { children: ReactNode }) {
   return <div className="flex-1 min-h-0 flex items-center justify-center p-6">{children}</div>;
 }
 
 export default function Terminals() {
   const { terminalId } = useParams();
+  const sessionParam = useSearchParams()[0].get("session");
   const navigate = useNavigate();
   const { terminals, info, isLoading, error, refetch, lastActiveId, connectionOf, create, remove } =
     useTerminals();
@@ -189,6 +274,17 @@ export default function Terminals() {
             <code className="text-primary">terminals.enabled: false</code>.
           </p>
         </div>
+      </Centered>
+    );
+  }
+
+  // /terminals?session=<id> is the shareable link for a session's terminal.
+  if (!terminalId && sessionParam) {
+    const match = runningTerminalForSession(terminals, sessionParam);
+    if (match) return <Navigate to={terminalPath(match.id)} replace />;
+    return (
+      <Centered>
+        <NoSessionTerminal liveSessionId={sessionParam} />
       </Centered>
     );
   }
@@ -292,6 +388,7 @@ export default function Terminals() {
               {selected.live_session_id && (
                 <SessionLinks liveSessionId={selected.live_session_id} />
               )}
+              <CopyLinkButton terminal={selected} />
             </header>
             <TerminalViewport terminalId={selected.id} />
           </>

@@ -1,7 +1,14 @@
-import { Check, ChevronDown, Copy, SquareTerminal } from "lucide-react";
+import { Check, ChevronDown, Copy, Link2, SquareTerminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import type { LiveSession } from "@/api/client";
 import { resumeCommand } from "@/lib/live-sessions";
+import {
+  absoluteUrl,
+  runningTerminalForSession,
+  sessionTerminalPath,
+  terminalPath,
+} from "@/lib/terminal-links";
 import { useTerminals } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 
@@ -9,10 +16,11 @@ const SEGMENT =
   "inline-flex items-center gap-1 whitespace-nowrap px-2 py-1 font-label text-[11px] uppercase tracking-widest transition-colors";
 
 export function ResumeActions({ session }: { session: LiveSession }) {
-  const { openLiveSession, info } = useTerminals();
+  const { openLiveSession, info, terminals } = useTerminals();
+  const navigate = useNavigate();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"command" | "link" | null>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const command = resumeCommand(session);
@@ -41,7 +49,10 @@ export function ResumeActions({ session }: { session: LiveSession }) {
 
   if (!command) return null;
 
+  const existing = runningTerminalForSession(terminals, session.id);
+
   const open = () => {
+    if (existing) return navigate(terminalPath(existing.id));
     setPending(true);
     setError(null);
     openLiveSession(session)
@@ -49,13 +60,15 @@ export function ResumeActions({ session }: { session: LiveSession }) {
       .finally(() => setPending(false));
   };
 
-  const copy = () => {
-    navigator.clipboard.writeText(command).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+  const copy = (kind: "command" | "link", text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(kind);
+      setTimeout(() => setCopied(null), 1500);
     });
     setMenuPos(null);
   };
+  const copyCommand = () => copy("command", command);
+  const copyLink = () => copy("link", absoluteUrl(sessionTerminalPath(session.id)));
 
   // Without terminals (no API secret, disabled, old Bun) the only useful action is the command.
   if (info && !info.ready) {
@@ -70,11 +83,11 @@ export function ResumeActions({ session }: { session: LiveSession }) {
         )}
         onClick={(e) => {
           e.stopPropagation();
-          copy();
+          copyCommand();
         }}
       >
-        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-        {copied ? "Copied" : "Copy resume command"}
+        {copied === "command" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+        {copied === "command" ? "Copied" : "Copy resume command"}
       </button>
     );
   }
@@ -91,7 +104,9 @@ export function ResumeActions({ session }: { session: LiveSession }) {
         type="button"
         data-testid="open-terminal-resume"
         disabled={pending}
-        title={error ?? "Resume in an ORC terminal"}
+        title={
+          error ?? (existing ? "This session is open in a terminal" : "Resume in an ORC terminal")
+        }
         className={cn(
           SEGMENT,
           "rounded-l-sm disabled:opacity-50",
@@ -103,7 +118,7 @@ export function ResumeActions({ session }: { session: LiveSession }) {
         }}
       >
         <SquareTerminal className="h-3 w-3" />
-        {error ? "Failed" : pending ? "Opening" : copied ? "Copied" : "Open in terminal"}
+        {error ? "Failed" : pending ? "Opening" : existing ? "Go to terminal" : "Open in terminal"}
       </button>
       <button
         type="button"
@@ -135,11 +150,25 @@ export function ResumeActions({ session }: { session: LiveSession }) {
             className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm font-label text-[11px] uppercase tracking-widest text-on-surface-variant hover:bg-surface-highest hover:text-on-surface"
             onClick={(e) => {
               e.stopPropagation();
-              copy();
+              copyCommand();
             }}
           >
-            {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+            {copied === "command" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
             Copy resume command
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            data-testid="copy-terminal-link"
+            title="A link that opens this session's terminal, or offers to start one"
+            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm font-label text-[11px] uppercase tracking-widest text-on-surface-variant hover:bg-surface-highest hover:text-on-surface"
+            onClick={(e) => {
+              e.stopPropagation();
+              copyLink();
+            }}
+          >
+            {copied === "link" ? <Check className="h-3 w-3" /> : <Link2 className="h-3 w-3" />}
+            Copy terminal link
           </button>
         </div>
       )}
