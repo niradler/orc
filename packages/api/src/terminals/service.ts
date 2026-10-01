@@ -39,7 +39,9 @@ export function launchDeps(config: OrcConfig): LaunchDeps {
   return {
     platform: process.platform,
     env: process.env,
-    which: (command) => Bun.which(command),
+    // Pass PATH explicitly: on Linux Bun.which can use the PATH from process start, ignoring
+    // later changes to process.env.PATH.
+    which: (command) => Bun.which(command, { PATH: process.env.PATH ?? "" }),
     isDirectory: (path) => {
       try {
         return statSync(path).isDirectory();
