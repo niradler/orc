@@ -4,7 +4,7 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError } from "@orc/core/errors";
 import { getDb } from "@orc/db/client";
 import { gateway_sessions, sessions, tasks } from "@orc/db/schema";
-import { and, desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { LIVE_CHAT_ID, syncNow } from "../session-watcher.js";
 import { searchSessions } from "../sessions/search.js";
 import { bodyLinkIndex, sessionIdsOfTask } from "../sessions/tasklinks.js";
@@ -224,14 +224,18 @@ const listRoute = createRoute({
     query: z.object({
       agent: z.string().optional(),
       job_run_id: z.string().optional(),
+      project_id: z.string().optional(),
       limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+      offset: z.coerce.number().int().min(0).optional().default(0),
     }),
   },
   responses: {
     200: {
       description: "Sessions list",
       content: {
-        "application/json": { schema: z.object({ sessions: z.array(SessionSchema) }) },
+        "application/json": {
+          schema: z.object({ sessions: z.array(SessionSchema), total: z.number().int() }),
+        },
       },
     },
   },
@@ -379,19 +383,24 @@ app.openapi(liveLinkRoute, async (c) => {
 
 app.openapi(listRoute, async (c) => {
   const db = getDb();
-  const { agent, job_run_id, limit } = c.req.valid("query");
+  const { agent, job_run_id, project_id, limit, offset } = c.req.valid("query");
 
   const conditions = [];
   if (agent) conditions.push(eq(sessions.agent, agent));
   if (job_run_id) conditions.push(eq(sessions.job_run_id, job_run_id));
+  if (project_id === "unassigned") conditions.push(isNull(sessions.project_id));
+  else if (project_id) conditions.push(eq(sessions.project_id, project_id));
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
 
   const rows = await db.query.sessions.findMany({
     limit,
+    offset,
     orderBy: [desc(sessions.created_at)],
-    where: conditions.length > 0 ? and(...conditions) : undefined,
+    where,
   });
+  const [counted] = await db.select({ total: sql<number>`count(*)` }).from(sessions).where(where);
 
-  return c.json({ sessions: rows.map(toDto) });
+  return c.json({ sessions: rows.map(toDto), total: Number(counted?.total ?? 0) });
 });
 
 app.openapi(getRoute, async (c) => {

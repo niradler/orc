@@ -246,6 +246,32 @@ describe("Sessions", () => {
     expect(s).toBeDefined();
     expect(s?.agent_version).toBe("cursor/1.0");
   });
+
+  test("GET /sessions paginates with offset and reports total", async () => {
+    for (const n of [1, 2]) {
+      await app.request("/api/mcp/tool", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: AUTH },
+        body: JSON.stringify({
+          name: "session_log",
+          args: { agent: "pager-agent", summary: `pager session ${n}` },
+        }),
+      });
+    }
+    const first = await req("GET", "/sessions?agent=pager-agent&limit=1&offset=0");
+    const second = await req("GET", "/sessions?agent=pager-agent&limit=1&offset=1");
+    const beyond = await req("GET", "/sessions?agent=pager-agent&limit=1&offset=2");
+    type Page = { sessions: { id: string }[]; total: number };
+    const a = (await first.json()) as Page;
+    const b = (await second.json()) as Page;
+    const c = (await beyond.json()) as Page;
+    expect(a.total).toBe(2);
+    expect(b.total).toBe(2);
+    expect(a.sessions).toHaveLength(1);
+    expect(b.sessions).toHaveLength(1);
+    expect(a.sessions[0]?.id).not.toBe(b.sessions[0]?.id);
+    expect(c.sessions).toHaveLength(0);
+  });
 });
 
 describe("Sessions - job_run_id filter", () => {

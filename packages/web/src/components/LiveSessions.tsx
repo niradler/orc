@@ -5,6 +5,7 @@ import type { LiveSession } from "@/api/client";
 import { EmptyState } from "@/components/EmptyState";
 import { Highlight } from "@/components/Highlight";
 import { LiveSessionDetail } from "@/components/LiveSessionDetail";
+import { Pager } from "@/components/Pager";
 import { ResumeActions } from "@/components/ResumeActions";
 import {
   Table,
@@ -25,7 +26,7 @@ import { useTasks } from "@/hooks/useTasks";
 import { formatTokens, formatWhen, STATUS } from "@/lib/live-sessions";
 
 const AGENTS = ["claude", "codex", "cursor"];
-const PAGE_SIZE = 200;
+const PAGE_SIZE = 25;
 const HEAD = "font-label text-[11px] uppercase tracking-widest text-outline";
 
 type Row = LiveSession & { snippets?: string[]; matched?: string[] };
@@ -37,11 +38,11 @@ export function LiveSessions({ projectId }: { projectId: string }) {
   const query = params.get("q") ?? "";
   const openId = params.get("session");
   const [draft, setDraft] = useState(query);
-  const [shown, setShown] = useState(PAGE_SIZE);
+  const [page, setPage] = useState(0);
 
   const setParam = useCallback(
     (key: string, value: string | null) => {
-      setShown(PAGE_SIZE);
+      setPage(0);
       setParams(
         (prev) => {
           const next = new URLSearchParams(prev);
@@ -83,6 +84,8 @@ export function LiveSessions({ projectId }: { projectId: string }) {
         ? s.project_id === null
         : s.project_id === projectId,
   );
+  const pageStart =
+    Math.min(page, Math.max(0, Math.ceil(visible.length / PAGE_SIZE) - 1)) * PAGE_SIZE;
   const scopeName =
     projectId === "unassigned" ? "unassigned" : (projectName.get(projectId) ?? projectId);
 
@@ -170,7 +173,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visible.slice(0, shown).map((s) => {
+              {visible.slice(pageStart, pageStart + PAGE_SIZE).map((s) => {
                 const st = STATUS[s.status];
                 const choices =
                   s.task && !openTasks.some((t) => t.id === s.task?.id)
@@ -276,17 +279,12 @@ export function LiveSessions({ projectId }: { projectId: string }) {
               })}
             </TableBody>
           </Table>
-          {visible.length > shown && (
-            <button
-              type="button"
-              data-testid="show-more-sessions"
-              className="w-full py-3 font-label text-[11px] uppercase tracking-widest text-primary hover:text-on-surface"
-              onClick={() => setShown((n) => n + PAGE_SIZE)}
-            >
-              Show {Math.min(PAGE_SIZE, visible.length - shown)} more ({visible.length - shown}{" "}
-              remaining)
-            </button>
-          )}
+          <Pager
+            page={pageStart / PAGE_SIZE}
+            pageSize={PAGE_SIZE}
+            total={visible.length}
+            onPage={setPage}
+          />
         </div>
       )}
       <LiveSessionDetail
