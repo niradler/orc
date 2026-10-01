@@ -4,7 +4,7 @@ import { loadConfig, type OrcConfig } from "@orc/core/config";
 import { ForbiddenError } from "@orc/core/errors";
 import type { LaunchDeps } from "./launch.js";
 import { TerminalManager } from "./manager.js";
-import { spawnPty } from "./spawn.js";
+import { MIN_BUN_VERSION, spawnPty } from "./spawn.js";
 
 export interface Availability {
   ready: boolean;
@@ -13,11 +13,21 @@ export interface Availability {
 
 let manager: TerminalManager | null = null;
 
-export function terminalsAvailability(config: OrcConfig): Availability {
+export function terminalsAvailability(
+  config: OrcConfig,
+  bunVersion: string = Bun.version,
+): Availability {
   if (!config.terminals.enabled) {
     return {
       ready: false,
-      reason: "Terminals are disabled. Set terminals.enabled in config or ORC_TERMINALS_ENABLED=1.",
+      reason:
+        "Terminals are disabled. Set terminals.enabled to true in config, or ORC_TERMINALS_ENABLED=1.",
+    };
+  }
+  if (!Bun.semver.satisfies(bunVersion, `>=${MIN_BUN_VERSION}`)) {
+    return {
+      ready: false,
+      reason: `Terminals need Bun ${MIN_BUN_VERSION} or newer (running ${bunVersion}).`,
     };
   }
   if (!config.api.secret) {

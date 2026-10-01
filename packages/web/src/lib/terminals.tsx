@@ -25,7 +25,6 @@ import {
   loadGhostty,
   mountRuntime,
   type RuntimeCallbacks,
-  stopRuntime,
   type TerminalRuntime,
   unmountRuntime,
 } from "@/lib/terminal-runtime";
@@ -45,7 +44,6 @@ interface TerminalsContextValue {
   connectionOf: (id: string) => ConnectionState | undefined;
   create: (input: CreateTerminalInput) => Promise<Terminal>;
   openLiveSession: (session: LiveSession) => Promise<Terminal>;
-  stop: (id: string) => void;
   remove: (id: string) => Promise<void>;
   attach: (id: string, container: HTMLElement) => Promise<void>;
   detach: (id: string) => void;
@@ -63,7 +61,9 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
   const query = useQuery({
     queryKey: ["terminals"],
     queryFn: () => api.terminals.list(),
-    refetchInterval: POLL_INTERVAL_MS,
+    // Nothing changes while terminals are unavailable until the API restarts, which a refetch
+    // on window focus picks up.
+    refetchInterval: (current) => (current.state.data?.ready === false ? false : POLL_INTERVAL_MS),
     retry: false,
   });
   const info = query.data;
@@ -169,16 +169,6 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
     [dropRuntime, queryClient],
   );
 
-  const stop = useCallback(
-    (id: string) => {
-      const runtime = runtimes.current.get(id);
-      if (!runtime) return;
-      stopRuntime(runtime);
-      void connectRuntime(runtime, callbacks);
-    },
-    [callbacks],
-  );
-
   const attach = useCallback(
     async (id: string, container: HTMLElement): Promise<void> => {
       pendingContainers.current.set(id, container);
@@ -227,7 +217,6 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
       connectionOf,
       create,
       openLiveSession,
-      stop,
       remove,
       attach,
       detach,
@@ -244,7 +233,6 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
       connectionOf,
       create,
       openLiveSession,
-      stop,
       remove,
       attach,
       detach,

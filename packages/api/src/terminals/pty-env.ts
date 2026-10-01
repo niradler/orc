@@ -1,8 +1,9 @@
 // What a terminal child sees should look like a fresh terminal window, not like a child of
-// whatever launched the API: no ORC credentials and no markers of a parent coding-agent session
-// (a nested claude otherwise believes it is a subagent and turns features off).
+// whatever launched the API: no markers of a parent coding-agent session (a nested claude
+// otherwise believes it is a subagent and turns features off). ORC_API_SECRET is kept: the ORC
+// hooks and CLI of an agent started here authenticate with it, and a shell can read the config
+// file anyway.
 const STRIPPED = [
-  /^ORC_API_SECRET$/,
   /^CLAUDECODE$/,
   /^CLAUDE_PID$/,
   /^CLAUDE_AGENT_SDK_/,

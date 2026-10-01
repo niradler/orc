@@ -1,6 +1,5 @@
-import { Square, X } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import type { Terminal, TerminalKind } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
@@ -10,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
+import { useLiveSessions } from "@/hooks/useSessions";
 import { TERMINAL_KINDS } from "@/lib/terminal-kinds";
 import type { ConnectionState } from "@/lib/terminal-runtime";
 import { useTerminals } from "@/lib/terminals";
@@ -59,6 +59,36 @@ function TerminalViewport({ terminalId }: { terminalId: string }) {
   );
 }
 
+const LINK_CLASS =
+  "shrink-0 font-label text-[11px] uppercase tracking-widest text-primary hover:text-on-surface";
+
+// A terminal that resumed a live session points back to that session and to its linked task.
+function SessionLinks({ liveSessionId }: { liveSessionId: string }) {
+  const { data: sessions } = useLiveSessions(false);
+  const task = sessions?.find((s) => s.id === liveSessionId)?.task;
+  return (
+    <div className="shrink-0 flex items-center gap-3">
+      <Link
+        to={`/sessions?session=${encodeURIComponent(liveSessionId)}`}
+        data-testid="terminal-open-session"
+        className={LINK_CLASS}
+      >
+        Session
+      </Link>
+      {task && (
+        <Link
+          to={`/tasks/${task.id}`}
+          data-testid="terminal-open-task"
+          title={task.title}
+          className={LINK_CLASS}
+        >
+          Task
+        </Link>
+      )}
+    </div>
+  );
+}
+
 function Centered({ children }: { children: ReactNode }) {
   return <div className="flex-1 min-h-0 flex items-center justify-center p-6">{children}</div>;
 }
@@ -66,18 +96,8 @@ function Centered({ children }: { children: ReactNode }) {
 export default function Terminals() {
   const { terminalId } = useParams();
   const navigate = useNavigate();
-  const {
-    terminals,
-    info,
-    isLoading,
-    error,
-    refetch,
-    lastActiveId,
-    connectionOf,
-    create,
-    stop,
-    remove,
-  } = useTerminals();
+  const { terminals, info, isLoading, error, refetch, lastActiveId, connectionOf, create, remove } =
+    useTerminals();
   const isDesktop = useBreakpoint("md");
   const sidebar = usePanelWidth({
     storageKey: "orc_terminal_sidebar_width",
@@ -162,9 +182,11 @@ export default function Terminals() {
             {info.reason ?? "The API has not enabled terminals."}
           </p>
           <p className="font-body text-xs text-outline">
-            Enable with <code className="text-primary">ORC_TERMINALS_ENABLED=1</code> (or{" "}
-            <code className="text-primary">terminals.enabled</code> in the config) and set an API
-            secret, then restart the API.
+            Terminals run processes on the machine hosting the API, so they need an API secret (
+            <code className="text-primary">api.secret</code> or{" "}
+            <code className="text-primary">ORC_API_SECRET</code>). Restart the API after setting it.
+            They can be turned off with{" "}
+            <code className="text-primary">terminals.enabled: false</code>.
           </p>
         </div>
       </Centered>
@@ -267,29 +289,9 @@ export default function Terminals() {
                   {actionError}
                 </span>
               )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                data-testid="terminal-stop"
-                disabled={selected.status !== "running"}
-                onClick={() => stop(selected.id)}
-                className="h-8 gap-1 font-label text-xs uppercase text-tertiary hover:text-tertiary"
-              >
-                <Square size={12} />
-                Stop
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                data-testid="terminal-close"
-                onClick={() => requestClose(selected)}
-                className="h-8 gap-1 font-label text-xs uppercase text-outline hover:text-error"
-              >
-                <X size={12} />
-                Close
-              </Button>
+              {selected.live_session_id && (
+                <SessionLinks liveSessionId={selected.live_session_id} />
+              )}
             </header>
             <TerminalViewport terminalId={selected.id} />
           </>

@@ -62,7 +62,7 @@ ORC_WEB_PORT=3077
 
 Default ports when `.env` is absent: API → 7700, web → 9742. If you need a temporary alternate (e.g. zombie socket on 7701), prefer **7711 / 3087** - don't pick arbitrary numbers, and always update both `.env` and any running dev server together so the web proxy points at the right API.
 
-The web dev server proxies `/api/*` → `http://localhost:$ORC_API_PORT` (strips the `/api` prefix). The API auth secret defaults to `""` (open). Set `ORC_API_SECRET` or `api.secret` in `~/.orc/config.json` to require a Bearer token.
+The web dev server proxies `/api/*` → `http://localhost:$ORC_API_PORT` (the `/api` prefix is kept; the API serves its routes under `/api`, and WebSockets are proxied too). The API auth secret defaults to `""` (open). Set `ORC_API_SECRET` or `api.secret` in `~/.orc/config.json` to require a Bearer token.
 
 ### Running dev servers
 
@@ -300,7 +300,15 @@ Use the `type` field in `memory_store` - it affects scoring in `context`:
 
 Priority order (later wins): `~/.orc/config.json` → `./.orc/config.json` → env vars.
 
-Key env vars: `ORC_DB_PATH`, `ORC_API_PORT` (default 7700), `ORC_API_SECRET`, `ORC_TELEGRAM_TOKEN`, `ORC_LOG_LEVEL`, `ORC_LOG_DIR`, `ORC_LOG_FILE`.
+Key env vars: `ORC_DB_PATH`, `ORC_API_PORT` (default 7700), `ORC_API_SECRET`, `ORC_TELEGRAM_TOKEN`, `ORC_LOG_LEVEL`, `ORC_LOG_DIR`, `ORC_LOG_FILE`, `ORC_TERMINALS_ENABLED`, `ORC_TERMINALS_SHELL`.
+
+### Terminals
+
+The dashboard's **Terminals** workspace runs real PTYs (plain shell, fresh `claude`/`codex`/`cursor` agents, or a resume of a live session) on the machine hosting the API. Code lives in `packages/api/src/terminals/` (manager, spawn, launch, ws) and `packages/web/src/lib/terminal{s,-runtime}.ts*`.
+
+- **On by default**, but it only reports `ready` when `api.secret` / `ORC_API_SECRET` is set (a terminal is arbitrary code execution) and Bun >= 1.4.2 is running (`Bun.spawn` `terminal` option; ConPTY on Windows). Otherwise the UI shows why and live-session resume falls back to "Copy resume command". Turn off with `terminals.enabled: false`.
+- Config: `terminals: { enabled, max (8), shell?, scrollback_bytes (524288) }`. `ORC_API_SECRET` is passed through to the PTY env so an agent's hooks/CLI can authenticate.
+- WebSocket: mint a one-shot ticket with `POST /api/terminals/:id/ticket`, then connect to `/api/terminals/:id/ws?ticket=`. Server to client: binary frames are PTY output; text frames are control (`{"type":"replay-end"}` after the scrollback replay, `{"type":"exit","code"}`). Client to server: **binary frames are keyboard input**; text frames are control only (`resize`, `stop`) and anything else is dropped.
 
 ### Logs
 

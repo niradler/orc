@@ -21,7 +21,10 @@ export interface TerminalRuntime {
   everConnected: boolean;
   exitSeen: boolean;
   disposed: boolean;
-  pendingStop: boolean;
+  /** The server is still replaying scrollback; the terminal's replies to it are history, not input. */
+  replaying: boolean;
+  /** Set around a synchronous `term.write` of replayed data so ghostty's replies are dropped. */
+  muteReplies: boolean;
   attempts: number;
   retryTimer: ReturnType<typeof setTimeout> | null;
   resizeTimer: ReturnType<typeof setTimeout> | null;
@@ -158,15 +161,19 @@ export function createRuntime(id: string): TerminalRuntime {
     everConnected: false,
     exitSeen: false,
     disposed: false,
-    pendingStop: false,
+    replaying: false,
+    muteReplies: false,
     attempts: 0,
     retryTimer: null,
     resizeTimer: null,
   };
 
+  // Keystrokes go out as binary frames; text frames are reserved for control messages.
+  const encoder = new TextEncoder();
   term.onData((data) => {
+    if (runtime.muteReplies) return;
     const socket = runtime.socket;
-    if (socket && socket.readyState === WebSocket.OPEN) socket.send(data);
+    if (socket && socket.readyState === WebSocket.OPEN) socket.send(encoder.encode(data));
   });
   term.onResize(() => scheduleResize(runtime));
 
@@ -250,24 +257,31 @@ export async function connectRuntime(
 
   socket.onopen = () => {
     runtime.attempts = 0;
+    runtime.replaying = true;
     if (runtime.everConnected) runtime.term.reset();
     runtime.everConnected = true;
     callbacks.onState(runtime.id, "connected");
     sendResize(runtime);
-    if (runtime.pendingStop) {
-      runtime.pendingStop = false;
-      socket.send(JSON.stringify({ type: "stop" }));
-    }
   };
 
   socket.onmessage = (event: MessageEvent<string | ArrayBuffer>) => {
     if (runtime.disposed) return;
     if (typeof event.data !== "string") {
-      runtime.term.write(new Uint8Array(event.data));
+      // ghostty answers queries in the data (cursor position, device attributes) synchronously
+      // inside write(). Replayed history was already answered when it was first produced, so
+      // those answers would reach the shell as stray keystrokes.
+      runtime.muteReplies = runtime.replaying;
+      try {
+        runtime.term.write(new Uint8Array(event.data));
+      } finally {
+        runtime.muteReplies = false;
+      }
       return;
     }
     const control = parseControlFrame(event.data);
-    if (control?.type === "exit") {
+    if (control?.type === "replay-end") {
+      runtime.replaying = false;
+    } else if (control?.type === "exit") {
       runtime.exitSeen = true;
       callbacks.onState(runtime.id, "exited");
       callbacks.onExit(runtime.id);
@@ -288,15 +302,6 @@ function parseControlFrame(text: string): { type?: string } | null {
   } catch {
     return null;
   }
-}
-
-export function stopRuntime(runtime: TerminalRuntime): void {
-  const socket = runtime.socket;
-  if (socket && socket.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify({ type: "stop" }));
-    return;
-  }
-  runtime.pendingStop = true;
 }
 
 export function disposeRuntime(runtime: TerminalRuntime): void {

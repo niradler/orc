@@ -74,8 +74,16 @@ export const terminalWebsocket: WebSocketHandler<TerminalSocketData> = {
       exit: (code) => {
         ws.send(JSON.stringify({ type: "exit", code }));
       },
+      replayed: () => {
+        ws.send(JSON.stringify({ type: "replay-end" }));
+      },
+      close: () => {
+        ws.close(1000);
+      },
     });
   },
+  // Keystrokes arrive as binary frames and control messages as text frames, so typed text that
+  // happens to look like JSON can never be taken for a control message.
   message(ws, message) {
     const manager = getTerminalManager();
     const { terminalId } = ws.data;
@@ -86,7 +94,6 @@ export const terminalWebsocket: WebSocketHandler<TerminalSocketData> = {
     const control = parseControl(message);
     if (control?.type === "resize") manager.resize(terminalId, control.cols, control.rows);
     else if (control?.type === "stop") manager.stop(terminalId);
-    else manager.write(terminalId, message);
   },
   close(ws) {
     ws.data.detach?.();

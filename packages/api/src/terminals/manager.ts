@@ -27,6 +27,11 @@ export interface TerminalInfo {
 export interface TerminalSink {
   output(data: Uint8Array): void;
   exit(code: number | null): void;
+  /** Called once the scrollback has been replayed, before live output; lets the client tell
+   * history from new output. */
+  replayed?(): void;
+  /** The terminal was removed or the server is shutting down; drop the connection. */
+  close?(): void;
 }
 
 export interface CreateTerminalInput {
@@ -133,6 +138,7 @@ export class TerminalManager {
   attach(id: string, sink: TerminalSink): () => void {
     const entry = this.entry(id);
     for (const chunk of entry.scrollback) sink.output(chunk);
+    sink.replayed?.();
     if (entry.info.status === "exited") sink.exit(entry.info.exit_code);
     entry.sinks.add(sink);
     return () => {
@@ -159,7 +165,7 @@ export class TerminalManager {
   remove(id: string): void {
     const entry = this.entry(id);
     if (entry.info.status === "running") entry.pty.kill();
-    entry.sinks.clear();
+    this.closeSinks(entry);
     this.entries.delete(id);
     for (const [token, t] of this.tickets) if (t.terminalId === id) this.tickets.delete(token);
   }
@@ -186,6 +192,7 @@ export class TerminalManager {
   shutdown(): void {
     for (const entry of this.entries.values()) {
       if (entry.info.status === "running") entry.pty.kill();
+      this.closeSinks(entry);
     }
     this.entries.clear();
     this.tickets.clear();
@@ -221,8 +228,15 @@ export class TerminalManager {
   private pruneExited(): void {
     const exited = [...this.entries.values()].filter((e) => e.info.status === "exited");
     for (const e of exited.slice(0, Math.max(0, exited.length - MAX_EXITED_KEPT))) {
+      this.closeSinks(e);
       this.entries.delete(e.info.id);
     }
+  }
+
+  private closeSinks(entry: Entry): void {
+    const sinks = [...entry.sinks];
+    entry.sinks.clear();
+    for (const sink of sinks) sink.close?.();
   }
 }
 

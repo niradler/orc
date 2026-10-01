@@ -16,17 +16,25 @@ export interface SpawnOptions {
 
 export type SpawnPty = (argv: string[], options: SpawnOptions) => PtyHandle;
 
+export const MIN_BUN_VERSION = "1.4.2";
+const TASKKILL_TIMEOUT_MS = 3000;
+
+// The child is a session leader (it owns the PTY), so on POSIX its pid is also its process group.
 function killProcessTree(pid: number): void {
   if (process.platform === "win32") {
-    Bun.spawn(["taskkill", "/F", "/T", "/PID", String(pid)], {
+    // Synchronous: killing the parent first would orphan the tree before taskkill can walk it.
+    Bun.spawnSync(["taskkill", "/F", "/T", "/PID", String(pid)], {
       stdout: "ignore",
       stderr: "ignore",
+      timeout: TASKKILL_TIMEOUT_MS,
     });
     return;
   }
-  try {
-    process.kill(pid, "SIGHUP");
-  } catch {}
+  for (const target of [-pid, pid]) {
+    try {
+      process.kill(target, "SIGHUP");
+    } catch {}
+  }
 }
 
 export const spawnPty: SpawnPty = (argv, options) => {
@@ -42,7 +50,12 @@ export const spawnPty: SpawnPty = (argv, options) => {
     },
   });
   const terminal = proc.terminal;
-  if (!terminal) throw new Error("Bun.spawn did not attach a terminal; Bun >= 1.4.2 is required");
+  if (!terminal) {
+    try {
+      proc.kill();
+    } catch {}
+    throw new Error(`Bun.spawn did not attach a terminal; Bun >= ${MIN_BUN_VERSION} is required`);
+  }
   return {
     pid: proc.pid ?? null,
     write: (data) => terminal.write(data),

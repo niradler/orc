@@ -121,15 +121,29 @@ afterAll(() => {
 });
 
 describe("availability", () => {
-  test("off by default, and refuses to run without an api secret", () => {
-    expect(terminalsAvailability(OrcConfigSchema.parse({})).ready).toBe(false);
-    const noSecret = terminalsAvailability(OrcConfigSchema.parse({ terminals: { enabled: true } }));
+  test("on by default, but refuses to run without an api secret", () => {
+    expect(OrcConfigSchema.parse({}).terminals.enabled).toBe(true);
+    const noSecret = terminalsAvailability(OrcConfigSchema.parse({}));
     expect(noSecret.ready).toBe(false);
     expect(noSecret.reason).toContain("api.secret");
-    const ok = terminalsAvailability(
-      OrcConfigSchema.parse({ terminals: { enabled: true }, api: { secret: "s" } }),
-    );
+    const ok = terminalsAvailability(OrcConfigSchema.parse({ api: { secret: "s" } }));
     expect(ok).toEqual({ ready: true, reason: null });
+  });
+
+  test("can be switched off", () => {
+    const off = terminalsAvailability(
+      OrcConfigSchema.parse({ terminals: { enabled: false }, api: { secret: "s" } }),
+    );
+    expect(off.ready).toBe(false);
+    expect(off.reason).toContain("disabled");
+  });
+
+  test("needs a Bun that can attach a PTY", () => {
+    const config = OrcConfigSchema.parse({ api: { secret: "s" } });
+    expect(terminalsAvailability(config, "1.2.21")).toMatchObject({ ready: false });
+    expect(terminalsAvailability(config, "1.2.21").reason).toContain("1.4.2");
+    expect(terminalsAvailability(config, "1.4.2").ready).toBe(true);
+    expect(terminalsAvailability(config, "1.5.0").ready).toBe(true);
   });
 
   test("the HTTP routes need the bearer secret like every other route", async () => {
@@ -265,7 +279,7 @@ describe("control frame parsing", () => {
     '{"type":"resize","cols":100,"rows":30,"x":1}',
     '{"type":"stop","force":true}',
     '{"type":"other"}',
-  ])("is treated as terminal input: %s", (text) => {
+  ])("is not a control frame: %s", (text) => {
     expect(parseControl(text)).toBeNull();
   });
 
@@ -355,15 +369,26 @@ describe("terminal WebSocket", () => {
     pty.emit("prompt> ");
     await until(() => one.binary.join("") === "prompt> ");
 
-    one.ws.send("ls\r");
+    // Keystrokes are binary frames; text frames are control messages only.
+    one.ws.send(new TextEncoder().encode("ls\r"));
     one.ws.send('{"type":"resize","cols":90,"rows":25}');
     await until(() => pty.written.length === 1 && pty.sizes.length === 1);
     expect(pty.written).toEqual(["ls\r"]);
     expect(pty.sizes).toEqual([[90, 25]]);
 
-    one.ws.send('{"type":"resize","cols":"wide","rows":25}');
+    // Typed text that looks like JSON is input when binary, and never a control message.
+    const lookalike = '{"type":"stop"}';
+    one.ws.send(new TextEncoder().encode(lookalike));
     await until(() => pty.written.length === 2);
-    expect(pty.written[1]).toBe('{"type":"resize","cols":"wide","rows":25}');
+    expect(pty.written[1]).toBe(lookalike);
+    expect(pty.killed).toBe(0);
+
+    // A text frame that is not a control message is dropped, not written to the shell.
+    one.ws.send("ls -la\r");
+    one.ws.send('{"type":"resize","cols":"wide","rows":25}');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(pty.written).toHaveLength(2);
+    expect(pty.sizes).toEqual([[90, 25]]);
 
     one.ws.close();
     await one.closed;
@@ -375,13 +400,30 @@ describe("terminal WebSocket", () => {
     const two = connect(info.id, manager.mintTicket(info.id).ticket);
     expect(await two.opened).toBe(true);
     await until(() => two.binary.join("") === "prompt> while away");
+    // The scrollback is marked as history, so the client can mute terminal replies to it.
+    await until(() => two.text.length > 0);
+    expect(JSON.parse(two.text[0] as string)).toEqual({ type: "replay-end" });
 
     two.ws.send('{"type":"stop"}');
-    await until(() => two.text.length > 0);
-    expect(JSON.parse(two.text[0] as string)).toEqual({ type: "exit", code: 137 });
+    await until(() => two.text.length > 1);
+    expect(JSON.parse(two.text[1] as string)).toEqual({ type: "exit", code: 137 });
     expect(pty.killed).toBe(1);
     expect(manager.get(info.id).status).toBe("exited");
     two.ws.close();
     manager.remove(info.id);
+  });
+
+  test("removing a terminal closes its sockets", async () => {
+    const manager = getTerminalManager();
+    const info = manager.create({
+      launch: { kind: "shell", argv: ["sh"], cwd: undefined, resume: false },
+    });
+    const one = connect(info.id, manager.mintTicket(info.id).ticket);
+    expect(await one.opened).toBe(true);
+    manager.remove(info.id);
+    await Promise.race([
+      one.closed,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("socket stayed open")), 2000)),
+    ]);
   });
 });

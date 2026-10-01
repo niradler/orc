@@ -45,6 +45,13 @@ describe("TerminalQueryResponder", () => {
     expect(r.feed(bytes("\x1b[31mred\x1b[0m\x1b[2J\x1b[?25l\x1b]0;title\x07"))).toEqual([]);
   });
 
+  test("an OSC query whose ST terminator is split across chunks is answered once", () => {
+    const r = new TerminalQueryResponder({ answerDeviceAttributes: false });
+    expect(r.feed(bytes("x\x1b]11;?\x1b"))).toEqual([]);
+    expect(r.feed(bytes("\\y"))).toEqual(["\x1b]11;rgb:0909/0e0e/1a1a\x1b\\"]);
+    expect(r.feed(bytes("again"))).toEqual([]);
+  });
+
   test("does not hold on to an unterminated escape forever", () => {
     const r = new TerminalQueryResponder({ answerDeviceAttributes: true });
     r.feed(bytes(`\x1b]11;${"x".repeat(40)}`));
@@ -64,7 +71,7 @@ describe("buildPtyEnv", () => {
     });
   });
 
-  test("hides the API secret and parent coding-agent markers", () => {
+  test("hides parent coding-agent markers and keeps the API secret", () => {
     const env = buildPtyEnv({
       ORC_API_SECRET: "s3cret",
       CLAUDECODE: "1",
@@ -82,6 +89,7 @@ describe("buildPtyEnv", () => {
         "ANTHROPIC_API_KEY",
         "CLAUDE_CONFIG_DIR",
         "COLORTERM",
+        "ORC_API_SECRET",
         "PATH",
         "TERM",
         "TERM_PROGRAM",

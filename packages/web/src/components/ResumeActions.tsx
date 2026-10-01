@@ -9,7 +9,7 @@ const SEGMENT =
   "inline-flex items-center gap-1 whitespace-nowrap px-2 py-1 font-label text-[11px] uppercase tracking-widest transition-colors";
 
 export function ResumeActions({ session }: { session: LiveSession }) {
-  const { openLiveSession } = useTerminals();
+  const { openLiveSession, info } = useTerminals();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -56,6 +56,28 @@ export function ResumeActions({ session }: { session: LiveSession }) {
     });
     setMenuPos(null);
   };
+
+  // Without terminals (no API secret, disabled, old Bun) the only useful action is the command.
+  if (info && !info.ready) {
+    return (
+      <button
+        type="button"
+        data-testid="copy-resume"
+        title={info.reason ?? command}
+        className={cn(
+          SEGMENT,
+          "rounded-sm border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20",
+        )}
+        onClick={(e) => {
+          e.stopPropagation();
+          copy();
+        }}
+      >
+        {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+        {copied ? "Copied" : "Copy resume command"}
+      </button>
+    );
+  }
 
   return (
     // biome-ignore lint/a11y/useSemanticElements: a fieldset would add form-control chrome to a button group

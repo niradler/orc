@@ -10,7 +10,9 @@ const AGENT_BINARY: Record<Exclude<LaunchKind, "shell">, string> = {
   cursor: "cursor-agent",
 };
 
-const SESSION_ID_PATTERN = /^[A-Za-z0-9][!-~]{0,255}$/;
+// Ids are uuids or similar slugs; keeping shell metacharacters out matters because a .cmd shim
+// runs through cmd.exe.
+const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/;
 
 export interface LaunchDeps {
   platform: NodeJS.Platform;

@@ -71,11 +71,21 @@ const launch = (over: Partial<Launch> = {}): Launch => ({
 function sink() {
   const out: string[] = [];
   const exits: (number | null)[] = [];
+  const events: string[] = [];
   const s: TerminalSink = {
-    output: (d) => out.push(new TextDecoder().decode(d)),
-    exit: (c) => exits.push(c),
+    output: (d) => {
+      const text = new TextDecoder().decode(d);
+      out.push(text);
+      events.push(`output:${text}`);
+    },
+    exit: (c) => {
+      exits.push(c);
+      events.push("exit");
+    },
+    replayed: () => events.push("replayed"),
+    close: () => events.push("close"),
   };
-  return { s, out, exits };
+  return { s, out, exits, events };
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -162,6 +172,40 @@ describe("TerminalManager", () => {
     manager.attach(id, second.s);
     expect(first.out).toEqual(["hello ", "world"]);
     expect(second.out.join("")).toBe("hello world!");
+  });
+
+  test("marks the end of the replay before live output and before a replayed exit", async () => {
+    const { manager, ptys } = setup();
+    const { id } = manager.create({ launch: launch() });
+    ptys[0]?.emit("old");
+    const live = sink();
+    manager.attach(id, live.s);
+    ptys[0]?.emit("new");
+    expect(live.events).toEqual(["output:old", "replayed", "output:new"]);
+
+    ptys[0]?.exit(0);
+    await tick();
+    const late = sink();
+    manager.attach(id, late.s);
+    expect(late.events).toEqual(["output:old", "output:new", "replayed", "exit"]);
+  });
+
+  test("remove and shutdown close attached sinks, and detached ones are left alone", () => {
+    const { manager } = setup();
+    const a = manager.create({ launch: launch() });
+    const b = manager.create({ launch: launch() });
+    const attached = sink();
+    const detached = sink();
+    manager.attach(a.id, attached.s);
+    manager.attach(a.id, detached.s)();
+    manager.remove(a.id);
+    expect(attached.events).toContain("close");
+    expect(detached.events).not.toContain("close");
+
+    const other = sink();
+    manager.attach(b.id, other.s);
+    manager.shutdown();
+    expect(other.events).toContain("close");
   });
 
   test("scrollback is capped but never empty", () => {

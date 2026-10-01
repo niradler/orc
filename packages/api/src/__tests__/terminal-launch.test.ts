@@ -61,11 +61,29 @@ describe("resume launch", () => {
     expect(() => buildLaunch({ live: live({ session_id: null }) }, deps())).toThrow(/no agent/);
   });
 
-  test.each(["has space", "new\nline", "tab\there", "-flag", "nul\u0000byte", "x".repeat(300)])(
-    "a malformed session id is rejected: %j",
+  test.each([
+    "has space",
+    "new\nline",
+    "tab\there",
+    "-flag",
+    "nul\u0000byte",
+    "x".repeat(300),
+    "a&calc",
+    "a|b",
+    "a%PATH%",
+    "a^b",
+    'a"b',
+    "a;b",
+    "$(id)",
+  ])("a malformed session id is rejected: %j", (id) => {
+    expect(isValidSessionId(id)).toBe(false);
+    expect(() => buildLaunch({ live: live({ session_id: id }) }, deps())).toThrow(/Malformed/);
+  });
+
+  test.each(["33583f12-72b3-4edf-a18d-8616b7d10723", "cx-1", "thread_01.a:b"])(
+    "a plausible session id is accepted: %j",
     (id) => {
-      expect(isValidSessionId(id)).toBe(false);
-      expect(() => buildLaunch({ live: live({ session_id: id }) }, deps())).toThrow(/Malformed/);
+      expect(isValidSessionId(id)).toBe(true);
     },
   );
 

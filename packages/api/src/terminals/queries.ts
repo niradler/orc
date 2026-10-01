@@ -25,6 +25,18 @@ function oscColor(slot: string, hex: string, terminator: string): string {
   return `\x1b]${slot};rgb:${channel(0)}/${channel(2)}/${channel(4)}${terminator}`;
 }
 
+// The tail that the next chunk may complete into a query: an unfinished CSI/OSC introducer, or a
+// lone trailing ESC (the start of one, or the first half of an "ESC \" terminator whose OSC
+// introducer is earlier in the same tail).
+function openTail(text: string, consumed: number): string {
+  const introducer = Math.max(text.lastIndexOf(`${ESC}[`), text.lastIndexOf(`${ESC}]`));
+  const trailing = text.endsWith(ESC) ? text.length - 1 : -1;
+  for (const start of [introducer, trailing].sort((a, b) => a - b)) {
+    if (start >= consumed && text.length - start < MAX_PARTIAL) return text.slice(start);
+  }
+  return "";
+}
+
 export interface QueryResponderOptions {
   answerDeviceAttributes: boolean;
 }
@@ -43,11 +55,7 @@ export class TerminalQueryResponder {
       const reply = this.reply(match[1], match[2], match[3]);
       if (reply) replies.push(reply);
     }
-    const lastEscape = text.lastIndexOf("\x1b");
-    this.partial =
-      lastEscape >= consumed && text.length - lastEscape < MAX_PARTIAL
-        ? text.slice(lastEscape)
-        : "";
+    this.partial = openTail(text, consumed);
     return replies;
   }
 

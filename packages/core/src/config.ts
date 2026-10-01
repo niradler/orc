@@ -75,12 +75,12 @@ export const OrcConfigSchema = z.object({
 
   terminals: z
     .object({
-      enabled: z.boolean().default(false),
+      enabled: z.boolean().default(true),
       max: z.number().int().min(1).max(64).default(8),
       shell: z.string().optional(),
       scrollback_bytes: z.number().int().min(0).default(524288),
     })
-    .default({ enabled: false, max: 8, scrollback_bytes: 524288 }),
+    .default({ enabled: true, max: 8, scrollback_bytes: 524288 }),
 
   mcp: z
     .object({
