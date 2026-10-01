@@ -9,6 +9,12 @@ import {
   sessionTerminalPath,
   shareablePath,
 } from "../../src/lib/terminal-links";
+import {
+  type ClickState,
+  cellAt,
+  cursorMoveKeys,
+  isPlainClick,
+} from "../../src/lib/terminal-mouse";
 
 const http = { protocol: "http:", host: "localhost:9742" };
 const https = { protocol: "https:", host: "orc.example.com" };
@@ -154,5 +160,52 @@ describe("terminal links", () => {
     expect(absoluteUrl("/terminals/t1", "https://orc.example.com")).toBe(
       "https://orc.example.com/terminals/t1",
     );
+  });
+});
+
+describe("terminal mouse", () => {
+  const grid = { left: 10, top: 20, width: 800, height: 400, cols: 80, rows: 20 };
+  const click: ClickState = {
+    alternateScreen: false,
+    scrolledBack: false,
+    hasSelection: false,
+    wasFocused: true,
+    button: 0,
+    detail: 1,
+    modified: false,
+    dragged: false,
+  };
+
+  test("cellAt maps pixels to cells and rejects points outside the grid", () => {
+    expect(cellAt(grid, 10, 20)).toEqual({ col: 0, row: 0 });
+    expect(cellAt(grid, 10 + 10 * 5 + 1, 20 + 20 * 3 + 1)).toEqual({ col: 5, row: 3 });
+    expect(cellAt(grid, 809, 419)).toEqual({ col: 79, row: 19 });
+    expect(cellAt(grid, 9, 30)).toBeNull();
+    expect(cellAt(grid, 810, 30)).toBeNull();
+    expect(cellAt({ ...grid, width: 0 }, 20, 30)).toBeNull();
+  });
+
+  test("cursorMoveKeys walks right and left, and honours application cursor mode", () => {
+    expect(cursorMoveKeys(2, 5, false)).toBe("\x1b[C".repeat(3));
+    expect(cursorMoveKeys(5, 2, false)).toBe("\x1b[D".repeat(3));
+    expect(cursorMoveKeys(5, 3, true)).toBe("\x1bOD".repeat(2));
+    expect(cursorMoveKeys(4, 4, false)).toBe("");
+    expect(cursorMoveKeys(0, 100_000, false).length).toBe(500 * 3);
+  });
+
+  test("only a plain click on a focused, live, normal-screen terminal counts", () => {
+    expect(isPlainClick(click)).toBe(true);
+    for (const override of [
+      { alternateScreen: true },
+      { scrolledBack: true },
+      { hasSelection: true },
+      { wasFocused: false },
+      { button: 2 },
+      { detail: 2 },
+      { modified: true },
+      { dragged: true },
+    ]) {
+      expect(isPlainClick({ ...click, ...override })).toBe(false);
+    }
   });
 });

@@ -1,6 +1,7 @@
 import { FitAddon, Terminal as GhosttyTerminal, type ITheme, init } from "ghostty-web";
 import { api, terminalSocketUrl } from "@/api/client";
 import { isMacPlatform, resolveTerminalKey } from "@/lib/terminal-keys";
+import { cellAt, cursorMoveKeys, isPlainClick } from "@/lib/terminal-mouse";
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "exited" | "closed";
 
@@ -191,7 +192,62 @@ export function createRuntime(id: string): TerminalRuntime {
     return true;
   });
 
+  attachClickToMove(runtime, encoder);
+
   return runtime;
+}
+
+// Application cursor keys (DECCKM) change the arrow sequences a shell expects.
+const DEC_APPLICATION_CURSOR = 1;
+const CLICK_SLOP_PX = 4;
+
+function attachClickToMove(runtime: TerminalRuntime, encoder: TextEncoder): void {
+  const { element, term } = runtime;
+  let press: { x: number; y: number; wasFocused: boolean } | null = null;
+
+  element.addEventListener(
+    "mousedown",
+    (e) => {
+      press = { x: e.clientX, y: e.clientY, wasFocused: element.contains(document.activeElement) };
+    },
+    true,
+  );
+  element.addEventListener("mouseup", (e) => {
+    const start = press;
+    press = null;
+    const canvas = element.querySelector("canvas");
+    const socket = runtime.socket;
+    if (!start || !canvas || !socket || socket.readyState !== WebSocket.OPEN) return;
+    const dragged = Math.hypot(e.clientX - start.x, e.clientY - start.y) > CLICK_SLOP_PX;
+    const plain = isPlainClick({
+      alternateScreen: term.buffer.active.type === "alternate",
+      scrolledBack: term.viewportY > 0,
+      hasSelection: term.hasSelection(),
+      wasFocused: start.wasFocused,
+      button: e.button,
+      detail: e.detail,
+      modified: e.shiftKey || e.ctrlKey || e.altKey || e.metaKey,
+      dragged,
+    });
+    if (!plain) return;
+    const box = canvas.getBoundingClientRect();
+    const cell = cellAt(
+      {
+        left: box.left,
+        top: box.top,
+        width: box.width,
+        height: box.height,
+        cols: term.cols,
+        rows: term.rows,
+      },
+      e.clientX,
+      e.clientY,
+    );
+    const cursor = term.buffer.active;
+    if (!cell || cell.row !== cursor.cursorY) return;
+    const keys = cursorMoveKeys(cursor.cursorX, cell.col, term.getMode(DEC_APPLICATION_CURSOR));
+    if (keys) socket.send(encoder.encode(keys));
+  });
 }
 
 export function mountRuntime(runtime: TerminalRuntime, container: HTMLElement): void {
