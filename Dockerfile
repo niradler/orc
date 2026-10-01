@@ -16,6 +16,9 @@ COPY packages/sdk/package.json            packages/sdk/
 COPY packages/task-service/package.json   packages/task-service/
 COPY packages/web/package.json            packages/web/
 
+# qmd's tree-sitter packages compile native addons (node-gyp) during install
+RUN apk add --no-cache python3 build-base
+
 RUN bun install --frozen-lockfile
 
 # Copy source and build the web dashboard (embedded into CLI/server)
