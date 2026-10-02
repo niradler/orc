@@ -41,18 +41,34 @@ ORC fixes this. Shared memory across every session. A task board where agents su
 
 ## Getting started
 
-### Prerequisites
-
-- [Bun](https://bun.sh) >= 1.1
-
 ### Install
+
+**Recommended: the desktop app.** Download the installer for your machine from [GitHub Releases](https://github.com/niradler/orc/releases) - no Bun, Node or npm needed.
+
+| OS                    | Installer                                                |
+| --------------------- | -------------------------------------------------------- |
+| macOS (Apple Silicon) | `orc-<version>-mac-arm64.dmg`                            |
+| macOS (Intel)         | `orc-<version>-mac-x64.dmg`                              |
+| Windows (x64)         | `orc-<version>-windows-x64-setup.exe`                    |
+| Linux (x64)           | `orc-<version>-linux-x64.AppImage` (`chmod +x`, then run) |
+
+On first launch the app sets everything up:
+
+- starts the orc daemon (API, scheduler, session watchers, gateway) and opens the dashboard in its window
+- when it starts the daemon, generates an API secret, saves it to `~/.orc/config.json`, and sends it for you - Terminals work with nothing to configure
+- installs the `orc` CLI to `~/.orc/bin` and links it into `~/.local/bin` (macOS, Linux; on Windows add `%USERPROFILE%\.orc\bin` to `PATH`)
+- registers start at login (hidden) and keeps the daemon running from the tray / menu bar when the window is closed; toggle it from the tray menu, quit from there to stop the daemon
+
+The builds are unsigned: on macOS right-click the app and choose Open the first time, on Windows choose "More info" then "Run anyway".
+
+<details>
+<summary>Headless / CLI-only install (servers, Docker, CI)</summary>
+
+Needs [Bun](https://bun.sh) >= 1.4.2 for the npm install.
 
 ```bash
 npm install -g orc-ai
 ```
-
-<details>
-<summary>Other installation methods</summary>
 
 #### Pre-built binaries
 
@@ -87,6 +103,7 @@ cd orc && bun install && bun build
 
 ```bash
 # 1. Start the daemon - runs the REST API on :7700, task loop, job scheduler, gateway, and web UI
+#    (skip this if you installed the desktop app: it is already running)
 orc daemon start
 
 # 2. Create a project
@@ -125,18 +142,21 @@ Override the served dist directory with `ORC_WEB_DIST=/path/to/web/dist` if you 
 
 ### Desktop app
 
-`packages/desktop` is an Electron window around the dashboard. It attaches to a daemon already answering on the configured port (`api.port`, default 7700) or starts the bundled `orc` binary, and stops only a daemon it started. When it starts one with no `api.secret` configured it generates a secret, saves it to `~/.orc/config.json`, and sends it with every request from its window, so terminals work without setup.
+`packages/desktop` is the Electron app described under [Install](#install). It attaches to a daemon already answering `/api/health` on the configured port (`api.port`, default 7700) or starts the bundled `orc` binary, and stops only a daemon it started. Its daemon output goes to `~/.orc/desktop-daemon.log`.
+
+Hardening: sandboxed renderer with context isolation and no Node integration, permission requests denied except clipboard, `<webview>` blocked, navigation locked to the daemon origin (everything else opens in the system browser), Electron fuses that disable `ELECTRON_RUN_AS_NODE` and Node CLI/env options.
+
+`orc daemon start` merges the login shell's `PATH` into its own on macOS and Linux, so `claude`, `codex` and `cursor-agent` are found when the daemon is started by launchd, systemd or a Finder-launched app.
 
 ```bash
 bun run --filter @orc/desktop bin --only host   # build the orc binary for this machine
 bun run --filter @orc/desktop dev               # run the app from source
 bun run --filter @orc/desktop dist              # installer for this machine -> packages/desktop/release
 bun run --filter @orc/desktop dist:mac          # also dist:win, dist:linux
+bun packages/desktop/scripts/smoke.ts           # end-to-end check of the packaged app
 ```
 
-`orc daemon start` merges the login shell's `PATH` into its own on macOS and Linux, so `claude`, `codex` and `cursor-agent` are found when the daemon is started by launchd, systemd or a Finder-launched app.
-
-Builds are unsigned. Building binaries needs `bun >= 1.4.2` on `PATH` ahead of any `node_modules/.bin/bun`.
+Builds are unsigned and there is no auto-update yet. Building binaries needs `bun >= 1.4.2` on `PATH` ahead of any `node_modules/.bin/bun`.
 
 ## Docker
 

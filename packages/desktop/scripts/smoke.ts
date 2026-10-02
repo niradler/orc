@@ -1,6 +1,14 @@
 #!/usr/bin/env bun
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -103,6 +111,7 @@ async function run(): Promise<void> {
       USERPROFILE: home,
       ORC_API_PORT: String(port),
       ELECTRON_ENABLE_LOGGING: "1",
+      ORC_DESKTOP_NO_LOGIN_ITEM: "1",
     },
     stdio: ["ignore", "inherit", "inherit"],
   });
@@ -129,6 +138,25 @@ async function run(): Promise<void> {
   const secret = config.api?.secret;
   if (!secret || secret.length < 32) throw new Error("no generated api.secret in the config");
   pass("api.secret generated and saved");
+
+  const cli = join(home, ".orc", "bin", win ? "orc.exe" : "orc");
+  const version = spawnSync(cli, ["--version"], { encoding: "utf-8" });
+  if (version.status !== 0 || !/^\d+\.\d+\.\d+/.test(version.stdout.trim())) {
+    throw new Error(`installed CLI ${cli} gave status ${version.status}: ${version.stdout}`);
+  }
+  pass(`orc CLI installed (${version.stdout.trim()})`);
+  if (!win) {
+    const link = join(home, ".local", "bin", "orc");
+    if (!lstatSync(link).isSymbolicLink()) throw new Error(`${link} is not a symlink`);
+    const linked = spawnSync(link, ["--version"], { encoding: "utf-8" });
+    if (linked.stdout.trim() !== version.stdout.trim())
+      throw new Error("PATH link does not run orc");
+    pass("orc linked into ~/.local/bin");
+  }
+
+  const log = join(home, ".orc", "desktop-daemon.log");
+  if (!existsSync(log) || statSync(log).size === 0) throw new Error("daemon log is empty");
+  pass("daemon output written to ~/.orc/desktop-daemon.log");
 
   const anon = await fetch(`${base}/api/terminals`);
   if (anon.status !== 401) throw new Error(`unauthenticated /api/terminals gave ${anon.status}`);

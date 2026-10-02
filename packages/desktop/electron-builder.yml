@@ -4,9 +4,11 @@ directories:
   output: release
 files:
   - dist/**
+  - build/icon.png
   - package.json
 mac:
   category: public.app-category.developer-tools
+  identity: "-"
   target: dmg
   extraResources:
     - from: ../cli/dist/orc-mac-${arch}
@@ -23,3 +25,9 @@ linux:
   extraResources:
     - from: ../cli/dist/orc-linux-${arch}
       to: orc
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  onlyLoadAppFromAsar: true
+  grantFileProtocolExtraPrivileges: false
