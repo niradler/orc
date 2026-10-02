@@ -4,11 +4,20 @@ export const LAUNCH_KINDS = ["shell", "claude", "codex", "cursor"] as const;
 
 export type LaunchKind = (typeof LAUNCH_KINDS)[number];
 
-const AGENT_BINARY: Record<Exclude<LaunchKind, "shell">, string> = {
-  claude: "claude",
-  codex: "codex",
-  cursor: "cursor-agent",
+// Cursor renamed its CLI from cursor-agent to agent; either may be installed.
+const AGENT_BINARIES: Record<Exclude<LaunchKind, "shell">, string[]> = {
+  claude: ["claude"],
+  codex: ["codex"],
+  cursor: ["cursor-agent", "agent"],
 };
+
+function whichAgent(kind: Exclude<LaunchKind, "shell">, deps: LaunchDeps): string | null {
+  for (const name of AGENT_BINARIES[kind]) {
+    const resolved = deps.which(name);
+    if (resolved) return resolved;
+  }
+  return null;
+}
 
 // Ids are uuids or similar slugs; keeping shell metacharacters out matters because a .cmd shim
 // runs through cmd.exe.
@@ -62,13 +71,17 @@ export function defaultShell(deps: LaunchDeps): string[] | null {
 export function availableLaunchers(deps: LaunchDeps): LaunchKind[] {
   return LAUNCH_KINDS.filter((kind) => {
     if (kind === "shell") return defaultShell(deps) !== null;
-    return deps.which(AGENT_BINARY[kind]) !== null;
+    return whichAgent(kind, deps) !== null;
   });
 }
 
 function resolveBinary(kind: Exclude<LaunchKind, "shell">, deps: LaunchDeps): string {
-  const resolved = deps.which(AGENT_BINARY[kind]);
-  if (!resolved) throw new ValidationError(`${AGENT_BINARY[kind]} is not installed or not on PATH`);
+  const resolved = whichAgent(kind, deps);
+  if (!resolved) {
+    throw new ValidationError(
+      `${AGENT_BINARIES[kind].join(" or ")} is not installed or not on PATH`,
+    );
+  }
   return resolved;
 }
 

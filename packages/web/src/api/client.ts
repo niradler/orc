@@ -125,7 +125,32 @@ export type CreateTerminalInput = {
   cwd?: string;
   name?: string;
   live_session_id?: string;
+  worktree?: boolean;
 };
+
+export type Worktree = {
+  path: string;
+  branch: string | null;
+  head: string | null;
+  main: boolean;
+  dirty: boolean;
+  detached: boolean;
+  locked: boolean;
+  prunable: boolean;
+};
+
+export type WorktreeListing = { root: string | null; worktrees: Worktree[] };
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code: string | null,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
 
 export function terminalSocketUrl(
   id: string,
@@ -172,9 +197,9 @@ async function req<T>(
   if (res.status === 404 && opts?.nullOn404) return null as T;
   const json = (await res.json()) as unknown;
   if (!res.ok) {
-    const e = json as { error?: unknown };
+    const e = json as { error?: unknown; code?: unknown };
     const msg = typeof e.error === "string" ? e.error : `HTTP ${res.status}`;
-    throw new Error(msg);
+    throw new ApiError(msg, res.status, typeof e.code === "string" ? e.code : null);
   }
   return json as T;
 }
@@ -449,6 +474,14 @@ export const api = {
         "POST",
         `/terminals/${encodeURIComponent(id)}/ticket`,
       ),
+    pickFolder: (initial?: string) =>
+      req<{ path: string | null }>("POST", "/terminals/pick-folder", initial ? { initial } : {}),
+  },
+
+  git: {
+    worktrees: (cwd: string) => req<WorktreeListing>("GET", "/git/worktrees", undefined, { cwd }),
+    removeWorktree: (data: { cwd: string; path: string; force?: boolean }) =>
+      req<null>("POST", "/git/worktrees/remove", data),
   },
 
   gateway: {

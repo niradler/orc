@@ -1,7 +1,7 @@
 import { Check, Link2 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import type { Terminal, TerminalKind } from "@/api/client";
+import type { CreateTerminalInput, Terminal } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
 import { NewTerminalMenu } from "@/components/terminals/NewTerminalMenu";
@@ -198,15 +198,17 @@ export default function Terminals() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const handleCreate = useCallback(
-    async (kind: TerminalKind, cwd: string) => {
+    async (input: CreateTerminalInput): Promise<boolean> => {
       setCreating(true);
       setCreateError(null);
       try {
-        const terminal = await create({ kind, ...(cwd ? { cwd } : {}) });
+        const terminal = await create(input);
         setMenuOpen(false);
         navigate(`/terminals/${terminal.id}`);
+        return true;
       } catch (e) {
         setCreateError(e instanceof Error ? e.message : String(e));
+        return false;
       } finally {
         setCreating(false);
       }

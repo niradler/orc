@@ -9,6 +9,7 @@ import { backendsRouter } from "./routes/backends.js";
 import { chatRouter } from "./routes/chat.js";
 import { flowsRouter } from "./routes/flows.js";
 import { gatewayRouter } from "./routes/gateway.js";
+import { gitRouter } from "./routes/git.js";
 import { healthRouter } from "./routes/health.js";
 import { jobsRouter } from "./routes/jobs.js";
 import { knowledgeRouter } from "./routes/knowledge.js";
@@ -72,6 +73,7 @@ export function createApp() {
   app.route("/api", gatewayRouter);
   app.route("/api", tagsRouter);
   app.route("/api", terminalsRouter);
+  app.route("/api", gitRouter);
 
   app.doc("/openapi.json", {
     openapi: "3.1.0",
