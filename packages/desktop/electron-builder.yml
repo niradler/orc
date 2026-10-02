@@ -1,0 +1,24 @@
+appId: dev.orc.desktop
+productName: orc
+directories:
+  output: release
+files:
+  - dist/**
+  - package.json
+mac:
+  category: public.app-category.developer-tools
+  target: dmg
+  extraResources:
+    - from: ../cli/dist/orc-mac-${arch}
+      to: orc
+win:
+  target: nsis
+  extraResources:
+    - from: ../cli/dist/orc-windows-x64.exe
+      to: orc.exe
+linux:
+  category: Development
+  target: AppImage
+  extraResources:
+    - from: ../cli/dist/orc-linux-${arch}
+      to: orc

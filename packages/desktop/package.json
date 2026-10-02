@@ -1,0 +1,27 @@
+{
+  "name": "@orc/desktop",
+  "productName": "orc",
+  "version": "0.1.27",
+  "private": true,
+  "type": "module",
+  "description": "orc desktop app - Electron shell around the orc daemon",
+  "author": "Nir Adler",
+  "main": "dist/main.js",
+  "scripts": {
+    "bundle": "bun build src/main.ts --outdir dist --target node --format esm --external electron",
+    "bin": "cd ../cli && bun run build.ts",
+    "dev": "bun run bundle && electron .",
+    "build": "bun run bundle",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "dist": "bun run bundle && bun run bin --only host && electron-builder",
+    "dist:mac": "bun run bundle && bun run bin --only mac-arm64,mac-x64 && electron-builder --mac --arm64 --x64",
+    "dist:win": "bun run bundle && bun run bin --only windows-x64 && electron-builder --win --x64",
+    "dist:linux": "bun run bundle && bun run bin --only linux-x64,linux-arm64 && electron-builder --linux --x64 --arm64",
+    "clean": "rm -rf dist release"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "^26.15.3"
+  }
+}

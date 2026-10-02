@@ -123,6 +123,19 @@ The web dashboard ships inside the `orc` binary and is served by the API process
 
 Override the served dist directory with `ORC_WEB_DIST=/path/to/web/dist` if you want to host a custom build (e.g. a fork). If no dist is found, the server runs in pure-API mode.
 
+### Desktop app
+
+`packages/desktop` is an Electron window around the dashboard. It attaches to a daemon already answering on the configured port (`api.port`, default 7700) or starts the bundled `orc` binary, and stops only a daemon it started. When it starts one with no `api.secret` configured it generates a secret, saves it to `~/.orc/config.json`, and sends it with every request from its window, so terminals work without setup.
+
+```bash
+bun run --filter @orc/desktop bin --only host   # build the orc binary for this machine
+bun run --filter @orc/desktop dev               # run the app from source
+bun run --filter @orc/desktop dist              # installer for this machine -> packages/desktop/release
+bun run --filter @orc/desktop dist:mac          # also dist:win, dist:linux
+```
+
+Builds are unsigned. Building binaries needs `bun >= 1.4.2` on `PATH` ahead of any `node_modules/.bin/bun`.
+
 ## Docker
 
 Run ORC in a container with the published image:
