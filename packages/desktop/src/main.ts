@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { app, BrowserWindow, dialog, session, shell } from "electron";
+import { app, BrowserWindow, dialog, screen, session, shell } from "electron";
 import { type Daemon, ensureDaemon } from "./daemon.js";
 
 type OrcConfig = { api?: { port?: number; secret?: string } };
@@ -60,13 +60,59 @@ function isWeb(url: string): boolean {
   return /^https?:/.test(url);
 }
 
+const iconPath = resolve(import.meta.dirname, "../build/icon.png");
+const statePath = () => join(app.getPath("userData"), "window-state.json");
+
+type WindowState = { x?: number; y?: number; width: number; height: number; maximized: boolean };
+
+function loadWindowState(): WindowState {
+  const fallback: WindowState = { width: 1440, height: 900, maximized: false };
+  try {
+    const saved = JSON.parse(readFileSync(statePath(), "utf-8")) as WindowState;
+    if (typeof saved.width !== "number" || typeof saved.height !== "number") return fallback;
+    const { x, y, width, height } = saved;
+    const onScreen =
+      typeof x === "number" &&
+      typeof y === "number" &&
+      screen.getAllDisplays().some((d) => {
+        const b = d.workArea;
+        return x < b.x + b.width && x + width > b.x && y < b.y + b.height && y + height > b.y;
+      });
+    return onScreen ? saved : { ...fallback, width, height, maximized: saved.maximized };
+  } catch {
+    return fallback;
+  }
+}
+
+function saveWindowState(w: BrowserWindow): void {
+  const state: WindowState = { ...w.getNormalBounds(), maximized: w.isMaximized() };
+  try {
+    writeFileSync(statePath(), JSON.stringify(state));
+  } catch {}
+}
+
 let daemon: Daemon | null = null;
 let win: BrowserWindow | null = null;
+let quitting = false;
+let recovering = false;
 
 function openWindow(url: string): void {
   const origin = new URL(url).origin;
-  win = new BrowserWindow({ width: 1440, height: 900, title: "orc", show: false });
+  const state = loadWindowState();
+  win = new BrowserWindow({
+    ...state,
+    minWidth: 900,
+    minHeight: 600,
+    title: "orc",
+    backgroundColor: "#0a0d19",
+    show: false,
+    ...(app.isPackaged ? {} : { icon: iconPath }),
+  });
+  if (state.maximized) win.maximize();
   win.once("ready-to-show", () => win?.show());
+  win.on("close", () => {
+    if (win) saveWindowState(win);
+  });
   win.on("closed", () => {
     win = null;
   });
@@ -79,27 +125,70 @@ function openWindow(url: string): void {
     event.preventDefault();
     if (isWeb(target)) void shell.openExternal(target);
   });
+  win.webContents.on("did-fail-load", (_event, code, description, _url, isMainFrame) => {
+    if (isMainFrame && code !== -3) void recover(`orc is not reachable (${description}).`);
+  });
   void win.loadURL(url);
+}
+
+async function bringUp(): Promise<Daemon> {
+  const configured = configuredSecret();
+  const generated = configured ? undefined : randomBytes(24).toString("hex");
+  const up = await ensureDaemon({
+    port: configuredPort(),
+    bin: orcBin(),
+    ...(generated ? { secret: generated } : {}),
+  });
+  if (generated && up.owned) persistSecret(generated);
+  const secret = configured ?? (up.owned ? generated : undefined);
+  if (secret) injectSecret(up.url, secret);
+  up.onExit(() => {
+    if (!quitting) void recover("The orc daemon stopped unexpectedly.");
+  });
+  daemon = up;
+  return up;
+}
+
+async function recover(reason: string): Promise<void> {
+  if (recovering) return;
+  recovering = true;
+  let message = reason;
+  for (;;) {
+    console.error(`[orc-desktop] ${message}`);
+    const { response } = await dialog.showMessageBox({
+      type: "error",
+      message,
+      buttons: ["Retry", "Quit"],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 1) {
+      recovering = false;
+      app.quit();
+      return;
+    }
+    try {
+      const up = await bringUp();
+      recovering = false;
+      if (win) void win.loadURL(up.url);
+      else openWindow(up.url);
+      return;
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+  }
 }
 
 async function start(): Promise<void> {
   try {
-    const configured = configuredSecret();
-    const generated = configured ? undefined : randomBytes(24).toString("hex");
-    daemon = await ensureDaemon({
-      port: configuredPort(),
-      bin: orcBin(),
-      ...(generated ? { secret: generated } : {}),
-    });
-    if (generated && daemon.owned) persistSecret(generated);
-    const secret = configured ?? (daemon.owned ? generated : undefined);
-    if (secret) injectSecret(daemon.url, secret);
-    openWindow(daemon.url);
+    openWindow((await bringUp()).url);
   } catch (err) {
     dialog.showErrorBox("orc failed to start", err instanceof Error ? err.message : String(err));
     app.quit();
   }
 }
+
+app.setName("orc");
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -115,8 +204,14 @@ if (!app.requestSingleInstanceLock()) {
   app.on("activate", () => {
     if (daemon && !win) openWindow(daemon.url);
   });
-  app.on("before-quit", () => daemon?.stop());
+  app.on("before-quit", () => {
+    quitting = true;
+    daemon?.stop();
+  });
   process.on("SIGINT", () => app.quit());
   process.on("SIGTERM", () => app.quit());
-  void app.whenReady().then(start);
+  void app.whenReady().then(() => {
+    if (process.platform === "darwin" && !app.isPackaged) app.dock?.setIcon(iconPath);
+    return start();
+  });
 }

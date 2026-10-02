@@ -2,7 +2,12 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 
-export type Daemon = { url: string; owned: boolean; stop: () => void };
+export type Daemon = {
+  url: string;
+  owned: boolean;
+  stop: () => void;
+  onExit: (cb: () => void) => void;
+};
 
 export async function isHealthy(url: string): Promise<boolean> {
   try {
@@ -22,7 +27,7 @@ export async function ensureDaemon(opts: {
   timeoutMs?: number;
 }): Promise<Daemon> {
   const url = `http://127.0.0.1:${opts.port}`;
-  if (await isHealthy(url)) return { url, owned: false, stop: () => {} };
+  if (await isHealthy(url)) return { url, owned: false, stop: () => {}, onExit: () => {} };
 
   if (!existsSync(opts.bin)) throw new Error(`orc binary not found: ${opts.bin}`);
 
@@ -47,7 +52,16 @@ export async function ensureDaemon(opts: {
         `orc daemon exited with code ${child.exitCode} - another orc daemon may already be running on a different port`,
       );
     }
-    if (await isHealthy(url)) return { url, owned: true, stop: () => child.kill() };
+    if (await isHealthy(url)) {
+      return {
+        url,
+        owned: true,
+        stop: () => child.kill(),
+        onExit: (cb) => {
+          child.once("exit", cb);
+        },
+      };
+    }
     await sleep(250);
   }
   child.kill();
