@@ -1,14 +1,6 @@
 #!/usr/bin/env bun
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  statSync,
-} from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -65,6 +57,13 @@ mkdirSync(home, { recursive: true });
 let child: ChildProcess | null = null;
 const win = process.platform === "win32";
 
+function appFlags(): string[] {
+  return [
+    `--user-data-dir=${join(home, "userdata")}`,
+    ...(process.platform === "linux" ? ["--no-sandbox"] : []),
+  ];
+}
+
 function pass(name: string): void {
   console.log(`ok    ${name}`);
 }
@@ -95,23 +94,21 @@ async function healthy(): Promise<boolean> {
 function stopApp(c: ChildProcess, force: boolean): void {
   if (force && win) spawnSync("taskkill", ["/PID", String(c.pid), "/T", "/F"], { stdio: "ignore" });
   else if (force) c.kill("SIGKILL");
-  else
-    spawn(app as string, ["--quit", `--user-data-dir=${join(home, "userdata")}`], {
-      stdio: "ignore",
-    });
+  else {
+    const quit = spawn(app as string, ["--quit", ...appFlags()], { stdio: "inherit" });
+    quit.once("exit", (code) => console.log(`quit launcher exited with ${code}`));
+  }
 }
 
 async function run(): Promise<void> {
-  const args = [`--remote-debugging-port=${cdpPort}`, `--user-data-dir=${join(home, "userdata")}`];
-  if (process.platform === "linux") args.push("--no-sandbox");
-  child = spawn(app as string, args, {
+  child = spawn(app as string, [`--remote-debugging-port=${cdpPort}`, ...appFlags()], {
     env: {
       ...process.env,
       HOME: home,
       USERPROFILE: home,
       ORC_API_PORT: String(port),
       ELECTRON_ENABLE_LOGGING: "1",
-      ORC_DESKTOP_NO_LOGIN_ITEM: "1",
+      ORC_DESKTOP_SKIP_SYSTEM_SETUP: "1",
     },
     stdio: ["ignore", "inherit", "inherit"],
   });
@@ -146,12 +143,20 @@ async function run(): Promise<void> {
   }
   pass(`orc CLI installed (${version.stdout.trim()})`);
   if (!win) {
-    const link = join(home, ".local", "bin", "orc");
-    if (!lstatSync(link).isSymbolicLink()) throw new Error(`${link} is not a symlink`);
-    const linked = spawnSync(link, ["--version"], { encoding: "utf-8" });
-    if (linked.stdout.trim() !== version.stdout.trim())
-      throw new Error("PATH link does not run orc");
-    pass("orc linked into ~/.local/bin");
+    const profiles = [
+      ".zshenv",
+      ".bashrc",
+      ".bash_profile",
+      ".profile",
+      join(".config", "fish", "conf.d", "orc.fish"),
+    ];
+    const written = profiles.filter(
+      (name) =>
+        existsSync(join(home, name)) &&
+        readFileSync(join(home, name), "utf-8").includes(".orc/bin"),
+    );
+    if (written.length === 0) throw new Error("no shell startup file puts ~/.orc/bin on PATH");
+    pass(`~/.orc/bin added to PATH in ${written.join(", ")}`);
   }
 
   const log = join(home, ".orc", "desktop-daemon.log");

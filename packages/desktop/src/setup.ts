@@ -1,50 +1,112 @@
+import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
   existsSync,
-  lstatSync,
   mkdirSync,
   readFileSync,
-  readlinkSync,
   renameSync,
   rmSync,
-  symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { homedir, userInfo } from "node:os";
+import { basename, dirname, join } from "node:path";
 
 export function installCli(opts: {
   bin: string;
   version: string;
   home?: string;
   platform?: NodeJS.Platform;
-}): { cli: string; linked: boolean } {
+}): { cli: string; binDir: string } {
   const home = opts.home ?? homedir();
   const win = (opts.platform ?? process.platform) === "win32";
-  const cli = join(home, ".orc", "bin", win ? "orc.exe" : "orc");
+  const binDir = join(home, ".orc", "bin");
+  const cli = join(binDir, win ? "orc.exe" : "orc");
   const stamp = `${cli}.version`;
 
   const installed =
     existsSync(cli) && existsSync(stamp) && readFileSync(stamp, "utf-8") === opts.version;
   if (!installed) {
-    mkdirSync(dirname(cli), { recursive: true });
+    mkdirSync(binDir, { recursive: true });
     const staging = `${cli}.tmp`;
     copyFileSync(opts.bin, staging);
     if (!win) chmodSync(staging, 0o755);
     renameSync(staging, cli);
     writeFileSync(stamp, opts.version);
   }
-  if (win) return { cli, linked: false };
+  return { cli, binDir };
+}
 
-  const link = join(home, ".local", "bin", "orc");
-  try {
-    return { cli, linked: lstatSync(link).isSymbolicLink() && readlinkSync(link) === cli };
-  } catch {
-    mkdirSync(dirname(link), { recursive: true });
-    symlinkSync(cli, link);
-    return { cli, linked: true };
+const BLOCK_START = "# >>> orc >>>";
+const BLOCK_END = "# <<< orc <<<";
+const PATH_BLOCK = `${BLOCK_START}\nexport PATH="$HOME/.orc/bin:$PATH"\n${BLOCK_END}\n`;
+
+export function loginShell(env: NodeJS.ProcessEnv = process.env): string {
+  const fromEnv = env.SHELL ?? "";
+  let name = basename(fromEnv);
+  if (!name) {
+    try {
+      name = basename(userInfo().shell ?? "");
+    } catch {
+      name = "";
+    }
   }
+  if (name === "zsh" || name === "bash" || name === "fish") return name;
+  return process.platform === "darwin" ? "zsh" : "bash";
+}
+
+export function ensureOnPath(opts: {
+  home?: string;
+  platform?: NodeJS.Platform;
+  shell?: string;
+}): string[] {
+  const home = opts.home ?? homedir();
+  const platform = opts.platform ?? process.platform;
+  if (platform === "win32") return [];
+  const shell = opts.shell ?? loginShell();
+
+  if (shell === "fish") {
+    const file = join(home, ".config", "fish", "conf.d", "orc.fish");
+    if (existsSync(file)) return [];
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, 'fish_add_path -g "$HOME/.orc/bin"\n');
+    return [file];
+  }
+
+  const names =
+    shell === "zsh"
+      ? [".zshenv"]
+      : platform === "darwin"
+        ? [".bash_profile", ".bashrc"]
+        : [".bashrc", ".profile"];
+  const changed: string[] = [];
+  for (const [index, name] of names.entries()) {
+    const file = join(home, name);
+    const present = existsSync(file);
+    if (index > 0 && !present) continue;
+    const current = present ? readFileSync(file, "utf-8") : "";
+    if (current.includes(BLOCK_START)) continue;
+    writeFileSync(
+      file,
+      `${current}${current && !current.endsWith("\n") ? "\n" : ""}\n${PATH_BLOCK}`,
+    );
+    changed.push(file);
+  }
+  return changed;
+}
+
+export function ensureOnWindowsUserPath(binDir: string): boolean {
+  const script = [
+    `$dir = '${binDir.replaceAll("'", "''")}'`,
+    "$path = [Environment]::GetEnvironmentVariable('Path', 'User')",
+    "if (($path -split ';') -contains $dir) { exit 3 }",
+    "[Environment]::SetEnvironmentVariable('Path', (($path.TrimEnd(';') + ';' + $dir).TrimStart(';')), 'User')",
+  ].join("; ");
+  const result = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  return result.status === 0;
 }
 
 export function setLinuxAutostart(opts: { enabled: boolean; exec: string; home?: string }): void {

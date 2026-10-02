@@ -56,7 +56,7 @@ On first launch the app sets everything up:
 
 - starts the orc daemon (API, scheduler, session watchers, gateway) and opens the dashboard in its window
 - when it starts the daemon, generates an API secret, saves it to `~/.orc/config.json`, and sends it for you - Terminals work with nothing to configure
-- installs the `orc` CLI to `~/.orc/bin` and links it into `~/.local/bin` (macOS, Linux; on Windows add `%USERPROFILE%\.orc\bin` to `PATH`)
+- installs the `orc` CLI to `~/.orc/bin` and adds that folder to your `PATH` (a marked block in your login shell's startup file on macOS and Linux, the user `PATH` on Windows) - open a new terminal and run `orc`
 - registers start at login (hidden) and keeps the daemon running from the tray / menu bar when the window is closed; toggle it from the tray menu, quit from there to stop the daemon
 
 The builds are unsigned: on macOS right-click the app and choose Open the first time, on Windows choose "More info" then "Run anyway".

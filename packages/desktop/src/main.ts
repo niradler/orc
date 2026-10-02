@@ -14,7 +14,7 @@ import {
   Tray,
 } from "electron";
 import { type Daemon, ensureDaemon } from "./daemon.js";
-import { installCli, setLinuxAutostart } from "./setup.js";
+import { ensureOnPath, ensureOnWindowsUserPath, installCli, setLinuxAutostart } from "./setup.js";
 
 type OrcConfig = { api?: { port?: number; secret?: string } };
 
@@ -255,12 +255,18 @@ function createTray(): void {
 function firstRunSetup(): void {
   if (!app.isPackaged) return;
   try {
+    const systemSetup = !process.env.ORC_DESKTOP_SKIP_SYSTEM_SETUP;
     const marker = join(app.getPath("userData"), "setup.json");
-    if (!existsSync(marker) && !process.env.ORC_DESKTOP_NO_LOGIN_ITEM) {
+    if (!existsSync(marker) && systemSetup) {
       setAutostart(true);
       writeFileSync(marker, JSON.stringify({ autostart: true }));
     }
-    installCli({ bin: orcBin(), version: app.getVersion() });
+    const { binDir } = installCli({ bin: orcBin(), version: app.getVersion() });
+    if (process.platform === "win32") {
+      if (systemSetup) ensureOnWindowsUserPath(binDir);
+    } else {
+      ensureOnPath({});
+    }
   } catch (err) {
     console.error(
       `[orc-desktop] setup failed: ${err instanceof Error ? err.message : String(err)}`,
