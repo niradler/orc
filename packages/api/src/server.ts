@@ -40,7 +40,8 @@ export function createApp() {
     );
   }
 
-  app.use("*", bearerAuth(config.api.secret));
+  const auth = bearerAuth(config.api.secret);
+  for (const path of ["/api/*", "/openapi.json", "/docs"]) app.use(path, auth);
 
   app.onError((err, c) => {
     const orcErr = err instanceof OrcError ? err : null;
