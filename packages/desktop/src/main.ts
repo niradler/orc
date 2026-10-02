@@ -1,14 +1,27 @@
 import { randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { app, BrowserWindow, dialog, screen, session, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  Menu,
+  nativeImage,
+  screen,
+  session,
+  shell,
+  Tray,
+} from "electron";
 import { type Daemon, ensureDaemon } from "./daemon.js";
+import { ensureOnPath, ensureOnWindowsUserPath, installCli, setLinuxAutostart } from "./setup.js";
 
 type OrcConfig = { api?: { port?: number; secret?: string } };
 
 const orcDir = join(homedir(), ".orc");
 const configPath = join(orcDir, "config.json");
+const HIDDEN_FLAG = "--hidden";
+const QUIT_FLAG = "--quit";
 
 function readConfig(): OrcConfig {
   try {
@@ -95,6 +108,7 @@ let daemon: Daemon | null = null;
 let win: BrowserWindow | null = null;
 let quitting = false;
 let recovering = false;
+let tray: Tray | null = null;
 
 function openWindow(url: string): void {
   const origin = new URL(url).origin;
@@ -107,11 +121,25 @@ function openWindow(url: string): void {
     backgroundColor: "#0a0d19",
     show: false,
     ...(app.isPackaged ? {} : { icon: iconPath }),
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webviewTag: false,
+    },
   });
   if (state.maximized) win.maximize();
   win.once("ready-to-show", () => win?.show());
-  win.on("close", () => {
-    if (win) saveWindowState(win);
+  win.on("session-end", () => {
+    quitting = true;
+  });
+  win.on("close", (event) => {
+    if (!win) return;
+    saveWindowState(win);
+    if (!quitting && tray && process.platform !== "darwin") {
+      event.preventDefault();
+      win.hide();
+    }
   });
   win.on("closed", () => {
     win = null;
@@ -137,6 +165,7 @@ async function bringUp(): Promise<Daemon> {
   const up = await ensureDaemon({
     port: configuredPort(),
     bin: orcBin(),
+    logFile: join(orcDir, "desktop-daemon.log"),
     ...(generated ? { secret: generated } : {}),
   });
   if (generated && up.owned) persistSecret(generated);
@@ -179,9 +208,94 @@ async function recover(reason: string): Promise<void> {
   }
 }
 
+function showWindow(): void {
+  if (win) {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  } else if (daemon) {
+    openWindow(daemon.url);
+  }
+}
+
+const linuxAutostartFile = join(homedir(), ".config", "autostart", "orc.desktop");
+
+function autostartEnabled(): boolean {
+  if (process.platform === "linux") return existsSync(linuxAutostartFile);
+  return app.getLoginItemSettings().openAtLogin;
+}
+
+function setAutostart(enabled: boolean): void {
+  if (process.platform === "linux") {
+    setLinuxAutostart({ enabled, exec: process.env.APPIMAGE ?? process.execPath });
+    return;
+  }
+  app.setLoginItemSettings({ openAtLogin: enabled, args: [HIDDEN_FLAG] });
+}
+
+function createTray(): void {
+  tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 18, height: 18 }));
+  tray.setToolTip("orc");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Open orc", click: showWindow },
+      {
+        label: "Start at login",
+        type: "checkbox",
+        checked: autostartEnabled(),
+        click: (item) => setAutostart(item.checked),
+      },
+      { type: "separator" },
+      { label: "Quit orc", click: () => app.quit() },
+    ]),
+  );
+  tray.on("click", showWindow);
+}
+
+function firstRunSetup(): void {
+  if (!app.isPackaged) return;
+  try {
+    const systemSetup = !process.env.ORC_DESKTOP_SKIP_SYSTEM_SETUP;
+    const marker = join(app.getPath("userData"), "setup.json");
+    if (!existsSync(marker) && systemSetup) {
+      setAutostart(true);
+      writeFileSync(marker, JSON.stringify({ autostart: true }));
+    }
+    const { binDir } = installCli({ bin: orcBin(), version: app.getVersion() });
+    if (process.platform === "win32") {
+      if (systemSetup) ensureOnWindowsUserPath(binDir);
+    } else {
+      ensureOnPath({});
+    }
+  } catch (err) {
+    console.error(
+      `[orc-desktop] setup failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+function hardenSession(): void {
+  const allowed = new Set(["clipboard-sanitized-write", "clipboard-read"]);
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, callback) =>
+    callback(allowed.has(permission)),
+  );
+  session.defaultSession.setPermissionCheckHandler((_contents, permission) =>
+    allowed.has(permission),
+  );
+  app.on("web-contents-created", (_event, contents) => {
+    contents.on("will-attach-webview", (event) => event.preventDefault());
+  });
+}
+
 async function start(): Promise<void> {
   try {
-    openWindow((await bringUp()).url);
+    hardenSession();
+    const up = await bringUp();
+    firstRunSetup();
+    createTray();
+    const startHidden =
+      process.argv.includes(HIDDEN_FLAG) || app.getLoginItemSettings().wasOpenedAtLogin;
+    if (!startHidden) openWindow(up.url);
   } catch (err) {
     dialog.showErrorBox("orc failed to start", err instanceof Error ? err.message : String(err));
     app.quit();
@@ -189,21 +303,17 @@ async function start(): Promise<void> {
 }
 
 app.setName("orc");
+app.enableSandbox();
+app.setAboutPanelOptions({ applicationName: "orc", applicationVersion: app.getVersion() });
 
-if (!app.requestSingleInstanceLock()) {
+if (!app.requestSingleInstanceLock() || process.argv.includes(QUIT_FLAG)) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    if (!win) return;
-    if (win.isMinimized()) win.restore();
-    win.focus();
+  app.on("second-instance", (_event, argv) => {
+    if (argv.includes(QUIT_FLAG)) app.quit();
+    else showWindow();
   });
-  app.on("window-all-closed", () => {
-    if (process.platform !== "darwin") app.quit();
-  });
-  app.on("activate", () => {
-    if (daemon && !win) openWindow(daemon.url);
-  });
+  app.on("activate", showWindow);
   app.on("before-quit", () => {
     quitting = true;
     daemon?.stop();

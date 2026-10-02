@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync } from "node:fs";
+import { dirname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 export type Daemon = {
@@ -24,6 +25,7 @@ export async function ensureDaemon(opts: {
   port: number;
   bin: string;
   secret?: string;
+  logFile?: string;
   timeoutMs?: number;
 }): Promise<Daemon> {
   const url = `http://127.0.0.1:${opts.port}`;
@@ -31,11 +33,14 @@ export async function ensureDaemon(opts: {
 
   if (!existsSync(opts.bin)) throw new Error(`orc binary not found: ${opts.bin}`);
 
+  if (opts.logFile) mkdirSync(dirname(opts.logFile), { recursive: true });
+  const logFd = opts.logFile ? openSync(opts.logFile, "a") : null;
   const child = spawn(opts.bin, ["--port", String(opts.port), "daemon", "start"], {
-    stdio: ["ignore", "inherit", "inherit"],
+    stdio: logFd === null ? ["ignore", "inherit", "inherit"] : ["ignore", logFd, logFd],
     env: opts.secret ? { ...process.env, ORC_API_SECRET: opts.secret } : process.env,
     windowsHide: true,
   });
+  if (logFd !== null) closeSync(logFd);
   const state: { error: Error | null; exited: boolean } = { error: null, exited: false };
   child.once("error", (err) => {
     state.error = err;
