@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Play } from "lucide-react";
+import { ChevronDown, ChevronRight, Play, Power } from "lucide-react";
 import { useState } from "react";
 import type { JobRun } from "@/api/client";
 import { DetailField } from "@/components/DetailField";
@@ -14,7 +14,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useJob, useJobRunLogs, useJobRuns, useTriggerJob } from "@/hooks/useJobs";
+import { useJob, useJobRunLogs, useJobRuns, useTriggerJob, useUpdateJob } from "@/hooks/useJobs";
 
 interface JobDetailSheetProps {
   jobId: string | null;
@@ -26,6 +26,7 @@ export function JobDetailSheet({ jobId, open, onClose }: JobDetailSheetProps) {
   const { data: job } = useJob(jobId);
   const { data: runs, isLoading: runsLoading } = useJobRuns(jobId);
   const triggerJob = useTriggerJob();
+  const updateJob = useUpdateJob();
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
 
   return (
@@ -123,6 +124,18 @@ export function JobDetailSheet({ jobId, open, onClose }: JobDetailSheetProps) {
           )}
         </SheetBody>
         <SheetFooter>
+          {job && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={updateJob.isPending}
+              onClick={() => updateJob.mutate({ id: job.id, enabled: !job.enabled })}
+              className="font-label text-xs uppercase tracking-widest"
+            >
+              <Power size={12} className="mr-1.5" />
+              {job.enabled ? "Disable" : "Enable"}
+            </Button>
+          )}
           {job && (
             <Button
               size="sm"

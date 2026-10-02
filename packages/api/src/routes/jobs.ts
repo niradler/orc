@@ -13,6 +13,7 @@ import {
   sessions,
 } from "@orc/db/schema";
 import { executeJob } from "@orc/runner/executor";
+import { syncJob, unscheduleJob } from "@orc/runner/scheduler";
 import { Cron } from "croner";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
@@ -308,6 +309,7 @@ app.openapi(createRoute_, async (c) => {
 
   const job = await db.query.jobs.findFirst({ where: eq(jobs.id, id) });
   if (!job) throw new Error("Expected job to exist after write");
+  syncJob(job);
   return c.json(toDto(job), 201);
 });
 
@@ -347,6 +349,7 @@ app.openapi(updateRoute, async (c) => {
 
   const updated = await db.query.jobs.findFirst({ where: eq(jobs.id, id) });
   if (!updated) throw new Error("Expected job to exist after write");
+  syncJob(updated);
   return c.json(toDto(updated));
 });
 
@@ -379,6 +382,7 @@ app.openapi(deleteRoute, async (c) => {
     }
     await tx.delete(jobs).where(eq(jobs.id, id));
   });
+  unscheduleJob(id);
   return new Response(null, { status: 204 });
 });
 

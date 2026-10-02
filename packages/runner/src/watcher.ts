@@ -45,6 +45,13 @@ export function startWatcher(jobId: string, name: string, watchPath: string): vo
   logger.info(`Watching: ${watchPath} → ${name}`);
 }
 
+export function stopWatcher(jobId: string): void {
+  const watcher = activeWatchers.get(jobId);
+  if (!watcher) return;
+  activeWatchers.delete(jobId);
+  watcher.close().catch(() => {});
+}
+
 async function triggerWatch(jobId: string, name: string, path: string): Promise<void> {
   logger.info(`Watch trigger: ${name} (${path})`);
   try {

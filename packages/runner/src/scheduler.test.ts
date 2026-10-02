@@ -11,7 +11,14 @@ import {
   sessions,
 } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
-import { pruneHistory, scheduleOneShotJob, startScheduler, stopScheduler } from "./scheduler.js";
+import {
+  pruneHistory,
+  scheduleOneShotJob,
+  startScheduler,
+  stopScheduler,
+  syncJob,
+  unscheduleJob,
+} from "./scheduler.js";
 
 beforeAll(() => {
   process.env.ORC_DB_PATH = ":memory:";
@@ -80,6 +87,73 @@ describe("Scheduler - cron jobs", () => {
 
     await expect(startScheduler()).resolves.toBeUndefined();
     stopScheduler();
+  });
+});
+
+describe("Scheduler - syncJob", () => {
+  test("disabling a scheduled cron job stops it firing and re-enabling resumes it", async () => {
+    const { getDb } = await import("@orc/db/client");
+    const db = getDb();
+    const jobId = ulid();
+    const now = new Date();
+    await db.insert(jobs).values({
+      id: jobId,
+      name: "scheduler-test-sync",
+      command: "echo sync-ok",
+      trigger_type: "cron",
+      cron_expr: "* * * * * *",
+      created_at: now,
+      updated_at: now,
+    });
+    const countRuns = async () =>
+      (await db.query.job_runs.findMany({ where: eq(job_runs.job_id, jobId) })).length;
+    const load = async () => {
+      const row = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
+      if (!row) throw new Error("job missing");
+      return row;
+    };
+
+    await startScheduler();
+    syncJob(await load());
+    await Bun.sleep(2500);
+    expect(await countRuns()).toBeGreaterThanOrEqual(1);
+
+    await db.update(jobs).set({ enabled: false }).where(eq(jobs.id, jobId));
+    syncJob(await load());
+    await Bun.sleep(300);
+    const afterDisable = await countRuns();
+    await Bun.sleep(2500);
+    expect(await countRuns()).toBe(afterDisable);
+
+    await db.update(jobs).set({ enabled: true }).where(eq(jobs.id, jobId));
+    syncJob(await load());
+    await Bun.sleep(2500);
+    expect(await countRuns()).toBeGreaterThan(afterDisable);
+
+    unscheduleJob(jobId);
+    stopScheduler();
+  }, 20_000);
+
+  test("is a no-op while the scheduler is not running", async () => {
+    const { getDb } = await import("@orc/db/client");
+    const db = getDb();
+    const jobId = ulid();
+    const now = new Date();
+    await db.insert(jobs).values({
+      id: jobId,
+      name: "scheduler-test-sync-idle",
+      command: "echo idle",
+      trigger_type: "cron",
+      cron_expr: "* * * * * *",
+      created_at: now,
+      updated_at: now,
+    });
+    const row = await db.query.jobs.findFirst({ where: eq(jobs.id, jobId) });
+    if (!row) throw new Error("job missing");
+    syncJob(row);
+    await Bun.sleep(1500);
+    const runs = await db.query.job_runs.findMany({ where: eq(job_runs.job_id, jobId) });
+    expect(runs.length).toBe(0);
   });
 });
 
