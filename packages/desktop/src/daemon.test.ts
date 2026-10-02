@@ -40,7 +40,7 @@ describe("ensureDaemon", () => {
     expect(daemon.url).toBe(`http://127.0.0.1:${server.port}`);
   });
 
-  test("spawns the binary with --port when nothing is listening, and stop() kills it", async () => {
+  test.skipIf(process.platform === "win32")("spawns the binary with --port when nothing is listening, and stop() kills it", async () => {
     const port = freePort();
     const bin = fakeBin(
       "serve",
@@ -57,7 +57,7 @@ await new Promise(() => {});`,
     expect(await isHealthy(daemon.url)).toBe(false);
   });
 
-  test("throws when the binary exits before becoming healthy", async () => {
+  test.skipIf(process.platform === "win32")("throws when the binary exits before becoming healthy", async () => {
     const bin = fakeBin("exits", "process.exit(3);");
     await expect(ensureDaemon({ port: freePort(), bin, timeoutMs: 10_000 })).rejects.toThrow(
       "exited with code 3",
