@@ -11,6 +11,8 @@ export interface Availability {
   reason: string | null;
 }
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
+
 let manager: TerminalManager | null = null;
 
 export function terminalsAvailability(
@@ -31,11 +33,19 @@ export function terminalsAvailability(
     };
   }
   if (!config.api.secret) {
-    return {
-      ready: false,
-      reason:
-        "Terminals start processes on this machine and need an API secret. Set api.secret in config or ORC_API_SECRET.",
-    };
+    if (!config.terminals.allow_without_secret) {
+      return {
+        ready: false,
+        reason:
+          "Terminals start processes on this machine and need an API secret. Set api.secret in config or ORC_API_SECRET, or opt in to secretless local use with terminals.allow_without_secret.",
+      };
+    }
+    if (!LOOPBACK_HOSTS.has(config.api.host)) {
+      return {
+        ready: false,
+        reason: `terminals.allow_without_secret only works when the API is bound to loopback (api.host is ${config.api.host}). Set api.secret.`,
+      };
+    }
   }
   return { ready: true, reason: null };
 }

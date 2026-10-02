@@ -130,6 +130,20 @@ describe("availability", () => {
     expect(ok).toEqual({ ready: true, reason: null });
   });
 
+  test("allow_without_secret opts in on loopback only", () => {
+    const optIn = { terminals: { allow_without_secret: true } };
+    expect(terminalsAvailability(OrcConfigSchema.parse(optIn))).toEqual({
+      ready: true,
+      reason: null,
+    });
+    const exposed = terminalsAvailability(
+      OrcConfigSchema.parse({ ...optIn, api: { host: "0.0.0.0" } }),
+    );
+    expect(exposed.ready).toBe(false);
+    expect(exposed.reason).toContain("loopback");
+    expect(OrcConfigSchema.parse({}).terminals.allow_without_secret).toBe(false);
+  });
+
   test("can be switched off", () => {
     const off = terminalsAvailability(
       OrcConfigSchema.parse({ terminals: { enabled: false }, api: { secret: "s" } }),

@@ -640,6 +640,7 @@ ORC merges config in priority order (later wins):
 | `ORC_API_HOST`                   | `127.0.0.1`           | API listen host (set to `0.0.0.0` in Docker)      |
 | `ORC_API_PORT`                   | `7700`                | API listen port                                   |
 | `ORC_API_SECRET`                 | -                     | Bearer token for auth                             |
+| `ORC_TERMINALS_ALLOW_WITHOUT_SECRET` | `false`           | Allow dashboard Terminals with no API secret (loopback-bound API only) |
 | `ORC_TELEGRAM_TOKEN`             | -                     | Enables the Telegram gateway when set             |
 | `AGENTAPI_URL`                   | `http://127.0.0.1:3284` | URL of host agentapi server (for `agentapi` backend) |
 | `ANTHROPIC_API_KEY`              | -                     | Required for the `claude` backend (Anthropic SDK) |

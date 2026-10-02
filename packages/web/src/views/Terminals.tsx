@@ -269,8 +269,9 @@ export default function Terminals() {
           <p className="font-body text-xs text-outline">
             Terminals run processes on the machine hosting the API, so they need an API secret (
             <code className="text-primary">api.secret</code> or{" "}
-            <code className="text-primary">ORC_API_SECRET</code>). Restart the API after setting it.
-            They can be turned off with{" "}
+            <code className="text-primary">ORC_API_SECRET</code>), or{" "}
+            <code className="text-primary">terminals.allow_without_secret: true</code> on a
+            loopback-only API. Restart the API after changing it. They can be turned off with{" "}
             <code className="text-primary">terminals.enabled: false</code>.
           </p>
         </div>
