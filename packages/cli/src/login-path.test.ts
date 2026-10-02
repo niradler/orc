@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { delimiter } from "node:path";
 import { inheritLoginShellPath, loginShellPath, mergePaths } from "./login-path.js";
 
 describe("mergePaths", () => {
   test("login entries first, duplicates and empties dropped", () => {
-    expect(mergePaths("/a:/b:/usr/bin", "/usr/bin::/c:/a")).toBe("/a:/b:/usr/bin:/c");
+    const join = (...entries: string[]) => entries.join(delimiter);
+    expect(mergePaths(join("/a", "/b", "/usr/bin"), join("/usr/bin", "", "/c", "/a"))).toBe(
+      join("/a", "/b", "/usr/bin", "/c"),
+    );
   });
 });
 

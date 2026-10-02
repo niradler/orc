@@ -40,29 +40,35 @@ describe("ensureDaemon", () => {
     expect(daemon.url).toBe(`http://127.0.0.1:${server.port}`);
   });
 
-  test.skipIf(process.platform === "win32")("spawns the binary with --port when nothing is listening, and stop() kills it", async () => {
-    const port = freePort();
-    const bin = fakeBin(
-      "serve",
-      `Bun.serve({ port: Number(process.argv[3]), fetch: () => Response.json({ status: "ok", secret: process.env.ORC_API_SECRET ?? null }) });
+  test.skipIf(process.platform === "win32")(
+    "spawns the binary with --port when nothing is listening, and stop() kills it",
+    async () => {
+      const port = freePort();
+      const bin = fakeBin(
+        "serve",
+        `Bun.serve({ port: Number(process.argv[3]), fetch: () => Response.json({ status: "ok", secret: process.env.ORC_API_SECRET ?? null }) });
 await new Promise(() => {});`,
-    );
-    const daemon = await ensureDaemon({ port, bin, secret: "s3cret", timeoutMs: 10_000 });
-    expect(daemon.owned).toBe(true);
-    const body = (await (await fetch(`${daemon.url}/api/health`)).json()) as { secret: string };
-    expect(body.secret).toBe("s3cret");
-    expect(await isHealthy(daemon.url)).toBe(true);
-    daemon.stop();
-    for (let i = 0; i < 20 && (await isHealthy(daemon.url)); i++) await Bun.sleep(100);
-    expect(await isHealthy(daemon.url)).toBe(false);
-  });
+      );
+      const daemon = await ensureDaemon({ port, bin, secret: "s3cret", timeoutMs: 10_000 });
+      expect(daemon.owned).toBe(true);
+      const body = (await (await fetch(`${daemon.url}/api/health`)).json()) as { secret: string };
+      expect(body.secret).toBe("s3cret");
+      expect(await isHealthy(daemon.url)).toBe(true);
+      daemon.stop();
+      for (let i = 0; i < 20 && (await isHealthy(daemon.url)); i++) await Bun.sleep(100);
+      expect(await isHealthy(daemon.url)).toBe(false);
+    },
+  );
 
-  test.skipIf(process.platform === "win32")("throws when the binary exits before becoming healthy", async () => {
-    const bin = fakeBin("exits", "process.exit(3);");
-    await expect(ensureDaemon({ port: freePort(), bin, timeoutMs: 10_000 })).rejects.toThrow(
-      "exited with code 3",
-    );
-  });
+  test.skipIf(process.platform === "win32")(
+    "throws when the binary exits before becoming healthy",
+    async () => {
+      const bin = fakeBin("exits", "process.exit(3);");
+      await expect(ensureDaemon({ port: freePort(), bin, timeoutMs: 10_000 })).rejects.toThrow(
+        "exited with code 3",
+      );
+    },
+  );
 
   test("throws when the binary is missing", async () => {
     await expect(

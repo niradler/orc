@@ -17,6 +17,7 @@ win:
     - from: ../cli/dist/orc-windows-x64.exe
       to: orc.exe
 linux:
+  executableName: orc
   category: Development
   target: AppImage
   extraResources:
