@@ -53,7 +53,14 @@ jobs:
 
       - name: Package the installer
         working-directory: packages/desktop
+        env:
+          CSC_FOR_PULL_REQUEST: "true"
         run: bunx electron-builder
+
+      - name: Verify the macOS code signature
+        if: runner.os == 'macOS'
+        working-directory: packages/desktop
+        run: codesign -v --deep --strict release/mac-arm64/orc.app
 
       - name: Smoke test the packaged app
         if: runner.os != 'Linux'
