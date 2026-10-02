@@ -79,8 +79,9 @@ export const OrcConfigSchema = z.object({
       max: z.number().int().min(1).max(64).default(8),
       shell: z.string().optional(),
       scrollback_bytes: z.number().int().min(0).default(524288),
+      allow_without_secret: z.boolean().default(false),
     })
-    .default({ enabled: true, max: 8, scrollback_bytes: 524288 }),
+    .default({ enabled: true, max: 8, scrollback_bytes: 524288, allow_without_secret: false }),
 
   mcp: z
     .object({
@@ -230,6 +231,10 @@ function fromEnv(): Record<string, unknown> {
   if (process.env.ORC_TERMINALS_ENABLED)
     terminals.enabled = ["1", "true"].includes(process.env.ORC_TERMINALS_ENABLED);
   if (process.env.ORC_TERMINALS_SHELL) terminals.shell = process.env.ORC_TERMINALS_SHELL;
+  if (process.env.ORC_TERMINALS_ALLOW_WITHOUT_SECRET)
+    terminals.allow_without_secret = ["1", "true"].includes(
+      process.env.ORC_TERMINALS_ALLOW_WITHOUT_SECRET,
+    );
   if (Object.keys(terminals).length) env.terminals = terminals;
 
   const runner: Record<string, unknown> = {};
