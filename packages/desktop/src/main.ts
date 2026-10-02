@@ -208,8 +208,13 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
     daemon?.stop();
   });
-  process.on("SIGINT", () => app.quit());
-  process.on("SIGTERM", () => app.quit());
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.on(signal, () => {
+      quitting = true;
+      daemon?.stop();
+      app.exit(0);
+    });
+  }
   void app.whenReady().then(() => {
     if (process.platform === "darwin" && !app.isPackaged) app.dock?.setIcon(iconPath);
     return start();
