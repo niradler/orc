@@ -38,6 +38,7 @@
     "includes": [
       "**",
       "!**/dist",
+      "!packages/desktop/release",
       "!**/node_modules",
       "!**/*.gen.ts",
       "!**/drizzle",

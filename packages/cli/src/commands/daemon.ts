@@ -21,6 +21,7 @@ import {
 } from "@orc/runner";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
+import { inheritLoginShellPath } from "../login-path.js";
 
 export const ORC_HOME = process.env.ORC_HOME ?? join(homedir(), ".orc");
 export const ORC_LOG = join(ORC_HOME, "daemon.log");
@@ -237,6 +238,7 @@ export function daemonCommand() {
     .description("Start the daemon (use global --port / --host / --db / --secret to configure)")
     .action(async () => {
       ensureOrcHome();
+      inheritLoginShellPath();
 
       const existingPid = readDaemonPid();
       if (existingPid) {

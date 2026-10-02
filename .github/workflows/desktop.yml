@@ -1,0 +1,76 @@
+name: Desktop
+
+on:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "packages/desktop/**"
+      - "packages/cli/**"
+      - "packages/api/src/terminals/**"
+      - ".github/workflows/desktop.yml"
+      - "package.json"
+      - "bun.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: desktop (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build the orc binary for this OS
+        working-directory: packages/desktop
+        run: bun run bin --only host
+
+      - name: Bundle the main process
+        working-directory: packages/desktop
+        run: bun run bundle
+
+      - name: Unit tests
+        working-directory: packages/desktop
+        run: bun test
+
+      - name: Login-shell PATH tests
+        working-directory: packages/cli
+        run: bun test src/login-path.test.ts
+
+      - name: Package the installer
+        working-directory: packages/desktop
+        run: bunx electron-builder
+
+      - name: Smoke test the packaged app
+        if: runner.os != 'Linux'
+        working-directory: packages/desktop
+        run: bun scripts/smoke.ts
+
+      - name: Smoke test the packaged app (xvfb)
+        if: runner.os == 'Linux'
+        working-directory: packages/desktop
+        run: xvfb-run -a bun scripts/smoke.ts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: orc-desktop-${{ matrix.os }}
+          path: |
+            packages/desktop/release/*.dmg
+            packages/desktop/release/*.AppImage
+            packages/desktop/release/*.exe
+          if-no-files-found: error
+          retention-days: 7
