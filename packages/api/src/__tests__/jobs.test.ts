@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { ulid } from "@orc/core/ids";
 import { getDb } from "@orc/db/client";
 import { job_runs, sessions } from "@orc/db/schema";
+import { startScheduler, stopScheduler } from "@orc/runner/scheduler";
 import { eq } from "drizzle-orm";
 import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
@@ -14,6 +15,37 @@ beforeAll(() => {
 
 afterAll(() => {
   teardownTestApp();
+});
+
+describe("Jobs enable/disable against a live scheduler", () => {
+  test("PATCH enabled=false stops a running cron job and enabled=true resumes it", async () => {
+    await startScheduler();
+    const created = await req(app, "POST", "/jobs", {
+      name: "live-toggle-job",
+      command: "echo live",
+      trigger_type: "cron",
+      cron_expr: "* * * * * *",
+    });
+    const { id } = await created.json();
+    const countRuns = async () =>
+      (await getDb().query.job_runs.findMany({ where: eq(job_runs.job_id, id) })).length;
+
+    await Bun.sleep(2500);
+    expect(await countRuns()).toBeGreaterThanOrEqual(1);
+
+    await req(app, "PATCH", `/jobs/${id}`, { enabled: false });
+    await Bun.sleep(300);
+    const afterDisable = await countRuns();
+    await Bun.sleep(2500);
+    expect(await countRuns()).toBe(afterDisable);
+
+    await req(app, "PATCH", `/jobs/${id}`, { enabled: true });
+    await Bun.sleep(2500);
+    expect(await countRuns()).toBeGreaterThan(afterDisable);
+
+    await req(app, "DELETE", `/jobs/${id}`);
+    stopScheduler();
+  }, 20_000);
 });
 
 describe("Jobs CRUD", () => {

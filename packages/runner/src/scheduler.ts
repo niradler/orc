@@ -5,6 +5,7 @@ import { comments, job_runs, jobs } from "@orc/db/schema";
 import { Cron } from "croner";
 import { desc, eq } from "drizzle-orm";
 import { executeJob } from "./executor.js";
+import { startWatcher, stopWatcher } from "./watcher.js";
 
 const logger = createLogger("runner:scheduler");
 
@@ -12,6 +13,7 @@ const activeCrons = new Map<string, Cron>();
 const activeTimers = new Map<string, Timer>();
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 let checkpointInterval: ReturnType<typeof setInterval> | null = null;
+let running = false;
 
 const WAL_CHECKPOINT_INTERVAL_MS = 60 * 60 * 1000; // hourly
 
@@ -19,6 +21,7 @@ const CIRCUIT_BREAKER_THRESHOLD = 3;
 const HISTORY_RETENTION_DAYS = 7;
 
 export async function startScheduler(): Promise<void> {
+  running = true;
   const db = getDb();
   const allJobs = await db.query.jobs.findMany({
     where: eq(jobs.enabled, true),
@@ -179,13 +182,14 @@ export function scheduleCronJob(jobId: string, name: string, expr: string): void
     const db = getDb();
     const still = await db.query.jobs.findFirst({
       where: eq(jobs.id, jobId),
-      columns: { id: true },
+      columns: { id: true, enabled: true },
     });
     if (!still) {
       logger.warn(`Cron job ${name} no longer exists, unscheduling`);
       unscheduleJob(jobId);
       return;
     }
+    if (!still.enabled) return;
     logger.info(`Cron trigger: ${name}`);
     try {
       await executeJob({ jobId, triggerBy: "cron" });
@@ -221,12 +225,13 @@ export function scheduleOneShotJob(
     const db = getDb();
     const still = await db.query.jobs.findFirst({
       where: eq(jobs.id, jobId),
-      columns: { id: true },
+      columns: { id: true, enabled: true },
     });
     if (!still) {
       logger.warn(`One-shot job ${name} no longer exists, skipping`);
       return;
     }
+    if (!still.enabled) return;
     logger.info(`One-shot trigger: ${name}`);
     try {
       await executeJob({ jobId, triggerBy: "one-shot" });
@@ -251,9 +256,24 @@ export function unscheduleJob(jobId: string): void {
     clearTimeout(timer);
     activeTimers.delete(jobId);
   }
+  stopWatcher(jobId);
+}
+
+export function syncJob(job: typeof jobs.$inferSelect): void {
+  if (!running) return;
+  unscheduleJob(job.id);
+  if (!job.enabled || job.command.startsWith("__internal:")) return;
+  if (job.trigger_type === "cron" && job.cron_expr) {
+    scheduleCronJob(job.id, job.name, job.cron_expr);
+  } else if (job.trigger_type === "one-shot" && job.run_at) {
+    scheduleOneShotJob(job.id, job.name, job.run_at, job.run_count);
+  } else if (job.trigger_type === "watch" && job.watch_path) {
+    startWatcher(job.id, job.name, job.watch_path);
+  }
 }
 
 export function stopScheduler(): void {
+  running = false;
   for (const [, cron] of activeCrons) cron.stop();
   activeCrons.clear();
   for (const [, timer] of activeTimers) clearTimeout(timer);
