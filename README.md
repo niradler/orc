@@ -142,7 +142,7 @@ Override the served dist directory with `ORC_WEB_DIST=/path/to/web/dist` if you 
 
 ### Desktop app
 
-`packages/desktop` is the Electron app described under [Install](#install). It attaches to a daemon already answering `/api/health` on the configured port (`api.port`, default 7700) or starts the bundled `orc` binary, and stops only a daemon it started. Its daemon output goes to `~/.orc/desktop-daemon.log`.
+`packages/desktop` is the Electron app described under [Install](#install). It attaches to a daemon already answering `/api/health` on the configured port (`api.port`, default 7700) or starts the bundled `orc` binary, and stops only a daemon it started. Its daemon output goes to `~/.orc/desktop-daemon.log`. Launching the app executable with `--quit` quits the running instance (and the daemon it started), which is what installers and scripts should use; `--hidden` starts it without opening a window.
 
 Hardening: sandboxed renderer with context isolation and no Node integration, permission requests denied except clipboard, `<webview>` blocked, navigation locked to the daemon origin (everything else opens in the system browser), Electron fuses that disable `ELECTRON_RUN_AS_NODE` and Node CLI/env options.
 

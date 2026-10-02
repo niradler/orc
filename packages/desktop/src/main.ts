@@ -21,6 +21,7 @@ type OrcConfig = { api?: { port?: number; secret?: string } };
 const orcDir = join(homedir(), ".orc");
 const configPath = join(orcDir, "config.json");
 const HIDDEN_FLAG = "--hidden";
+const QUIT_FLAG = "--quit";
 
 function readConfig(): OrcConfig {
   try {
@@ -129,6 +130,9 @@ function openWindow(url: string): void {
   });
   if (state.maximized) win.maximize();
   win.once("ready-to-show", () => win?.show());
+  win.on("session-end", () => {
+    quitting = true;
+  });
   win.on("close", (event) => {
     if (!win) return;
     saveWindowState(win);
@@ -296,10 +300,13 @@ app.setName("orc");
 app.enableSandbox();
 app.setAboutPanelOptions({ applicationName: "orc", applicationVersion: app.getVersion() });
 
-if (!app.requestSingleInstanceLock()) {
+if (!app.requestSingleInstanceLock() || process.argv.includes(QUIT_FLAG)) {
   app.quit();
 } else {
-  app.on("second-instance", showWindow);
+  app.on("second-instance", (_event, argv) => {
+    if (argv.includes(QUIT_FLAG)) app.quit();
+    else showWindow();
+  });
   app.on("activate", showWindow);
   app.on("before-quit", () => {
     quitting = true;

@@ -93,12 +93,12 @@ async function healthy(): Promise<boolean> {
 }
 
 function stopApp(c: ChildProcess, force: boolean): void {
-  if (win) {
-    const args = ["/PID", String(c.pid), ...(force ? ["/T", "/F"] : [])];
-    spawnSync("taskkill", args, { stdio: "ignore" });
-  } else {
-    c.kill(force ? "SIGKILL" : "SIGTERM");
-  }
+  if (force && win) spawnSync("taskkill", ["/PID", String(c.pid), "/T", "/F"], { stdio: "ignore" });
+  else if (force) c.kill("SIGKILL");
+  else
+    spawn(app as string, ["--quit", `--user-data-dir=${join(home, "userdata")}`], {
+      stdio: "ignore",
+    });
 }
 
 async function run(): Promise<void> {
