@@ -134,6 +134,8 @@ bun run --filter @orc/desktop dist              # installer for this machine -> 
 bun run --filter @orc/desktop dist:mac          # also dist:win, dist:linux
 ```
 
+`orc daemon start` merges the login shell's `PATH` into its own on macOS and Linux, so `claude`, `codex` and `cursor-agent` are found when the daemon is started by launchd, systemd or a Finder-launched app.
+
 Builds are unsigned. Building binaries needs `bun >= 1.4.2` on `PATH` ahead of any `node_modules/.bin/bun`.
 
 ## Docker
