@@ -98,9 +98,10 @@ export function ensureOnPath(opts: {
 export function ensureOnWindowsUserPath(binDir: string): boolean {
   const script = [
     `$dir = '${binDir.replaceAll("'", "''")}'`,
-    "$path = [Environment]::GetEnvironmentVariable('Path', 'User')",
+    "$path = [string][Environment]::GetEnvironmentVariable('Path', 'User')",
     "if (($path -split ';') -contains $dir) { exit 3 }",
-    "[Environment]::SetEnvironmentVariable('Path', (($path.TrimEnd(';') + ';' + $dir).TrimStart(';')), 'User')",
+    "$updated = if ($path) { $path.TrimEnd(';') + ';' + $dir } else { $dir }",
+    "[Environment]::SetEnvironmentVariable('Path', $updated, 'User')",
   ].join("; ");
   const result = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
     stdio: "ignore",
