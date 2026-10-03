@@ -5,6 +5,7 @@ interface PanelWidthOptions {
   initial: number;
   min: number;
   max: number;
+  edge?: "left" | "right";
 }
 
 const KEY_STEP = 16;
@@ -28,7 +29,14 @@ function writeStored(key: string, value: number): void {
   } catch {}
 }
 
-export function usePanelWidth({ storageKey, initial, min, max }: PanelWidthOptions) {
+export function usePanelWidth({
+  storageKey,
+  initial,
+  min,
+  max,
+  edge = "right",
+}: PanelWidthOptions) {
+  const direction = edge === "left" ? -1 : 1;
   const [width, setWidth] = useState(() => clamp(readStored(storageKey, initial), min, max));
 
   const commit = useCallback(
@@ -48,28 +56,28 @@ export function usePanelWidth({ storageKey, initial, min, max }: PanelWidthOptio
       const startWidth = width;
       handle.setPointerCapture(event.pointerId);
       const onMove = (e: globalThis.PointerEvent) =>
-        setWidth(clamp(startWidth + e.clientX - startX, min, max));
+        setWidth(clamp(startWidth + direction * (e.clientX - startX), min, max));
       const onUp = (e: globalThis.PointerEvent) => {
         handle.removeEventListener("pointermove", onMove);
         handle.removeEventListener("pointerup", onUp);
         handle.removeEventListener("pointercancel", onUp);
-        commit(startWidth + e.clientX - startX);
+        commit(startWidth + direction * (e.clientX - startX));
       };
       handle.addEventListener("pointermove", onMove);
       handle.addEventListener("pointerup", onUp);
       handle.addEventListener("pointercancel", onUp);
     },
-    [width, min, max, commit],
+    [width, min, max, commit, direction],
   );
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
-      if (event.key === "ArrowLeft") commit(width - KEY_STEP);
-      else if (event.key === "ArrowRight") commit(width + KEY_STEP);
+      if (event.key === "ArrowLeft") commit(width - direction * KEY_STEP);
+      else if (event.key === "ArrowRight") commit(width + direction * KEY_STEP);
       else return;
       event.preventDefault();
     },
-    [width, commit],
+    [width, commit, direction],
   );
 
   const reset = useCallback(() => commit(initial), [commit, initial]);

@@ -1,4 +1,3 @@
-import { Check, Link2 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { CreateTerminalInput, Terminal } from "@/api/client";
@@ -6,23 +5,19 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
 import { NewTerminalMenu } from "@/components/terminals/NewTerminalMenu";
 import { TerminalList } from "@/components/terminals/TerminalList";
+import { TerminalWorkspace } from "@/components/terminals/TerminalWorkspace";
+import { WorktreeRegistry } from "@/components/terminals/WorktreeRegistry";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { useLiveSessions } from "@/hooks/useSessions";
 import { TERMINAL_KINDS } from "@/lib/terminal-kinds";
-import {
-  absoluteUrl,
-  runningTerminalForSession,
-  shareablePath,
-  terminalPath,
-} from "@/lib/terminal-links";
+import { runningTerminalForSession, terminalPath } from "@/lib/terminal-links";
 import type { ConnectionState } from "@/lib/terminal-runtime";
 import { useTerminals } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 
-const gitPanel: ReactNode = null;
 const SIDEBAR_DEFAULT = 208;
 const SIDEBAR_MIN = 160;
 const SIDEBAR_MAX = 480;
@@ -93,28 +88,6 @@ function SessionLinks({ liveSessionId }: { liveSessionId: string }) {
         </Link>
       )}
     </div>
-  );
-}
-
-function CopyLinkButton({ terminal }: { terminal: Terminal }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard.writeText(absoluteUrl(shareablePath(terminal))).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  };
-  return (
-    <button
-      type="button"
-      data-testid="terminal-copy-link"
-      title="Copy a link to this terminal"
-      onClick={copy}
-      className={cn(LINK_CLASS, "inline-flex items-center gap-1")}
-    >
-      {copied ? <Check size={12} /> : <Link2 size={12} />}
-      {copied ? "Copied" : "Link"}
-    </button>
   );
 }
 
@@ -323,6 +296,7 @@ export default function Terminals() {
             activeId={terminalId ?? null}
             onClose={requestClose}
           />
+          <WorktreeRegistry />
           {/* biome-ignore lint/a11y/useSemanticElements: a draggable splitter has no native element */}
           <div
             role="separator"
@@ -391,9 +365,12 @@ export default function Terminals() {
               {selected.live_session_id && (
                 <SessionLinks liveSessionId={selected.live_session_id} />
               )}
-              <CopyLinkButton terminal={selected} />
             </header>
-            <TerminalViewport terminalId={selected.id} />
+            <TerminalWorkspace
+              selected={selected}
+              terminals={terminals}
+              renderTerminal={(id) => <TerminalViewport terminalId={id} />}
+            />
           </>
         ) : (
           <Centered>
@@ -414,8 +391,6 @@ export default function Terminals() {
           </Centered>
         )}
       </section>
-
-      {gitPanel}
 
       <ConfirmDialog
         open={closing !== null}

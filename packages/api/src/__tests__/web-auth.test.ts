@@ -41,4 +41,19 @@ describe("web dashboard with an API secret set", () => {
     });
     expect(res.status).toBe(200);
   });
+
+  test("an explicitly empty secret permits requests without a token", async () => {
+    try {
+      process.env.ORC_API_SECRET = "";
+      resetConfig();
+      const openApp = createApp();
+      for (const path of ["/api/tasks", "/api/projects", "/api/terminals", "/openapi.json"]) {
+        expect((await openApp.request(path)).status, path).toBe(200);
+      }
+      expect((await app.request("/api/tasks")).status).toBe(401);
+    } finally {
+      process.env.ORC_API_SECRET = "test-secret";
+      resetConfig();
+    }
+  });
 });

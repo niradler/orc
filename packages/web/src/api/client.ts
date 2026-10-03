@@ -137,9 +137,37 @@ export type Worktree = {
   detached: boolean;
   locked: boolean;
   prunable: boolean;
+  merged?: boolean;
+  upstream_gone?: boolean;
+  stale?: boolean;
+  active_terminal?: string | null;
 };
 
 export type WorktreeListing = { root: string | null; worktrees: Worktree[] };
+export type GitStatus = {
+  root: string | null;
+  branch: string | null;
+  files: { path: string; index: string; working: string; original: string | null }[];
+  branches: string[];
+};
+export type GithubItem = {
+  repo: string;
+  number: number;
+  title: string;
+  url: string;
+  kind: "issue" | "pr";
+  state: string;
+  branch: string | null;
+  assignees: string[];
+  task_ids: string[];
+};
+export type GithubFeed = {
+  auth: "gh" | "token" | "none";
+  login: string | null;
+  items: GithubItem[];
+  errors: { repo: string; error: string }[];
+  truncated: boolean;
+};
 
 export class ApiError extends Error {
   constructor(
@@ -479,6 +507,51 @@ export const api = {
   },
 
   git: {
+    status: (id: string) =>
+      req<GitStatus>("GET", `/terminals/${encodeURIComponent(id)}/git/status`),
+    diff: (id: string, staged: boolean, path?: string) =>
+      req<{ diff: string; truncated: boolean }>(
+        "GET",
+        `/terminals/${encodeURIComponent(id)}/git/diff`,
+        undefined,
+        { staged: staged ? "1" : "0", path },
+      ),
+    terminalWorktrees: (id: string) =>
+      req<WorktreeListing>("GET", `/terminals/${encodeURIComponent(id)}/git/worktrees`),
+    stage: (id: string, paths: string[]) =>
+      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/stage`, { paths }),
+    switchBranch: (id: string, branch: string) =>
+      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/switch`, { branch }),
+    checkoutGithub: (id: string) =>
+      req<GithubFeed>("GET", `/terminals/${encodeURIComponent(id)}/git/github`),
+    files: (id: string, path: string) =>
+      req<{
+        root: string;
+        path: string;
+        entries: { name: string; path: string; directory: boolean }[] | null;
+        content: string | null;
+        binary: boolean;
+        truncated: boolean;
+      }>("GET", `/terminals/${encodeURIComponent(id)}/files`, undefined, { path }),
+    commit: (id: string, message: string) =>
+      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/commit`, { message }),
+    addWorktree: (id: string) =>
+      req<{ path: string }>("POST", `/terminals/${encodeURIComponent(id)}/git/worktrees`),
+    githubItems: (filter: string, project_id?: string) =>
+      req<GithubFeed>("GET", "/github/items", undefined, { filter, project_id }),
+    registry: (project_id?: string) =>
+      req<{ repos: WorktreeListing[]; errors: { cwd: string; error: string }[] }>(
+        "GET",
+        "/git/registry",
+        undefined,
+        { project_id },
+      ),
+    cleanup: (items: { cwd: string; path: string; delete_branch?: boolean }[]) =>
+      req<{ results: { path: string; removed: boolean; error: string | null }[] }>(
+        "POST",
+        "/git/worktrees/cleanup",
+        { items },
+      ),
     worktrees: (cwd: string) => req<WorktreeListing>("GET", "/git/worktrees", undefined, { cwd }),
     removeWorktree: (data: { cwd: string; path: string; force?: boolean }) =>
       req<null>("POST", "/git/worktrees/remove", data),

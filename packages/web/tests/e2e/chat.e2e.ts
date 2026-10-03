@@ -1,10 +1,15 @@
 import { expect, test } from "@playwright/test";
+import { API_SECRET } from "./_helpers";
 
 const ask = (marker: string) =>
   `Reply with exactly: ${marker}. Do not include any other words, punctuation, quotes, or whitespace around it.`;
 
 test.describe("Chat panel - end-to-end SSE round-trip", () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(
+      (secret) => localStorage.setItem("orc_api_secret", secret),
+      API_SECRET,
+    );
     await page.goto("/");
     const openBtn = page.getByTestId("chat-open-button");
     if (await openBtn.isVisible().catch(() => false)) {

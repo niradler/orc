@@ -59,6 +59,7 @@ export const TtsConfigSchema = z.object({
 });
 
 export const OrcConfigSchema = z.object({
+  github: z.object({ token: z.string().optional() }).default({}),
   db: z
     .object({
       path: z.string().default("~/.orc/orc.db"),
@@ -224,10 +225,11 @@ function fromEnv(): Record<string, unknown> {
   const api: Record<string, unknown> = {};
   if (process.env.ORC_API_PORT) api.port = Number(process.env.ORC_API_PORT);
   if (process.env.ORC_API_HOST) api.host = process.env.ORC_API_HOST;
-  if (process.env.ORC_API_SECRET) api.secret = process.env.ORC_API_SECRET;
+  if (process.env.ORC_API_SECRET !== undefined) api.secret = process.env.ORC_API_SECRET;
   if (Object.keys(api).length) env.api = api;
 
   const terminals: Record<string, unknown> = {};
+  if (process.env.ORC_GITHUB_TOKEN) env.github = { token: process.env.ORC_GITHUB_TOKEN };
   if (process.env.ORC_TERMINALS_ENABLED)
     terminals.enabled = ["1", "true"].includes(process.env.ORC_TERMINALS_ENABLED);
   if (process.env.ORC_TERMINALS_SHELL) terminals.shell = process.env.ORC_TERMINALS_SHELL;

@@ -15,8 +15,30 @@ const logger = createLogger("api:tasks");
 
 const app = new OpenAPIHono();
 
+const TaskGitFields = {
+  git_repo: z.string().min(1).max(4096).nullable(),
+  git_branch: z.string().min(1).max(1024).nullable(),
+  git_worktree: z.string().min(1).max(4096).nullable(),
+  github_issue: z
+    .string()
+    .regex(/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/issues\/[1-9]\d*$/)
+    .nullable(),
+  github_pr: z
+    .string()
+    .regex(/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/[1-9]\d*$/)
+    .nullable(),
+};
+const OptionalTaskGitFields = {
+  git_repo: TaskGitFields.git_repo.optional(),
+  git_branch: TaskGitFields.git_branch.optional(),
+  git_worktree: TaskGitFields.git_worktree.optional(),
+  github_issue: TaskGitFields.github_issue.optional(),
+  github_pr: TaskGitFields.github_pr.optional(),
+};
+
 const TaskSchema = z
   .object({
+    ...TaskGitFields,
     id: z.string(),
     project_id: z.string().nullable(),
     title: z.string(),
@@ -55,6 +77,7 @@ const CommentSchema = z
 
 const CreateTaskSchema = z
   .object({
+    ...OptionalTaskGitFields,
     title: z.string().min(1).max(500),
     body: z.string().optional(),
     project_id: z.string().optional(),
@@ -79,6 +102,7 @@ const CreateTaskSchema = z
 
 const UpdateTaskSchema = z
   .object({
+    ...OptionalTaskGitFields,
     title: z.string().min(1).max(500).optional(),
     body: z.string().nullable().optional(),
     status: TaskStatusSchema.optional(),
@@ -418,6 +442,11 @@ app.openapi(createRoute_, async (c) => {
   await db.insert(tasks).values({
     id,
     title: body.title,
+    git_repo: body.git_repo,
+    git_branch: body.git_branch,
+    git_worktree: body.git_worktree,
+    github_issue: body.github_issue,
+    github_pr: body.github_pr,
     body: body.body,
     project_id: body.project_id,
     status: body.status,
@@ -466,6 +495,11 @@ app.openapi(updateRoute, async (c) => {
   }
 
   const nonStatusFields = {
+    ...(body.git_repo !== undefined ? { git_repo: body.git_repo } : {}),
+    ...(body.git_branch !== undefined ? { git_branch: body.git_branch } : {}),
+    ...(body.git_worktree !== undefined ? { git_worktree: body.git_worktree } : {}),
+    ...(body.github_issue !== undefined ? { github_issue: body.github_issue } : {}),
+    ...(body.github_pr !== undefined ? { github_pr: body.github_pr } : {}),
     ...(body.title !== undefined ? { title: body.title } : {}),
     ...(body.body !== undefined ? { body: body.body } : {}),
     ...(body.priority !== undefined ? { priority: body.priority } : {}),
