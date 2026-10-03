@@ -250,6 +250,28 @@ describe("POST /terminals", () => {
   });
 });
 
+test("should reopen a fresh agent terminal without spawning a resume", async () => {
+  const created = await (
+    await req(app, "POST", "/terminals", { kind: "claude", cwd: root })
+  ).json();
+  expect(created.live_session_id).toBeNull();
+  await seedLive("live-fresh", {
+    pid: created.pid,
+    status: "idle",
+    created_at: new Date(Date.parse(created.created_at) + 1),
+  });
+  const before = ptys.length;
+  const response = await req(app, "POST", "/terminals", { live_session_id: "live-fresh" });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    id: created.id,
+    live_session_id: "live-fresh",
+  });
+  expect(ptys.length).toBe(before);
+  expect(getTerminalManager().findByLiveSession("live-fresh")?.id).toBe(created.id);
+  await req(app, "DELETE", `/terminals/${created.id}`);
+});
+
 describe("GET /terminals and tickets", () => {
   test("lists launchers and running terminals", async () => {
     const created = await (await req(app, "POST", "/terminals", { kind: "shell" })).json();
