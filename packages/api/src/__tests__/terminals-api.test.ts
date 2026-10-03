@@ -1,7 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { OrcConfigSchema, resetConfig } from "@orc/core/config";
 import { getDb } from "@orc/db/client";
 import { bridge_chats, gateway_sessions } from "@orc/db/schema";
@@ -439,5 +447,127 @@ describe("terminal WebSocket", () => {
       one.closed,
       new Promise((_, reject) => setTimeout(() => reject(new Error("socket stayed open")), 2000)),
     ]);
+  });
+});
+
+describe("worktree terminals and /git/worktrees", () => {
+  const repo = join(root, "wtrepo");
+  const plain = join(root, "wtplain");
+  const worktrees = join(root, "worktrees", "wtrepo");
+
+  async function git(args: string[], cwd: string): Promise<string> {
+    const proc = Bun.spawn(["git", "-C", cwd, ...args], { stdout: "pipe", stderr: "pipe" });
+    const [out, err, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    if (code !== 0) throw new Error(err);
+    return out;
+  }
+
+  const listing = (cwd: string) => req(app, "GET", `/git/worktrees?cwd=${encodeURIComponent(cwd)}`);
+
+  beforeAll(async () => {
+    mkdirSync(repo);
+    mkdirSync(plain);
+    await git(["init", "-b", "main"], repo);
+    await git(["config", "user.email", "test@example.com"], repo);
+    await git(["config", "user.name", "test"], repo);
+    writeFileSync(join(repo, "README.md"), "hi\n");
+    await git(["add", "README.md"], repo);
+    await git(["commit", "-m", "init"], repo);
+  });
+
+  test("a shell never gets a worktree", async () => {
+    const before = ptys.length;
+    const res = await req(app, "POST", "/terminals", { kind: "shell", cwd: repo, worktree: true });
+    expect(res.status).toBe(400);
+    expect(ptys.length).toBe(before);
+    expect(existsSync(worktrees)).toBe(false);
+  });
+
+  test("a resumed session cannot ask for a worktree", async () => {
+    await seedLive("live-wt");
+    const res = await req(app, "POST", "/terminals", {
+      live_session_id: "live-wt",
+      worktree: true,
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test("an agent in a plain folder starts there without a worktree", async () => {
+    const res = await req(app, "POST", "/terminals", {
+      kind: "claude",
+      cwd: plain,
+      worktree: true,
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.cwd).toBe(plain);
+    await req(app, "DELETE", `/terminals/${body.id}`);
+  });
+
+  test("an agent in a repo starts in a new worktree that outlives the terminal", async () => {
+    const res = await req(app, "POST", "/terminals", {
+      kind: "claude",
+      cwd: join(repo),
+      worktree: true,
+    });
+    expect(res.status).toBe(201);
+    const terminal = await res.json();
+    expect(dirname(terminal.cwd)).toBe(worktrees);
+    const id = terminal.cwd.slice(worktrees.length + 1);
+    expect(terminal.name).toBe(`wtrepo ${id.slice(-6).toLowerCase()}`);
+    expect((await git(["branch", "--show-current"], terminal.cwd)).trim()).toBe(`orc/${id}`);
+
+    const list = await listing(repo);
+    expect(list.status).toBe(200);
+    const { root: repoRoot, worktrees: rows } = await list.json();
+    expect(repoRoot).toBe(repo);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ path: repo, main: true, branch: "main", dirty: false });
+    expect(rows[1]).toMatchObject({ path: terminal.cwd, main: false, branch: `orc/${id}` });
+
+    const busy = await req(app, "POST", "/git/worktrees/remove", { cwd: repo, path: terminal.cwd });
+    expect(busy.status).toBe(409);
+
+    await req(app, "DELETE", `/terminals/${terminal.id}`);
+    expect(existsSync(terminal.cwd)).toBe(true);
+
+    writeFileSync(join(terminal.cwd, "wip.txt"), "wip\n");
+    const dirty = await req(app, "POST", "/git/worktrees/remove", {
+      cwd: repo,
+      path: terminal.cwd,
+    });
+    expect(dirty.status).toBe(409);
+    expect((await dirty.json()).code).toBe("WORKTREE_DIRTY");
+
+    const forced = await req(app, "POST", "/git/worktrees/remove", {
+      cwd: repo,
+      path: terminal.cwd,
+      force: true,
+    });
+    expect(forced.status).toBe(204);
+    expect(existsSync(terminal.cwd)).toBe(false);
+  });
+
+  test("the main checkout and outside paths cannot be removed", async () => {
+    const main = await req(app, "POST", "/git/worktrees/remove", { cwd: repo, path: repo });
+    expect(main.status).toBe(400);
+    const outside = await req(app, "POST", "/git/worktrees/remove", { cwd: repo, path: plain });
+    expect(outside.status).toBe(400);
+    expect(existsSync(plain)).toBe(true);
+  });
+
+  test("a plain folder lists nothing and a missing one is rejected", async () => {
+    const res = await listing(plain);
+    expect(await res.json()).toMatchObject({ root: null, worktrees: [] });
+    expect((await listing(join(root, "missing"))).status).toBe(400);
+  });
+
+  test("the git routes need the bearer secret", async () => {
+    const res = await app.request(`/api/git/worktrees?cwd=${encodeURIComponent(repo)}`);
+    expect(res.status).toBe(401);
   });
 });

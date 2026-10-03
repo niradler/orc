@@ -113,6 +113,12 @@ describe("fresh launches", () => {
     expect(buildLaunch({ kind: "codex" }, deps()).argv).toEqual(["/bin/codex"]);
   });
 
+  test("cursor falls back to the newer agent binary", () => {
+    const which = (c: string) => (c === "agent" ? "/bin/agent" : null);
+    expect(buildLaunch({ kind: "cursor" }, deps({ which })).argv).toEqual(["/bin/agent"]);
+    expect(availableLaunchers(deps({ which, shell: "/bin/sh" }))).toEqual(["shell", "cursor"]);
+  });
+
   test("no cwd starts in the home folder", () => {
     expect(buildLaunch({ kind: "shell" }, deps()).cwd).toBe("/home/me");
     expect(buildLaunch({ kind: "codex", cwd: "" }, deps()).cwd).toBe("/home/me");

@@ -94,11 +94,16 @@ export class TerminalManager {
     return null;
   }
 
-  create(input: CreateTerminalInput): TerminalInfo {
+  // Callers that do side effects before create (making a worktree) check this first.
+  assertCapacity(): void {
     const running = [...this.entries.values()].filter((e) => e.info.status === "running").length;
     if (running >= this.options.max) {
       throw new ConflictError(`Terminal limit reached (${this.options.max})`);
     }
+  }
+
+  create(input: CreateTerminalInput): TerminalInfo {
+    this.assertCapacity();
     this.pruneExited();
     const id = ulid();
     const sinks = new Set<TerminalSink>();

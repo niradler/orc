@@ -1,6 +1,7 @@
+import { basename, dirname } from "node:path";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
-import { NotFoundError } from "@orc/core/errors";
+import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { getDb } from "@orc/db/client";
 import { gateway_sessions } from "@orc/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -9,9 +10,12 @@ import { availableLaunchers, buildLaunch, LAUNCH_KINDS } from "../terminals/laun
 import {
   getTerminalManager,
   launchDeps,
+  pickFolderOnce,
   requireTerminals,
+  sessionDirDeps,
   terminalsAvailability,
 } from "../terminals/service.js";
+import { prepareSessionDirectory } from "../terminals/session-dir.js";
 
 const app = new OpenAPIHono();
 
@@ -70,6 +74,10 @@ const createTerminalRoute = createRoute({
             cwd: z.string().min(1).optional(),
             name: z.string().max(120).optional(),
             live_session_id: z.string().min(1).optional(),
+            worktree: z
+              .boolean()
+              .optional()
+              .openapi({ description: "Start an agent in a new git worktree of the cwd's repo" }),
           }),
         },
       },
@@ -83,6 +91,28 @@ const createTerminalRoute = createRoute({
     201: {
       description: "Terminal started",
       content: { "application/json": { schema: TerminalSchema } },
+    },
+  },
+});
+
+const pickFolderRoute = createRoute({
+  method: "post",
+  path: "/terminals/pick-folder",
+  tags: ["Terminals"],
+  summary: "Open the native folder dialog on the API machine and return the chosen folder",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ initial: z.string().max(4096).optional() }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Chosen folder, or null when the dialog was cancelled",
+      content: { "application/json": { schema: z.object({ path: z.string().nullable() }) } },
     },
   },
 });
@@ -148,6 +178,7 @@ app.openapi(createTerminalRoute, async (c) => {
   const deps = launchDeps(config);
 
   if (body.live_session_id) {
+    if (body.worktree) throw new ValidationError("A resumed session keeps its own folder");
     const existing = manager.findByLiveSession(body.live_session_id);
     if (existing) return c.json(existing, 200);
     const row = await getDb().query.gateway_sessions.findFirst({
@@ -175,8 +206,29 @@ app.openapi(createTerminalRoute, async (c) => {
     return c.json(info, 201);
   }
 
+  // Validate the launcher and limit before making a worktree, so a failed start leaves nothing behind.
   const launch = buildLaunch({ kind: body.kind, cwd: body.cwd }, deps);
-  return c.json(manager.create({ launch, name: body.name }), 201);
+  if (body.worktree && launch.kind === "shell") {
+    throw new ValidationError("Worktrees are only created for agent terminals");
+  }
+  manager.assertCapacity();
+  const cwd = await prepareSessionDirectory(
+    { cwd: body.cwd, worktree: body.worktree },
+    sessionDirDeps(deps),
+  );
+  const name = body.name ?? (cwd !== launch.cwd ? worktreeName(cwd) : undefined);
+  return c.json(manager.create({ launch: { ...launch, cwd }, name }), 201);
+});
+
+// <parent>/worktrees/<repo>/<ulid> reads as "<repo> <last 6 of the id>" in the terminal list.
+function worktreeName(path: string): string {
+  return `${basename(dirname(path))} ${basename(path).slice(-6).toLowerCase()}`;
+}
+
+app.openapi(pickFolderRoute, async (c) => {
+  requireTerminals(loadConfig());
+  const { initial } = c.req.valid("json");
+  return c.json({ path: await pickFolderOnce(initial) }, 200);
 });
 
 app.openapi(getTerminalRoute, (c) => {

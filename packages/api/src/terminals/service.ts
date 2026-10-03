@@ -1,9 +1,12 @@
-import { statSync } from "node:fs";
+import { mkdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { loadConfig, type OrcConfig } from "@orc/core/config";
-import { ForbiddenError } from "@orc/core/errors";
+import { ConflictError, ForbiddenError } from "@orc/core/errors";
+import { ulid } from "@orc/core/ids";
 import type { LaunchDeps } from "./launch.js";
 import { TerminalManager } from "./manager.js";
+import { folderPickerLaunch, pickFolder } from "./pick-folder.js";
+import { runGit, type SessionDirDeps } from "./session-dir.js";
 import { MIN_BUN_VERSION, spawnPty } from "./spawn.js";
 
 export interface Availability {
@@ -72,6 +75,35 @@ export function launchDeps(config: OrcConfig): LaunchDeps {
     home: homedir(),
     shell: config.terminals.shell,
   };
+}
+
+export function sessionDirDeps(deps: LaunchDeps): SessionDirDeps {
+  return {
+    isDirectory: deps.isDirectory,
+    home: deps.home,
+    runGit,
+    makeDirectory: (path) => mkdirSync(path, { recursive: true }),
+    newId: ulid,
+  };
+}
+
+let picking = false;
+
+// One native dialog at a time: a second click while one is open would stack hidden dialogs.
+export async function pickFolderOnce(initial: string | undefined): Promise<string | null> {
+  if (picking) throw new ConflictError("A folder dialog is already open");
+  picking = true;
+  try {
+    return await pickFolder(
+      folderPickerLaunch({
+        platform: process.platform,
+        which: (command) => Bun.which(command, { PATH: process.env.PATH ?? "" }),
+        initial,
+      }),
+    );
+  } finally {
+    picking = false;
+  }
 }
 
 export function getTerminalManager(): TerminalManager {
