@@ -4,8 +4,8 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, type Terminal } from "@/api/client";
 import { useTasks, useUpdateTask } from "@/hooks/useTasks";
-import { diffLines } from "@/lib/git-diff";
 import { useTerminals } from "@/lib/terminals";
+import { FileDiffCard } from "./FileDiffCard";
 
 function sameCheckout(left: string, right: string | null) {
   const normalize = (path: string) => path.replace(/\\/g, "/").replace(/\/$/, "");
@@ -226,6 +226,7 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
   const [message, setMessage] = useState("");
   const [taskId, setTaskId] = useState("");
   const [diffPath, setDiffPath] = useState("");
+  const [collapsed, setCollapsed] = useState<string[]>([]);
   const status = useQuery({
     queryKey: ["git", terminal.id, "status"],
     queryFn: () => api.git.status(terminal.id),
@@ -235,13 +236,6 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
     status.data?.files.filter((file) =>
       staged ? file.index !== " " && file.index !== "?" : file.working !== " ",
     ) ?? [];
-  const selectedPath = diffFiles.find((file) => file.path === diffPath)?.path ?? diffFiles[0]?.path;
-  const diff = useQuery({
-    queryKey: ["git", terminal.id, "diff", staged, selectedPath],
-    queryFn: () => api.git.diff(terminal.id, staged, selectedPath),
-    enabled: tab === "diff" && !!selectedPath,
-    refetchInterval: 5_000,
-  });
   const github = useQuery({
     queryKey: ["git", terminal.id, "github", status.data?.branch],
     queryFn: () => api.git.checkoutGithub(terminal.id),
@@ -299,7 +293,7 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
           data-testid="git-refresh"
           onClick={() => {
             void status.refetch();
-            void diff.refetch();
+            void client.invalidateQueries({ queryKey: ["git", terminal.id, "diff"] });
             void github.refetch();
             void trees.refetch();
           }}
@@ -409,6 +403,7 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
                     onClick={() => {
                       setStaged(file.working === " ");
                       setDiffPath(file.path);
+                      setCollapsed((old) => old.filter((path) => path !== file.path));
                       setTab("diff");
                     }}
                     className="text-left hover:text-primary"
@@ -461,93 +456,104 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
                 />
                 Staged changes
               </label>
-              {diff.error && <p role="alert">{diff.error.message}</p>}
-              <select
-                data-testid="git-diff-file"
-                aria-label="File to compare"
-                className="w-full bg-surface-highest p-2"
-                value={selectedPath ?? ""}
-                onChange={(event) => setDiffPath(event.target.value)}
-              >
-                {!diffFiles.length && <option value="">No changed files</option>}
-                {diffFiles.map((file) => (
-                  <option key={file.path} value={file.path}>
-                    {file.path}
-                  </option>
-                ))}
-              </select>
-              <div
-                data-testid="git-diff"
-                className="overflow-auto rounded border border-surface-highest font-mono text-xs"
-              >
-                {selectedPath && diff.isPending
-                  ? "Loading diff…"
-                  : !selectedPath || !diff.data?.diff
-                    ? "No changes in this view."
-                    : diffLines(diff.data.diff).map((line) => (
-                        <div
-                          key={line.id}
-                          data-testid={`git-diff-${line.kind}`}
-                          className={`flex min-w-max whitespace-pre ${line.kind === "add" ? "bg-green-500/10 text-green-400" : line.kind === "remove" ? "bg-red-500/10 text-red-400" : line.kind === "hunk" ? "bg-blue-500/10 text-blue-400" : line.kind === "meta" ? "text-outline" : ""}`}
-                        >
-                          <span className="w-10 shrink-0 text-right pr-2 select-none opacity-60">
-                            {line.old}
-                          </span>
-                          <span className="w-10 shrink-0 text-right pr-2 select-none opacity-60">
-                            {line.next}
-                          </span>
-                          <span className="pr-3">{line.text || " "}</span>
-                        </div>
-                      ))}
+              <div className="flex items-center gap-3 text-xs">
+                <span className="text-outline flex-1">{diffFiles.length} changed files</span>
+                <button
+                  type="button"
+                  data-testid="git-diff-expand-all"
+                  onClick={() => setCollapsed([])}
+                  className="text-primary"
+                >
+                  Expand all
+                </button>
+                <button
+                  type="button"
+                  data-testid="git-diff-collapse-all"
+                  onClick={() => setCollapsed(diffFiles.map((file) => file.path))}
+                  className="text-primary"
+                >
+                  Collapse all
+                </button>
               </div>
-              {diff.data?.truncated && <p>Diff truncated at 200 KB.</p>}
+              {!diffFiles.length && <p className="text-outline">No changes in this view.</p>}
+              {diffFiles.map((file) => (
+                <FileDiffCard
+                  key={file.path}
+                  terminalId={terminal.id}
+                  path={file.path}
+                  original={file.original}
+                  staged={staged}
+                  open={!collapsed.includes(file.path)}
+                  focused={diffPath === file.path}
+                  toggle={() =>
+                    setCollapsed((old) =>
+                      old.includes(file.path)
+                        ? old.filter((path) => path !== file.path)
+                        : [...old, file.path],
+                    )
+                  }
+                />
+              ))}
             </div>
           )}
           {tab === "branches" && (
             <div className="space-y-2">
               <p>Local branches</p>
-              {data.branches.map((branch) => (
-                <button
-                  type="button"
-                  key={branch}
-                  data-testid="git-branch"
-                  aria-current={branch === data.branch ? "true" : undefined}
-                  disabled={branch === data.branch || switchTo.isPending}
-                  onClick={() => switchTo.mutate(branch)}
-                  className={`block w-full text-left rounded p-2 ${branch === data.branch ? "bg-primary/15 text-primary font-semibold" : "hover:bg-surface-highest"}`}
-                >
-                  {branch}
-                  {branch === data.branch ? " · Current" : " · Switch"}
-                </button>
-              ))}
+              {[...data.branches]
+                .sort(
+                  (a, b) =>
+                    Number(b === data.branch) - Number(a === data.branch) || a.localeCompare(b),
+                )
+                .map((branch) => (
+                  <button
+                    type="button"
+                    key={branch}
+                    data-testid="git-branch"
+                    aria-current={branch === data.branch ? "true" : undefined}
+                    disabled={branch === data.branch || switchTo.isPending}
+                    onClick={() => switchTo.mutate(branch)}
+                    className={`block w-full text-left rounded p-2 ${branch === data.branch ? "bg-primary/15 text-primary font-semibold" : "hover:bg-surface-highest"}`}
+                  >
+                    {branch}
+                    {branch === data.branch ? " · Current" : " · Switch"}
+                  </button>
+                ))}
               <p>Worktrees</p>
               {trees.error && <p role="alert">{trees.error.message}</p>}
-              {trees.data?.worktrees.map((tree) => (
-                <div
-                  key={tree.path}
-                  data-testid="git-panel-worktree"
-                  aria-current={sameCheckout(tree.path, data.root) ? "true" : undefined}
-                  className={`break-all rounded p-2 ${sameCheckout(tree.path, data.root) ? "bg-primary/15 text-primary" : "border border-surface-highest"}`}
-                >
-                  <strong>{tree.branch ?? "detached"}</strong>
-                  <p>{tree.path}</p>
-                  {tree.dirty && <span>dirty · </span>}
-                  {tree.active_terminal && <span>running · </span>}
-                  {sameCheckout(tree.path, data.root) ? (
-                    <p>Current checkout</p>
-                  ) : (
-                    <button
-                      data-testid="git-switch-worktree"
-                      type="button"
-                      disabled={openShell.isPending}
-                      onClick={() => openShell.mutate(tree.path)}
-                      className="text-primary"
-                    >
-                      Switch to worktree
-                    </button>
-                  )}
-                </div>
-              ))}
+              {trees.data?.worktrees
+                .slice()
+                .sort(
+                  (a, b) =>
+                    Number(sameCheckout(b.path, data.root)) -
+                      Number(sameCheckout(a.path, data.root)) ||
+                    (a.branch ?? a.path).localeCompare(b.branch ?? b.path),
+                )
+                .map((tree) => (
+                  <div
+                    key={tree.path}
+                    data-testid="git-panel-worktree"
+                    aria-current={sameCheckout(tree.path, data.root) ? "true" : undefined}
+                    className={`break-all rounded p-2 ${sameCheckout(tree.path, data.root) ? "bg-primary/15 text-primary" : "border border-surface-highest"}`}
+                  >
+                    <strong>{tree.branch ?? "detached"}</strong>
+                    <p>{tree.path}</p>
+                    {tree.dirty && <span>dirty · </span>}
+                    {tree.active_terminal && <span>running · </span>}
+                    {sameCheckout(tree.path, data.root) ? (
+                      <p>Current checkout</p>
+                    ) : (
+                      <button
+                        data-testid="git-switch-worktree"
+                        type="button"
+                        disabled={openShell.isPending}
+                        onClick={() => openShell.mutate(tree.path)}
+                        className="text-primary"
+                      >
+                        Switch to worktree
+                      </button>
+                    )}
+                  </div>
+                ))}
               <button
                 type="button"
                 data-testid="git-add-worktree"

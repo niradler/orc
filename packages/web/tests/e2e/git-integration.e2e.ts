@@ -63,14 +63,25 @@ test("slice 3 git panel status, diff, selected staging, commit, branches and tas
   await page.getByTestId("terminal-git-toggle").click();
   await expect(page.getByTestId("git-status-file")).toHaveCount(2);
   await page.getByTestId("git-tab-diff").click();
-  await expect(page.getByTestId("git-diff")).toContainText("+panel edit");
-  await expect(page.getByTestId("git-diff-add")).toContainText("+panel edit");
-  await expect(page.getByTestId("git-diff-remove")).toContainText("-initial");
-  await expect(page.getByTestId("git-diff-add")).toHaveCSS("color", "rgb(74, 222, 128)");
-  await expect(page.getByTestId("git-diff-remove")).toHaveCSS("color", "rgb(248, 113, 113)");
-  await page.getByTestId("git-diff-file").selectOption("untracked.txt");
-  await expect(page.getByTestId("git-diff")).toContainText("+keep unstaged");
-  await expect(page.getByTestId("git-diff")).not.toContainText("panel edit");
+  const tracked = page.getByTestId("git-diff-file").filter({ hasText: "file.txt" });
+  const untracked = page.getByTestId("git-diff-file").filter({ hasText: "untracked.txt" });
+  await expect(page.getByTestId("git-diff-file")).toHaveCount(2);
+  await expect(tracked.getByTestId("git-diff")).toContainText("+panel edit");
+  await expect(tracked.getByTestId("git-diff-add")).toHaveCSS("color", "rgb(74, 222, 128)");
+  await expect(tracked.getByTestId("git-diff-remove")).toHaveCSS("color", "rgb(248, 113, 113)");
+  await expect(untracked.getByTestId("git-diff")).toContainText("+keep unstaged");
+  await expect(untracked.getByTestId("git-diff")).not.toContainText("panel edit");
+  await tracked.getByTestId("git-diff-file-toggle").click();
+  await expect(tracked.getByTestId("git-diff-file-toggle")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await expect(tracked.getByTestId("git-diff")).toHaveCount(0);
+  await expect(untracked.getByTestId("git-diff")).toBeVisible();
+  await page.getByTestId("git-diff-collapse-all").click();
+  await expect(page.getByTestId("git-diff")).toHaveCount(0);
+  await page.getByTestId("git-diff-expand-all").click();
+  await expect(page.getByTestId("git-diff")).toHaveCount(2);
   await page.getByTestId("git-tab-status").click();
   await page.getByTestId("git-select-all").check();
   await expect(page.getByTestId("git-status-file").locator("input:checked")).toHaveCount(2);
@@ -173,6 +184,7 @@ test("Git panel moves, selects all, switches branches and worktrees, and shows t
     "aria-current",
     "true",
   );
+  await expect(page.getByTestId("git-branch").first()).toContainText("feature");
   await expect(page.getByTestId("git-current-pr")).toContainText("Open PR #88: Feature PR");
   writeFileSync(join(local, "a.txt"), "after\n");
   writeFileSync(join(local, "b.txt"), "added\n");
@@ -199,6 +211,11 @@ test("Git panel moves, selects all, switches branches and worktrees, and shows t
   await expect(
     page.getByTestId("git-panel-worktree").filter({ hasText: "Current checkout" }),
   ).toContainText(other);
+  await expect(page.getByTestId("git-panel-worktree").first()).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await expect(page.getByTestId("git-branch").first()).toContainText("other");
 });
 
 test("slice 4 GitHub board filtering, linking, creating task and reopening saved links", async ({
