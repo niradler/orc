@@ -60,7 +60,8 @@ test("slice 3 git panel status, diff, selected staging, commit, branches and tas
   writeFileSync(join(repo, "untracked.txt"), "keep unstaged\n");
   await page.addInitScript((secret) => localStorage.setItem("orc_api_secret", secret), API_SECRET);
   await page.goto(`/terminals/${terminal.id}`);
-  await page.getByTestId("terminal-git-toggle").click();
+  await page.getByTestId("pane-split-horizontal").click();
+  await expect(page.getByTestId("terminal-git-toggle")).toHaveCount(0);
   await expect(page.getByTestId("git-status-file")).toHaveCount(2);
   await expect(page.getByTestId("git-branch-select")).toHaveValue("main");
   await expect(page.getByTestId("git-tab-status")).toHaveCount(0);
@@ -118,7 +119,7 @@ test("slice 3 git panel status, diff, selected staging, commit, branches and tas
   await expect(page.getByTestId("task-git-links")).toContainText(checkout.root);
 });
 
-test("Git panel moves, selects all, switches branches and worktrees, and shows the current PR", async ({
+test("Git pane selects all, switches branches and worktrees, and shows the current PR", async ({
   page,
   request,
 }) => {
@@ -171,16 +172,9 @@ test("Git panel moves, selects all, switches branches and worktrees, and shows t
   });
   await page.addInitScript((secret) => localStorage.setItem("orc_api_secret", secret), API_SECRET);
   await page.goto(`/terminals/${terminal.id}`);
-  await page.getByTestId("terminal-git-toggle").click();
-  const panel = page.getByTestId("git-floating-panel");
-  const before = await panel.boundingBox();
-  const handle = await page.getByTestId("git-panel-drag").boundingBox();
-  if (!before || !handle) throw new Error("Missing panel geometry");
-  await page.mouse.move(handle.x + 80, handle.y + 15);
-  await page.mouse.down();
-  await page.mouse.move(handle.x - 40, handle.y + 45, { steps: 8 });
-  await page.mouse.up();
-  expect((await panel.boundingBox())?.x).toBeLessThan(before.x - 80);
+  await page.getByTestId("pane-split-horizontal").click();
+  await expect(page.getByTestId("terminal-git-toggle")).toHaveCount(0);
+  const panel = page.getByTestId("terminal-git-panel");
   await expect(page.getByTestId("git-branch").filter({ hasText: "main" })).toHaveAttribute(
     "aria-current",
     "true",

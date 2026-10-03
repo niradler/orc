@@ -3,7 +3,6 @@ import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-r
 import type { CreateTerminalInput, Terminal } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
-import { GitPanel } from "@/components/terminals/GitPanel";
 import { NewTerminalMenu } from "@/components/terminals/NewTerminalMenu";
 import { TerminalList } from "@/components/terminals/TerminalList";
 import { TerminalWorkspace } from "@/components/terminals/TerminalWorkspace";
@@ -392,8 +391,6 @@ export default function Terminals() {
           </Centered>
         )}
       </section>
-
-      {selected && <GitPanel key={selected.id} terminal={selected} />}
 
       <ConfirmDialog
         open={closing !== null}
