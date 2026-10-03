@@ -2,6 +2,7 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
+import { checkoutFiles } from "../git/files.js";
 import { checkoutGithubFeed } from "../git/github.js";
 import { commitStaged, gitDiff, gitStatus, stageFiles, switchBranch } from "../git/panel.js";
 import { worktreeDeps } from "../git/registry.js";
@@ -29,6 +30,36 @@ const FileSchema = z.object({
   working: z.string(),
   original: z.string().nullable(),
 });
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/terminals/{id}/files",
+    tags: ["Terminals"],
+    summary: "Browse or preview files inside a terminal checkout",
+    request: { params, query: z.object({ path: z.string().max(4096).default("") }) },
+    responses: {
+      200: {
+        description: "Checkout files",
+        content: {
+          "application/json": {
+            schema: z.object({
+              root: z.string(),
+              path: z.string(),
+              entries: z
+                .array(z.object({ name: z.string(), path: z.string(), directory: z.boolean() }))
+                .nullable(),
+              content: z.string().nullable(),
+              binary: z.boolean(),
+              truncated: z.boolean(),
+            }),
+          },
+        },
+      },
+    },
+  }),
+  async (c) =>
+    c.json(await checkoutFiles(folder(c.req.valid("param").id), c.req.valid("query").path), 200),
+);
 app.openapi(
   createRoute({
     method: "post",

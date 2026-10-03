@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gitStatus, parseStatus } from "../git/panel.js";
@@ -33,6 +33,26 @@ afterAll(() => {
 });
 
 describe("terminal git panel", () => {
+  test("browses checkout files and bounds previews without exposing git internals or parent paths", async () => {
+    const route = `/terminals/${terminalId}/files`;
+    const listed = await req(app, "GET", route);
+    expect(listed.status).toBe(200);
+    const entries = (await listed.json()).entries;
+    expect(entries.some((entry: { name: string }) => entry.name === "file.txt")).toBe(true);
+    expect(entries.some((entry: { name: string }) => entry.name === ".git")).toBe(false);
+    expect((await (await req(app, "GET", `${route}?path=file.txt`)).json()).content).toBe(
+      "before\n",
+    );
+    expect((await req(app, "GET", `${route}?path=../outside`)).status).toBe(400);
+    expect((await req(app, "GET", `${route}?path=.git/config`)).status).toBe(400);
+    expect((await req(app, "GET", `${route}?path=missing`)).status).toBe(400);
+    writeFileSync(join(repo, "preview.txt"), "x".repeat(210_000));
+    const preview = await (await req(app, "GET", `${route}?path=preview.txt`)).json();
+    expect(preview.content.length).toBe(200_000);
+    expect(preview.truncated).toBe(true);
+    await runGit(["git", "-C", repo, "add", "preview.txt"]);
+    await runGit(["git", "-C", repo, "commit", "-m", "preview fixture"]);
+  });
   test("switches clean local branches and refuses dirty or unknown branches", async () => {
     await runGit(["git", "-C", repo, "branch", "feature"]);
     const route = `/terminals/${terminalId}/git/switch`;
@@ -132,5 +152,26 @@ describe("terminal git panel", () => {
       `/terminals/${id}/git/diff?staged=1&path=literal%5B1%5D.txt`,
     );
     expect((await diff.json()).diff).toContain("+selected");
+  });
+  test("file preview refuses directory aliases outside the checkout or into git metadata", async () => {
+    const outside = mkdtempSync(join(tmpdir(), "orc-outside-files-"));
+    writeFileSync(join(outside, "private.txt"), "outside content");
+    symlinkSync(
+      outside,
+      join(repo, "outside-alias"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    symlinkSync(
+      join(repo, ".git"),
+      join(repo, "git-alias"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    const route = `/terminals/${terminalId}/files`;
+    expect((await req(app, "GET", `${route}?path=outside-alias/private.txt`)).status).toBe(400);
+    expect((await req(app, "GET", `${route}?path=git-alias/config`)).status).toBe(400);
+    writeFileSync(join(repo, "binary.bin"), Buffer.from([0, 1, 2]));
+    const binary = await (await req(app, "GET", `${route}?path=binary.bin`)).json();
+    expect(binary.binary).toBe(true);
+    expect(binary.content).toBeNull();
   });
 });

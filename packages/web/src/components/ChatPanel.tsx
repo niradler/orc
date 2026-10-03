@@ -1,6 +1,7 @@
 import { MessageSquare, Send, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useChat } from "@/hooks/useChat";
+import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { cn } from "@/lib/utils";
 
 interface ChatPanelProps {
@@ -16,6 +17,13 @@ export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPan
   const { messages, streaming, streamText, config, setConfig, send, cancel, clear } = useChat();
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const panel = usePanelWidth({
+    storageKey: "orc_chat_panel_width",
+    initial: 320,
+    min: 256,
+    max: 640,
+    edge: "left",
+  });
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -66,13 +74,28 @@ export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPan
     <div
       data-testid="chat-panel"
       data-streaming={streaming ? "true" : "false"}
+      style={embedded ? undefined : { width: panel.width, maxWidth: "50vw" }}
       className={cn(
-        "h-full flex flex-col min-h-0 bg-surface",
-        embedded
-          ? "w-full"
-          : "w-80 shrink-0 border-l border-surface-highest transition-[width] duration-200",
+        "relative h-full flex flex-col min-h-0 bg-surface",
+        embedded ? "w-full" : "shrink-0 border-l border-surface-highest",
       )}
     >
+      {!embedded && (
+        // biome-ignore lint/a11y/useSemanticElements: pointer-driven splitter has no native element
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize chat panel"
+          aria-valuenow={panel.width}
+          aria-valuemin={256}
+          aria-valuemax={640}
+          tabIndex={0}
+          data-testid="chat-panel-resize"
+          title="Drag to resize, double-click to reset"
+          className="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none hover:bg-primary/30 focus-visible:bg-primary/40 focus-visible:outline-none"
+          {...panel.handleProps}
+        />
+      )}
       {/* Header */}
       <div className="flex-shrink-0 px-4 py-3 border-b border-surface-highest">
         <div className="flex items-center justify-between">

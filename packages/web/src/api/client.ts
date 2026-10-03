@@ -524,6 +524,15 @@ export const api = {
       req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/switch`, { branch }),
     checkoutGithub: (id: string) =>
       req<GithubFeed>("GET", `/terminals/${encodeURIComponent(id)}/git/github`),
+    files: (id: string, path: string) =>
+      req<{
+        root: string;
+        path: string;
+        entries: { name: string; path: string; directory: boolean }[] | null;
+        content: string | null;
+        binary: boolean;
+        truncated: boolean;
+      }>("GET", `/terminals/${encodeURIComponent(id)}/files`, undefined, { path }),
     commit: (id: string, message: string) =>
       req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/commit`, { message }),
     addWorktree: (id: string) =>

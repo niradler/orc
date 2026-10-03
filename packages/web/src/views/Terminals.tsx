@@ -7,6 +7,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { GitPanel } from "@/components/terminals/GitPanel";
 import { NewTerminalMenu } from "@/components/terminals/NewTerminalMenu";
 import { TerminalList } from "@/components/terminals/TerminalList";
+import { TerminalWorkspace } from "@/components/terminals/TerminalWorkspace";
 import { WorktreeRegistry } from "@/components/terminals/WorktreeRegistry";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -395,7 +396,11 @@ export default function Terminals() {
               )}
               <CopyLinkButton terminal={selected} />
             </header>
-            <TerminalViewport terminalId={selected.id} />
+            <TerminalWorkspace
+              selected={selected}
+              terminals={terminals}
+              renderTerminal={(id) => <TerminalViewport terminalId={id} />}
+            />
           </>
         ) : (
           <Centered>

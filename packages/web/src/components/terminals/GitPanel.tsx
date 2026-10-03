@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GitBranch, GripHorizontal, X } from "lucide-react";
+import { GitBranch, Grip, GripHorizontal, X } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, type Terminal } from "@/api/client";
@@ -16,6 +16,27 @@ function sameCheckout(left: string, right: string | null) {
 }
 
 export function GitPanel({ terminal }: { terminal: Terminal }) {
+  const defaults = { width: 640, height: 720 };
+  const [size, setSize] = useState(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("orc_git_panel_size") ?? "null");
+      return stored && Number.isFinite(stored.width) && Number.isFinite(stored.height)
+        ? {
+            width: Math.max(320, Math.min(1600, stored.width)),
+            height: Math.max(240, Math.min(1200, stored.height)),
+          }
+        : defaults;
+    } catch {
+      return defaults;
+    }
+  });
+  const saveSize = (width: number, height: number) => {
+    const next = { width, height };
+    setSize(next);
+    try {
+      localStorage.setItem("orc_git_panel_size", JSON.stringify(next));
+    } catch {}
+  };
   const [open, setOpen] = useState(() => sessionStorage.getItem("orc_git_panel_open") === "1");
   const changeOpen = (value: boolean) => {
     sessionStorage.setItem("orc_git_panel_open", value ? "1" : "0");
@@ -45,13 +66,12 @@ export function GitPanel({ terminal }: { terminal: Terminal }) {
             left: position?.x,
             top: position?.y ?? 80,
             right: position ? undefined : 16,
-            width: "min(640px, calc(100vw - 32px))",
-            height: "min(720px, calc(100vh - 96px))",
+            width: `min(${size.width}px, calc(100vw - ${position ? position.x + 8 : 32}px))`,
+            height: `min(${size.height}px, calc(100vh - ${(position?.y ?? 80) + 8}px))`,
             minWidth: "min(320px, calc(100vw - 32px))",
             minHeight: 240,
             maxWidth: "calc(100vw - 16px)",
             maxHeight: "calc(100vh - 16px)",
-            resize: "both",
           }}
         >
           <div className="flex border-b border-surface-highest">
@@ -127,13 +147,76 @@ export function GitPanel({ terminal }: { terminal: Terminal }) {
             </button>
           </div>
           <GitPanelBody key={terminal.id} terminal={terminal} />
+          <button
+            type="button"
+            data-testid="git-panel-resize"
+            aria-label="Resize Git panel; arrow keys resize, double-click resets"
+            title="Drag to resize, double-click to reset"
+            className="absolute bottom-0 right-0 z-10 p-1 cursor-nwse-resize touch-none bg-surface text-outline hover:text-primary focus-visible:text-primary"
+            onDoubleClick={() => {
+              setPosition(null);
+              saveSize(defaults.width, defaults.height);
+            }}
+            onKeyDown={(event) => {
+              const delta = {
+                ArrowLeft: [-20, 0],
+                ArrowRight: [20, 0],
+                ArrowUp: [0, -20],
+                ArrowDown: [0, 20],
+              }[event.key];
+              if (!delta) return;
+              event.preventDefault();
+              const rect = event.currentTarget.parentElement?.getBoundingClientRect();
+              if (rect) {
+                setPosition({ x: rect.left, y: rect.top });
+                saveSize(
+                  Math.max(320, Math.min(window.innerWidth - rect.left - 8, rect.width + delta[0])),
+                  Math.max(
+                    240,
+                    Math.min(window.innerHeight - rect.top - 8, rect.height + delta[1]),
+                  ),
+                );
+              }
+            }}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              const handle = event.currentTarget;
+              const rect = handle.parentElement?.getBoundingClientRect();
+              if (!rect) return;
+              setPosition({ x: rect.left, y: rect.top });
+              const x = event.clientX;
+              const y = event.clientY;
+              handle.setPointerCapture(event.pointerId);
+              const move = (pointer: PointerEvent) =>
+                saveSize(
+                  Math.max(
+                    320,
+                    Math.min(window.innerWidth - rect.left - 8, rect.width + pointer.clientX - x),
+                  ),
+                  Math.max(
+                    240,
+                    Math.min(window.innerHeight - rect.top - 8, rect.height + pointer.clientY - y),
+                  ),
+                );
+              const end = () => {
+                handle.removeEventListener("pointermove", move);
+                handle.removeEventListener("pointerup", end);
+                handle.removeEventListener("pointercancel", end);
+              };
+              handle.addEventListener("pointermove", move);
+              handle.addEventListener("pointerup", end);
+              handle.addEventListener("pointercancel", end);
+            }}
+          >
+            <Grip size={16} />
+          </button>
         </div>
       )}
     </aside>
   );
 }
 
-function GitPanelBody({ terminal }: { terminal: Terminal }) {
+export function GitPanelBody({ terminal }: { terminal: Terminal }) {
   const { create } = useTerminals();
   const navigate = useNavigate();
   const client = useQueryClient();
