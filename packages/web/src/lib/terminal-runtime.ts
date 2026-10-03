@@ -2,6 +2,7 @@ import { FitAddon, Terminal as GhosttyTerminal, type ITheme, init } from "ghostt
 import { api, terminalSocketUrl } from "@/api/client";
 import { isMacPlatform, resolveTerminalKey } from "@/lib/terminal-keys";
 import { cellAt, cursorMoveKeys, isPlainClick } from "@/lib/terminal-mouse";
+import { writeTerminalOutput } from "@/lib/terminal-output";
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "exited" | "closed";
 
@@ -328,7 +329,7 @@ export async function connectRuntime(
       // those answers would reach the shell as stray keystrokes.
       runtime.muteReplies = runtime.replaying;
       try {
-        runtime.term.write(new Uint8Array(event.data));
+        writeTerminalOutput(runtime.term, new Uint8Array(event.data));
       } finally {
         runtime.muteReplies = false;
       }
