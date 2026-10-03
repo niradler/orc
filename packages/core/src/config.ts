@@ -225,7 +225,7 @@ function fromEnv(): Record<string, unknown> {
   const api: Record<string, unknown> = {};
   if (process.env.ORC_API_PORT) api.port = Number(process.env.ORC_API_PORT);
   if (process.env.ORC_API_HOST) api.host = process.env.ORC_API_HOST;
-  if (process.env.ORC_API_SECRET) api.secret = process.env.ORC_API_SECRET;
+  if (process.env.ORC_API_SECRET !== undefined) api.secret = process.env.ORC_API_SECRET;
   if (Object.keys(api).length) env.api = api;
 
   const terminals: Record<string, unknown> = {};
