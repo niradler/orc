@@ -189,6 +189,15 @@ app.openapi(createTerminalRoute, async (c) => {
       ),
     });
     if (!row) throw new NotFoundError("Live session", body.live_session_id);
+    if (row.status === "idle" || row.status === "running") {
+      const original = manager.linkLiveSession({
+        id: row.id,
+        pid: row.pid,
+        backend: row.backend,
+        createdAt: row.created_at,
+      });
+      if (original) return c.json(original, 200);
+    }
     const launch = buildLaunch(
       {
         live: {

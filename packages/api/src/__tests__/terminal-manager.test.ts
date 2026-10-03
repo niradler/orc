@@ -270,6 +270,26 @@ describe("TerminalManager", () => {
     expect(manager.create({ launch: launch({ cwd: undefined }) }).name).toBe("shell");
   });
 
+  test("should link a fresh terminal by agent PID while rejecting stale or mismatched records", async () => {
+    const { manager, ptys } = setup({ now: () => 1000 });
+    const terminal = manager.create({ launch: launch({ kind: "claude" }) });
+    const input = {
+      id: "live-new",
+      pid: terminal.pid,
+      backend: "claude",
+      createdAt: new Date(1001),
+    };
+    expect(manager.linkLiveSession({ ...input, pid: null })).toBeNull();
+    expect(manager.linkLiveSession({ ...input, pid: 99 })).toBeNull();
+    expect(manager.linkLiveSession({ ...input, backend: "codex" })).toBeNull();
+    expect(manager.linkLiveSession({ ...input, createdAt: new Date(999) })).toBeNull();
+    expect(manager.linkLiveSession(input)?.id).toBe(terminal.id);
+    expect(manager.findByLiveSession(input.id)?.id).toBe(terminal.id);
+    ptys[0]?.exit(0);
+    await tick();
+    expect(manager.linkLiveSession(input)).toBeNull();
+  });
+
   test("shutdown kills everything", () => {
     const { manager, ptys } = setup();
     manager.create({ launch: launch() });

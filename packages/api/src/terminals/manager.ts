@@ -94,6 +94,29 @@ export class TerminalManager {
     return null;
   }
 
+  linkLiveSession(input: {
+    id: string;
+    pid: number | null;
+    backend: string;
+    createdAt: Date;
+  }): TerminalInfo | null {
+    if (input.pid == null) return null;
+    for (const entry of this.entries.values()) {
+      const info = entry.info;
+      if (
+        info.status === "running" &&
+        info.pid === input.pid &&
+        info.kind === input.backend &&
+        Math.floor(Date.parse(info.created_at) / 1000) <=
+          Math.floor(input.createdAt.getTime() / 1000)
+      ) {
+        info.live_session_id = input.id;
+        return { ...info };
+      }
+    }
+    return null;
+  }
+
   // Callers that do side effects before create (making a worktree) check this first.
   assertCapacity(): void {
     const running = [...this.entries.values()].filter((e) => e.info.status === "running").length;
