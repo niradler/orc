@@ -82,8 +82,10 @@ const env = {
   ORC_API_PORT: pwApiPort,
   ORC_DB_PATH: pwDbPath,
   ORC_KNOWLEDGE_DB_PATH: pwKnowledgeDbPath,
-  ORC_API_SECRET: "",
+  ORC_API_SECRET: "orc-playwright-isolated-secret",
   ORC_E2E_CHAT_MOCK: "1",
+  ORC_TERMINALS_ENABLED: "1",
+  ORC_TERMINALS_ALLOW_WITHOUT_SECRET: "1",
   // We manage the server ourselves so playwright does not spawn a second one.
   // This is the only reliable way to guarantee the port is freed on all
   // platforms: keep the process handle in scope and kill it in finally.

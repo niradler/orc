@@ -4,8 +4,10 @@ import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-r
 import type { CreateTerminalInput, Terminal } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
+import { GitPanel } from "@/components/terminals/GitPanel";
 import { NewTerminalMenu } from "@/components/terminals/NewTerminalMenu";
 import { TerminalList } from "@/components/terminals/TerminalList";
+import { WorktreeRegistry } from "@/components/terminals/WorktreeRegistry";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
@@ -22,7 +24,6 @@ import type { ConnectionState } from "@/lib/terminal-runtime";
 import { useTerminals } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 
-const gitPanel: ReactNode = null;
 const SIDEBAR_DEFAULT = 208;
 const SIDEBAR_MIN = 160;
 const SIDEBAR_MAX = 480;
@@ -323,6 +324,7 @@ export default function Terminals() {
             activeId={terminalId ?? null}
             onClose={requestClose}
           />
+          <WorktreeRegistry />
           {/* biome-ignore lint/a11y/useSemanticElements: a draggable splitter has no native element */}
           <div
             role="separator"
@@ -415,7 +417,7 @@ export default function Terminals() {
         )}
       </section>
 
-      {gitPanel}
+      {selected && <GitPanel key={selected.id} terminal={selected} />}
 
       <ConfirmDialog
         open={closing !== null}

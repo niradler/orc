@@ -362,6 +362,11 @@ function setupDb(sqlite: Database): void {
   `);
 
   const migrations = [
+    "ALTER TABLE tasks ADD COLUMN git_repo TEXT",
+    "ALTER TABLE tasks ADD COLUMN git_branch TEXT",
+    "ALTER TABLE tasks ADD COLUMN git_worktree TEXT",
+    "ALTER TABLE tasks ADD COLUMN github_issue TEXT",
+    "ALTER TABLE tasks ADD COLUMN github_pr TEXT",
     "ALTER TABLE memories ADD COLUMN title TEXT",
     "ALTER TABLE memories ADD COLUMN type TEXT NOT NULL DEFAULT 'fact'",
     "ALTER TABLE session_events ADD COLUMN data_hash TEXT",

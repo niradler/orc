@@ -11,6 +11,7 @@ import { FlowPicker, USE_DEFAULT_FLOW, useEffectiveFlow } from "@/components/flo
 import { FlowRunPanel, FlowSectionHeading } from "@/components/flow/FlowRunPanel";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { StatusBadge } from "@/components/StatusBadge";
+import { TaskGitLinks } from "@/components/TaskGitLinks";
 import { TaskSessions } from "@/components/TaskSessions";
 import { Button } from "@/components/ui/button";
 import {
@@ -173,6 +174,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
               </div>
             ) : task ? (
               <div className="space-y-6">
+                <TaskGitLinks key={task.id} task={task} />
                 {task.body && (
                   <div className="space-y-1">
                     <div className="font-label text-[11px] uppercase tracking-widest text-outline">

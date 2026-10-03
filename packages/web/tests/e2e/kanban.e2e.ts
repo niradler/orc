@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { API_BASE, apiDelete, apiPatch, apiPost, gotoView, tid } from "./_helpers";
+import { apiDelete, apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers";
 
 interface Task {
   id: string;
@@ -87,9 +87,7 @@ test.describe("Kanban drag & drop", () => {
       await expect
         .poll(
           async () => {
-            const res = await request.get(`${API_BASE}/tasks/${task.id}`);
-            if (!res.ok()) return null;
-            return ((await res.json()) as Task).status;
+            return (await apiGet<Task>(request, `/tasks/${task.id}`)).status;
           },
           { timeout: 10_000 },
         )
@@ -122,9 +120,7 @@ test.describe("Kanban drag & drop", () => {
       await expect
         .poll(
           async () => {
-            const res = await request.get(`${API_BASE}/tasks/${task.id}`);
-            if (!res.ok()) return null;
-            return ((await res.json()) as Task).status;
+            return (await apiGet<Task>(request, `/tasks/${task.id}`)).status;
           },
           { timeout: 10_000 },
         )

@@ -23,7 +23,15 @@ export type JobTriggerType = "one-shot" | "cron" | "watch" | "webhook" | "manual
 export type JobStatus = "pending" | "running" | "success" | "failed" | "cancelled" | "skipped";
 export type JobOverlap = "skip" | "queue" | "kill";
 
-export type Task = {
+export type TaskGitLinks = {
+  git_repo?: string | null;
+  git_branch?: string | null;
+  git_worktree?: string | null;
+  github_issue?: string | null;
+  github_pr?: string | null;
+};
+
+export type Task = TaskGitLinks & {
   id: string;
   project_id: string | null;
   title: string;
@@ -204,7 +212,7 @@ export type HealthResponse = {
   agent_loop: { enabled: boolean; poll_interval_minutes: number; max_workers: number };
 };
 
-export type CreateTaskInput = {
+export type CreateTaskInput = TaskGitLinks & {
   title: string;
   body?: string;
   project_id?: string;
@@ -221,7 +229,7 @@ export type CreateTaskInput = {
   flow_override?: Record<string, unknown>;
 };
 
-export type UpdateTaskInput = {
+export type UpdateTaskInput = TaskGitLinks & {
   title?: string;
   body?: string | null;
   status?: TaskStatus;

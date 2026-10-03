@@ -37,3 +37,9 @@ docs/superpowers/plans/
 # Added by code-review-graph
 .code-review-graph/
 packages/desktop/release/
+
+# bun --compile cross-target runtime downloads
+.bun-cache/
+
+# Local browser validation artifacts
+output/playwright/

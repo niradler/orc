@@ -8,6 +8,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { FlowPicker, USE_DEFAULT_FLOW } from "@/components/flow/FlowPicker";
+import { GithubBoard } from "@/components/GithubBoard";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TaskDetailSheet } from "@/components/TaskDetailSheet";
@@ -235,6 +236,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
         }
       />
 
+      <GithubBoard projectId={apiProjectId} />
       {viewMode === "board" ? (
         isLoading ? (
           <div className="space-y-2">

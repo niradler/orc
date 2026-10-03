@@ -29,6 +29,11 @@ export const tasks = sqliteTable("tasks", {
   project_id: text("project_id").references(() => projects.id),
   title: text("title").notNull(),
   body: text("body"),
+  git_repo: text("git_repo"),
+  git_branch: text("git_branch"),
+  git_worktree: text("git_worktree"),
+  github_issue: text("github_issue"),
+  github_pr: text("github_pr"),
   status: text("status", {
     enum: [
       "todo",

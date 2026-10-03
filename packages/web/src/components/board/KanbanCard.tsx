@@ -81,6 +81,13 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
         <p className="font-body text-xs text-on-surface line-clamp-2 leading-relaxed">
           {task.title}
         </p>
+        {(task.git_branch || task.github_issue || task.github_pr) && (
+          <p data-testid="task-git-badge" className="text-[10px] text-primary truncate">
+            {task.git_branch}
+            {task.github_issue && ` · Issue #${task.github_issue.split("/").pop()}`}
+            {task.github_pr && ` · PR #${task.github_pr.split("/").pop()}`}
+          </p>
+        )}
 
         <div className="flex items-center justify-between mt-2 gap-2">
           <div className="flex items-center gap-1.5 min-w-0">

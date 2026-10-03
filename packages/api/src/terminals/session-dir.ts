@@ -27,6 +27,7 @@ export async function runGit(argv: string[]): Promise<GitResult> {
     stdout: "pipe",
     stderr: "pipe",
     windowsHide: true,
+    timeout: 30_000,
   });
   const [stdout, stderr, code] = await Promise.all([
     new Response(proc.stdout).text(),

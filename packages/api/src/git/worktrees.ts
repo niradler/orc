@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { normalize, resolve, sep } from "node:path";
 import { ConflictError, OrcError, ValidationError } from "@orc/core/errors";
 import { type GitResult, gitError, repoRoot } from "../terminals/session-dir.js";
@@ -11,6 +12,10 @@ export interface Worktree {
   detached: boolean;
   locked: boolean;
   prunable: boolean;
+  merged?: boolean;
+  upstream_gone?: boolean;
+  stale?: boolean;
+  active_terminal?: string | null;
 }
 
 export interface WorktreeListing {
@@ -27,6 +32,7 @@ export interface RemoveWorktreeRequest {
   cwd: string;
   path: string;
   force?: boolean | undefined;
+  delete_branch?: boolean | undefined;
 }
 
 export interface RemoveWorktreeDeps extends WorktreeDeps {
@@ -42,7 +48,13 @@ export class WorktreeDirtyError extends OrcError {
 }
 
 function comparable(path: string, platform: NodeJS.Platform): string {
-  const full = resolve(path).replace(/[\\/]+$/, "");
+  let absolute = resolve(path);
+  try {
+    absolute = realpathSync.native(absolute);
+  } catch {
+    /* Missing worktrees still need a comparable path. */
+  }
+  const full = absolute.replace(/[\\/]+$/, "");
   return platform === "win32" ? full.toLowerCase() : full;
 }
 
@@ -121,6 +133,14 @@ export async function removeWorktree(
   const target = listing.worktrees.find((w) => samePath(w.path, req.path, deps.platform));
   if (!target) throw new ValidationError(`Not a worktree of ${listing.root}: ${req.path}`);
   if (target.main) throw new ValidationError("The main checkout cannot be removed");
+  if (target.locked) throw new ConflictError("Unlock the worktree in git before removing it");
+  if (req.delete_branch) {
+    if (!target.branch?.startsWith("orc/"))
+      throw new ValidationError("Only merged orc/* branches can be deleted here");
+    const base = await mergeBase(listing.root, deps.runGit);
+    if (!base || !(await branchMerged(listing.root, target.branch, base, deps.runGit)))
+      throw new ConflictError("The branch is not merged into the repository default branch");
+  }
 
   const user = deps.terminalUsing(target.path);
   if (user)
@@ -128,9 +148,93 @@ export async function removeWorktree(
   if (target.dirty && !req.force) throw new WorktreeDirtyError(target.path);
 
   const main = listing.worktrees.find((w) => w.main)?.path ?? listing.root;
-  const argv = target.prunable
-    ? ["git", "-C", main, "worktree", "prune"]
-    : ["git", "-C", main, "worktree", "remove", ...(req.force ? ["--force"] : []), target.path];
+  const argv = [
+    "git",
+    "-C",
+    main,
+    "worktree",
+    "remove",
+    ...(req.force ? ["--force"] : []),
+    target.path,
+  ];
   const result = await deps.runGit(argv);
   if (result.code !== 0) throw gitError(result, "git worktree remove failed");
+  if (req.delete_branch && target.branch) {
+    const deleted = await deps.runGit(["git", "-C", main, "branch", "-d", "--", target.branch]);
+    if (deleted.code !== 0)
+      throw new ConflictError(
+        "Worktree removed; git refused safe branch deletion. The branch was kept.",
+      );
+  }
+}
+
+export async function mergeBase(cwd: string, run: WorktreeDeps["runGit"]): Promise<string | null> {
+  const remote = await run([
+    "git",
+    "-C",
+    cwd,
+    "symbolic-ref",
+    "--quiet",
+    "refs/remotes/origin/HEAD",
+  ]);
+  if (remote.code === 0) return remote.stdout.trim();
+  for (const branch of ["refs/heads/main", "refs/heads/master"]) {
+    if ((await run(["git", "-C", cwd, "show-ref", "--verify", "--quiet", branch])).code === 0)
+      return branch;
+  }
+  return null;
+}
+
+export async function branchMerged(
+  cwd: string,
+  branch: string,
+  base: string,
+  run: WorktreeDeps["runGit"],
+): Promise<boolean> {
+  const result = await run([
+    "git",
+    "-C",
+    cwd,
+    "merge-base",
+    "--is-ancestor",
+    `refs/heads/${branch}`,
+    base,
+  ]);
+  return result.code === 0;
+}
+
+export async function trackedWorktrees(
+  cwd: string,
+  deps: RemoveWorktreeDeps,
+): Promise<WorktreeListing> {
+  const listing = await listWorktrees(cwd, deps);
+  if (!listing.root) return listing;
+  const root = listing.root;
+  const base = await mergeBase(root, deps.runGit);
+  const branches = await deps.runGit([
+    "git",
+    "-C",
+    root,
+    "for-each-ref",
+    "--format=%(refname:short)%09%(upstream)%09%(upstream:track)",
+    "refs/heads/",
+  ]);
+  if (branches.code !== 0) throw gitError(branches, "Cannot read branch tracking");
+  const gone = new Set(
+    branches.stdout
+      .split(/\r?\n/)
+      .filter((line) => line.endsWith("[gone]"))
+      .map((line) => line.split("\t")[0]),
+  );
+  listing.worktrees = await Promise.all(
+    listing.worktrees.map(async (tree) => ({
+      ...tree,
+      merged:
+        tree.branch && base ? await branchMerged(root, tree.branch, base, deps.runGit) : false,
+      upstream_gone: tree.branch ? gone.has(tree.branch) : false,
+      stale: tree.prunable || (tree.branch ? gone.has(tree.branch) : false),
+      active_terminal: deps.terminalUsing(tree.path),
+    })),
+  );
+  return listing;
 }

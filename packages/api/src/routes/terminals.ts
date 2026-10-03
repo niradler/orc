@@ -5,6 +5,7 @@ import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { getDb } from "@orc/db/client";
 import { gateway_sessions } from "@orc/db/schema";
 import { and, eq } from "drizzle-orm";
+import { rememberTerminalFolder } from "../git/registry.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
 import { availableLaunchers, buildLaunch, LAUNCH_KINDS } from "../terminals/launch.js";
 import {
@@ -203,6 +204,7 @@ app.openapi(createTerminalRoute, async (c) => {
       name: body.name ?? row.title ?? undefined,
       liveSessionId: row.id,
     });
+    rememberTerminalFolder(info.cwd);
     return c.json(info, 201);
   }
 
@@ -217,7 +219,9 @@ app.openapi(createTerminalRoute, async (c) => {
     sessionDirDeps(deps),
   );
   const name = body.name ?? (cwd !== launch.cwd ? worktreeName(cwd) : undefined);
-  return c.json(manager.create({ launch: { ...launch, cwd }, name }), 201);
+  const info = manager.create({ launch: { ...launch, cwd }, name });
+  rememberTerminalFolder(info.cwd);
+  return c.json(info, 201);
 });
 
 // <parent>/worktrees/<repo>/<ulid> reads as "<repo> <last 6 of the id>" in the terminal list.
