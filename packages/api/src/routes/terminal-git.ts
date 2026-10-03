@@ -2,7 +2,8 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
-import { commitStaged, gitDiff, gitStatus, stageFiles } from "../git/panel.js";
+import { checkoutGithubFeed } from "../git/github.js";
+import { commitStaged, gitDiff, gitStatus, stageFiles, switchBranch } from "../git/panel.js";
 import { worktreeDeps } from "../git/registry.js";
 import { trackedWorktrees } from "../git/worktrees.js";
 import {
@@ -28,6 +29,65 @@ const FileSchema = z.object({
   working: z.string(),
   original: z.string().nullable(),
 });
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/terminals/{id}/git/switch",
+    tags: ["Git"],
+    summary: "Switch a clean checkout to a local branch",
+    request: {
+      params,
+      body: {
+        content: {
+          "application/json": { schema: z.object({ branch: z.string().min(1).max(1024) }) },
+        },
+      },
+    },
+    responses: { 204: { description: "Switched" } },
+  }),
+  async (c) => {
+    await switchBranch(folder(c.req.valid("param").id), c.req.valid("json").branch);
+    return c.body(null, 204);
+  },
+);
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/terminals/{id}/git/github",
+    tags: ["GitHub"],
+    summary: "Open pull requests for this terminal's current branch",
+    request: { params },
+    responses: {
+      200: {
+        description: "Checkout GitHub feed",
+        content: {
+          "application/json": {
+            schema: z.object({
+              auth: z.enum(["gh", "token", "none"]),
+              login: z.string().nullable(),
+              truncated: z.boolean(),
+              errors: z.array(z.object({ repo: z.string(), error: z.string() })),
+              items: z.array(
+                z.object({
+                  repo: z.string(),
+                  number: z.number(),
+                  title: z.string(),
+                  url: z.string(),
+                  kind: z.enum(["issue", "pr"]),
+                  state: z.string(),
+                  branch: z.string().nullable(),
+                  assignees: z.array(z.string()),
+                  task_ids: z.array(z.string()),
+                }),
+              ),
+            }),
+          },
+        },
+      },
+    },
+  }),
+  async (c) => c.json(await checkoutGithubFeed(folder(c.req.valid("param").id)), 200),
+);
 app.openapi(
   createRoute({
     method: "get",

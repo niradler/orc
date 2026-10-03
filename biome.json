@@ -38,6 +38,8 @@
     "includes": [
       "**",
       "!**/dist",
+      "!**/test-results",
+      "!**/playwright-report",
       "!packages/desktop/release",
       "!**/node_modules",
       "!**/*.gen.ts",

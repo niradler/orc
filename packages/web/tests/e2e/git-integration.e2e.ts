@@ -64,7 +64,17 @@ test("slice 3 git panel status, diff, selected staging, commit, branches and tas
   await expect(page.getByTestId("git-status-file")).toHaveCount(2);
   await page.getByTestId("git-tab-diff").click();
   await expect(page.getByTestId("git-diff")).toContainText("+panel edit");
+  await expect(page.getByTestId("git-diff-add")).toContainText("+panel edit");
+  await expect(page.getByTestId("git-diff-remove")).toContainText("-initial");
+  await expect(page.getByTestId("git-diff-add")).toHaveCSS("color", "rgb(74, 222, 128)");
+  await expect(page.getByTestId("git-diff-remove")).toHaveCSS("color", "rgb(248, 113, 113)");
+  await page.getByTestId("git-diff-file").selectOption("untracked.txt");
+  await expect(page.getByTestId("git-diff")).toContainText("+keep unstaged");
+  await expect(page.getByTestId("git-diff")).not.toContainText("panel edit");
   await page.getByTestId("git-tab-status").click();
+  await page.getByTestId("git-select-all").check();
+  await expect(page.getByTestId("git-status-file").locator("input:checked")).toHaveCount(2);
+  await page.getByTestId("git-select-all").uncheck();
   await page
     .getByTestId("git-status-file")
     .filter({ hasText: "file.txt" })
@@ -85,6 +95,110 @@ test("slice 3 git panel status, diff, selected staging, commit, branches and tas
   await expect(page.getByTestId("task-git-links")).toContainText("main");
   await page.reload();
   await expect(page.getByTestId("task-git-links")).toContainText(repo);
+});
+
+test("Git panel moves, selects all, switches branches and worktrees, and shows the current PR", async ({
+  page,
+  request,
+}) => {
+  const local = mkdtempSync(join(tmpdir(), "orc-pw-git-ux-"));
+  for (const args of [
+    ["init", "-b", "main"],
+    ["config", "user.email", "test@example.com"],
+    ["config", "user.name", "test"],
+  ])
+    await git(local, ...args);
+  writeFileSync(join(local, "a.txt"), "before\n");
+  await git(local, "add", ".");
+  await git(local, "commit", "-m", "initial");
+  await git(local, "branch", "feature");
+  const other = `${local}-other`;
+  await git(local, "worktree", "add", "-b", "other", other);
+  const terminal = await apiPost<{ id: string }>(request, "/terminals", {
+    kind: "shell",
+    cwd: local,
+  });
+  await page.route("**/api/terminals/*/git/github", async (route) => {
+    const status = await apiGet<{ branch: string }>(
+      request,
+      `/terminals/${terminal.id}/git/status`,
+    );
+    await route.fulfill({
+      json: {
+        auth: "gh",
+        login: "test",
+        errors: [],
+        truncated: false,
+        items:
+          status.branch === "feature"
+            ? [
+                {
+                  repo: "test/repo",
+                  number: 88,
+                  title: "Feature PR",
+                  url: "https://github.com/test/repo/pull/88",
+                  kind: "pr",
+                  state: "open",
+                  branch: "feature",
+                  assignees: [],
+                  task_ids: [],
+                },
+              ]
+            : [],
+      },
+    });
+  });
+  await page.addInitScript((secret) => localStorage.setItem("orc_api_secret", secret), API_SECRET);
+  await page.goto(`/terminals/${terminal.id}`);
+  await page.getByTestId("terminal-git-toggle").click();
+  const panel = page.getByTestId("git-floating-panel");
+  const before = await panel.boundingBox();
+  const handle = await page.getByTestId("git-panel-drag").boundingBox();
+  if (!before || !handle) throw new Error("Missing panel geometry");
+  await page.mouse.move(handle.x + 80, handle.y + 15);
+  await page.mouse.down();
+  await page.mouse.move(handle.x - 40, handle.y + 45, { steps: 8 });
+  await page.mouse.up();
+  expect((await panel.boundingBox())?.x).toBeLessThan(before.x - 80);
+  await page.getByTestId("git-tab-branches").click();
+  await expect(page.getByTestId("git-branch").filter({ hasText: "main" })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await expect(
+    page.getByTestId("git-panel-worktree").filter({ hasText: "Current checkout" }),
+  ).toContainText("main");
+  await page.getByTestId("git-branch").filter({ hasText: "feature" }).click();
+  await expect(page.getByTestId("git-branch").filter({ hasText: "feature" })).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await expect(page.getByTestId("git-current-pr")).toContainText("Open PR #88: Feature PR");
+  writeFileSync(join(local, "a.txt"), "after\n");
+  writeFileSync(join(local, "b.txt"), "added\n");
+  await page.getByTestId("git-refresh").click();
+  await page.getByTestId("git-branch").filter({ hasText: "main" }).click();
+  await expect(panel.getByRole("alert")).toContainText("Commit or stash");
+  await page.getByTestId("git-tab-status").click();
+  await expect(page.getByTestId("git-status-file")).toHaveCount(2);
+  await page.getByTestId("git-select-all").check();
+  await page.getByTestId("git-stage").click();
+  await page.getByTestId("git-commit-message").fill("All changes");
+  await expect(page.getByTestId("git-commit")).toBeEnabled();
+  await page.getByTestId("git-commit").click();
+  await expect(page.getByTestId("git-clean")).toBeVisible();
+  await page.getByTestId("git-tab-branches").click();
+  await page
+    .getByTestId("git-panel-worktree")
+    .filter({ hasText: "other" })
+    .getByTestId("git-switch-worktree")
+    .click();
+  await expect(page).not.toHaveURL(new RegExp(`${terminal.id}$`));
+  await expect(page.getByTestId("terminal-git-panel")).toContainText("other");
+  await page.getByTestId("git-tab-branches").click();
+  await expect(
+    page.getByTestId("git-panel-worktree").filter({ hasText: "Current checkout" }),
+  ).toContainText(other);
 });
 
 test("slice 4 GitHub board filtering, linking, creating task and reopening saved links", async ({

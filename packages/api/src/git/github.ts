@@ -3,6 +3,7 @@ import { OrcError } from "@orc/core/errors";
 import { getDb } from "@orc/db/client";
 import { z } from "zod";
 import { type GitResult, runGit } from "../terminals/session-dir.js";
+import { gitStatus } from "./panel.js";
 import { knownWorktrees } from "./registry.js";
 
 export interface GithubDeps {
@@ -259,4 +260,17 @@ export async function githubFeed(
       .map((task) => task.id);
   feed.errors.push(...registry.errors.map((error) => ({ repo: error.cwd, error: error.error })));
   return feed;
+}
+
+export async function checkoutGithubFeed(cwd: string): Promise<GithubFeed> {
+  const status = await gitStatus(cwd);
+  const remote = await runGit(["git", "-C", cwd, "remote", "get-url", "origin"]);
+  const name = remote.code === 0 ? githubRemote(remote.stdout) : null;
+  if (!name || !status.branch)
+    return { auth: "none", login: null, items: [], errors: [], truncated: false };
+  return fetchGithubFeed([{ name, branches: [status.branch], linked: [] }], "branches", {
+    run: runGit,
+    fetch,
+    token: loadConfig().github.token,
+  });
 }

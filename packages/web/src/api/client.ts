@@ -509,17 +509,21 @@ export const api = {
   git: {
     status: (id: string) =>
       req<GitStatus>("GET", `/terminals/${encodeURIComponent(id)}/git/status`),
-    diff: (id: string, staged: boolean) =>
+    diff: (id: string, staged: boolean, path?: string) =>
       req<{ diff: string; truncated: boolean }>(
         "GET",
         `/terminals/${encodeURIComponent(id)}/git/diff`,
         undefined,
-        { staged: staged ? "1" : "0" },
+        { staged: staged ? "1" : "0", path },
       ),
     terminalWorktrees: (id: string) =>
       req<WorktreeListing>("GET", `/terminals/${encodeURIComponent(id)}/git/worktrees`),
     stage: (id: string, paths: string[]) =>
       req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/stage`, { paths }),
+    switchBranch: (id: string, branch: string) =>
+      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/switch`, { branch }),
+    checkoutGithub: (id: string) =>
+      req<GithubFeed>("GET", `/terminals/${encodeURIComponent(id)}/git/github`),
     commit: (id: string, message: string) =>
       req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/commit`, { message }),
     addWorktree: (id: string) =>

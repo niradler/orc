@@ -33,6 +33,21 @@ afterAll(() => {
 });
 
 describe("terminal git panel", () => {
+  test("switches clean local branches and refuses dirty or unknown branches", async () => {
+    await runGit(["git", "-C", repo, "branch", "feature"]);
+    const route = `/terminals/${terminalId}/git/switch`;
+    expect((await req(app, "POST", route, { branch: "feature" })).status).toBe(204);
+    expect((await gitStatus(repo)).branch).toBe("feature");
+    writeFileSync(join(repo, "file.txt"), "pending change\n");
+    expect((await req(app, "POST", route, { branch: "main" })).status).toBe(400);
+    expect((await gitStatus(repo)).branch).toBe("feature");
+    expect((await req(app, "POST", route, { branch: "--detach" })).status).toBe(400);
+    writeFileSync(join(repo, "file.txt"), "before\n");
+    expect((await req(app, "POST", route, { branch: "main" })).status).toBe(204);
+    const feed = await req(app, "GET", `/terminals/${terminalId}/git/github`);
+    expect(feed.status).toBe(200);
+    expect((await feed.json()).items).toEqual([]);
+  });
   test("should parse spaces, renames and newline filenames without splitting them", () => {
     expect(parseStatus("R  new name\0old name\0?? line\nbreak\0")).toEqual([
       { path: "new name", original: "old name", index: "R", working: " " },
@@ -47,6 +62,16 @@ describe("terminal git panel", () => {
     expect((await status.json()).branch).toBe("main");
     const diff = await req(app, "GET", `/terminals/${terminalId}/git/diff`);
     expect((await diff.json()).diff).toContain("+after");
+    const untracked = await req(app, "GET", `/terminals/${terminalId}/git/diff?path=keep.txt`);
+    expect(untracked.status).toBe(200);
+    expect((await untracked.json()).diff).toContain("+unstaged");
+    const perFile = await req(app, "GET", `/terminals/${terminalId}/git/diff?path=file.txt`);
+    const body = (await perFile.json()).diff;
+    expect(body).toContain("-before");
+    expect(body).not.toContain("unstaged");
+    expect(
+      (await req(app, "GET", `/terminals/${terminalId}/git/diff?path=../outside`)).status,
+    ).toBe(400);
     expect(
       (await req(app, "POST", `/terminals/${terminalId}/git/stage`, { paths: ["../outside"] }))
         .status,

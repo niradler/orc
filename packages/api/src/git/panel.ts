@@ -1,3 +1,5 @@
+import { lstat } from "node:fs/promises";
+import { join } from "node:path";
 import { ValidationError } from "@orc/core/errors";
 import { gitError, repoRoot, runGit } from "../terminals/session-dir.js";
 
@@ -51,20 +53,44 @@ export async function gitDiff(
 ): Promise<{ diff: string; truncated: boolean }> {
   const root = await repoRoot(cwd, runGit);
   if (!root) throw new ValidationError("Not a git repository");
+  const file = path ? (await gitStatus(root)).files.find((file) => file.path === path) : null;
+  if (path && !file) throw new ValidationError("Path is not in this checkout's status");
+  const untracked = !staged && file?.index === "?";
+  if (untracked && path && !(await lstat(join(root, path))).isFile())
+    return {
+      diff: "Untracked symbolic link or special file; stage it to view its Git diff.",
+      truncated: false,
+    };
   const result = await runGit([
     "git",
     "--literal-pathspecs",
     "-C",
     root,
     "diff",
+    "--no-color",
     "--no-ext-diff",
     "--no-textconv",
     ...(staged ? ["--cached"] : []),
+    ...(untracked ? ["--no-index"] : []),
     "--",
+    ...(untracked ? ["/dev/null"] : []),
+    ...(file?.original ? [file.original] : []),
     ...(path ? [path] : []),
   ]);
-  if (result.code !== 0) throw gitError(result, "Cannot read diff");
+  if (result.code !== 0 && !(untracked && result.code === 1))
+    throw gitError(result, "Cannot read diff");
   return { diff: result.stdout.slice(0, 200_000), truncated: result.stdout.length > 200_000 };
+}
+
+export async function switchBranch(cwd: string, branch: string): Promise<void> {
+  const status = await gitStatus(cwd);
+  if (!status.root || !status.branches.includes(branch))
+    throw new ValidationError("Select an existing local branch");
+  if (status.branch === branch) return;
+  if (status.files.length)
+    throw new ValidationError("Commit or stash your changes before switching branches");
+  const result = await runGit(["git", "-C", status.root, "switch", "--", branch]);
+  if (result.code !== 0) throw gitError(result, "Cannot switch branch");
 }
 
 export async function stageFiles(cwd: string, paths: string[]): Promise<void> {
