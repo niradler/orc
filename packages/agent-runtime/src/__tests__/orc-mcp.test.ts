@@ -20,7 +20,7 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   },
 }));
 
-const { buildOrcMcpServers, isOrcMcpTool } = await import("../orc-mcp.js");
+const { buildOrcMcpServers, isImplicitOrcTool } = await import("../orc-mcp.js");
 const { createBackend } = await import("../index.js");
 
 const ENV_KEYS = ["ORC_API_HOST", "ORC_API_PORT", "ORC_API_SECRET"] as const;
@@ -53,12 +53,13 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
         headers: { Authorization: "Bearer s3cret" },
       },
     });
-    expect(isOrcMcpTool("mcp__orc__flow_report")).toBe(true);
-    expect(isOrcMcpTool("mcp__other__flow_report")).toBe(false);
-    expect(isOrcMcpTool("Bash")).toBe(false);
+    expect(isImplicitOrcTool("mcp__orc__flow_report")).toBe(true);
+    expect(isImplicitOrcTool("mcp__orc__job_run")).toBe(false);
+    expect(isImplicitOrcTool("mcp__other__flow_report")).toBe(false);
+    expect(isImplicitOrcTool("Bash")).toBe(false);
   });
 
-  test("should give the sdk backend only the orc mcp server and allow orc tools", async () => {
+  test("should give the sdk backend only the orc mcp server and the implicit orc tools", async () => {
     const backend = createBackend("claude");
     const session = await backend.startSession({
       cwd: process.cwd(),
@@ -71,8 +72,22 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
     const { options } = queries[0] as QueryArgs;
     expect(Object.keys(options.mcpServers ?? {})).toEqual(["orc"]);
     expect(options.tools).toEqual(["Read"]);
-    expect(options.allowedTools).toEqual(["Read", "mcp__orc"]);
+    expect(options.allowedTools).toContain("Read");
+    expect(options.allowedTools).toContain("mcp__orc__flow_report");
+    expect(options.allowedTools).not.toContain("mcp__orc__job_run");
     expect((await options.canUseTool("mcp__orc__flow_report", {})).behavior).toBe("allow");
+    for (const escalation of [
+      "job_run",
+      "flow_create",
+      "flow_attach",
+      "task_create",
+      "task_update",
+      "skill_create",
+      "agent_create",
+      "agent_package_import",
+    ]) {
+      expect((await options.canUseTool(`mcp__orc__${escalation}`, {})).behavior).toBe("deny");
+    }
     expect((await options.canUseTool("Read", {})).behavior).toBe("allow");
     expect((await options.canUseTool("Bash", {})).behavior).toBe("deny");
     expect((await options.canUseTool("mcp__github__create_issue", {})).behavior).toBe("deny");
@@ -107,7 +122,10 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
       const at = (flag: string) => cmd[cmd.indexOf(flag) + 1];
       expect(at("--tools")).toBe("Read");
       expect(cmd).toContain("--strict-mcp-config");
-      expect(at("--allowedTools")).toBe("mcp__orc");
+      const allowed = (at("--allowedTools") as string).split(",");
+      expect(allowed).toContain("mcp__orc__flow_report");
+      expect(allowed).not.toContain("mcp__orc__job_run");
+      expect(allowed).not.toContain("Read");
       expect(cmd.join(" ")).not.toContain("s3cret");
       const parsed = JSON.parse(configJson) as { mcpServers: Record<string, unknown> };
       expect(Object.keys(parsed.mcpServers)).toEqual(["orc"]);
@@ -121,5 +139,19 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
       spawnSpy.mockRestore();
       whichSpy.mockRestore();
     }
+  });
+
+  test("should allow an orc tool beyond the implicit set when the profile names it", async () => {
+    const session = await createBackend("claude").startSession({
+      cwd: process.cwd(),
+      autoApprove: true,
+      toolAllowlist: ["Read", "mcp__orc__task_update"],
+    });
+    await session.send("go");
+    await Bun.sleep(20);
+    const { options } = queries[0] as QueryArgs;
+    expect((await options.canUseTool("mcp__orc__task_update", {})).behavior).toBe("allow");
+    expect((await options.canUseTool("mcp__orc__job_run", {})).behavior).toBe("deny");
+    await session.close();
   });
 });
