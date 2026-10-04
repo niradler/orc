@@ -46,7 +46,8 @@
       "!**/drizzle",
       "!.examples",
       "!.demo",
-      "!.cursor"
+      "!.cursor",
+      "!packages/core/src/schemas"
     ]
   }
 }
