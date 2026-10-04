@@ -48,11 +48,16 @@ export function renderSkillInstructions(skill: SkillFull): string {
   return `${skill.content}\n\nSkill entry point: ${skill.path}\nResolve relative paths from this skill directory. Load supporting files only when needed using skill_read with name "${skill.name}" and ref set to the relative path, or read the local file.\n${files}`;
 }
 
+export type SkillIssue = { path: string; error: string };
+
+export type SkillWarning = { path: string; message: string };
+
 export type SkillCache = {
-  version: 2;
+  version: 3;
   builtAt: string;
   skills: SkillMeta[];
-  broken: Array<{ path: string; error: string }>;
+  broken: SkillIssue[];
+  warnings: SkillWarning[];
 };
 
 export type ListSkillsOpts = {
@@ -152,6 +157,56 @@ export function parseFrontmatter(content: string): {
   };
 }
 
+type ParsedSkill = ReturnType<typeof parseFrontmatter>;
+
+/**
+ * The pre-validation parser: line-based `key: value`, everything except
+ * name/description lands in metadata. Used only to keep already-installed skills
+ * loading; anything newly written goes through parseFrontmatter.
+ */
+function parseLegacyFrontmatter(content: string): ParsedSkill {
+  const match = content
+    .replace(/^\uFEFF/, "")
+    .match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n([\s\S]*))?$/);
+  if (!match) throw new ValidationError("Invalid SKILL.md: missing frontmatter");
+
+  const fm: Record<string, string> = {};
+  for (const line of (match[1] as string).split("\n")) {
+    const idx = line.indexOf(":");
+    if (idx === -1) continue;
+    fm[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+  }
+  if (!fm.name) throw new ValidationError("SKILL.md name is required");
+  if (!fm.description) throw new ValidationError("SKILL.md description is required");
+
+  const metadata: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fm)) {
+    if (key !== "name" && key !== "description") metadata[key] = value;
+  }
+  return {
+    frontmatter: { name: fm.name, description: fm.description, metadata },
+    body: (match[2] ?? "").trim(),
+  };
+}
+
+/** Strict first; if the file predates validation, fall back to the legacy parser with a warning. */
+function parseInstalledFrontmatter(
+  content: string,
+): ParsedSkill & { warning?: string | undefined } {
+  try {
+    return parseFrontmatter(content);
+  } catch (strictError) {
+    try {
+      return {
+        ...parseLegacyFrontmatter(content),
+        warning: `Loaded as a legacy skill: ${(strictError as Error).message}`,
+      };
+    } catch {
+      throw strictError;
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Directories
 // ---------------------------------------------------------------------------
@@ -186,6 +241,7 @@ function scanDirectory(
   dir: string,
   source: SkillSource,
   broken: SkillCache["broken"],
+  warnings: SkillCache["warnings"],
 ): SkillMeta[] {
   const results: SkillMeta[] = [];
   if (!existsSync(dir) || lstatSync(dir).isSymbolicLink()) return results;
@@ -200,9 +256,18 @@ function scanDirectory(
         if (lstatSync(skillFile).isSymbolicLink())
           throw new ValidationError("Skill entry point cannot be a symlink");
         const content = readFileSync(skillFile, "utf-8");
-        const { frontmatter: fm } = parseFrontmatter(content);
-        if (fm.name.normalize("NFKC") !== entry.normalize("NFKC"))
-          throw new ValidationError("Skill directory name must match SKILL.md name");
+        // Built-ins ship with orc and must be valid; user and package skills may predate validation.
+        const parsed: ReturnType<typeof parseInstalledFrontmatter> =
+          source === "builtin" ? parseFrontmatter(content) : parseInstalledFrontmatter(content);
+        const fm = parsed.frontmatter;
+        const messages: string[] = [];
+        if (parsed.warning) messages.push(parsed.warning);
+        if (fm.name.normalize("NFKC") !== entry.normalize("NFKC")) {
+          if (source === "builtin")
+            throw new ValidationError("Skill directory name must match SKILL.md name");
+          messages.push(`Skill directory "${entry}" does not match SKILL.md name "${fm.name}"`);
+        }
+        for (const message of messages) warnings.push({ path: skillFile, message });
         results.push({
           name: fm.name,
           description: fm.description,
@@ -220,19 +285,22 @@ function scanDirectory(
   return results;
 }
 
-export function scanSkills(broken: SkillCache["broken"] = []): SkillMeta[] {
-  const builtin = scanDirectory(BUILTIN_SKILLS_DIR, "builtin", broken);
-  const user = scanDirectory(USER_SKILLS_DIR, "user", broken);
+export function scanSkills(
+  broken: SkillCache["broken"] = [],
+  warnings: SkillCache["warnings"] = [],
+): SkillMeta[] {
+  const builtin = scanDirectory(BUILTIN_SKILLS_DIR, "builtin", broken, warnings);
+  const user = scanDirectory(USER_SKILLS_DIR, "user", broken, warnings);
   const packagesDir = getPackagesDir();
   const packaged: SkillMeta[] = [];
   if (existsSync(packagesDir)) {
-    packaged.push(...scanDirectory(packagesDir, "user", broken));
+    packaged.push(...scanDirectory(packagesDir, "user", broken, warnings));
     for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
       const apmDir = join(packagesDir, entry.name, ".apm");
       if (existsSync(apmDir) && lstatSync(apmDir).isSymbolicLink()) continue;
       packaged.push(
-        ...scanDirectory(join(packagesDir, entry.name, ".apm", "skills"), "user", broken),
+        ...scanDirectory(join(packagesDir, entry.name, ".apm", "skills"), "user", broken, warnings),
       );
     }
   }
@@ -260,7 +328,7 @@ function loadCache(): SkillCache | null {
   try {
     const raw = readFileSync(CACHE_PATH, "utf-8");
     const cache = JSON.parse(raw) as SkillCache;
-    return cache.version === 2 ? cache : null;
+    return cache.version === 3 ? cache : null;
   } catch {
     return null;
   }
@@ -274,8 +342,15 @@ function saveCache(cache: SkillCache): void {
 
 export function reloadCache(): SkillCache {
   const broken: SkillCache["broken"] = [];
-  const skills = scanSkills(broken);
-  const cache: SkillCache = { version: 2, builtAt: new Date().toISOString(), skills, broken };
+  const warnings: SkillCache["warnings"] = [];
+  const skills = scanSkills(broken, warnings);
+  const cache: SkillCache = {
+    version: 3,
+    builtAt: new Date().toISOString(),
+    skills,
+    broken,
+    warnings,
+  };
   saveCache(cache);
   return cache;
 }
@@ -288,6 +363,10 @@ function ensureCache(): SkillCache {
 
 export function skillValidationIssues(): SkillCache["broken"] {
   return ensureCache().broken ?? [];
+}
+
+export function skillWarnings(): SkillWarning[] {
+  return ensureCache().warnings ?? [];
 }
 
 // ---------------------------------------------------------------------------
@@ -323,7 +402,7 @@ export function readSkill(name: string, ref?: string): SkillFull | SkillRefConte
   }
 
   const content = readFileSync(meta.path, "utf-8");
-  const { body } = parseFrontmatter(content);
+  const { body } = parseInstalledFrontmatter(content);
   const references = listReferenceFiles(skillDir);
 
   return { ...meta, content: body, references, files: listSkillFiles(skillDir) };

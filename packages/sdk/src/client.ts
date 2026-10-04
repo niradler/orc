@@ -234,7 +234,11 @@ export function createOrcClient(options?: OrcClientOptions) {
 
     skills: {
       list: (params?: { q?: string; source?: SkillSource; reload?: boolean }) =>
-        c<{ skills: SkillMeta[]; broken: BrokenAgent[] }>(
+        c<{
+          skills: SkillMeta[];
+          broken: BrokenAgent[];
+          warnings: Array<{ path: string; message: string }>;
+        }>(
           "GET",
           "/skills",
           undefined,

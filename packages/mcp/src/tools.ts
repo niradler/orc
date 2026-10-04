@@ -17,6 +17,7 @@ import {
   type SkillFull,
   type SkillRefContent,
   skillValidationIssues,
+  skillWarnings,
 } from "@orc/core/skill-service";
 import type { TaskStatus } from "@orc/core/types";
 import { AgentBackendSchema } from "@orc/core/types";
@@ -1435,9 +1436,10 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         reload?: boolean;
       };
       const skills = listSkills({ q, source, reload });
-      const issues = skillValidationIssues().map(
-        (issue) => `Invalid skill: ${issue.path}: ${issue.error}`,
-      );
+      const issues = [
+        ...skillValidationIssues().map((issue) => `Invalid skill: ${issue.path}: ${issue.error}`),
+        ...skillWarnings().map((w) => `Skill warning: ${w.path}: ${w.message}`),
+      ];
       const result = skills
         .map((s) => {
           const src = s.source === "user" ? " [user]" : "";

@@ -23,6 +23,7 @@ import {
   type SkillFull,
   type SkillRefContent,
   scanSkills,
+  skillWarnings,
 } from "./skill-service.js";
 
 // ─── parseFrontmatter ────────────────────────────────────────────────────────
@@ -237,6 +238,124 @@ describe("scanSkills", () => {
       expect(broken.some((b) => b.path.startsWith(shadowDir))).toBe(true);
     } finally {
       rmSync(shadowDir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ─── legacy skills (strict on write, lenient on read) ───────────────────────
+
+describe("legacy skills installed before frontmatter validation", () => {
+  const prefix = `legacy-${process.pid}`;
+  const cases = [
+    {
+      dir: `${prefix}-yaml`,
+      content: "---\nname: LEGACY_YAML\ndescription: Use when: debugging\n---\nBody yaml",
+      name: "LEGACY_YAML",
+      description: "Use when: debugging",
+    },
+    {
+      dir: `${prefix}-version`,
+      content: `---
+name: ${prefix}-version
+description: Versioned
+version: 1.0
+---
+Body version`,
+      name: `${prefix}-version`,
+      description: "Versioned",
+      metadata: { version: "1.0" },
+    },
+    {
+      dir: `${prefix}-hint`,
+      content: `---
+name: ${prefix}-hint
+description: Hinted
+argument-hint: <file>
+---
+Body hint`,
+      name: `${prefix}-hint`,
+      description: "Hinted",
+      metadata: { "argument-hint": "<file>" },
+    },
+    {
+      dir: `${prefix}-upper`,
+      content: "---\nname: My_Skill\ndescription: Underscored\n---\nBody upper",
+      name: "My_Skill",
+      description: "Underscored",
+    },
+  ];
+  const roots = cases.map((c) => join(getUserSkillsDir(), c.dir));
+
+  beforeAll(() => {
+    for (const [i, c] of cases.entries()) {
+      mkdirSync(roots[i] as string, { recursive: true });
+      writeFileSync(join(roots[i] as string, "SKILL.md"), c.content);
+    }
+    reloadCache();
+  });
+
+  afterAll(() => {
+    for (const root of roots) rmSync(root, { recursive: true, force: true });
+    reloadCache();
+  });
+
+  for (const c of cases) {
+    test(`loads ${c.dir} with a warning instead of marking it broken`, () => {
+      const broken: { path: string; error: string }[] = [];
+      const warnings: { path: string; message: string }[] = [];
+      const skill = scanSkills(broken, warnings).find((x) => x.name === c.name);
+      expect(skill?.description).toBe(c.description);
+      expect(skill?.source).toBe("user");
+      if (c.metadata) expect(skill?.metadata).toEqual(c.metadata);
+      const file = join(getUserSkillsDir(), c.dir, "SKILL.md");
+      expect(broken.some((b) => b.path === file)).toBe(false);
+      expect(warnings.some((w) => w.path === file && w.message.length > 0)).toBe(true);
+      expect(skillWarnings().some((w) => w.path === file)).toBe(true);
+    });
+
+    test(`readSkill returns the body of ${c.dir}`, () => {
+      const full = readSkill(c.name) as SkillFull;
+      expect(full.content).toBe(c.content.split("---\n").pop() as string);
+    });
+
+    test(`createSkill still rejects the ${c.dir} shape`, () => {
+      expect(() => createSkill(c.name, c.content)).toThrow();
+    });
+  }
+
+  test("a legacy skill with no description is still broken", () => {
+    const dir = join(getUserSkillsDir(), `${prefix}-nodesc`);
+    mkdirSync(dir, { recursive: true });
+    try {
+      writeFileSync(
+        join(dir, "SKILL.md"),
+        `---
+name: ${prefix}-nodesc
+---
+Body`,
+      );
+      const broken: { path: string; error: string }[] = [];
+      scanSkills(broken);
+      expect(broken.some((b) => b.path.startsWith(dir))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a legacy skill cannot shadow a built-in skill", () => {
+    const dir = join(getUserSkillsDir(), "orc-worker-base");
+    mkdirSync(dir, { recursive: true });
+    try {
+      writeFileSync(
+        join(dir, "SKILL.md"),
+        "---\nname: orc-worker-base\ndescription: Use when: shadowing\n---\nInjected",
+      );
+      const broken: { path: string; error: string }[] = [];
+      const base = scanSkills(broken).find((x) => x.name === "orc-worker-base");
+      expect(base?.source).toBe("builtin");
+      expect(broken.some((b) => b.path.startsWith(dir))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

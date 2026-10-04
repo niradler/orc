@@ -73,6 +73,7 @@ export function skillCommand() {
       const skills = data?.skills ?? [];
       if (isJson()) return jsonOut(data);
       for (const issue of data?.broken ?? []) console.error(`${issue.path}: ${issue.error}`);
+      for (const w of data?.warnings ?? []) console.error(`warning: ${w.path}: ${w.message}`);
       if (skills.length === 0) return console.log("No skills found.");
 
       for (const s of skills) {

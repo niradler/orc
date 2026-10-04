@@ -7,6 +7,7 @@ import { updateTaskStatus } from "@orc/task-service";
 import { eq } from "drizzle-orm";
 import {
   cancelFlowRun,
+  drainPendingNodes,
   finishNodeRun,
   getActiveFlowRunForTask,
   getLatestFlowRunForTask,
@@ -256,6 +257,25 @@ describe("orc-default end to end", () => {
     const failed = nodeRuns(taskId).find((r) => r.node_id === "build");
     expect(failed?.status).toBe("failed");
     expect(getLatestFlowRunForTask(taskId)?.status).toBe("completed");
+  });
+
+  test("a node whose skill is not installed fails with a clear error instead of running without it", async () => {
+    const taskId = await makeTask({ skill_name: "no-such-skill-for-test" });
+    await startFlowForTask(taskId);
+    const build = activeNodeRun(taskId);
+
+    getSqlite()
+      .query("UPDATE flow_node_runs SET status = 'cancelled' WHERE status = 'pending' AND id != ?")
+      .run(build.id);
+    const spawned = await drainPendingNodes();
+
+    expect(spawned).toEqual([]);
+    const row = getSqlite()
+      .query("SELECT status, error FROM flow_node_runs WHERE id = ?")
+      .get(build.id) as { status: string; error: string | null };
+    expect(row.status).toBe("failed");
+    expect(row.error).toContain('skill "no-such-skill-for-test"');
+    expect(taskStatus(taskId)).toBe("blocked");
   });
 
   test("a node that never reports has its outcome inferred from the task status", async () => {

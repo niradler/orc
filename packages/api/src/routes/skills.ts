@@ -8,6 +8,7 @@ import {
   type SkillRefContent,
   type SkillSource,
   skillValidationIssues,
+  skillWarnings,
 } from "@orc/core/skill-service";
 
 const app = new OpenAPIHono();
@@ -83,6 +84,7 @@ const listRoute = createRoute({
           schema: z.object({
             skills: z.array(SkillMetaSchema),
             broken: z.array(z.object({ path: z.string(), error: z.string() })),
+            warnings: z.array(z.object({ path: z.string(), message: z.string() })),
           }),
         },
       },
@@ -145,7 +147,7 @@ app.openapi(listRoute, (c) => {
     source: source as SkillSource | undefined,
     reload,
   });
-  return c.json({ skills, broken: skillValidationIssues() });
+  return c.json({ skills, broken: skillValidationIssues(), warnings: skillWarnings() });
 });
 
 app.openapi(readRoute, (c) => {

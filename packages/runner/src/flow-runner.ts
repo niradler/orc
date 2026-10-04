@@ -461,6 +461,13 @@ function taskComments(taskId: string, since?: number): { content: string; author
   return rows.reverse();
 }
 
+class MissingSkillError extends Error {
+  constructor(nodeId: string, skillName: string) {
+    super(`Node ${nodeId} references skill "${skillName}", which is not installed`);
+    this.name = "MissingSkillError";
+  }
+}
+
 function buildNodePrompt(opts: {
   def: FlowDefinition;
   node: FlowNode;
@@ -516,7 +523,7 @@ function buildNodePrompt(opts: {
   if (skillName) {
     const skill = readSkill(skillName) as SkillFull | null;
     if (skill) parts.push(`\n---\n## Workflow: ${skill.name}\n${renderSkillInstructions(skill)}`);
-    else logger.warn(`Node ${nodeId} references unknown skill "${skillName}"`);
+    else throw new MissingSkillError(nodeId, skillName);
   }
 
   if (node.prompt) parts.push(`\n---\n## Node Instructions (${nodeId})\n${node.prompt}`);
@@ -1160,13 +1167,13 @@ function previousNodeSession(
   );
 }
 
-async function spawnNodeSession(nodeRun: NodeRunRow): Promise<void> {
+async function spawnNodeSession(nodeRun: NodeRunRow): Promise<boolean> {
   const loaded = loadRun(nodeRun.flow_run_id);
-  if (!loaded) return;
+  if (!loaded) return false;
   const task = getTask(nodeRun.task_id);
-  if (!task) return;
+  if (!task) return false;
   const node = loaded.def.nodes[nodeRun.node_id];
-  if (node?.kind !== "agent") return;
+  if (node?.kind !== "agent") return false;
 
   const sqlite = getSqlite();
   const sessionId = ulid();
@@ -1178,17 +1185,26 @@ async function spawnNodeSession(nodeRun: NodeRunRow): Promise<void> {
   const model =
     nodeModel(node, task) ?? (node.agent ? readAgent(node.agent, cwd)?.fields.model : undefined);
 
-  const prompt = buildNodePrompt({
-    def: loaded.def,
-    node,
-    nodeId: nodeRun.node_id,
-    attempt: nodeRun.attempt,
-    task,
-    flowRunId: nodeRun.flow_run_id,
-    nodeRunId: nodeRun.id,
-    vars: loaded.state.vars,
-    ...(prev ? { resumeSince: prev.ended_at } : {}),
-  });
+  let prompt: string;
+  try {
+    prompt = buildNodePrompt({
+      def: loaded.def,
+      node,
+      nodeId: nodeRun.node_id,
+      attempt: nodeRun.attempt,
+      task,
+      flowRunId: nodeRun.flow_run_id,
+      nodeRunId: nodeRun.id,
+      vars: loaded.state.vars,
+      ...(prev ? { resumeSince: prev.ended_at } : {}),
+    });
+  } catch (err) {
+    if (!(err instanceof MissingSkillError)) throw err;
+    logger.error(err.message);
+    await addTaskComment(task.id, `Flow node failed: ${err.message}`, "system");
+    await finishNodeRun(nodeRun.id, err.message);
+    return false;
+  }
 
   const now = new Date();
   await getDb()
@@ -1222,7 +1238,7 @@ async function spawnNodeSession(nodeRun: NodeRunRow): Promise<void> {
   if (claimed.changes === 0) {
     logger.debug(`Node run ${nodeRun.id} was already claimed; skipping`);
     sqlite.query("DELETE FROM gateway_sessions WHERE id = ?").run(sessionId);
-    return;
+    return false;
   }
 
   // Now that an agent is really running, the node's declared status is honest.
@@ -1248,6 +1264,7 @@ async function spawnNodeSession(nodeRun: NodeRunRow): Promise<void> {
   }).catch((err) => {
     logger.error(`Node session ${sessionId} failed: ${String(err)}`);
   });
+  return true;
 }
 
 async function driveNodeSession(opts: {
@@ -1564,8 +1581,9 @@ export async function drainPendingNodes(): Promise<string[]> {
 
     try {
       if (runningNodesInFlow(nodeRun.flow_run_id) >= loaded.def.limits.max_parallel) continue;
-      await spawnNodeSession(nodeRun);
-      spawned.push(`${loaded.def.name}/${nodeRun.node_id} [${nodeRun.task_id}]`);
+      if (await spawnNodeSession(nodeRun)) {
+        spawned.push(`${loaded.def.name}/${nodeRun.node_id} [${nodeRun.task_id}]`);
+      }
     } catch (err) {
       // One node that cannot be spawned must not stop every other queued node
       // in this cycle from starting.
