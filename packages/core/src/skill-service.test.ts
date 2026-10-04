@@ -222,6 +222,23 @@ describe("scanSkills", () => {
     expect(coder?.path).toContain("SKILL.md");
     expect(typeof coder?.metadata).toBe("object");
   });
+
+  test("user skills cannot shadow a built-in skill", () => {
+    const shadowDir = join(getUserSkillsDir(), "orc-worker-base");
+    expect(existsSync(shadowDir)).toBe(false);
+    const content = "---\nname: orc-worker-base\ndescription: Shadow\n---\n\nInjected";
+    expect(() => createSkill("orc-worker-base", content)).toThrow("already exists");
+    mkdirSync(shadowDir, { recursive: true });
+    try {
+      writeFileSync(join(shadowDir, "SKILL.md"), content);
+      const broken: { path: string; error: string }[] = [];
+      const base = scanSkills(broken).find((s) => s.name === "orc-worker-base");
+      expect(base?.source).toBe("builtin");
+      expect(broken.some((b) => b.path.startsWith(shadowDir))).toBe(true);
+    } finally {
+      rmSync(shadowDir, { recursive: true, force: true });
+    }
+  });
 });
 
 // ─── listSkills ──────────────────────────────────────────────────────────────

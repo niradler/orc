@@ -236,7 +236,19 @@ export function scanSkills(broken: SkillCache["broken"] = []): SkillMeta[] {
       );
     }
   }
-  const skills = new Map([...builtin, ...packaged, ...user].map((skill) => [skill.name, skill]));
+  // Built-ins win (orc-worker-base is injected into every flow worker), then user, then packages.
+  const skills = new Map<string, SkillMeta>();
+  for (const skill of [...builtin, ...user, ...packaged]) {
+    const existing = skills.get(skill.name);
+    if (existing) {
+      broken.push({
+        path: skill.path,
+        error: `Skill name ${skill.name} is already provided by ${existing.path}`,
+      });
+      continue;
+    }
+    skills.set(skill.name, skill);
+  }
   return [...skills.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -327,7 +339,7 @@ export function createSkill(
   const skillDir = join(USER_SKILLS_DIR, name);
   const skillFile = join(skillDir, "SKILL.md");
 
-  if (existsSync(skillDir)) {
+  if (existsSync(skillDir) || existsSync(join(BUILTIN_SKILLS_DIR, name))) {
     throw new Error(`Skill already exists: ${name}`);
   }
 
