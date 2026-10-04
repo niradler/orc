@@ -1,6 +1,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
+import { buildOrcMcpServers, isOrcMcpTool, withOrcAllowedTools } from "./orc-mcp.js";
 import { registerBackend } from "./registry.js";
 import type {
   AgentBackend,
@@ -88,8 +89,8 @@ class ClaudeSDKSession implements AgentSession {
           ...(this.opts.toolAllowlist !== undefined
             ? {
                 tools: this.opts.toolAllowlist,
-                mcpServers: {},
-                allowedTools: this.opts.toolAllowlist,
+                mcpServers: buildOrcMcpServers(),
+                allowedTools: withOrcAllowedTools(this.opts.toolAllowlist),
               }
             : {}),
           systemPrompt: {
@@ -99,6 +100,9 @@ class ClaudeSDKSession implements AgentSession {
           },
           ...(this.abortController ? { abortController: this.abortController } : {}),
           canUseTool: async (toolName, input) => {
+            if (this.opts.toolAllowlist !== undefined && isOrcMcpTool(toolName)) {
+              return { behavior: "allow", updatedInput: input };
+            }
             if (
               this.opts.toolAllowlist !== undefined &&
               !this.opts.toolAllowlist.includes(toolName)
