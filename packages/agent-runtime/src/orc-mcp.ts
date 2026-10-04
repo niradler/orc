@@ -12,8 +12,25 @@ export type OrcHttpMcpServer = {
   headers?: Record<string, string>;
 };
 
-export function isOrcMcpTool(toolName: string): boolean {
-  return toolName.startsWith(ORC_TOOL_PREFIX);
+// ORC tools a tool-restricted session always gets: what the built-in worker skills use,
+// plus read-only lookups. Anything that runs commands, starts agents (job_run, flow_*,
+// task_create/update) or persists prompts (skill/agent create) must be named in the profile.
+const IMPLICIT_ORC_TOOLS = [
+  "flow_report",
+  "flow_status",
+  "task_get",
+  "task_list",
+  "memory_search",
+  "memory_get",
+  "memory_store",
+  "knowledge_search",
+  "knowledge_get",
+  "skill_list",
+  "skill_read",
+].map((tool) => `${ORC_TOOL_PREFIX}${tool}`);
+
+export function isImplicitOrcTool(toolName: string): boolean {
+  return IMPLICIT_ORC_TOOLS.includes(toolName);
 }
 
 export function buildOrcMcpServer(): OrcHttpMcpServer {
@@ -37,7 +54,7 @@ export function buildOrcMcpServers(): Record<string, OrcHttpMcpServer> {
 }
 
 export function withOrcAllowedTools(allowed: readonly string[]): string[] {
-  return [...allowed, `mcp__${ORC_MCP_SERVER_NAME}`];
+  return [...new Set([...allowed, ...IMPLICIT_ORC_TOOLS])];
 }
 
 export type OrcMcpConfigFile = { path: string; cleanup: () => void };
