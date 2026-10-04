@@ -112,5 +112,6 @@ describe.skipIf(!win)("ensureOnWindowsUserPath", () => {
         `[Environment]::SetEnvironmentVariable('Path','${cleaned.replaceAll("'", "''")}','User')`,
       ]);
     }
-  });
+    // Each user-scope write broadcasts WM_SETTINGCHANGE synchronously (~2.5s on a busy desktop).
+  }, 30_000);
 });

@@ -37,6 +37,7 @@ docs/superpowers/plans/
 # Added by code-review-graph
 .code-review-graph/
 packages/desktop/release/
+packages/cli/README.md
 
 # bun --compile cross-target runtime downloads
 .bun-cache/

@@ -43,7 +43,7 @@ ORC fixes this. Shared memory across every session. A task board where agents su
 
 ### Install
 
-**Recommended: the desktop app.** Download the installer for your machine from [GitHub Releases](https://github.com/niradler/orc/releases) - no Bun, Node or npm needed.
+**Recommended: the desktop app.** Download the installer for your machine from [GitHub Releases](https://github.com/niradler/orc/releases) - no Bun, Node or npm needed. Maintainers: see the [local release command](docs/releases.md).
 
 | OS                    | Installer                                                |
 | --------------------- | -------------------------------------------------------- |
