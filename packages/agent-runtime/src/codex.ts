@@ -261,6 +261,7 @@ export class CodexSession implements AgentSession {
 function createCodexBackend(): AgentBackend {
   return {
     name: "codex-cli",
+    profileCapabilities: { model: true, toolAllowlist: false },
 
     async preflight() {
       const path = Bun.which("codex");

@@ -1,6 +1,6 @@
 import { Plus, Search } from "lucide-react";
 import { useState } from "react";
-import type { SkillFull, SkillSource } from "@/api/client";
+import type { SkillFull, SkillRefContent, SkillSource } from "@/api/client";
 import { DetailField } from "@/components/DetailField";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -29,6 +29,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
 import { useCreateSkill, useSkill, useSkills } from "@/hooks/useSkills";
+import { readPrimitiveFolder } from "@/lib/primitive-files";
 
 type SourceFilter = "all" | "builtin" | "user";
 
@@ -55,7 +56,7 @@ export default function Skills() {
   const [creating, setCreating] = useState(false);
 
   const {
-    data: skills,
+    data: library,
     isLoading,
     error,
     refetch,
@@ -63,6 +64,7 @@ export default function Skills() {
     q: query || undefined,
     source: sourceFilter === "all" ? undefined : sourceFilter,
   });
+  const skills = library?.skills;
 
   if (error) return <ErrorState message={(error as Error).message} onRetry={() => refetch()} />;
 
@@ -82,6 +84,24 @@ export default function Skills() {
           </Button>
         }
       />
+
+      <p className="text-xs text-outline mb-3">
+        Skill folders follow the{" "}
+        <a
+          className="text-primary underline"
+          href="https://agentskills.io/specification"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Agent Skills specification
+        </a>
+        .
+      </p>
+      {library?.broken?.map((issue) => (
+        <p key={issue.path} role="alert" className="text-destructive text-xs mb-2">
+          {issue.path}: {issue.error}
+        </p>
+      ))}
 
       {/* Source filter pills */}
       <div className="flex items-center gap-4 mb-4">
@@ -177,6 +197,7 @@ export default function Skills() {
       )}
 
       <SkillDetailSheet
+        key={selectedSkill}
         skillName={selectedSkill}
         open={Boolean(selectedSkill)}
         onClose={closeSkillDetail}
@@ -196,8 +217,11 @@ function SkillDetailSheet({
   open: boolean;
   onClose: () => void;
 }) {
-  const { data, isLoading } = useSkill(skillName);
+  const { data, isLoading, error, refetch } = useSkill(skillName);
   const skill = data as SkillFull | undefined;
+  const [selectedFile, setSelectedFile] = useState<string | undefined>();
+  const fileQuery = useSkill(selectedFile ? skillName : null, selectedFile);
+  const file = fileQuery.data as SkillRefContent | undefined;
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
@@ -209,7 +233,9 @@ function SkillDetailSheet({
           )}
         </SheetHeader>
         <SheetBody>
-          {isLoading || !skill ? (
+          {error ? (
+            <ErrorState message={(error as Error).message} onRetry={() => void refetch()} />
+          ) : isLoading || !skill ? (
             <div className="space-y-3">
               {[...Array(4)].map((_, i) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
@@ -233,27 +259,53 @@ function SkillDetailSheet({
 
               <div>
                 <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-2">
-                  Content
+                  {selectedFile ?? "SKILL.md"}
                 </div>
+                {selectedFile && (
+                  <Button
+                    data-testid="skill-show-entry"
+                    variant="ghost"
+                    onClick={() => setSelectedFile(undefined)}
+                  >
+                    Show SKILL.md
+                  </Button>
+                )}
                 <div className="border border-surface-highest rounded-sm overflow-hidden">
                   <ScrollArea className="h-[400px]">
-                    <pre className="font-mono text-[11px] leading-relaxed bg-background p-4 whitespace-pre-wrap break-words text-on-surface">
-                      {skill.content}
+                    <pre
+                      data-testid="skill-file-content"
+                      className="font-mono text-[11px] leading-relaxed bg-background p-4 whitespace-pre-wrap break-words text-on-surface"
+                    >
+                      {selectedFile
+                        ? fileQuery.error
+                          ? (fileQuery.error as Error).message
+                          : fileQuery.isLoading
+                            ? "Loading..."
+                            : file?.content
+                        : skill.content}
                     </pre>
+                    {file?.encoding === "base64" && (
+                      <p className="p-4 text-xs text-outline">Binary asset shown as base64.</p>
+                    )}
                   </ScrollArea>
                 </div>
               </div>
 
-              {skill.references?.length > 0 && (
+              {skill.files?.length > 0 && (
                 <div>
                   <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-2">
-                    References
+                    Supporting files
                   </div>
                   <div className="space-y-1">
-                    {skill.references.map((ref) => (
-                      <div
+                    {skill.files.map((ref) => (
+                      <button
+                        type="button"
+                        data-testid="skill-file"
+                        data-file-name={ref.name}
+                        onClick={() => setSelectedFile(ref.name)}
+                        aria-pressed={selectedFile === ref.name}
                         key={ref.name}
-                        className="flex items-center gap-3 px-3 py-2 border border-surface-highest rounded-sm"
+                        className="flex w-full items-center gap-3 px-3 py-2 border border-surface-highest rounded-sm text-left hover:bg-surface-low"
                       >
                         <span className="font-body text-xs font-medium text-on-surface">
                           {ref.name}
@@ -261,7 +313,7 @@ function SkillDetailSheet({
                         <code className="font-mono text-[11px] text-outline truncate">
                           {ref.path}
                         </code>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -278,11 +330,46 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
   const [name, setName] = useState("");
   const [content, setContent] = useState("");
   const createSkill = useCreateSkill();
+  const [files, setFiles] = useState<
+    Array<{ id: string; path: string; content: string; encoding: "utf8" | "base64" }>
+  >([]);
+  const [importError, setImportError] = useState<string>();
+  const [importing, setImporting] = useState(false);
+
+  async function importFolder(uploaded: FileList | null): Promise<void> {
+    if (!uploaded?.length) return;
+    setImporting(true);
+    setImportError(undefined);
+    try {
+      const imported = (await readPrimitiveFolder(uploaded)).map((file) => ({
+        ...file,
+        encoding: file.encoding ?? "utf8",
+        id: crypto.randomUUID(),
+      }));
+      const entry = imported.find((file) => file.path === "SKILL.md");
+      if (!entry) throw new Error("Choose a skill folder containing SKILL.md");
+      if (entry.encoding !== "utf8") throw new Error("SKILL.md must be UTF-8 text");
+      setContent(entry.content);
+      setName(uploaded[0].webkitRelativePath.split("/")[0]);
+      setFiles(imported.filter((file) => file !== entry));
+    } catch (error) {
+      setImportError((error as Error).message);
+    } finally {
+      setImporting(false);
+    }
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !content.trim()) return;
-    createSkill.mutate({ name: name.trim(), content: content.trim() }, { onSuccess: onClose });
+    createSkill.mutate(
+      {
+        name: name.trim(),
+        content: content.trim(),
+        files: files.map(({ path, content, encoding }) => ({ path, content, encoding })),
+      },
+      { onSuccess: onClose },
+    );
   };
 
   return (
@@ -293,7 +380,16 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
             New Skill
           </DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-3 mt-2">
+        <form onSubmit={handleSubmit} className="space-y-3 mt-2 max-h-[75vh] overflow-y-auto">
+          <Label htmlFor="skill-folder-input">Import skill folder</Label>
+          <Input
+            id="skill-folder-input"
+            data-testid="skill-folder-input"
+            type="file"
+            multiple
+            {...{ webkitdirectory: "" }}
+            onChange={(event) => void importFolder(event.target.files)}
+          />
           <div className="space-y-1.5">
             <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               Name *
@@ -309,17 +405,83 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
           </div>
           <div className="space-y-1.5">
             <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Content *
+              SKILL.md *
             </Label>
             <Textarea
               data-testid="skill-content-input"
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="# Skill content (Markdown)..."
+              placeholder={
+                "---\nname: my-skill\ndescription: When to use this skill\n---\n\n# Instructions"
+              }
               className="bg-background border-surface-highest text-on-surface font-mono text-xs resize-none"
               rows={16}
             />
           </div>
+          <div className="space-y-3">
+            <Button
+              data-testid="skill-add-file"
+              type="button"
+              variant="outline"
+              onClick={() =>
+                setFiles([
+                  ...files,
+                  { id: crypto.randomUUID(), path: "", content: "", encoding: "utf8" },
+                ])
+              }
+            >
+              Add supporting file
+            </Button>
+            {files.map((file) => (
+              <div
+                key={file.id}
+                data-testid="skill-supporting-file"
+                className="space-y-2 border border-surface-highest p-3"
+              >
+                <Input
+                  data-testid="skill-file-path-input"
+                  aria-label="File path"
+                  placeholder="references/guide.md or scripts/check.py"
+                  value={file.path}
+                  onChange={(event) =>
+                    setFiles(
+                      files.map((item) =>
+                        item.id === file.id ? { ...item, path: event.target.value } : item,
+                      ),
+                    )
+                  }
+                />
+                <Textarea
+                  data-testid="skill-file-content-input"
+                  aria-label={`Content of ${file.path || "supporting file"}`}
+                  value={file.content}
+                  rows={4}
+                  onChange={(event) =>
+                    setFiles(
+                      files.map((item) =>
+                        item.id === file.id ? { ...item, content: event.target.value } : item,
+                      ),
+                    )
+                  }
+                />
+                {file.encoding === "base64" && (
+                  <p className="text-xs text-outline">Binary asset (base64)</p>
+                )}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setFiles(files.filter((item) => item.id !== file.id))}
+                >
+                  Remove file
+                </Button>
+              </div>
+            ))}
+          </div>
+          {(importError || createSkill.error) && (
+            <p role="alert" className="text-sm text-destructive">
+              {importError ?? createSkill.error?.message}
+            </p>
+          )}
           <DialogFooter>
             <Button
               type="button"
@@ -334,7 +496,13 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
               data-testid="skill-submit"
               type="submit"
               size="sm"
-              disabled={createSkill.isPending || !name.trim() || !content.trim()}
+              disabled={
+                importing ||
+                createSkill.isPending ||
+                !name.trim() ||
+                !content.trim() ||
+                files.some((file) => !file.path.trim())
+              }
               className="font-label text-xs uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
             >
               {createSkill.isPending ? "Creating..." : "Create"}

@@ -12,6 +12,10 @@
     "./errors": "./src/errors.ts",
     "./version": "./src/version.ts",
     "./skill-service": "./src/skill-service.ts",
+    "./skill-files": "./src/skill-files.ts",
+    "./agent-service": "./src/agent-service.ts",
+    "./package-service": "./src/package-service.ts",
+    "./primitive-types": "./src/primitive-types.ts",
     "./flow": "./src/flow.ts",
     "./flow-engine": "./src/flow-engine.ts",
     "./flow-service": "./src/flow-service.ts",
@@ -26,6 +30,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "ajv": "^8.18.0",
     "zod": "^4.4.3"
   }
 }

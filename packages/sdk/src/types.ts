@@ -333,6 +333,14 @@ export type UpdateJobInput = {
 
 export type SkillSource = "builtin" | "user";
 
+export type {
+  AgentFull,
+  AgentProfile,
+  BrokenAgent,
+  PackageFull,
+  PackageMeta,
+} from "@orc/core/primitive-types";
+
 export type SkillMeta = {
   name: string;
   description: string;
@@ -349,17 +357,26 @@ export type SkillRef = {
 export type SkillFull = SkillMeta & {
   content: string;
   references: SkillRef[];
+  files: SkillRef[];
 };
 
 export type SkillRefContent = {
   name: string;
   path: string;
   content: string;
+  encoding: "utf8" | "base64";
+};
+
+export type SkillFileInput = {
+  path: string;
+  content: string;
+  encoding?: "utf8" | "base64" | undefined;
 };
 
 export type CreateSkillInput = {
   name: string;
   content: string;
+  files?: SkillFileInput[] | undefined;
 };
 
 export type TaskLink = {

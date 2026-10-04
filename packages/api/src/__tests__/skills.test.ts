@@ -86,7 +86,7 @@ describe("GET /skills/:name", () => {
 // ─── POST /skills ────────────────────────────────────────────────────────────
 
 describe("POST /skills", () => {
-  const TEST_NAME = "__test-api-create__";
+  const TEST_NAME = "test-api-create";
   const skillDir = join(getUserSkillsDir(), TEST_NAME);
 
   afterAll(() => {
@@ -132,5 +132,72 @@ API test body.`;
   test("rejects empty content", async () => {
     const res = await req(app, "POST", "/skills", { name: "foo", content: "" });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("multi-file skills API", () => {
+  const name = `api-bundle-${process.pid}`;
+  const invalidName = `${name}-invalid`;
+  const content = `---\nname: ${name}\ndescription: Bundle\n---\nEntry instructions`;
+
+  afterAll(() => {
+    rmSync(join(getUserSkillsDir(), name), { recursive: true, force: true });
+    reloadCache();
+  });
+
+  test("should create a bundle and load each resource on demand", async () => {
+    const response = await req(app, "POST", "/skills", {
+      name,
+      content,
+      files: [
+        { path: "references/deep/guide.md", content: "Nested guide" },
+        { path: "scripts/run.ts", content: "console.log('hello');" },
+        { path: "assets/icon.bin", content: "AP8=", encoding: "base64" },
+      ],
+    });
+    expect(response.status).toBe(201);
+    expect((await response.json()).files).toHaveLength(3);
+    const reopened = await req(app, "GET", `/skills/${name}`);
+    expect((await reopened.json()).files).toHaveLength(3);
+    for (const [path, content, encoding] of [
+      ["references/deep/guide.md", "Nested guide", "utf8"],
+      ["scripts/run.ts", "console.log('hello');", "utf8"],
+      ["assets/icon.bin", "AP8=", "base64"],
+    ]) {
+      const resource = await req(
+        app,
+        "GET",
+        `/skills/${name}?ref=${encodeURIComponent(path as string)}`,
+      );
+      expect(resource.status).toBe(200);
+      expect(await resource.json()).toMatchObject({ content, encoding });
+    }
+  });
+
+  test("should return 400 for unsafe paths and 404 for missing files", async () => {
+    expect((await req(app, "GET", `/skills/${name}?ref=..%2Fsecret.md`)).status).toBe(400);
+    expect((await req(app, "GET", `/skills/${name}?ref=scripts%2Fmissing.ts`)).status).toBe(404);
+    const invalid = await req(app, "POST", "/skills", {
+      name: invalidName,
+      content: content.replace(name, invalidName),
+      files: [{ path: "../escape.md", content: "escape" }],
+    });
+    expect(invalid.status).toBe(400);
+    expect(
+      (await req(app, "POST", "/skills", { name: invalidName, content: "plain Markdown" })).status,
+    ).toBe(400);
+  });
+
+  test("should require the configured API token for bundle reads and writes", async () => {
+    expect((await app.request(`/api/skills/${name}`)).status).toBe(401);
+    expect(
+      (
+        await app.request("/api/skills", {
+          method: "POST",
+          body: JSON.stringify({ name, content }),
+          headers: { "Content-Type": "application/json" },
+        })
+      ).status,
+    ).toBe(401);
   });
 });

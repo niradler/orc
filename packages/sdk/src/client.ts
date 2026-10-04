@@ -1,8 +1,11 @@
 import { loadConfig } from "@orc/core/config";
 import type {
   AgentBackendInfo,
+  AgentFull,
+  AgentProfile,
   ApiResult,
   AttachFlowInput,
+  BrokenAgent,
   BrokenFlow,
   CreateFlowInput,
   CreateJobInput,
@@ -21,6 +24,8 @@ import type {
   JobRunLog,
   LiveSession,
   Memory,
+  PackageFull,
+  PackageMeta,
   Project,
   ProjectSummary,
   ResumeFlowInput,
@@ -28,6 +33,7 @@ import type {
   SessionDetail,
   SessionSearchResult,
   SessionSyncResult,
+  SkillFileInput,
   SkillFull,
   SkillMeta,
   SkillRefContent,
@@ -228,7 +234,11 @@ export function createOrcClient(options?: OrcClientOptions) {
 
     skills: {
       list: (params?: { q?: string; source?: SkillSource; reload?: boolean }) =>
-        c<{ skills: SkillMeta[] }>(
+        c<{
+          skills: SkillMeta[];
+          broken: BrokenAgent[];
+          warnings: Array<{ path: string; message: string }>;
+        }>(
           "GET",
           "/skills",
           undefined,
@@ -244,6 +254,23 @@ export function createOrcClient(options?: OrcClientOptions) {
         ),
 
       create: (input: CreateSkillInput) => c<SkillFull>("POST", "/skills", input),
+    },
+    agents: {
+      list: () => c<{ agents: AgentProfile[]; broken: BrokenAgent[] }>("GET", "/agents"),
+      read: (id: string) => c<AgentFull>("GET", `/agents/${encodeURIComponent(id)}`),
+      create: (input: { id: string; content: string }) => c<AgentFull>("POST", "/agents", input),
+    },
+    agentPackages: {
+      list: () => c<{ packages: PackageMeta[]; broken: BrokenAgent[] }>("GET", "/agent-packages"),
+      read: (name: string, ref?: string) =>
+        c<PackageFull | SkillRefContent>(
+          "GET",
+          `/agent-packages/${encodeURIComponent(name)}`,
+          undefined,
+          ref ? { ref } : undefined,
+        ),
+      create: (input: { name: string; content: string; files: SkillFileInput[] }) =>
+        c<PackageFull>("POST", "/agent-packages", input),
     },
 
     backends: {

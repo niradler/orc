@@ -66,7 +66,7 @@ describe("skill_read", () => {
 // ─── skill_create ────────────────────────────────────────────────────────────
 
 describe("skill_create", () => {
-  const TEST_NAME = "__test-mcp-create__";
+  const TEST_NAME = "test-mcp-create";
   const skillDir = join(getUserSkillsDir(), TEST_NAME);
 
   afterAll(() => {
@@ -104,5 +104,34 @@ MCP test body.`;
     });
     expect(result).toContain("Error");
     expect(result).toContain("already exists");
+  });
+});
+
+describe("multi-file skills MCP", () => {
+  const name = `mcp-bundle-${process.pid}`;
+  afterAll(() => {
+    rmSync(join(getUserSkillsDir(), name), { recursive: true, force: true });
+    reloadCache();
+  });
+
+  test("should create a bundle, inventory resources and read a script without executing it", async () => {
+    const created = await executeTool("skill_create", {
+      name,
+      content: `---\nname: ${name}\ndescription: Bundle\n---\nMain instructions`,
+      files: [
+        { path: "scripts/run.py", content: "raise RuntimeError('do not execute while reading')" },
+        { path: "references/deep/guide.md", content: "Detailed guide" },
+      ],
+    });
+    expect(created).toContain("Created skill");
+    const entry = await executeTool("skill_read", { name });
+    expect(entry).toContain("scripts/run.py");
+    expect(entry).toContain("references/deep/guide.md");
+    expect(entry).not.toContain("raise RuntimeError");
+    const script = await executeTool("skill_read", { name, ref: "scripts/run.py" });
+    expect(script).toContain("raise RuntimeError");
+    expect(await executeTool("skill_read", { name, ref: "references/deep/guide.md" })).toContain(
+      "Detailed guide",
+    );
   });
 });

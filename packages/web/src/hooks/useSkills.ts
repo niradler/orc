@@ -6,14 +6,13 @@ export function useSkills(params?: { q?: string; source?: "builtin" | "user" }) 
     queryKey: ["skills", params],
     queryFn: () => api.skills.list(params),
     refetchInterval: 60_000,
-    select: (data) => data.skills,
   });
 }
 
-export function useSkill(name: string | null) {
+export function useSkill(name: string | null, ref?: string) {
   return useQuery({
-    queryKey: ["skill", name],
-    queryFn: () => api.skills.get(name as string),
+    queryKey: ["skill", name, ref],
+    queryFn: () => api.skills.get(name as string, ref),
     enabled: Boolean(name),
   });
 }

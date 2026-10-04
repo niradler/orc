@@ -1,5 +1,5 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import { ConflictError, NotFoundError } from "@orc/core/errors";
+import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import {
   createSkill,
   listSkills,
@@ -7,6 +7,8 @@ import {
   type SkillFull,
   type SkillRefContent,
   type SkillSource,
+  skillValidationIssues,
+  skillWarnings,
 } from "@orc/core/skill-service";
 
 const app = new OpenAPIHono();
@@ -31,6 +33,7 @@ const SkillRefSchema = z
 const SkillFullSchema = SkillMetaSchema.extend({
   content: z.string(),
   references: z.array(SkillRefSchema),
+  files: z.array(SkillRefSchema),
 }).openapi("SkillFull");
 
 const SkillRefContentSchema = z
@@ -38,6 +41,7 @@ const SkillRefContentSchema = z
     name: z.string(),
     path: z.string(),
     content: z.string(),
+    encoding: z.enum(["utf8", "base64"]),
   })
   .openapi("SkillRefContent");
 
@@ -45,6 +49,16 @@ const CreateSkillSchema = z
   .object({
     name: z.string().min(1).max(200),
     content: z.string().min(1),
+    files: z
+      .array(
+        z.object({
+          path: z.string().min(1).max(1024),
+          content: z.string().max(12 * 1024 * 1024),
+          encoding: z.enum(["utf8", "base64"]).optional(),
+        }),
+      )
+      .max(512)
+      .optional(),
   })
   .openapi("CreateSkill");
 
@@ -65,7 +79,15 @@ const listRoute = createRoute({
   responses: {
     200: {
       description: "Skill list",
-      content: { "application/json": { schema: z.object({ skills: z.array(SkillMetaSchema) }) } },
+      content: {
+        "application/json": {
+          schema: z.object({
+            skills: z.array(SkillMetaSchema),
+            broken: z.array(z.object({ path: z.string(), error: z.string() })),
+            warnings: z.array(z.object({ path: z.string(), message: z.string() })),
+          }),
+        },
+      },
     },
   },
 });
@@ -78,10 +100,10 @@ const readRoute = createRoute({
   request: {
     params: z.object({ name: z.string() }),
     query: z.object({
-      ref: z
-        .string()
-        .optional()
-        .openapi({ description: "Reference filename to read instead of SKILL.md" }),
+      ref: z.string().optional().openapi({
+        description:
+          "Skill-relative file path (e.g. scripts/check.py); bare filenames read references/",
+      }),
     }),
   },
   responses: {
@@ -94,6 +116,7 @@ const readRoute = createRoute({
       },
     },
     404: { description: "Skill not found" },
+    400: { description: "Invalid skill file path" },
   },
 });
 
@@ -124,7 +147,7 @@ app.openapi(listRoute, (c) => {
     source: source as SkillSource | undefined,
     reload,
   });
-  return c.json({ skills });
+  return c.json({ skills, broken: skillValidationIssues(), warnings: skillWarnings() });
 });
 
 app.openapi(readRoute, (c) => {
@@ -136,15 +159,16 @@ app.openapi(readRoute, (c) => {
 });
 
 app.openapi(createRoute_, async (c) => {
-  const { name, content } = c.req.valid("json");
+  const { name, content, files } = c.req.valid("json");
   try {
-    const skill = createSkill(name, content);
+    const skill = createSkill(name, content, files);
     return c.json(skill, 201);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("already exists")) {
       throw new ConflictError(msg);
     }
+    if (msg.startsWith("Invalid SKILL.md")) throw new ValidationError(msg);
     throw err;
   }
 });

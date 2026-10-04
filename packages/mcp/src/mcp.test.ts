@@ -561,7 +561,7 @@ describe("MCP tool schemas", () => {
   });
 
   test("every tool that takes arguments advertises them", () => {
-    const argless = new Set(["project_list"]);
+    const argless = new Set(["project_list", "agent_list", "agent_package_list"]);
     for (const { name, schema } of advertised()) {
       if (argless.has(name)) continue;
       const props = Object.keys(schema.properties ?? {});

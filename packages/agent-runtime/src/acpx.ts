@@ -316,6 +316,7 @@ class AcpxSession implements AgentSession {
       ...this.acpxCmd,
       "--format",
       "json",
+      ...(this.model ? ["--model", this.model] : []),
       ...(this.autoApprove ? ["--approve-all"] : []),
       this.agent,
       "-s",
@@ -405,6 +406,7 @@ async function acpxVersion(cmd: string[]): Promise<string | null> {
 function createAcpxBackend(): AgentBackend {
   return {
     name: "acpx",
+    profileCapabilities: { model: true, toolAllowlist: false },
 
     async preflight() {
       const resolved = resolveAcpxCli();

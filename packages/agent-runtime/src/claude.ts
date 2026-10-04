@@ -1,6 +1,7 @@
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { endStdin, readLines, writeToStdin } from "./io.js";
+import { type OrcMcpConfigFile, withOrcAllowedTools, writeOrcMcpConfigFile } from "./orc-mcp.js";
 import { registerBackend } from "./registry.js";
 import type {
   AgentBackend,
@@ -108,15 +109,28 @@ class ClaudeSession implements AgentSession {
   private runtimeSessionId: string | undefined;
   private readonly claudePath: string;
   private readonly autoApprove: boolean;
+  private readonly model: string | undefined;
+  private readonly toolAllowlist: string[] | undefined;
 
   constructor(opts: SessionOpts, claudePath: string) {
     this.cwd = opts.cwd;
     this.runtimeSessionId = opts.runtimeSessionId;
     this.claudePath = claudePath;
     this.autoApprove = opts.autoApprove ?? false;
+    this.model = opts.model;
+    this.toolAllowlist = opts.toolAllowlist;
+  }
+
+  private mcpConfig: OrcMcpConfigFile | null = null;
+
+  private releaseMcpConfig(): void {
+    this.mcpConfig?.cleanup();
+    this.mcpConfig = null;
   }
 
   private spawn(extraArgs: string[] = [], printPrompt?: string | undefined): void {
+    this.releaseMcpConfig();
+    if (this.toolAllowlist !== undefined) this.mcpConfig = writeOrcMcpConfigFile();
     const args = [
       this.claudePath,
       "-p",
@@ -124,7 +138,21 @@ class ClaudeSession implements AgentSession {
       "--output-format",
       "stream-json",
       "--verbose",
-      ...(this.autoApprove ? ["--dangerously-skip-permissions"] : []),
+      ...(this.autoApprove && this.toolAllowlist === undefined
+        ? ["--dangerously-skip-permissions"]
+        : []),
+      ...(this.model ? ["--model", this.model] : []),
+      ...(this.toolAllowlist !== undefined
+        ? [
+            "--tools",
+            this.toolAllowlist.join(","),
+            "--strict-mcp-config",
+            "--mcp-config",
+            this.mcpConfig?.path ?? "",
+            "--allowedTools",
+            withOrcAllowedTools(this.autoApprove ? this.toolAllowlist : []).join(","),
+          ]
+        : []),
       ...extraArgs,
     ];
 
@@ -240,7 +268,9 @@ class ClaudeSession implements AgentSession {
 
   private async watchExit(): Promise<void> {
     if (!this.proc) return;
+    const config = this.mcpConfig;
     const code = await this.proc.exited;
+    config?.cleanup();
     if (this.state.hasReceivedResult || this.done) return;
     const stderr = this.stderrRing.join("\n");
     if (isAuthError(stderr)) {
@@ -315,6 +345,7 @@ class ClaudeSession implements AgentSession {
       await this.proc.exited;
     } finally {
       clearTimeout(timer);
+      this.releaseMcpConfig();
     }
     this.proc = null;
     this.done = true;
@@ -326,6 +357,7 @@ class ClaudeSession implements AgentSession {
 function createClaudeBackend(): AgentBackend {
   return {
     name: "claude-cli",
+    profileCapabilities: { model: true, toolAllowlist: true },
 
     describe(): BackendDescription {
       const path = findClaudeCli();
