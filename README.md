@@ -575,9 +575,57 @@ Skill templates live in `skills/*/SKILL.md` (built-in) and `~/.orc/skills/` (use
 
 Add custom skills by creating a `SKILL.md` in `~/.orc/skills/my-workflow/SKILL.md`.
 
+Skills are complete folders, following the [Agent Skills format](https://agentskills.io/specification). Keep the entry instructions in `SKILL.md` and reference supporting files with paths relative to the skill root:
+
+```text
+my-workflow/
+  SKILL.md
+  references/guide.md
+  references/topics/details.md
+  scripts/check.py
+  assets/template.json
+```
+
+`skill_list` loads metadata only. `skill_read` returns the entry instructions plus a recursive `files` inventory; supporting content loads on demand. For example, `skill_read({ name: "my-workflow", ref: "scripts/check.py" })` reads a script without executing it. Bare reference filenames such as `ref: "guide.md"` remain supported. Binary assets are transported as base64 with `encoding: "base64"`.
+
+```bash
+# Import the whole folder through the API
+orc skill create my-workflow --directory ./my-workflow
+orc skill read my-workflow --ref references/topics/details.md
+orc skill validate ./my-workflow
+orc skill export my-workflow ./exported/my-workflow
+```
+
+The dashboard can import a skill folder or add supporting files individually, then open each file from the detail sheet. API `POST /api/skills` and MCP `skill_create` accept optional `files: [{ path, content, encoding? }]` alongside `name` and the full `SKILL.md` `content`. Encoding defaults to `utf8`. Bundles allow 512 supporting files, 8 MiB per file and 16 MiB total. Paths must stay inside the skill folder; symlinks are excluded and cannot be read. The legacy `references` inventory is retained for existing clients. Worker prompts include the skill's entry path and file inventory so relative links resolve from the skill directory.
+
+### Shared agents and APM packages
+
+ORC shares authored definitions across coding agents through one library. An agent profile describes the specialist; a backend selects the coding agent that runs it. Profiles use [APM's `.agent.md` format](https://microsoft.github.io/apm/producer/author-primitives/instructions-and-agents/): YAML frontmatter with a required `description`, optional `name`, `model`, `tools`, `color`, and `handoffs`, followed by Markdown instructions. Unknown agent fields are preserved. Standalone profiles live in `~/.orc/agents/`; project profiles in `.apm/agents/` override matching shared IDs.
+
+An imported package keeps its entire directory under `~/.orc/packages/<name>/`, including `apm.yml`, `.apm/agents/`, `.apm/skills/<name>/SKILL.md`, `.apm/instructions/`, scripts, references, and binary assets. Root `SKILL.md` packages are supported too. Manifest validation uses Microsoft's pinned OpenAPM v0.1 schema; the v0.1.41 schema is supported when explicitly selected with `$schema`. Import/export preserves dependency declarations, scripts, and extension fields. Import does not resolve dependencies or execute lifecycle scripts; use APM for those operations before importing the resulting package.
+
+```bash
+orc agent-package import ./team-agents
+orc agent list
+orc agent read team-agents/reviewer
+orc agent-package export team-agents ./exported/team-agents
+orc agent create reviewer --file ./reviewer.agent.md
+orc agent export reviewer ./exported/reviewer.agent.md
+```
+
+Select a shared profile independently of its backend in an ORC flow:
+
+```json
+{ "kind": "agent", "agent": "team-agents/reviewer", "backend": "codex-cli", "outcomes": ["pass", "fail"] }
+```
+
+The same profile instructions and relative file locations reach every backend. Pinned models are supported by Claude SDK, Claude CLI, Codex CLI, and ACPX. Tool allowlists are enforced by Claude SDK and Claude CLI; other adapters reject profiles declaring tool restrictions. Unsupported model/tool settings fail before launch. Tool names and model IDs must be valid for the selected coding agent. Explicit session/flow model choices override the profile's model. Handoffs remain authored declarations; ORC flow edges control execution. Package instructions without `applyTo` are included automatically; scoped instructions retain their original glob strings or arrays in an on-demand index, which the coding agent applies when working on matching files.
+
+The dashboard's Agents page imports packages and creates/reads profiles. API `/api/agents` and `/api/agent-packages`, SDK clients, CLI, and MCP all access the same files. MCP tools are `agent_list`, `agent_read`, `agent_create`, `agent_package_list`, `agent_package_read`, and `agent_package_import`. Package agent IDs are namespaced as `<package>/<file-stem>`.
+
 ## MCP tools
 
-**34 tools** available to any connected agent. Start every session with `context`.
+Tools are available to any connected agent. Start every session with `context`.
 
 | Category      | Tools                                                                                                                                       |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -585,6 +633,7 @@ Add custom skills by creating a `SKILL.md` in `~/.orc/skills/my-workflow/SKILL.m
 | **Memory**    | `context`, `memory_search`, `memory_get`, `memory_store`, `memory_update`                                                                   |
 | **Task**      | `task_list`, `task_get`, `task_create`, `task_update`, `task_batch_create`                                                                  |
 | **Skill**     | `skill_list`, `skill_read`, `skill_create`                                                                                                  |
+| **Agent**     | `agent_list`, `agent_read`, `agent_create`, `agent_package_list`, `agent_package_read`, `agent_package_import`                               |
 | **Flow**      | `flow_report`, `flow_status`, `flow_list`, `flow_read`, `flow_create`, `flow_attach`                                                        |
 | **Knowledge** | `knowledge_search`, `knowledge_get`, `knowledge_collections`, `knowledge_collection_add`, `knowledge_collection_remove`, `knowledge_update` |
 | **Search**    | `search`                                                                                                                                    |

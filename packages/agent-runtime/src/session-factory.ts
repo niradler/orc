@@ -2,7 +2,11 @@
  * Single place for backend selection + session start/resume logic.
  * Add a new provider here — task-loop, agent-runner, and chat all use this.
  */
+
+import type { AgentFull } from "@orc/core/agent-service";
+import { readAgent, renderAgentInstructions } from "@orc/core/agent-service";
 import { createLogger } from "@orc/core/logger";
+import { packageInstructionsForAgent } from "@orc/core/package-service";
 import { createBackend, hasBackend } from "./registry.js";
 import type { AgentBackend, AgentBackendName, AgentSession, SessionOpts } from "./types.js";
 
@@ -55,7 +59,30 @@ export async function openAgentSession(
   opts: SessionOpts,
   runtimeSessionId?: string,
 ): Promise<AgentSession> {
-  const { backend, resolvedOpts } = await resolveBackend(backendName, opts);
+  let profile: AgentFull | null = null;
+  if (opts.agentProfile) {
+    profile = readAgent(opts.agentProfile, opts.cwd);
+    if (!profile) throw new Error(`Agent profile not found: ${opts.agentProfile}`);
+  }
+  const profileOpts = applyAgentProfile(opts, profile);
+  const { backend, resolvedOpts } = await resolveBackend(backendName, profileOpts);
+  validateProfileCapabilities(backend, resolvedOpts, profile);
+  const context = profile
+    ? [renderAgentInstructions(profile), packageInstructionsForAgent(profile.path)]
+        .filter(Boolean)
+        .join("\n\n")
+    : "";
+  const wrap = (session: AgentSession): AgentSession => {
+    if (!profile) return session;
+    return {
+      id: session.id,
+      send: (prompt, images) => session.send(`${context}\n\n${prompt}`, images),
+      respondPermission: (requestId, result) => session.respondPermission(requestId, result),
+      events: () => session.events(),
+      alive: () => session.alive(),
+      close: () => session.close(),
+    };
+  };
 
   if (runtimeSessionId) {
     try {
@@ -64,7 +91,7 @@ export async function openAgentSession(
         runtimeSessionId,
       });
       logger.info(`Resumed session ${runtimeSessionId} via ${backendName}`);
-      return session;
+      return wrap(session);
     } catch (err) {
       logger.warn(`Resume failed for ${backendName}, starting fresh`, { err });
     }
@@ -72,7 +99,38 @@ export async function openAgentSession(
 
   const session = await backend.startSession(resolvedOpts);
   logger.info(`Started new session via ${backendName}`);
-  return session;
+  return wrap(session);
+}
+
+export function applyAgentProfile(opts: SessionOpts, profile: AgentFull | null): SessionOpts {
+  if (!profile) return opts;
+  let toolAllowlist: string[] | undefined;
+  const tools = profile.fields.tools;
+  if (typeof tools === "string") toolAllowlist = tools.split(/[\s,]+/).filter(Boolean);
+  else if (Array.isArray(tools)) toolAllowlist = tools;
+  else if (tools !== undefined)
+    toolAllowlist = Object.entries(tools)
+      .filter(([, allowed]) => allowed)
+      .map(([name]) => name);
+  return {
+    ...opts,
+    model: opts.model ?? profile.fields.model,
+    ...(toolAllowlist !== undefined ? { toolAllowlist } : {}),
+  };
+}
+
+export function validateProfileCapabilities(
+  backend: AgentBackend,
+  opts: SessionOpts,
+  profile: AgentFull | null,
+): void {
+  if (!profile) return;
+  if (profile.fields.model && !backend.profileCapabilities?.model)
+    throw new Error(`Backend ${backend.name} cannot honor profile model ${profile.fields.model}`);
+  if (opts.toolAllowlist !== undefined && !backend.profileCapabilities?.toolAllowlist)
+    throw new Error(
+      `Backend ${backend.name} cannot enforce the tool whitelist for agent ${profile.id}; the profile will not run unrestricted`,
+    );
 }
 
 /**

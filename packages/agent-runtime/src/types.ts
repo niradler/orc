@@ -10,6 +10,8 @@ export type SessionOpts = {
   agentApiUrl?: string | undefined;
   permissionMode?: "default" | "plan" | "acceptEdits" | "bypassPermissions" | undefined;
   systemPromptAppend?: string | undefined;
+  agentProfile?: string | undefined;
+  toolAllowlist?: string[] | undefined;
 };
 
 export type ImageAttachment = {
@@ -59,6 +61,7 @@ export type BackendDescription = {
 
 export interface AgentBackend {
   readonly name: AgentBackendName;
+  readonly profileCapabilities?: { model: boolean; toolAllowlist: boolean };
   startSession(opts: SessionOpts): Promise<AgentSession>;
   resumeSession(runtimeSessionId: string, opts: SessionOpts): Promise<AgentSession>;
   preflight(): Promise<{ ok: boolean; error?: string }>;

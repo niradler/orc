@@ -17,6 +17,7 @@ import { knowledgeRouter } from "./routes/knowledge.js";
 import { mcpRouter } from "./routes/mcp.js";
 import { mcpToolRouter } from "./routes/mcp-tool.js";
 import { memoriesRouter } from "./routes/memories.js";
+import { primitivesRouter } from "./routes/primitives.js";
 import { projectsRouter } from "./routes/projects.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import { skillsRouter } from "./routes/skills.js";
@@ -65,6 +66,7 @@ export function createApp() {
   app.route("/", mcpRouter);
   app.route("/api", projectsRouter);
   app.route("/api", skillsRouter);
+  app.route("/api", primitivesRouter);
   app.route("/api", flowsRouter);
   app.route("/api", tasksRouter);
   app.route("/api", taskLinksRouter);

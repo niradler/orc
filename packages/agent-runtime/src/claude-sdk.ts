@@ -70,7 +70,9 @@ class ClaudeSDKSession implements AgentSession {
   private async driveQuery(prompt: string): Promise<void> {
     try {
       const permissionMode =
-        this.opts.permissionMode ?? (this.opts.autoApprove ? "bypassPermissions" : "default");
+        this.opts.toolAllowlist !== undefined
+          ? "default"
+          : (this.opts.permissionMode ?? (this.opts.autoApprove ? "bypassPermissions" : "default"));
       logger.info("Starting Claude SDK query", {
         permissionMode,
         cwd: this.opts.cwd,
@@ -82,7 +84,14 @@ class ClaudeSDKSession implements AgentSession {
         options: {
           cwd: this.opts.cwd,
           permissionMode,
-          settingSources: ["user", "project"],
+          settingSources: this.opts.toolAllowlist !== undefined ? [] : ["user", "project"],
+          ...(this.opts.toolAllowlist !== undefined
+            ? {
+                tools: this.opts.toolAllowlist,
+                mcpServers: {},
+                allowedTools: this.opts.toolAllowlist,
+              }
+            : {}),
           systemPrompt: {
             type: "preset",
             preset: "claude_code",
@@ -90,6 +99,14 @@ class ClaudeSDKSession implements AgentSession {
           },
           ...(this.abortController ? { abortController: this.abortController } : {}),
           canUseTool: async (toolName, input) => {
+            if (
+              this.opts.toolAllowlist !== undefined &&
+              !this.opts.toolAllowlist.includes(toolName)
+            ) {
+              return { behavior: "deny", message: "Tool is outside the agent profile whitelist" };
+            }
+            if (this.opts.toolAllowlist !== undefined && this.opts.autoApprove)
+              return { behavior: "allow", updatedInput: input };
             const requestId = ulid();
             const command = JSON.stringify(input);
             logger.info("canUseTool called", { toolName, requestId });
@@ -192,6 +209,7 @@ class ClaudeSDKSession implements AgentSession {
 function createClaudeSDKBackend(): AgentBackend {
   return {
     name: "claude",
+    profileCapabilities: { model: true, toolAllowlist: true },
 
     async preflight() {
       try {

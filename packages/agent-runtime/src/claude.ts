@@ -108,12 +108,16 @@ class ClaudeSession implements AgentSession {
   private runtimeSessionId: string | undefined;
   private readonly claudePath: string;
   private readonly autoApprove: boolean;
+  private readonly model: string | undefined;
+  private readonly toolAllowlist: string[] | undefined;
 
   constructor(opts: SessionOpts, claudePath: string) {
     this.cwd = opts.cwd;
     this.runtimeSessionId = opts.runtimeSessionId;
     this.claudePath = claudePath;
     this.autoApprove = opts.autoApprove ?? false;
+    this.model = opts.model;
+    this.toolAllowlist = opts.toolAllowlist;
   }
 
   private spawn(extraArgs: string[] = [], printPrompt?: string | undefined): void {
@@ -124,7 +128,20 @@ class ClaudeSession implements AgentSession {
       "--output-format",
       "stream-json",
       "--verbose",
-      ...(this.autoApprove ? ["--dangerously-skip-permissions"] : []),
+      ...(this.autoApprove && this.toolAllowlist === undefined
+        ? ["--dangerously-skip-permissions"]
+        : []),
+      ...(this.model ? ["--model", this.model] : []),
+      ...(this.toolAllowlist !== undefined
+        ? [
+            "--tools",
+            this.toolAllowlist.join(","),
+            "--strict-mcp-config",
+            "--mcp-config",
+            '{"mcpServers":{}}',
+            ...(this.autoApprove ? ["--allowedTools", this.toolAllowlist.join(",")] : []),
+          ]
+        : []),
       ...extraArgs,
     ];
 
@@ -326,6 +343,7 @@ class ClaudeSession implements AgentSession {
 function createClaudeBackend(): AgentBackend {
   return {
     name: "claude-cli",
+    profileCapabilities: { model: true, toolAllowlist: true },
 
     describe(): BackendDescription {
       const path = findClaudeCli();

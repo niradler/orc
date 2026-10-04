@@ -1,14 +1,7 @@
 ---
 name: orc-memory
 description: Use when storing project knowledge, decisions, rules, or discoveries in ORC, when searching for past context, when recalling architectural decisions or conventions, when multiple agents need shared knowledge, or when building a persistent knowledge base. Trigger on "remember", "recall", "what did we decide", "store this", when making architectural decisions, or when you need past context before starting work.
-allowed-tools:
-  [
-    "mcp__orc__memory_search",
-    "mcp__orc__memory_get",
-    "mcp__orc__memory_store",
-    "mcp__orc__memory_update",
-    "mcp__orc__search",
-  ]
+allowed-tools: mcp__orc__memory_search mcp__orc__memory_get mcp__orc__memory_store mcp__orc__memory_update mcp__orc__search
 ---
 
 # ORC Memory Workflow

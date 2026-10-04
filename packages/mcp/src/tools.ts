@@ -1,13 +1,22 @@
 import { createHash } from "node:crypto";
+import { createAgent, discoverAgents, readAgent } from "@orc/core/agent-service";
 import { loadConfig } from "@orc/core/config";
 import { shortId, ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import {
+  createPackage,
+  listPackages,
+  readPackage,
+  readPackageFile,
+} from "@orc/core/package-service";
+import {
   createSkill as createSkillFs,
   listSkills,
   readSkill,
+  type SkillFileInput,
   type SkillFull,
   type SkillRefContent,
+  skillValidationIssues,
 } from "@orc/core/skill-service";
 import type { TaskStatus } from "@orc/core/types";
 import { AgentBackendSchema } from "@orc/core/types";
@@ -400,19 +409,88 @@ export const toolDefinitions = [
   {
     name: "skill_read",
     description:
-      "Read a skill by name. Returns SKILL.md content and lists all reference filenames. " +
-      "Pass ref to read a specific reference file instead.",
+      "Read a skill by name. Returns SKILL.md instructions and an inventory of supporting files. " +
+      "Pass ref with a skill-relative path to load Markdown, scripts or assets on demand. Binary assets return base64. Reading never executes scripts.",
     inputSchema: z.object({
       name: z.string().describe("Skill name"),
-      ref: z.string().optional().describe("Reference filename to read instead of SKILL.md"),
+      ref: z
+        .string()
+        .optional()
+        .describe(
+          "Skill-relative file path, e.g. scripts/check.py or references/guide.md. Bare filenames read references/.",
+        ),
     }),
   },
   {
     name: "skill_create",
-    description: "Create a new user skill. Writes SKILL.md to ~/.orc/skills/<name>/.",
+    description:
+      "Create a user skill folder with SKILL.md and optional Markdown, scripts, templates and assets in ~/.orc/skills/<name>/.",
     inputSchema: z.object({
       name: z.string().describe("Skill name (used as directory name)"),
       content: z.string().describe("Full SKILL.md content including frontmatter"),
+      files: z
+        .array(
+          z.object({
+            path: z.string().describe("Path relative to the skill root"),
+            content: z.string(),
+            encoding: z.enum(["utf8", "base64"]).optional(),
+          }),
+        )
+        .max(512)
+        .optional(),
+    }),
+  },
+  {
+    name: "agent_list",
+    description:
+      "Discover shared APM .agent.md profiles usable across coding backends. Includes malformed definitions with validation errors.",
+    inputSchema: z.object({}),
+  },
+  {
+    name: "agent_read",
+    description:
+      "Read a shared APM agent profile: original YAML/Markdown, role, model, tools and handoffs. A profile is separate from its execution backend.",
+    inputSchema: z.object({
+      id: z.string().describe("Agent ID from agent_list, including package prefix when present"),
+    }),
+  },
+  {
+    name: "agent_create",
+    description:
+      "Create a shared, validated APM .agent.md definition available to every connected coding agent.",
+    inputSchema: z.object({
+      id: z.string(),
+      content: z.string().describe("Original .agent.md including YAML frontmatter"),
+    }),
+  },
+  {
+    name: "agent_package_list",
+    description:
+      "List shared OpenAPM packages containing agents, skills, instructions and supporting resources.",
+    inputSchema: z.object({}),
+  },
+  {
+    name: "agent_package_read",
+    description:
+      "Read apm.yml and a package file inventory, or load one package-relative resource with ref. Binary resources return base64.",
+    inputSchema: z.object({ name: z.string(), ref: z.string().optional() }),
+  },
+  {
+    name: "agent_package_import",
+    description:
+      "Import an intact OpenAPM package. Validates the manifest, Agent Skills and .agent.md files; preserves relative links, resources and manifest fields. Does not execute scripts or resolve dependencies.",
+    inputSchema: z.object({
+      name: z.string(),
+      content: z.string().describe("Original apm.yml"),
+      files: z
+        .array(
+          z.object({
+            path: z.string(),
+            content: z.string(),
+            encoding: z.enum(["utf8", "base64"]).optional(),
+          }),
+        )
+        .max(512),
     }),
   },
   {
@@ -1357,14 +1435,17 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         reload?: boolean;
       };
       const skills = listSkills({ q, source, reload });
-      if (skills.length === 0) return "No skills found.";
-      return skills
+      const issues = skillValidationIssues().map(
+        (issue) => `Invalid skill: ${issue.path}: ${issue.error}`,
+      );
+      const result = skills
         .map((s) => {
           const src = s.source === "user" ? " [user]" : "";
           const desc = s.description ? ` - ${s.description.slice(0, 80)}` : "";
           return `${s.name.padEnd(28)}${src}${desc}`;
         })
         .join("\n");
+      return [result || "No skills found.", ...issues].join("\n");
     }
 
     case "skill_read": {
@@ -1373,26 +1454,56 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       if (!result) return `Skill not found: ${sName}`;
       if (ref) {
         const rc = result as SkillRefContent;
-        return `# ${rc.name}\n\n${rc.content}`;
+        const encoding = rc.encoding === "base64" ? "\nEncoding: base64" : "";
+        return `# ${rc.name}${encoding}\n\n${rc.content}`;
       }
       const skill = result as SkillFull;
-      let out = `# ${skill.name}\n${skill.description}\n\n${skill.content}`;
-      if (skill.references.length > 0) {
-        out += `\n\nReferences:\n${skill.references.map((r) => `- ${r.name} (${r.path})`).join("\n")}`;
+      let out = `# ${skill.name}\n${skill.description}\nSkill entry point: ${skill.path}\n\n${skill.content}`;
+      if (skill.files.length > 0) {
+        out += `\n\nSupporting files (paths relative to the skill root; load with skill_read ref):\n${skill.files.map((r) => `- ${r.name} (${r.path})`).join("\n")}`;
       }
       return out;
     }
 
     case "skill_create": {
-      const { name: cName, content: cContent } = args as { name: string; content: string };
+      const {
+        name: cName,
+        content: cContent,
+        files,
+      } = args as { name: string; content: string; files?: SkillFileInput[] };
       try {
-        const skill = createSkillFs(cName, cContent);
+        const skill = createSkillFs(cName, cContent, files);
         return `Created skill: ${skill.name} at ${skill.path}`;
       } catch (err) {
         return `Error: ${err instanceof Error ? err.message : String(err)}`;
       }
     }
 
+    case "agent_list":
+      return JSON.stringify(discoverAgents());
+    case "agent_read": {
+      const { id } = args as { id: string };
+      const agent = readAgent(id);
+      return agent ? JSON.stringify(agent) : `Agent not found: ${id}`;
+    }
+    case "agent_create": {
+      const { id, content } = args as { id: string; content: string };
+      return JSON.stringify(createAgent(id, content));
+    }
+    case "agent_package_list":
+      return JSON.stringify(listPackages());
+    case "agent_package_read": {
+      const { name, ref } = args as { name: string; ref?: string };
+      return JSON.stringify(ref ? readPackageFile(name, ref) : readPackage(name));
+    }
+    case "agent_package_import": {
+      const { name, content, files } = args as {
+        name: string;
+        content: string;
+        files: SkillFileInput[];
+      };
+      return JSON.stringify(createPackage(name, content, files));
+    }
     case "flow_report": {
       const {
         task: taskId,

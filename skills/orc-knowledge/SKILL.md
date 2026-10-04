@@ -1,15 +1,7 @@
 ---
 name: orc-knowledge
 description: Use when searching indexed document collections, retrieving documentation or markdown files, managing knowledge collections (add/remove directories), or re-indexing after file changes. Trigger on "search the docs", "find in knowledge base", "index this directory", "what does the docs say about X", or when you need to look up reference material from project documentation.
-allowed-tools:
-  [
-    "mcp__orc__knowledge_search",
-    "mcp__orc__knowledge_get",
-    "mcp__orc__knowledge_collections",
-    "mcp__orc__knowledge_collection_add",
-    "mcp__orc__knowledge_collection_remove",
-    "mcp__orc__knowledge_update",
-  ]
+allowed-tools: mcp__orc__knowledge_search mcp__orc__knowledge_get mcp__orc__knowledge_collections mcp__orc__knowledge_collection_add mcp__orc__knowledge_collection_remove mcp__orc__knowledge_update
 ---
 
 # ORC Knowledge Workflow

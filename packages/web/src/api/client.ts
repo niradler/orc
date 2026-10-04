@@ -5,6 +5,9 @@
 
 export type {
   AgentBackendInfo,
+  AgentFull,
+  AgentProfile,
+  BrokenAgent,
   BrokenFlow,
   Comment,
   CreateJobInput,
@@ -28,6 +31,8 @@ export type {
   LiveSessionHit,
   Memory,
   MemoryType,
+  PackageFull,
+  PackageMeta,
   Project,
   ProjectStatus,
   ProjectSummary,
@@ -37,6 +42,7 @@ export type {
   SessionEvent,
   SessionSearchResult,
   SessionSyncResult,
+  SkillFileInput,
   SkillFull,
   SkillMeta,
   SkillRefContent,
@@ -57,6 +63,9 @@ export type {
 
 import type {
   AgentBackendInfo,
+  AgentFull,
+  AgentProfile,
+  BrokenAgent,
   BrokenFlow,
   Comment,
   CreateJobInput,
@@ -75,6 +84,8 @@ import type {
   JobRunLog,
   LiveSession,
   Memory,
+  PackageFull,
+  PackageMeta,
   Project,
   ProjectSummary,
   ResumeFlowInput,
@@ -82,6 +93,7 @@ import type {
   SessionDetail,
   SessionSearchResult,
   SessionSyncResult,
+  SkillFileInput,
   SkillFull,
   SkillMeta,
   SkillRefContent,
@@ -394,7 +406,7 @@ export const api = {
 
   skills: {
     list: (params?: { q?: string; source?: "builtin" | "user"; reload?: boolean }) =>
-      req<{ skills: SkillMeta[] }>(
+      req<{ skills: SkillMeta[]; broken: BrokenAgent[] }>(
         "GET",
         "/skills",
         undefined,
@@ -408,6 +420,23 @@ export const api = {
         ref ? { ref } : undefined,
       ),
     create: (data: CreateSkillInput) => req<SkillFull>("POST", "/skills", data),
+  },
+  agents: {
+    list: () => req<{ agents: AgentProfile[]; broken: BrokenAgent[] }>("GET", "/agents"),
+    get: (id: string) => req<AgentFull>("GET", `/agents/${encodeURIComponent(id)}`),
+    create: (input: { id: string; content: string }) => req<AgentFull>("POST", "/agents", input),
+  },
+  agentPackages: {
+    list: () => req<{ packages: PackageMeta[]; broken: BrokenAgent[] }>("GET", "/agent-packages"),
+    get: (name: string, ref?: string) =>
+      req<PackageFull | SkillRefContent>(
+        "GET",
+        `/agent-packages/${encodeURIComponent(name)}`,
+        undefined,
+        ref ? { ref } : undefined,
+      ),
+    create: (input: { name: string; content: string; files: SkillFileInput[] }) =>
+      req<PackageFull>("POST", "/agent-packages", input),
   },
 
   knowledge: {

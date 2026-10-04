@@ -3,7 +3,7 @@ import { existsSync, statSync } from "node:fs";
 import { loadConfig } from "@orc/core/config";
 import { ORC_VERSION } from "@orc/core/version";
 import { Command } from "commander";
-
+import { agentCommand, agentPackageCommand } from "./commands/agent.js";
 import { daemonCommand, ORC_HOME, ORC_PID, readDaemonPid } from "./commands/daemon.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { flowCommand } from "./commands/flow.js";
@@ -70,6 +70,8 @@ program.addCommand(sessionCommand());
 program.addCommand(daemonCommand());
 program.addCommand(gatewayCommand());
 program.addCommand(skillCommand());
+program.addCommand(agentCommand());
+program.addCommand(agentPackageCommand());
 program.addCommand(flowCommand());
 program.addCommand(kbCommand());
 program.addCommand(statusCommand());

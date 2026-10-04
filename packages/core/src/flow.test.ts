@@ -187,7 +187,7 @@ describe("validateFlowGraph", () => {
 
   test("rejects an agent node with nothing to do", () => {
     const bad = { ...MINIMAL, nodes: { ...MINIMAL.nodes, work: { kind: "agent" } } };
-    expect(issues(bad).join()).toContain("needs a skill or a prompt");
+    expect(issues(bad).join()).toContain("needs an agent profile, skill or prompt");
   });
 });
 

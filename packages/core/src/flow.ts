@@ -143,6 +143,7 @@ export const FlowNodeSchema = z.strictObject({
 
   // agent nodes
   skill: z.string().max(200).optional(),
+  agent: z.string().min(1).max(200).optional(),
   // Bounded: a node prompt is injected verbatim into the agent's context and
   // frozen into every run of the flow.
   prompt: z.string().max(20_000).optional(),
@@ -267,16 +268,17 @@ export function validateFlowGraph(def: FlowDefinition): FlowValidationIssue[] {
       });
     }
 
-    if (node.kind === "agent" && !node.skill && !node.prompt) {
+    if (node.kind === "agent" && !node.skill && !node.prompt && !node.agent) {
       issues.push({
         path: `nodes.${id}`,
-        message: "agent node needs a skill or a prompt to give the agent something to do",
+        message:
+          "agent node needs an agent profile, skill or prompt to give the agent something to do",
       });
     }
-    if (node.kind !== "agent" && (node.skill || node.backend || node.model)) {
+    if (node.kind !== "agent" && (node.agent || node.skill || node.backend || node.model)) {
       issues.push({
         path: `nodes.${id}`,
-        message: `skill/backend/model only apply to agent nodes, not ${node.kind}`,
+        message: `agent/skill/backend/model only apply to agent nodes, not ${node.kind}`,
       });
     }
 

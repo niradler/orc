@@ -1,5 +1,6 @@
 import type { AgentSession } from "@orc/agent-runtime";
 import { openAgentSession } from "@orc/agent-runtime";
+import { readAgent } from "@orc/core/agent-service";
 import { loadConfig } from "@orc/core/config";
 import type { FlowCondition, FlowDefinition, FlowNode, NumericOperand } from "@orc/core/flow";
 import { declaredOutcomes, resolvePlaceholder } from "@orc/core/flow";
@@ -9,7 +10,7 @@ import { resolveFlowForTask } from "@orc/core/flow-service";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import type { SkillFull } from "@orc/core/skill-service";
-import { readSkill } from "@orc/core/skill-service";
+import { readSkill, renderSkillInstructions } from "@orc/core/skill-service";
 import type { TaskStatus } from "@orc/core/types";
 import { getDb, getSqlite } from "@orc/db/client";
 import { flow_runs, gateway_sessions } from "@orc/db/schema";
@@ -508,13 +509,13 @@ function buildNodePrompt(opts: {
   // not — a reviewer told to "submit for review and stop" reviews itself.
   if ((node.role ?? "worker") === "worker") {
     const baseSkill = readSkill("orc-worker-base") as SkillFull | null;
-    if (baseSkill) parts.push(baseSkill.content);
+    if (baseSkill) parts.push(renderSkillInstructions(baseSkill));
   }
 
   const skillName = nodeSkillName(node, task);
   if (skillName) {
     const skill = readSkill(skillName) as SkillFull | null;
-    if (skill) parts.push(`\n---\n## Workflow: ${skill.name}\n${skill.content}`);
+    if (skill) parts.push(`\n---\n## Workflow: ${skill.name}\n${renderSkillInstructions(skill)}`);
     else logger.warn(`Node ${nodeId} references unknown skill "${skillName}"`);
   }
 
@@ -1170,11 +1171,12 @@ async function spawnNodeSession(nodeRun: NodeRunRow): Promise<void> {
   const sqlite = getSqlite();
   const sessionId = ulid();
   const backendName = nodeBackend(node, task);
-  const model = nodeModel(node, task);
 
   const prev =
     nodeRun.resume_session === 1 ? previousNodeSession(nodeRun.flow_run_id, nodeRun.node_id) : null;
   const cwd = projectScope(task.project_id) ?? prev?.cwd ?? process.cwd();
+  const model =
+    nodeModel(node, task) ?? (node.agent ? readAgent(node.agent, cwd)?.fields.model : undefined);
 
   const prompt = buildNodePrompt({
     def: loaded.def,
@@ -1242,6 +1244,7 @@ async function spawnNodeSession(nodeRun: NodeRunRow): Promise<void> {
     cwd,
     ...(model ? { model } : {}),
     ...(prev ? { previousRuntimeSessionId: prev.runtime_session_id } : {}),
+    ...(node.agent ? { agentProfile: node.agent } : {}),
   }).catch((err) => {
     logger.error(`Node session ${sessionId} failed: ${String(err)}`);
   });
@@ -1259,6 +1262,7 @@ async function driveNodeSession(opts: {
   cwd: string;
   model?: string | undefined;
   previousRuntimeSessionId?: string | undefined;
+  agentProfile?: string | undefined;
 }): Promise<void> {
   const sqlite = getSqlite();
   let session: AgentSession | null = null;
@@ -1267,7 +1271,12 @@ async function driveNodeSession(opts: {
   try {
     session = await openAgentSession(
       opts.backendName,
-      { cwd: opts.cwd, autoApprove: true, ...(opts.model ? { model: opts.model } : {}) },
+      {
+        cwd: opts.cwd,
+        autoApprove: true,
+        ...(opts.model ? { model: opts.model } : {}),
+        ...(opts.agentProfile ? { agentProfile: opts.agentProfile } : {}),
+      },
       opts.previousRuntimeSessionId,
     );
 
