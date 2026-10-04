@@ -92,6 +92,10 @@ const env = {
   PW_NO_SERVER: "1",
 } satisfies Record<string, string>;
 
+// Static serving selects its dist at API startup. Build first so a fresh
+// checkout cannot select the source index.html and serve /src/main.tsx as 404.
+await run(["bun", "x", "vite", "build"], env, 5 * 60_000);
+
 // Start the API server before playwright so we own the process handle.
 // Playwright's webServer cannot be relied on to kill its child on Windows
 // when playwright itself is killed or times out.
@@ -138,7 +142,6 @@ process.once("SIGTERM", () => {
 let exitCode = 0;
 try {
   await waitForReady(`http://127.0.0.1:${pwApiPort}/api/health`, 30_000);
-  await run(["bun", "x", "vite", "build"], env, 5 * 60_000);
   await run(["bun", "x", "playwright", "test", ...process.argv.slice(2)], env, 25 * 60_000);
 } catch (err) {
   console.error(err instanceof Error ? err.message : err);

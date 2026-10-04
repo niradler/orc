@@ -1,216 +1,367 @@
 #!/usr/bin/env bun
-/**
- * Local release for orc — replaces the (removed) GitHub release workflow.
- * Run manually from the repo root: `bun run scripts/release.ts [flags]`.
- *
- * Steps (in order):
- *   1. Preflight  — version alignment, clean git tree, on master, required tools present.
- *   2. Binaries   — `build:bin` cross-compiles the 5 platform binaries.
- *   3. Checksums  — sha256 of each binary → dist/checksums.txt.
- *   4. npm        — `npm publish` orc-ai (its prepublishOnly runs build + validate:package).
- *   5. Tag        — create + push `v<version>`.
- *   6. GitHub     — `gh release create` with binaries + checksums attached.
- *   7. Docker     — multi-arch buildx build + push (niradler/orc:latest and :<version>).
- *
- * DRY-RUN by default: prints every command without running the outward-facing
- * ones. Pass --yes to actually publish/push. Skip steps with
- * --skip-binaries --skip-npm --skip-tag --skip-github --skip-docker.
- */
-import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, join, resolve } from "node:path";
+import { parseArgs } from "node:util";
+import {
+  BINARIES,
+  bumpPatch,
+  completeStep,
+  desktopMatrix,
+  hostTarget,
+  installerName,
+  run,
+  sha256,
+  TARGETS,
+} from "./release-lib.js";
+import { installDesktop } from "./update-desktop.js";
 
 const ROOT = resolve(import.meta.dir, "..");
-const CLI_DIR = join(ROOT, "packages", "cli");
-const DIST = join(CLI_DIR, "dist");
-const BIN_GLOB = [
-  "orc-linux-x64",
-  "orc-linux-arm64",
-  "orc-mac-arm64",
-  "orc-mac-x64",
-  "orc-windows-x64.exe",
-];
-const DOCKER_IMAGE = "niradler/orc";
+const CLI = join(ROOT, "packages/cli");
+const DESKTOP = join(ROOT, "packages/desktop");
+const STATE = join(ROOT, ".orc/release-state.json");
+const PLAN = join(ROOT, "scripts/release-plan.json");
+const { values } = parseArgs({
+  options: {
+    yes: { type: "boolean" },
+    resume: { type: "boolean" },
+    check: { type: "boolean" },
+    "ci-matrix": { type: "boolean" },
+    help: { type: "boolean" },
+  },
+});
 
-const args = new Set(process.argv.slice(2));
-const EXECUTE = args.has("--yes");
-const skip = (s: string) => args.has(`--skip-${s}`);
-const isWin = process.platform === "win32";
-// npm accounts with 2FA require a one-time password at publish time. Pass it as
-// --otp=<code> so the non-interactive `npm publish` below doesn't fail on EOTP.
-const otp = [...args].find((a) => a.startsWith("--otp="))?.slice("--otp=".length);
-
-function readJson(p: string): { version?: string } {
-  return JSON.parse(readFileSync(p, "utf-8"));
+type State = {
+  version: string;
+  target: string;
+  commit?: string;
+  runId?: number;
+  completed: string[];
+  hashes?: Record<string, string>;
+};
+type Manifest = { version: string; [key: string]: unknown };
+function readJson<T>(path: string): T {
+  return JSON.parse(readFileSync(path, "utf8")) as T;
+}
+function writeJson(path: string, value: unknown): void {
+  writeFileSync(`${path}.tmp`, `${JSON.stringify(value, null, 2)}\n`);
+  renameSync(`${path}.tmp`, path);
+}
+function command(tool: string, args: string[], cwd = ROOT, capture = false): string {
+  return run(tool, args, { cwd, capture });
+}
+function manifests(): string[] {
+  return [
+    join(ROOT, "package.json"),
+    ...readdirSync(join(ROOT, "packages"))
+      .map((name) => join(ROOT, "packages", name, "package.json"))
+      .filter(existsSync),
+  ];
+}
+function checkClean(): void {
+  if (command("git", ["status", "--porcelain"], ROOT, true))
+    throw new Error("Commit your changes first; release requires a clean working tree.");
+}
+function validate(): void {
+  command("bun", ["x", "biome", "check", "./packages", "./scripts"]);
+  command("bun", ["run", "typecheck"]);
+  command("bun", ["x", "tsc", "-p", "scripts/tsconfig.json"]);
+  command("bun", ["test", "scripts/release.test.ts"]);
+  command("bun", ["run", "test"]);
 }
 
-function sh(cmd: string, cmdArgs: string[], cwd = ROOT): void {
-  const printable = `${cmd} ${cmdArgs.join(" ")}`;
-  if (!EXECUTE) {
-    console.log(`  [dry-run] ${printable}`);
+async function main(): Promise<void> {
+  if (values.help) {
+    console.log(
+      "bun run release [--yes | --check | --resume --yes]\nDefault: print plan. --check: run all checks without bump/publish.\n--yes: test, bump patch, build, tag, release, npm, Docker, update desktop.\n--resume --yes: continue the same version after a failure. Only the tag is pushed; no branch push.",
+    );
     return;
   }
-  console.log(`  $ ${printable}`);
-  // On Windows, npm/gh/docker are .cmd shims that Bun's spawn can't resolve via
-  // PATHEXT, so run everything through cmd.exe there. Real .exe commands (git,
-  // bun) work fine via cmd /c too.
-  const spawnCmd = isWin ? ["cmd", "/c", cmd, ...cmdArgs] : [cmd, ...cmdArgs];
-  const r = Bun.spawnSync(spawnCmd, {
-    cwd,
-    stdout: "inherit",
-    stderr: "inherit",
-    env: process.env,
+  if (values["ci-matrix"]) {
+    const plan = readJson<{ version: string; target: string }>(PLAN);
+    console.log(
+      JSON.stringify(
+        desktopMatrix(
+          plan.version,
+          plan.target,
+          readJson<Manifest>(join(ROOT, "package.json")).version,
+        ),
+      ),
+    );
+    return;
+  }
+  if (values.check) {
+    validate();
+    return;
+  }
+  if (values.resume && !values.yes) throw new Error("--resume requires --yes");
+  const current = readJson<Manifest>(join(ROOT, "package.json")).version;
+  const target = hostTarget();
+  if (!TARGETS.some((t) => t.id === target)) throw new Error(`Unsupported release host: ${target}`);
+  const version = values.resume ? readJson<State>(STATE).version : bumpPatch(current);
+  if (!values.yes) {
+    console.log(
+      `Release v${version}: full checks → patch bump + lockfile → local CLI binaries + ${target} installer + smoke → version commit + tag push → Actions (${TARGETS.filter(
+        (t) => t.id !== target,
+      )
+        .map((t) => t.id)
+        .join(
+          ", ",
+        )}) → checksummed GitHub release → npm → Docker linux/amd64,linux/arm64 → install/relaunch desktop.\nRun bun run release --yes when ready. No branch is pushed.`,
+    );
+    return;
+  }
+  checkClean();
+  let state: State;
+  if (values.resume) {
+    state = readJson<State>(STATE);
+    if (
+      state.target !== target ||
+      state.version !== current ||
+      (state.commit && state.commit !== command("git", ["rev-parse", "HEAD"], ROOT, true))
+    )
+      throw new Error("Resume requires the original release commit, version and host.");
+  } else {
+    if (existsSync(STATE)) {
+      const previous = readJson<State>(STATE);
+      if (!previous.completed.includes("install"))
+        throw new Error(`Unfinished v${previous.version}; use --resume --yes.`);
+    }
+    for (const file of manifests())
+      if (readJson<Manifest>(file).version !== current)
+        throw new Error(`Version mismatch: ${file}`);
+    command("gh", ["api", "user", "--jq", ".login"], ROOT, true);
+    command("npm", ["whoami"], ROOT, true);
+    const publishedVersions = JSON.parse(
+      command("npm", ["view", "orc-ai", "versions", "--json"], ROOT, true),
+    ) as string[];
+    if (publishedVersions.includes(version))
+      throw new Error(
+        `npm orc-ai@${version} already exists; reconcile package versions before a new release.`,
+      );
+    command("docker", ["info", "--format", "{{.ServerVersion}}"], ROOT, true);
+    command("git", ["fetch", "origin", "--tags"]);
+    if (command("git", ["tag", "--list", `v${version}`], ROOT, true))
+      throw new Error(`Tag v${version} already exists.`);
+    validate();
+    state = { version, target, completed: ["checks"] };
+    mkdirSync(join(ROOT, ".orc"), { recursive: true });
+    writeJson(STATE, state);
+  }
+  const save = (): void => writeJson(STATE, state);
+  async function step(name: string, action: () => void | Promise<void>): Promise<void> {
+    await completeStep(
+      state.completed,
+      name,
+      async () => {
+        console.log(`\n→ ${name} (v${version})`);
+        await action();
+      },
+      save,
+    );
+  }
+  const tag = `v${version}`;
+  const artifacts = join(ROOT, ".orc", `release-${version}`);
+  mkdirSync(artifacts, { recursive: true });
+  await step("bump", () => {
+    for (const file of manifests()) writeJson(file, { ...readJson<Manifest>(file), version });
+    writeJson(PLAN, { version, target });
+    command("bun", ["install", "--lockfile-only"]);
+    command("git", [
+      "add",
+      "package.json",
+      ...manifests()
+        .slice(1)
+        .map((p) => p.slice(ROOT.length + 1)),
+      "bun.lock",
+      "scripts/release-plan.json",
+    ]);
+    command("git", ["commit", "-m", `chore: release ${tag}`]);
+    state.commit = command("git", ["rev-parse", "HEAD"], ROOT, true);
+    save();
   });
-  if (r.exitCode !== 0) {
-    console.error(`\n✗ Command failed (exit ${r.exitCode}): ${printable}`);
-    process.exit(1);
-  }
-}
-
-// Like sh() but never aborts the release — used for best-effort setup steps
-// (e.g. creating a buildx builder that may already exist).
-function shSoft(cmd: string, cmdArgs: string[], cwd = ROOT): void {
-  const printable = `${cmd} ${cmdArgs.join(" ")}`;
-  if (!EXECUTE) {
-    console.log(`  [dry-run] ${printable}`);
-    return;
-  }
-  console.log(`  $ ${printable}`);
-  const spawnCmd = isWin ? ["cmd", "/c", cmd, ...cmdArgs] : [cmd, ...cmdArgs];
-  Bun.spawnSync(spawnCmd, { cwd, stdout: "inherit", stderr: "inherit", env: process.env });
-}
-
-function capture(cmd: string, cmdArgs: string[]): string {
-  const r = Bun.spawnSync([cmd, ...cmdArgs], { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
-  return new TextDecoder().decode(r.stdout).trim();
-}
-
-function die(msg: string): never {
-  console.error(`✗ ${msg}`);
-  process.exit(1);
-}
-
-// ── 1. Preflight ────────────────────────────────────────────────────────────
-console.log(`→ orc local release ${EXECUTE ? "(EXECUTE)" : "(dry-run — pass --yes to publish)"}\n`);
-console.log("[1/7] Preflight");
-
-const version =
-  readJson(join(ROOT, "package.json")).version ?? die("root package.json has no version");
-const pkgDirs = readdirSync(join(ROOT, "packages"));
-const mismatched = pkgDirs
-  .map((d) => join(ROOT, "packages", d, "package.json"))
-  .filter(existsSync)
-  .filter((p) => readJson(p).version !== version);
-if (mismatched.length > 0) {
-  die(
-    `version mismatch (root is ${version}): ${mismatched.join(", ")} — all package.json must align`,
+  await step("build", () => {
+    command("bun", ["run", "build"]);
+    command("bun", ["run", "build:bin"], CLI);
+    command("bun", ["run", "validate:package"], CLI);
+    command(
+      "bun",
+      [
+        "x",
+        "electron-builder",
+        `--${TARGETS.find((t) => t.id === target)?.os}`,
+        `--${process.arch}`,
+        "--publish",
+        "never",
+      ],
+      DESKTOP,
+    );
+    command("bun", ["packages/desktop/scripts/smoke.ts"]);
+    for (const file of BINARIES)
+      if (!existsSync(join(CLI, "dist", file))) throw new Error(`Missing binary: ${file}`);
+    if (!existsSync(join(DESKTOP, "release", installerName(version, target))))
+      throw new Error("Missing local installer");
+    checkClean();
+  });
+  await step("tag", () => {
+    const existing = command("git", ["tag", "--list", tag], ROOT, true);
+    if (!existing) command("git", ["tag", "-a", tag, "-m", `orc ${tag}`]);
+    if (command("git", ["rev-list", "-n", "1", tag], ROOT, true) !== state.commit)
+      throw new Error("Tag points at another commit");
+    command("git", ["push", "origin", `refs/tags/${tag}`]);
+  });
+  await step("actions", async () => {
+    const deadline = Date.now() + 60 * 60_000;
+    while (!state.runId && Date.now() < deadline) {
+      const runs = JSON.parse(
+        command(
+          "gh",
+          [
+            "run",
+            "list",
+            "--commit",
+            state.commit ?? "",
+            "--event",
+            "push",
+            "--json",
+            "databaseId,workflowName",
+            "--limit",
+            "30",
+          ],
+          ROOT,
+          true,
+        ),
+      ) as { databaseId: number; workflowName: string }[];
+      const runId = runs.find((r) => r.workflowName === "Release desktop gaps")?.databaseId;
+      if (runId) {
+        state.runId = runId;
+        save();
+      } else await Bun.sleep(10_000);
+    }
+    if (!state.runId) throw new Error("Release workflow did not start; inspect GitHub Actions.");
+    for (;;) {
+      const result = JSON.parse(
+        command(
+          "gh",
+          ["run", "view", String(state.runId), "--json", "status,conclusion,url"],
+          ROOT,
+          true,
+        ),
+      ) as { status: string; conclusion: string; url: string };
+      console.log(`Actions: ${result.status} ${result.url}`);
+      if (result.status === "completed") {
+        if (result.conclusion !== "success")
+          throw new Error(
+            `Desktop workflow ${result.conclusion}: ${result.url}. Fix the cause; no release published.`,
+          );
+        break;
+      }
+      if (Date.now() > deadline)
+        throw new Error("Timed out waiting for desktop builds; resume later.");
+      await Bun.sleep(20_000);
+    }
+    command("gh", ["run", "download", String(state.runId), "--dir", artifacts]);
+  });
+  const files = [
+    ...BINARIES.map((name) => join(CLI, "dist", name)),
+    ...TARGETS.map((t) =>
+      t.id === target
+        ? join(DESKTOP, "release", installerName(version, t.id))
+        : join(artifacts, `desktop-${t.id}`, installerName(version, t.id)),
+    ),
+  ];
+  for (const file of files)
+    if (!existsSync(file)) throw new Error(`Missing release artifact: ${file}`);
+  const checksums = join(artifacts, "checksums.txt");
+  const hashes = Object.fromEntries(files.map((file) => [basename(file), sha256(file)]));
+  if (state.hashes && JSON.stringify(state.hashes) !== JSON.stringify(hashes))
+    throw new Error(
+      "Release artifacts changed after collection; refusing to publish or install different bytes.",
+    );
+  state.hashes = hashes;
+  save();
+  writeFileSync(
+    checksums,
+    `${files.map((file) => `${sha256(file)}  ${basename(file)}`).join("\n")}\n`,
+  );
+  await step("github", () => {
+    const releases = JSON.parse(
+      command("gh", ["release", "list", "--json", "tagName,isDraft", "--limit", "100"], ROOT, true),
+    ) as { tagName: string; isDraft: boolean }[];
+    const release = releases.find((r) => r.tagName === tag);
+    if (!release)
+      command("gh", [
+        "release",
+        "create",
+        tag,
+        "--verify-tag",
+        "--draft",
+        "--generate-notes",
+        ...files,
+        checksums,
+      ]);
+    else if (release.isDraft)
+      command("gh", ["release", "upload", tag, ...files, checksums, "--clobber"]);
+    command("gh", ["release", "edit", tag, "--draft=false", "--latest"]);
+  });
+  await step("npm", () => {
+    const versions = JSON.parse(
+      command("npm", ["view", "orc-ai", "versions", "--json"], ROOT, true),
+    ) as string[];
+    if (!versions.includes(version)) command("npm", ["publish"], CLI);
+    if (command("npm", ["view", `orc-ai@${version}`, "version"], ROOT, true) !== version)
+      throw new Error("npm version verification failed");
+  });
+  await step("docker", () => {
+    const builders = command("docker", ["buildx", "ls", "--format", "{{.Name}}"], ROOT, true).split(
+      /\r?\n/,
+    );
+    if (!builders.includes("orc-multiarch"))
+      command("docker", [
+        "buildx",
+        "create",
+        "--name",
+        "orc-multiarch",
+        "--driver",
+        "docker-container",
+      ]);
+    command("docker", [
+      "buildx",
+      "build",
+      "--builder",
+      "orc-multiarch",
+      "--platform",
+      "linux/amd64,linux/arm64",
+      "--push",
+      "-t",
+      `niradler/orc:${version}`,
+      "-t",
+      "niradler/orc:latest",
+      ".",
+    ]);
+    command("docker", ["buildx", "imagetools", "inspect", `niradler/orc:${version}`]);
+  });
+  await step("install", () =>
+    installDesktop({
+      version,
+      installer: join(DESKTOP, "release", installerName(version, target)),
+    }),
+  );
+  console.log(
+    `\nReleased and installed ${tag}: https://github.com/niradler/orc/releases/tag/${tag}`,
   );
 }
-console.log(`  ✓ all package.json aligned at v${version}`);
 
-const branch = capture("git", ["rev-parse", "--abbrev-ref", "HEAD"]);
-if (branch !== "master") console.warn(`  ! on branch '${branch}', expected 'master'`);
-if (capture("git", ["status", "--porcelain"]) !== "") {
-  die("git tree is dirty — commit or stash before releasing");
-}
-console.log("  ✓ clean git tree");
-
-for (const tool of [
-  "npm",
-  "git",
-  ...(skip("github") ? [] : ["gh"]),
-  ...(skip("docker") ? [] : ["docker"]),
-]) {
-  const found = capture(isWin ? "where" : "which", [tool]);
-  if (!found) die(`required tool not found on PATH: ${tool}`);
-}
-console.log("  ✓ required tools present");
-
-// ── 2. Binaries ───────────────────────────────────────────────────────────-─
-console.log("\n[2/7] Build platform binaries");
-if (skip("binaries")) {
-  console.log("  (skipped)");
-} else {
-  sh("bun", ["run", "build:bin"], CLI_DIR);
-}
-
-// ── 3. Checksums ─────────────────────────────────────────────────────────────
-console.log("\n[3/7] Checksums");
-if (skip("binaries")) {
-  console.log("  (skipped — binaries not built)");
-} else if (!EXECUTE) {
-  console.log("  [dry-run] sha256(dist/orc-*) → dist/checksums.txt");
-} else {
-  const lines = BIN_GLOB.map((name) => {
-    const file = join(DIST, name);
-    if (!existsSync(file)) die(`expected binary missing: ${file}`);
-    const hash = createHash("sha256").update(readFileSync(file)).digest("hex");
-    return `${hash}  ${name}`;
-  });
-  writeFileSync(join(DIST, "checksums.txt"), `${lines.join("\n")}\n`);
-  console.log(`  ✓ wrote dist/checksums.txt (${lines.length} binaries)`);
-}
-
-// ── 4. npm publish ───────────────────────────────────────────────────────────
-console.log("\n[4/7] npm publish orc-ai (runs prepublishOnly = build + validate:package)");
-if (skip("npm")) {
-  console.log("  (skipped)");
-} else {
-  sh("npm", ["publish", ...(otp ? [`--otp=${otp}`] : [])], CLI_DIR);
-}
-
-// ── 5. Git tag ────────────────────────────────────────────────────────────────
-console.log("\n[5/7] Git tag");
-if (skip("tag")) {
-  console.log("  (skipped)");
-} else {
-  sh("git", ["tag", `v${version}`]);
-  sh("git", ["push", "origin", `v${version}`]);
-}
-
-// ── 6. GitHub release ─────────────────────────────────────────────────────────
-console.log("\n[6/7] GitHub release");
-if (skip("github")) {
-  console.log("  (skipped)");
-} else {
-  const files = [...BIN_GLOB.map((n) => join(DIST, n)), join(DIST, "checksums.txt")];
-  sh("gh", ["release", "create", `v${version}`, "--generate-notes", ...files]);
-}
-
-// ── 7. Docker ─────────────────────────────────────────────────────────────────
-console.log("\n[7/7] Docker multi-arch build + push");
-if (skip("docker")) {
-  console.log("  (skipped)");
-} else {
-  // The default 'docker' driver can't do multi-platform builds. Ensure a
-  // container-driver builder exists and is selected; tolerate "already exists".
-  shSoft("docker", [
-    "buildx",
-    "create",
-    "--name",
-    "orc-multiarch",
-    "--driver",
-    "docker-container",
-    "--bootstrap",
-    "--use",
-  ]);
-  sh("docker", ["buildx", "use", "orc-multiarch"]);
-  sh("docker", [
-    "buildx",
-    "build",
-    "--platform",
-    "linux/amd64,linux/arm64",
-    "--push",
-    "-t",
-    `${DOCKER_IMAGE}:latest`,
-    "-t",
-    `${DOCKER_IMAGE}:${version}`,
-    ".",
-  ]);
-}
-
-console.log(
-  EXECUTE
-    ? `\n✓ Released v${version}.`
-    : `\n✓ Dry-run complete for v${version}. Re-run with --yes to publish.`,
-);
+await main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  console.error(
+    "After correcting the failure, use bun run release --resume --yes if release-state.json was created.",
+  );
+  process.exitCode = 1;
+});
