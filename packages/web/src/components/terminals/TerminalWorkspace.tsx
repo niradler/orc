@@ -1,7 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
 import { Columns2, Rows2, X } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { api, type Terminal } from "@/api/client";
+import type { Terminal } from "@/api/client";
 import {
   closePane,
   type Layout,
@@ -11,69 +10,8 @@ import {
   readLayout,
   updateLayout,
 } from "@/lib/workspace-layout";
+import { FilePanel } from "./FilePanel";
 import { GitPanelBody } from "./GitPanel";
-
-function FilePanel({ terminal }: { terminal: Terminal }) {
-  const [path, setPath] = useState("");
-  const files = useQuery({
-    queryKey: ["checkout-files", terminal.id, path],
-    queryFn: () => api.git.files(terminal.id, path),
-  });
-  const parent = path.split("/").slice(0, -1).join("/");
-  return (
-    <div data-testid="file-panel" className="flex-1 min-h-0 overflow-auto p-3 space-y-2 text-sm">
-      <div className="flex gap-3">
-        <button
-          type="button"
-          data-testid="files-root"
-          onClick={() => setPath("")}
-          className="text-primary"
-        >
-          Checkout
-        </button>
-        {path && (
-          <button
-            type="button"
-            data-testid="files-up"
-            onClick={() => setPath(parent)}
-            className="text-primary"
-          >
-            Up
-          </button>
-        )}
-        <button type="button" onClick={() => void files.refetch()} className="ml-auto text-primary">
-          Refresh
-        </button>
-      </div>
-      <p className="text-outline break-all">
-        {files.data?.root}/{path}
-      </p>
-      {files.isPending && <p>Loading files…</p>}
-      {files.error && <p role="alert">{files.error.message}</p>}
-      {files.data?.entries?.map((entry) => (
-        <button
-          type="button"
-          key={entry.path}
-          data-testid="file-entry"
-          onClick={() => setPath(entry.path)}
-          className="block w-full text-left p-1 hover:bg-surface-highest"
-        >
-          {entry.directory ? "▸ " : ""}
-          {entry.name}
-        </button>
-      ))}
-      {files.data?.binary && <p>Binary file; text preview unavailable.</p>}
-      {files.data?.content != null && (
-        <pre data-testid="file-preview" className="text-xs font-mono whitespace-pre overflow-auto">
-          {files.data.content}
-        </pre>
-      )}
-      {files.data?.truncated && (
-        <p className="text-outline">Preview limited to 200 KB or 500 directory entries.</p>
-      )}
-    </div>
-  );
-}
 
 type WorkspaceProps = {
   selected: Terminal;
