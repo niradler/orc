@@ -524,6 +524,8 @@ export const api = {
       req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/switch`, { branch }),
     checkoutGithub: (id: string) =>
       req<GithubFeed>("GET", `/terminals/${encodeURIComponent(id)}/git/github`),
+    saveFile: (id: string, path: string, content: string, original: string) =>
+      req<null>("PUT", `/terminals/${encodeURIComponent(id)}/files`, { path, content, original }),
     files: (id: string, path: string) =>
       req<{
         root: string;

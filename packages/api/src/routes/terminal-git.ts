@@ -2,7 +2,7 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
-import { checkoutFiles } from "../git/files.js";
+import { checkoutFiles, saveCheckoutFile } from "../git/files.js";
 import { checkoutGithubFeed } from "../git/github.js";
 import { commitStaged, gitDiff, gitStatus, stageFiles, switchBranch } from "../git/panel.js";
 import { worktreeDeps } from "../git/registry.js";
@@ -30,6 +30,36 @@ const FileSchema = z.object({
   working: z.string(),
   original: z.string().nullable(),
 });
+app.openapi(
+  createRoute({
+    method: "put",
+    path: "/terminals/{id}/files",
+    tags: ["Terminals"],
+    summary: "Save an existing text file inside a terminal checkout",
+    request: {
+      params,
+      body: {
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                path: z.string().min(1).max(4096),
+                content: z.string().max(200_000),
+                original: z.string().max(200_000),
+              })
+              .strict(),
+          },
+        },
+      },
+    },
+    responses: { 204: { description: "File saved" }, 409: { description: "File changed on disk" } },
+  }),
+  async (c) => {
+    const body = c.req.valid("json");
+    await saveCheckoutFile(folder(c.req.valid("param").id), body.path, body.content, body.original);
+    return c.body(null, 204);
+  },
+);
 app.openapi(
   createRoute({
     method: "get",

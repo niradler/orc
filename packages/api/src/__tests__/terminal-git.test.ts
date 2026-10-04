@@ -33,6 +33,60 @@ afterAll(() => {
 });
 
 describe("terminal git panel", () => {
+  test("should save text, preserve shorter writes and refuse stale or unsafe file edits", async () => {
+    const route = `/terminals/${terminalId}/files`;
+    writeFileSync(join(repo, "editor.txt"), "long original text\r\n");
+    const body = { path: "editor.txt", original: "long original text\r\n", content: "short\r\n" };
+    expect((await req(app, "PUT", route, body)).status).toBe(204);
+    expect((await (await req(app, "GET", `${route}?path=editor.txt`)).json()).content).toBe(
+      "short\r\n",
+    );
+    expect((await req(app, "PUT", route, body)).status).toBe(409);
+    expect((await req(app, "PUT", route, { ...body, path: "../outside" })).status).toBe(400);
+    expect((await req(app, "PUT", route, { ...body, path: ".git/config" })).status).toBe(400);
+    expect((await req(app, "PUT", route, { ...body, path: "new-file.txt" })).status).toBe(400);
+    expect((await req(app, "PUT", route, { ...body, content: "é".repeat(110_000) })).status).toBe(
+      400,
+    );
+    expect(
+      (
+        await app.request(`/api${route}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        })
+      ).status,
+    ).toBe(401);
+    writeFileSync(join(repo, "editor-binary.bin"), Buffer.from([0, 1, 2]));
+    expect(
+      (await req(app, "PUT", route, { ...body, path: "editor-binary.bin", original: "\0\x01\x02" }))
+        .status,
+    ).toBe(400);
+    writeFileSync(join(repo, "editor-encoding.bin"), Buffer.from([255, 254, 65]));
+    expect(
+      (await req(app, "PUT", route, { ...body, path: "editor-encoding.bin", original: "��A" }))
+        .status,
+    ).toBe(400);
+    expect((await (await req(app, "GET", `${route}?path=editor-encoding.bin`)).json()).binary).toBe(
+      true,
+    );
+    writeFileSync(join(repo, "editor-large.txt"), "€".repeat(70_000));
+    const large = await (await req(app, "GET", `${route}?path=editor-large.txt`)).json();
+    expect(large.truncated).toBe(true);
+    expect(large.binary).toBe(false);
+    expect((await req(app, "PUT", route, { ...body, path: "editor-large.txt" })).status).toBe(400);
+    await runGit([
+      "git",
+      "-C",
+      repo,
+      "add",
+      "editor.txt",
+      "editor-binary.bin",
+      "editor-encoding.bin",
+      "editor-large.txt",
+    ]);
+    await runGit(["git", "-C", repo, "commit", "-m", "editor fixtures"]);
+  });
   test("browses checkout files and bounds previews without exposing git internals or parent paths", async () => {
     const route = `/terminals/${terminalId}/files`;
     const listed = await req(app, "GET", route);
@@ -169,6 +223,19 @@ describe("terminal git panel", () => {
     const route = `/terminals/${terminalId}/files`;
     expect((await req(app, "GET", `${route}?path=outside-alias/private.txt`)).status).toBe(400);
     expect((await req(app, "GET", `${route}?path=git-alias/config`)).status).toBe(400);
+    expect(
+      (
+        await req(app, "PUT", route, {
+          path: "outside-alias/private.txt",
+          original: "outside content",
+          content: "changed",
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (await req(app, "PUT", route, { path: "git-alias/config", original: "", content: "changed" }))
+        .status,
+    ).toBe(400);
     writeFileSync(join(repo, "binary.bin"), Buffer.from([0, 1, 2]));
     const binary = await (await req(app, "GET", `${route}?path=binary.bin`)).json();
     expect(binary.binary).toBe(true);
