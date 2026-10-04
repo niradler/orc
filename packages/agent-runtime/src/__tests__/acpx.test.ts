@@ -97,7 +97,7 @@ describe("parseAcpxLine", () => {
     const data = event?.data as Record<string, unknown>;
     expect(data.id).toBe("tc-123");
     expect(data.name).toBe("Read");
-    expect(JSON.parse(data.input)).toEqual({ path: "/tmp/test.ts" });
+    expect(JSON.parse(data.input as string)).toEqual({ path: "/tmp/test.ts" });
   });
 
   it("uses title as fallback tool name", () => {
