@@ -1,4 +1,4 @@
-import { unlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, unlinkSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -73,9 +73,12 @@ await assertPortFree(Number(pwApiPort));
 const pwDbPath = process.env.PW_DB_PATH ?? join(tmpdir(), `orc-pw-${process.pid}.db`);
 const pwKnowledgeDbPath =
   process.env.PW_KNOWLEDGE_DB_PATH ?? join(tmpdir(), `orc-pw-knowledge-${process.pid}.db`);
+const pwHome = mkdtempSync(join(tmpdir(), "orc-pw-home-"));
 
 const env = {
   ...process.env,
+  HOME: pwHome,
+  USERPROFILE: pwHome,
   ORC_API_HOST: "127.0.0.1",
   PW_API_PORT: pwApiPort,
   PW_DB_PATH: pwDbPath,
@@ -163,6 +166,7 @@ try {
   } catch {
     /* already gone */
   }
+  rmSync(pwHome, { recursive: true, force: true });
 }
 
 process.exit(exitCode);

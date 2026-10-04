@@ -37,7 +37,9 @@ test.describe("Skills", () => {
     await row.click();
     for (const resource of resources) {
       await page.locator(`[data-testid="skill-file"][data-file-name="${resource.path}"]`).click();
-      await expect(page.getByTestId("skill-file-content")).toHaveText(resource.content);
+      await expect(page.getByTestId("skill-file-content")).toHaveText(resource.content, {
+        useInnerText: true,
+      });
     }
     await page.reload();
     await expect(page.getByTestId("skill-file-content")).toContainText(

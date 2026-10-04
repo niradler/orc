@@ -425,6 +425,9 @@ export const api = {
     list: () => req<{ agents: AgentProfile[]; broken: BrokenAgent[] }>("GET", "/agents"),
     get: (id: string) => req<AgentFull>("GET", `/agents/${encodeURIComponent(id)}`),
     create: (input: { id: string; content: string }) => req<AgentFull>("POST", "/agents", input),
+    delete: (id: string) => req<null>("DELETE", `/agents/${encodeURIComponent(id)}`),
+    update: (id: string, input: { content: string; expectedRaw: string; expectedPath: string }) =>
+      req<AgentFull>("PUT", `/agents/${encodeURIComponent(id)}`, input),
   },
   agentPackages: {
     list: () => req<{ packages: PackageMeta[]; broken: BrokenAgent[] }>("GET", "/agent-packages"),

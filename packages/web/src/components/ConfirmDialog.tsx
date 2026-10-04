@@ -42,6 +42,7 @@ export function ConfirmDialog({
         </DialogHeader>
         <DialogFooter className="mt-4">
           <Button
+            data-testid="confirm-dialog-cancel"
             type="button"
             variant="ghost"
             size="sm"

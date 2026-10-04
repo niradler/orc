@@ -1,19 +1,8 @@
-import { indentWithTab } from "@codemirror/commands";
-import { css } from "@codemirror/lang-css";
-import { html } from "@codemirror/lang-html";
-import { javascript } from "@codemirror/lang-javascript";
-import { json } from "@codemirror/lang-json";
-import { markdown } from "@codemirror/lang-markdown";
-import { python } from "@codemirror/lang-python";
-import { openSearchPanel } from "@codemirror/search";
-import { Compartment, EditorState, type Extension } from "@codemirror/state";
-import { oneDark } from "@codemirror/theme-one-dark";
-import { EditorView, keymap } from "@codemirror/view";
 import { useQueryClient } from "@tanstack/react-query";
-import { basicSetup } from "codemirror";
-import { Save, Search, WrapText } from "lucide-react";
+import { Save } from "lucide-react";
 import { type ReactElement, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
+import { CodeEditor } from "@/components/CodeEditor";
 
 type Draft = { original: string; content: string };
 const drafts = new Map<string, Draft>();
@@ -23,21 +12,6 @@ if (typeof window !== "undefined") {
     event.preventDefault();
     event.returnValue = "";
   });
-}
-
-function language(path: string): Extension {
-  const extension = path.split(".").pop()?.toLowerCase();
-  if (["ts", "tsx", "js", "jsx", "mjs", "cjs"].includes(extension ?? ""))
-    return javascript({
-      typescript: extension === "ts" || extension === "tsx",
-      jsx: extension === "jsx" || extension === "tsx",
-    });
-  if (extension === "json") return json();
-  if (extension === "css") return css();
-  if (extension === "html") return html();
-  if (extension === "md") return markdown();
-  if (extension === "py") return python();
-  return [];
 }
 
 export function FileEditor({
@@ -56,16 +30,11 @@ export function FileEditor({
   const draftKey = `${terminalId}:${path}`;
   const initial = useRef(drafts.get(draftKey) ?? { original: content, content });
   const original = useRef(initial.current.original);
-  const lineBreak = useRef(initial.current.original.includes("\r\n") ? "\r\n" : "\n");
   const document = useRef(initial.current.content);
   const [dirty, setDirty] = useState(initial.current.content !== initial.current.original);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [wrap, setWrap] = useState(false);
-  const [lines, setLines] = useState(initial.current.content.split("\n").length);
-  const parent = useRef<HTMLDivElement>(null);
-  const view = useRef<EditorView | null>(null);
-  const wrapExtension = useRef(new Compartment());
+  const [text, setText] = useState(initial.current.content);
   const queryClient = useQueryClient();
   const saveAction = useRef<() => void>(() => {});
   const pending = useRef(false);
@@ -99,63 +68,22 @@ export function FileEditor({
   saveAction.current = () => void save();
 
   useEffect(() => {
-    if (!parent.current) return;
     active.current = true;
     dirtyCallback.current(initial.current.content !== initial.current.original);
-    const editor = new EditorView({
-      parent: parent.current,
-      state: EditorState.create({
-        doc: initial.current.content,
-        extensions: [
-          basicSetup,
-          oneDark,
-          language(path),
-          EditorState.readOnly.of(readOnly),
-          EditorView.editable.of(!readOnly),
-          EditorView.contentAttributes.of({
-            "aria-label": `Edit ${path}`,
-            "data-testid": "file-editor-input",
-          }),
-          keymap.of([
-            {
-              key: "Mod-s",
-              run: () => {
-                saveAction.current();
-                return true;
-              },
-            },
-            indentWithTab,
-          ]),
-          wrapExtension.current.of([]),
-          EditorView.theme({
-            "&": { height: "100%", backgroundColor: "#090e1a", fontSize: "12px" },
-            ".cm-scroller": { overflow: "auto", fontFamily: "monospace" },
-            ".cm-gutters": { backgroundColor: "#111827", borderRight: "1px solid #1e2537" },
-            ".cm-activeLine": { backgroundColor: "#1e253744" },
-            ".cm-content": { padding: "12px 0" },
-            ".cm-line": { padding: "0 12px" },
-          }),
-          EditorView.updateListener.of((update) => {
-            if (!update.docChanged) return;
-            document.current = update.state.doc.toString().replace(/\n/g, lineBreak.current);
-            const changed = document.current !== original.current;
-            setDirty(changed);
-            dirtyCallback.current(changed);
-            setLines(update.state.doc.lines);
-            if (changed)
-              drafts.set(draftKey, { original: original.current, content: document.current });
-            else drafts.delete(draftKey);
-          }),
-        ],
-      }),
-    });
-    view.current = editor;
     return () => {
       active.current = false;
-      view.current = null;
-      editor.destroy();
     };
-  }, [path, readOnly, draftKey]);
+  }, []);
+
+  function change(content: string): void {
+    document.current = content;
+    setText(content);
+    const changed = content !== original.current;
+    setDirty(changed);
+    dirtyCallback.current(changed);
+    if (changed) drafts.set(draftKey, { original: original.current, content });
+    else drafts.delete(draftKey);
+  }
 
   function reload(): void {
     if (!window.confirm("Discard your edits and reload the file from disk?")) return;
@@ -166,11 +94,8 @@ export function FileEditor({
           throw new Error("File is no longer editable");
         original.current = file.content;
         document.current = file.content;
-        lineBreak.current = file.content.includes("\r\n") ? "\r\n" : "\n";
         drafts.delete(draftKey);
-        view.current?.dispatch({
-          changes: { from: 0, to: view.current.state.doc.length, insert: file.content },
-        });
+        setText(file.content);
         setDirty(false);
         dirtyCallback.current(false);
         setError(null);
@@ -200,35 +125,6 @@ export function FileEditor({
         >
           {readOnly ? "Read-only preview" : dirty ? "Unsaved changes" : "Saved"}
         </span>
-        <button
-          type="button"
-          aria-label="Find in file"
-          title="Find (Ctrl/Cmd+F)"
-          onClick={() => {
-            if (view.current) {
-              openSearchPanel(view.current);
-            }
-          }}
-          className="rounded p-1 text-outline hover:bg-surface-highest"
-        >
-          <Search size={14} />
-        </button>
-        <button
-          type="button"
-          aria-label="Word wrap"
-          title="Word wrap"
-          aria-pressed={wrap}
-          onClick={() => {
-            const next = !wrap;
-            setWrap(next);
-            view.current?.dispatch({
-              effects: wrapExtension.current.reconfigure(next ? EditorView.lineWrapping : []),
-            });
-          }}
-          className={`rounded p-1 hover:bg-surface-highest ${wrap ? "text-primary" : "text-outline"}`}
-        >
-          <WrapText size={14} />
-        </button>
       </div>
       {error && (
         <div role="alert" className="shrink-0 border-b border-error/30 p-2 text-xs text-error">
@@ -243,10 +139,17 @@ export function FileEditor({
           </button>
         </div>
       )}
-      <div ref={parent} data-testid="file-preview" className="min-h-0 flex-1 overflow-hidden" />
-      <footer className="shrink-0 border-t border-surface-highest px-3 py-1 text-[10px] text-outline">
-        {lines} {lines === 1 ? "line" : "lines"} · UTF-8
-      </footer>
+      <div data-testid="file-preview" className="min-h-0 flex-1 overflow-hidden">
+        <CodeEditor
+          path={path}
+          value={text}
+          onChange={change}
+          onSave={() => saveAction.current()}
+          readOnly={readOnly}
+          height="100%"
+          testId="file-editor-input"
+        />
+      </div>
     </div>
   );
 }

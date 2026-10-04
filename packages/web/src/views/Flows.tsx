@@ -1,12 +1,12 @@
 import { AlertTriangle, Search } from "lucide-react";
 import { useState } from "react";
 import type { FlowSource } from "@/api/client";
+import { CodeEditor } from "@/components/CodeEditor";
 import { DetailField } from "@/components/DetailField";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { FlowGraph } from "@/components/flow/FlowGraph";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -355,11 +355,13 @@ function FlowDetailSheet({
                   Definition
                 </div>
                 <div className="border border-surface-highest rounded-sm overflow-hidden">
-                  <ScrollArea className="h-[300px]">
-                    <pre className="font-mono text-[11px] leading-relaxed bg-background p-4 whitespace-pre-wrap break-words text-on-surface">
-                      {JSON.stringify(flow.definition, null, 2)}
-                    </pre>
-                  </ScrollArea>
+                  <CodeEditor
+                    path="flow.json"
+                    value={JSON.stringify(flow.definition, null, 2)}
+                    readOnly
+                    height={300}
+                    testId="flow-file-content"
+                  />
                 </div>
               </div>
             </div>

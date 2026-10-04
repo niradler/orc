@@ -1,6 +1,7 @@
 import { Plus, Search } from "lucide-react";
 import { useState } from "react";
 import type { SkillFull, SkillRefContent, SkillSource } from "@/api/client";
+import { CodeEditor } from "@/components/CodeEditor";
 import { DetailField } from "@/components/DetailField";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -14,7 +15,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -25,7 +25,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
 import { useCreateSkill, useSkill, useSkills } from "@/hooks/useSkills";
@@ -220,7 +219,7 @@ function SkillDetailSheet({
   const { data, isLoading, error, refetch } = useSkill(skillName);
   const skill = data as SkillFull | undefined;
   const [selectedFile, setSelectedFile] = useState<string | undefined>();
-  const fileQuery = useSkill(selectedFile ? skillName : null, selectedFile);
+  const fileQuery = useSkill(skillName, selectedFile ?? "SKILL.md");
   const file = fileQuery.data as SkillRefContent | undefined;
 
   return (
@@ -271,23 +270,24 @@ function SkillDetailSheet({
                   </Button>
                 )}
                 <div className="border border-surface-highest rounded-sm overflow-hidden">
-                  <ScrollArea className="h-[400px]">
-                    <pre
-                      data-testid="skill-file-content"
-                      className="font-mono text-[11px] leading-relaxed bg-background p-4 whitespace-pre-wrap break-words text-on-surface"
-                    >
-                      {selectedFile
-                        ? fileQuery.error
-                          ? (fileQuery.error as Error).message
-                          : fileQuery.isLoading
-                            ? "Loading..."
-                            : file?.content
-                        : skill.content}
-                    </pre>
-                    {file?.encoding === "base64" && (
-                      <p className="p-4 text-xs text-outline">Binary asset shown as base64.</p>
-                    )}
-                  </ScrollArea>
+                  {fileQuery.error ? (
+                    <p role="alert">{(fileQuery.error as Error).message}</p>
+                  ) : fileQuery.isLoading ? (
+                    <p>Loading...</p>
+                  ) : (
+                    <CodeEditor
+                      path={selectedFile ?? "SKILL.md"}
+                      value={file?.content ?? ""}
+                      readOnly
+                      height={400}
+                      testId="skill-file-content"
+                    />
+                  )}
+                  {file?.encoding === "base64" && (
+                    <p className="p-4 text-xs text-outline">
+                      Binary asset shown as base64 (read-only).
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -331,7 +331,12 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
   const [content, setContent] = useState("");
   const createSkill = useCreateSkill();
   const [files, setFiles] = useState<
-    Array<{ id: string; path: string; content: string; encoding: "utf8" | "base64" }>
+    Array<{
+      id: string;
+      path: string;
+      content: string;
+      encoding: "utf8" | "base64";
+    }>
   >([]);
   const [importError, setImportError] = useState<string>();
   const [importing, setImporting] = useState(false);
@@ -366,7 +371,11 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
       {
         name: name.trim(),
         content: content.trim(),
-        files: files.map(({ path, content, encoding }) => ({ path, content, encoding })),
+        files: files.map(({ path, content, encoding }) => ({
+          path,
+          content,
+          encoding,
+        })),
       },
       { onSuccess: onClose },
     );
@@ -407,15 +416,15 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
             <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               SKILL.md *
             </Label>
-            <Textarea
-              data-testid="skill-content-input"
+            <CodeEditor
+              testId="skill-content-input"
+              path="SKILL.md"
               value={content}
-              onChange={(e) => setContent(e.target.value)}
+              onChange={setContent}
               placeholder={
                 "---\nname: my-skill\ndescription: When to use this skill\n---\n\n# Instructions"
               }
-              className="bg-background border-surface-highest text-on-surface font-mono text-xs resize-none"
-              rows={16}
+              height={350}
             />
           </div>
           <div className="space-y-3">
@@ -426,11 +435,16 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
               onClick={() =>
                 setFiles([
                   ...files,
-                  { id: crypto.randomUUID(), path: "", content: "", encoding: "utf8" },
+                  {
+                    id: crypto.randomUUID(),
+                    path: "",
+                    content: "",
+                    encoding: "utf8",
+                  },
                 ])
               }
             >
-              Add supporting file
+              Add file
             </Button>
             {files.map((file) => (
               <div
@@ -451,15 +465,17 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
                     )
                   }
                 />
-                <Textarea
-                  data-testid="skill-file-content-input"
-                  aria-label={`Content of ${file.path || "supporting file"}`}
+                <CodeEditor
+                  testId="skill-file-content-input"
+                  path={file.path || "supporting.txt"}
+                  readOnly={file.encoding === "base64"}
+                  label={`Content of ${file.path || "supporting file"}`}
                   value={file.content}
-                  rows={4}
-                  onChange={(event) =>
+                  height={180}
+                  onChange={(value) =>
                     setFiles(
                       files.map((item) =>
-                        item.id === file.id ? { ...item, content: event.target.value } : item,
+                        item.id === file.id ? { ...item, content: value } : item,
                       ),
                     )
                   }

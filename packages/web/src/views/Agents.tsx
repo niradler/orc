@@ -1,13 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { api } from "@/api/client";
+import { type AgentFull, api } from "@/api/client";
+import { AgentEditor } from "@/components/AgentEditor";
+import { AgentPackageEditor } from "@/components/AgentPackageEditor";
+import { AgentPackageFiles } from "@/components/AgentPackageFiles";
+import { CodeEditor } from "@/components/CodeEditor";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Textarea } from "@/components/ui/textarea";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
 import { readPrimitiveFolder } from "@/lib/primitive-files";
@@ -30,10 +34,10 @@ export default function Agents() {
     enabled: Boolean(selectedId),
   });
   const [creating, setCreating] = useState(false);
-  const [id, setId] = useState("");
-  const [content, setContent] = useState(
-    "---\ndescription: Describe this specialist\n---\n\nYou are a specialist. Define your role and scope.",
-  );
+  const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
+  const [editing, setEditing] = useState<AgentFull>();
+  const [creatingPackage, setCreatingPackage] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [importError, setImportError] = useState<string>();
   const [importing, setImporting] = useState(false);
   const create = useMutation({
@@ -41,6 +45,39 @@ export default function Agents() {
     onSuccess: () => {
       void cache.invalidateQueries({ queryKey: ["agents"] });
       setCreating(false);
+    },
+  });
+  const deleteAgent = useMutation({
+    mutationFn: api.agents.delete,
+    onSuccess: () => {
+      setDeleting(false);
+      closeDetail();
+      void cache.invalidateQueries({ queryKey: ["agents"] });
+      void cache.invalidateQueries({ queryKey: ["agent-packages"] });
+      void cache.invalidateQueries({ queryKey: ["agent"] });
+    },
+  });
+  const update = useMutation({
+    mutationFn: ({ profile, content }: { profile: AgentFull; content: string }) =>
+      api.agents.update(profile.id, {
+        content,
+        expectedRaw: profile.raw,
+        expectedPath: profile.path,
+      }),
+    onSuccess: (profile) => {
+      cache.setQueryData(["agent", profile.id], profile);
+      void cache.invalidateQueries({ queryKey: ["agents"] });
+      void cache.invalidateQueries({ queryKey: ["agent-packages"] });
+      setEditing(undefined);
+    },
+  });
+  const createPackage = useMutation({
+    mutationFn: api.agentPackages.create,
+    onSuccess: () => {
+      void cache.invalidateQueries({ queryKey: ["agent-packages"] });
+      void cache.invalidateQueries({ queryKey: ["agents"] });
+      void cache.invalidateQueries({ queryKey: ["skills"] });
+      setCreatingPackage(false);
     },
   });
 
@@ -79,9 +116,27 @@ export default function Agents() {
         title="Agents"
         meta={`${agents.data?.agents.length ?? 0} shared profiles`}
         action={
-          <Button data-testid="new-agent-button" onClick={() => setCreating(true)}>
-            New Agent
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              data-testid="new-agent-package-button"
+              variant="outline"
+              onClick={() => {
+                createPackage.reset();
+                setCreatingPackage(true);
+              }}
+            >
+              New APM package
+            </Button>
+            <Button
+              data-testid="new-agent-button"
+              onClick={() => {
+                create.reset();
+                setCreating(true);
+              }}
+            >
+              New Agent
+            </Button>
+          </div>
         }
       />
       <p className="text-sm text-outline">
@@ -113,11 +168,25 @@ export default function Agents() {
           </p>
         )}
         {(packages.data?.packages ?? []).map((pkg) => (
-          <p key={pkg.name} data-testid="agent-package-row" className="text-xs text-outline">
+          <button
+            type="button"
+            onClick={() => setSelectedPackage(pkg.name)}
+            key={pkg.name}
+            data-testid="agent-package-row"
+            data-package-name={pkg.name}
+            className="text-xs text-outline"
+          >
             {pkg.name}@{pkg.version} · {pkg.description}
-          </p>
+          </button>
         ))}
         {packages.error && <p role="alert">{packages.error.message}</p>}
+        {selectedPackage && (
+          <AgentPackageFiles
+            key={selectedPackage}
+            name={selectedPackage}
+            onClose={() => setSelectedPackage(null)}
+          />
+        )}
       </div>
       {[...(agents.data?.broken ?? []), ...(packages.data?.broken ?? [])].map((issue) => (
         <p key={issue.path} role="alert" className="text-destructive">
@@ -159,6 +228,33 @@ export default function Agents() {
             ) : agent.data ? (
               <div className="space-y-4">
                 <p className="text-sm">{agent.data.description}</p>
+                <Button
+                  data-testid="agent-edit"
+                  variant="outline"
+                  onClick={async () => {
+                    update.reset();
+                    const current = await agent.refetch();
+                    if (current.data) setEditing(current.data);
+                  }}
+                >
+                  Edit agent
+                </Button>
+                <Button
+                  data-testid="agent-delete"
+                  variant="destructive"
+                  onClick={() => {
+                    deleteAgent.reset();
+                    setDeleting(true);
+                  }}
+                  disabled={deleteAgent.isPending}
+                >
+                  Delete agent
+                </Button>
+                {deleteAgent.error && (
+                  <p data-testid="agent-delete-error" role="alert" className="text-destructive">
+                    {deleteAgent.error.message}
+                  </p>
+                )}
                 <p className="text-xs text-outline">
                   Use this profile in a flow agent node with <code>"agent": "{agent.data.id}"</code>{" "}
                   and choose the coding backend independently.
@@ -168,15 +264,20 @@ export default function Agents() {
                   it cannot honor a declared restriction. Handoffs remain declarations; flow edges
                   choose execution.
                 </p>
-                <pre data-testid="agent-fields" className="text-xs whitespace-pre-wrap">
-                  {JSON.stringify(agent.data.fields, null, 2)}
-                </pre>
-                <pre
-                  data-testid="agent-content"
-                  className="text-xs whitespace-pre-wrap border border-surface-highest p-4"
-                >
-                  {agent.data.content}
-                </pre>
+                <CodeEditor
+                  path="metadata.json"
+                  value={JSON.stringify(agent.data.fields, null, 2)}
+                  readOnly
+                  height={180}
+                  testId="agent-fields"
+                />
+                <CodeEditor
+                  path="agent.agent.md"
+                  value={agent.data.raw}
+                  readOnly
+                  height={400}
+                  testId="agent-content"
+                />
               </div>
             ) : (
               <p>Loading...</p>
@@ -184,48 +285,50 @@ export default function Agents() {
           </SheetBody>
         </SheetContent>
       </Sheet>
-      <Dialog open={creating} onOpenChange={setCreating}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>New shared agent</DialogTitle>
-          </DialogHeader>
-          <form
-            className="space-y-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              create.mutate({ id, content });
-            }}
-          >
-            <Label htmlFor="agent-id">Agent filename stem</Label>
-            <Input
-              id="agent-id"
-              data-testid="agent-id-input"
-              value={id}
-              onChange={(event) => setId(event.target.value)}
-              placeholder="security-review"
-            />
-            <Label htmlFor="agent-definition">.agent.md definition</Label>
-            <Textarea
-              id="agent-definition"
-              data-testid="agent-content-input"
-              rows={15}
-              value={content}
-              onChange={(event) => setContent(event.target.value)}
-            />
-            {create.error && (
-              <p role="alert" className="text-destructive">
-                {create.error.message}
-              </p>
-            )}
-            <Button
-              data-testid="agent-submit"
-              type="submit"
-              disabled={create.isPending || !id.trim() || !content.trim()}
-            >
-              Create
-            </Button>
-          </form>
-        </DialogContent>
+      <ConfirmDialog
+        open={deleting}
+        title={`Delete ${agent.data?.name ?? "agent"}?`}
+        description={`This permanently deletes the agent definition "${selectedId}". Other agents and package resources are kept. Flows referencing this agent will need another profile.`}
+        isPending={deleteAgent.isPending}
+        onCancel={() => !deleteAgent.isPending && setDeleting(false)}
+        onConfirm={() => {
+          if (selectedId) deleteAgent.mutate(selectedId, { onError: () => setDeleting(false) });
+        }}
+      />
+      <Dialog open={creating} onOpenChange={(open) => !create.isPending && setCreating(open)}>
+        {creating && (
+          <AgentEditor
+            pending={create.isPending}
+            error={create.error?.message}
+            onSave={(id, content) => create.mutate({ id, content })}
+          />
+        )}
+      </Dialog>
+      <Dialog
+        open={Boolean(editing)}
+        onOpenChange={(open) => !open && !update.isPending && setEditing(undefined)}
+      >
+        {editing && (
+          <AgentEditor
+            key={editing.id}
+            agent={editing}
+            pending={update.isPending}
+            error={update.error?.message}
+            onSave={(_, content) => update.mutate({ profile: editing, content })}
+          />
+        )}
+      </Dialog>
+      <Dialog
+        open={creatingPackage}
+        onOpenChange={(open) => !createPackage.isPending && setCreatingPackage(open)}
+      >
+        {creatingPackage && (
+          <AgentPackageEditor
+            pending={createPackage.isPending}
+            error={createPackage.error?.message}
+            onSave={(input) => createPackage.mutate(input)}
+          />
+        )}
       </Dialog>
     </div>
   );

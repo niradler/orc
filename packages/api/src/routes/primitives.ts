@@ -1,5 +1,11 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import { createAgent, discoverAgents, readAgent } from "@orc/core/agent-service";
+import {
+  createAgent,
+  deleteAgent,
+  discoverAgents,
+  readAgent,
+  updateAgent,
+} from "@orc/core/agent-service";
 import { NotFoundError } from "@orc/core/errors";
 import {
   createPackage,
@@ -46,6 +52,61 @@ const FileInputSchema = z.object({
   content: z.string().max(12 * 1024 * 1024),
   encoding: z.enum(["utf8", "base64"]).optional(),
 });
+
+app.openapi(
+  createRoute({
+    method: "put",
+    path: "/agents/{id}",
+    tags: ["Agents"],
+    summary: "Update an agent definition with optimistic concurrency checks",
+    request: {
+      params: z.object({ id: z.string().min(1).max(1024) }),
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              content: z
+                .string()
+                .min(1)
+                .max(8 * 1024 * 1024),
+              expectedRaw: z.string().max(8 * 1024 * 1024),
+              expectedPath: z.string().min(1).max(4096),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Updated agent",
+        content: { "application/json": { schema: AgentFullSchema } },
+      },
+      400: { description: "Invalid definition or path" },
+      404: { description: "Agent not found" },
+      409: { description: "Agent changed since it was opened" },
+    },
+  }),
+  (c) => c.json(updateAgent(c.req.valid("param").id, c.req.valid("json"))),
+);
+
+app.openapi(
+  createRoute({
+    method: "delete",
+    path: "/agents/{id}",
+    tags: ["Agents"],
+    summary: "Delete the selected agent definition without deleting package resources",
+    request: { params: z.object({ id: z.string().min(1).max(1024) }) },
+    responses: {
+      204: { description: "Agent deleted" },
+      400: { description: "Invalid agent path" },
+      404: { description: "Agent not found" },
+    },
+  }),
+  (c) => {
+    deleteAgent(c.req.valid("param").id);
+    return c.body(null, 204);
+  },
+);
 
 app.openapi(
   createRoute({

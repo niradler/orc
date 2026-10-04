@@ -257,6 +257,9 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
     agents: {
       list: () => c<{ agents: AgentProfile[]; broken: BrokenAgent[] }>("GET", "/agents"),
+      delete: (id: string) => c<null>("DELETE", `/agents/${encodeURIComponent(id)}`),
+      update: (id: string, input: { content: string; expectedRaw: string; expectedPath: string }) =>
+        c<AgentFull>("PUT", `/agents/${encodeURIComponent(id)}`, input),
       read: (id: string) => c<AgentFull>("GET", `/agents/${encodeURIComponent(id)}`),
       create: (input: { id: string; content: string }) => c<AgentFull>("POST", "/agents", input),
     },

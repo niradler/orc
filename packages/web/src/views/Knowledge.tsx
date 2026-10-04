@@ -1,6 +1,7 @@
 import { FileText, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { CodeEditor } from "@/components/CodeEditor";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DetailField } from "@/components/DetailField";
 import { EmptyState } from "@/components/EmptyState";
@@ -15,7 +16,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -264,11 +264,13 @@ function SearchTab({ projectId }: { projectId?: string }) {
                   <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-2">
                     Content
                   </div>
-                  <ScrollArea className="h-[400px]">
-                    <pre className="font-mono text-[11px] text-on-surface-variant whitespace-pre-wrap bg-surface-highest/50 border border-surface-highest rounded-sm p-3">
-                      {document.content}
-                    </pre>
-                  </ScrollArea>
+                  <CodeEditor
+                    path={document.path}
+                    value={document.content}
+                    readOnly
+                    height={400}
+                    testId="knowledge-file-content"
+                  />
                 </div>
               </div>
             )}

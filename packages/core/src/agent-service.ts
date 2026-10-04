@@ -1,8 +1,16 @@
-import { existsSync, lstatSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  realpathSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
-import { ConflictError, ValidationError } from "./errors.js";
+import { ConflictError, NotFoundError, ValidationError } from "./errors.js";
 import { parseMarkdownFrontmatter } from "./markdown-frontmatter.js";
 import { getPackagesDir } from "./package-paths.js";
 import type { AgentFields, AgentFull, AgentProfile, BrokenAgent } from "./primitive-types.js";
@@ -145,4 +153,48 @@ export function createAgent(id: string, content: string): AgentFull {
 
 export function renderAgentInstructions(agent: AgentFull): string {
   return `## Agent profile: ${agent.name}\n${agent.content}\n\nAgent definition: ${agent.path}\nResolve references relative to this file's directory.\n${agent.fields.handoffs ? `Declared handoffs: ${JSON.stringify(agent.fields.handoffs)}\nORC flow edges determine which handoff runs; declarations do not start agents automatically.` : ""}`;
+}
+
+function agentFilePath(id: string, cwd: string): string {
+  validateSkillPath(id);
+  const agent = discoverAgents(cwd).agents.find((entry) => entry.id === id);
+  if (!agent) throw new NotFoundError("Agent", id);
+  let directory = getUserAgentsDir();
+  if (agent.source === "package") directory = getPackagesDir();
+  if (agent.source === "project") directory = join(cwd, ".apm", "agents");
+  const root = resolve(directory);
+  const inside = relative(root, agent.path);
+  if (!inside || inside === ".." || inside.startsWith(`..${sep}`) || isAbsolute(inside))
+    throw new ValidationError("Agent file must stay inside its source directory");
+  if (lstatSync(root).isSymbolicLink() || relative(root, realpathSync(root)) !== "")
+    throw new ValidationError("Agent directory symlinks are not allowed");
+  let path = root;
+  for (const part of inside.split(sep)) {
+    path = join(path, part);
+    if (lstatSync(path).isSymbolicLink())
+      throw new ValidationError("Agent file symlinks are not allowed");
+  }
+  if (!lstatSync(path).isFile()) throw new NotFoundError("Agent", id);
+  return path;
+}
+
+export function deleteAgent(id: string, cwd = process.cwd()): void {
+  unlinkSync(agentFilePath(id, cwd));
+}
+
+export function updateAgent(
+  id: string,
+  input: { content: string; expectedRaw: string; expectedPath: string },
+  cwd = process.cwd(),
+): AgentFull {
+  const path = agentFilePath(id, cwd);
+  const current = readAgent(id, cwd);
+  if (!current) throw new NotFoundError("Agent", id);
+  if (current.raw !== input.expectedRaw || current.path !== input.expectedPath)
+    throw new ConflictError("This agent changed since you opened it. Reopen it before saving.");
+  parseAgent(input.content, path);
+  writeFileSync(path, input.content, { encoding: "utf8" });
+  const updated = readAgent(id, cwd);
+  if (!updated) throw new NotFoundError("Agent", id);
+  return updated;
 }

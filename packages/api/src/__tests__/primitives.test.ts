@@ -75,4 +75,88 @@ describe("shared agent and package contracts", () => {
     expect((await app.request("/api/agents")).status).toBe(401);
     expect((await app.request("/api/agent-packages")).status).toBe(401);
   });
+  test("should update definitions, preserve extensions and reject stale or invalid writes", async () => {
+    const original = await (await req(app, "GET", `/agents/${id}`)).json();
+    const input = {
+      content:
+        "---\nname: Updated reviewer\ndescription: Review changes\ntools: { Read: true, Bash: false }\ncustom-field: preserved\n---\nUpdated instructions.",
+      expectedRaw: original.raw,
+      expectedPath: original.path,
+    };
+    expect(
+      (
+        await app.request(`/api/agents/${id}`, {
+          method: "PUT",
+          body: JSON.stringify(input),
+          headers: { "Content-Type": "application/json" },
+        })
+      ).status,
+    ).toBe(401);
+    const updated = await req(app, "PUT", `/agents/${id}`, input);
+    expect(updated.status).toBe(200);
+    expect((await updated.json()).fields["custom-field"]).toBe("preserved");
+    expect((await req(app, "PUT", `/agents/${id}`, input)).status).toBe(409);
+    const latest = await (await req(app, "GET", `/agents/${id}`)).json();
+    expect(
+      (
+        await req(app, "PUT", `/agents/${id}`, {
+          ...input,
+          expectedRaw: latest.raw,
+          content: "not yaml",
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await req(app, "PUT", `/agents/${id}`, {
+          ...input,
+          expectedRaw: latest.raw,
+          expectedPath: "another-file.agent.md",
+        })
+      ).status,
+    ).toBe(409);
+    expect((await (await req(app, "GET", `/agents/${id}`)).json()).raw).toBe(latest.raw);
+    const packageId = encodeURIComponent(`${name}/review`);
+    const packaged = await (await req(app, "GET", `/agents/${packageId}`)).json();
+    expect(
+      (
+        await req(app, "PUT", `/agents/${packageId}`, {
+          content: packaged.raw.replace(
+            "Read ../../references/policy.md.",
+            "Read package policy carefully.",
+          ),
+          expectedRaw: packaged.raw,
+          expectedPath: packaged.path,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (await (await req(app, "GET", `/agent-packages/${name}?ref=references%2Fpolicy.md`)).json())
+        .content,
+    ).toBe("Shared policy");
+  });
+  test("should authenticate deletion and reject traversal without changing profiles", async () => {
+    expect((await app.request(`/api/agents/${id}`, { method: "DELETE" })).status).toBe(401);
+    for (const invalid of ["../outside", "folder/../outside", "C:\\outside", "folder\\outside"]) {
+      expect((await req(app, "DELETE", `/agents/${encodeURIComponent(invalid)}`)).status).toBe(400);
+    }
+    expect((await req(app, "GET", `/agents/${id}`)).status).toBe(200);
+  });
+  test("should delete only the selected standalone or package profile", async () => {
+    expect((await req(app, "DELETE", `/agents/${id}`)).status).toBe(204);
+    expect((await req(app, "GET", `/agents/${id}`)).status).toBe(404);
+    expect((await req(app, "DELETE", `/agents/${id}`)).status).toBe(404);
+    const packageId = encodeURIComponent(`${name}/review`);
+    expect((await req(app, "DELETE", `/agents/${packageId}`)).status).toBe(204);
+    expect((await req(app, "GET", `/agents/${packageId}`)).status).toBe(404);
+    expect((await req(app, "GET", `/agent-packages/${name}`)).status).toBe(200);
+    const file = await req(app, "GET", `/agent-packages/${name}?ref=references%2Fpolicy.md`);
+    expect((await file.json()).content).toBe("Shared policy");
+    const library = JSON.parse(await executeTool("agent_list", {}));
+    expect(
+      library.agents.some(
+        (agent: { id: string }) => agent.id === id || agent.id === `${name}/review`,
+      ),
+    ).toBe(false);
+  });
 });
