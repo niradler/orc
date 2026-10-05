@@ -34,6 +34,8 @@ The desktop app refreshes the CLI at `~/.orc/bin` on launch. Separately managed
 daemons are never stopped automatically; an old daemon makes verification fail.
 Desktop relaunch ignores development port, API-base, database and web-dist
 environment overrides and uses the installed application's configuration.
+It starts in the installed application's directory so the repository's `.env`
+and project configuration are not reloaded by the standalone executable.
 Linux x64 installers use Electron's `x86_64` artifact suffix.
 
 Progress is checkpointed in ignored `.orc/release-state.json`. Resume from the

@@ -93,11 +93,12 @@ export async function installDesktop(options: {
           "-NoProfile",
           "-NonInteractive",
           "-Command",
-          "Start-Process -FilePath $env:ORC_RELEASE_APP -ArgumentList '--hidden' -WindowStyle Hidden",
+          "Start-Process -FilePath $env:ORC_RELEASE_APP -ArgumentList '--hidden' -WorkingDirectory $env:ORC_RELEASE_WORKDIR -WindowStyle Hidden",
         ]
       : [executable, "--hidden"],
     {
-      env: { ...env, ORC_RELEASE_APP: executable },
+      cwd: dirname(executable),
+      env: { ...env, ORC_RELEASE_APP: executable, ORC_RELEASE_WORKDIR: dirname(executable) },
       stdin: "ignore",
       stdout: "ignore",
       stderr: "ignore",
