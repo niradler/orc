@@ -6,8 +6,13 @@ export function hasWriter(path: string): boolean {
   if (!existsSync(path)) return false;
   if (process.platform === "win32") return hasWindowsWriter(path);
   const errnoSymbol = process.platform === "darwin" ? "__error" : "__errno_location";
+  const musl = `/lib/ld-musl-${process.arch === "arm64" ? "aarch64" : "x86_64"}.so.1`;
   const library = dlopen(
-    process.platform === "darwin" ? "/usr/lib/libSystem.B.dylib" : "libc.so.6",
+    process.platform === "darwin"
+      ? "/usr/lib/libSystem.B.dylib"
+      : existsSync(musl)
+        ? musl
+        : "libc.so.6",
     {
       flock: { args: ["i32", "i32"], returns: "i32" },
       [errnoSymbol]: { args: [], returns: "ptr" },
