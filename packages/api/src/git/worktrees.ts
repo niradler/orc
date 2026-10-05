@@ -104,7 +104,7 @@ export function parseWorktreeList(porcelain: string): Parsed[] {
 }
 
 async function isDirty(path: string, run: WorktreeDeps["runGit"]): Promise<boolean> {
-  const result = await run(["git", "-C", path, "status", "--porcelain"]);
+  const result = await run(["git", "--no-optional-locks", "-C", path, "status", "--porcelain"]);
   if (result.code !== 0) throw gitError(result, `git status failed in ${path}`);
   return result.stdout.trim().length > 0;
 }

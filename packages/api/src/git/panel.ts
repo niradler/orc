@@ -32,7 +32,7 @@ export async function gitStatus(
   const root = await repoRoot(cwd, runGit);
   if (!root) return { root: null, branch: null, files: [], branches: [] };
   const [status, branch, branches] = await Promise.all([
-    runGit(["git", "-C", root, "status", "--porcelain=v1", "-z"]),
+    runGit(["git", "--no-optional-locks", "-C", root, "status", "--porcelain=v1", "-z"]),
     runGit(["git", "-C", root, "symbolic-ref", "--quiet", "--short", "HEAD"]),
     runGit(["git", "-C", root, "for-each-ref", "--format=%(refname:short)", "refs/heads/"]),
   ]);

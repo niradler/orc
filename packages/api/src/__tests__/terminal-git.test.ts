@@ -1,8 +1,16 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gitStatus, parseStatus } from "../git/panel.js";
+import { listWorktrees } from "../git/worktrees.js";
 import { shutdownTerminals } from "../terminals/service.js";
 import { runGit } from "../terminals/session-dir.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
@@ -33,6 +41,29 @@ afterAll(() => {
 });
 
 describe("terminal git panel", () => {
+  test("should read status and worktrees without refreshing the index", async () => {
+    const checkout = mkdtempSync(join(tmpdir(), "orc-index-read-"));
+    for (const args of [
+      ["init", "-b", "main"],
+      ["config", "user.email", "test@example.com"],
+      ["config", "user.name", "test"],
+    ]) {
+      expect((await runGit(["git", "-C", checkout, ...args])).code).toBe(0);
+    }
+    const file = join(checkout, "tracked.txt");
+    writeFileSync(file, "unchanged\n");
+    expect((await runGit(["git", "-C", checkout, "add", "."])).code).toBe(0);
+    expect((await runGit(["git", "-C", checkout, "commit", "-m", "initial"])).code).toBe(0);
+    const index = join(checkout, ".git", "index");
+    const before = readFileSync(index);
+    utimesSync(file, new Date(0), new Date(0));
+    expect((await gitStatus(checkout)).files).toEqual([]);
+    expect(readFileSync(index)).toEqual(before);
+    expect(
+      (await listWorktrees(checkout, { runGit, platform: process.platform })).worktrees[0]?.dirty,
+    ).toBe(false);
+    expect(readFileSync(index)).toEqual(before);
+  });
   test("should save text, preserve shorter writes and refuse stale or unsafe file edits", async () => {
     const route = `/terminals/${terminalId}/files`;
     writeFileSync(join(repo, "editor.txt"), "long original text\r\n");
