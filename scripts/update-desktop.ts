@@ -3,6 +3,19 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { run } from "./release-lib.js";
 
+export function desktopLaunchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const developmentVariables = new Set([
+    "ORC_API_PORT",
+    "ORC_WEB_PORT",
+    "ORC_API_BASE",
+    "ORC_DB_PATH",
+    "ORC_WEB_DIST",
+  ]);
+  return Object.fromEntries(
+    Object.entries(env).filter(([key]) => !developmentVariables.has(key.toUpperCase())),
+  );
+}
+
 export async function installDesktop(options: {
   version: string;
   installer: string;
@@ -71,13 +84,30 @@ export async function installDesktop(options: {
     binary = join(homedir(), ".orc/bin/orc");
   }
   if (!existsSync(executable)) throw new Error(`Installed app not found: ${executable}`);
-  const launch = Bun.spawn([executable, "--hidden"], {
-    stdin: "ignore",
-    stdout: "ignore",
-    stderr: "ignore",
-    windowsHide: true,
-  });
-  launch.unref();
+  const env = desktopLaunchEnv(process.env);
+  // Start-Process detaches the Windows desktop from this bounded release process.
+  const launch = Bun.spawn(
+    process.platform === "win32"
+      ? [
+          "powershell.exe",
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "Start-Process -FilePath $env:ORC_RELEASE_APP -ArgumentList '--hidden' -WindowStyle Hidden",
+        ]
+      : [executable, "--hidden"],
+    {
+      env: { ...env, ORC_RELEASE_APP: executable },
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+      windowsHide: true,
+      ...(process.platform === "win32" ? { timeout: 30_000 } : {}),
+    },
+  );
+  if (process.platform === "win32") {
+    if ((await launch.exited) !== 0) throw new Error("Desktop relaunch failed");
+  } else launch.unref();
   const deadline = Date.now() + 60_000;
   let verified = false;
   while (Date.now() < deadline) {

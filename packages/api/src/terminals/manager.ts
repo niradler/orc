@@ -106,7 +106,7 @@ export class TerminalManager {
       if (
         info.status === "running" &&
         info.pid === input.pid &&
-        info.kind === input.backend &&
+        info.kind === (input.backend === "cursor-agent" ? "cursor" : input.backend) &&
         Math.floor(Date.parse(info.created_at) / 1000) <=
           Math.floor(input.createdAt.getTime() / 1000)
       ) {

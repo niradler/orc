@@ -1,4 +1,5 @@
 import { statSync } from "node:fs";
+import { GeminiSession, geminiText } from "./gemini.js";
 
 export type TranscriptBlock =
   | { type: "text"; text: string }
@@ -213,7 +214,41 @@ async function* cursorTurns(path: string): AsyncGenerator<Draft> {
     );
     if (blocks.length === 0) continue;
     const onlyResults = blocks.every((b) => b.type === "tool_result");
-    yield { role: onlyResults ? "tool" : line.role, time: null, blocks };
+    yield {
+      role: onlyResults ? "tool" : line.role,
+      time: typeof line.timestamp === "string" ? line.timestamp : null,
+      blocks,
+    };
+  }
+}
+
+async function* geminiTurns(path: string): AsyncGenerator<Draft> {
+  if (path.endsWith(".jsonl")) {
+    yield* cursorTurns(path);
+    return;
+  }
+  const data = GeminiSession.parse(await Bun.file(path).json());
+  for (const message of data.messages) {
+    const blocks: TranscriptBlock[] = [];
+    const text = geminiText(message.content);
+    if (text) blocks.push({ type: "text", text: cut(text, TEXT_MAX) });
+    for (const tool of message.toolCalls ?? []) {
+      blocks.push({
+        type: "tool_use",
+        id: tool.id,
+        name: tool.name,
+        input: cut(stringify(tool.args), TOOL_INPUT_MAX),
+        ...(tool.result != null
+          ? { result: cut(geminiText(tool.result) || stringify(tool.result), TOOL_RESULT_MAX) }
+          : {}),
+      });
+    }
+    if (blocks.length)
+      yield {
+        role: message.type === "user" ? "user" : message.type === "gemini" ? "assistant" : "system",
+        time: message.timestamp ?? null,
+        blocks,
+      };
   }
 }
 
@@ -221,6 +256,8 @@ const readers: Record<string, (path: string) => AsyncGenerator<Draft>> = {
   claude: claudeTurns,
   codex: codexTurns,
   cursor: cursorTurns,
+  "cursor-agent": cursorTurns,
+  gemini: geminiTurns,
 };
 
 type ToolUse = Extract<TranscriptBlock, { type: "tool_use" }>;

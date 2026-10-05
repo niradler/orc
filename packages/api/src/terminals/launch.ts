@@ -1,6 +1,6 @@
 import { ValidationError } from "@orc/core/errors";
 
-export const LAUNCH_KINDS = ["shell", "claude", "codex", "cursor"] as const;
+export const LAUNCH_KINDS = ["shell", "claude", "codex", "cursor", "gemini"] as const;
 
 export type LaunchKind = (typeof LAUNCH_KINDS)[number];
 
@@ -9,6 +9,7 @@ const AGENT_BINARIES: Record<Exclude<LaunchKind, "shell">, string[]> = {
   claude: ["claude"],
   codex: ["codex"],
   cursor: ["cursor-agent", "agent"],
+  gemini: ["gemini"],
 };
 
 function whichAgent(kind: Exclude<LaunchKind, "shell">, deps: LaunchDeps): string | null {
@@ -92,17 +93,17 @@ function checkedCwd(cwd: string | null | undefined, deps: LaunchDeps): string | 
 }
 
 export function resumeLaunch(live: LiveSessionRef, deps: LaunchDeps): Launch {
-  if (live.agent !== "claude" && live.agent !== "codex") {
+  if (!["claude", "codex", "cursor-agent", "gemini"].includes(live.agent)) {
     throw new ValidationError(`Resume is not supported for ${live.agent} sessions`);
   }
   if (!live.session_id) throw new ValidationError("Session has no agent session id to resume");
   if (!isValidSessionId(live.session_id)) throw new ValidationError("Malformed session id");
-  const binary = resolveBinary(live.agent, deps);
+  const kind =
+    live.agent === "cursor-agent" ? "cursor" : (live.agent as Exclude<LaunchKind, "shell">);
+  const binary = resolveBinary(kind, deps);
   const argv =
-    live.agent === "claude"
-      ? [binary, "--resume", live.session_id]
-      : [binary, "resume", live.session_id];
-  return { kind: live.agent, argv, cwd: checkedCwd(live.cwd, deps), resume: true };
+    kind === "codex" ? [binary, "resume", live.session_id] : [binary, "--resume", live.session_id];
+  return { kind, argv, cwd: checkedCwd(live.cwd, deps), resume: true };
 }
 
 export function buildLaunch(req: LaunchRequest, deps: LaunchDeps): Launch {

@@ -32,6 +32,9 @@ Linux uses an AppImage at `~/.local/bin/orc-desktop.AppImage`. Set
 `ORC_DESKTOP_PATH` to the existing desktop executable for a custom installation.
 The desktop app refreshes the CLI at `~/.orc/bin` on launch. Separately managed
 daemons are never stopped automatically; an old daemon makes verification fail.
+Desktop relaunch ignores development port, API-base, database and web-dist
+environment overrides and uses the installed application's configuration.
+Linux x64 installers use Electron's `x86_64` artifact suffix.
 
 Progress is checkpointed in ignored `.orc/release-state.json`. Resume from the
 same release commit and host. Failed steps stop immediately; successful publishes

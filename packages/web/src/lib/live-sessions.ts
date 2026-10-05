@@ -12,6 +12,8 @@ export function resumeCommand(s: LiveSession): string | null {
   const cd = s.cwd ? `cd '${s.cwd.replace(/'/g, "'\\''")}' && ` : "";
   if (s.agent === "claude") return `${cd}claude --resume ${s.session_id}`;
   if (s.agent === "codex") return `${cd}codex resume ${s.session_id}`;
+  if (s.agent === "cursor-agent") return `${cd}agent --resume ${s.session_id}`;
+  if (s.agent === "gemini") return `${cd}gemini --resume ${s.session_id}`;
   return null;
 }
 

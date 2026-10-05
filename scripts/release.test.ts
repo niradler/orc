@@ -9,6 +9,7 @@ import {
   run,
   TARGETS,
 } from "./release-lib.js";
+import { desktopLaunchEnv } from "./update-desktop.js";
 
 describe("release safety", () => {
   test("should keep the default invocation read-only even with uncommitted changes", () => {
@@ -75,7 +76,22 @@ describe("release safety", () => {
     expect(new Set(files).size).toBe(4);
     expect(files).toContain("orc-0.1.30-mac-arm64.dmg");
     expect(files).toContain("orc-0.1.30-win-x64.exe");
+    expect(files).toContain("orc-0.1.30-linux-x86_64.AppImage");
     expect(() => installerName("0.1.30", "windows-arm64")).toThrow();
+  });
+  test("should isolate the installed desktop from development ports and data paths", () => {
+    const source = {
+      ORC_API_PORT: "7711",
+      ORC_WEB_PORT: "3077",
+      ORC_API_BASE: "http://localhost:7711",
+      ORC_DB_PATH: "temporary.db",
+      ORC_WEB_DIST: "temporary-dist",
+      PATH: "tools",
+      ORC_API_SECRET: "test-secret",
+    };
+    expect(desktopLaunchEnv(source)).toEqual({ PATH: "tools", ORC_API_SECRET: "test-secret" });
+    expect(source.ORC_API_PORT).toBe("7711");
+    expect(desktopLaunchEnv({ orc_api_port: "7711", HOME: "user" })).toEqual({ HOME: "user" });
   });
   test("should preserve process errors rather than treating empty output as success", () => {
     expect(() =>

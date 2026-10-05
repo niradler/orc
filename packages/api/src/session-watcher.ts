@@ -1,6 +1,7 @@
-import { existsSync, watch } from "node:fs";
+import { existsSync, mkdirSync, watch } from "node:fs";
 import { join } from "node:path";
 import { ulid } from "@orc/core/ids";
+import { LIVE_REGISTRY_DIR } from "@orc/core/live-session";
 import { createLogger } from "@orc/core/logger";
 import { getDb } from "@orc/db/client";
 import { gateway_sessions } from "@orc/db/schema";
@@ -14,6 +15,9 @@ import {
 import { codexAdapter } from "./sessions/codex.js";
 import { LIVE_CHAT_ID, projectIdFor } from "./sessions/common.js";
 import { cursorAdapter } from "./sessions/cursor.js";
+import { cursorAgentAdapter } from "./sessions/cursor-agent.js";
+import { geminiAdapter } from "./sessions/gemini.js";
+import { lifecycleRecords, withLifecycle } from "./sessions/lifecycle.js";
 import type { KnownSession, SessionAdapter, SessionRecord } from "./sessions/types.js";
 
 export { LIVE_CHAT_ID };
@@ -22,9 +26,13 @@ const logger = createLogger("api:session-sync");
 
 export type SyncResult = { backend: string; seen: number; ms: number; error?: string };
 
-const defaultAdapters = (): SessionAdapter[] => [claudeAdapter(), codexAdapter(), cursorAdapter()];
+const defaultAdapters = (): SessionAdapter[] =>
+  [claudeAdapter(), codexAdapter(), cursorAdapter(), cursorAgentAdapter(), geminiAdapter()].map(
+    (adapter) => withLifecycle(adapter),
+  );
 
 let currentAdapters: SessionAdapter[] = defaultAdapters();
+let liveRegistryDir: string | null = null;
 const lastRun = new Map<string, number>();
 let chain: Promise<unknown> = Promise.resolve();
 let tokenChain: Promise<unknown> = Promise.resolve();
@@ -145,6 +153,9 @@ export function runSync(
       const due = Date.now() - (lastRun.get(adapter.backend) ?? 0) >= adapter.minIntervalMs;
       if (opts.force || due) results.push(await syncAdapter(adapter));
     }
+    if (liveRegistryDir) {
+      for (const record of lifecycleRecords(liveRegistryDir)) await upsertRecord(record);
+    }
     return results;
   });
 }
@@ -156,15 +167,37 @@ export function tokensSettled(): Promise<unknown> {
 }
 
 export function startSessionWatcher(
-  opts: { adapters?: SessionAdapter[]; registryDir?: string | null; tickMs?: number } = {},
+  opts: {
+    adapters?: SessionAdapter[];
+    registryDir?: string | null;
+    liveRegistryDir?: string | null;
+    tickMs?: number;
+  } = {},
 ): () => void {
   currentAdapters = opts.adapters ?? defaultAdapters();
+  liveRegistryDir =
+    opts.liveRegistryDir === undefined
+      ? opts.adapters
+        ? null
+        : LIVE_REGISTRY_DIR
+      : opts.liveRegistryDir;
+  if (liveRegistryDir) mkdirSync(liveRegistryDir, { recursive: true });
   const registryDir = opts.registryDir === undefined ? CLAUDE_REGISTRY_DIR : opts.registryDir;
   void runSync(currentAdapters, { force: true });
-  const timer = setInterval(() => void runSync(currentAdapters), opts.tickMs ?? 30_000);
+  const timer = setInterval(() => void runSync(currentAdapters), opts.tickMs ?? 3_000);
 
   const pending = new Map<string, ReturnType<typeof setTimeout>>();
   let watcher: ReturnType<typeof watch> | undefined;
+  let lifecycleWatcher: ReturnType<typeof watch> | undefined;
+  if (liveRegistryDir && existsSync(liveRegistryDir)) {
+    lifecycleWatcher = watch(liveRegistryDir, (_event, file) => {
+      if (file?.endsWith(".json"))
+        void runSync(currentAdapters).catch((error) =>
+          logger.error("lifecycle sync failed", error),
+        );
+    });
+    lifecycleWatcher.on("error", (error) => logger.error("lifecycle watcher failed", error));
+  }
   if (registryDir && existsSync(registryDir)) {
     try {
       watcher = watch(registryDir, (_event, file) => {
@@ -203,5 +236,7 @@ export function startSessionWatcher(
     clearInterval(timer);
     for (const t of pending.values()) clearTimeout(t);
     watcher?.close();
+    lifecycleWatcher?.close();
+    liveRegistryDir = null;
   };
 }

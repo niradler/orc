@@ -11,6 +11,7 @@ const BIN: Record<string, string> = {
   claude: "/bin/claude",
   codex: "/bin/codex",
   "cursor-agent": "/bin/cursor-agent",
+  gemini: "/bin/gemini",
   pwsh: "C:\\pwsh.exe",
   powershell: "C:\\powershell.exe",
 };
@@ -48,6 +49,23 @@ describe("resume launch", () => {
     const l = buildLaunch({ live: live({ agent: "codex" }) }, deps());
     expect(l.argv).toEqual(["/bin/codex", "resume", "abc-123"]);
   });
+
+  test.each(["cursor-agent", "gemini"])(
+    "should resume %s with its original id and working folder",
+    (agent) => {
+      const launch = buildLaunch({ live: live({ agent }) }, deps());
+      expect(launch).toMatchObject({
+        kind: agent === "cursor-agent" ? "cursor" : "gemini",
+        cwd: "/work/app",
+        resume: true,
+      });
+      expect(launch.argv).toEqual([
+        agent === "cursor-agent" ? "/bin/cursor-agent" : "/bin/gemini",
+        "--resume",
+        "abc-123",
+      ]);
+    },
+  );
 
   test("null cwd spawns with no cwd override", () => {
     expect(buildLaunch({ live: live({ cwd: null }) }, deps()).cwd).toBeUndefined();
@@ -156,7 +174,7 @@ describe("platform shells", () => {
   });
 
   test("only installed launchers are offered", () => {
-    expect(availableLaunchers(deps())).toEqual(["shell", "claude", "codex", "cursor"]);
+    expect(availableLaunchers(deps())).toEqual(["shell", "claude", "codex", "cursor", "gemini"]);
     expect(
       availableLaunchers(deps({ which: (c) => (c === "claude" ? "/bin/claude" : null) })),
     ).toEqual(["shell", "claude"]);

@@ -7,7 +7,7 @@ import type { createApp } from "../server.js";
 import { runSync, startSessionWatcher, tokensSettled } from "../session-watcher.js";
 import { claudeAdapter } from "../sessions/claude.js";
 import { codexAdapter } from "../sessions/codex.js";
-import { cursorAdapter, resolveSlugPath } from "../sessions/cursor.js";
+import { cursorAdapter, cursorStateDbPath, resolveSlugPath } from "../sessions/cursor.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 type Row = {
@@ -263,6 +263,32 @@ describe("codex adapter", () => {
 });
 
 describe("cursor adapter", () => {
+  test("should resolve the native state database on every supported platform", () => {
+    expect(cursorStateDbPath("win32", "/home", { APPDATA: "/roaming" })).toBe(
+      join("/roaming", "Cursor", "User", "globalStorage", "state.vscdb"),
+    );
+    expect(cursorStateDbPath("win32", "/home", {})).toBe(
+      join("/home", "AppData", "Roaming", "Cursor", "User", "globalStorage", "state.vscdb"),
+    );
+    expect(cursorStateDbPath("darwin", "/home", {})).toBe(
+      join(
+        "/home",
+        "Library",
+        "Application Support",
+        "Cursor",
+        "User",
+        "globalStorage",
+        "state.vscdb",
+      ),
+    );
+    expect(cursorStateDbPath("linux", "/home", { XDG_CONFIG_HOME: "/config" })).toBe(
+      join("/config", "Cursor", "User", "globalStorage", "state.vscdb"),
+    );
+    expect(cursorStateDbPath("linux", "/home", {})).toBe(
+      join("/home", ".config", "Cursor", "User", "globalStorage", "state.vscdb"),
+    );
+  });
+
   test("agent transcripts become sessions with an estimated token count", async () => {
     const dir = join(root, "cursor-target");
     const projects = join(root, "cursor-projects");
@@ -297,5 +323,50 @@ describe("cursor adapter", () => {
       tokens_used: Math.round(body.length / 4),
       tokens_estimated: true,
     });
+  });
+  test("should expose an active composer through the live API and retain ended history", async () => {
+    const dbPath = join(root, "cursor-state.vscdb");
+    const db = new Database(dbPath);
+    db.exec("CREATE TABLE cursorDiskKV (key TEXT PRIMARY KEY, value TEXT)");
+    const statement = db.prepare("INSERT INTO cursorDiskKV VALUES (?, ?)");
+    const now = Date.now();
+    for (const [id, updated, archived] of [
+      ["cursor-active", now, false],
+      ["cursor-ended", now - 60_000, false],
+      ["cursor-archived", now, true],
+    ] as const) {
+      statement.run(
+        `composerData:${id}`,
+        JSON.stringify({
+          name: id,
+          createdAt: now - 120_000,
+          lastUpdatedAt: updated,
+          contextTokensUsed: 1234,
+          isArchived: archived,
+          fullConversationHeadersOnly: [{ grouping: { textPreview: "Cursor prompt" } }],
+        }),
+      );
+    }
+    statement.finalize();
+    db.close();
+    const adapter = cursorAdapter({ projects: null, stateDb: dbPath });
+    expect(adapter.minIntervalMs).toBe(30_000);
+    await runSync([adapter], { force: true });
+    expect(await live({ agent: "cursor" })).toMatchObject([
+      {
+        session_id: "cursor-active",
+        agent: "cursor",
+        status: "running",
+        summary: "Cursor prompt",
+        tokens_used: 1234,
+      },
+    ]);
+    const rows = await live({ active: false, agent: "cursor" });
+    expect(rows.map((row) => row.session_id).sort()).toEqual([
+      "c1adfec3-6b47-4794-af89-276b33218906",
+      "cursor-active",
+      "cursor-ended",
+    ]);
+    expect(rows.find((row) => row.session_id === "cursor-ended")?.status).toBe("stopped");
   });
 });

@@ -6,15 +6,19 @@ import { oneLine, statusFromMtime } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
 
 export const CURSOR_PROJECTS_DIR = join(homedir(), ".cursor", "projects");
-export const CURSOR_STATE_DB = join(
-  homedir(),
-  "Library",
-  "Application Support",
-  "Cursor",
-  "User",
-  "globalStorage",
-  "state.vscdb",
-);
+export function cursorStateDbPath(
+  platform: NodeJS.Platform = process.platform,
+  home: string = homedir(),
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  let configRoot: string;
+  if (platform === "win32") configRoot = env.APPDATA || join(home, "AppData", "Roaming");
+  else if (platform === "darwin") configRoot = join(home, "Library", "Application Support");
+  else configRoot = env.XDG_CONFIG_HOME || join(home, ".config");
+  return join(configRoot, "Cursor", "User", "globalStorage", "state.vscdb");
+}
+
+export const CURSOR_STATE_DB = cursorStateDbPath();
 
 const pathBySlug = new Map<string, string | null>();
 
@@ -102,7 +106,8 @@ function composerRecords(dbPath: string): SessionRecord[] {
                 json_extract(value, '$.name', '$.createdAt', '$.lastUpdatedAt',
                   '$.contextTokensUsed', '$.latestConversationSummary.summary.summary',
                   '$.fullConversationHeadersOnly[0].grouping.textPreview') AS f
-         FROM cursorDiskKV WHERE key >= 'composerData:' AND key < 'composerData;'`,
+         FROM cursorDiskKV WHERE key >= 'composerData:' AND key < 'composerData;'
+           AND COALESCE(json_extract(value, '$.isArchived'), 0) = 0`,
       )
       .all();
     const out: SessionRecord[] = [];
@@ -143,7 +148,7 @@ export function cursorAdapter(
   const stateDb = opts.stateDb === undefined ? CURSOR_STATE_DB : opts.stateDb;
   return {
     backend: "cursor",
-    minIntervalMs: 120_000,
+    minIntervalMs: 30_000,
     async list() {
       const byId = new Map<string, SessionRecord>();
       if (stateDb) for (const r of composerRecords(stateDb)) byId.set(r.externalId, r);

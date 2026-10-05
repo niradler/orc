@@ -110,7 +110,7 @@ export const getApiUrl = (): string => localStorage.getItem("orc_api_url") ?? "/
 
 export const getApiSecret = (): string => localStorage.getItem("orc_api_secret") ?? "";
 
-export type TerminalKind = "shell" | "claude" | "codex" | "cursor";
+export type TerminalKind = "shell" | "claude" | "codex" | "cursor" | "gemini";
 
 export type Terminal = {
   id: string;

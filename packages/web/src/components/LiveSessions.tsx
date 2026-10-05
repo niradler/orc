@@ -25,7 +25,7 @@ import {
 import { useTasks } from "@/hooks/useTasks";
 import { formatTokens, formatWhen, STATUS } from "@/lib/live-sessions";
 
-const AGENTS = ["claude", "codex", "cursor"];
+const AGENTS = ["claude", "codex", "cursor", "cursor-agent", "gemini"];
 const PAGE_SIZE = 25;
 const HEAD = "font-label text-[11px] uppercase tracking-widest text-outline";
 
@@ -75,6 +75,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
   const openTasks = (tasks ?? []).filter((t) => t.status !== "done" && t.status !== "cancelled");
 
   const source: Row[] = searching ? (search.data?.hits ?? []) : (list.data ?? []);
+  const agents = [...new Set([...AGENTS, ...source.map((session) => session.agent)])];
   const isLoading = searching ? search.isLoading : list.isLoading;
   const byAgent = source.filter((s) => !agent || s.agent === agent);
   const visible = byAgent.filter((s) =>
@@ -97,7 +98,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
           data-testid="session-search"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="Search sessions: titles, summaries and conversation text across Claude, Codex and Cursor"
+          placeholder="Search agent sessions: titles, summaries and conversation text"
           className="w-full bg-surface-low border border-surface-highest rounded-sm pl-9 pr-3 py-2 font-body text-xs text-on-surface placeholder:text-outline"
         />
       </div>
@@ -127,7 +128,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
             onChange={(e) => setParam("agent", e.target.value || null)}
           >
             <option value="">all agents</option>
-            {AGENTS.map((a) => (
+            {agents.map((a) => (
               <option key={a} value={a}>
                 {a}
               </option>

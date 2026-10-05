@@ -40,7 +40,8 @@ export function installerName(version: string, target: string): string {
   const entry = TARGETS.find((item) => item.id === target);
   if (!entry) throw new Error(`Unsupported desktop target: ${target}`);
   bumpPatch(version);
-  return `orc-${version}-${entry.os}-${entry.arch}.${entry.extension}`;
+  const artifactArch = entry.id === "linux-x64" ? "x86_64" : entry.arch;
+  return `orc-${version}-${entry.os}-${artifactArch}.${entry.extension}`;
 }
 
 export function sha256(file: string): string {

@@ -42,6 +42,8 @@ function roots(): string[] {
         join(homedir(), ".claude", "projects"),
         join(homedir(), ".codex", "sessions"),
         join(homedir(), ".cursor", "projects"),
+        join(homedir(), ".gemini", "tmp"),
+        join(homedir(), ".orc", "live-sessions", "transcripts"),
       ];
   return all.filter((dir) => existsSync(dir));
 }
@@ -78,6 +80,8 @@ async function ripgrep(q: string): Promise<Map<string, string[]> | null> {
       "--with-filename",
       "-g",
       "*.jsonl",
+      "-g",
+      "session-*.json",
       "-e",
       `.{0,80}${escapeRegex(q)}.{0,80}`,
       ...dirs,

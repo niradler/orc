@@ -7,6 +7,7 @@ export const TERMINAL_KINDS: Record<TerminalKind, { label: string; icon: Element
   claude: { label: "Claude", icon: Bot },
   codex: { label: "Codex", icon: Bot },
   cursor: { label: "Cursor", icon: MousePointer2 },
+  gemini: { label: "Gemini", icon: Bot },
 };
 
 export function cwdTail(cwd: string | null): string {
