@@ -1,6 +1,8 @@
 # Portable packages and reusable agent launches
 
-Status: Proposed implementation design. Package loading and configured launches described here are not implemented yet.
+Status: The initial Packages catalog and configured terminal adapter are implemented.
+See [the usage guide](agent-packages.md) for shipped behavior and capabilities.
+Chat and flow adapters described below remain future extensions of the shared resolver.
 
 ## Problem and intended behavior
 

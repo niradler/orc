@@ -6,15 +6,88 @@ import {
   readAgent,
   updateAgent,
 } from "@orc/core/agent-service";
+import { loadConfig } from "@orc/core/config";
 import { NotFoundError } from "@orc/core/errors";
+import {
+  AgentSetupSchema,
+  listAgentSetups,
+  packageToolCommands,
+  saveAgentSetup,
+} from "@orc/core/package-launch";
 import {
   createPackage,
   listPackages,
   readPackage,
   readPackageFile,
 } from "@orc/core/package-service";
+import { requireTerminals } from "../terminals/service.js";
 
 const app = new OpenAPIHono();
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/package-tools",
+    tags: ["Agent packages"],
+    responses: {
+      200: {
+        description: "Upstream tooling availability",
+        content: {
+          "application/json": {
+            schema: z.object({ apm: z.boolean(), skills: z.boolean(), bun: z.boolean() }),
+          },
+        },
+      },
+    },
+  }),
+  (c) => {
+    const tools = packageToolCommands();
+    return c.json({
+      apm: tools.apm !== null,
+      skills: tools.skills !== null,
+      bun: tools.bun !== null,
+    });
+  },
+);
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/agent-setups",
+    tags: ["Agent packages"],
+    responses: {
+      200: {
+        description: "Reusable agent setups",
+        content: {
+          "application/json": {
+            schema: z.object({
+              setups: z.array(AgentSetupSchema),
+              broken: z.array(z.object({ path: z.string(), error: z.string() })),
+            }),
+          },
+        },
+      },
+    },
+  }),
+  (c) => c.json(listAgentSetups()),
+);
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/agent-setups",
+    tags: ["Agent packages"],
+    request: { body: { content: { "application/json": { schema: AgentSetupSchema } } } },
+    responses: {
+      201: {
+        description: "Saved setup",
+        content: { "application/json": { schema: AgentSetupSchema } },
+      },
+      409: { description: "Setup already exists" },
+    },
+  }),
+  (c) => {
+    requireTerminals(loadConfig());
+    return c.json(saveAgentSetup(c.req.valid("json")), 201);
+  },
+);
 const BrokenSchema = z.object({ path: z.string(), error: z.string() });
 const AgentSchema = z
   .object({
@@ -36,6 +109,9 @@ const PackageSchema = z
     description: z.string(),
     path: z.string(),
     manifest: z.record(z.string(), z.unknown()),
+    format: z.enum(["apm", "agent-plugin"]),
+    manifestFile: z.enum(["apm.yml", "plugin.json"]),
+    warnings: z.array(z.string()),
   })
   .openapi("ApmPackage");
 const FileSchema = z.object({ name: z.string(), path: z.string() });
@@ -252,6 +328,7 @@ app.openapi(
               name: z.string().min(1).max(200),
               content: z.string().min(1),
               files: z.array(FileInputSchema).max(512),
+              format: z.enum(["apm", "agent-plugin"]).optional(),
             }),
           },
         },
@@ -267,8 +344,8 @@ app.openapi(
     },
   }),
   (c) => {
-    const { name, content, files } = c.req.valid("json");
-    return c.json(createPackage(name, content, files), 201);
+    const { name, content, files, format } = c.req.valid("json");
+    return c.json(createPackage(name, content, files, format), 201);
   },
 );
 

@@ -171,10 +171,27 @@ describe("availability", () => {
   test("the HTTP routes need the bearer secret like every other route", async () => {
     const res = await app.request("/api/terminals");
     expect(res.status).toBe(401);
+    expect((await app.request("/api/agent-setups")).status).toBe(401);
   });
 });
 
 describe("POST /terminals", () => {
+  test("rejects unknown package configuration before spawning a PTY", async () => {
+    const count = ptys.length;
+    const res = await req(app, "POST", "/terminals", {
+      kind: "claude",
+      setup: {
+        name: "missing-package",
+        packages: ["never-imported-package"],
+        backend: "claude",
+        tool: "apm",
+        cwd: root,
+        prompt: "",
+      },
+    });
+    expect(res.status).toBe(404);
+    expect(ptys.length).toBe(count);
+  });
   test("starts a plain shell in a directory", async () => {
     const res = await req(app, "POST", "/terminals", { kind: "shell", cwd: root });
     expect(res.status).toBe(201);

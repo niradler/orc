@@ -80,6 +80,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "optionalDependencies": {
-    "acpx": "^0.12.1"
+    "acpx": "^0.12.1",
+    "skills": "1.7.2"
   }
 }

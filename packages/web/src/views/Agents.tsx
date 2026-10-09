@@ -2,19 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { type AgentFull, api } from "@/api/client";
 import { AgentEditor } from "@/components/AgentEditor";
-import { AgentPackageEditor } from "@/components/AgentPackageEditor";
-import { AgentPackageFiles } from "@/components/AgentPackageFiles";
 import { CodeEditor } from "@/components/CodeEditor";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
-import { readPrimitiveFolder } from "@/lib/primitive-files";
 
 export default function Agents() {
   const cache = useQueryClient();
@@ -23,10 +18,6 @@ export default function Agents() {
     queryFn: () => api.agents.list(),
     refetchInterval: 60_000,
   });
-  const packages = useQuery({
-    queryKey: ["agent-packages"],
-    queryFn: () => api.agentPackages.list(),
-  });
   const { selectedId, openDetail, closeDetail } = useDetailRoute("/agents", "agentId");
   const agent = useQuery({
     queryKey: ["agent", selectedId],
@@ -34,12 +25,8 @@ export default function Agents() {
     enabled: Boolean(selectedId),
   });
   const [creating, setCreating] = useState(false);
-  const [selectedPackage, setSelectedPackage] = useState<string | null>(null);
   const [editing, setEditing] = useState<AgentFull>();
-  const [creatingPackage, setCreatingPackage] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [importError, setImportError] = useState<string>();
-  const [importing, setImporting] = useState(false);
   const create = useMutation({
     mutationFn: api.agents.create,
     onSuccess: () => {
@@ -71,43 +58,6 @@ export default function Agents() {
       setEditing(undefined);
     },
   });
-  const createPackage = useMutation({
-    mutationFn: api.agentPackages.create,
-    onSuccess: () => {
-      void cache.invalidateQueries({ queryKey: ["agent-packages"] });
-      void cache.invalidateQueries({ queryKey: ["agents"] });
-      void cache.invalidateQueries({ queryKey: ["skills"] });
-      setCreatingPackage(false);
-    },
-  });
-
-  async function importPackage(files: FileList | null): Promise<void> {
-    if (!files?.length) return;
-    setImporting(true);
-    setImportError(undefined);
-    try {
-      const bundle = await readPrimitiveFolder(files);
-      const manifest = bundle.find((file) => file.path === "apm.yml");
-      if (!manifest || manifest.encoding === "base64")
-        throw new Error("Choose an APM package folder containing apm.yml");
-      const name = files[0].webkitRelativePath.split("/")[0];
-      await api.agentPackages.create({
-        name,
-        content: manifest.content,
-        files: bundle.filter((file) => file !== manifest),
-      });
-      await Promise.all([
-        cache.invalidateQueries({ queryKey: ["agents"] }),
-        cache.invalidateQueries({ queryKey: ["agent-packages"] }),
-        cache.invalidateQueries({ queryKey: ["skills"] }),
-      ]);
-    } catch (error) {
-      setImportError((error as Error).message);
-    } finally {
-      setImporting(false);
-    }
-  }
-
   if (agents.error)
     return <ErrorState message={agents.error.message} onRetry={() => void agents.refetch()} />;
   return (
@@ -117,16 +67,6 @@ export default function Agents() {
         meta={`${agents.data?.agents.length ?? 0} shared profiles`}
         action={
           <div className="flex gap-2">
-            <Button
-              data-testid="new-agent-package-button"
-              variant="outline"
-              onClick={() => {
-                createPackage.reset();
-                setCreatingPackage(true);
-              }}
-            >
-              New APM package
-            </Button>
             <Button
               data-testid="new-agent-button"
               onClick={() => {
@@ -150,45 +90,10 @@ export default function Agents() {
           APM agent format
         </a>
       </p>
-      <div className="border border-surface-highest p-4 space-y-2">
-        <Label htmlFor="agent-package-folder">Import APM package folder</Label>
-        <Input
-          id="agent-package-folder"
-          data-testid="agent-package-folder"
-          type="file"
-          multiple
-          {...{ webkitdirectory: "" }}
-          disabled={importing}
-          onChange={(event) => void importPackage(event.target.files)}
-        />
-        {importing && <p className="text-xs">Importing...</p>}
-        {importError && (
-          <p role="alert" className="text-destructive">
-            {importError}
-          </p>
-        )}
-        {(packages.data?.packages ?? []).map((pkg) => (
-          <button
-            type="button"
-            onClick={() => setSelectedPackage(pkg.name)}
-            key={pkg.name}
-            data-testid="agent-package-row"
-            data-package-name={pkg.name}
-            className="text-xs text-outline"
-          >
-            {pkg.name}@{pkg.version} · {pkg.description}
-          </button>
-        ))}
-        {packages.error && <p role="alert">{packages.error.message}</p>}
-        {selectedPackage && (
-          <AgentPackageFiles
-            key={selectedPackage}
-            name={selectedPackage}
-            onClose={() => setSelectedPackage(null)}
-          />
-        )}
-      </div>
-      {[...(agents.data?.broken ?? []), ...(packages.data?.broken ?? [])].map((issue) => (
+      <a href="/packages" data-testid="agents-packages-link" className="text-primary underline">
+        Manage packages and reusable launch setups
+      </a>
+      {(agents.data?.broken ?? []).map((issue) => (
         <p key={issue.path} role="alert" className="text-destructive">
           {issue.path}: {issue.error}
         </p>
@@ -213,7 +118,7 @@ export default function Agents() {
         ))}
         {!agents.isLoading && agents.data?.agents.length === 0 && (
           <p className="text-sm text-outline">
-            Create an agent or import an APM package to share specialists.
+            Create an agent or import specialists from Packages.
           </p>
         )}
       </div>
@@ -315,18 +220,6 @@ export default function Agents() {
             pending={update.isPending}
             error={update.error?.message}
             onSave={(_, content) => update.mutate({ profile: editing, content })}
-          />
-        )}
-      </Dialog>
-      <Dialog
-        open={creatingPackage}
-        onOpenChange={(open) => !createPackage.isPending && setCreatingPackage(open)}
-      >
-        {creatingPackage && (
-          <AgentPackageEditor
-            pending={createPackage.isPending}
-            error={createPackage.error?.message}
-            onSave={(input) => createPackage.mutate(input)}
           />
         )}
       </Dialog>

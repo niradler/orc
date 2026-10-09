@@ -110,7 +110,17 @@ export const getApiUrl = (): string => localStorage.getItem("orc_api_url") ?? "/
 
 export const getApiSecret = (): string => localStorage.getItem("orc_api_secret") ?? "";
 
-export type TerminalKind = "shell" | "claude" | "codex" | "cursor" | "gemini";
+export type TerminalKind = "shell" | "claude" | "codex" | "cursor" | "gemini" | "copilot";
+export type AgentSetup = {
+  name: string;
+  packages: string[];
+  backend: "claude" | "codex" | "copilot";
+  tool: "apm" | "skills";
+  cwd: string;
+  agent?: string;
+  model?: string;
+  prompt: string;
+};
 
 export type Terminal = {
   id: string;
@@ -138,6 +148,7 @@ export type CreateTerminalInput = {
   name?: string;
   live_session_id?: string;
   worktree?: boolean;
+  setup?: AgentSetup;
 };
 
 export type Worktree = {
@@ -438,8 +449,19 @@ export const api = {
         undefined,
         ref ? { ref } : undefined,
       ),
-    create: (input: { name: string; content: string; files: SkillFileInput[] }) =>
-      req<PackageFull>("POST", "/agent-packages", input),
+    create: (input: {
+      name: string;
+      content: string;
+      files: SkillFileInput[];
+      format?: "apm" | "agent-plugin";
+    }) => req<PackageFull>("POST", "/agent-packages", input),
+  },
+  agentSetups: {
+    list: () => req<{ setups: AgentSetup[]; broken: BrokenAgent[] }>("GET", "/agent-setups"),
+    create: (input: AgentSetup) => req<AgentSetup>("POST", "/agent-setups", input),
+  },
+  packageTools: {
+    list: () => req<{ apm: boolean; skills: boolean; bun: boolean }>("GET", "/package-tools"),
   },
 
   knowledge: {

@@ -16,6 +16,8 @@
     "./skill-files": "./src/skill-files.ts",
     "./agent-service": "./src/agent-service.ts",
     "./package-service": "./src/package-service.ts",
+    "./package-launch": "./src/package-launch.ts",
+    "./plugin-service": "./src/plugin-service.ts",
     "./primitive-types": "./src/primitive-types.ts",
     "./flow": "./src/flow.ts",
     "./flow-engine": "./src/flow-engine.ts",
@@ -32,6 +34,7 @@
   },
   "dependencies": {
     "ajv": "^8.18.0",
+    "skills": "1.7.2",
     "zod": "^4.4.3"
   }
 }

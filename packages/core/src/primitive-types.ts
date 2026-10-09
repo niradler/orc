@@ -31,12 +31,16 @@ export type ApmManifest = Record<string, unknown> & {
   version: string;
   description?: string;
 };
+export type PackageFormat = "apm" | "agent-plugin";
 export type PackageMeta = {
   name: string;
   version: string;
   description: string;
   path: string;
-  manifest: ApmManifest;
+  manifest: Record<string, unknown> & { name: string; version?: string; description?: string };
+  format: PackageFormat;
+  manifestFile: "apm.yml" | "plugin.json";
+  warnings: string[];
 };
 export type PackageFull = PackageMeta & {
   content: string;

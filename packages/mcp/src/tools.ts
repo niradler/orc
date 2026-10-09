@@ -466,23 +466,23 @@ export const toolDefinitions = [
   },
   {
     name: "agent_package_list",
-    description:
-      "List shared OpenAPM packages containing agents, skills, instructions and supporting resources.",
+    description: "List shared OpenAPM and Agent Plugins packages and their source formats.",
     inputSchema: z.object({}),
   },
   {
     name: "agent_package_read",
     description:
-      "Read apm.yml and a package file inventory, or load one package-relative resource with ref. Binary resources return base64.",
+      "Read the original package manifest and file inventory, or one package-relative resource with ref. Binary resources return base64.",
     inputSchema: z.object({ name: z.string(), ref: z.string().optional() }),
   },
   {
     name: "agent_package_import",
     description:
-      "Import an intact OpenAPM package. Validates the manifest, Agent Skills and .agent.md files; preserves relative links, resources and manifest fields. Does not execute scripts or resolve dependencies.",
+      "Import an intact OpenAPM or portable Agent Plugins package. Preserves original manifests, resources and relative links. OpenAPM primitives are validated; portable plugin skill failures are isolated during discovery. Does not execute scripts or resolve dependencies.",
     inputSchema: z.object({
       name: z.string(),
-      content: z.string().describe("Original apm.yml"),
+      content: z.string().describe("Original apm.yml or plugin.json"),
+      format: z.enum(["apm", "agent-plugin"]).optional(),
       files: z
         .array(
           z.object({
@@ -1499,12 +1499,13 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       return JSON.stringify(ref ? readPackageFile(name, ref) : readPackage(name));
     }
     case "agent_package_import": {
-      const { name, content, files } = args as {
+      const { name, content, files, format } = args as {
         name: string;
         content: string;
         files: SkillFileInput[];
+        format?: "apm" | "agent-plugin";
       };
-      return JSON.stringify(createPackage(name, content, files));
+      return JSON.stringify(createPackage(name, content, files, format));
     }
     case "flow_report": {
       const {

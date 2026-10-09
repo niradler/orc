@@ -106,6 +106,11 @@ export function discoverAgents(cwd = process.cwd()): {
   if (existsSync(packages)) {
     for (const entry of readdirSync(packages, { withFileTypes: true })) {
       if (entry.isDirectory() && !entry.isSymbolicLink()) {
+        if (
+          existsSync(join(packages, entry.name, "plugin.json")) &&
+          !existsSync(join(packages, entry.name, "apm.yml"))
+        )
+          continue;
         const apmDir = join(packages, entry.name, ".apm");
         if (!existsSync(apmDir) || !lstatSync(apmDir).isSymbolicLink())
           scan(join(apmDir, "agents"), "package", `${entry.name}/`);

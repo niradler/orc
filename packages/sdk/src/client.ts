@@ -272,8 +272,12 @@ export function createOrcClient(options?: OrcClientOptions) {
           undefined,
           ref ? { ref } : undefined,
         ),
-      create: (input: { name: string; content: string; files: SkillFileInput[] }) =>
-        c<PackageFull>("POST", "/agent-packages", input),
+      create: (input: {
+        name: string;
+        content: string;
+        files: SkillFileInput[];
+        format?: "apm" | "agent-plugin";
+      }) => c<PackageFull>("POST", "/agent-packages", input),
     },
 
     backends: {

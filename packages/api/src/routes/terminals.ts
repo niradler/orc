@@ -2,6 +2,12 @@ import { basename, dirname } from "node:path";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
+import {
+  AgentSetupSchema,
+  buildPackagePlan,
+  packagePlanArgv,
+  packageToolCommands,
+} from "@orc/core/package-launch";
 import { getDb } from "@orc/db/client";
 import { gateway_sessions } from "@orc/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -79,6 +85,7 @@ const createTerminalRoute = createRoute({
               .boolean()
               .optional()
               .openapi({ description: "Start an agent in a new git worktree of the cwd's repo" }),
+            setup: AgentSetupSchema.optional(),
           }),
         },
       },
@@ -177,6 +184,30 @@ app.openapi(createTerminalRoute, async (c) => {
   const body = c.req.valid("json");
   const manager = getTerminalManager();
   const deps = launchDeps(config);
+
+  if (body.setup) {
+    if (body.live_session_id || body.worktree)
+      throw new ValidationError(
+        "Package setups launch fresh sessions in their configured project folder",
+      );
+    if (body.kind && body.kind !== body.setup.backend)
+      throw new ValidationError("Terminal backend must match the selected setup");
+    const tools = packageToolCommands();
+    if (!tools.bun) throw new ValidationError("Configured package terminals need Bun on PATH");
+    manager.assertCapacity();
+    const plan = buildPackagePlan(body.setup, tools);
+    const info = manager.create({
+      launch: {
+        kind: plan.setup.backend,
+        argv: packagePlanArgv(plan, tools.bun),
+        cwd: plan.setup.cwd,
+        resume: false,
+      },
+      name: body.name ?? plan.setup.name,
+    });
+    rememberTerminalFolder(info.cwd);
+    return c.json(info, 201);
+  }
 
   if (body.live_session_id) {
     if (body.worktree) throw new ValidationError("A resumed session keeps its own folder");

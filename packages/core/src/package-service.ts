@@ -5,7 +5,8 @@ import { parseAgent } from "./agent-service.js";
 import { ConflictError, NotFoundError, ValidationError } from "./errors.js";
 import { parseMarkdownFrontmatter } from "./markdown-frontmatter.js";
 import { getPackagesDir } from "./package-paths.js";
-import type { ApmManifest, PackageFull, PackageMeta } from "./primitive-types.js";
+import { parsePluginManifest } from "./plugin-service.js";
+import type { ApmManifest, PackageFormat, PackageFull, PackageMeta } from "./primitive-types.js";
 
 import amendmentSchema from "./schemas/apm/manifest-v0.1.41.schema.json";
 import manifestSchema from "./schemas/apm/manifest-v0.1.schema.json";
@@ -106,14 +107,26 @@ export function listPackages(): {
     if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
     const path = join(directory, entry.name);
     try {
-      const content = readSkillFile(path, "apm.yml", false).content;
-      const manifest = parseApmManifest(content);
+      const format =
+        existsSync(join(path, "plugin.json")) && !existsSync(join(path, "apm.yml"))
+          ? "agent-plugin"
+          : "apm";
+      const manifestFile = format === "apm" ? "apm.yml" : "plugin.json";
+      const content = readSkillFile(path, manifestFile, false).content;
+      const parsed =
+        format === "apm"
+          ? { manifest: parseApmManifest(content), warnings: [] }
+          : parsePluginManifest(content);
+      const { manifest, warnings } = parsed;
       packages.push({
         name: entry.name,
-        version: manifest.version,
+        version: manifest.version ?? "",
         description: manifest.description ?? "",
         path,
         manifest,
+        format,
+        manifestFile,
+        warnings,
       });
     } catch (error) {
       broken.push({ path, error: (error as Error).message });
@@ -129,8 +142,8 @@ export function readPackage(name: string): PackageFull | null {
   if (!meta) return null;
   return {
     ...meta,
-    content: readSkillFile(meta.path, "apm.yml", false).content,
-    files: listSkillFiles(meta.path, "apm.yml"),
+    content: readSkillFile(meta.path, meta.manifestFile, false).content,
+    files: listSkillFiles(meta.path, meta.manifestFile),
   };
 }
 
@@ -140,20 +153,33 @@ export function readPackageFile(name: string, path: string) {
   return readSkillFile(pkg.path, path, false);
 }
 
-export function createPackage(name: string, content: string, files: SkillFileInput[]): PackageFull {
+export function createPackage(
+  name: string,
+  content: string,
+  files: SkillFileInput[],
+  format: PackageFormat = "apm",
+): PackageFull {
   validateSkillPath(name);
   if (name.includes("/")) throw new ValidationError("Package name must be a directory name");
-  const manifest = parseApmManifest(content);
+  const manifestFile = format === "apm" ? "apm.yml" : "plugin.json";
+  const { manifest, warnings } =
+    format === "apm"
+      ? { manifest: parseApmManifest(content), warnings: [] }
+      : parsePluginManifest(content);
   if (manifest.name !== name)
-    throw new ValidationError("Package directory must match apm.yml name");
-  const prepared = prepareSkillFiles(files, content, "apm.yml");
-  validatePackagePrimitives(prepared, name);
+    throw new ValidationError(`Package directory must match ${manifestFile} name`);
+  const prepared = prepareSkillFiles(files, content, manifestFile);
+  if (format === "apm") validatePackagePrimitives(prepared, name);
+  // Plugins isolate invalid components. Import preserves their original files;
+  // discovery/activation reports or skips invalid components independently.
+  if (format === "agent-plugin" && prepared.some((file) => file.path === "apm.yml"))
+    throw new ValidationError("Choose one package format; import the other manifest separately");
   const root = getPackagesDir();
   const path = join(root, name);
   if (existsSync(path)) throw new ConflictError(`Package already exists: ${name}`);
   mkdirSync(root, { recursive: true });
   mkdirSync(path);
-  writeFileSync(join(path, "apm.yml"), content, { encoding: "utf8", flag: "wx" });
+  writeFileSync(join(path, manifestFile), content, { encoding: "utf8", flag: "wx" });
   for (const file of prepared) {
     const destination = join(path, file.path);
     mkdirSync(dirname(destination), { recursive: true });
@@ -162,12 +188,15 @@ export function createPackage(name: string, content: string, files: SkillFileInp
   reloadCache();
   return {
     name,
-    version: manifest.version,
+    version: manifest.version ?? "",
     description: manifest.description ?? "",
     path,
     manifest,
+    format,
+    manifestFile,
+    warnings,
     content,
-    files: listSkillFiles(path, "apm.yml"),
+    files: listSkillFiles(path, manifestFile),
   };
 }
 
