@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, unlinkSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stopOwnedProcess } from "./stop-process";
 
 function freePort(): Promise<number> {
   return new Promise((resolve) => {
@@ -113,32 +114,18 @@ const apiProc = Bun.spawn({
   stdin: "ignore",
 });
 
-function killApiServer(): void {
-  if (apiProc.pid === undefined) return;
-  try {
-    if (process.platform === "win32") {
-      // proc.kill() only kills the direct child on Windows; /T terminates
-      // the entire tree so the inner bun runtime does not become an orphan.
-      Bun.spawnSync(["taskkill", "/F", "/T", "/PID", String(apiProc.pid)], {
-        stdout: "ignore",
-        stderr: "ignore",
-      });
-    } else {
-      process.kill(-apiProc.pid, "SIGKILL");
-    }
-  } catch {
-    /* already dead */
-  }
+async function killApiServer(): Promise<void> {
+  await stopOwnedProcess(apiProc);
 }
 
 // SIGINT (Ctrl+C) and SIGTERM bypass finally blocks in Bun - register explicit
 // handlers so the port is freed even when the run is interrupted.
-process.once("SIGINT", () => {
-  killApiServer();
+process.once("SIGINT", async () => {
+  await killApiServer();
   process.exit(130);
 });
-process.once("SIGTERM", () => {
-  killApiServer();
+process.once("SIGTERM", async () => {
+  await killApiServer();
   process.exit(143);
 });
 
@@ -150,7 +137,7 @@ try {
   console.error(err instanceof Error ? err.message : err);
   exitCode = 1;
 } finally {
-  killApiServer();
+  await killApiServer();
   try {
     await apiProc.exited;
   } catch {
