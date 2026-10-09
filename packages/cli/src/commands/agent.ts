@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseAgent } from "@orc/core/agent-service";
 import { parseApmManifest } from "@orc/core/package-service";
+import { parsePluginManifest } from "@orc/core/plugin-service";
 import { encodeSkillFile, listSkillFiles, validateSkillPath } from "@orc/core/skill-files";
 import { createOrcClient } from "@orc/sdk/client";
 import type { PackageFull, SkillRefContent } from "@orc/sdk/types";
@@ -54,7 +55,7 @@ export function agentCommand(): Command {
 
 export function agentPackageCommand(): Command {
   const command = new Command("agent-package").description(
-    "Import/export intact APM packages shared by all coding agents",
+    "Import/export intact OpenAPM and portable Agent Plugins packages",
   );
   command.command("list").action(async () => {
     const { data, error } = await createOrcClient().agentPackages.list();
@@ -65,11 +66,14 @@ export function agentPackageCommand(): Command {
   });
   command
     .command("import <directory>")
-    .description("Validate and share an apm.yml package with every bundled file")
+    .description("Validate and share an apm.yml or plugin.json package with every bundled file")
     .action(async (directory: string) => {
-      const content = readFileSync(join(directory, "apm.yml"), "utf8");
-      const manifest = parseApmManifest(content);
-      const files = listSkillFiles(directory, "apm.yml").map((file) => ({
+      const format = existsSync(join(directory, "apm.yml")) ? "apm" : "agent-plugin";
+      const manifestFile = format === "apm" ? "apm.yml" : "plugin.json";
+      const content = readFileSync(join(directory, manifestFile), "utf8");
+      const manifest =
+        format === "apm" ? parseApmManifest(content) : parsePluginManifest(content).manifest;
+      const files = listSkillFiles(directory, manifestFile).map((file) => ({
         path: file.name,
         ...encodeSkillFile(readFileSync(file.path)),
       }));
@@ -77,6 +81,7 @@ export function agentPackageCommand(): Command {
         name: manifest.name,
         content,
         files,
+        format,
       });
       if (error || !data) throw new Error(JSON.stringify(error));
       if (isJson()) return jsonOut(data);
@@ -104,7 +109,7 @@ export function agentPackageCommand(): Command {
       if (existsSync(root))
         throw new Error("Export destination already exists; choose a new directory");
       mkdirSync(root, { recursive: true });
-      writeFileSync(join(root, "apm.yml"), pkg.content, { encoding: "utf8", flag: "wx" });
+      writeFileSync(join(root, pkg.manifestFile), pkg.content, { encoding: "utf8", flag: "wx" });
       for (const file of files) {
         const path = join(root, file.path);
         mkdirSync(dirname(path), { recursive: true });

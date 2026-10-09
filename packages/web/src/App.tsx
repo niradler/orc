@@ -15,6 +15,7 @@ import Flows from "@/views/Flows";
 import Jobs from "@/views/Jobs";
 import Knowledge from "@/views/Knowledge";
 import Memories from "@/views/Memories";
+import Packages from "@/views/Packages";
 import Projects from "@/views/Projects";
 import Sessions from "@/views/Sessions";
 import Settings from "@/views/Settings";
@@ -105,6 +106,7 @@ export default function App() {
                 <Route path="/skills/:skillName" element={<Skills />} />
                 <Route path="/agents" element={<Agents />} />
                 <Route path="/agents/:agentId" element={<Agents />} />
+                <Route path="/packages" element={<Packages />} />
                 <Route path="/flows" element={<Flows />} />
                 <Route path="/flows/:flowName" element={<Flows />} />
                 <Route path="/settings" element={<Settings />} />

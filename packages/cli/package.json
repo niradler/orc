@@ -28,6 +28,7 @@
     "README.md"
   ],
   "devDependencies": {
+    "@orc/agent-runtime": "workspace:*",
     "@orc/api": "workspace:*",
     "@orc/core": "workspace:*",
     "@orc/gateway": "workspace:*",
@@ -80,6 +81,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "optionalDependencies": {
-    "acpx": "^0.12.1"
+    "acpx": "^0.12.1",
+    "skills": "1.7.2"
   }
 }

@@ -11,6 +11,7 @@ import { dirname, join, resolve } from "node:path";
 import { ValidationError } from "./errors.js";
 import { parseMarkdownFrontmatter } from "./markdown-frontmatter.js";
 import { getPackagesDir } from "./package-paths.js";
+import { parsePluginManifest } from "./plugin-service.js";
 import {
   listSkillFiles,
   prepareSkillFiles,
@@ -53,7 +54,7 @@ export type SkillIssue = { path: string; error: string };
 export type SkillWarning = { path: string; message: string };
 
 export type SkillCache = {
-  version: 3;
+  version: 4;
   builtAt: string;
   skills: SkillMeta[];
   broken: SkillIssue[];
@@ -294,14 +295,57 @@ export function scanSkills(
   const packagesDir = getPackagesDir();
   const packaged: SkillMeta[] = [];
   if (existsSync(packagesDir)) {
-    packaged.push(...scanDirectory(packagesDir, "user", broken, warnings));
+    packaged.push(
+      ...scanDirectory(packagesDir, "user", broken, warnings).filter(
+        (skill) =>
+          !existsSync(join(dirname(skill.path), "plugin.json")) ||
+          existsSync(join(dirname(skill.path), "apm.yml")),
+      ),
+    );
     for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
       const apmDir = join(packagesDir, entry.name, ".apm");
       if (existsSync(apmDir) && lstatSync(apmDir).isSymbolicLink()) continue;
-      packaged.push(
-        ...scanDirectory(join(packagesDir, entry.name, ".apm", "skills"), "user", broken, warnings),
-      );
+      if (
+        !existsSync(join(packagesDir, entry.name, "plugin.json")) ||
+        existsSync(join(packagesDir, entry.name, "apm.yml"))
+      ) {
+        packaged.push(
+          ...scanDirectory(
+            join(packagesDir, entry.name, ".apm", "skills"),
+            "user",
+            broken,
+            warnings,
+          ),
+        );
+      }
+      if (
+        existsSync(join(packagesDir, entry.name, "plugin.json")) &&
+        !existsSync(join(packagesDir, entry.name, "apm.yml"))
+      ) {
+        try {
+          const manifest = readSkillFile(join(packagesDir, entry.name), "plugin.json", false);
+          parsePluginManifest(manifest.content);
+          const pluginSkills = scanDirectory(
+            join(packagesDir, entry.name, "skills"),
+            "builtin",
+            broken,
+            warnings,
+          );
+          packaged.push(
+            ...pluginSkills.map((skill) => ({
+              ...skill,
+              source: "user" as const,
+              name: `${entry.name}/${skill.name}`,
+            })),
+          );
+        } catch (error) {
+          broken.push({
+            path: join(packagesDir, entry.name, "plugin.json"),
+            error: (error as Error).message,
+          });
+        }
+      }
     }
   }
   // Built-ins win (orc-worker-base is injected into every flow worker), then user, then packages.
@@ -328,7 +372,7 @@ function loadCache(): SkillCache | null {
   try {
     const raw = readFileSync(CACHE_PATH, "utf-8");
     const cache = JSON.parse(raw) as SkillCache;
-    return cache.version === 3 ? cache : null;
+    return cache.version === 4 ? cache : null;
   } catch {
     return null;
   }
@@ -345,7 +389,7 @@ export function reloadCache(): SkillCache {
   const warnings: SkillCache["warnings"] = [];
   const skills = scanSkills(broken, warnings);
   const cache: SkillCache = {
-    version: 3,
+    version: 4,
     builtAt: new Date().toISOString(),
     skills,
     broken,

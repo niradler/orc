@@ -94,7 +94,7 @@ test("should retain drafts on a stale save and refresh the profile when editing 
 test("should create an APM package from editable fields and YAML", async ({ page, request }) => {
   const name = tid("authored-package");
   await gotoView(page, "skills");
-  await page.getByTestId("nav-agents").click();
+  await page.getByTestId("nav-packages").click();
   await page.getByTestId("new-agent-package-button").click();
   await page.getByTestId("package-name-input").fill(name);
   await page.getByTestId("package-version-input").fill("1.2.3");
@@ -181,8 +181,12 @@ test("APM folder import shares packaged agents and skills", async ({ page }) => 
   );
   try {
     await gotoView(page, "skills");
-    await page.getByTestId("nav-agents").click();
+    await page.getByTestId("nav-packages").click();
     await page.getByTestId("agent-package-folder").setInputFiles(folder);
+    await expect(
+      page.locator(`[data-testid="agent-package-row"][data-package-name="${name}"]`),
+    ).toBeVisible();
+    await page.getByTestId("nav-agents").click();
     const row = page.locator(`[data-testid="agent-row"][data-agent-id="${name}/reviewer"]`);
     await expect(row).toBeVisible();
     await row.click();
@@ -192,10 +196,14 @@ test("APM folder import shares packaged agents and skills", async ({ page }) => 
     await expect(row).toHaveCount(0);
     await page.reload();
     await expect(row).toHaveCount(0);
+    await page.getByTestId("nav-packages").click();
     await expect(
       page.locator(`[data-testid="agent-package-row"][data-package-name="${name}"]`),
     ).toBeVisible();
-    await page.locator(`[data-testid="agent-package-row"][data-package-name="${name}"]`).click();
+    await page
+      .locator(`[data-testid="agent-package-row"][data-package-name="${name}"]`)
+      .getByTestId("package-inspect")
+      .click();
     await expect(page.getByTestId("package-file-content")).toContainText(`name: ${name}`);
     await expect(page.getByTestId("package-file-content")).toHaveAttribute(
       "contenteditable",

@@ -1,6 +1,6 @@
 import { ValidationError } from "@orc/core/errors";
 
-export const LAUNCH_KINDS = ["shell", "claude", "codex", "cursor", "gemini"] as const;
+export const LAUNCH_KINDS = ["shell", "claude", "codex", "cursor", "gemini", "copilot"] as const;
 
 export type LaunchKind = (typeof LAUNCH_KINDS)[number];
 
@@ -10,6 +10,7 @@ const AGENT_BINARIES: Record<Exclude<LaunchKind, "shell">, string[]> = {
   codex: ["codex"],
   cursor: ["cursor-agent", "agent"],
   gemini: ["gemini"],
+  copilot: ["copilot"],
 };
 
 function whichAgent(kind: Exclude<LaunchKind, "shell">, deps: LaunchDeps): string | null {

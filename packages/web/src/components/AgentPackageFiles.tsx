@@ -6,12 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 export function AgentPackageFiles({ name, onClose }: { name: string; onClose: () => void }) {
-  const [path, setPath] = useState("apm.yml");
+  const [selectedPath, setPath] = useState<string>();
   const manifest = useQuery({
     queryKey: ["agent-package", name],
     queryFn: () => api.agentPackages.get(name) as Promise<PackageFull>,
   });
+  const path = selectedPath ?? manifest.data?.manifestFile ?? "apm.yml";
   const file = useQuery({
+    enabled: Boolean(manifest.data),
     queryKey: ["agent-package-file", name, path],
     queryFn: () => api.agentPackages.get(name, path) as Promise<SkillRefContent>,
   });
@@ -28,21 +30,22 @@ export function AgentPackageFiles({ name, onClose }: { name: string; onClose: ()
         </SheetHeader>
         <SheetBody>
           <div className="flex flex-wrap gap-2 mb-4">
-            {["apm.yml", ...(manifest.data?.files.map((entry) => entry.name) ?? [])].map(
-              (entry) => (
-                <Button
-                  key={entry}
-                  type="button"
-                  variant="outline"
-                  data-testid="package-file"
-                  data-file-name={entry}
-                  onClick={() => setPath(entry)}
-                  aria-pressed={path === entry}
-                >
-                  {entry}
-                </Button>
-              ),
-            )}
+            {[
+              manifest.data?.manifestFile ?? "apm.yml",
+              ...(manifest.data?.files.map((entry) => entry.name) ?? []),
+            ].map((entry) => (
+              <Button
+                key={entry}
+                type="button"
+                variant="outline"
+                data-testid="package-file"
+                data-file-name={entry}
+                onClick={() => setPath(entry)}
+                aria-pressed={path === entry}
+              >
+                {entry}
+              </Button>
+            ))}
           </div>
           {manifest.error || file.error ? (
             <p role="alert">{(manifest.error ?? file.error)?.message}</p>

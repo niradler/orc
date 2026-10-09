@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { loadConfig, type OrcConfig } from "@orc/core/config";
 import { ConflictError, ForbiddenError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
+import { resolvePackageAgentBinary } from "@orc/core/package-launch";
 import type { LaunchDeps } from "./launch.js";
 import { TerminalManager } from "./manager.js";
 import { folderPickerLaunch, pickFolder } from "./pick-folder.js";
@@ -64,7 +65,7 @@ export function launchDeps(config: OrcConfig): LaunchDeps {
     env: process.env,
     // Pass PATH explicitly: on Linux Bun.which can use the PATH from process start, ignoring
     // later changes to process.env.PATH.
-    which: (command) => Bun.which(command, { PATH: process.env.PATH ?? "" }),
+    which: (command) => resolvePackageAgentBinary(command),
     isDirectory: (path) => {
       try {
         return statSync(path).isDirectory();
