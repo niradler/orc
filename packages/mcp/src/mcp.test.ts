@@ -5,15 +5,20 @@ import { closeDb, createTestDb } from "@orc/db/client";
 import { toolListing } from "./server.js";
 import { executeTool } from "./tools.js";
 
+const originalActiveProject = process.env.ORC_ACTIVE_PROJECT;
+
 beforeAll(() => {
   process.env.ORC_API_SECRET = "test-secret";
   process.env.ORC_DB_PATH = ":memory:";
+  process.env.ORC_ACTIVE_PROJECT = "";
   resetConfig();
   // Force an in-memory DB so tools never touch the real ~/.orc/orc.db.
   createTestDb();
 });
 
 afterAll(() => {
+  if (originalActiveProject === undefined) delete process.env.ORC_ACTIVE_PROJECT;
+  else process.env.ORC_ACTIVE_PROJECT = originalActiveProject;
   closeDb();
   resetConfig();
   delete process.env.ORC_API_SECRET;
@@ -305,6 +310,21 @@ describe("MCP context tool", () => {
 // ── Session log ───────────────────────────────────────────────────────────────
 
 describe("MCP session_log tool", () => {
+  test("should deduplicate repeated work-unit contributions", async () => {
+    const args = {
+      agent: "test-idempotency",
+      session_id: "dedup-work-unit",
+      summary: "Verified source evidence once",
+    };
+    await executeTool("session_log", args);
+    await executeTool("session_log", args);
+    const result = JSON.parse(await executeTool("wiki_read", {})) as {
+      contributions: { source_id: string }[];
+    };
+    expect(
+      result.contributions.filter((entry) => entry.source_id.endsWith(":dedup-work-unit")),
+    ).toHaveLength(1);
+  });
   test("session_log with agent_version stores session", async () => {
     const result = await executeTool("session_log", {
       agent: "codex",

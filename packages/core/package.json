@@ -24,6 +24,9 @@
     "./flow-service": "./src/flow-service.ts",
     "./flows/builtin": "./src/flows/builtin.ts",
     "./knowledge": "./src/knowledge.ts",
+    "./retrieval": "./src/retrieval.ts",
+    "./wiki": "./src/wiki.ts",
+    "./embedding-provider": "./src/embedding-provider.ts",
     "./validate": "./src/validate.ts"
   },
   "scripts": {

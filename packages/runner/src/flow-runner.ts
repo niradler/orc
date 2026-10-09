@@ -10,10 +10,13 @@ import { resolveFlowForTask } from "@orc/core/flow-service";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import type { SkillFull } from "@orc/core/skill-service";
-import { readSkill, renderSkillInstructions } from "@orc/core/skill-service";
+import { renderSkillInstructions } from "@orc/core/skill-service";
 import type { TaskStatus } from "@orc/core/types";
 import { getDb, getSqlite } from "@orc/db/client";
 import { flow_runs, gateway_sessions } from "@orc/db/schema";
+import { contributeStoppedSession } from "@orc/db/session-contributions";
+import { readEvolvedSkill } from "@orc/db/skill-evolution";
+import { WikiStore } from "@orc/db/wiki";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 
 const logger = createLogger("runner:flow");
@@ -515,13 +518,17 @@ function buildNodePrompt(opts: {
   // Worker nodes get the base worker contract; reviewer nodes deliberately do
   // not — a reviewer told to "submit for review and stop" reviews itself.
   if ((node.role ?? "worker") === "worker") {
-    const baseSkill = readSkill("orc-worker-base") as SkillFull | null;
+    const baseSkill = readEvolvedSkill(
+      getSqlite(),
+      "orc-worker-base",
+      task.project_id,
+    ) as SkillFull | null;
     if (baseSkill) parts.push(renderSkillInstructions(baseSkill));
   }
 
   const skillName = nodeSkillName(node, task);
   if (skillName) {
-    const skill = readSkill(skillName) as SkillFull | null;
+    const skill = readEvolvedSkill(getSqlite(), skillName, task.project_id) as SkillFull | null;
     if (skill) parts.push(`\n---\n## Workflow: ${skill.name}\n${renderSkillInstructions(skill)}`);
     else throw new MissingSkillError(nodeId, skillName);
   }
@@ -1384,6 +1391,11 @@ async function finishNodeRunUnlocked(nodeRunId: string, error: string | null): P
     .get(nodeRunId) as NodeRunRow | null;
   if (!row) return;
   if (!["running", "pending", "awaiting_human"].includes(row.status)) return;
+  contributeStoppedSession(sqlite, row.gateway_session_id ?? "");
+  new WikiStore(sqlite).finishTask(
+    row.task_id,
+    error ?? (row.outcome === "blocked" ? row.summary : null),
+  );
 
   const loaded = loadRun(row.flow_run_id);
   if (!loaded) return;

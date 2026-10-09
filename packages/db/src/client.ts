@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import * as schema from "./schema.js";
+import { installWiki } from "./wiki.js";
 
 export type OrcDb = ReturnType<typeof createDb>;
 
@@ -480,6 +481,7 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   sqlite.exec("PRAGMA wal_autocheckpoint=1000;");
 
   setupDb(sqlite);
+  installWiki(sqlite);
 
   return drizzle(sqlite, { schema });
 }

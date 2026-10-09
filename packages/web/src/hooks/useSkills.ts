@@ -9,10 +9,10 @@ export function useSkills(params?: { q?: string; source?: "builtin" | "user" }) 
   });
 }
 
-export function useSkill(name: string | null, ref?: string) {
+export function useSkill(name: string | null, ref?: string, projectId?: string) {
   return useQuery({
-    queryKey: ["skill", name, ref],
-    queryFn: () => api.skills.get(name as string, ref),
+    queryKey: ["skill", name, ref, projectId],
+    queryFn: () => api.skills.get(name as string, ref, projectId),
     enabled: Boolean(name),
   });
 }

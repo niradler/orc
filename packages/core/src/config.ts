@@ -119,8 +119,25 @@ export const OrcConfigSchema = z.object({
       db_path: z.string().default("~/.orc/knowledge.db"),
       default_limit: z.number().int().min(1).max(50).default(10),
       search_mode: z.enum(["hybrid", "lexical"]).default("lexical"),
+      embeddings: z
+        .object({
+          endpoint: z.string().url(),
+          model: z.string().min(1),
+          dimensions: z.number().int().min(1).max(4096),
+          allow_hosted: z.boolean().default(false),
+          secret_env: z.string().optional(),
+          timeout_ms: z.number().int().min(100).max(60000).default(10000),
+        })
+        .optional(),
     })
     .default({ db_path: "~/.orc/knowledge.db", default_limit: 10, search_mode: "lexical" }),
+
+  wiki: z
+    .object({
+      min_evaluation_cases: z.number().int().min(2).max(1000).default(10),
+      min_success_gain: z.number().min(0.01).max(1).default(0.1),
+    })
+    .default({ min_evaluation_cases: 10, min_success_gain: 0.1 }),
 
   agent_loop: z
     .object({
@@ -219,6 +236,8 @@ function deepMerge(
 
 function fromEnv(): Record<string, unknown> {
   const env: Record<string, unknown> = {};
+  if (process.env.ORC_ACTIVE_PROJECT !== undefined)
+    env.activeProject = process.env.ORC_ACTIVE_PROJECT;
 
   if (process.env.ORC_DB_PATH) env.db = { path: process.env.ORC_DB_PATH };
 

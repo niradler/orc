@@ -29,6 +29,7 @@ import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
 import { useCreateSkill, useSkill, useSkills } from "@/hooks/useSkills";
 import { readPrimitiveFolder } from "@/lib/primitive-files";
+import { SkillEvolution } from "./SkillEvolution";
 
 type SourceFilter = "all" | "builtin" | "user";
 
@@ -43,7 +44,7 @@ const SOURCE_COLORS: Record<SkillSource, string> = {
   user: "bg-tertiary/15 text-tertiary border-tertiary/30",
 };
 
-export default function Skills() {
+export default function Skills({ projectId }: { projectId?: string } = {}) {
   const [searchInput, setSearchInput] = useState("");
   const [query, setQuery] = useState("");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
@@ -69,6 +70,10 @@ export default function Skills() {
 
   return (
     <div>
+      <SkillEvolution
+        key={projectId ?? "unassigned"}
+        projectId={projectId === "all" || projectId === "unassigned" ? undefined : projectId}
+      />
       <ViewHeader
         title="Skills"
         meta={`${(skills ?? []).length} skills`}
@@ -200,6 +205,7 @@ export default function Skills() {
         skillName={selectedSkill}
         open={Boolean(selectedSkill)}
         onClose={closeSkillDetail}
+        projectId={projectId === "all" || projectId === "unassigned" ? undefined : projectId}
       />
 
       {creating && <CreateSkillDialog open={creating} onClose={() => setCreating(false)} />}
@@ -211,15 +217,17 @@ function SkillDetailSheet({
   skillName,
   open,
   onClose,
+  projectId,
 }: {
   skillName: string | null;
   open: boolean;
   onClose: () => void;
+  projectId?: string;
 }) {
-  const { data, isLoading, error, refetch } = useSkill(skillName);
+  const { data, isLoading, error, refetch } = useSkill(skillName, undefined, projectId);
   const skill = data as SkillFull | undefined;
   const [selectedFile, setSelectedFile] = useState<string | undefined>();
-  const fileQuery = useSkill(skillName, selectedFile ?? "SKILL.md");
+  const fileQuery = useSkill(skillName, selectedFile ?? "SKILL.md", projectId);
   const file = fileQuery.data as SkillRefContent | undefined;
 
   return (

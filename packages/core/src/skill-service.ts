@@ -212,7 +212,12 @@ function parseInstalledFrontmatter(
 // Directories
 // ---------------------------------------------------------------------------
 
-const BUILTIN_SKILLS_DIR = resolve(import.meta.dirname, "../../../skills");
+const BUILTIN_SKILLS_DIR =
+  (globalThis as { __ORC_BUILTIN_SKILLS_DIR__?: string }).__ORC_BUILTIN_SKILLS_DIR__ ??
+  [resolve(import.meta.dirname, "skills"), resolve(import.meta.dirname, "../../../skills")].find(
+    (directory) => existsSync(join(directory, "orc-worker-base", "SKILL.md")),
+  ) ??
+  resolve(import.meta.dirname, "../../../skills");
 const USER_SKILLS_DIR = join(homedir(), ".orc", "skills");
 const CACHE_PATH = join(homedir(), ".orc", "skills-cache.json");
 

@@ -45,10 +45,11 @@ type RawMemRow = {
   source: string | null;
   tags: string | null;
   expires_at: number | null;
+  project_id: string | null;
 };
 
 const SELECT_COLS = `m.id, m.title, m.type, m.content, m.scope, m.importance,
-  m.created_at, m.updated_at, m.source, m.tags, m.expires_at`;
+  m.created_at, m.updated_at, m.source, m.tags, m.expires_at, m.project_id`;
 
 function snippet(content: string, maxLen = 80): string {
   return content.length <= maxLen ? content : `${content.slice(0, maxLen - 1)}…`;
@@ -91,7 +92,7 @@ function buildScopeTypeFilter(
   type?: string,
   project_id?: string,
 ): { clause: string; params: (string | null)[] } {
-  const conditions: string[] = [];
+  const conditions: string[] = ["(m.expires_at IS NULL OR m.expires_at > unixepoch())"];
   const params: (string | null)[] = [];
   if (scope) {
     conditions.push("m.scope = ?");
@@ -278,16 +279,20 @@ export function getLayer2(id: string, windowSize = 3): MemoryLayer2 | null {
   if (!target) return null;
 
   const before = sqlite
-    .query<RawMemRow, [number, number]>(
-      `SELECT ${SELECT_COLS} FROM memories m WHERE m.created_at < ? ORDER BY m.created_at DESC LIMIT ?`,
+    .query<RawMemRow, [number, string | null, number]>(
+      `SELECT ${SELECT_COLS} FROM memories m WHERE m.created_at < ?
+       AND m.project_id IS ? AND (m.expires_at IS NULL OR m.expires_at > unixepoch())
+       ORDER BY m.created_at DESC, m.id DESC LIMIT ?`,
     )
-    .all(target.created_at, windowSize);
+    .all(target.created_at, target.project_id, windowSize);
 
   const after = sqlite
-    .query<RawMemRow, [number, number]>(
-      `SELECT ${SELECT_COLS} FROM memories m WHERE m.created_at > ? ORDER BY m.created_at ASC LIMIT ?`,
+    .query<RawMemRow, [number, string | null, number]>(
+      `SELECT ${SELECT_COLS} FROM memories m WHERE m.created_at > ?
+       AND m.project_id IS ? AND (m.expires_at IS NULL OR m.expires_at > unixepoch())
+       ORDER BY m.created_at ASC, m.id ASC LIMIT ?`,
     )
-    .all(target.created_at, windowSize);
+    .all(target.created_at, target.project_id, windowSize);
 
   return {
     ...toLayer1(target, 1, "porter"),

@@ -1,8 +1,9 @@
 import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
-import { getDb } from "@orc/db/client";
+import { getDb, getSqlite } from "@orc/db/client";
 import { job_runs, jobs } from "@orc/db/schema";
+import { WikiStore } from "@orc/db/wiki";
 import { Cron } from "croner";
 import { eq } from "drizzle-orm";
 import {
@@ -40,6 +41,8 @@ export async function cleanupStaleSessions(): Promise<number> {
 async function runCycle(): Promise<string> {
   const config = loadConfig();
   const lines: string[] = [];
+  const scheduled = new WikiStore(getSqlite()).schedule();
+  if (scheduled) lines.push(`Queued ${scheduled} wiki contribution(s)`);
 
   const cleaned = await cleanupStaleSessions();
   if (cleaned > 0) lines.push(`Cleaned ${cleaned} stale session(s)`);

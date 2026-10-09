@@ -3,8 +3,9 @@ import { join } from "node:path";
 import { ulid } from "@orc/core/ids";
 import { LIVE_REGISTRY_DIR } from "@orc/core/live-session";
 import { createLogger } from "@orc/core/logger";
-import { getDb } from "@orc/db/client";
+import { getDb, getSqlite } from "@orc/db/client";
 import { gateway_sessions } from "@orc/db/schema";
+import { contributeStoppedSession } from "@orc/db/session-contributions";
 import { and, eq, ne, notInArray } from "drizzle-orm";
 import {
   CLAUDE_REGISTRY_DIR,
@@ -65,6 +66,8 @@ async function upsertRecord(r: SessionRecord): Promise<string> {
   };
   if (existing) {
     await db.update(gateway_sessions).set(fields).where(eq(gateway_sessions.id, existing.id));
+    if (r.status === "stopped" && existing.status !== "stopped")
+      contributeStoppedSession(getSqlite(), existing.id);
     return existing.id;
   }
   const id = ulid();
@@ -118,7 +121,7 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
       if (r.tokens) queueTokens(id, r.tokens);
     }
     const seen = records.map((r) => r.externalId);
-    await getDb()
+    const stopped = await getDb()
       .update(gateway_sessions)
       .set({ status: "stopped", updated_at: new Date() })
       .where(
@@ -128,7 +131,9 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
           ne(gateway_sessions.status, "stopped"),
           seen.length > 0 ? notInArray(gateway_sessions.runtime_session_id, seen) : undefined,
         ),
-      );
+      )
+      .returning({ id: gateway_sessions.id });
+    for (const row of stopped) contributeStoppedSession(getSqlite(), row.id);
     return { backend: adapter.backend, seen: records.length, ms: Date.now() - started };
   } catch (err) {
     logger.error(`sync failed for ${adapter.backend}`, err);

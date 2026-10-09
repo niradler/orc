@@ -66,7 +66,12 @@ const fail = (msg: string) => {
 const ok = (msg: string) => console.log(`  ✓ ${msg}`);
 
 function run(cmd: string, args: string[], cwd: string): { code: number; stdout: string } {
-  const r = spawnSync(cmd, args, { cwd, encoding: "utf-8", shell: process.platform === "win32" });
+  const r = spawnSync(cmd, args, {
+    cwd,
+    encoding: "utf-8",
+    shell: process.platform === "win32",
+    timeout: 240000,
+  });
   if (r.error) throw r.error;
   return { code: r.status ?? 1, stdout: r.stdout ?? "" };
 }
@@ -128,6 +133,11 @@ if (tarball && failures.length === 0) {
       fail("installed orc-ai is missing dist/index.js");
     } else {
       ok("installed orc-ai ships dist/index.js");
+    }
+    for (const name of ["orc-wiki", "orc-worker-base", "orc-session"]) {
+      const entry = join(tmp, "node_modules", "orc-ai", "dist", "skills", name, "SKILL.md");
+      if (existsSync(entry)) ok(`installed package ships ${name}`);
+      else fail(`installed package is missing required built-in skill ${name}`);
     }
 
     // Resolve each external dep the way the runtime does — from the installed

@@ -2,7 +2,10 @@ import type { Database } from "bun:sqlite";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
-import { getDb } from "@orc/db/client";
+import { normalizeTags } from "@orc/core/retrieval";
+import { getDb, getSqlite } from "@orc/db/client";
+import { captureMemoryEvidence } from "@orc/db/evidence-sync";
+import { PassageIndex } from "@orc/db/retrieval";
 import { memories } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
 
@@ -29,7 +32,7 @@ const MemorySchema = z
 
 const CreateMemorySchema = z
   .object({
-    content: z.string().min(1),
+    content: z.string().min(1).max(2_000_000),
     title: z.string().optional(),
     type: MemoryTypeSchema.optional().default("fact"),
     source: z.string().optional(),
@@ -97,7 +100,7 @@ const createRoute_ = createRoute({
 
 const UpdateMemorySchema = z
   .object({
-    content: z.string().optional(),
+    content: z.string().min(1).max(2_000_000).optional(),
     title: z.string().optional(),
     type: MemoryTypeSchema.optional(),
     source: z.string().optional(),
@@ -206,7 +209,9 @@ app.openapi(searchRoute, async (c) => {
       return sqlite
         .query(
           `SELECT ${SELECT_COLS} FROM ${table} f JOIN memories m ON m.id = f.id
-           WHERE f.${table} MATCH ?${scopeClause}${typeClause}${projectClause} ORDER BY rank LIMIT ?`,
+           WHERE f.${table} MATCH ?${scopeClause}${typeClause}${projectClause}
+           AND (m.expires_at IS NULL OR m.expires_at > unixepoch())
+           ORDER BY bm25(${table}, 0, 1.0, 3.0, 1.5, 0) LIMIT ?`,
         )
         .all(expr, ...filterParams, limit) as RawRow[];
     } catch {
@@ -229,6 +234,7 @@ app.openapi(searchRoute, async (c) => {
       .query(
         `SELECT ${SELECT_COLS} FROM memories m
          WHERE m.content LIKE ?${scopeClause}${typeClause}${projectClause}
+         AND (m.expires_at IS NULL OR m.expires_at > unixepoch())
          ORDER BY m.created_at DESC LIMIT ?`,
       )
       .all(...fallbackParams) as RawRow[];
@@ -280,7 +286,7 @@ app.openapi(createRoute_, async (c) => {
     source: body.source,
     scope: body.scope,
     project_id: body.project_id,
-    tags: body.tags,
+    tags: body.tags ? normalizeTags(body.tags) : undefined,
     importance: body.importance,
     expires_at: body.expires_at ? new Date(body.expires_at) : undefined,
     created_at: now,
@@ -288,6 +294,7 @@ app.openapi(createRoute_, async (c) => {
   });
 
   const mem = await db.query.memories.findFirst({ where: eq(memories.id, id) });
+  captureMemoryEvidence(getSqlite(), id);
   return c.json(toDto(mem as NonNullable<typeof mem>), 201);
 });
 
@@ -297,15 +304,17 @@ app.openapi(updateRoute, async (c) => {
   const body = c.req.valid("json");
   const existing = await db.query.memories.findFirst({ where: eq(memories.id, id) });
   if (!existing) throw new NotFoundError("Memory", id);
+  captureMemoryEvidence(getSqlite(), id);
   const updates: Record<string, unknown> = { updated_at: new Date() };
   if (body.content !== undefined) updates.content = body.content;
   if (body.title !== undefined) updates.title = body.title;
   if (body.type !== undefined) updates.type = body.type;
   if (body.source !== undefined) updates.source = body.source;
   if (body.scope !== undefined) updates.scope = body.scope;
-  if (body.tags !== undefined) updates.tags = body.tags;
+  if (body.tags !== undefined) updates.tags = normalizeTags(body.tags);
   if (body.importance !== undefined) updates.importance = body.importance;
   await db.update(memories).set(updates).where(eq(memories.id, id));
+  captureMemoryEvidence(getSqlite(), id);
   const mem = await db.query.memories.findFirst({ where: eq(memories.id, id) });
   return c.json(toDto(mem as NonNullable<typeof mem>));
 });
@@ -316,6 +325,7 @@ app.openapi(deleteRoute, async (c) => {
   const existing = await db.query.memories.findFirst({ where: eq(memories.id, id) });
   if (!existing) throw new NotFoundError("Memory", id);
   await db.delete(memories).where(eq(memories.id, id));
+  new PassageIndex(getSqlite()).retire("memory", id);
   return new Response(null, { status: 204 });
 });
 

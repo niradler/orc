@@ -822,6 +822,7 @@ See [AGENTS.md](./AGENTS.md) for the full development guide and coding conventio
 
 ## Learn more
 
+- [Evolving Wiki](./docs/evolving-wiki.md) - cited retrieval, automatic session consolidation, evaluated skill promotion, and human revert
 - [Usage Guide](./docs/usage-guide.md) - best practices for memory, tasks, multi-agent workflows, and configuration
 - [Vision](./docs/vision.md) - why ORC exists and the problem it solves
 - [Roadmap](./docs/roadmap.md) - what shipped and what's next

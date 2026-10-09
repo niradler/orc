@@ -2,11 +2,14 @@ import { resetConfig } from "@orc/core/config";
 import { closeDb, createTestDb } from "@orc/db/client";
 import { createApp } from "../server.js";
 
+const originalActiveProject = process.env.ORC_ACTIVE_PROJECT;
+
 // loadConfig() caches per process, and `bun test` at the root runs every package's files in one
 // process; without a reset the app keeps a secret cached by an earlier file and answers 401.
 export function setupTestApp() {
   process.env.ORC_API_SECRET = "test-secret";
   process.env.ORC_DB_PATH = ":memory:";
+  process.env.ORC_ACTIVE_PROJECT = "";
   resetConfig();
   createTestDb();
   return createApp();
@@ -16,6 +19,8 @@ export function teardownTestApp() {
   closeDb();
   delete process.env.ORC_API_SECRET;
   delete process.env.ORC_DB_PATH;
+  if (originalActiveProject === undefined) delete process.env.ORC_ACTIVE_PROJECT;
+  else process.env.ORC_ACTIVE_PROJECT = originalActiveProject;
   resetConfig();
 }
 

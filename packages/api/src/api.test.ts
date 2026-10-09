@@ -6,6 +6,7 @@ import { createApp } from "./server.js";
 let app: ReturnType<typeof createApp>;
 
 const AUTH = "Bearer test-secret";
+const originalActiveProject = process.env.ORC_ACTIVE_PROJECT;
 
 async function req(method: string, path: string, body?: unknown) {
   const fullPath = path.startsWith("/api") ? path : `/api${path}`;
@@ -22,6 +23,7 @@ async function req(method: string, path: string, body?: unknown) {
 beforeAll(() => {
   process.env.ORC_API_SECRET = "test-secret";
   process.env.ORC_DB_PATH = ":memory:";
+  process.env.ORC_ACTIVE_PROJECT = "";
   resetConfig();
   // Force an in-memory DB regardless of any config cached by a sibling test
   // file — otherwise getDb() can open the real ~/.orc/orc.db and tests both
@@ -35,6 +37,8 @@ afterAll(() => {
   resetConfig();
   delete process.env.ORC_API_SECRET;
   delete process.env.ORC_DB_PATH;
+  if (originalActiveProject === undefined) delete process.env.ORC_ACTIVE_PROJECT;
+  else process.env.ORC_ACTIVE_PROJECT = originalActiveProject;
 });
 
 describe("Health", () => {

@@ -19,6 +19,7 @@ import { mcpToolRouter } from "./routes/mcp-tool.js";
 import { memoriesRouter } from "./routes/memories.js";
 import { primitivesRouter } from "./routes/primitives.js";
 import { projectsRouter } from "./routes/projects.js";
+import { retrievalRouter } from "./routes/retrieval.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import { skillsRouter } from "./routes/skills.js";
 import { tagsRouter } from "./routes/tags.js";
@@ -26,6 +27,7 @@ import { taskLinksRouter } from "./routes/task-links.js";
 import { tasksRouter } from "./routes/tasks.js";
 import { terminalGitRouter } from "./routes/terminal-git.js";
 import { terminalsRouter } from "./routes/terminals.js";
+import { wikiRouter } from "./routes/wiki.js";
 import { createWebStatic } from "./static.js";
 
 const logger = createLogger("api");
@@ -65,6 +67,7 @@ export function createApp() {
   app.route("/api", mcpToolRouter);
   app.route("/", mcpRouter);
   app.route("/api", projectsRouter);
+  app.route("/api", wikiRouter);
   app.route("/api", skillsRouter);
   app.route("/api", primitivesRouter);
   app.route("/api", flowsRouter);
@@ -72,6 +75,7 @@ export function createApp() {
   app.route("/api", taskLinksRouter);
   app.route("/api", memoriesRouter);
   app.route("/api", knowledgeRouter);
+  app.route("/api", retrievalRouter);
   app.route("/api", sessionsRouter);
   app.route("/api", jobsRouter);
   app.route("/api", gatewayRouter);
