@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resetConfig } from "@orc/core/config";
 import { closeDb, createTestDb, getDb } from "@orc/db/client";
-import { memories, projects, sessions } from "@orc/db/schema";
+import { memories, projects, sessions, tasks } from "@orc/db/schema";
 import { getLayer2, getLayer3, searchLayer1 } from "../search.js";
 import { executeTool } from "../tools.js";
 
@@ -12,6 +12,7 @@ beforeAll(async () => {
   await db.insert(projects).values([
     { id: "validity-a", name: "validity-a" },
     { id: "validity-b", name: "validity-b" },
+    { id: "scope-a", name: "scope-a" },
   ]);
 });
 
@@ -22,6 +23,48 @@ afterAll(() => {
 });
 
 describe("Memory eligibility", () => {
+  test("should scope startup by explicit ID or null without inheriting a project name", async () => {
+    await getDb()
+      .insert(tasks)
+      .values([
+        { id: "scope-task-a", title: "Assigned scoped task", project_id: "scope-a" },
+        { id: "scope-task-none", title: "Unassigned scoped task" },
+      ]);
+    await getDb()
+      .insert(memories)
+      .values([
+        { id: "scope-memory-a", content: "Assigned scoped memory", project_id: "scope-a" },
+        { id: "scope-memory-none", content: "Unassigned scoped memory" },
+      ]);
+    await getDb()
+      .insert(sessions)
+      .values([
+        { id: "scope-session-none", agent: "test", summary: "Unassigned session summary" },
+        {
+          id: "scope-session-a",
+          agent: "test",
+          project_id: "scope-a",
+          summary: "Assigned session summary",
+        },
+      ]);
+    const assigned = await executeTool("context", {
+      project: "missing-default-project",
+      project_id: "scope-a",
+    });
+    expect(assigned).toContain("Assigned scoped task");
+    expect(assigned).toContain("Assigned scoped memory");
+    expect(assigned).toContain("Assigned session summary");
+    expect(assigned).not.toContain("Unassigned");
+    const unassigned = await executeTool("context", { project: "validity-a", project_id: null });
+    expect(unassigned).toContain("Unassigned scoped task");
+    expect(unassigned).toContain("Unassigned scoped memory");
+    expect(unassigned).toContain("Unassigned session summary");
+    expect(unassigned).not.toContain("Assigned scoped");
+    expect(unassigned).not.toContain("Assigned session summary");
+    await expect(executeTool("context", { project_id: "missing-id" })).rejects.toThrow(
+      "Project not found",
+    );
+  });
   test("should fail closed for an unknown requested project", async () => {
     await expect(executeTool("context", { project: "missing-validity-project" })).rejects.toThrow(
       "Project not found",

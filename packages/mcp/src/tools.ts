@@ -426,11 +426,9 @@ export const toolDefinitions = [
     name: "context",
     description:
       "Compact context index - active tasks + important memories. ~200 tokens. Call at session start. " +
-      "Pass project name to scope, or omit to use activeProject from config. " +
+      "Pass project name or explicit project_id (null selects unassigned) to scope, or omit to use activeProject from config. " +
       "Use task_get or memory_get to drill into specific items.",
-    inputSchema: z.object({
-      project: projectParam,
-    }),
+    inputSchema: wikiProjectParams,
   },
   {
     name: "session_event",
@@ -1089,14 +1087,22 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "context": {
-      const { project } = args as { project?: string };
+      const input = wikiProjectParams.parse(args);
       const config = loadConfig();
       const taskLimit = config.context.layer1_task_limit;
       const memLimit = config.context.layer1_memory_limit;
-      const resolved = resolveProjectId(project);
+      const explicitScope = input.project_id !== undefined;
+      const projectId = explicitScope ? resolveWikiProject(input) : undefined;
+      const resolved = explicitScope
+        ? projectId == null
+          ? null
+          : await db.query.projects.findFirst({ where: eq(projects.id, projectId) })
+        : resolveProjectId(input.project);
+      const scoped = explicitScope || Boolean(resolved);
+      const scopeId = resolved?.id ?? null;
 
       const taskConditions = [];
-      if (resolved) taskConditions.push(eq(tasks.project_id, resolved.id));
+      if (scoped) taskConditions.push(sql`${tasks.project_id} IS ${scopeId}`);
       const activeTasks = await db.query.tasks.findMany({
         where: taskConditions.length > 0 ? and(...taskConditions) : undefined,
         limit: taskLimit,
@@ -1105,7 +1111,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const filtered = activeTasks.filter((t) => !["done", "cancelled"].includes(t.status));
 
       const memConditions = [];
-      if (resolved) memConditions.push(eq(memories.project_id, resolved.id));
+      if (scoped) memConditions.push(sql`${memories.project_id} IS ${scopeId}`);
       memConditions.push(
         sql`(${memories.expires_at} IS NULL OR ${memories.expires_at} > unixepoch())`,
       );
@@ -1127,16 +1133,18 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       });
 
       const lastSession = await db.query.sessions.findFirst({
-        where: resolved ? eq(sessions.project_id, resolved.id) : undefined,
+        where: scoped ? sql`${sessions.project_id} IS ${scopeId}` : undefined,
         orderBy: [desc(sessions.created_at)],
       });
 
       const lines: string[] = [];
       if (resolved) {
         lines.push(`## Project: ${resolved.name}`);
+      } else if (explicitScope) {
+        lines.push("## Project: Unassigned");
       }
 
-      lines.push(resolved ? "\n## Active Tasks" : "## Active Tasks");
+      lines.push(scoped ? "\n## Active Tasks" : "## Active Tasks");
       if (filtered.length === 0) lines.push("  (none)");
       for (const t of filtered) {
         lines.push(`  [${t.id}] ${t.status.padEnd(10)} ${t.title}`);
@@ -1160,9 +1168,10 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const sqlite = getSqlite();
       const activeCount = sqlite
         .query(
-          "SELECT COUNT(*) as count FROM gateway_sessions WHERE role = 'worker' AND status = 'running'",
+          "SELECT COUNT(*) as count FROM gateway_sessions WHERE role = 'worker' AND status = 'running'" +
+            (scoped ? " AND project_id IS ?" : ""),
         )
-        .get() as { count: number } | null;
+        .get(...(scoped ? [scopeId] : [])) as { count: number } | null;
       if (activeCount && activeCount.count > 0) {
         lines.push(`\n## Agent Loop: ${activeCount.count} active worker(s)`);
       }
