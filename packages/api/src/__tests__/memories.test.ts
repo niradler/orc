@@ -132,6 +132,27 @@ describe("Memories CRUD", () => {
   });
 
   describe("GET /memories/search", () => {
+    test("should exclude expired memories across lexical and fallback search", async () => {
+      const expired = await req(app, "POST", "/memories", {
+        content: "apivalidityneedle punctuation::needle",
+        expires_at: new Date(Date.now() - 60_000).toISOString(),
+      });
+      const expiredBody = await expired.json();
+      const current = await req(app, "POST", "/memories", {
+        content: "apivalidityneedle punctuation::needle",
+        expires_at: new Date(Date.now() + 60_000).toISOString(),
+      });
+      const currentBody = await current.json();
+      for (const query of ["apivalidityneedle", "validityneed", "punctuation::needle"]) {
+        const response = await req(app, "GET", `/memories/search?q=${encodeURIComponent(query)}`);
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        const ids = body.results.map((item: { id: string }) => item.id);
+        expect(ids).toContain(currentBody.id);
+        expect(ids).not.toContain(expiredBody.id);
+      }
+    });
+
     test("finds memories by keyword", async () => {
       const res = await req(app, "GET", "/memories/search?q=ULID");
       expect(res.status).toBe(200);

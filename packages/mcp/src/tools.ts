@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { createAgent, discoverAgents, readAgent } from "@orc/core/agent-service";
 import { loadConfig } from "@orc/core/config";
+import { configuredEmbeddingProvider } from "@orc/core/embedding-provider";
+import { NotFoundError } from "@orc/core/errors";
 import { shortId, ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import {
@@ -9,10 +11,10 @@ import {
   readPackage,
   readPackageFile,
 } from "@orc/core/package-service";
+import { EvidenceSourceSchema, normalizeTags, RetrievalQuerySchema } from "@orc/core/retrieval";
 import {
   createSkill as createSkillFs,
   listSkills,
-  readSkill,
   type SkillFileInput,
   type SkillFull,
   type SkillRefContent,
@@ -22,24 +24,117 @@ import {
 import type { TaskStatus } from "@orc/core/types";
 import { AgentBackendSchema } from "@orc/core/types";
 import { PathValidationError, validateCollectionPath } from "@orc/core/validate";
+import { SkillEvaluationSchema, SkillProposalSchema, WikiOutcomeSchema } from "@orc/core/wiki";
 import { getDb, getSqlite } from "@orc/db/client";
+import { captureMemoryEvidence, syncProjectEvidence } from "@orc/db/evidence-sync";
+import { PassageIndex } from "@orc/db/retrieval";
 import { job_runs, jobs, memories, projects, sessions, tasks } from "@orc/db/schema";
+import { getSkillSnapshot, readEvolvedSkill, revertSkill } from "@orc/db/skill-evolution";
+import { WikiStore } from "@orc/db/wiki";
 import { executeJob } from "@orc/runner/executor";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 
-const logger = createLogger("mcp:tools");
-
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getKnowledgeEngine } from "./knowledge.js";
 import { getLayer3, searchLayer1 } from "./search.js";
+
+const logger = createLogger("mcp:tools");
 
 const projectParam = z
   .string()
   .optional()
   .describe("Project name (e.g. 'orc'). Defaults to activeProject from config if not set.");
+const wikiProjectParams = z.object({
+  project: projectParam,
+  project_id: z
+    .string()
+    .min(1)
+    .nullable()
+    .optional()
+    .describe(
+      "Explicit project ID; null selects unassigned. Takes precedence over project/default.",
+    ),
+});
 
 export const toolDefinitions = [
+  {
+    name: "skill_history",
+    description:
+      "Read project-scoped candidate, rejection, evaluation, promotion and revert history before proposing a skill change.",
+    inputSchema: wikiProjectParams,
+  },
+  {
+    name: "evidence_get",
+    description:
+      "Fetch explicitly cited immutable passages, including historical or retired evidence, within the same project. Historical fetch does not make evidence current.",
+    inputSchema: z.object({
+      ids: z.array(z.string()).min(1).max(20),
+      project_id: z.string().nullable(),
+    }),
+  },
+  {
+    name: "skill_baseline",
+    description:
+      "Read exact active skill package baseline and raw entry point for a project before proposing changes.",
+    inputSchema: wikiProjectParams.extend({ name: z.string() }),
+  },
+  {
+    name: "skill_revert",
+    description:
+      "Revert the current automatically promoted skill version, retaining history. Requires the current activation ID and reason; preserves installed files.",
+    inputSchema: z.object({
+      id: z.string(),
+      project_id: z.string().nullable(),
+      reason: z.string().trim().min(1).max(4000),
+    }),
+  },
+  {
+    name: "evidence_search",
+    description:
+      "Retrieve project-scoped current passages with source/version/offset citations and a bounded estimated token budget. Works without embeddings.",
+    inputSchema: RetrievalQuerySchema,
+  },
+  {
+    name: "evidence_index",
+    description:
+      "Index original source evidence with immutable revision history. Use project IDs for passage tools.",
+    inputSchema: EvidenceSourceSchema,
+  },
+  {
+    name: "evidence_expand",
+    description:
+      "Expand a current cited passage to neighboring passages within the same source version and project.",
+    inputSchema: z.object({
+      id: z.string(),
+      project_id: z.string().nullable(),
+      radius: z.number().int().min(0).max(3).default(1),
+    }),
+  },
+  {
+    name: "wiki_read",
+    description:
+      "Read maintained wiki pages, contribution/attempt history, and optional page history. Use project name or explicit project_id (null for unassigned).",
+    inputSchema: wikiProjectParams.extend({ slug: z.string().optional() }),
+  },
+  {
+    name: "wiki_apply",
+    description:
+      "Consolidate a contribution into cited wiki page revisions or record no_change/failed. Optimistic revision checks protect concurrent updates. Does not activate skills.",
+    inputSchema: WikiOutcomeSchema,
+  },
+  {
+    name: "skill_propose",
+    description:
+      "Retain a proposed skill change with evidence and baseline identity. Never overwrites active skills.",
+    inputSchema: SkillProposalSchema,
+  },
+  {
+    name: "skill_evaluate",
+    description:
+      "Record paired held-out outcomes and validation history. Reported measured gain is limited to this suite; storing lessons is not proof of improvement.",
+    inputSchema: SkillEvaluationSchema,
+  },
   {
     name: "memory_search",
     description:
@@ -72,7 +167,7 @@ export const toolDefinitions = [
       "'decision' for choices made, 'rule' for conventions/constraints, 'discovery' for findings, " +
       "'event' for things that happened, 'fact' for general knowledge.",
     inputSchema: z.object({
-      content: z.string().describe("Content to remember"),
+      content: z.string().min(1).max(2_000_000).describe("Content to remember"),
       title: z
         .string()
         .optional()
@@ -95,7 +190,7 @@ export const toolDefinitions = [
       "Prefer this over delete+recreate to preserve history (created_at, access_count).",
     inputSchema: z.object({
       id: z.string().describe("Memory ID to update"),
-      content: z.string().optional().describe("New content"),
+      content: z.string().min(1).max(2_000_000).optional().describe("New content"),
       title: z.string().optional().describe("New title - what it is and when to use it"),
       type: z.enum(["fact", "decision", "event", "rule", "discovery"]).optional(),
       scope: z.string().optional().describe("New scope"),
@@ -414,6 +509,7 @@ export const toolDefinitions = [
       "Pass ref with a skill-relative path to load Markdown, scripts or assets on demand. Binary assets return base64. Reading never executes scripts.",
     inputSchema: z.object({
       name: z.string().describe("Skill name"),
+      project: projectParam,
       ref: z
         .string()
         .optional()
@@ -592,13 +688,121 @@ function resolveProjectId(projectName?: string): { id: string; name: string } | 
       "SELECT id, name FROM projects WHERE name = ? COLLATE NOCASE LIMIT 1",
     )
     .get(name);
-  return row ?? null;
+  if (!row) throw new NotFoundError("Project", name);
+  return row;
+}
+
+function resolveWikiProject(input: z.infer<typeof wikiProjectParams>): string | null {
+  if (input.project_id !== undefined) {
+    if (
+      input.project_id !== null &&
+      !getSqlite().query("SELECT id FROM projects WHERE id=?").get(input.project_id)
+    )
+      throw new NotFoundError("Project", input.project_id);
+    return input.project_id;
+  }
+  return resolveProjectId(input.project)?.id ?? null;
 }
 
 export async function executeTool(name: ToolName, args: unknown): Promise<string> {
   const db = getDb();
 
   switch (name) {
+    case "skill_baseline": {
+      const input = wikiProjectParams.extend({ name: z.string() }).parse(args);
+      const snapshot = getSkillSnapshot(getSqlite(), input.name, resolveWikiProject(input));
+      return JSON.stringify({
+        hash: snapshot.hash,
+        base_hash: snapshot.base_hash,
+        raw: snapshot.raw,
+      });
+    }
+    case "skill_revert": {
+      const input = z
+        .object({
+          id: z.string(),
+          project_id: z.string().nullable(),
+          reason: z.string().trim().min(1).max(4000),
+        })
+        .parse(args);
+      return JSON.stringify({
+        id: revertSkill(getSqlite(), input.id, input.project_id, input.reason),
+      });
+    }
+    case "evidence_search": {
+      const input = RetrievalQuerySchema.parse(args);
+      const index = new PassageIndex(getSqlite(), configuredEmbeddingProvider());
+      syncProjectEvidence(getSqlite(), input.project_id, index);
+      return JSON.stringify(await index.search(input));
+    }
+    case "evidence_get": {
+      const input = z
+        .object({ ids: z.array(z.string()).min(1).max(20), project_id: z.string().nullable() })
+        .parse(args);
+      return JSON.stringify({
+        passages: new PassageIndex(getSqlite()).get(input.ids, input.project_id),
+      });
+    }
+    case "skill_history": {
+      const input = wikiProjectParams.parse(args);
+      const projectId = resolveWikiProject(input);
+      const sqlite = getSqlite();
+      new WikiStore(sqlite);
+      return JSON.stringify({
+        proposals: sqlite
+          .query(
+            "SELECT id,skill_name,status,decision,payload FROM skill_proposals WHERE project_id IS ? ORDER BY created_at DESC,id DESC LIMIT 100",
+          )
+          .all(projectId),
+        evaluations: sqlite
+          .query(
+            "SELECT e.id,e.proposal_id,e.payload,e.result FROM skill_evaluations e JOIN skill_proposals p ON p.id=e.proposal_id WHERE p.project_id IS ? ORDER BY e.created_at DESC,e.id DESC LIMIT 100",
+          )
+          .all(projectId),
+        activations: sqlite
+          .query(
+            "SELECT id,skill_name,proposal_id,evaluation_id,active,action,reason,raw,previous_raw FROM skill_activations WHERE project_key=? ORDER BY created_at DESC,id DESC LIMIT 100",
+          )
+          .all(projectId === null ? "global:" : `project:${projectId}`),
+      });
+    }
+    case "evidence_index": {
+      const input = EvidenceSourceSchema.parse(args);
+      return JSON.stringify({ version: new PassageIndex(getSqlite()).put(input) });
+    }
+    case "evidence_expand": {
+      const input = z
+        .object({
+          id: z.string(),
+          project_id: z.string().nullable(),
+          radius: z.number().int().min(0).max(3).default(1),
+        })
+        .parse(args);
+      return JSON.stringify({
+        passages: new PassageIndex(getSqlite()).expand(input.id, input.project_id, input.radius),
+      });
+    }
+    case "wiki_read": {
+      const input = wikiProjectParams.extend({ slug: z.string().optional() }).parse(args);
+      const project = resolveWikiProject(input);
+      const wiki = new WikiStore(getSqlite());
+      return JSON.stringify({
+        pages: wiki.list(project),
+        contributions: wiki.contributions(project),
+        attempts: wiki.attempts(project),
+        history: input.slug ? wiki.history(project, input.slug) : [],
+      });
+    }
+    case "wiki_apply": {
+      new WikiStore(getSqlite()).apply(WikiOutcomeSchema.parse(args));
+      return "Wiki outcome recorded";
+    }
+    case "skill_propose":
+      return JSON.stringify({
+        id: new WikiStore(getSqlite()).propose(SkillProposalSchema.parse(args)),
+      });
+    case "skill_evaluate":
+      return JSON.stringify(new WikiStore(getSqlite()).evaluate(SkillEvaluationSchema.parse(args)));
     case "memory_search": {
       const { query, scope, type, limit, project } = args as {
         query: string;
@@ -662,13 +866,14 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         content,
         source: resolvedSource,
         scope,
-        tags,
+        tags: tags ? normalizeTags(tags) : undefined,
         importance: (importance ?? "normal") as "low" | "normal" | "high" | "critical",
         project_id: resolved?.id,
         created_at: now,
         updated_at: now,
       });
       const label = title ? ` "${title}"` : "";
+      captureMemoryEvidence(getSqlite(), id);
       const proj = resolved ? ` (${resolved.name})` : "";
       let result = `Stored: ${id}${label} [${type ?? "fact"}]${proj}`;
 
@@ -696,15 +901,17 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       };
       const existing = await db.query.memories.findFirst({ where: eq(memories.id, id) });
       if (!existing) return `Memory not found: ${id}`;
+      captureMemoryEvidence(getSqlite(), id);
       const updates: Record<string, unknown> = { updated_at: new Date() };
       if (content !== undefined) updates.content = content;
       if (title !== undefined) updates.title = title;
       if (type !== undefined) updates.type = type;
       if (scope !== undefined) updates.scope = scope;
-      if (tags !== undefined) updates.tags = tags;
+      if (tags !== undefined) updates.tags = normalizeTags(tags);
       if (importance !== undefined) updates.importance = importance;
       if (source !== undefined) updates.source = source;
       await db.update(memories).set(updates).where(eq(memories.id, id));
+      captureMemoryEvidence(getSqlite(), id);
       return `Updated: ${id} [${type ?? existing.type}]`;
     }
 
@@ -899,44 +1106,28 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
 
       const memConditions = [];
       if (resolved) memConditions.push(eq(memories.project_id, resolved.id));
-      const allMems = await db.query.memories.findMany({
-        where: memConditions.length > 0 ? and(...memConditions) : undefined,
-        limit: memLimit * 3,
-        orderBy: (m, { desc }) => [desc(m.created_at)],
+      memConditions.push(
+        sql`(${memories.expires_at} IS NULL OR ${memories.expires_at} > unixepoch())`,
+      );
+      const recentMems = await db.query.memories.findMany({
+        where: and(...memConditions),
+        limit: memLimit,
+        orderBy: [
+          sql`(
+            CASE ${memories.importance} WHEN 'critical' THEN 4 WHEN 'high' THEN 3
+              WHEN 'normal' THEN 2 ELSE 1 END * 2
+            + CASE ${memories.type} WHEN 'rule' THEN 3 WHEN 'decision' THEN 3
+              WHEN 'discovery' THEN 2 ELSE 1 END
+            + max(0, 1.0 - (unixepoch() - ${memories.created_at}) / 2592000.0) * 2
+            + min(coalesce(${memories.access_count}, 0) / 5.0, 2)
+          ) DESC`,
+          desc(memories.created_at),
+          desc(memories.id),
+        ],
       });
-
-      const importanceWeight: Record<string, number> = {
-        critical: 4,
-        high: 3,
-        normal: 2,
-        low: 1,
-      };
-
-      const typeWeight: Record<string, number> = {
-        rule: 3,
-        decision: 3,
-        discovery: 2,
-        fact: 1,
-        event: 1,
-      };
-
-      const nowMs = Date.now();
-      const scored = allMems.map((m) => {
-        const ageHours = (nowMs - m.created_at.getTime()) / 3_600_000;
-        const recency = Math.max(0, 1 - ageHours / (24 * 30));
-        const accessBoost = Math.min((m.access_count ?? 0) / 5, 2);
-        const score =
-          (importanceWeight[m.importance] ?? 1) * 2 +
-          (typeWeight[m.type ?? "fact"] ?? 1) +
-          recency * 2 +
-          accessBoost;
-        return { m, score };
-      });
-
-      scored.sort((a, b) => b.score - a.score);
-      const recentMems = scored.slice(0, memLimit).map((s) => s.m);
 
       const lastSession = await db.query.sessions.findFirst({
+        where: resolved ? eq(sessions.project_id, resolved.id) : undefined,
         orderBy: [desc(sessions.created_at)],
       });
 
@@ -1128,6 +1319,28 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         job_run_id: jobRunId,
         created_at: new Date(),
       });
+      const wikiTask = sqlite
+        .query(
+          "SELECT t.id FROM tasks t JOIN gateway_sessions s ON s.task_id=t.id WHERE t.skill_name='orc-wiki' AND (s.id=? OR s.runtime_session_id=?) LIMIT 1",
+        )
+        .get(sid, sid);
+      if (!wikiTask)
+        new WikiStore(sqlite).enqueue({
+          kind: "session",
+          source_id: `work-unit:${resolved?.id ?? "unassigned"}:${sid}`,
+          project_id: resolved?.id ?? null,
+          title: `${agent} work unit`,
+          content:
+            richSummary +
+            "\n\n## Recorded events\n" +
+            events
+              .map((event) => `${event.type}: ${event.data}`)
+              .join("\n")
+              .slice(0, 1000000),
+          location: `orc://session-events/${encodeURIComponent(sid)}`,
+          tags: ["session-evidence"],
+          metadata: { capture: "explicit-work-unit", session_id: sid },
+        });
       return `Session logged: ${id}`;
     }
 
@@ -1451,8 +1664,17 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "skill_read": {
-      const { name: sName, ref } = args as { name: string; ref?: string };
-      const result = readSkill(sName, ref);
+      const {
+        name: sName,
+        ref,
+        project,
+      } = args as { name: string; ref?: string; project?: string };
+      const result = readEvolvedSkill(
+        getSqlite(),
+        sName,
+        resolveProjectId(project)?.id ?? null,
+        ref,
+      );
       if (!result) return `Skill not found: ${sName}`;
       if (ref) {
         const rc = result as SkillRefContent;

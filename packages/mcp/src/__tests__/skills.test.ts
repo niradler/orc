@@ -1,17 +1,25 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
+import { resetConfig } from "@orc/core/config";
 import { getUserSkillsDir, reloadCache } from "@orc/core/skill-service";
 import { createTestDb } from "@orc/db/client";
 import { executeTool } from "../tools.js";
 
+const originalActiveProject = process.env.ORC_ACTIVE_PROJECT;
+
 beforeAll(() => {
+  process.env.ORC_ACTIVE_PROJECT = "";
+  resetConfig();
   process.env.ORC_DB_PATH = ":memory:";
   createTestDb();
   reloadCache();
 });
 
 afterAll(() => {
+  if (originalActiveProject === undefined) delete process.env.ORC_ACTIVE_PROJECT;
+  else process.env.ORC_ACTIVE_PROJECT = originalActiveProject;
+  resetConfig();
   delete process.env.ORC_DB_PATH;
 });
 

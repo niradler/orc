@@ -64,6 +64,39 @@ async function makeTask(overrides?: Partial<typeof tasks.$inferInsert>): Promise
   return id;
 }
 
+test("should retain the reported evaluator blocker in skill evaluation history", async () => {
+  const taskId = await makeTask({ skill_name: "orc-wiki", required_review: false });
+  const sqlite = getSqlite();
+  const proposalId = ulid();
+  sqlite
+    .query("INSERT INTO skill_proposals(id,skill_name,payload) VALUES(?,'orc-worker-base','{}')")
+    .run(proposalId);
+  sqlite
+    .query(
+      "INSERT INTO skill_evaluation_jobs(proposal_id,task_id,status,attempts) VALUES(?,?,'processing',1)",
+    )
+    .run(proposalId, taskId);
+  const started = await startFlowForTask(taskId);
+  expect(started.ok).toBe(true);
+  const node = activeNodeRun(taskId);
+  const reason = "No representative executable held-out suite exists; paired outcomes unavailable";
+  const reported = await reportNodeOutcome({
+    taskId,
+    nodeId: node.node_id,
+    outcome: "blocked",
+    summary: reason,
+  });
+  expect(reported.ok).toBe(true);
+  await finishNodeRun(node.id, null);
+  const row = sqlite
+    .query<{ payload: string; result: string }, [string]>(
+      "SELECT payload,result FROM skill_evaluations WHERE proposal_id=?",
+    )
+    .get(proposalId);
+  expect(row?.result).toBe("evaluator_failed");
+  expect(JSON.parse(row?.payload ?? "{}").error).toBe(reason);
+});
+
 function nodeRuns(taskId: string): NodeRunRow[] {
   return getSqlite()
     .query(

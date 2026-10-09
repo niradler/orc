@@ -1,4 +1,6 @@
 #!/usr/bin/env bun
+import { installEmbeddedSkills } from "../../core/src/builtin-skills.js";
+import { SKILL_ASSETS } from "./_skills-manifest.generated.js";
 /**
  * Entry point for standalone compiled binaries (`bun build --compile`).
  *
@@ -13,5 +15,7 @@ import { WEB_ASSETS } from "./_web-manifest.generated.js";
 
 // Same structural shape the API's static middleware reads (packages/api/src/static.ts).
 (globalThis as { __ORC_EMBEDDED_WEB__?: typeof WEB_ASSETS }).__ORC_EMBEDDED_WEB__ = WEB_ASSETS;
+(globalThis as { __ORC_BUILTIN_SKILLS_DIR__?: string }).__ORC_BUILTIN_SKILLS_DIR__ =
+  installEmbeddedSkills(SKILL_ASSETS);
 
 await import("./index.js");

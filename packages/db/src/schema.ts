@@ -1,6 +1,8 @@
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
+export * from "./wiki-schema.js";
+
 const timestamps = {
   created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
   updated_at: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),

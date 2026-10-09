@@ -61,6 +61,14 @@ export type {
   UpdateTaskInput,
 } from "@orc/sdk/types";
 
+import type { Passage, RetrievalQuery, RetrievalResult } from "@orc/core/retrieval";
+import type {
+  SkillActivation,
+  WikiContribution,
+  WikiContributionAttempt,
+  WikiOutcome,
+  WikiPage,
+} from "@orc/core/wiki";
 import type {
   AgentBackendInfo,
   AgentFull,
@@ -258,6 +266,39 @@ async function req<T>(
 // ---- API client ----
 
 export const api = {
+  evolution: {
+    history: (project_id?: string) =>
+      req<{ history: SkillActivation[] }>("GET", "/skills/evolution", undefined, { project_id }),
+    proposals: (project_id?: string) =>
+      req<{
+        proposals: {
+          id: string;
+          skill_name: string;
+          status: string;
+          decision: string | null;
+          payload: string;
+        }[];
+        evaluations: { id: string; proposal_id: string; payload: string; result: string }[];
+      }>("GET", "/skills/proposals", undefined, { project_id }),
+    revert: (id: string, project_id: string | null, reason: string) =>
+      req<{ id: string }>("POST", "/skills/evolution/revert", { id, project_id, reason }),
+  },
+  evidence: {
+    get: (ids: string[], project_id: string | null) =>
+      req<{ passages: Passage[] }>("POST", "/knowledge/passages/get", { ids, project_id }),
+    search: (input: RetrievalQuery) =>
+      req<RetrievalResult>("POST", "/knowledge/passages/search", input),
+  },
+  wiki: {
+    read: (project_id?: string, slug?: string) =>
+      req<{
+        pages: WikiPage[];
+        history: WikiPage[];
+        contributions: WikiContribution[];
+        attempts: WikiContributionAttempt[];
+      }>("GET", "/knowledge/wiki", undefined, { project_id, slug }),
+    apply: (input: WikiOutcome) => req<{ ok: true }>("POST", "/knowledge/wiki/apply", input),
+  },
   health: {
     check: () => req<HealthResponse>("GET", "/health"),
   },
@@ -423,13 +464,11 @@ export const api = {
         undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
-    get: (name: string, ref?: string) =>
-      req<SkillFull | SkillRefContent>(
-        "GET",
-        `/skills/${encodeURIComponent(name)}`,
-        undefined,
-        ref ? { ref } : undefined,
-      ),
+    get: (name: string, ref?: string, project_id?: string) =>
+      req<SkillFull | SkillRefContent>("GET", `/skills/${encodeURIComponent(name)}`, undefined, {
+        ref,
+        project_id,
+      }),
     create: (data: CreateSkillInput) => req<SkillFull>("POST", "/skills", data),
   },
   agents: {

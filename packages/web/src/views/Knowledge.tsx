@@ -45,13 +45,15 @@ import {
   useRemoveKnowledgeCollection,
 } from "@/hooks/useKnowledge";
 import { useProjectScope } from "@/hooks/useProjectScope";
+import { Wiki } from "./Wiki";
 
 export default function Knowledge({ projectId: savedProjectId }: { projectId: string }) {
   const projectId = useProjectScope(savedProjectId);
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab: "search" | "collections" =
-    searchParams.get("tab") === "collections" ? "collections" : "search";
-  const setTab = (v: "search" | "collections") => {
+  let tab: "search" | "collections" | "wiki" = "search";
+  if (searchParams.get("tab") === "wiki") tab = "wiki";
+  else if (searchParams.get("tab") === "collections") tab = "collections";
+  const setTab = (v: "search" | "collections" | "wiki") => {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
@@ -73,14 +75,24 @@ export default function Knowledge({ projectId: savedProjectId }: { projectId: st
 
   return (
     <div>
-      <ViewHeader title="Knowledge" meta={`${totalDocs} documents \u00b7 ${searchMode}`} />
+      <ViewHeader
+        title="Knowledge"
+        meta={
+          tab === "wiki"
+            ? "Maintained pages and cited evidence"
+            : `${totalDocs} documents \u00b7 ${searchMode}`
+        }
+      />
 
       <Tabs
         value={tab}
-        onValueChange={(v) => setTab(v as "search" | "collections")}
+        onValueChange={(v) => setTab(v as "search" | "collections" | "wiki")}
         className="mb-4"
       >
         <TabsList className="bg-surface-highest border border-surface-highest gap-0 h-auto p-0">
+          <TabsTrigger value="wiki" data-testid="knowledge-wiki-tab">
+            Wiki & evidence
+          </TabsTrigger>
           <TabsTrigger
             value="search"
             className="font-label text-[11px] uppercase tracking-widest px-4 py-2 rounded-none
@@ -101,7 +113,13 @@ export default function Knowledge({ projectId: savedProjectId }: { projectId: st
         </TabsList>
       </Tabs>
 
-      {tab === "search" ? <SearchTab projectId={pid} /> : <CollectionsTab projectId={pid} />}
+      {tab === "wiki" ? (
+        <Wiki key={pid ?? "unassigned"} projectId={pid} />
+      ) : tab === "search" ? (
+        <SearchTab projectId={pid} />
+      ) : (
+        <CollectionsTab projectId={pid} />
+      )}
     </div>
   );
 }
