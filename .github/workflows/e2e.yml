@@ -1,12 +1,7 @@
 name: E2E
 
 on:
-  # Uncomment to auto-trigger on web changes:
-  # pull_request:
-  #   branches:
-  #     - master
-  #   paths:
-  #     - 'packages/web/**'
+  pull_request:
   workflow_dispatch:
 
 permissions:
