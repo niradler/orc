@@ -1,6 +1,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
+import { resolveClaudeSdkLaunch } from "./claude-executable.js";
 import { buildOrcMcpServers, isImplicitOrcTool, withOrcAllowedTools } from "./orc-mcp.js";
 import { registerBackend } from "./registry.js";
 import type {
@@ -83,6 +84,7 @@ class ClaudeSDKSession implements AgentSession {
       const q = query({
         prompt,
         options: {
+          ...resolveClaudeSdkLaunch(),
           cwd: this.opts.cwd,
           permissionMode,
           settingSources: this.opts.toolAllowlist !== undefined ? [] : ["user", "project"],
@@ -218,6 +220,7 @@ function createClaudeSDKBackend(): AgentBackend {
     async preflight() {
       try {
         await import("@anthropic-ai/claude-agent-sdk");
+        resolveClaudeSdkLaunch();
         // The SDK reuses the claude CLI's stored credentials, so the CLI has to
         // be there even though the agent itself runs in-process. An API key is
         // accepted as an alternative.
@@ -240,7 +243,10 @@ function createClaudeSDKBackend(): AgentBackend {
       const claudePath = Bun.which("claude");
       return {
         kind: "in-process",
-        requires: "@anthropic-ai/claude-agent-sdk (bundled) + claude CLI credentials",
+        requires:
+          Bun.embeddedFiles.length > 0
+            ? "Claude Code installed on PATH + credentials (standalone SDK executable is external)"
+            : "@anthropic-ai/claude-agent-sdk (bundled) + claude CLI credentials",
         target: claudePath ?? (process.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY" : null),
         source: claudePath ? "path" : process.env.ANTHROPIC_API_KEY ? "env" : null,
         version: null,

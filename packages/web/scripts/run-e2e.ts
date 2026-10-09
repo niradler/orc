@@ -117,8 +117,6 @@ await run(["bun", "x", "vite", "build"], env, 5 * 60_000);
 // when playwright itself is killed or times out.
 // import.meta.dir = packages/web/scripts  →  ../../.. = repo root
 const repoRoot = join(import.meta.dir, "../../..");
-// A clean checkout has no dashboard dist; the source API serves the built SPA.
-await run(["bun", "x", "vite", "build"], env, 120000);
 const apiProc = Bun.spawn({
   cmd: ["bun", "packages/api/src/index.ts"],
   cwd: repoRoot,

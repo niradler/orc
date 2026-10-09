@@ -22,6 +22,7 @@ import { PassageIndex } from "@orc/db/retrieval";
 import { knowledge_collections } from "@orc/db/schema";
 import type { HybridQueryResult, QMDStore, SearchResult } from "@tobilu/qmd";
 import { eq } from "drizzle-orm";
+import { validateKnowledgePattern } from "./knowledge-pattern.js";
 
 const logger = createLogger("knowledge:qmd");
 
@@ -173,6 +174,7 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
     name: string,
     opts: { path: string; pattern?: string; project_id?: string },
   ): Promise<void> {
+    validateKnowledgePattern(opts.pattern ?? "**/*.md");
     const store = await this.getStore();
     await store.addCollection(name, {
       path: opts.path,
@@ -233,6 +235,11 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
   }): Promise<{ indexed: number; updated: number; removed: number }> {
     const config = loadConfig();
     const store = await this.getStore();
+    const collections = await store.listCollections();
+    for (const collection of collections) {
+      if (!opts?.collections || opts.collections.includes(collection.name))
+        validateKnowledgePattern(collection.glob_pattern);
+    }
     const result = await store.update(opts?.collections ? { collections: opts.collections } : {});
     await this.syncPassages(opts?.collections);
 
