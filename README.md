@@ -598,7 +598,7 @@ orc skill export my-workflow ./exported/my-workflow
 
 The dashboard can import a skill folder or add supporting files individually, then open each file from the detail sheet. API `POST /api/skills` and MCP `skill_create` accept optional `files: [{ path, content, encoding? }]` alongside `name` and the full `SKILL.md` `content`. Encoding defaults to `utf8`. Bundles allow 512 supporting files, 8 MiB per file and 16 MiB total. Paths must stay inside the skill folder; symlinks are excluded and cannot be read. The legacy `references` inventory is retained for existing clients. Worker prompts include the skill's entry path and file inventory so relative links resolve from the skill directory.
 
-### Shared agents and APM packages
+### Shared agents and portable packages
 
 ORC shares authored definitions across coding agents through one library. An agent profile describes the specialist; a backend selects the coding agent that runs it. Profiles use [APM's `.agent.md` format](https://microsoft.github.io/apm/producer/author-primitives/instructions-and-agents/): YAML frontmatter with a required `description`, optional `name`, `model`, `tools`, `color`, and `handoffs`, followed by Markdown instructions. Unknown agent fields are preserved. Standalone profiles live in `~/.orc/agents/`; project profiles in `.apm/agents/` override matching shared IDs.
 
@@ -621,7 +621,9 @@ Select a shared profile independently of its backend in an ORC flow:
 
 The same profile instructions and relative file locations reach every backend. Pinned models are supported by Claude SDK, Claude CLI, Codex CLI, and ACPX. Tool allowlists are enforced by Claude SDK and Claude CLI; other adapters reject profiles declaring tool restrictions. Unsupported model/tool settings fail before launch. Tool names and model IDs must be valid for the selected coding agent. Explicit session/flow model choices override the profile's model. Handoffs remain authored declarations; ORC flow edges control execution. Package instructions without `applyTo` are included automatically; scoped instructions retain their original glob strings or arrays in an on-demand index, which the coding agent applies when working on matching files.
 
-The dashboard's Agents page imports packages and creates/reads profiles. API `/api/agents` and `/api/agent-packages`, SDK clients, CLI, and MCP all access the same files. MCP tools are `agent_list`, `agent_read`, `agent_create`, `agent_package_list`, `agent_package_read`, and `agent_package_import`. Package agent IDs are namespaced as `<package>/<file-stem>`.
+The dashboard's **Packages** page imports OpenAPM and portable Agent Plugins v1.0.0 folders, inspects/exports their files, and saves reusable agent setups. **Run with → Open in ORC terminal** prepares the selected packages through Microsoft APM or Vercel skills, then opens the coding agent. Deployment persists in the chosen project; normal upstream trust and authentication prompts remain. Whole portable plugins activate through APM/Copilot; skills-only plugins can use Vercel with Claude, Codex or Copilot. See [Reusable agent packages](docs/agent-packages.md) for requirements and supported combinations.
+
+The **Agents** page creates/reads specialist profiles. API `/api/agents` and `/api/agent-packages`, SDK clients, CLI, and MCP all access the same files. MCP tools are `agent_list`, `agent_read`, `agent_create`, `agent_package_list`, `agent_package_read`, and `agent_package_import`. Package agent IDs are namespaced as `<package>/<file-stem>`.
 
 ## MCP tools
 
