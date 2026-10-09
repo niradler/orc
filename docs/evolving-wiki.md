@@ -32,7 +32,7 @@ document engine; this change neither upgrades nor replaces its dependency.
 
 CLI: `orc wiki list --project orc` and `orc wiki search "join_deadlock" --project orc`.
 MCP: `evidence_search`, `evidence_index`, `evidence_get`, `evidence_expand`, `wiki_read`, and `wiki_apply`.
-Maintenance reads (`wiki_read`, `skill_history`, `skill_baseline`) accept a readable
+Startup context and maintenance reads (`context`, `wiki_read`, `skill_history`, `skill_baseline`) accept a readable
 `project` name or an explicit `project_id`. Explicit IDs take precedence; null selects
 unassigned even when the installation has a default project. Unknown IDs fail closed.
 The dashboard exposes **Knowledge → Wiki & evidence**. The all-project selector shows
