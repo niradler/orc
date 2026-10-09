@@ -12,9 +12,9 @@ test("E2E shutdown releases an owned child without requiring a process group", a
     expect(new TextDecoder().decode(output.value)).toContain("ready");
     reader.releaseLock();
     await stopOwnedProcess(child, 1000);
-    expect(child.exitCode).not.toBeNull();
+    expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
   } finally {
-    if (child.exitCode === null) child.kill("SIGKILL");
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
   }
 });
 
@@ -39,7 +39,7 @@ test.skipIf(process.platform === "win32")(
       await stopOwnedProcess(child, 100);
       expect(child.signalCode).toBe("SIGKILL");
     } finally {
-      if (child.exitCode === null) child.kill("SIGKILL");
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
     }
   },
 );
