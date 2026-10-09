@@ -38,6 +38,11 @@ unassigned even when the installation has a default project. Unknown IDs fail cl
 The dashboard exposes **Knowledge → Wiki & evidence**. The all-project selector shows
 unassigned evidence in this workspace; choose a project to inspect its wiki.
 
+Collection patterns are bounded before indexing or persistence: at most 1,024
+characters, eight nested brace/parenthesis levels, and 256 brace alternatives or
+range expansions. Normal patterns such as `**/*.{md,txt}` remain supported. Updating
+a legacy collection with an unsafe pattern fails validation before indexing.
+
 ## Optional embeddings
 
 Configure `knowledge.embeddings` explicitly in ORC's config:
@@ -158,3 +163,6 @@ skill has been promoted by this implementation's validation.
 The npm bundle ships built-in skill files alongside the dashboard. Standalone builds
 embed those files and materialize a content-addressed cache under `~/.orc/bundled-skills/`
 so baseline hashing and supporting-file reads work without a repository checkout.
+Standalone agent execution additionally requires Claude Code on `PATH`; the SDK's
+native executable is external to the compiled binary. The readiness probe checks
+this prerequisite before starting maintenance. npm/source use the installed SDK executable.

@@ -340,6 +340,12 @@ orc doctor --json   # same, machine-readable
 
 The dashboard shows the same probe: the agent-backend field on a task is a picker that marks each backend ready or unavailable, and names the one a task with no backend of its own will use. `GET /api/backends` is the endpoint behind both.
 
+Standalone executables embed the SDK adapter, but its native Claude executable is
+external. Install Claude Code on `PATH` to use `claude` in a standalone build; an
+API key alone does not supply that executable. The npm distribution uses the SDK's
+installed optional executable. Windows npm shims require their `cli.js` and Node
+or Bun; missing executable prerequisites are reported before launching a session.
+
 Enable the task loop in `~/.orc/config.json`:
 
 ```json

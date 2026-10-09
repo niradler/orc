@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ulid } from "@orc/core/ids";
-import { createTestDb, getDb } from "@orc/db/client";
+import { createTestDb, getDb, getSqlite } from "@orc/db/client";
 import { projects } from "@orc/db/schema";
 import { QmdKnowledgeEngine } from "../knowledge.js";
 
@@ -83,6 +83,35 @@ describe("collections", () => {
     expect(collections[0]?.name).toBe("test-docs");
     expect(collections[0]?.documentCount).toBe(3);
     expect(collections[0]?.pattern).toBe("**/*.md");
+  });
+
+  test("should reject dangerous patterns before collection or project mapping mutation", async () => {
+    const before = await engine.listCollections();
+    for (const pattern of [
+      `${"{".repeat(4900)}x${"}".repeat(4900)}`,
+      "{a,b}".repeat(9),
+      "{1..1000000000}",
+    ]) {
+      await expect(
+        engine.addCollection("rejected-pattern", {
+          path: docsDir,
+          pattern,
+          project_id: projectAId,
+        }),
+      ).rejects.toThrow("Knowledge pattern");
+      expect(await engine.listCollections()).toEqual(before);
+      expect(
+        getSqlite()
+          .query("SELECT name FROM knowledge_collections WHERE name='rejected-pattern'")
+          .get(),
+      ).toBeNull();
+    }
+    await engine.addCollection("normal-alternatives", { path: docsDir, pattern: "**/*.{md,txt}" });
+    expect(
+      (await engine.listCollections()).find(
+        (collection) => collection.name === "normal-alternatives",
+      )?.documentCount,
+    ).toBe(3);
   });
 
   test("remove a collection", async () => {
