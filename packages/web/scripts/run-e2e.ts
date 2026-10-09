@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync, unlinkSync } from "node:fs";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { stopOwnedProcess } from "./stop-process";
 
@@ -75,11 +75,23 @@ const pwDbPath = process.env.PW_DB_PATH ?? join(tmpdir(), `orc-pw-${process.pid}
 const pwKnowledgeDbPath =
   process.env.PW_KNOWLEDGE_DB_PATH ?? join(tmpdir(), `orc-pw-knowledge-${process.pid}.db`);
 const pwHome = mkdtempSync(join(tmpdir(), "orc-pw-home-"));
+// Isolate ORC state without hiding the browser installed before this process starts.
+const browserCache =
+  process.env.PLAYWRIGHT_BROWSERS_PATH ??
+  join(
+    process.platform === "win32"
+      ? (process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"))
+      : process.platform === "darwin"
+        ? join(homedir(), "Library", "Caches")
+        : (process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache")),
+    "ms-playwright",
+  );
 
 const env = {
   ...process.env,
   HOME: pwHome,
   USERPROFILE: pwHome,
+  PLAYWRIGHT_BROWSERS_PATH: browserCache,
   ORC_API_HOST: "127.0.0.1",
   PW_API_PORT: pwApiPort,
   PW_DB_PATH: pwDbPath,
@@ -105,6 +117,8 @@ await run(["bun", "x", "vite", "build"], env, 5 * 60_000);
 // when playwright itself is killed or times out.
 // import.meta.dir = packages/web/scripts  →  ../../.. = repo root
 const repoRoot = join(import.meta.dir, "../../..");
+// A clean checkout has no dashboard dist; the source API serves the built SPA.
+await run(["bun", "x", "vite", "build"], env, 120000);
 const apiProc = Bun.spawn({
   cmd: ["bun", "packages/api/src/index.ts"],
   cwd: repoRoot,
