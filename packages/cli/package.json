@@ -28,6 +28,7 @@
     "README.md"
   ],
   "devDependencies": {
+    "@orc/agent-runtime": "workspace:*",
     "@orc/api": "workspace:*",
     "@orc/core": "workspace:*",
     "@orc/gateway": "workspace:*",

@@ -6,6 +6,7 @@ import { createAgent, discoverAgents, getUserAgentsDir } from "./agent-service.j
 import {
   buildPackagePlan,
   listAgentSetups,
+  type PackagePlan,
   packagePlanArgv,
   saveAgentSetup,
 } from "./package-launch.js";
@@ -77,6 +78,7 @@ describe("package reuse and launch boundaries", () => {
     const plan = buildPackagePlan(input, tools, which, qualify);
     expect(plan.steps[0]?.argv).toEqual(["/apm", "install", "--target", "copilot"]);
     expect(plan.steps[0]?.apmDependencies).toEqual([join(getPackagesDir(), name)]);
+    expect(plan.steps[0]?.expectedPlugins).toEqual([name]);
     expect(plan.steps[0]?.timeout).toBe(300000);
     expect(plan.steps[1]?.argv).toEqual(["/bin/copilot", "--interactive", input.prompt]);
     expect(plan.steps[1]?.timeout).toBeNull();
@@ -148,7 +150,7 @@ describe("package reuse and launch boundaries", () => {
       manifest,
       "name: existing\nversion: '1.0.0'\nexecutables:\n  deny: ['untrusted']\ndependencies:\n  apm: ['./existing']\n",
     );
-    const plan = {
+    const plan: PackagePlan = {
       setup: input,
       notice: "test",
       steps: [
@@ -193,6 +195,15 @@ describe("package reuse and launch boundaries", () => {
     });
     expect(failed.exitCode).toBe(7);
     expect(failed.stdout.toString()).not.toContain("AGENT_STARTED");
+    preparation.argv = [process.execPath, "--eval", "process.exit(0)"];
+    preparation.expectedPlugins = ["not-admitted"];
+    const unregistered = Bun.spawnSync(packagePlanArgv(plan, process.execPath), {
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 20000,
+    });
+    expect(unregistered.exitCode).not.toBe(0);
+    expect(unregistered.stdout.toString()).not.toContain("AGENT_STARTED");
     writeFileSync(manifest, "dependencies: invalid\n");
     const invalid = Bun.spawnSync(packagePlanArgv(plan, process.execPath), {
       stdout: "pipe",

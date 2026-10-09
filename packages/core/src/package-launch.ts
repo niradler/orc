@@ -39,6 +39,7 @@ export type PackageStep = {
   cwd: string;
   timeout: number | null;
   apmDependencies?: string[];
+  expectedPlugins?: string[];
 };
 export type PackagePlan = { setup: AgentSetup; steps: PackageStep[]; notice: string };
 
@@ -223,6 +224,9 @@ export function buildPackagePlan(
       cwd,
       timeout: 300000,
       apmDependencies: packages.map((pkg) => pkg.path),
+      expectedPlugins: packages
+        .filter((pkg) => pkg.format === "agent-plugin")
+        .map((pkg) => pkg.name),
     });
   }
   const argv = [binary];
@@ -291,6 +295,13 @@ for(const step of steps){
  }
  const child=Bun.spawn(step.argv,{cwd:step.cwd,stdin:"inherit",stdout:"inherit",stderr:"inherit",...(step.timeout?{timeout:step.timeout}:{})});
  const code=await child.exited;if(code!==0){console.error("[ORC] Step failed; agent launch stopped.");process.exit(code||1);}
+ if(step.expectedPlugins?.length){
+  const settings=JSON.parse(readFileSync(join(step.cwd,".github","copilot","settings.local.json"),"utf8"));
+  const catalog=JSON.parse(readFileSync(join(step.cwd,"apm_modules",".github","plugin","marketplace.json"),"utf8"));
+  for(const name of step.expectedPlugins){
+   if(settings.enabledPlugins?.[name+"@apm"]!==true||!catalog.plugins?.some(plugin=>plugin.name===name))throw Error("APM did not admit/register selected plugin: "+name+". Check its target and security policy before launching.");
+  }
+ }
 }`;
   return [bun, "--eval", source];
 }
