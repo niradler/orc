@@ -5,13 +5,14 @@ import { ulid } from "@orc/core/ids";
 import type { EvidenceSource } from "@orc/core/retrieval";
 import { normalizeTags } from "@orc/core/retrieval";
 import type {
+  SkillEvaluation,
+  SkillProposal,
   WikiContribution,
   WikiContributionAttempt,
   WikiOutcome,
   WikiPage,
 } from "@orc/core/wiki";
 import { SkillEvaluationSchema, SkillProposalSchema, WikiOutcomeSchema } from "@orc/core/wiki";
-import type { z } from "zod";
 import { PassageIndex } from "./retrieval.js";
 import { activateSkill, installSkillEvolution } from "./skill-evolution.js";
 
@@ -357,7 +358,7 @@ export class WikiStore {
     })();
   }
 
-  propose(input: z.input<typeof SkillProposalSchema>): string {
+  propose(input: SkillProposal): string {
     const proposal = SkillProposalSchema.parse(input);
     this.checkEvidence(proposal.evidence, proposal.project_id);
     const id = ulid();
@@ -370,7 +371,7 @@ export class WikiStore {
     return id;
   }
 
-  evaluate(input: z.input<typeof SkillEvaluationSchema>): { id: string; result: string } {
+  evaluate(input: SkillEvaluation): { id: string; result: string } {
     const evaluation = SkillEvaluationSchema.parse(input);
     const row = this.sqlite
       .query<{ payload: string; status: string }, [string, string | null]>(
