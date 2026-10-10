@@ -1,5 +1,5 @@
 /** Paid, real Claude SDK enforcement probe. All state is retained under .claude/tooling. */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { type AgentEvent, createBackend } from "../packages/agent-runtime/src/index.js";
@@ -11,7 +11,12 @@ import { drainRuleActions } from "../packages/runner/src/rule-actions.js";
 const directory = resolve(import.meta.dir, "../.claude/tooling/rules-runtime", String(Date.now()));
 const workspace = join(directory, "workspace");
 mkdirSync(workspace, { recursive: true });
-loadConfig({ db: { path: join(directory, "orc.db") }, rules: { enabled: true } });
+loadConfig({
+  db: { path: join(directory, "orc.db") },
+  rules: { enabled: true },
+  activeProject: "",
+  api: { host: "127.0.0.1", port: 7711, secret: randomUUID() },
+});
 const db = getSqlite();
 const store = new RuleStore(db);
 const path = join(workspace, "example.ts");

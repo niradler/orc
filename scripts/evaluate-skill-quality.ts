@@ -1,5 +1,5 @@
 /** Paid paired real-agent evaluation. Preserves all attempts; never manufactures gains. */
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -12,7 +12,12 @@ import { WikiStore } from "../packages/db/src/wiki.js";
 
 const directory = resolve(import.meta.dir, "../.claude/tooling/skill-quality", String(Date.now()));
 mkdirSync(directory, { recursive: true });
-loadConfig({ db: { path: join(directory, "orc.db") }, rules: { enabled: false } });
+loadConfig({
+  db: { path: join(directory, "orc.db") },
+  rules: { enabled: false },
+  activeProject: "",
+  api: { host: "127.0.0.1", port: 7711, secret: randomUUID() },
+});
 const db = getSqlite();
 const wiki = new WikiStore(db);
 const index = new PassageIndex(db);
