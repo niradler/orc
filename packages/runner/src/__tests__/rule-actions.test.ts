@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
@@ -114,4 +114,78 @@ test("mutated job ownership and disabled jobs are rejected at dispatch; recursiv
     else process.env.ORC_RULE_ACTION = original;
   }
   expect(db.query<{ n: number }, []>("SELECT count(*) n FROM rule_actions").get()?.n).toBe(count);
+});
+
+test("should dispatch background scripts once through the runner using event cwd/stdin and erase queued payloads", async () => {
+  const db = getSqlite();
+  const store = new RuleStore(db);
+  const directory = join(root, "background");
+  mkdirSync(directory);
+  const nested = join(directory, "nested");
+  mkdirSync(nested);
+  const code =
+    "const e=JSON.parse(await Bun.stdin.text());const p='script-marker.txt';const before=await Bun.file(p).exists()?await Bun.file(p).text():'';await Bun.write(p,before+e.input.command);process.stdout.write('x'.repeat(100000));";
+  const policy = {
+    workspace: directory,
+    project_id: null,
+    rules: [
+      {
+        id: "background-check",
+        kind: "event",
+        enabled: true,
+        reason: "Background validation",
+        scope: { agents: "all", events: ["post_tool"] },
+        filter: {
+          match: "all",
+          conditions: [
+            { predicate: { field: "input.command", operator: "contains", value: "allowed" } },
+          ],
+        },
+        target: {
+          type: "script",
+          mode: "background",
+          argv: [process.execPath, "-e", code],
+          timeout_ms: 1000,
+        },
+      },
+    ],
+  };
+  const first = store.activate(policy, null, "Enable background script");
+  const event = {
+    id: "background-1",
+    session_id: "s",
+    backend: "claude",
+    cwd: directory,
+    phase: "post_tool",
+    input: { command: "allowed", private: "queued-secret" },
+  };
+  store.evaluate({ ...event, id: "ignored", input: { command: "ordinary" } });
+  expect(store.actions(directory)).toHaveLength(0);
+  store.evaluate(event);
+  store.evaluate(event);
+  expect(store.actions(directory)).toHaveLength(1);
+  await drainRuleActions();
+  expect(readFileSync(join(directory, "script-marker.txt"), "utf8")).toBe("allowed");
+  expect(store.actions(directory)[0]?.status).toBe("done");
+  const output = db
+    .query<{ stdout: string }, [string]>("SELECT stdout FROM job_runs WHERE id=?")
+    .get(store.actions(directory)[0]?.run_id ?? "");
+  expect(output?.stdout).toHaveLength(65536);
+  expect(
+    db
+      .query<{ event_json: string | null }, [string]>(
+        "SELECT event_json FROM rule_actions WHERE id=?",
+      )
+      .get(store.actions(directory)[0]?.id ?? "")?.event_json,
+  ).toBeNull();
+  store.evaluate({ ...event, id: "background-nested", cwd: nested });
+  await drainRuleActions();
+  expect(readFileSync(join(nested, "script-marker.txt"), "utf8")).toBe("allowed");
+  store.evaluate({ ...event, id: "cancel-before-dispatch", cwd: nested });
+  store.revert(first.id, "Disable before dispatch");
+  await drainRuleActions();
+  expect(readFileSync(join(nested, "script-marker.txt"), "utf8")).toBe("allowed");
+  expect(store.actions(directory).some((action) => action.status === "cancelled")).toBe(true);
+  expect(JSON.stringify(store.decisions(directory))).not.toContain("queued-secret");
+  expect(existsSync(join(directory, "script-marker.txt"))).toBe(true);
 });

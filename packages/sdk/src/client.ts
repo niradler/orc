@@ -1,5 +1,6 @@
 import { loadConfig } from "@orc/core/config";
 import type { EvidenceSource, Passage, RetrievalQuery, RetrievalResult } from "@orc/core/retrieval";
+import type { RuleEventCapability, RuleHookBackend } from "@orc/core/rule-events";
 import type { RuleDecision, RuleEvent, RulePolicy, RuleRevision } from "@orc/core/rule-types";
 import type {
   SkillActivation,
@@ -142,6 +143,7 @@ export function createOrcClient(options?: OrcClientOptions) {
             error: string | null;
           }[];
           adapters: { backend: string; interception: string }[];
+          events: Record<RuleHookBackend, RuleEventCapability[]>;
         }>("GET", "/rules", undefined, { workspace }),
       activate: (policy: RulePolicy, expected_id: string | null, reason: string) =>
         c<RuleRevision>("POST", "/rules/activate", { policy, expected_id, reason }),

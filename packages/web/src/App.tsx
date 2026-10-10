@@ -17,6 +17,7 @@ import Knowledge from "@/views/Knowledge";
 import Memories from "@/views/Memories";
 import Packages from "@/views/Packages";
 import Projects from "@/views/Projects";
+import Rules from "@/views/Rules";
 import Sessions from "@/views/Sessions";
 import Settings from "@/views/Settings";
 import Skills from "@/views/Skills";
@@ -110,6 +111,7 @@ export default function App() {
                 <Route path="/flows" element={<Flows />} />
                 <Route path="/flows/:flowName" element={<Flows />} />
                 <Route path="/settings" element={<Settings />} />
+                <Route path="/rules" element={<Rules />} />
                 <Route path="*" element={<Navigate to="/tasks" replace />} />
               </Routes>
             </div>

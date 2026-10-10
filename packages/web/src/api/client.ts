@@ -1,3 +1,4 @@
+import type { RuleEventCapability } from "@orc/core/rule-events";
 import type { RulePolicy, RuleRevision } from "@orc/core/rule-types";
 
 // Browser-compatible ORC API client.
@@ -272,6 +273,8 @@ export const api = {
     list: () =>
       req<{
         enabled: boolean;
+        events: Record<string, RuleEventCapability[]>;
+        adapters: { backend: string; interception: string }[];
         history: RuleRevision[];
         decisions: {
           id: string;

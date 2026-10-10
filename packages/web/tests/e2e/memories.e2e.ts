@@ -135,7 +135,7 @@ test.describe("Memories CRUD", () => {
       ).toHaveCount(0);
 
       // Click "Rule" filter
-      await page.getByRole("button", { name: /^rule/i }).click();
+      await page.getByTestId("memory-type-filter-rule").click();
 
       await expect(
         page.locator(`[data-testid="memory-row"][data-memory-id="${ruleMem.id}"]`),

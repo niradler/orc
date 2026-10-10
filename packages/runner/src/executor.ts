@@ -11,6 +11,7 @@ export type RunOptions = {
   runId?: string;
   triggerBy?: string;
   envOverrides?: Record<string, string>;
+  execution?: { argv: string[]; stdin: string; timeout_ms: number; cwd: string };
 };
 
 export async function executeJob(opts: RunOptions): Promise<string> {
@@ -57,17 +58,20 @@ export async function executeJob(opts: RunOptions): Promise<string> {
       ...(opts.envOverrides ?? {}),
     };
 
-    const timeout = (job.timeout_secs ?? 300) * 1000;
+    const timeout = opts.execution?.timeout_ms ?? (job.timeout_secs ?? 300) * 1000;
 
     const proc = Bun.spawn({
-      cmd: ["sh", "-c", job.command],
-      cwd: job.working_dir ?? process.cwd(),
+      cmd: opts.execution?.argv ?? ["sh", "-c", job.command],
+      cwd: opts.execution?.cwd ?? job.working_dir ?? process.cwd(),
       env: env as Record<string, string>,
       stdout: "pipe",
       stderr: "pipe",
+      stdin: opts.execution ? new TextEncoder().encode(opts.execution.stdin) : "ignore",
+      timeout,
+      killSignal: "SIGKILL",
     });
 
-    const MAX_STREAM_BYTES = 100 * 1024 * 1024; // 100 MB per stream
+    const MAX_STREAM_BYTES = opts.execution ? 65536 : 100 * 1024 * 1024;
     const stdoutLines: string[] = [];
     const stderrLines: string[] = [];
     let stdoutBytes = 0;
@@ -86,8 +90,12 @@ export async function executeJob(opts: RunOptions): Promise<string> {
     const readStream = async (reader: ReadableStream<Uint8Array>, stream: "stdout" | "stderr") => {
       const dec = new TextDecoder();
       let buf = "";
+      let receivedBytes = 0;
       for await (const chunk of reader) {
-        buf += dec.decode(chunk, { stream: true });
+        const remaining = Math.max(0, MAX_STREAM_BYTES - receivedBytes);
+        const accepted = chunk.subarray(0, remaining);
+        receivedBytes += accepted.byteLength;
+        buf += dec.decode(accepted, { stream: true });
         const lines = buf.split("\n");
         buf = lines.pop() ?? "";
         for (const line of lines) {
@@ -99,7 +107,7 @@ export async function executeJob(opts: RunOptions): Promise<string> {
             } else if (!stdoutCapped) {
               stdoutCapped = true;
               logger.warn(
-                `Job ${job.name} [${runId}] stdout exceeded 100 MB — dropping remaining output`,
+                `Job ${job.name} [${runId}] stdout exceeded output limit — dropping remaining output`,
               );
             }
           } else {
@@ -110,11 +118,21 @@ export async function executeJob(opts: RunOptions): Promise<string> {
             } else if (!stderrCapped) {
               stderrCapped = true;
               logger.warn(
-                `Job ${job.name} [${runId}] stderr exceeded 100 MB — dropping remaining output`,
+                `Job ${job.name} [${runId}] stderr exceeded output limit — dropping remaining output`,
               );
             }
           }
         }
+      }
+      buf += dec.decode();
+      if (buf) {
+        const line = buf.slice(
+          0,
+          Math.max(0, MAX_STREAM_BYTES - (stream === "stdout" ? stdoutBytes : stderrBytes)),
+        );
+        if (stream === "stdout") stdoutLines.push(line);
+        else stderrLines.push(line);
+        if (line) logEntries.push({ run_id: runId, ts: new Date(), stream, line });
       }
     };
 

@@ -1,7 +1,8 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { RULE_EVENT_ADAPTERS, type RuleHookBackend, ruleEventCapability } from "./rule-events.js";
 import { type RuleDecision, type RuleEvent, RuleEventSchema } from "./rules.js";
 
-export type RuleHookBackend = "claude" | "cursor" | "gemini";
+export type { RuleHookBackend } from "./rule-events.js";
 export function normalizeRuleHook(
   backend: RuleHookBackend,
   event: string,
@@ -10,25 +11,19 @@ export function normalizeRuleHook(
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     throw new Error("Hook input must be an object");
   const input = raw as Record<string, unknown>;
-  const phases: Record<string, RuleEvent["phase"]> = {
-    SessionStart: "session_start",
-    sessionStart: "session_start",
-    PreToolUse: "pre_tool",
-    preToolUse: "pre_tool",
-    BeforeTool: "pre_tool",
-    PostToolUse: "post_tool",
-    postToolUse: "post_tool",
-    PostToolUseFailure: "post_tool",
-    postToolUseFailure: "post_tool",
-    AfterTool: "post_tool",
-    SessionEnd: "session_end",
-    sessionEnd: "session_end",
-  };
-  const phase = phases[event];
+  const capability = RULE_EVENT_ADAPTERS[backend]?.find((entry) => entry.native === event);
+  const phase = capability?.event;
   if (!phase) throw new Error("Unsupported rule hook event");
-  const session = input.session_id ?? input.conversation_id;
-  const id = input.tool_use_id ?? input.tool_call_id;
-  if ((phase === "pre_tool" || phase === "post_tool") && typeof id !== "string")
+  const session =
+    input.session_id ??
+    input.conversation_id ??
+    (phase === "workspace_open" ? "workspace" : undefined);
+  const id = input.tool_use_id ?? input.tool_call_id ?? input.event_id;
+  if (
+    ["pre_tool", "post_tool", "post_tool_failure"].includes(phase) &&
+    typeof id !== "string" &&
+    backend !== "gemini"
+  )
     throw new Error("Tool hook requires a stable tool-call identity");
   const cwd =
     input.cwd ?? (Array.isArray(input.workspace_roots) ? input.workspace_roots[0] : undefined);
@@ -37,14 +32,23 @@ export function normalizeRuleHook(
       typeof id === "string"
         ? id
         : createHash("sha256")
-            .update(JSON.stringify([session, event, input.generation_id ?? null]))
+            .update(
+              JSON.stringify([
+                session,
+                event,
+                input.generation_id ?? input.turn_id ?? randomUUID(),
+                input,
+              ]),
+            )
             .digest("hex"),
     session_id: session,
     backend,
     cwd,
     phase,
+    native_event: event,
+    payload: input,
     tool: input.tool_name,
-    input: input.tool_input ?? {},
+    input: input.tool_input ?? input,
     failed:
       event.endsWith("Failure") ||
       event.endsWith("Failure".toLowerCase()) ||
@@ -61,33 +65,38 @@ export function ruleHookOutput(
   result: RuleDecision,
 ): Record<string, unknown> {
   const reason = result.reasons.map((r) => `${r.rule_id}: ${r.reason}`).join("; ");
-  if (event.phase === "pre_tool") {
-    if (backend === "cursor")
-      return result.decision === "deny"
-        ? {
-            permission: "deny",
-            ...(reason ? { user_message: reason, agent_message: reason } : {}),
-          }
-        : {};
-    if (backend === "gemini") return result.decision === "deny" ? { decision: "deny", reason } : {};
-    return result.decision === "deny"
-      ? {
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            permissionDecisionReason: reason,
-          },
-        }
-      : {};
+  const capability = ruleEventCapability(
+    backend,
+    event.native_event ? `native:${event.native_event}` : event.phase,
+  );
+  const denied = result.decision === "deny";
+  const context = result.context.join("\n");
+  if (denied && !capability?.block)
+    throw new Error("Rule denied an event without blocking support");
+  if (context && !capability?.context)
+    throw new Error("Rule context cannot be delivered on this event");
+  if (!denied && !context) return {};
+  const native = capability?.native;
+  if (backend === "cursor") {
+    if (denied)
+      return event.phase === "prompt_submit"
+        ? { continue: false }
+        : { permission: "deny", user_message: reason, agent_message: reason };
+    return { additional_context: context };
   }
-  if (event.phase === "session_start" && result.context.length) {
-    if (backend === "cursor") return { additional_context: result.context.join("\n") };
+  if (backend === "gemini")
     return {
-      hookSpecificOutput: {
-        hookEventName: "SessionStart",
-        additionalContext: result.context.join("\n"),
-      },
+      ...(denied ? { decision: "deny", reason } : {}),
+      ...(context
+        ? { hookSpecificOutput: { hookEventName: native, additionalContext: context } }
+        : {}),
     };
-  }
-  return {};
+  if (denied && event.phase !== "pre_tool") return { decision: "block", reason };
+  return {
+    hookSpecificOutput: {
+      hookEventName: native,
+      ...(denied ? { permissionDecision: "deny", permissionDecisionReason: reason } : {}),
+      ...(context ? { additionalContext: context } : {}),
+    },
+  };
 }

@@ -55,6 +55,7 @@ try {
     ["claude", "PreToolUse"],
     ["cursor", "preToolUse"],
     ["gemini", "BeforeTool"],
+    ["codex", "PreToolUse"],
   ] as const) {
     const raw = {
       session_id: "native",
@@ -121,6 +122,31 @@ try {
     true, "Installer retained unsafe failure setting");
   require((await run(["install-hook", "gemini", "--target", target])).code !==
     0, "Unqualified installer accepted");
+  for (const backend of ["claude", "gemini", "codex"] as const) {
+    const settings = join(directory, `${backend}.json`);
+    const event = backend === "gemini" ? "BeforeTool" : "PreToolUse";
+    writeFileSync(
+      settings,
+      JSON.stringify({
+        custom: "retained",
+        hooks: {
+          [event]: [{ matcher: "Read", hooks: [{ type: "command", command: "existing-hook" }] }],
+        },
+      }),
+    );
+    for (let attempt = 0; attempt < 2; attempt++) {
+      require((await run(["install-hook", backend, "--target", settings])).code ===
+        0, `${backend}: installation failed`);
+    }
+    const installed = JSON.parse(readFileSync(settings, "utf8"));
+    require(installed.custom === "retained" &&
+      installed.hooks[event].length === 2 &&
+      installed.hooks[event][0].hooks[0].command ===
+        "existing-hook", `${backend}: installer lost settings or duplicated hooks`);
+    if (backend === "claude")
+      require(installed.hooks[event][1].hooks[0].onFailure ===
+        "block", "Claude installer did not request failure blocking");
+  }
   writeFileSync(
     join(directory, "report.json"),
     JSON.stringify(

@@ -6,11 +6,45 @@ import { resetConfig } from "@orc/core/config";
 import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { sessionRules } from "../rules.js";
-import { createRulesHook } from "../rules-hook.js";
+import { createRulesHook, sessionStartRuleContext } from "../rules-hook.js";
 
 const root = mkdtempSync(join(tmpdir(), "orc-guard-tests-"));
 const originalEnabled = process.env.ORC_RULES_ENABLED;
 const originalDb = process.env.ORC_DB_PATH;
+test("managed startup and resume deliver context before query and fail closed on unavailable rules", () => {
+  for (const source of ["startup", "resume"] as const) {
+    expect(
+      sessionStartRuleContext(
+        {
+          context: "",
+          evaluate(event) {
+            expect(event.phase).toBe("session_start");
+            expect(event.payload?.source).toBe(source);
+            return { decision: "abstain", reasons: [], context: ["injected"], jobs: [] };
+          },
+        },
+        root,
+        "session",
+        source,
+        source,
+      ),
+    ).toBe("injected");
+  }
+  expect(() =>
+    sessionStartRuleContext(
+      {
+        context: "",
+        evaluate() {
+          throw new Error("unavailable");
+        },
+      },
+      root,
+      "session",
+      "failed",
+      "startup",
+    ),
+  ).toThrow("unavailable");
+});
 beforeAll(() => {
   process.env.ORC_RULES_ENABLED = "true";
   process.env.ORC_DB_PATH = ":memory:";
@@ -125,7 +159,9 @@ test("SDK maps failed tools and session context without granting native permissi
       "one",
       options,
     ),
-  ).toEqual({});
+  ).toMatchObject({
+    hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: "Project context" },
+  });
   await hook(
     {
       ...base,
@@ -141,5 +177,5 @@ test("SDK maps failed tools and session context without granting native permissi
   expect(
     await hook({ ...base, hook_event_name: "SessionStart", source: "resume" }, undefined, options),
   ).toMatchObject({ hookSpecificOutput: { additionalContext: "Project context" } });
-  expect(phases).toEqual(["pre_tool:false", "post_tool:true", "session_start:false"]);
+  expect(phases).toEqual(["pre_tool:false", "post_tool_failure:true", "session_start:false"]);
 });

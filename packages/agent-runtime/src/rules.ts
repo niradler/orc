@@ -11,7 +11,18 @@ export async function sessionRules(backend: string, opts: SessionOpts): Promise<
     import("@orc/db/rules"),
   ]);
   const store = new RuleStore(getSqlite());
-  const policies = store.active(opts.cwd);
+  const agent = backend === "claude-cli" ? "claude" : backend === "codex-cli" ? "codex" : backend;
+  const policies = store
+    .active(opts.cwd)
+    .filter((policy) =>
+      policy.policy?.rules.some(
+        (rule) =>
+          rule.kind !== "event" ||
+          (rule.enabled &&
+            (rule.scope.agents === "all" ||
+              rule.scope.agents.includes(agent as "claude" | "cursor" | "gemini" | "codex"))),
+      ),
+    );
   if (backend !== "claude" && !policies.length) return opts;
   if (backend !== "claude")
     throw new Error(

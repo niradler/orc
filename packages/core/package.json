@@ -30,7 +30,10 @@
     "./validate": "./src/validate.ts",
     "./rules": "./src/rules.ts",
     "./rule-hooks": "./src/rule-hooks.ts",
-    "./rule-types": "./src/rule-types.ts"
+    "./rule-types": "./src/rule-types.ts",
+    "./rule-events": "./src/rule-events.ts",
+    "./rule-filters": "./src/rule-filters.ts",
+    "./rule-script": "./src/rule-script.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -42,6 +45,7 @@
     "ajv": "^8.18.0",
     "skills": "1.7.2",
     "zod": "^4.4.3",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "re2js": "2.8.6"
   }
 }

@@ -1,7 +1,26 @@
-import type { HookCallback } from "@anthropic-ai/claude-agent-sdk";
-import { type RuleEvent, RuleEventSchema } from "@orc/core/rule-types";
+import type { HookCallback, SyncHookJSONOutput } from "@anthropic-ai/claude-agent-sdk";
+import { normalizeRuleHook, ruleHookOutput } from "@orc/core/rule-hooks";
 import type { SessionRuleGuard } from "./rules.js";
 import type { AgentEvent } from "./types.js";
+
+export function sessionStartRuleContext(
+  guard: SessionRuleGuard,
+  cwd: string,
+  sessionId: string,
+  eventId: string,
+  source: "startup" | "resume",
+): string {
+  const event = normalizeRuleHook("claude", "SessionStart", {
+    session_id: sessionId,
+    event_id: eventId,
+    cwd,
+    source,
+    hook_event_name: "SessionStart",
+  });
+  const result = guard.evaluate(event);
+  ruleHookOutput("claude", event, result);
+  return result.context.join("\n");
+}
 
 export function createRulesHook(
   guard: SessionRuleGuard,
@@ -9,50 +28,22 @@ export function createRulesHook(
   emit: (event: AgentEvent) => void,
 ): HookCallback {
   return async (input, toolUseId) => {
-    const phase: RuleEvent["phase"] =
-      input.hook_event_name === "PreToolUse"
-        ? "pre_tool"
-        : input.hook_event_name === "SessionStart"
-          ? "session_start"
-          : input.hook_event_name === "SessionEnd"
-            ? "session_end"
-            : "post_tool";
     try {
-      const result = guard.evaluate(
-        RuleEventSchema.parse({
-          id: toolUseId ?? `${input.hook_event_name}:${input.session_id}`,
-          session_id: input.session_id,
-          backend: "claude",
-          cwd: cwd,
-          phase,
-          ...("tool_name" in input ? { tool: input.tool_name } : {}),
-          input: "tool_input" in input ? input.tool_input : {},
-          failed: input.hook_event_name === "PostToolUseFailure",
-        }),
-      );
-      if (phase === "pre_tool" && result?.decision === "deny") {
+      const event = normalizeRuleHook("claude", input.hook_event_name, {
+        ...input,
+        cwd,
+        ...(toolUseId ? { tool_use_id: toolUseId } : {}),
+      });
+      const result = guard.evaluate(event);
+      if (result?.decision === "deny") {
         const reason = result.reasons.map((r) => `${r.rule_id}: ${r.reason}`).join("; ");
         emit({ type: "system_status", data: `ORC rule denied tool: ${reason}` });
-        return {
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            permissionDecisionReason: reason,
-          },
-        };
       }
-      if (phase === "session_start")
-        return {
-          hookSpecificOutput: {
-            hookEventName: "SessionStart",
-            additionalContext: result?.context.join("\n") ?? "",
-          },
-        };
-      return {};
+      return ruleHookOutput("claude", event, result) as SyncHookJSONOutput;
     } catch (error) {
       const reason = `ORC rule evaluation unavailable: ${String(error)}`;
       emit({ type: "system_status", data: reason });
-      if (phase === "pre_tool")
+      if (input.hook_event_name === "PreToolUse")
         return {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
