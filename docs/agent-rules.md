@@ -166,3 +166,8 @@ The package version remains 3.0.3, so raw `bun audit` still reports that advisor
 patch does not transfer automatically to a separate published npm install; release work
 must carry or otherwise replace that mitigation before claiming equivalent protection.
 Existing moderate/low findings remain listed by the audit. No audit finding is hidden.
+
+Native agent terminal launches also check the derived worktree directory before creating
+a branch or worktree, then check the final directory before spawning. Reattaching a live
+session checks the existing terminal directory before changing its session association.
+Human shell terminals remain available in protected workspaces.

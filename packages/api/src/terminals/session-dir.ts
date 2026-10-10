@@ -13,6 +13,7 @@ export interface SessionDirDeps {
   runGit: (argv: string[]) => Promise<GitResult>;
   makeDirectory: (path: string) => void;
   newId: () => string;
+  validateDirectory?: (path: string) => void;
 }
 
 export interface SessionDirRequest {
@@ -73,6 +74,7 @@ export async function prepareSessionDirectory(
 
   const id = deps.newId();
   const path = worktreePath(root, id);
+  deps.validateDirectory?.(path);
   deps.makeDirectory(dirname(path));
   const added = await deps.runGit(["git", "-C", root, "worktree", "add", "-b", `orc/${id}`, path]);
   if (added.code !== 0) throw gitError(added, "git worktree add failed");

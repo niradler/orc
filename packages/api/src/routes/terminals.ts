@@ -185,8 +185,17 @@ app.openapi(createTerminalRoute, async (c) => {
   const body = c.req.valid("json");
   const manager = getTerminalManager();
   const deps = launchDeps(config);
-  const checkRules = (cwd: string | undefined | null): void => {
-    if (config.rules.enabled && new RuleStore(getSqlite()).active(cwd ?? deps.home).length)
+  const checkRules = (cwd: string | undefined | null, planned = false): void => {
+    if (!config.rules.enabled) return;
+    let scope = cwd ?? deps.home;
+    if (planned) {
+      while (!deps.isDirectory(scope)) {
+        const parent = dirname(scope);
+        if (parent === scope) throw new ValidationError("Cannot resolve planned workspace");
+        scope = parent;
+      }
+    }
+    if (new RuleStore(getSqlite()).active(scope).length)
       throw new ValidationError(
         "Protected workspace requires the Claude SDK adapter; native agent terminals have unverified hook coverage",
       );
@@ -233,12 +242,15 @@ app.openapi(createTerminalRoute, async (c) => {
     if (!row) throw new NotFoundError("Live session", body.live_session_id);
     checkRules(row.cwd);
     if (row.status === "idle" || row.status === "running") {
-      const original = manager.linkLiveSession({
-        id: row.id,
-        pid: row.pid,
-        backend: row.backend,
-        createdAt: row.created_at,
-      });
+      const original = manager.linkLiveSession(
+        {
+          id: row.id,
+          pid: row.pid,
+          backend: row.backend,
+          createdAt: row.created_at,
+        },
+        (info) => checkRules(info.cwd),
+      );
       if (original) return c.json(original, 200);
     }
     const launch = buildLaunch(
@@ -269,8 +281,9 @@ app.openapi(createTerminalRoute, async (c) => {
   manager.assertCapacity();
   const cwd = await prepareSessionDirectory(
     { cwd: body.cwd, worktree: body.worktree },
-    sessionDirDeps(deps),
+    { ...sessionDirDeps(deps), validateDirectory: (path) => checkRules(path, true) },
   );
+  if (launch.kind !== "shell") checkRules(cwd);
   const name = body.name ?? (cwd !== launch.cwd ? worktreeName(cwd) : undefined);
   const info = manager.create({ launch: { ...launch, cwd }, name });
   rememberTerminalFolder(info.cwd);

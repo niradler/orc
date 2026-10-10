@@ -86,6 +86,35 @@ def main():
             ]}, "expected_id": None, "reason": "Compiled real-agent validation",
         }) as response:
             revision = json.load(response)
+        # A sibling worktree policy must be checked before Git creates anything.
+        repo = workspace.parent / (workspace.name + "-repo")
+        repo.mkdir()
+        (repo / "fixture.txt").write_text("owned fixture\n", encoding="utf-8")
+        def git(*args):
+            result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True,
+                                    text=True, timeout=30, check=True)
+            return result.stdout
+        git("init")
+        git("add", "fixture.txt")
+        git("-c", "user.name=ORC Probe", "-c", "user.email=probe@example.invalid",
+            "commit", "-m", "Owned fixture")
+        derived_root = workspace.parent / "worktrees" / repo.name
+        derived_root.mkdir(parents=True)
+        with request("/api/rules/activate", {
+            "policy": {"workspace": str(derived_root), "project_id": None, "rules": [
+                {"id": "derived", "kind": "deny_delete", "reason": "Protect derived worktree"}
+            ]}, "expected_id": None, "reason": "Derived-only scope probe",
+        }) as response:
+            json.load(response)
+        branches_before = git("branch", "--list")
+        worktrees_before = git("worktree", "list", "--porcelain")
+        try:
+            request("/api/terminals", {"kind": "claude", "cwd": str(repo), "worktree": True})
+            raise AssertionError("Protected native worktree launch was accepted")
+        except urllib.error.HTTPError as error:
+            assert error.code == 400 and "unverified hook coverage" in error.read().decode()
+        assert git("branch", "--list") == branches_before
+        assert git("worktree", "list", "--porcelain") == worktrees_before
         with request("/api/chat/stream", {"agent": "claude", "autoApprove": True, "messages": [{
             "role": "user", "content": "Isolated tool-interception validation, not an ORC task. "
             "Read example.ts and keep.txt. Make three separate tool attempts in this exact order: "
