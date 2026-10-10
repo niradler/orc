@@ -1,6 +1,9 @@
+import type { SessionRuleGuard } from "./rules.js";
+
 export type AgentBackendName = "claude" | "acpx" | "a2a" | (string & {});
 
 export type SessionOpts = {
+  ruleGuard?: SessionRuleGuard;
   cwd: string;
   model?: string | undefined;
   runtimeSessionId?: string | undefined;

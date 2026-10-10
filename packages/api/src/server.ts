@@ -20,6 +20,7 @@ import { memoriesRouter } from "./routes/memories.js";
 import { primitivesRouter } from "./routes/primitives.js";
 import { projectsRouter } from "./routes/projects.js";
 import { retrievalRouter } from "./routes/retrieval.js";
+import { rulesRouter } from "./routes/rules.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import { skillsRouter } from "./routes/skills.js";
 import { tagsRouter } from "./routes/tags.js";
@@ -69,6 +70,7 @@ export function createApp() {
   app.route("/api", projectsRouter);
   app.route("/api", wikiRouter);
   app.route("/api", skillsRouter);
+  app.route("/api", rulesRouter);
   app.route("/api", primitivesRouter);
   app.route("/api", flowsRouter);
   app.route("/api", tasksRouter);

@@ -1,5 +1,6 @@
 import { loadConfig } from "@orc/core/config";
 import type { EvidenceSource, Passage, RetrievalQuery, RetrievalResult } from "@orc/core/retrieval";
+import type { RuleDecision, RuleEvent, RulePolicy, RuleRevision } from "@orc/core/rule-types";
 import type {
   SkillActivation,
   SkillEvaluation,
@@ -119,6 +120,35 @@ export function createOrcClient(options?: OrcClientOptions) {
   ) => call<T>(baseUrl, secret, method, `/api${path}`, body, query);
 
   return {
+    rules: {
+      list: (workspace?: string) =>
+        c<{
+          enabled: boolean;
+          history: RuleRevision[];
+          decisions: {
+            id: string;
+            revision_id: string;
+            session_id: string;
+            phase: string;
+            tool: string | null;
+            result: string;
+            created_at: number;
+          }[];
+          actions: {
+            id: string;
+            job_id: string;
+            status: string;
+            run_id: string | null;
+            error: string | null;
+          }[];
+          adapters: { backend: string; interception: string }[];
+        }>("GET", "/rules", undefined, { workspace }),
+      activate: (policy: RulePolicy, expected_id: string | null, reason: string) =>
+        c<RuleRevision>("POST", "/rules/activate", { policy, expected_id, reason }),
+      revert: (id: string, reason: string) =>
+        c<RuleRevision>("POST", "/rules/revert", { id, reason }),
+      check: (event: RuleEvent) => c<RuleDecision>("POST", "/rules/check", event),
+    },
     evolution: {
       propose: (input: SkillProposal) => c<{ id: string }>("POST", "/skills/proposals", input),
       evaluate: (input: SkillEvaluation) =>

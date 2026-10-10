@@ -24,7 +24,11 @@
   },
   "overrides": {
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "simple-git": "4.0.2",
+    "ip-address": "10.7.3",
+    "js-yaml": "4.3.2"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.5",
@@ -34,5 +38,8 @@
   "trustedDependencies": [
     "bun",
     "electron"
-  ]
+  ],
+  "patchedDependencies": {
+    "braces@3.0.3": "patches/braces@3.0.3.patch"
+  }
 }

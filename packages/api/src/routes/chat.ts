@@ -4,7 +4,10 @@ import {
   probeBackend,
   resolveAcpxCli,
 } from "@orc/agent-runtime";
+import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
+import { getSqlite } from "@orc/db/client";
+import { RuleStore } from "@orc/db/rules";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 
@@ -161,6 +164,16 @@ app.post("/chat/stream", async (c) => {
   // chat immediately. acpx is what makes *other* agents (gemini, codex, …)
   // reachable, so it stays the path for anything else.
   const nativeBackend = agent === "claude" ? await pickUsableBackend(["claude"]) : null;
+  const protectedWorkspace =
+    loadConfig().rules.enabled && new RuleStore(getSqlite()).active(process.cwd()).length > 0;
+  if (protectedWorkspace && !nativeBackend)
+    return c.json(
+      {
+        error:
+          "Protected workspace requires the Claude SDK rule adapter; CLI/remote chat fallback is refused",
+      },
+      503,
+    );
   const acpx = nativeBackend ? null : resolveAcpxCli();
 
   if (!acpx) {

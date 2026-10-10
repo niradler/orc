@@ -12,7 +12,8 @@
     "./evidence-sync": "./src/evidence-sync.ts",
     "./wiki": "./src/wiki.ts",
     "./session-contributions": "./src/session-contributions.ts",
-    "./skill-evolution": "./src/skill-evolution.ts"
+    "./skill-evolution": "./src/skill-evolution.ts",
+    "./rules": "./src/rules.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

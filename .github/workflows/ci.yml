@@ -32,6 +32,9 @@ jobs:
       - name: Test
         run: bun run --filter '!@orc/web' test
 
+      - name: Dependency security regressions
+        run: bun test scripts/dependency-security.test.ts
+
       # @orc/web is excluded above because its `test` script drives Playwright,
       # which needs a browser (see e2e.yml). Its browser-free unit tests still
       # belong on every PR.
