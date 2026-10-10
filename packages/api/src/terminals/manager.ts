@@ -94,12 +94,15 @@ export class TerminalManager {
     return null;
   }
 
-  linkLiveSession(input: {
-    id: string;
-    pid: number | null;
-    backend: string;
-    createdAt: Date;
-  }): TerminalInfo | null {
+  linkLiveSession(
+    input: {
+      id: string;
+      pid: number | null;
+      backend: string;
+      createdAt: Date;
+    },
+    validate?: (info: TerminalInfo) => void,
+  ): TerminalInfo | null {
     if (input.pid == null) return null;
     for (const entry of this.entries.values()) {
       const info = entry.info;
@@ -110,6 +113,7 @@ export class TerminalManager {
         Math.floor(Date.parse(info.created_at) / 1000) <=
           Math.floor(input.createdAt.getTime() / 1000)
       ) {
+        validate?.({ ...info });
         info.live_session_id = input.id;
         return { ...info };
       }

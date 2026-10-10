@@ -189,6 +189,7 @@ describe("POST /terminals", () => {
       createdAt: new Date(terminal.created_at),
     });
     await seedLive("live-protected-resume");
+    await seedLive("live-protected-link", { pid: terminal.pid, cwd: tmpdir(), status: "idle" });
     const store = new RuleStore(getSqlite());
     const revision = store.activate(
       {
@@ -206,6 +207,7 @@ describe("POST /terminals", () => {
         { kind: "claude", cwd: root },
         { live_session_id: "live-protected-resume" },
         { live_session_id: "live-protected-existing" },
+        { live_session_id: "live-protected-link" },
         {
           kind: "claude",
           setup: {
@@ -223,6 +225,7 @@ describe("POST /terminals", () => {
         expect((await response.json()).error).toContain("unverified hook coverage");
       }
       expect(ptys.length).toBe(before);
+      expect(getTerminalManager().findByLiveSession("live-protected-link")).toBeNull();
       const shell = await req(app, "POST", "/terminals", { kind: "shell", cwd: root });
       expect(shell.status).toBe(201);
       await req(app, "DELETE", `/terminals/${(await shell.json()).id}`);
@@ -653,6 +656,41 @@ describe("worktree terminals and /git/worktrees", () => {
     const outside = await req(app, "POST", "/git/worktrees/remove", { cwd: repo, path: plain });
     expect(outside.status).toBe(400);
     expect(existsSync(plain)).toBe(true);
+  });
+
+  test("a protected derived worktree is refused before creating a branch or native terminal", async () => {
+    const protectedRoot = dirname(worktrees);
+    mkdirSync(protectedRoot, { recursive: true });
+    const store = new RuleStore(getSqlite());
+    const revision = store.activate(
+      {
+        workspace: protectedRoot,
+        project_id: null,
+        rules: [{ id: "files", kind: "deny_delete", reason: "Protect derived workspaces" }],
+      },
+      null,
+      "Isolated derived workspace regression",
+    );
+    loadConfig({ rules: { enabled: true } });
+    try {
+      expect(store.active(repo)).toHaveLength(0);
+      const before = ptys.length;
+      const branches = await git(["branch", "--format=%(refname)"], repo);
+      const directories = await git(["worktree", "list", "--porcelain"], repo);
+      const response = await req(app, "POST", "/terminals", {
+        kind: "claude",
+        cwd: repo,
+        worktree: true,
+      });
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toContain("unverified hook coverage");
+      expect(ptys.length).toBe(before);
+      expect(await git(["branch", "--format=%(refname)"], repo)).toBe(branches);
+      expect(await git(["worktree", "list", "--porcelain"], repo)).toBe(directories);
+    } finally {
+      store.revert(revision.id, "End isolated derived workspace fixture");
+      loadConfig({ rules: { enabled: false } });
+    }
   });
 
   test("a plain folder lists nothing and a missing one is rejected", async () => {
