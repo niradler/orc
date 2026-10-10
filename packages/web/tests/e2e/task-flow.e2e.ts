@@ -161,6 +161,8 @@ test.describe("Task flow run panel", () => {
       const panel = page.getByTestId("flow-run-panel");
       await expect(panel).toHaveAttribute("data-flow-status", "running");
       await expect(page.getByTestId("flow-run-name")).toHaveText("pw-gate");
+      // An inline definition has no named flow behind it, so the name is not a link.
+      await expect(page.getByRole("button", { name: "pw-gate" })).toHaveCount(0);
 
       // The parked node is drawn as awaiting_human; the terminals are untouched.
       await expect(

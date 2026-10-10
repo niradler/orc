@@ -166,7 +166,7 @@ The CLI build (`packages/cli`) runs `bun run --filter @orc/web build` first and 
 
 ### Static file serving
 
-`packages/api/src/static.ts` serves `index.html` at `/`, hashed bundles at `/assets/*` (with `Cache-Control: public, max-age=31536000, immutable`), and root-level files (favicon, robots) by name. It is mounted last so any conflicting API route wins. The web app routes with React Router, so any navigation request (`Accept: text/html`) that matches no static file falls back to `index.html` - that is what makes deep links like `/flows/orc-default` and `/tasks/<id>` work.
+`packages/api/src/static.ts` serves `index.html` at `/`, hashed bundles at `/assets/*` (with `Cache-Control: public, max-age=31536000, immutable`), and root-level files (favicon, robots) by name. It is mounted last so any conflicting API route wins. The web app routes with React Router, so any navigation request (`Accept: text/html`) that matches no static file falls back to `index.html` - that is what makes deep links like `/tasks/<id>` work.
 
 ## Web UI e2e tests (Playwright)
 

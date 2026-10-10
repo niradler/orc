@@ -1,7 +1,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, test } from "@playwright/test";
-import { apiGet, gotoView, repoRoot } from "./_helpers";
+import { expect, type Page, test } from "@playwright/test";
+import { apiDelete, apiGet, apiPost, gotoView, repoRoot, tid } from "./_helpers";
 
 // Project flows live in `<cwd>/.orc/flows/<name>/flow.json` and the API under
 // test runs with the repo root as its cwd, so these fixtures put a project flow
@@ -43,7 +43,14 @@ function writeProjectFlow(definition: { name: string }): void {
   writeFileSync(join(dir, "flow.json"), JSON.stringify(definition, null, 2));
 }
 
-test.describe("Flows browser", () => {
+/** Opens the new-task dialog, where the flow picker lives. */
+async function openNewTaskDialog(page: Page) {
+  await gotoView(page, "tasks");
+  await page.getByTestId("new-task-button").click();
+  return page.getByRole("dialog");
+}
+
+test.describe("Flow picker", () => {
   test.beforeAll(async ({ request }) => {
     writeProjectFlow(SHADOWING_FLOW);
     writeProjectFlow(BROKEN_FLOW);
@@ -56,47 +63,34 @@ test.describe("Flows browser", () => {
     await apiGet(request, "/flows?reload=true");
   });
 
-  test("built-in flows are listed with their source, and the default is marked", async ({
+  test("built-in flows are offered with their source, and the default is named", async ({
     page,
   }) => {
-    await gotoView(page, "flows");
-    await expect(page.getByTestId("view-title")).toHaveText(/flows/i);
+    const dialog = await openNewTaskDialog(page);
+    await dialog.getByTestId("new-task-flow").click();
 
-    const row = page.locator('[data-testid="flow-row"][data-flow-name="orc-default"]');
-    await expect(row).toBeVisible();
-    await expect(row).toHaveAttribute("data-flow-source", "builtin");
-    await expect(row.getByTestId("flow-default-badge")).toBeVisible();
-
+    await expect(page.getByRole("option", { name: /^Default \(orc-default\)/ })).toBeVisible();
     // The fan-out flow is the one whose shape the graph has to handle; make sure
-    // the list is really the shipped set and not a single row.
+    // the list is really the shipped set and not a single entry.
     await expect(
-      page.locator('[data-testid="flow-row"][data-flow-name="orc-parallel-review"]'),
+      page.getByRole("option", { name: /^orc-parallel-review · builtin/ }),
     ).toBeVisible();
   });
 
   test("a project flow shadowing a builtin says so", async ({ page }) => {
-    await gotoView(page, "flows");
-    const row = page.locator(`[data-testid="flow-row"][data-flow-name="${SHADOWING_FLOW.name}"]`);
-    await expect(row).toBeVisible();
-    await expect(row).toHaveAttribute("data-flow-source", "project");
-    await expect(row.getByTestId("flow-shadows-badge")).toContainText("shadows builtin");
-  });
-
-  test("source filter narrows the list to one source", async ({ page }) => {
-    await gotoView(page, "flows");
-    await page.getByTestId("flow-source-filter-project").click();
-
-    const rows = page.locator('[data-testid="flow-row"]');
-    await expect(rows.first()).toBeVisible();
-    const count = await rows.count();
-    for (let i = 0; i < count; i++) {
-      await expect(rows.nth(i)).toHaveAttribute("data-flow-source", "project");
-    }
+    const dialog = await openNewTaskDialog(page);
+    await dialog.getByTestId("new-task-flow").click();
+    await page.getByRole("option", { name: `${SHADOWING_FLOW.name} · project` }).click();
+    await expect(dialog.getByTestId("flow-picker-hint")).toContainText("shadows the builtin flow");
   });
 
   test("invalid definitions are surfaced with their validation errors", async ({ page }) => {
-    await gotoView(page, "flows");
-    const broken = page.locator(
+    const dialog = await openNewTaskDialog(page);
+    const panel = dialog.getByTestId("broken-flows");
+    await expect(panel).toBeVisible();
+    await panel.locator("summary").click();
+
+    const broken = panel.locator(
       `[data-testid="broken-flow-row"][data-flow-name="${BROKEN_FLOW.name}"]`,
     );
     await expect(broken).toBeVisible();
@@ -105,14 +99,15 @@ test.describe("Flows browser", () => {
     await expect(broken).toContainText(/edges/i);
   });
 
-  test("opening a flow renders its graph, nodes and edges", async ({ page }) => {
-    await gotoView(page, "flows");
-    await page.locator('[data-testid="flow-row"][data-flow-name="orc-default"]').click();
+  test("View flow renders the selected flow's graph, nodes and edges", async ({ page }) => {
+    const dialog = await openNewTaskDialog(page);
+    // With no explicit choice the picker resolves to the configured default.
+    await dialog.getByTestId("flow-picker-view").click();
 
-    const sheet = page.getByRole("dialog");
-    await expect(sheet.getByTestId("flow-detail")).toBeVisible();
+    const detail = page.getByTestId("flow-detail");
+    await expect(detail).toBeVisible();
 
-    const graph = sheet.getByTestId("flow-graph");
+    const graph = detail.getByTestId("flow-graph");
     await expect(graph).toHaveAttribute("data-flow-name", "orc-default");
     // orc-default: build, review_gate, review, done, blocked_out, escalated.
     await expect(graph.locator('[data-testid="flow-graph-node"]')).toHaveCount(6);
@@ -126,21 +121,45 @@ test.describe("Flows browser", () => {
     await expect(loopback).toHaveAttribute("data-edge-kind", "back");
 
     // Edge list mirrors the definition's order, conditions rendered as prose.
-    await expect(sheet.locator('[data-testid="flow-detail-edge"]')).toHaveCount(7);
-    await expect(sheet.locator('[data-testid="flow-detail-edge"]').first()).toContainText(
+    await expect(detail.locator('[data-testid="flow-detail-edge"]')).toHaveCount(7);
+    await expect(detail.locator('[data-testid="flow-detail-edge"]').first()).toContainText(
       "outcome submitted",
     );
-    await expect(sheet.locator('[data-testid="flow-detail-node"]')).toHaveCount(6);
+    await expect(detail.locator('[data-testid="flow-detail-node"]')).toHaveCount(6);
   });
 
-  test("a flow is addressable by URL", async ({ page }) => {
-    await gotoView(page, "flows");
-    await page.goto("/flows/orc-supervisor");
-    const sheet = page.getByRole("dialog");
-    await expect(sheet.getByTestId("flow-detail")).toBeVisible();
-    await expect(sheet.getByTestId("flow-graph")).toHaveAttribute(
+  test("View flow follows the picked flow", async ({ page }) => {
+    const dialog = await openNewTaskDialog(page);
+    await dialog.getByTestId("new-task-flow").click();
+    await page.getByRole("option", { name: /^orc-supervisor/ }).click();
+    await dialog.getByTestId("flow-picker-view").click();
+    await expect(page.getByTestId("flow-detail").getByTestId("flow-graph")).toHaveAttribute(
       "data-flow-name",
       "orc-supervisor",
     );
+  });
+  test("a running named flow opens its definition from the task", async ({ page, request }) => {
+    // The project override is a single human gate, so starting it spawns no agent.
+    const task = await apiPost<{ id: string }>(request, "/tasks", {
+      title: tid("pw-flow-view"),
+      status: "todo",
+      priority: "normal",
+    });
+    try {
+      await apiPost(request, `/tasks/${task.id}/flow`, { name: SHADOWING_FLOW.name, start: true });
+      await gotoView(page, "tasks");
+      await page.goto(`/tasks/${task.id}`);
+
+      await page.getByTestId("flow-run-name").click();
+      const detail = page.getByTestId("flow-detail");
+      await expect(detail).toBeVisible();
+      await expect(detail.getByTestId("flow-graph")).toHaveAttribute(
+        "data-flow-name",
+        SHADOWING_FLOW.name,
+      );
+      await expect(detail.locator('[data-testid="flow-detail-node"]')).toHaveCount(2);
+    } finally {
+      await apiDelete(request, `/tasks/${task.id}`);
+    }
   });
 });

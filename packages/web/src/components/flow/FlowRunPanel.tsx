@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { FlowNodeRun, FlowRun } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { FlowDetailSheet } from "@/components/flow/FlowDetailSheet";
 import { FlowGraph, FlowGraphLegend } from "@/components/flow/FlowGraph";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -112,6 +113,7 @@ function FlowRunBody({
   const waiting = useMemo(() => awaitingHumanRun(run), [run]);
   const halt = useHaltFlow();
   const [halting, setHalting] = useState(false);
+  const [viewingFlow, setViewingFlow] = useState(false);
 
   const flowVars = Object.entries(run.vars).filter(([k]) => !RESERVED_VARS.has(k));
 
@@ -119,13 +121,25 @@ function FlowRunBody({
     <div className="space-y-4" data-testid="flow-run-panel" data-flow-status={run.status}>
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 min-w-0">
-          <Link
-            to={`/flows/${encodeURIComponent(run.flow_name)}`}
-            className="font-body text-xs text-primary hover:underline truncate"
-            data-testid="flow-run-name"
-          >
-            {run.flow_name}
-          </Link>
+          {/* An inline (flow_source "task") definition has no named flow to open;
+              its graph is the one drawn below. */}
+          {run.flow_source === "task" ? (
+            <span
+              className="font-body text-xs text-on-surface truncate"
+              data-testid="flow-run-name"
+            >
+              {run.flow_name}
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setViewingFlow(true)}
+              className="font-body text-xs text-primary hover:underline truncate"
+              data-testid="flow-run-name"
+            >
+              {run.flow_name}
+            </button>
+          )}
           <Chip>{run.flow_source}</Chip>
           <Chip className={RUN_STATUS_COLORS[run.status]}>{run.status}</Chip>
         </div>
@@ -214,6 +228,12 @@ function FlowRunBody({
           </div>
         </div>
       )}
+
+      <FlowDetailSheet
+        flowName={viewingFlow ? run.flow_name : null}
+        open={viewingFlow}
+        onClose={() => setViewingFlow(false)}
+      />
 
       <ConfirmDialog
         open={halting}

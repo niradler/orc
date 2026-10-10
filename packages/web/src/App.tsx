@@ -11,7 +11,6 @@ import { TerminalsProvider } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 import Agents from "@/views/Agents";
 import Dashboard from "@/views/Dashboard";
-import Flows from "@/views/Flows";
 import Jobs from "@/views/Jobs";
 import Knowledge from "@/views/Knowledge";
 import Memories from "@/views/Memories";
@@ -107,8 +106,6 @@ export default function App() {
                 <Route path="/agents" element={<Agents />} />
                 <Route path="/agents/:agentId" element={<Agents />} />
                 <Route path="/packages" element={<Packages />} />
-                <Route path="/flows" element={<Flows />} />
-                <Route path="/flows/:flowName" element={<Flows />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="*" element={<Navigate to="/tasks" replace />} />
               </Routes>

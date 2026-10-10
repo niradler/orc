@@ -136,7 +136,7 @@ The web dashboard ships inside the `orc` binary and is served by the API process
 | `GET /api/*`                       | All REST routes                                                                                                                |
 | `GET /openapi.json`, `GET /docs`   | Swagger UI                                                                                                                     |
 | `GET /mcp`                         | MCP server (streamable HTTP)                                                                                                   |
-| `GET /tasks/<id>`, `/flows/<name>`, … | `index.html` again - a navigation request matching no static file falls back to the SPA shell, so dashboard links are shareable |
+| `GET /tasks/<id>`, `/knowledge`, … | `index.html` again - a navigation request matching no static file falls back to the SPA shell, so dashboard links are shareable |
 
 Override the served dist directory with `ORC_WEB_DIST=/path/to/web/dist` if you want to host a custom build (e.g. a fork). If no dist is found, the server runs in pure-API mode.
 
