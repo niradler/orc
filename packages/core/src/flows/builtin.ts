@@ -14,6 +14,35 @@
 
 /** Raw, unparsed definitions — validated through parseFlowDefinition on load. */
 export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
+  "orc-evidence-review": {
+    name: "orc-evidence-review",
+    description:
+      "Optional bounded review tracing connected code and concrete defect triggers. Does not replace the default flow or claim measured quality gains.",
+    entry: "review",
+    limits: { max_node_executions: 4, execution_timeout_secs: 3600, max_parallel: 1 },
+    nodes: {
+      review: {
+        kind: "agent",
+        skill: "orc-reviewer",
+        backend: "$task.agent_backend",
+        model: "$task.agent_model",
+        role: "reviewer",
+        task_status: "review",
+        outcomes: ["approved", "changes_requested", "insufficient_evidence"],
+        on_error: "review_failed",
+        prompt:
+          "Trace the changed behavior through callers, entrypoints and stored data. Inspect repository conventions and existing safeguards before proposing replacements. For every blocking finding cite the file, concrete triggering input and observed or demonstrable failure. Run focused executable checks where available and record the command and outcome. Distinguish untested risks from demonstrated defects; do not block on style preferences. Preserve auth, validation and error behavior. Report approved when the supplied acceptance criteria are verified, changes_requested for concrete defects, or insufficient_evidence when necessary validation cannot be performed. Include evidence and limits in the flow report summary. Do not claim skill gains from a single review.",
+      },
+      done: { kind: "terminal", task_status: "done" },
+      rejected: { kind: "terminal", task_status: "changes_requested" },
+      escalated: { kind: "terminal", task_status: "paused" },
+    },
+    edges: [
+      { from: "review", to: "done", when: { outcome: "approved" } },
+      { from: "review", to: "rejected", when: { outcome: "changes_requested" } },
+      { from: "review", to: "escalated", when: { always: true } },
+    ],
+  },
   "orc-default": {
     name: "orc-default",
     description:

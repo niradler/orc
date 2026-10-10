@@ -10,8 +10,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
-import { OrcConfigSchema, resetConfig } from "@orc/core/config";
-import { getDb } from "@orc/db/client";
+import { loadConfig, OrcConfigSchema, resetConfig } from "@orc/core/config";
+import { getDb, getSqlite } from "@orc/db/client";
+import { RuleStore } from "@orc/db/rules";
 import { bridge_chats, gateway_sessions } from "@orc/db/schema";
 import type { createApp } from "../server.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
@@ -176,6 +177,61 @@ describe("availability", () => {
 });
 
 describe("POST /terminals", () => {
+  test("protected workspaces refuse fresh, resumed and packaged agents but permit human shells", async () => {
+    const fresh = await req(app, "POST", "/terminals", { kind: "claude", cwd: root });
+    expect(fresh.status).toBe(201);
+    const terminal = await fresh.json();
+    await seedLive("live-protected-existing", { pid: terminal.pid });
+    getTerminalManager().linkLiveSession({
+      id: "live-protected-existing",
+      pid: terminal.pid,
+      backend: "claude",
+      createdAt: new Date(terminal.created_at),
+    });
+    await seedLive("live-protected-resume");
+    const store = new RuleStore(getSqlite());
+    const revision = store.activate(
+      {
+        workspace: root,
+        project_id: null,
+        rules: [{ id: "files", kind: "deny_delete", reason: "Protect fixture" }],
+      },
+      null,
+      "Protect isolated terminal fixture",
+    );
+    loadConfig({ rules: { enabled: true } });
+    try {
+      const before = ptys.length;
+      for (const body of [
+        { kind: "claude", cwd: root },
+        { live_session_id: "live-protected-resume" },
+        { live_session_id: "live-protected-existing" },
+        {
+          kind: "claude",
+          setup: {
+            name: "guarded",
+            packages: ["not-imported"],
+            backend: "claude",
+            tool: "apm",
+            cwd: root,
+            prompt: "",
+          },
+        },
+      ]) {
+        const response = await req(app, "POST", "/terminals", body);
+        expect(response.status).toBe(400);
+        expect((await response.json()).error).toContain("unverified hook coverage");
+      }
+      expect(ptys.length).toBe(before);
+      const shell = await req(app, "POST", "/terminals", { kind: "shell", cwd: root });
+      expect(shell.status).toBe(201);
+      await req(app, "DELETE", `/terminals/${(await shell.json()).id}`);
+    } finally {
+      store.revert(revision.id, "End isolated terminal fixture");
+      loadConfig({ rules: { enabled: false } });
+      await req(app, "DELETE", `/terminals/${terminal.id}`);
+    }
+  });
   test("rejects unknown package configuration before spawning a PTY", async () => {
     const count = ptys.length;
     const res = await req(app, "POST", "/terminals", {

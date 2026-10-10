@@ -27,7 +27,10 @@
     "./retrieval": "./src/retrieval.ts",
     "./wiki": "./src/wiki.ts",
     "./embedding-provider": "./src/embedding-provider.ts",
-    "./validate": "./src/validate.ts"
+    "./validate": "./src/validate.ts",
+    "./rules": "./src/rules.ts",
+    "./rule-hooks": "./src/rule-hooks.ts",
+    "./rule-types": "./src/rule-types.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -38,6 +41,7 @@
   "dependencies": {
     "ajv": "^8.18.0",
     "skills": "1.7.2",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "typescript": "^6.0.3"
   }
 }

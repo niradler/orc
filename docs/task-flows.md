@@ -181,6 +181,15 @@ A run **freezes its definition** at start (`flow_runs.definition`), so editing a
 
 ## Built-in flows
 
+### `orc-evidence-review`
+
+An optional review of already implemented work using the existing `orc-reviewer` skill.
+The reviewer traces connected code and cites concrete inputs and executable results.
+Approval ends in `done`, demonstrated defects in `changes_requested`, and insufficient
+evidence or execution errors in `paused`. One reviewer, four node executions and a
+one-hour timeout bound the run. It leaves the default flow unchanged; see
+[Agent rules and skill quality](agent-rules.md#optional-evidence-review-flow) for real-flow validation.
+
 ### `orc-default`
 
 Reproduces the pipeline the task loop used to hardcode, so migrating changed no behaviour.

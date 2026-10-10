@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import { drizzle } from "drizzle-orm/bun-sqlite";
+import { installRules } from "./rules.js";
 import * as schema from "./schema.js";
 import { installWiki } from "./wiki.js";
 
@@ -482,6 +483,7 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
 
   setupDb(sqlite);
   installWiki(sqlite);
+  installRules(sqlite);
 
   return drizzle(sqlite, { schema });
 }

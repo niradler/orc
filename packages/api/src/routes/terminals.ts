@@ -8,7 +8,8 @@ import {
   packagePlanArgv,
   packageToolCommands,
 } from "@orc/core/package-launch";
-import { getDb } from "@orc/db/client";
+import { getDb, getSqlite } from "@orc/db/client";
+import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions } from "@orc/db/schema";
 import { and, eq } from "drizzle-orm";
 import { rememberTerminalFolder } from "../git/registry.js";
@@ -184,8 +185,15 @@ app.openapi(createTerminalRoute, async (c) => {
   const body = c.req.valid("json");
   const manager = getTerminalManager();
   const deps = launchDeps(config);
+  const checkRules = (cwd: string | undefined | null): void => {
+    if (config.rules.enabled && new RuleStore(getSqlite()).active(cwd ?? deps.home).length)
+      throw new ValidationError(
+        "Protected workspace requires the Claude SDK adapter; native agent terminals have unverified hook coverage",
+      );
+  };
 
   if (body.setup) {
+    checkRules(body.setup.cwd);
     if (body.live_session_id || body.worktree)
       throw new ValidationError(
         "Package setups launch fresh sessions in their configured project folder",
@@ -212,7 +220,10 @@ app.openapi(createTerminalRoute, async (c) => {
   if (body.live_session_id) {
     if (body.worktree) throw new ValidationError("A resumed session keeps its own folder");
     const existing = manager.findByLiveSession(body.live_session_id);
-    if (existing) return c.json(existing, 200);
+    if (existing) {
+      checkRules(existing.cwd);
+      return c.json(existing, 200);
+    }
     const row = await getDb().query.gateway_sessions.findFirst({
       where: and(
         eq(gateway_sessions.id, body.live_session_id),
@@ -220,6 +231,7 @@ app.openapi(createTerminalRoute, async (c) => {
       ),
     });
     if (!row) throw new NotFoundError("Live session", body.live_session_id);
+    checkRules(row.cwd);
     if (row.status === "idle" || row.status === "running") {
       const original = manager.linkLiveSession({
         id: row.id,
@@ -250,6 +262,7 @@ app.openapi(createTerminalRoute, async (c) => {
 
   // Validate the launcher and limit before making a worktree, so a failed start leaves nothing behind.
   const launch = buildLaunch({ kind: body.kind, cwd: body.cwd }, deps);
+  if (launch.kind !== "shell") checkRules(launch.cwd);
   if (body.worktree && launch.kind === "shell") {
     throw new ValidationError("Worktrees are only created for agent terminals");
   }

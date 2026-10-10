@@ -4,6 +4,7 @@ import { createLogger } from "@orc/core/logger";
 import { resolveClaudeSdkLaunch } from "./claude-executable.js";
 import { buildOrcMcpServers, isImplicitOrcTool, withOrcAllowedTools } from "./orc-mcp.js";
 import { registerBackend } from "./registry.js";
+import { createRulesHook } from "./rules-hook.js";
 import type {
   AgentBackend,
   AgentEvent,
@@ -81,24 +82,44 @@ class ClaudeSDKSession implements AgentSession {
         resume: this.runtimeSessionId,
       });
 
+      const rulesHook = this.opts.ruleGuard
+        ? createRulesHook(this.opts.ruleGuard, this.opts.cwd, (event) => this.push(event))
+        : undefined;
+
       const q = query({
         prompt,
         options: {
           ...resolveClaudeSdkLaunch(),
           cwd: this.opts.cwd,
+          ...(rulesHook
+            ? {
+                hooks: {
+                  PreToolUse: [{ hooks: [rulesHook], timeout: 10 }],
+                  PostToolUse: [{ hooks: [rulesHook], timeout: 10 }],
+                  PostToolUseFailure: [{ hooks: [rulesHook], timeout: 10 }],
+                  SessionStart: [{ hooks: [rulesHook], timeout: 10 }],
+                  SessionEnd: [{ hooks: [rulesHook], timeout: 10 }],
+                },
+              }
+            : {}),
           permissionMode,
-          settingSources: this.opts.toolAllowlist !== undefined ? [] : ["user", "project"],
+          settingSources:
+            this.opts.toolAllowlist !== undefined || this.opts.ruleGuard ? [] : ["user", "project"],
           ...(this.opts.toolAllowlist !== undefined
             ? {
                 tools: this.opts.toolAllowlist,
                 mcpServers: buildOrcMcpServers(),
                 allowedTools: withOrcAllowedTools(this.opts.toolAllowlist),
               }
-            : {}),
+            : this.opts.ruleGuard
+              ? { mcpServers: buildOrcMcpServers() }
+              : {}),
           systemPrompt: {
             type: "preset",
             preset: "claude_code",
-            append: [ORC_SYSTEM_CONTEXT, this.opts.systemPromptAppend].filter(Boolean).join("\n\n"),
+            append: [ORC_SYSTEM_CONTEXT, this.opts.systemPromptAppend, this.opts.ruleGuard?.context]
+              .filter(Boolean)
+              .join("\n\n"),
           },
           ...(this.abortController ? { abortController: this.abortController } : {}),
           canUseTool: async (toolName, input) => {

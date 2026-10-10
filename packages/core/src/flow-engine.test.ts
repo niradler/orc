@@ -55,6 +55,27 @@ function drive(
   return { state: step.state, trail };
 }
 
+describe("orc-evidence-review", () => {
+  const flow = builtin("orc-evidence-review");
+  for (const [outcome, status] of [
+    ["approved", "done"],
+    ["changes_requested", "changes_requested"],
+    ["insufficient_evidence", "paused"],
+  ] as const) {
+    test(`routes ${outcome} without an unbounded retry`, () => {
+      const result = drive(flow, () => ({ outcome }));
+      expect(result.state.status).toBe("completed");
+      expect(result.state.task_status).toBe(status);
+      expect(result.trail).toEqual(["review"]);
+    });
+  }
+  test("reviewer failure pauses rather than approving", () => {
+    expect(drive(flow, () => ({ error: "Evaluator unavailable" })).state.task_status).toBe(
+      "paused",
+    );
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Conditions
 // ---------------------------------------------------------------------------

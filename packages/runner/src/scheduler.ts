@@ -5,6 +5,7 @@ import { comments, job_runs, jobs } from "@orc/db/schema";
 import { Cron } from "croner";
 import { desc, eq } from "drizzle-orm";
 import { executeJob } from "./executor.js";
+import { drainRuleActions, reconcileRuleActions } from "./rule-actions.js";
 import { startWatcher, stopWatcher } from "./watcher.js";
 
 const logger = createLogger("runner:scheduler");
@@ -14,6 +15,7 @@ const activeTimers = new Map<string, Timer>();
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 let checkpointInterval: ReturnType<typeof setInterval> | null = null;
 let running = false;
+let ruleInterval: ReturnType<typeof setInterval> | null = null;
 
 const WAL_CHECKPOINT_INTERVAL_MS = 60 * 60 * 1000; // hourly
 
@@ -22,6 +24,10 @@ const HISTORY_RETENTION_DAYS = 7;
 
 export async function startScheduler(): Promise<void> {
   running = true;
+  reconcileRuleActions();
+  ruleInterval = setInterval(() => {
+    void drainRuleActions();
+  }, 2000);
   const db = getDb();
   const allJobs = await db.query.jobs.findMany({
     where: eq(jobs.enabled, true),
@@ -273,6 +279,8 @@ export function syncJob(job: typeof jobs.$inferSelect): void {
 }
 
 export function stopScheduler(): void {
+  if (ruleInterval) clearInterval(ruleInterval);
+  ruleInterval = null;
   running = false;
   for (const [, cron] of activeCrons) cron.stop();
   activeCrons.clear();

@@ -32,6 +32,7 @@
     "@orc/agent-runtime": "workspace:*",
     "@orc/api": "workspace:*",
     "@orc/core": "workspace:*",
+    "@orc/db": "workspace:*",
     "@orc/gateway": "workspace:*",
     "@orc/mcp": "workspace:*",
     "@orc/runner": "workspace:*",

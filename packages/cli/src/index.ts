@@ -12,6 +12,7 @@ import { jobCommand } from "./commands/job.js";
 import { kbCommand } from "./commands/kb.js";
 import { memCommand } from "./commands/mem.js";
 import { projectCommand } from "./commands/project.js";
+import { rulesCommand } from "./commands/rules.js";
 import { schemaCommand } from "./commands/schema.js";
 import { sessionCommand } from "./commands/session.js";
 import { skillCommand } from "./commands/skill.js";
@@ -65,6 +66,7 @@ const program = new Command()
 
 program.addCommand(taskCommand());
 program.addCommand(wikiCommand());
+program.addCommand(rulesCommand());
 program.addCommand(projectCommand());
 program.addCommand(memCommand());
 program.addCommand(jobCommand());

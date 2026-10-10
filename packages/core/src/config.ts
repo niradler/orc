@@ -132,6 +132,8 @@ export const OrcConfigSchema = z.object({
     })
     .default({ db_path: "~/.orc/knowledge.db", default_limit: 10, search_mode: "lexical" }),
 
+  rules: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
+
   wiki: z
     .object({
       min_evaluation_cases: z.number().int().min(2).max(1000).default(10),
@@ -236,6 +238,8 @@ function deepMerge(
 
 function fromEnv(): Record<string, unknown> {
   const env: Record<string, unknown> = {};
+  if (process.env.ORC_RULES_ENABLED !== undefined)
+    env.rules = { enabled: process.env.ORC_RULES_ENABLED === "true" };
   if (process.env.ORC_ACTIVE_PROJECT !== undefined)
     env.activeProject = process.env.ORC_ACTIVE_PROJECT;
 

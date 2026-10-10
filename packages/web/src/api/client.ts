@@ -1,3 +1,5 @@
+import type { RulePolicy, RuleRevision } from "@orc/core/rule-types";
+
 // Browser-compatible ORC API client.
 // Types imported from @orc/sdk for end-to-end type safety.
 // Dev: Vite proxies /api/* → http://localhost:7701/api/*
@@ -266,6 +268,33 @@ async function req<T>(
 // ---- API client ----
 
 export const api = {
+  rules: {
+    list: () =>
+      req<{
+        enabled: boolean;
+        history: RuleRevision[];
+        decisions: {
+          id: string;
+          revision_id: string;
+          session_id: string;
+          phase: string;
+          tool: string | null;
+          result: string;
+          created_at: number;
+        }[];
+        actions: {
+          id: string;
+          job_id: string;
+          status: string;
+          run_id: string | null;
+          error: string | null;
+        }[];
+      }>("GET", "/rules"),
+    activate: (policy: RulePolicy, expected_id: string | null, reason: string) =>
+      req<RuleRevision>("POST", "/rules/activate", { policy, expected_id, reason }),
+    revert: (id: string, reason: string) =>
+      req<RuleRevision>("POST", "/rules/revert", { id, reason }),
+  },
   evolution: {
     history: (project_id?: string) =>
       req<{ history: SkillActivation[] }>("GET", "/skills/evolution", undefined, { project_id }),

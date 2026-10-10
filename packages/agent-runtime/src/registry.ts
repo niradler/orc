@@ -1,3 +1,4 @@
+import { sessionRules } from "./rules.js";
 import type { AgentBackend, AgentBackendName } from "./types.js";
 
 const registry = new Map<AgentBackendName, () => AgentBackend>();
@@ -19,7 +20,15 @@ export function registerBackend(name: AgentBackendName, factory: () => AgentBack
  */
 export function createBackend(name: AgentBackendName): AgentBackend {
   const factory = registry.get(name);
-  if (factory) return factory();
+  if (factory) {
+    const backend = factory();
+    return {
+      ...backend,
+      startSession: async (opts) => backend.startSession(await sessionRules(String(name), opts)),
+      resumeSession: async (id, opts) =>
+        backend.resumeSession(id, await sessionRules(String(name), opts)),
+    };
+  }
   throw new Error(
     `No agent backend registered for "${name}". Registered: ${listRegisteredBackends().join(", ")}. ` +
       "To reach an agent through acpx, pass it as the agent name instead of the backend.",
