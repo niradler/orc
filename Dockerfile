@@ -35,7 +35,7 @@ WORKDIR /app
 RUN addgroup -S orc && adduser -S -G orc orc
 
 # Minimal runtime OS packages — tini for correct signal forwarding + PID 1
-RUN apk add --no-cache tini curl
+RUN apk add --no-cache tini curl openssh-client
 
 # Copy only the runtime artifacts from the builder
 COPY --from=builder --chown=orc:orc /app/node_modules   ./node_modules

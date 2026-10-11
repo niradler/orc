@@ -1,3 +1,10 @@
+import {
+  type ExecHost,
+  hostBinary,
+  hostExec,
+  hostSpawn,
+  resolveExecHost,
+} from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { endStdin, readLines, writeToStdin } from "./io.js";
@@ -75,10 +82,16 @@ function buildClaudeEnv(): Record<string, string> {
   return env;
 }
 
-function findClaudeCli(): string | null {
-  const found = Bun.which("claude");
+async function findClaudeCli(host: ExecHost): Promise<string | null> {
+  const found = await hostBinary(host, "claude");
   if (!found) return null;
   return found.replaceAll("\\", "/");
+}
+
+function claudeMissing(host: ExecHost): string {
+  return host.kind === "ssh"
+    ? `claude CLI not found on ${host.alias} (npm i -g @anthropic-ai/claude-code there)`
+    : "claude CLI not found on PATH";
 }
 
 function isAuthError(text: string): boolean {
@@ -95,6 +108,7 @@ class ClaudeSession implements AgentSession {
   readonly id = ulid();
 
   private proc: ReturnType<typeof Bun.spawn> | null = null;
+  private killProc: (() => void) | null = null;
   private readonly eventQueue: AgentEvent[] = [];
   private resolveNext: (() => void) | null = null;
   private done = false;
@@ -111,8 +125,10 @@ class ClaudeSession implements AgentSession {
   private readonly autoApprove: boolean;
   private readonly model: string | undefined;
   private readonly toolAllowlist: string[] | undefined;
+  private readonly host: ExecHost;
 
-  constructor(opts: SessionOpts, claudePath: string) {
+  constructor(opts: SessionOpts, claudePath: string, host: ExecHost) {
+    this.host = host;
     this.cwd = opts.cwd;
     this.runtimeSessionId = opts.runtimeSessionId;
     this.claudePath = claudePath;
@@ -128,9 +144,9 @@ class ClaudeSession implements AgentSession {
     this.mcpConfig = null;
   }
 
-  private spawn(extraArgs: string[] = [], printPrompt?: string | undefined): void {
+  private async spawn(extraArgs: string[] = [], printPrompt?: string | undefined): Promise<void> {
     this.releaseMcpConfig();
-    if (this.toolAllowlist !== undefined) this.mcpConfig = writeOrcMcpConfigFile();
+    if (this.toolAllowlist !== undefined) this.mcpConfig = await writeOrcMcpConfigFile(this.host);
     const args = [
       this.claudePath,
       "-p",
@@ -156,14 +172,15 @@ class ClaudeSession implements AgentSession {
       ...extraArgs,
     ];
 
-    this.proc = Bun.spawn({
-      cmd: args,
+    const handle = await hostSpawn(this.host, args, {
       cwd: this.cwd,
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
       env: buildClaudeEnv(),
     });
+    this.proc = handle.proc;
+    this.killProc = handle.kill;
 
     if (this.proc.stdout) {
       void readLines(this.proc.stdout, (line) => {
@@ -274,7 +291,13 @@ class ClaudeSession implements AgentSession {
     if (this.state.hasReceivedResult || this.done) return;
     const stderr = this.stderrRing.join("\n");
     if (isAuthError(stderr)) {
-      this.push({ type: "error", data: "Authentication failed - check ANTHROPIC_API_KEY" });
+      this.push({
+        type: "error",
+        data:
+          this.host.kind === "ssh"
+            ? `Authentication failed on ${this.host.alias} - run claude login there or set ANTHROPIC_API_KEY where orc runs`
+            : "Authentication failed - check ANTHROPIC_API_KEY",
+      });
     } else if (code !== 0) {
       const msg = stderr.trim() || `claude exited with code ${code}`;
       this.push({ type: "error", data: msg });
@@ -304,7 +327,7 @@ class ClaudeSession implements AgentSession {
     this.state.hasReceivedResult = false;
     this.state.hasStreamedText = false;
     this.eventQueue.length = 0;
-    this.spawn(resumeArgs, prompt);
+    await this.spawn(resumeArgs, prompt);
   }
 
   respondPermission(requestId: string, result: PermissionResult): void {
@@ -340,7 +363,7 @@ class ClaudeSession implements AgentSession {
   async close(): Promise<void> {
     if (!this.proc) return;
     endStdin(this.proc.stdin);
-    const timer = setTimeout(() => this.proc?.kill(), GRACE_TIMEOUT_MS);
+    const timer = setTimeout(() => this.killProc?.(), GRACE_TIMEOUT_MS);
     try {
       await this.proc.exited;
     } finally {
@@ -348,6 +371,7 @@ class ClaudeSession implements AgentSession {
       this.releaseMcpConfig();
     }
     this.proc = null;
+    this.killProc = null;
     this.done = true;
     this.resolveNext?.();
     this.resolveNext = null;
@@ -359,47 +383,53 @@ function createClaudeBackend(): AgentBackend {
     name: "claude-cli",
     profileCapabilities: { model: true, toolAllowlist: true },
 
-    describe(): BackendDescription {
-      const path = findClaudeCli();
+    async describe(): Promise<BackendDescription> {
+      const host = resolveExecHost();
+      const path = await findClaudeCli(host).catch(() => null);
       return {
         kind: "cli",
-        requires: "the claude CLI on PATH (npm i -g @anthropic-ai/claude-code)",
-        target: path ?? null,
-        source: path ? "path" : null,
+        requires:
+          host.kind === "ssh"
+            ? `the claude CLI on ${host.alias}`
+            : "the claude CLI on PATH (npm i -g @anthropic-ai/claude-code)",
+        target: path && host.kind === "ssh" ? `${host.alias}:${path}` : (path ?? null),
+        source: path ? (host.kind === "ssh" ? "ssh" : "path") : null,
         version: null,
       };
     },
 
     async preflight() {
-      const path = findClaudeCli();
-      if (!path) return { ok: false, error: "claude CLI not found on PATH" };
+      const host = resolveExecHost();
       try {
-        const proc = Bun.spawn({ cmd: [path, "--version"], stdout: "pipe", stderr: "pipe" });
-        const out = await new Response(proc.stdout).text();
-        await proc.exited;
-        if (proc.exitCode !== 0) return { ok: false, error: "claude --version failed" };
+        const path = await findClaudeCli(host);
+        if (!path) return { ok: false, error: claudeMissing(host) };
+        const result = await hostExec(host, [path, "--version"], { timeoutMs: 30_000 });
+        const out = result.stdout;
+        if (result.code !== 0) return { ok: false, error: "claude --version failed" };
         const match = /(\d+)\./.exec(out);
         const major = match ? Number(match[1]) : 0;
         if (major < 2)
           return { ok: false, error: `claude CLI too old (${out.trim()}), need >= 2.x` };
         return { ok: true };
       } catch (err) {
-        return { ok: false, error: String(err) };
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
     },
 
     async startSession(opts) {
-      const path = findClaudeCli();
-      if (!path) throw new Error("claude CLI not found on PATH");
-      const session = new ClaudeSession(opts, path);
+      const host = resolveExecHost();
+      const path = await findClaudeCli(host);
+      if (!path) throw new Error(claudeMissing(host));
+      const session = new ClaudeSession(opts, path, host);
       await session.start(opts);
       return session;
     },
 
     async resumeSession(runtimeSessionId, opts) {
-      const path = findClaudeCli();
-      if (!path) throw new Error("claude CLI not found on PATH");
-      const session = new ClaudeSession({ ...opts, runtimeSessionId }, path);
+      const host = resolveExecHost();
+      const path = await findClaudeCli(host);
+      if (!path) throw new Error(claudeMissing(host));
+      const session = new ClaudeSession({ ...opts, runtimeSessionId }, path, host);
       await session.start({ ...opts, runtimeSessionId });
       return session;
     },

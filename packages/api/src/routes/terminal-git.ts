@@ -1,6 +1,7 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
+import type { ExecHost } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { checkoutFiles, saveCheckoutFile } from "../git/files.js";
 import { checkoutGithubFeed } from "../git/github.js";
@@ -8,21 +9,21 @@ import { commitStaged, gitDiff, gitStatus, stageFiles, switchBranch } from "../g
 import { worktreeDeps } from "../git/registry.js";
 import { trackedWorktrees } from "../git/worktrees.js";
 import {
-  getTerminalManager,
   launchDeps,
   requireTerminals,
   sessionDirDeps,
+  terminalHost,
 } from "../terminals/service.js";
 import { prepareSessionDirectory } from "../terminals/session-dir.js";
 import { WorktreeSchema } from "./git.js";
 
 const app = new OpenAPIHono();
 const params = z.object({ id: z.string().min(1) });
-function folder(id: string): string {
+function folder(id: string): { host: ExecHost; cwd: string } {
   requireTerminals(loadConfig());
-  const cwd = getTerminalManager().get(id).cwd;
+  const { host, cwd } = terminalHost(id);
   if (!cwd) throw new ValidationError("Terminal has no working directory");
-  return cwd;
+  return { host, cwd };
 }
 const FileSchema = z.object({
   path: z.string(),
@@ -56,7 +57,8 @@ app.openapi(
   }),
   async (c) => {
     const body = c.req.valid("json");
-    await saveCheckoutFile(folder(c.req.valid("param").id), body.path, body.content, body.original);
+    const { host, cwd } = folder(c.req.valid("param").id);
+    await saveCheckoutFile(host, cwd, body.path, body.content, body.original);
     return c.body(null, 204);
   },
 );
@@ -87,8 +89,10 @@ app.openapi(
       },
     },
   }),
-  async (c) =>
-    c.json(await checkoutFiles(folder(c.req.valid("param").id), c.req.valid("query").path), 200),
+  async (c) => {
+    const { host, cwd } = folder(c.req.valid("param").id);
+    return c.json(await checkoutFiles(host, cwd, c.req.valid("query").path), 200);
+  },
 );
 app.openapi(
   createRoute({
@@ -107,7 +111,8 @@ app.openapi(
     responses: { 204: { description: "Switched" } },
   }),
   async (c) => {
-    await switchBranch(folder(c.req.valid("param").id), c.req.valid("json").branch);
+    const { host, cwd } = folder(c.req.valid("param").id);
+    await switchBranch(host, cwd, c.req.valid("json").branch);
     return c.body(null, 204);
   },
 );
@@ -147,7 +152,10 @@ app.openapi(
       },
     },
   }),
-  async (c) => c.json(await checkoutGithubFeed(folder(c.req.valid("param").id)), 200),
+  async (c) => {
+    const { host, cwd } = folder(c.req.valid("param").id);
+    return c.json(await checkoutGithubFeed(host, cwd), 200);
+  },
 );
 app.openapi(
   createRoute({
@@ -172,7 +180,10 @@ app.openapi(
       },
     },
   }),
-  async (c) => c.json(await gitStatus(folder(c.req.valid("param").id)), 200),
+  async (c) => {
+    const { host, cwd } = folder(c.req.valid("param").id);
+    return c.json(await gitStatus(host, cwd), 200);
+  },
 );
 app.openapi(
   createRoute({
@@ -197,11 +208,11 @@ app.openapi(
     },
   }),
   async (c) => {
-    const cwd = folder(c.req.valid("param").id);
+    const { host, cwd } = folder(c.req.valid("param").id);
     const query = c.req.valid("query");
-    if (query.path && !(await gitStatus(cwd)).files.some((file) => file.path === query.path))
+    if (query.path && !(await gitStatus(host, cwd)).files.some((file) => file.path === query.path))
       throw new ValidationError("Path is not in this checkout's status");
-    return c.json(await gitDiff(cwd, query.staged === "1", query.path), 200);
+    return c.json(await gitDiff(host, cwd, query.staged === "1", query.path), 200);
   },
 );
 app.openapi(
@@ -222,7 +233,10 @@ app.openapi(
       },
     },
   }),
-  async (c) => c.json(await trackedWorktrees(folder(c.req.valid("param").id), worktreeDeps()), 200),
+  async (c) => {
+    const { host, cwd } = folder(c.req.valid("param").id);
+    return c.json(await trackedWorktrees(cwd, worktreeDeps(host)), 200);
+  },
 );
 app.openapi(
   createRoute({
@@ -243,7 +257,8 @@ app.openapi(
     responses: { 204: { description: "Staged" } },
   }),
   async (c) => {
-    await stageFiles(folder(c.req.valid("param").id), c.req.valid("json").paths);
+    const { host, cwd } = folder(c.req.valid("param").id);
+    await stageFiles(host, cwd, c.req.valid("json").paths);
     return c.body(null, 204);
   },
 );
@@ -266,7 +281,8 @@ app.openapi(
     responses: { 204: { description: "Committed" } },
   }),
   async (c) => {
-    await commitStaged(folder(c.req.valid("param").id), c.req.valid("json").message);
+    const { host, cwd } = folder(c.req.valid("param").id);
+    await commitStaged(host, cwd, c.req.valid("json").message);
     return c.body(null, 204);
   },
 );
@@ -285,9 +301,9 @@ app.openapi(
     },
   }),
   async (c) => {
-    const cwd = folder(c.req.valid("param").id);
-    if (!(await gitStatus(cwd)).root) throw new ValidationError("Not a git repository");
-    const deps = sessionDirDeps(launchDeps(loadConfig()));
+    const { host, cwd } = folder(c.req.valid("param").id);
+    if (!(await gitStatus(host, cwd)).root) throw new ValidationError("Not a git repository");
+    const deps = sessionDirDeps(await launchDeps(loadConfig(), host), host);
     return c.json(
       { path: await prepareSessionDirectory({ cwd, worktree: true }, { ...deps, newId: ulid }) },
       201,

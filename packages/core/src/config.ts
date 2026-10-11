@@ -1,6 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 
 const ChannelDefaultModeSchema = z
@@ -83,6 +83,20 @@ export const OrcConfigSchema = z.object({
       allow_without_secret: z.boolean().default(false),
     })
     .default({ enabled: true, max: 8, scrollback_bytes: 524288, allow_without_secret: false }),
+
+  ssh: z
+    .object({
+      host: z
+        .string()
+        .regex(
+          /^[A-Za-z0-9_.@][A-Za-z0-9_.@-]*$/,
+          "ssh.host must be a Host alias from ~/.ssh/config",
+        )
+        .optional(),
+      remote_port: z.number().int().min(1).max(65535).optional(),
+      connect_timeout_secs: z.number().int().min(1).max(120).default(10),
+    })
+    .default({ connect_timeout_secs: 10 }),
 
   mcp: z
     .object({
@@ -262,6 +276,11 @@ function fromEnv(): Record<string, unknown> {
     );
   if (Object.keys(terminals).length) env.terminals = terminals;
 
+  const ssh: Record<string, unknown> = {};
+  if (process.env.ORC_SSH_HOST !== undefined) ssh.host = process.env.ORC_SSH_HOST || undefined;
+  if (process.env.ORC_SSH_REMOTE_PORT) ssh.remote_port = Number(process.env.ORC_SSH_REMOTE_PORT);
+  if (Object.keys(ssh).length) env.ssh = ssh;
+
   const runner: Record<string, unknown> = {};
   if (process.env.ORC_RUNNER_TIMEOUT)
     runner.default_timeout_secs = Number(process.env.ORC_RUNNER_TIMEOUT);
@@ -352,11 +371,11 @@ let _config: OrcConfig | null = null;
 export function loadConfig(overrides?: Partial<OrcConfig>): OrcConfig {
   if (_config && !overrides) return _config;
 
-  const globalConfigPath = join(homedir(), ".orc", "config.json");
+  const globalPath = globalConfigPath();
   const localConfigPath = join(process.cwd(), ".orc", "config.json");
 
   let raw: Record<string, unknown> = {};
-  if (existsSync(globalConfigPath)) raw = deepMerge(raw, loadJsonFile(globalConfigPath));
+  if (existsSync(globalPath)) raw = deepMerge(raw, loadJsonFile(globalPath));
   if (existsSync(localConfigPath)) raw = deepMerge(raw, loadJsonFile(localConfigPath));
   raw = deepMerge(raw, fromEnv());
   if (overrides) raw = deepMerge(raw, overrides as Record<string, unknown>);
@@ -380,4 +399,27 @@ export function loadConfig(overrides?: Partial<OrcConfig>): OrcConfig {
 
 export function resetConfig(): void {
   _config = null;
+}
+
+export function globalConfigPath(): string {
+  return join(homedir(), ".orc", "config.json");
+}
+
+export function updateGlobalConfig(mutate: (raw: Record<string, unknown>) => void): OrcConfig {
+  const path = globalConfigPath();
+  let raw: Record<string, unknown> = {};
+  if (existsSync(path)) {
+    try {
+      raw = JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
+    } catch {
+      throw new Error(`Refusing to rewrite ${path}: it is not valid JSON`);
+    }
+  }
+  mutate(raw);
+  mkdirSync(dirname(path), { recursive: true });
+  const temp = `${path}.${process.pid}.tmp`;
+  writeFileSync(temp, `${JSON.stringify(raw, null, 2)}\n`, { mode: 0o600 });
+  renameSync(temp, path);
+  resetConfig();
+  return loadConfig();
 }

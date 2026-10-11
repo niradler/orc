@@ -5,6 +5,7 @@
 
 import type { AgentFull } from "@orc/core/agent-service";
 import { readAgent, renderAgentInstructions } from "@orc/core/agent-service";
+import { resolveExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
 import { packageInstructionsForAgent } from "@orc/core/package-service";
 import { createBackend, hasBackend } from "./registry.js";
@@ -34,6 +35,9 @@ async function resolveBackend(
     const preflight = await claudeBackend.preflight();
     if (preflight.ok) {
       return { backend: claudeBackend, resolvedOpts: opts };
+    }
+    if (resolveExecHost().kind === "ssh") {
+      throw new Error(preflight.error ?? "Claude SDK preflight failed");
     }
     logger.warn("Claude SDK preflight failed, falling back to ACPX", { error: preflight.error });
     // fall through to ACPX

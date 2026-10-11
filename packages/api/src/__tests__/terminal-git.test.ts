@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { LOCAL_HOST } from "@orc/core/exec-host";
 import { gitStatus, parseStatus } from "../git/panel.js";
 import { listWorktrees } from "../git/worktrees.js";
 import { shutdownTerminals } from "../terminals/service.js";
@@ -57,7 +58,7 @@ describe("terminal git panel", () => {
     const index = join(checkout, ".git", "index");
     const before = readFileSync(index);
     utimesSync(file, new Date(0), new Date(0));
-    expect((await gitStatus(checkout)).files).toEqual([]);
+    expect((await gitStatus(LOCAL_HOST, checkout)).files).toEqual([]);
     expect(readFileSync(index)).toEqual(before);
     expect(
       (await listWorktrees(checkout, { runGit, platform: process.platform })).worktrees[0]?.dirty,
@@ -142,10 +143,10 @@ describe("terminal git panel", () => {
     await runGit(["git", "-C", repo, "branch", "feature"]);
     const route = `/terminals/${terminalId}/git/switch`;
     expect((await req(app, "POST", route, { branch: "feature" })).status).toBe(204);
-    expect((await gitStatus(repo)).branch).toBe("feature");
+    expect((await gitStatus(LOCAL_HOST, repo)).branch).toBe("feature");
     writeFileSync(join(repo, "file.txt"), "pending change\n");
     expect((await req(app, "POST", route, { branch: "main" })).status).toBe(400);
-    expect((await gitStatus(repo)).branch).toBe("feature");
+    expect((await gitStatus(LOCAL_HOST, repo)).branch).toBe("feature");
     expect((await req(app, "POST", route, { branch: "--detach" })).status).toBe(400);
     writeFileSync(join(repo, "file.txt"), "before\n");
     expect((await req(app, "POST", route, { branch: "main" })).status).toBe(204);
@@ -191,7 +192,9 @@ describe("terminal git panel", () => {
       (await req(app, "POST", `/terminals/${terminalId}/git/commit`, { message: "panel commit" }))
         .status,
     ).toBe(204);
-    expect((await gitStatus(repo)).files.map((file) => file.path)).toEqual(["keep.txt"]);
+    expect((await gitStatus(LOCAL_HOST, repo)).files.map((file) => file.path)).toEqual([
+      "keep.txt",
+    ]);
   });
   test("should persist and clear task checkout and GitHub links through detail and list APIs", async () => {
     const created = await req(app, "POST", "/tasks", {
@@ -228,7 +231,7 @@ describe("terminal git panel", () => {
     expect(
       (await req(app, "POST", `/terminals/${id}/git/stage`, { paths: ["literal[1].txt"] })).status,
     ).toBe(204);
-    const status = await gitStatus(repo);
+    const status = await gitStatus(LOCAL_HOST, repo);
     expect(status.files.find((file) => file.path === "literal[1].txt")?.index).toBe("A");
     expect(status.files.find((file) => file.path === "literal1.txt")?.index).toBe("?");
     const diff = await req(

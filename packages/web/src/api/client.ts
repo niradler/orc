@@ -142,6 +142,7 @@ export type Terminal = {
   exit_code: number | null;
   pid: number | null;
   live_session_id: string | null;
+  host: string | null;
   created_at: string;
 };
 
@@ -150,7 +151,37 @@ export type TerminalsInfo = {
   ready: boolean;
   reason: string | null;
   launchers: TerminalKind[];
+  host: string | null;
   terminals: Terminal[];
+};
+
+export type HostDirectoryListing = {
+  host: string | null;
+  path: string;
+  parent: string | null;
+  directories: string[];
+};
+
+export type SshState = {
+  host: string | null;
+  remote_port: number;
+  hosts: string[];
+  locked: boolean;
+  supported: boolean;
+  unsupported_reason: string | null;
+  secret_set: boolean;
+};
+
+export type SshTest = {
+  ok: boolean;
+  host: string;
+  error: string | null;
+  os: string | null;
+  home: string | null;
+  shell: string | null;
+  binaries: Record<string, string | null>;
+  claude_logged_in: boolean | null;
+  api_key_forwarded: boolean;
 };
 
 export type CreateTerminalInput = {
@@ -629,6 +660,15 @@ export const api = {
       ),
     pickFolder: (initial?: string) =>
       req<{ path: string | null }>("POST", "/terminals/pick-folder", initial ? { initial } : {}),
+    browse: (path?: string) =>
+      req<HostDirectoryListing>("GET", "/terminals/browse", undefined, { path }),
+  },
+
+  ssh: {
+    get: () => req<SshState>("GET", "/ssh"),
+    select: (host: string | null, remote_port?: number | null) =>
+      req<SshState>("PUT", "/ssh", { host, ...(remote_port !== undefined ? { remote_port } : {}) }),
+    test: (host?: string) => req<SshTest>("POST", "/ssh/test", host ? { host } : {}),
   },
 
   git: {

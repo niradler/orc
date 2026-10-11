@@ -23,6 +23,7 @@ import { retrievalRouter } from "./routes/retrieval.js";
 import { rulesRouter } from "./routes/rules.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import { skillsRouter } from "./routes/skills.js";
+import { sshRouter } from "./routes/ssh.js";
 import { tagsRouter } from "./routes/tags.js";
 import { taskLinksRouter } from "./routes/task-links.js";
 import { tasksRouter } from "./routes/tasks.js";
@@ -63,6 +64,7 @@ export function createApp() {
   });
 
   app.route("/api", backendsRouter);
+  app.route("/api", sshRouter);
   app.route("/api", chatRouter);
   app.route("/api", healthRouter);
   app.route("/api", mcpToolRouter);

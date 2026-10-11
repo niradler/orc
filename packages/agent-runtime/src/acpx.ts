@@ -1,6 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  type ExecHost,
+  hostBinary,
+  hostExec,
+  hostSpawn,
+  resolveExecHost,
+} from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { readLines } from "./io.js";
@@ -127,7 +134,7 @@ export function parseAcpxLine(line: string): AgentEvent | null {
 export type AcpxResolution = {
   cmd: string[];
   path: string;
-  source: "config" | "path" | "bundled";
+  source: "config" | "path" | "bundled" | "ssh";
 };
 
 /**
@@ -158,6 +165,18 @@ export function resolveAcpxCli(): AcpxResolution | null {
   if (bundled) return { cmd: interpreterFor(bundled), path: bundled, source: "bundled" };
 
   return null;
+}
+
+export async function resolveAcpx(host: ExecHost): Promise<AcpxResolution | null> {
+  if (host.kind === "local") return resolveAcpxCli();
+  const path = await hostBinary(host, "acpx");
+  return path ? { cmd: [path], path, source: "ssh" } : null;
+}
+
+export function acpxMissingMessage(host: ExecHost): string {
+  return host.kind === "ssh"
+    ? `acpx CLI not found on ${host.alias}. Install it there with \`npm install -g acpx\`.`
+    : ACPX_MISSING_MESSAGE;
 }
 
 function normalizePath(path: string): string {
@@ -217,6 +236,7 @@ class AcpxSession implements AgentSession {
   readonly id: string;
 
   private proc: ReturnType<typeof Bun.spawn> | null = null;
+  private killProc: (() => void) | null = null;
   private readonly eventQueue: AgentEvent[] = [];
   private resolveNext: (() => void) | null = null;
   private done = false;
@@ -229,9 +249,11 @@ class AcpxSession implements AgentSession {
   private readonly autoApprove: boolean;
   /** Spawn-ready prefix: either [binary] or [interpreter, cli.js]. */
   private readonly acpxCmd: string[];
+  private readonly host: ExecHost;
 
-  constructor(opts: SessionOpts, acpxCmd: string[]) {
+  constructor(opts: SessionOpts, acpxCmd: string[], host: ExecHost) {
     this.id = ulid();
+    this.host = host;
     this.agent = opts.acpxAgent ?? "claude";
     this.sessionName = opts.runtimeSessionId ?? `orc-${this.id}`;
     this.cwd = opts.cwd;
@@ -331,13 +353,14 @@ class AcpxSession implements AgentSession {
       cmd: `${args.slice(0, -1).join(" ")} <prompt>`,
     });
 
-    this.proc = Bun.spawn({
-      cmd: args,
+    const handle = await hostSpawn(this.host, args, {
       cwd: this.cwd,
       stdout: "pipe",
       stderr: "pipe",
       stdin: "ignore",
     });
+    this.proc = handle.proc;
+    this.killProc = handle.kill;
 
     logger.info("ACPX process started", { agent: this.agent, pid: this.proc.pid });
 
@@ -383,21 +406,21 @@ class AcpxSession implements AgentSession {
 
   async close(): Promise<void> {
     if (!this.proc) return;
-    this.proc.kill();
+    this.killProc?.();
     await this.proc.exited;
     this.proc = null;
+    this.killProc = null;
     this.done = true;
     this.resolveNext?.();
     this.resolveNext = null;
   }
 }
 
-async function acpxVersion(cmd: string[]): Promise<string | null> {
+async function acpxVersion(host: ExecHost, cmd: string[]): Promise<string | null> {
   try {
-    const proc = Bun.spawn({ cmd: [...cmd, "--version"], stdout: "pipe", stderr: "pipe" });
-    const [out] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-    if (proc.exitCode !== 0) return null;
-    return out.trim().split("\n")[0]?.trim() || null;
+    const result = await hostExec(host, [...cmd, "--version"], { timeoutMs: 30_000 });
+    if (result.code !== 0) return null;
+    return result.stdout.trim().split("\n")[0]?.trim() || null;
   } catch {
     return null;
   }
@@ -409,9 +432,15 @@ function createAcpxBackend(): AgentBackend {
     profileCapabilities: { model: true, toolAllowlist: false },
 
     async preflight() {
-      const resolved = resolveAcpxCli();
-      if (!resolved) return { ok: false, error: ACPX_MISSING_MESSAGE };
-      const version = await acpxVersion(resolved.cmd);
+      const host = resolveExecHost();
+      let resolved: AcpxResolution | null;
+      try {
+        resolved = await resolveAcpx(host);
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+      if (!resolved) return { ok: false, error: acpxMissingMessage(host) };
+      const version = await acpxVersion(host, resolved.cmd);
       if (!version) {
         return { ok: false, error: `Found acpx at ${resolved.path} but \`--version\` failed` };
       }
@@ -419,29 +448,37 @@ function createAcpxBackend(): AgentBackend {
     },
 
     async describe(): Promise<BackendDescription> {
-      const resolved = resolveAcpxCli();
+      const host = resolveExecHost();
+      const resolved = await resolveAcpx(host).catch(() => null);
       return {
         kind: "cli",
-        requires: "the acpx CLI (npm i -g acpx), or ORC_ACPX_PATH",
-        target: resolved?.path ?? null,
+        requires:
+          host.kind === "ssh"
+            ? `the acpx CLI on ${host.alias}`
+            : "the acpx CLI (npm i -g acpx), or ORC_ACPX_PATH",
+        target:
+          resolved && host.kind === "ssh"
+            ? `${host.alias}:${resolved.path}`
+            : (resolved?.path ?? null),
         source: resolved?.source ?? null,
-        version: resolved ? await acpxVersion(resolved.cmd) : null,
+        version: resolved ? await acpxVersion(host, resolved.cmd) : null,
       };
     },
 
     async startSession(opts) {
-      const resolved = resolveAcpxCli();
-      if (!resolved) throw new Error(ACPX_MISSING_MESSAGE);
-      const session = new AcpxSession(opts, resolved.cmd);
+      const host = resolveExecHost();
+      const resolved = await resolveAcpx(host);
+      if (!resolved) throw new Error(acpxMissingMessage(host));
+      const session = new AcpxSession(opts, resolved.cmd, host);
       await session.ensureSession();
       return session;
     },
 
     async resumeSession(runtimeSessionId, opts) {
-      const resolved = resolveAcpxCli();
-      if (!resolved) throw new Error(ACPX_MISSING_MESSAGE);
-      const session = new AcpxSession({ ...opts, runtimeSessionId }, resolved.cmd);
-      return session;
+      const host = resolveExecHost();
+      const resolved = await resolveAcpx(host);
+      if (!resolved) throw new Error(acpxMissingMessage(host));
+      return new AcpxSession({ ...opts, runtimeSessionId }, resolved.cmd, host);
     },
 
     async stop() {},

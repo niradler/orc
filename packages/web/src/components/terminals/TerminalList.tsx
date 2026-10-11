@@ -49,6 +49,14 @@ export function TerminalList({ terminals, activeId, onClose }: TerminalListProps
               <div className="flex items-center gap-1 font-label text-[10px] uppercase tracking-widest text-outline min-w-0">
                 <Icon size={10} className="shrink-0" />
                 <span className="shrink-0">{label}</span>
+                {terminal.host && (
+                  <span
+                    data-testid="terminal-item-host"
+                    className="shrink-0 normal-case tracking-normal text-primary"
+                  >
+                    @{terminal.host}
+                  </span>
+                )}
                 {tail && <span className="truncate normal-case tracking-normal">{tail}</span>}
               </div>
             </Link>
