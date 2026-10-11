@@ -1,3 +1,4 @@
+import { type ExecHost, hostBinary, hostSpawn, resolveExecHost } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { endStdin, readLines, writeToStdin } from "./io.js";
@@ -50,6 +51,7 @@ export class CodexSession implements AgentSession {
   readonly id = ulid();
 
   private proc: ReturnType<typeof Bun.spawn> | null = null;
+  private killProc: (() => void) | null = null;
   private readonly eventQueue: AgentEvent[] = [];
   private resolveNext: (() => void) | null = null;
   private done = false;
@@ -58,9 +60,11 @@ export class CodexSession implements AgentSession {
   private readonly permissionResolvers = new Map<string, (result: PermissionResult) => void>();
   private stderrLines: string[] = [];
   private readonly cwd: string;
+  private readonly host: ExecHost;
 
-  constructor(opts: SessionOpts) {
+  constructor(opts: SessionOpts, host: ExecHost = resolveExecHost()) {
     this.cwd = opts.cwd;
+    this.host = host;
     this.runtimeSessionId = opts.runtimeSessionId;
   }
 
@@ -70,14 +74,15 @@ export class CodexSession implements AgentSession {
     if (opts.model) args.push("--model", opts.model);
     args.push(prompt);
 
-    this.proc = Bun.spawn({
-      cmd: args,
+    const handle = await hostSpawn(this.host, args, {
       cwd: this.cwd,
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
       env: buildCodexEnv(),
     });
+    this.proc = handle.proc;
+    this.killProc = handle.kill;
 
     if (this.proc.stdout) {
       void readLines(this.proc.stdout, (line) => {
@@ -245,13 +250,14 @@ export class CodexSession implements AgentSession {
   async close(): Promise<void> {
     if (!this.proc) return;
     endStdin(this.proc.stdin);
-    const timer = setTimeout(() => this.proc?.kill(), GRACE_TIMEOUT_MS);
+    const timer = setTimeout(() => this.killProc?.(), GRACE_TIMEOUT_MS);
     try {
       await this.proc.exited;
     } finally {
       clearTimeout(timer);
     }
     this.proc = null;
+    this.killProc = null;
     this.done = true;
     this.resolveNext?.();
     this.resolveNext = null;
@@ -264,20 +270,29 @@ function createCodexBackend(): AgentBackend {
     profileCapabilities: { model: true, toolAllowlist: false },
 
     async preflight() {
-      const path = Bun.which("codex");
-      if (!path) {
-        return { ok: false, error: "codex CLI not found on PATH (npm i -g @openai/codex)" };
+      const host = resolveExecHost();
+      try {
+        if (await hostBinary(host, "codex")) return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
-      return { ok: true };
+      return {
+        ok: false,
+        error:
+          host.kind === "ssh"
+            ? `codex CLI not found on ${host.alias} (npm i -g @openai/codex there)`
+            : "codex CLI not found on PATH (npm i -g @openai/codex)",
+      };
     },
 
-    describe(): BackendDescription {
-      const path = Bun.which("codex");
+    async describe(): Promise<BackendDescription> {
+      const host = resolveExecHost();
+      const path = await hostBinary(host, "codex").catch(() => null);
       return {
         kind: "cli",
-        requires: "the codex CLI on PATH",
-        target: path ?? null,
-        source: path ? "path" : null,
+        requires: host.kind === "ssh" ? `the codex CLI on ${host.alias}` : "the codex CLI on PATH",
+        target: path && host.kind === "ssh" ? `${host.alias}:${path}` : (path ?? null),
+        source: path ? (host.kind === "ssh" ? "ssh" : "path") : null,
         version: null,
       };
     },

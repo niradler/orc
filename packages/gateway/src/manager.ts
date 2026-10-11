@@ -1,5 +1,5 @@
-import { existsSync } from "node:fs";
 import { loadConfig } from "@orc/core/config";
+import { hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
 import type { GatewayMode } from "@orc/core/types";
 import { executeJob } from "@orc/runner/executor";
@@ -373,7 +373,10 @@ class GatewayManager {
     },
     text: string,
   ): Promise<void> {
-    if (!session.cwd || !existsSync(session.cwd)) {
+    if (
+      !session.cwd ||
+      !(await hostIsDirectory(resolveExecHost(), session.cwd).catch(() => false))
+    ) {
       await this.sendText(message, "Set a working directory first: /cwd <absolute-path>");
       return;
     }

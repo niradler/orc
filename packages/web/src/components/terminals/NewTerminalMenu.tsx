@@ -8,6 +8,7 @@ import {
   type Worktree,
 } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { RemoteFolderBrowser } from "@/components/terminals/RemoteFolderBrowser";
 import { useRemoveWorktree, useWorktrees } from "@/hooks/useGit";
 import { cwdTail, TERMINAL_KINDS } from "@/lib/terminal-kinds";
 import {
@@ -24,6 +25,7 @@ interface NewTerminalMenuProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   launchers: TerminalKind[];
+  host: string | null;
   pending: boolean;
   error: string | null;
   onCreate: (input: CreateTerminalInput) => Promise<boolean>;
@@ -47,6 +49,7 @@ export function NewTerminalMenu({
   open,
   onOpenChange,
   launchers,
+  host,
   pending,
   error,
   onCreate,
@@ -56,6 +59,7 @@ export function NewTerminalMenu({
   const [cwd, setCwd] = useState(prefs.cwd);
   const [worktree, setWorktree] = useState(prefs.worktree);
   const [browsing, setBrowsing] = useState(false);
+  const [remoteBrowsing, setRemoteBrowsing] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [removal, setRemoval] = useState<Removal | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -89,8 +93,12 @@ export function NewTerminalMenu({
   };
 
   const browse = async (): Promise<string | null> => {
-    setBrowsing(true);
     setLocalError(null);
+    if (host) {
+      setRemoteBrowsing(true);
+      return null;
+    }
+    setBrowsing(true);
     try {
       const { path } = await api.terminals.pickFolder(cwd.trim() || undefined);
       if (path) chooseFolder(path);
@@ -175,6 +183,14 @@ export function NewTerminalMenu({
           <label className="block">
             <span className="font-label text-[10px] uppercase tracking-widest text-outline">
               Working directory
+              {host && (
+                <span
+                  data-testid="terminal-host"
+                  className="ml-1 px-1 rounded-sm bg-primary/15 text-primary normal-case tracking-normal"
+                >
+                  on {host}
+                </span>
+              )}
             </span>
             <div className="mt-1 flex gap-1">
               <input
@@ -199,6 +215,16 @@ export function NewTerminalMenu({
               </button>
             </div>
           </label>
+          {host && remoteBrowsing && (
+            <RemoteFolderBrowser
+              initial={cwd.trim()}
+              onPick={(path) => {
+                chooseFolder(path);
+                setRemoteBrowsing(false);
+              }}
+              onClose={() => setRemoteBrowsing(false)}
+            />
+          )}
           <label className="flex items-center gap-2 px-1 cursor-pointer select-none">
             <input
               type="checkbox"

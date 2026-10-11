@@ -276,6 +276,7 @@ export default function Terminals() {
       open={menuOpen}
       onOpenChange={setMenuOpen}
       launchers={info.launchers}
+      host={info.host}
       pending={creating}
       error={createError}
       onCreate={handleCreate}

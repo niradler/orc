@@ -1,7 +1,7 @@
-import { loadConfig } from "@orc/core/config";
+import { type ExecHost, hostIsDirectory, hostPlatform, resolveExecHost } from "@orc/core/exec-host";
 import { getDb } from "@orc/db/client";
-import { getTerminalManager, launchDeps } from "../terminals/service.js";
-import { runGit } from "../terminals/session-dir.js";
+import { getTerminalManager } from "../terminals/service.js";
+import { gitRunner } from "../terminals/session-dir.js";
 import {
   isInside,
   type RemoveWorktreeDeps,
@@ -22,18 +22,21 @@ export function rememberTerminalFolder(cwd: string | null): void {
   }
 }
 
-export function worktreeDeps(): RemoveWorktreeDeps {
+export function worktreeDeps(host: ExecHost = resolveExecHost()): RemoveWorktreeDeps {
+  const platform = hostPlatform(host);
+  const alias = host.kind === "ssh" ? host.alias : null;
   return {
-    runGit,
-    platform: process.platform,
+    runGit: gitRunner(host),
+    platform,
     terminalUsing: (path) =>
       getTerminalManager()
         .list()
         .find(
           (terminal) =>
             terminal.status === "running" &&
+            terminal.host === alias &&
             terminal.cwd &&
-            isInside(terminal.cwd, path, process.platform),
+            isInside(terminal.cwd, path, platform),
         )?.name ?? null,
   };
 }
@@ -42,6 +45,8 @@ export async function knownWorktrees(
   projectId?: string,
 ): Promise<{ repos: WorktreeListing[]; errors: { cwd: string; error: string }[] }> {
   const db = getDb();
+  const host = resolveExecHost();
+  const alias = host.kind === "ssh" ? host.alias : null;
   const projects = await db.query.projects.findMany();
   const live = await db.query.gateway_sessions.findMany({
     limit: 100,
@@ -55,6 +60,7 @@ export async function knownWorktrees(
         ...recentFolders,
         ...getTerminalManager()
           .list()
+          .filter((terminal) => terminal.host === alias)
           .map((terminal) => terminal.cwd),
       ];
   const repos: WorktreeListing[] = [];
@@ -64,20 +70,16 @@ export async function knownWorktrees(
       cwd: "Project repository",
       error: "This project has no folder scope. Set its folder in Projects or use All Projects.",
     });
-  const deps = worktreeDeps();
-  const launch = launchDeps(loadConfig());
+  const deps = worktreeDeps(host);
   for (const cwd of new Set(folders.filter((folder): folder is string => Boolean(folder)))) {
-    if (!launch.isDirectory(cwd)) {
+    if (!(await hostIsDirectory(host, cwd))) {
       errors.push({ cwd, error: "Folder is unavailable" });
       continue;
     }
     try {
       const listing = await trackedWorktrees(cwd, deps);
       const canonical = listing.worktrees.find((tree) => tree.main)?.path ?? listing.root;
-      if (
-        canonical &&
-        !repos.some((repo) => samePath(repo.root ?? "", canonical, process.platform))
-      )
+      if (canonical && !repos.some((repo) => samePath(repo.root ?? "", canonical, deps.platform)))
         repos.push({ ...listing, root: canonical });
     } catch {
       errors.push({ cwd, error: "Could not inspect repository" });

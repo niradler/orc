@@ -41,12 +41,17 @@ services:
       - ORC_API_HOST=0.0.0.0
       - ORC_AGENT_LOOP_DEFAULT_BACKEND=${ORC_AGENT_LOOP_DEFAULT_BACKEND:-agentapi}
       - AGENTAPI_URL=${AGENTAPI_URL:-http://host.docker.internal:3284}
+      # Run agents, terminals and git on an SSH host from the mounted ~/.ssh/config.
+      # Passed through only when set in your shell; the reverse tunnel needs ORC_API_SECRET.
+      - ORC_SSH_HOST
 
     volumes:
       # Persistent ORC data: SQLite DB, logs, sessions
       - orc-data:/data
       # Claude Code auth (needed only if using agentapi with claude agent on host)
       - ${HOME}/.claude:/home/orc/.claude:ro
+      # SSH config, keys and known_hosts for ORC_SSH_HOST (must already trust the host key)
+      - ${HOME}/.ssh:/home/orc/.ssh:ro
 
     restart: unless-stopped
     # Lets the container resolve host.docker.internal → the host machine

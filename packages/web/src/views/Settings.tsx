@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle, Save } from "lucide-react";
 import { useState } from "react";
 import { getApiSecret, getApiUrl } from "@/api/client";
+import { SshHostSettings } from "@/components/SshHostSettings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -83,6 +84,8 @@ export default function Settings() {
             </div>
           </div>
         </section>
+
+        <SshHostSettings />
 
         {/* Terminal */}
         <section>

@@ -2,6 +2,7 @@ import type { AgentSession } from "@orc/agent-runtime";
 import { openAgentSession } from "@orc/agent-runtime";
 import { readAgent } from "@orc/core/agent-service";
 import { loadConfig } from "@orc/core/config";
+import { resolveExecHost } from "@orc/core/exec-host";
 import type { FlowCondition, FlowDefinition, FlowNode, NumericOperand } from "@orc/core/flow";
 import { declaredOutcomes, resolvePlaceholder } from "@orc/core/flow";
 import type { FlowAction, FlowState, FlowStep } from "@orc/core/flow-engine";
@@ -1188,7 +1189,10 @@ async function spawnNodeSession(nodeRun: NodeRunRow): Promise<boolean> {
 
   const prev =
     nodeRun.resume_session === 1 ? previousNodeSession(nodeRun.flow_run_id, nodeRun.node_id) : null;
-  const cwd = projectScope(task.project_id) ?? prev?.cwd ?? process.cwd();
+  const cwd =
+    projectScope(task.project_id) ??
+    prev?.cwd ??
+    (resolveExecHost().kind === "ssh" ? "~" : process.cwd());
   const model =
     nodeModel(node, task) ?? (node.agent ? readAgent(node.agent, cwd)?.fields.model : undefined);
 
