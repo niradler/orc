@@ -65,7 +65,10 @@ async function makeTask(overrides?: Partial<typeof tasks.$inferInsert>): Promise
 }
 
 test("should retain the reported evaluator blocker in skill evaluation history", async () => {
-  const taskId = await makeTask({ skill_name: "orc-wiki", required_review: false });
+  const taskId = await makeTask({
+    skill_name: "orc-wiki",
+    required_review: false,
+  });
   const sqlite = getSqlite();
   const proposalId = ulid();
   sqlite
@@ -165,7 +168,11 @@ describe("startFlowForTask", () => {
 
     const runs = nodeRuns(taskId);
     expect(runs).toHaveLength(1);
-    expect(runs[0]).toMatchObject({ node_id: "build", node_kind: "agent", status: "pending" });
+    expect(runs[0]).toMatchObject({
+      node_id: "build",
+      node_kind: "agent",
+      status: "pending",
+    });
     // The node inherits the task's skill via the $task.skill_name placeholder.
     const skill = getSqlite()
       .query("SELECT skill_name FROM flow_node_runs WHERE id = ?")
@@ -245,7 +252,11 @@ describe("orc-default end to end", () => {
     // Queued for rework — `doing` only once the worker session is up.
     expect(taskStatus(taskId)).toBe("queued");
     const rebuild = activeNodeRun(taskId);
-    expect(rebuild).toMatchObject({ node_id: "build", attempt: 2, status: "pending" });
+    expect(rebuild).toMatchObject({
+      node_id: "build",
+      attempt: 2,
+      status: "pending",
+    });
 
     const run = getLatestFlowRunForTask(taskId);
     expect(run?.visits.build).toBe(2);
@@ -328,12 +339,19 @@ describe("orc-default end to end", () => {
   test("an outcome the node cannot route is rejected rather than halting the flow", async () => {
     const taskId = await makeTask();
     await startFlowForTask(taskId);
-    const result = await reportNodeOutcome({ taskId, nodeId: "build", outcome: "banana" });
+    const result = await reportNodeOutcome({
+      taskId,
+      nodeId: "build",
+      outcome: "banana",
+    });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toContain("not routable");
     // The node is untouched and still waiting.
-    expect(activeNodeRun(taskId)).toMatchObject({ node_id: "build", outcome: null });
+    expect(activeNodeRun(taskId)).toMatchObject({
+      node_id: "build",
+      outcome: null,
+    });
   });
 
   test("reporting without a node id is rejected while several nodes are active", async () => {
@@ -358,7 +376,12 @@ describe("a verdict survives a session that dies after reporting it", () => {
     await startFlowForTask(taskId);
     const build = activeNodeRun(taskId);
 
-    await reportNodeOutcome({ taskId, nodeId: "build", outcome: "submitted", summary: "done" });
+    await reportNodeOutcome({
+      taskId,
+      nodeId: "build",
+      outcome: "submitted",
+      summary: "done",
+    });
     await finishNodeRun(build.id, "error_max_turns");
 
     // Routed on the report, not on build.on_error (which would be `blocked`).
@@ -425,7 +448,12 @@ describe("recovery from infrastructure failure", () => {
     // Same node, same graph visit, new session — retries have their own
     // coordinate so a later visit to this node cannot collide with them.
     const retry = activeNodeRun(taskId);
-    expect(retry).toMatchObject({ node_id: "build", attempt: 1, retry: 1, status: "pending" });
+    expect(retry).toMatchObject({
+      node_id: "build",
+      attempt: 1,
+      retry: 1,
+      status: "pending",
+    });
     expect(taskStatus(taskId)).not.toBe("blocked");
     const run = getLatestFlowRunForTask(taskId);
     expect(run?.status).toBe("running");
@@ -539,7 +567,12 @@ describe("recovery from infrastructure failure", () => {
 
     // The graph's second visit to build must have a live row of its own.
     const rebuild = activeNodeRun(taskId);
-    expect(rebuild).toMatchObject({ node_id: "build", attempt: 2, retry: 0, status: "pending" });
+    expect(rebuild).toMatchObject({
+      node_id: "build",
+      attempt: 2,
+      retry: 0,
+      status: "pending",
+    });
     expect(getLatestFlowRunForTask(taskId)?.status).toBe("running");
     expect(getLatestFlowRunForTask(taskId)?.visits.build).toBe(2);
   });
@@ -601,7 +634,10 @@ describe("fan-out", () => {
       nodeId: "review_security",
       vars: { security_ok: true },
     });
-    await completeNode(taskId, "reviewed", { nodeId: "review_tests", vars: { tests_ok: true } });
+    await completeNode(taskId, "reviewed", {
+      nodeId: "review_tests",
+      vars: { tests_ok: true },
+    });
 
     expect(taskStatus(taskId)).toBe("done");
     expect(getLatestFlowRunForTask(taskId)?.status).toBe("completed");
@@ -620,8 +656,18 @@ describe("fan-out", () => {
         start: { kind: "gate", routing: "all" },
         a: { kind: "agent", skill: "orc-coder", outcomes: ["ok"] },
         b: { kind: "agent", skill: "orc-coder", outcomes: ["ok"] },
-        a2: { kind: "agent", skill: "orc-coder", task_status: "review", outcomes: ["ok"] },
-        b2: { kind: "agent", skill: "orc-coder", task_status: "doing", outcomes: ["ok"] },
+        a2: {
+          kind: "agent",
+          skill: "orc-coder",
+          task_status: "review",
+          outcomes: ["ok"],
+        },
+        b2: {
+          kind: "agent",
+          skill: "orc-coder",
+          task_status: "doing",
+          outcomes: ["ok"],
+        },
         join: { kind: "gate", join: { mode: "all", from: ["a2", "b2"] } },
         done: { kind: "terminal", task_status: "done" },
       },
@@ -644,7 +690,11 @@ describe("fan-out", () => {
 
     await Promise.all(
       first.map(async (branch) => {
-        await reportNodeOutcome({ taskId, nodeId: branch.node_id, outcome: "ok" });
+        await reportNodeOutcome({
+          taskId,
+          nodeId: branch.node_id,
+          outcome: "ok",
+        });
         await finishNodeRun(branch.id, null);
       }),
     );
@@ -660,7 +710,11 @@ describe("fan-out", () => {
 
     await Promise.all(
       second.map(async (branch) => {
-        await reportNodeOutcome({ taskId, nodeId: branch.node_id, outcome: "ok" });
+        await reportNodeOutcome({
+          taskId,
+          nodeId: branch.node_id,
+          outcome: "ok",
+        });
         await finishNodeRun(branch.id, null);
       }),
     );
@@ -720,7 +774,10 @@ describe("fan-out", () => {
       nodeId: "review_security",
       vars: { security_ok: false },
     });
-    await completeNode(taskId, "reviewed", { nodeId: "review_tests", vars: { tests_ok: true } });
+    await completeNode(taskId, "reviewed", {
+      nodeId: "review_tests",
+      vars: { tests_ok: true },
+    });
 
     const rebuild = activeNodeRun(taskId);
     expect(rebuild).toMatchObject({ node_id: "build", attempt: 2 });
@@ -758,7 +815,11 @@ describe("human nodes", () => {
       { from: "build", to: "sign_off", when: { outcome: "submitted" } },
       { from: "build", to: "escalated", when: { always: true } },
       { from: "sign_off", to: "done", when: { outcome: "approved" } },
-      { from: "sign_off", to: "rework", when: { outcome: "changes_requested" } },
+      {
+        from: "sign_off",
+        to: "rework",
+        when: { outcome: "changes_requested" },
+      },
     ],
   };
 
@@ -882,7 +943,11 @@ describe("human gates and the wall clock", () => {
     expect(await sweepFlowTimeouts()).toBe(0);
 
     // And answering still works, because the wait was charged to paused_secs.
-    const resumed = await resumeHumanNode({ taskId, outcome: "approved", author: "human" });
+    const resumed = await resumeHumanNode({
+      taskId,
+      outcome: "approved",
+      author: "human",
+    });
     expect(resumed.ok).toBe(true);
     expect(taskStatus(taskId)).toBe("done");
   });
@@ -1006,7 +1071,10 @@ describe("sweepFlowTimeouts", () => {
 
 describe("task eligibility", () => {
   test("a task with only a flow_name is picked up by the loop", async () => {
-    const taskId = await makeTask({ skill_name: null, flow_name: "orc-plan-build-verify" });
+    const taskId = await makeTask({
+      skill_name: null,
+      flow_name: "orc-plan-build-verify",
+    });
     const { OrcTaskProvider } = await import("../orc-task-provider.js");
     const picked = await new OrcTaskProvider().pickWorkTasks();
     expect(picked.some((t) => t.id === taskId)).toBe(true);

@@ -153,7 +153,11 @@ export function skillCommand() {
             ...encodeSkillFile(readFileSync(file.path)),
           }))
         : undefined;
-      const { data, error } = await client.skills.create({ name, content, files });
+      const { data, error } = await client.skills.create({
+        name,
+        content,
+        files,
+      });
       if (error) return console.error("Error:", error);
       if (!data) return console.error("Failed to create skill.");
       if (isJson()) return jsonOut(data);

@@ -131,7 +131,11 @@ export function ResumeActions({ session }: { session: LiveSession }) {
           e.stopPropagation();
           if (menuOpen) return setMenuPos(null);
           const rect = e.currentTarget.parentElement?.getBoundingClientRect();
-          if (rect) setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+          if (rect)
+            setMenuPos({
+              top: rect.bottom + 4,
+              right: window.innerWidth - rect.right,
+            });
         }}
       >
         <ChevronDown className="h-3 w-3" />

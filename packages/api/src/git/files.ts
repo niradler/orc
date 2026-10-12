@@ -41,7 +41,9 @@ function assertCheckoutPath(path: string): void {
 function decodeText(bytes: Uint8Array, partial: boolean): string | null {
   if (bytes.includes(0)) return null;
   try {
-    new TextDecoder("utf-8", { fatal: true }).decode(bytes, { stream: partial });
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes, {
+      stream: partial,
+    });
   } catch {
     return null;
   }
@@ -273,7 +275,10 @@ export async function saveCheckoutFile(
       }
       let current: string;
       try {
-        current = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+        current = new TextDecoder("utf-8", {
+          fatal: true,
+          ignoreBOM: true,
+        }).decode(bytes);
       } catch {
         throw new ValidationError("Only UTF-8 text files can be edited");
       }

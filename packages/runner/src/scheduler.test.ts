@@ -152,7 +152,9 @@ describe("Scheduler - syncJob", () => {
     if (!row) throw new Error("job missing");
     syncJob(row);
     await Bun.sleep(1500);
-    const runs = await db.query.job_runs.findMany({ where: eq(job_runs.job_id, jobId) });
+    const runs = await db.query.job_runs.findMany({
+      where: eq(job_runs.job_id, jobId),
+    });
     expect(runs.length).toBe(0);
   });
 });
@@ -177,9 +179,12 @@ describe("Scheduler - pruneHistory", () => {
       .values({ id: runId, job_id: jobId, status: "success", created_at: old });
     // A runner session and bridge rows that reference the run / a terminal
     // gateway session — the exact FK web that previously made the prune fail.
-    await db
-      .insert(sessions)
-      .values({ id: ulid(), agent: "runner", job_run_id: runId, created_at: old });
+    await db.insert(sessions).values({
+      id: ulid(),
+      agent: "runner",
+      job_run_id: runId,
+      created_at: old,
+    });
     const chatId = ulid();
     await db.insert(bridge_chats).values({
       id: chatId,
@@ -220,11 +225,15 @@ describe("Scheduler - pruneHistory", () => {
     // The run and terminal gateway session are gone.
     expect(await db.query.job_runs.findFirst({ where: eq(job_runs.id, runId) })).toBeUndefined();
     expect(
-      await db.query.gateway_sessions.findFirst({ where: eq(gateway_sessions.id, gwId) }),
+      await db.query.gateway_sessions.findFirst({
+        where: eq(gateway_sessions.id, gwId),
+      }),
     ).toBeUndefined();
 
     // Bridge rows survive with their dangling references nulled out.
-    const msg = await db.query.bridge_messages.findFirst({ where: eq(bridge_messages.id, msgId) });
+    const msg = await db.query.bridge_messages.findFirst({
+      where: eq(bridge_messages.id, msgId),
+    });
     expect(msg?.job_run_id).toBeNull();
     expect(msg?.gateway_session_id).toBeNull();
     const perm = await db.query.bridge_permissions.findFirst({

@@ -18,7 +18,11 @@ type A2aResponseEvent = {
   role?: string;
   status?: { state?: string; message?: { parts?: Array<{ text?: string }> } };
   parts?: Array<{ text?: string; kind?: string }>;
-  artifact?: { artifactId?: string; name?: string; parts?: Array<{ text?: string }> };
+  artifact?: {
+    artifactId?: string;
+    name?: string;
+    parts?: Array<{ text?: string }>;
+  };
   taskId?: string;
   contextId?: string;
   final?: boolean;
@@ -246,7 +250,10 @@ function createA2aBackend(): AgentBackend {
           });
         }
       } catch (err) {
-        logger.warn("Failed to fetch A2A agent card", { url: opts.a2aUrl, err });
+        logger.warn("Failed to fetch A2A agent card", {
+          url: opts.a2aUrl,
+          err,
+        });
       }
 
       return session;

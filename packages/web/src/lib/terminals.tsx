@@ -162,7 +162,12 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
       await api.terminals.remove(id);
       dropRuntime(id);
       queryClient.setQueryData<TerminalsInfo>(["terminals"], (current) =>
-        current ? { ...current, terminals: current.terminals.filter((t) => t.id !== id) } : current,
+        current
+          ? {
+              ...current,
+              terminals: current.terminals.filter((t) => t.id !== id),
+            }
+          : current,
       );
       void queryClient.invalidateQueries({ queryKey: ["terminals"] });
     },

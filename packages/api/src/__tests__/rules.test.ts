@@ -57,7 +57,10 @@ test("rules endpoints authenticate and reject malformed policies", async () => {
   expect(
     (
       await req(app, "POST", "/rules/activate", {
-        policy: { ...policy, rules: [{ id: "x", kind: "script", command: "anything" }] },
+        policy: {
+          ...policy,
+          rules: [{ id: "x", kind: "script", command: "anything" }],
+        },
         expected_id: null,
         reason: "Test",
       })
@@ -96,7 +99,12 @@ test("real API activation, dry run, history and guarded revert", async () => {
   expect(reverted.status).toBe(200);
   expect((await reverted.json()).policy).toBeNull();
   expect(
-    (await req(app, "POST", "/rules/revert", { id: first.id, reason: "Stale revert" })).status,
+    (
+      await req(app, "POST", "/rules/revert", {
+        id: first.id,
+        reason: "Stale revert",
+      })
+    ).status,
   ).toBe(409);
   const history = await (await req(app, "GET", "/rules")).json();
   expect(history.history).toHaveLength(2);
@@ -105,8 +113,13 @@ test("real API activation, dry run, history and guarded revert", async () => {
 test("open local APIs cannot administer enforcement policies", async () => {
   loadConfig({ api: { host: "127.0.0.1", port: 7700, secret: "" } });
   expect(
-    (await req(app, "POST", "/rules/activate", { policy, expected_id: null, reason: "No secret" }))
-      .status,
+    (
+      await req(app, "POST", "/rules/activate", {
+        policy,
+        expected_id: null,
+        reason: "No secret",
+      })
+    ).status,
   ).toBe(403);
   loadConfig({ api: { host: "127.0.0.1", port: 7700, secret: "test-secret" } });
 });

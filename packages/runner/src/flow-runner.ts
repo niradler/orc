@@ -2,7 +2,7 @@ import type { AgentSession } from "@orc/agent-runtime";
 import { openAgentSession } from "@orc/agent-runtime";
 import { readAgent } from "@orc/core/agent-service";
 import { loadConfig } from "@orc/core/config";
-import { resolveExecHost } from "@orc/core/exec-host";
+import { hostAlias, resolveExecHost } from "@orc/core/exec-host";
 import type { FlowCondition, FlowDefinition, FlowNode, NumericOperand } from "@orc/core/flow";
 import { declaredOutcomes, resolvePlaceholder } from "@orc/core/flow";
 import type { FlowAction, FlowState, FlowStep } from "@orc/core/flow-engine";
@@ -707,7 +707,9 @@ async function applyAction(
              WHERE flow_run_id = ? AND node_id = ? AND attempt = ?
              ORDER BY retry DESC LIMIT 1`,
           )
-          .get(flowRunId, action.nodeId, action.attempt) as { status: string } | null;
+          .get(flowRunId, action.nodeId, action.attempt) as {
+          status: string;
+        } | null;
         const replayable =
           already !== null && ["pending", "running", "awaiting_human"].includes(already.status);
         if (!replayable) {
@@ -847,21 +849,30 @@ export type StartFlowResult =
 
 export function startFlowForTask(
   taskId: string,
-  opts?: { flowName?: string | undefined; vars?: Record<string, unknown> | undefined },
+  opts?: {
+    flowName?: string | undefined;
+    vars?: Record<string, unknown> | undefined;
+  },
 ): Promise<StartFlowResult> {
   return withTaskLock(taskId, () => startFlowForTaskUnlocked(taskId, opts));
 }
 
 async function startFlowForTaskUnlocked(
   taskId: string,
-  opts?: { flowName?: string | undefined; vars?: Record<string, unknown> | undefined },
+  opts?: {
+    flowName?: string | undefined;
+    vars?: Record<string, unknown> | undefined;
+  },
 ): Promise<StartFlowResult> {
   const task = getTask(taskId);
   if (!task) return { ok: false, error: `Task not found: ${taskId}` };
 
   const existing = getActiveFlowRunForTask(taskId);
   if (existing) {
-    return { ok: false, error: `Task already has a running flow (${existing.flow_name})` };
+    return {
+      ok: false,
+      error: `Task already has a running flow (${existing.flow_name})`,
+    };
   }
 
   const config = loadConfig();
@@ -1011,7 +1022,9 @@ async function advanceUnlocked(flowRunId: string, result: AdvanceInput): Promise
   const task = getTask(loaded.row.task_id);
   if (!task) return;
 
-  const step = advanceFlow(loaded.def, loaded.state, result, { now: nowSecs() });
+  const step = advanceFlow(loaded.def, loaded.state, result, {
+    now: nowSecs(),
+  });
   if (step.actions.length === 0 && step.state === loaded.state) return;
   await applyStep(flowRunId, loaded.def, task, loaded.state, step);
 }
@@ -1058,7 +1071,10 @@ async function reportNodeOutcomeUnlocked(opts: {
 
   if (!node) {
     if (opts.nodeId) {
-      return { ok: false, error: `No active node "${opts.nodeId}" in flow run ${run.id}` };
+      return {
+        ok: false,
+        error: `No active node "${opts.nodeId}" in flow run ${run.id}`,
+      };
     }
     return {
       ok: false,
@@ -1116,7 +1132,10 @@ async function reportNodeOutcomeUnlocked(opts: {
   }
 
   const after = loadRun(run.id);
-  return { ok: true, nextNodes: after?.state.active.map((a) => a.nodeId) ?? [] };
+  return {
+    ok: true,
+    nextNodes: after?.state.active.map((a) => a.nodeId) ?? [],
+  };
 }
 
 /**
@@ -1186,6 +1205,7 @@ async function spawnNodeSession(nodeRun: NodeRunRow): Promise<boolean> {
   const sqlite = getSqlite();
   const sessionId = ulid();
   const backendName = nodeBackend(node, task);
+  const executionHost = hostAlias(resolveExecHost());
 
   const prev =
     nodeRun.resume_session === 1 ? previousNodeSession(nodeRun.flow_run_id, nodeRun.node_id) : null;
@@ -1224,6 +1244,7 @@ async function spawnNodeSession(nodeRun: NodeRunRow): Promise<boolean> {
       id: sessionId,
       chat_id: "__task-loop__",
       backend: backendName,
+      execution_host: executionHost,
       mode: `agent:${backendName}`,
       cwd,
       title: `${loaded.def.name}/${nodeRun.node_id}: ${task.title}`,
@@ -1267,6 +1288,7 @@ async function spawnNodeSession(nodeRun: NodeRunRow): Promise<boolean> {
     nodeId: nodeRun.node_id,
     attempt: nodeRun.attempt,
     backendName,
+    executionHost,
     prompt,
     cwd,
     ...(model ? { model } : {}),
@@ -1286,6 +1308,7 @@ async function driveNodeSession(opts: {
   nodeId: string;
   attempt: number;
   backendName: string;
+  executionHost: string | null;
   prompt: string;
   cwd: string;
   model?: string | undefined;
@@ -1301,6 +1324,7 @@ async function driveNodeSession(opts: {
       opts.backendName,
       {
         cwd: opts.cwd,
+        executionHost: opts.executionHost,
         autoApprove: true,
         ...(opts.model ? { model: opts.model } : {}),
         ...(opts.agentProfile ? { agentProfile: opts.agentProfile } : {}),
@@ -1731,7 +1755,11 @@ export async function onTaskStatusChangedExternally(
     const asOutcome =
       status === "done" ? "approved" : status === "changes_requested" ? "changes_requested" : null;
     if (asOutcome) {
-      const result = await resumeHumanNode({ taskId, outcome: asOutcome, author: "human" });
+      const result = await resumeHumanNode({
+        taskId,
+        outcome: asOutcome,
+        author: "human",
+      });
       if (result.ok) return;
       // The gate cannot route that verdict; fall through and stop the run.
     }
@@ -1905,7 +1933,11 @@ export type FlowRunView = {
 
 export function getFlowRunView(flowRunId: string): FlowRunView | null {
   const row = getSqlite().query("SELECT * FROM flow_runs WHERE id = ?").get(flowRunId) as
-    | (FlowRunRow & { flow_source: string; halt_reason: string | null; ended_at: number | null })
+    | (FlowRunRow & {
+        flow_source: string;
+        halt_reason: string | null;
+        ended_at: number | null;
+      })
     | null;
   if (!row) return null;
 

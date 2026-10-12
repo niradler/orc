@@ -123,8 +123,12 @@ test("should save an all-agent regex rule and retain its scope/filter/target aft
       ).decision,
     ).toBe("abstain");
     expect(
-      (await apiPost<{ decision: string }>(request, "/rules/check", { ...event, backend: "codex" }))
-        .decision,
+      (
+        await apiPost<{ decision: string }>(request, "/rules/check", {
+          ...event,
+          backend: "codex",
+        })
+      ).decision,
     ).toBe("deny");
   } finally {
     rmSync(workspace, { recursive: true, force: true });

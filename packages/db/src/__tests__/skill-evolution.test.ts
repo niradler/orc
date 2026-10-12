@@ -18,7 +18,10 @@ test("should automatically promote a validated project override and revert witho
       location: "orc://sessions/evolution-session",
     });
     const evidence = (
-      await new PassageIndex(sqlite).search({ query: "ownership", project_id: "orc" })
+      await new PassageIndex(sqlite).search({
+        query: "ownership",
+        project_id: "orc",
+      })
     ).passages.map((p) => p.id);
     const baseline = getSkillSnapshot(sqlite, "orc-worker-base", "orc");
     const original = readFileSync(baseline.skill.path, "utf8");
@@ -87,7 +90,10 @@ test("should retain a passing evaluation but refuse promotion over a stale basel
       location: "orc://sessions/stale-evaluation",
     });
     const evidence = (
-      await new PassageIndex(sqlite).search({ query: "observed", project_id: null })
+      await new PassageIndex(sqlite).search({
+        query: "observed",
+        project_id: null,
+      })
     ).passages.map((p) => p.id);
     const baseline = getSkillSnapshot(sqlite, "orc-worker-base", null);
     const id = wiki.propose({

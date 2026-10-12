@@ -7,7 +7,11 @@ import type { TaskStatus } from "@/api/client";
 // mapping never hides which state the task is really in.
 export type VisibleStatus = "todo" | "doing" | "review" | "blocked" | "done";
 
-export const BOARD_COLUMNS: { status: VisibleStatus; label: string; color: string }[] = [
+export const BOARD_COLUMNS: {
+  status: VisibleStatus;
+  label: string;
+  color: string;
+}[] = [
   { status: "todo", label: "Todo", color: "#a6abbb" },
   { status: "doing", label: "In Progress", color: "#78b0ff" },
   { status: "review", label: "Review", color: "#ffa851" },

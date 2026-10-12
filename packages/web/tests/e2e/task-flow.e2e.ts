@@ -36,8 +36,18 @@ function gateFlow(name: string) {
       sent_back: { kind: "terminal", task_status: "blocked" },
     },
     edges: [
-      { from: "sign_off", to: "shipped", when: { outcome: "ship_it" }, label: "ship it" },
-      { from: "sign_off", to: "sent_back", when: { outcome: "send_back" }, label: "send back" },
+      {
+        from: "sign_off",
+        to: "shipped",
+        when: { outcome: "ship_it" },
+        label: "ship it",
+      },
+      {
+        from: "sign_off",
+        to: "sent_back",
+        when: { outcome: "send_back" },
+        label: "send back",
+      },
     ],
   };
 }
@@ -77,7 +87,12 @@ async function createTask(
   title: string,
   extra: Record<string, unknown> = {},
 ): Promise<Task> {
-  return apiPost<Task>(request, "/tasks", { title, status: "todo", priority: "normal", ...extra });
+  return apiPost<Task>(request, "/tasks", {
+    title,
+    status: "todo",
+    priority: "normal",
+    ...extra,
+  });
 }
 
 async function openTask(page: Page, taskId: string): Promise<void> {

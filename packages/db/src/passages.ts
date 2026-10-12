@@ -43,7 +43,11 @@ export function segmentEvidence(input: EvidenceSource, maxChars = 2400): Passage
     }
     if (!openFence && line.includes("|")) {
       if (!table)
-        table = { start: match.index, end: match.index + line.length, context: line.trim() };
+        table = {
+          start: match.index,
+          end: match.index + line.length,
+          context: line.trim(),
+        };
       else table.end = match.index + line.length;
     } else if (table) {
       structures.push({ ...table, context: `Table header: ${table.context}` });

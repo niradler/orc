@@ -23,7 +23,10 @@ test("wiki persists cited pages and retrieves real repository evidence without e
   const search = await apiPost<{
     passages: { id: string; content: string; start: number; end: number }[];
     capabilities: { semantic: string };
-  }>(request, "/knowledge/passages/search", { query: "join_deadlock", project_id: project.id });
+  }>(request, "/knowledge/passages/search", {
+    query: "join_deadlock",
+    project_id: project.id,
+  });
   expect(search.capabilities.semantic).toBe("off");
   expect(search.passages.length).toBeGreaterThan(0);
   for (const passage of search.passages)
@@ -107,7 +110,10 @@ test("wiki persists cited pages and retrieves real repository evidence without e
   await expect(page.getByTestId("wiki-link-join-procedure")).toHaveCount(1);
   await page.getByTestId("wiki-link-join-procedure").click();
   await expect(page.getByTestId("wiki-page-content")).toContainText("Inspect the flow ledger");
-  await page.screenshot({ path: "../../output/playwright/wiki-evidence.png", fullPage: true });
+  await page.screenshot({
+    path: "../../output/playwright/wiki-evidence.png",
+    fullPage: true,
+  });
 });
 
 test("automatic skill promotion exposes before/after history and a human revert action", async ({

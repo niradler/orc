@@ -22,7 +22,11 @@ import {
   validateSkillPath,
 } from "./skill-files.js";
 
-export type { SkillFileInput, SkillRef, SkillRefContent } from "./skill-files.js";
+export type {
+  SkillFileInput,
+  SkillRef,
+  SkillRefContent,
+} from "./skill-files.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -54,7 +58,7 @@ export type SkillIssue = { path: string; error: string };
 export type SkillWarning = { path: string; message: string };
 
 export type SkillCache = {
-  version: 4;
+	version: 5;
   builtAt: string;
   skills: SkillMeta[];
   broken: SkillIssue[];
@@ -377,7 +381,7 @@ function loadCache(): SkillCache | null {
   try {
     const raw = readFileSync(CACHE_PATH, "utf-8");
     const cache = JSON.parse(raw) as SkillCache;
-    return cache.version === 4 ? cache : null;
+		return cache.version === 5 ? cache : null;
   } catch {
     return null;
   }
@@ -394,7 +398,7 @@ export function reloadCache(): SkillCache {
   const warnings: SkillCache["warnings"] = [];
   const skills = scanSkills(broken, warnings);
   const cache: SkillCache = {
-    version: 4,
+		version: 5,
     builtAt: new Date().toISOString(),
     skills,
     broken,
@@ -454,7 +458,12 @@ export function readSkill(name: string, ref?: string): SkillFull | SkillRefConte
   const { body } = parseInstalledFrontmatter(content);
   const references = listReferenceFiles(skillDir);
 
-  return { ...meta, content: body, references, files: listSkillFiles(skillDir) };
+  return {
+    ...meta,
+    content: body,
+    references,
+    files: listSkillFiles(skillDir),
+  };
 }
 
 export function createSkill(

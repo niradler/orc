@@ -11,14 +11,19 @@ export function toolListing() {
   return toolDefinitions.map((t) => ({
     name: t.name,
     description: t.description,
-    inputSchema: z.toJSONSchema(t.inputSchema, { target: "draft-7", io: "input" }),
+    inputSchema: z.toJSONSchema(t.inputSchema, {
+      target: "draft-7",
+      io: "input",
+    }),
   }));
 }
 
 export function createMcpServer() {
   const server = new Server({ name: "orc", version: "0.0.1" }, { capabilities: { tools: {} } });
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: toolListing() }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: toolListing(),
+  }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
@@ -36,7 +41,12 @@ export function createMcpServer() {
       const parsed = toolDef.inputSchema.safeParse(args ?? {});
       if (!parsed.success) {
         return {
-          content: [{ type: "text" as const, text: `Invalid args: ${parsed.error.message}` }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Invalid args: ${parsed.error.message}`,
+            },
+          ],
           isError: true,
         };
       }

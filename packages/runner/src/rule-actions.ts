@@ -19,7 +19,15 @@ export async function drainRuleActions(): Promise<void> {
     const action = db
       .transaction(() => {
         const row = db
-          .query<{ id: string; job_id: string; rule_id: string; event_json: string | null }, []>(
+          .query<
+            {
+              id: string;
+              job_id: string;
+              rule_id: string;
+              event_json: string | null;
+            },
+            []
+          >(
             "SELECT id,job_id,rule_id,event_json FROM rule_actions WHERE status='pending' ORDER BY created_at,id LIMIT 1",
           )
           .get();

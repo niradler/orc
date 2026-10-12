@@ -28,7 +28,14 @@ describe("rule history and action evidence", () => {
     const next = store.activate(
       {
         ...policy,
-        rules: [{ id: "shell", kind: "deny_tools", tools: ["Bash"], reason: "No shell" }],
+        rules: [
+          {
+            id: "shell",
+            kind: "deny_tools",
+            tools: ["Bash"],
+            reason: "No shell",
+          },
+        ],
       },
       first.id,
       "Change",

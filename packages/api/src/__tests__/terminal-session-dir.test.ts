@@ -8,7 +8,11 @@ function deps(over: Partial<Parameters<typeof prepareSessionDirectory>[1]> = {})
   return {
     isDirectory: (path: string) => path.startsWith("/work") || path.startsWith("/home"),
     home: "/home/me",
-    runGit: async (): Promise<GitResult> => ({ code: 0, stdout: "", stderr: "" }),
+    runGit: async (): Promise<GitResult> => ({
+      code: 0,
+      stdout: "",
+      stderr: "",
+    }),
     makeDirectory: () => {},
     newId: () => "abc123",
     ...over,
@@ -39,7 +43,11 @@ describe("prepareSessionDirectory", () => {
       deps({
         runGit: async (args) => {
           calls.push(args);
-          return { code: 128, stdout: "", stderr: "fatal: not a git repository" };
+          return {
+            code: 128,
+            stdout: "",
+            stderr: "fatal: not a git repository",
+          };
         },
       }),
     );
@@ -86,7 +94,11 @@ describe("prepareSessionDirectory", () => {
             if (args.includes("rev-parse")) {
               return { code: 0, stdout: "/work/app\n", stderr: "" };
             }
-            return { code: 128, stdout: "", stderr: "fatal: branch already exists" };
+            return {
+              code: 128,
+              stdout: "",
+              stderr: "fatal: branch already exists",
+            };
           },
         }),
       ),
@@ -98,7 +110,11 @@ describe("prepareSessionDirectory with git", () => {
   const roots: string[] = [];
 
   async function git(args: string[], cwd: string): Promise<void> {
-    const proc = Bun.spawn(["git", ...args], { cwd, stdout: "pipe", stderr: "pipe" });
+    const proc = Bun.spawn(["git", ...args], {
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     const stderr = await new Response(proc.stderr).text();
     const code = await proc.exited;
     if (code !== 0) throw new Error(stderr);

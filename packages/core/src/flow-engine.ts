@@ -221,7 +221,10 @@ function routeFrom(
   if (matches.length === 0) return { ok: false, halt: `no_matching_edge:${fromNode}:${outcome}` };
 
   const chosen = node.routing === "all" ? matches : matches.slice(0, 1);
-  return { ok: true, targets: chosen.map((e) => ({ to: e.to, from: fromNode, outcome })) };
+  return {
+    ok: true,
+    targets: chosen.map((e) => ({ to: e.to, from: fromNode, outcome })),
+  };
 }
 
 /**
@@ -243,13 +246,22 @@ function haltRun(
       actions.splice(spawnIdx, 1);
       continue;
     }
-    actions.push({ kind: "cancel", nodeId: node.nodeId, attempt: node.attempt, reason });
+    actions.push({
+      kind: "cancel",
+      nodeId: node.nodeId,
+      attempt: node.attempt,
+      reason,
+    });
   }
   state.active = [];
   state.status = "halted";
   state.halt_reason = reason;
   state.task_status = def.limits.halt_task_status;
-  actions.push({ kind: "halt", reason, task_status: def.limits.halt_task_status });
+  actions.push({
+    kind: "halt",
+    reason,
+    task_status: def.limits.halt_task_status,
+  });
 }
 
 function cancelActive(
@@ -271,7 +283,12 @@ function cancelActive(
       actions.splice(spawnIdx, 1);
       continue;
     }
-    actions.push({ kind: "cancel", nodeId: node.nodeId, attempt: node.attempt, reason });
+    actions.push({
+      kind: "cancel",
+      nodeId: node.nodeId,
+      attempt: node.attempt,
+      reason,
+    });
   }
   state.active = keep;
 }
@@ -338,7 +355,11 @@ function activate(
       const taskStatus = node.task_status ?? "done";
       state.status = "completed";
       state.task_status = taskStatus;
-      actions.push({ kind: "complete", nodeId: target.to, task_status: taskStatus });
+      actions.push({
+        kind: "complete",
+        nodeId: target.to,
+        task_status: taskStatus,
+      });
       return;
     }
 

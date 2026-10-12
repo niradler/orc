@@ -3,7 +3,10 @@ import type { createApp } from "../server.js";
 import { setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof createApp>;
-const AUTH = { Authorization: "Bearer test-secret", "content-type": "application/json" };
+const AUTH = {
+  Authorization: "Bearer test-secret",
+  "content-type": "application/json",
+};
 
 beforeAll(() => {
   app = setupTestApp();

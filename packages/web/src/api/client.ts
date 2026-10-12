@@ -212,7 +212,12 @@ export type WorktreeListing = { root: string | null; worktrees: Worktree[] };
 export type GitStatus = {
   root: string | null;
   branch: string | null;
-  files: { path: string; index: string; working: string; original: string | null }[];
+  files: {
+    path: string;
+    index: string;
+    working: string;
+    original: string | null;
+  }[];
   branches: string[];
 };
 export type GithubItem = {
@@ -275,7 +280,9 @@ async function req<T>(
     const q = params.toString();
     if (q) url += `?${q}`;
   }
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
   const secret = getApiSecret();
   if (secret) headers.Authorization = `Bearer ${secret}`;
   const res = await fetch(url, {
@@ -325,7 +332,11 @@ export const api = {
         }[];
       }>("GET", "/rules"),
     activate: (policy: RulePolicy, expected_id: string | null, reason: string) =>
-      req<RuleRevision>("POST", "/rules/activate", { policy, expected_id, reason }),
+      req<RuleRevision>("POST", "/rules/activate", {
+        policy,
+        expected_id,
+        reason,
+      }),
     revert: (id: string, reason: string) =>
       req<RuleRevision>("POST", "/rules/revert", { id, reason }),
   },
@@ -341,14 +352,26 @@ export const api = {
           decision: string | null;
           payload: string;
         }[];
-        evaluations: { id: string; proposal_id: string; payload: string; result: string }[];
+        evaluations: {
+          id: string;
+          proposal_id: string;
+          payload: string;
+          result: string;
+        }[];
       }>("GET", "/skills/proposals", undefined, { project_id }),
     revert: (id: string, project_id: string | null, reason: string) =>
-      req<{ id: string }>("POST", "/skills/evolution/revert", { id, project_id, reason }),
+      req<{ id: string }>("POST", "/skills/evolution/revert", {
+        id,
+        project_id,
+        reason,
+      }),
   },
   evidence: {
     get: (ids: string[], project_id: string | null) =>
-      req<{ passages: Passage[] }>("POST", "/knowledge/passages/get", { ids, project_id }),
+      req<{ passages: Passage[] }>("POST", "/knowledge/passages/get", {
+        ids,
+        project_id,
+      }),
     search: (input: RetrievalQuery) =>
       req<RetrievalResult>("POST", "/knowledge/passages/search", input),
   },
@@ -387,7 +410,9 @@ export const api = {
     deleteLink: (id: string, linkId: string) => req<null>("DELETE", `/tasks/${id}/links/${linkId}`),
     // null (not an error) when the task has never run a flow.
     flow: (id: string) =>
-      req<FlowRun | null>("GET", `/tasks/${id}/flow`, undefined, undefined, { nullOn404: true }),
+      req<FlowRun | null>("GET", `/tasks/${id}/flow`, undefined, undefined, {
+        nullOn404: true,
+      }),
     resumeFlow: (id: string, data: ResumeFlowInput) =>
       req<{ ok: boolean; next_nodes: string[] }>("POST", `/tasks/${id}/flow/resume`, data),
     haltFlow: (id: string, reason?: string) =>
@@ -585,7 +610,12 @@ export const api = {
       ),
     search: (
       q: string,
-      opts?: { collection?: string; project_id?: string; mode?: string; limit?: number },
+      opts?: {
+        collection?: string;
+        project_id?: string;
+        mode?: string;
+        limit?: number;
+      },
     ) =>
       req<{
         results: {
@@ -661,13 +691,18 @@ export const api = {
     pickFolder: (initial?: string) =>
       req<{ path: string | null }>("POST", "/terminals/pick-folder", initial ? { initial } : {}),
     browse: (path?: string) =>
-      req<HostDirectoryListing>("GET", "/terminals/browse", undefined, { path }),
+      req<HostDirectoryListing>("GET", "/terminals/browse", undefined, {
+        path,
+      }),
   },
 
   ssh: {
     get: () => req<SshState>("GET", "/ssh"),
     select: (host: string | null, remote_port?: number | null) =>
-      req<SshState>("PUT", "/ssh", { host, ...(remote_port !== undefined ? { remote_port } : {}) }),
+      req<SshState>("PUT", "/ssh", {
+        host,
+        ...(remote_port !== undefined ? { remote_port } : {}),
+      }),
     test: (host?: string) => req<SshTest>("POST", "/ssh/test", host ? { host } : {}),
   },
 
@@ -684,13 +719,21 @@ export const api = {
     terminalWorktrees: (id: string) =>
       req<WorktreeListing>("GET", `/terminals/${encodeURIComponent(id)}/git/worktrees`),
     stage: (id: string, paths: string[]) =>
-      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/stage`, { paths }),
+      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/stage`, {
+        paths,
+      }),
     switchBranch: (id: string, branch: string) =>
-      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/switch`, { branch }),
+      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/switch`, {
+        branch,
+      }),
     checkoutGithub: (id: string) =>
       req<GithubFeed>("GET", `/terminals/${encodeURIComponent(id)}/git/github`),
     saveFile: (id: string, path: string, content: string, original: string) =>
-      req<null>("PUT", `/terminals/${encodeURIComponent(id)}/files`, { path, content, original }),
+      req<null>("PUT", `/terminals/${encodeURIComponent(id)}/files`, {
+        path,
+        content,
+        original,
+      }),
     files: (id: string, path: string) =>
       req<{
         root: string;
@@ -699,26 +742,29 @@ export const api = {
         content: string | null;
         binary: boolean;
         truncated: boolean;
-      }>("GET", `/terminals/${encodeURIComponent(id)}/files`, undefined, { path }),
+      }>("GET", `/terminals/${encodeURIComponent(id)}/files`, undefined, {
+        path,
+      }),
     commit: (id: string, message: string) =>
-      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/commit`, { message }),
+      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/commit`, {
+        message,
+      }),
     addWorktree: (id: string) =>
       req<{ path: string }>("POST", `/terminals/${encodeURIComponent(id)}/git/worktrees`),
     githubItems: (filter: string, project_id?: string) =>
-      req<GithubFeed>("GET", "/github/items", undefined, { filter, project_id }),
+      req<GithubFeed>("GET", "/github/items", undefined, {
+        filter,
+        project_id,
+      }),
     registry: (project_id?: string) =>
-      req<{ repos: WorktreeListing[]; errors: { cwd: string; error: string }[] }>(
-        "GET",
-        "/git/registry",
-        undefined,
-        { project_id },
-      ),
+      req<{
+        repos: WorktreeListing[];
+        errors: { cwd: string; error: string }[];
+      }>("GET", "/git/registry", undefined, { project_id }),
     cleanup: (items: { cwd: string; path: string; delete_branch?: boolean }[]) =>
-      req<{ results: { path: string; removed: boolean; error: string | null }[] }>(
-        "POST",
-        "/git/worktrees/cleanup",
-        { items },
-      ),
+      req<{
+        results: { path: string; removed: boolean; error: string | null }[];
+      }>("POST", "/git/worktrees/cleanup", { items }),
     worktrees: (cwd: string) => req<WorktreeListing>("GET", "/git/worktrees", undefined, { cwd }),
     removeWorktree: (data: { cwd: string; path: string; force?: boolean }) =>
       req<null>("POST", "/git/worktrees/remove", data),

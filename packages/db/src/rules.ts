@@ -195,7 +195,12 @@ export class RuleStore {
     const event = RuleEventSchema.parse(raw);
     const serialized = JSON.stringify(event);
     if (serialized.length > 1_100_000) throw new ValidationError("Rule event exceeds input limit");
-    const combined: RuleDecision = { decision: "abstain", reasons: [], context: [], jobs: [] };
+    const combined: RuleDecision = {
+      decision: "abstain",
+      reasons: [],
+      context: [],
+      jobs: [],
+    };
     const policies = this.active(event.cwd);
     const synchronousBudget = policies.reduce(
       (total, active) =>
@@ -431,7 +436,13 @@ export class RuleStore {
   actions(workspace?: string) {
     return this.db
       .query<
-        { id: string; job_id: string; status: string; run_id: string | null; error: string | null },
+        {
+          id: string;
+          job_id: string;
+          status: string;
+          run_id: string | null;
+          error: string | null;
+        },
         [string | null, string | null]
       >(
         "SELECT a.id,a.job_id,a.status,a.run_id,a.error FROM rule_actions a JOIN rule_decisions d ON d.id=a.decision_id JOIN rule_revisions r ON r.id=d.revision_id WHERE (? IS NULL OR r.workspace=?) ORDER BY a.created_at DESC,a.id DESC LIMIT 200",

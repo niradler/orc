@@ -79,7 +79,9 @@ async function runCycle(): Promise<string> {
   for (const task of await provider.pickReviewTasks()) {
     if (getActiveFlowRunForTask(task.id)) continue;
     try {
-      const result = await startFlowForTask(task.id, { flowName: config.agent_loop.review_flow });
+      const result = await startFlowForTask(task.id, {
+        flowName: config.agent_loop.review_flow,
+      });
       if (result.ok) {
         lines.push(`Started ${result.flowName} for review: [${task.id}] ${task.title}`);
         started++;
@@ -101,7 +103,9 @@ async function runCycle(): Promise<string> {
 
 export async function ensureSystemJob(): Promise<string> {
   const db = getDb();
-  const existing = await db.query.jobs.findFirst({ where: eq(jobs.name, SYSTEM_JOB_NAME) });
+  const existing = await db.query.jobs.findFirst({
+    where: eq(jobs.name, SYSTEM_JOB_NAME),
+  });
   if (existing) {
     const config = loadConfig();
     const expectedCron = `*/${config.agent_loop.poll_interval_minutes} * * * *`;
@@ -145,7 +149,9 @@ export async function recordedCycle(): Promise<void> {
   cycleRunning = true;
 
   const db = getDb();
-  const job = await db.query.jobs.findFirst({ where: eq(jobs.name, SYSTEM_JOB_NAME) });
+  const job = await db.query.jobs.findFirst({
+    where: eq(jobs.name, SYSTEM_JOB_NAME),
+  });
   if (!job) {
     cycleRunning = false;
     return;
@@ -167,11 +173,20 @@ export async function recordedCycle(): Promise<void> {
     const endedAt = new Date();
     await db
       .update(job_runs)
-      .set({ status: "success", exit_code: 0, ended_at: endedAt, stdout: summary })
+      .set({
+        status: "success",
+        exit_code: 0,
+        ended_at: endedAt,
+        stdout: summary,
+      })
       .where(eq(job_runs.id, runId));
     await db
       .update(jobs)
-      .set({ last_run_at: endedAt, run_count: (job.run_count ?? 0) + 1, updated_at: endedAt })
+      .set({
+        last_run_at: endedAt,
+        run_count: (job.run_count ?? 0) + 1,
+        updated_at: endedAt,
+      })
       .where(eq(jobs.id, job.id));
   } catch (err) {
     const errMsg = String(err);

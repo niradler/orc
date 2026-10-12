@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, watch } from "node:fs";
 import { join } from "node:path";
+import { hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { LIVE_REGISTRY_DIR } from "@orc/core/live-session";
 import { createLogger } from "@orc/core/logger";
 import { getDb, getSqlite } from "@orc/db/client";
 import { gateway_sessions } from "@orc/db/schema";
 import { contributeStoppedSession } from "@orc/db/session-contributions";
-import { and, eq, ne, notInArray } from "drizzle-orm";
+import { and, eq, isNull, ne, notInArray } from "drizzle-orm";
 import {
   CLAUDE_REGISTRY_DIR,
   claudeAdapter,
@@ -25,12 +26,28 @@ export { LIVE_CHAT_ID };
 
 const logger = createLogger("api:session-sync");
 
-export type SyncResult = { backend: string; seen: number; ms: number; error?: string };
+const selectedHostAlias = (): string | null => {
+  const host = resolveExecHost();
+  return host.kind === "ssh" ? host.alias : null;
+};
 
-const defaultAdapters = (): SessionAdapter[] =>
-  [claudeAdapter(), codexAdapter(), cursorAdapter(), cursorAgentAdapter(), geminiAdapter()].map(
-    (adapter) => withLifecycle(adapter),
-  );
+export type SyncResult = {
+  backend: string;
+  seen: number;
+  ms: number;
+  error?: string;
+};
+
+const defaultAdapters = (): SessionAdapter[] => {
+  const runtime = hostRuntime(resolveExecHost());
+  return [
+    claudeAdapter({}, runtime),
+    codexAdapter(undefined, { runtime }),
+    cursorAdapter({ runtime }),
+    cursorAgentAdapter(undefined, runtime),
+    geminiAdapter(undefined, runtime),
+  ].map((adapter) => withLifecycle(adapter, undefined, runtime));
+};
 
 let currentAdapters: SessionAdapter[] = defaultAdapters();
 let liveRegistryDir: string | null = null;
@@ -44,13 +61,17 @@ const serialized = <T>(job: () => Promise<T>): Promise<T> => {
   return next;
 };
 
-async function upsertRecord(r: SessionRecord): Promise<string> {
+const hostCondition = (alias: string | null) =>
+  alias ? eq(gateway_sessions.execution_host, alias) : isNull(gateway_sessions.execution_host);
+
+async function upsertRecord(r: SessionRecord, executionHost: string | null): Promise<string> {
   const db = getDb();
   const existing = await db.query.gateway_sessions.findFirst({
     where: and(
       eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
       eq(gateway_sessions.backend, r.backend),
       eq(gateway_sessions.runtime_session_id, r.externalId),
+      hostCondition(executionHost),
     ),
   });
   const fields = {
@@ -61,7 +82,9 @@ async function upsertRecord(r: SessionRecord): Promise<string> {
     ...(r.cwd !== undefined && { cwd: r.cwd }),
     ...(r.summary !== undefined && { summary: r.summary }),
     ...(r.pid !== undefined && { pid: r.pid }),
-    ...(r.transcriptPath !== undefined && { transcript_path: r.transcriptPath }),
+    ...(r.transcriptPath !== undefined && {
+      transcript_path: r.transcriptPath,
+    }),
     ...(r.tokensUsed !== undefined && { tokens_used: r.tokensUsed }),
   };
   if (existing) {
@@ -77,23 +100,34 @@ async function upsertRecord(r: SessionRecord): Promise<string> {
     backend: r.backend,
     mode: "direct",
     runtime_session_id: r.externalId,
-    project_id: await projectIdFor(r.cwd),
+    execution_host: executionHost,
+    project_id: await projectIdFor(r.cwd, hostRuntime(resolveExecHost())),
     created_at: r.createdAt,
     ...fields,
   });
   return id;
 }
 
-async function loadKnown(backend: string): Promise<Map<string, KnownSession>> {
+async function loadKnown(
+  backend: string,
+  executionHost: string | null,
+): Promise<Map<string, KnownSession>> {
   const rows = await getDb().query.gateway_sessions.findMany({
-    where: and(eq(gateway_sessions.chat_id, LIVE_CHAT_ID), eq(gateway_sessions.backend, backend)),
+    where: and(
+      eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
+      eq(gateway_sessions.backend, backend),
+      hostCondition(executionHost),
+    ),
   });
   return new Map(
     rows
       .filter((r) => r.runtime_session_id)
       .map((r) => [
         r.runtime_session_id as string,
-        { lastActivityMs: r.last_activity_at?.getTime() ?? 0, tokensUsed: r.tokens_used ?? null },
+        {
+          lastActivityMs: r.last_activity_at?.getTime() ?? 0,
+          tokensUsed: r.tokens_used ?? null,
+        },
       ]),
   );
 }
@@ -114,10 +148,11 @@ function queueTokens(id: string, compute: () => Promise<number | null>): void {
 
 async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
   const started = Date.now();
+  const executionHost = selectedHostAlias();
   try {
-    const records = await adapter.list(await loadKnown(adapter.backend));
+    const records = await adapter.list(await loadKnown(adapter.backend, executionHost));
     for (const r of records) {
-      const id = await upsertRecord(r);
+      const id = await upsertRecord(r, executionHost);
       if (r.tokens) queueTokens(id, r.tokens);
     }
     const seen = records.map((r) => r.externalId);
@@ -128,13 +163,18 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
         and(
           eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
           eq(gateway_sessions.backend, adapter.backend),
+          hostCondition(executionHost),
           ne(gateway_sessions.status, "stopped"),
           seen.length > 0 ? notInArray(gateway_sessions.runtime_session_id, seen) : undefined,
         ),
       )
       .returning({ id: gateway_sessions.id });
     for (const row of stopped) contributeStoppedSession(getSqlite(), row.id);
-    return { backend: adapter.backend, seen: records.length, ms: Date.now() - started };
+    return {
+      backend: adapter.backend,
+      seen: records.length,
+      ms: Date.now() - started,
+    };
   } catch (err) {
     logger.error(`sync failed for ${adapter.backend}`, err);
     return {
@@ -159,13 +199,19 @@ export function runSync(
       if (opts.force || due) results.push(await syncAdapter(adapter));
     }
     if (liveRegistryDir) {
-      for (const record of lifecycleRecords(liveRegistryDir)) await upsertRecord(record);
+      for (const record of await lifecycleRecords(liveRegistryDir, hostRuntime(resolveExecHost())))
+        await upsertRecord(record, selectedHostAlias());
     }
     return results;
   });
 }
 
 export const syncNow = () => runSync(currentAdapters, { force: true });
+
+export function refreshConfiguredSessionAdapters(): void {
+  currentAdapters = defaultAdapters();
+  lastRun.clear();
+}
 
 export function tokensSettled(): Promise<unknown> {
   return tokenChain;
@@ -187,7 +233,12 @@ export function startSessionWatcher(
         : LIVE_REGISTRY_DIR
       : opts.liveRegistryDir;
   if (liveRegistryDir) mkdirSync(liveRegistryDir, { recursive: true });
-  const registryDir = opts.registryDir === undefined ? CLAUDE_REGISTRY_DIR : opts.registryDir;
+  const registryDir =
+    opts.registryDir === undefined
+      ? opts.adapters || resolveExecHost().kind === "ssh"
+        ? null
+        : CLAUDE_REGISTRY_DIR
+      : opts.registryDir;
   void runSync(currentAdapters, { force: true });
   const timer = setInterval(() => void runSync(currentAdapters), opts.tickMs ?? 3_000);
 
@@ -215,7 +266,7 @@ export function startSessionWatcher(
             const path = join(registryDir, file);
             const entry = existsSync(path) ? readRegistryFile(path) : null;
             void serialized(async () => {
-              if (entry) return void (await upsertRecord(registryRecord(entry)));
+              if (entry) return void (await upsertRecord(registryRecord(entry), null));
               await getDb()
                 .update(gateway_sessions)
                 .set({ status: "stopped", updated_at: new Date() })

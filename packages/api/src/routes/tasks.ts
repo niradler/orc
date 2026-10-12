@@ -139,7 +139,9 @@ const listRoute = createRoute({
     200: {
       description: "Task list",
       content: {
-        "application/json": { schema: z.object({ tasks: z.array(TaskSchema), total: z.number() }) },
+        "application/json": {
+          schema: z.object({ tasks: z.array(TaskSchema), total: z.number() }),
+        },
       },
     },
   },
@@ -152,7 +154,10 @@ const getRoute = createRoute({
   summary: "Get task by ID",
   request: { params: z.object({ id: z.string() }) },
   responses: {
-    200: { description: "Task", content: { "application/json": { schema: TaskSchema } } },
+    200: {
+      description: "Task",
+      content: { "application/json": { schema: TaskSchema } },
+    },
   },
 });
 
@@ -161,9 +166,14 @@ const createRoute_ = createRoute({
   path: "/tasks",
   tags: ["Tasks"],
   summary: "Create task",
-  request: { body: { content: { "application/json": { schema: CreateTaskSchema } } } },
+  request: {
+    body: { content: { "application/json": { schema: CreateTaskSchema } } },
+  },
   responses: {
-    201: { description: "Created", content: { "application/json": { schema: TaskSchema } } },
+    201: {
+      description: "Created",
+      content: { "application/json": { schema: TaskSchema } },
+    },
   },
 });
 
@@ -177,7 +187,10 @@ const updateRoute = createRoute({
     body: { content: { "application/json": { schema: UpdateTaskSchema } } },
   },
   responses: {
-    200: { description: "Updated", content: { "application/json": { schema: TaskSchema } } },
+    200: {
+      description: "Updated",
+      content: { "application/json": { schema: TaskSchema } },
+    },
   },
 });
 
@@ -251,7 +264,11 @@ const listCommentsRoute = createRoute({
   responses: {
     200: {
       description: "Comments",
-      content: { "application/json": { schema: z.object({ comments: z.array(CommentSchema) }) } },
+      content: {
+        "application/json": {
+          schema: z.object({ comments: z.array(CommentSchema) }),
+        },
+      },
     },
   },
 });
@@ -589,7 +606,9 @@ app.openapi(addCommentRoute, async (c) => {
     created_at: now,
   });
 
-  const comment = await db.query.comments.findFirst({ where: eq(comments.id, commentId) });
+  const comment = await db.query.comments.findFirst({
+    where: eq(comments.id, commentId),
+  });
   if (!comment) throw new Error("Expected comment to exist after write");
   return c.json(commentToDto(comment), 201);
 });

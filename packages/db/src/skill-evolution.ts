@@ -9,7 +9,12 @@ import type { SkillFull, SkillRefContent } from "@orc/core/skill-service";
 import { parseFrontmatter, readSkill } from "@orc/core/skill-service";
 
 type ActiveRow = { id: string; raw: string; base_hash: string };
-export type SkillSnapshot = { skill: SkillFull; raw: string; hash: string; base_hash: string };
+export type SkillSnapshot = {
+  skill: SkillFull;
+  raw: string;
+  hash: string;
+  base_hash: string;
+};
 
 export function installSkillEvolution(sqlite: Database): void {
   sqlite.exec(`CREATE TABLE IF NOT EXISTS skill_activations (
@@ -62,14 +67,22 @@ export function readEvolvedSkill(
   if (!installed || (ref && ref !== "SKILL.md")) return installed;
   const snapshot = getSkillSnapshot(sqlite, name, project);
   if (ref === "SKILL.md")
-    return { ...installed, content: snapshot.raw, encoding: "utf8" } as SkillRefContent;
+    return {
+      ...installed,
+      content: snapshot.raw,
+      encoding: "utf8",
+    } as SkillRefContent;
   if (snapshot.raw === readFileSync(snapshot.skill.path, "utf8")) return snapshot.skill;
   const parsed = parseFrontmatter(snapshot.raw);
   return {
     ...snapshot.skill,
     content: parsed.body,
     description: parsed.frontmatter.description,
-    metadata: { ...parsed.frontmatter.metadata, evolved: "true", baseline_hash: snapshot.hash },
+    metadata: {
+      ...parsed.frontmatter.metadata,
+      evolved: "true",
+      baseline_hash: snapshot.hash,
+    },
   };
 }
 

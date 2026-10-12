@@ -197,7 +197,10 @@ export default function Agents() {
         isPending={deleteAgent.isPending}
         onCancel={() => !deleteAgent.isPending && setDeleting(false)}
         onConfirm={() => {
-          if (selectedId) deleteAgent.mutate(selectedId, { onError: () => setDeleting(false) });
+          if (selectedId)
+            deleteAgent.mutate(selectedId, {
+              onError: () => setDeleting(false),
+            });
         }}
       />
       <Dialog open={creating} onOpenChange={(open) => !create.isPending && setCreating(open)}>

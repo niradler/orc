@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { createOrcClient } from "./client.js";
 
 describe("createOrcClient", () => {
-  const client = createOrcClient({ baseUrl: "http://localhost:0", secret: "test" });
+  const client = createOrcClient({
+    baseUrl: "http://localhost:0",
+    secret: "test",
+  });
 
   test("exposes resource namespaces", () => {
     expect(typeof client.tasks.list).toBe("function");

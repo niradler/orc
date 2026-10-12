@@ -9,7 +9,10 @@ const folder = mkdtempSync(join(tmpdir(), "orc-pw-git-"));
 const repo = join(folder, "repo");
 const checkout = join(folder, "checkout");
 async function git(cwd: string, ...args: string[]): Promise<void> {
-  execFileSync("git", ["-C", cwd, ...args], { timeout: 15_000, windowsHide: true });
+  execFileSync("git", ["-C", cwd, ...args], {
+    timeout: 15_000,
+    windowsHide: true,
+  });
 }
 test.beforeAll(async () => {
   mkdirSync(repo);
@@ -51,7 +54,9 @@ test("slice 3 git panel status, diff, selected staging, commit, branches and tas
   page,
   request,
 }) => {
-  const task = await apiPost<{ id: string }>(request, "/tasks", { title: tid("git-panel-task") });
+  const task = await apiPost<{ id: string }>(request, "/tasks", {
+    title: tid("git-panel-task"),
+  });
   const terminal = await apiPost<{ id: string }>(request, "/terminals", {
     kind: "shell",
     cwd: repo,
@@ -222,7 +227,9 @@ test("slice 4 GitHub board filtering, linking, creating task and reopening saved
   page,
   request,
 }) => {
-  const task = await apiPost<{ id: string }>(request, "/tasks", { title: tid("github-task") });
+  const task = await apiPost<{ id: string }>(request, "/tasks", {
+    title: tid("github-task"),
+  });
   const issue = {
     repo: "niradler/orc",
     number: 123,
@@ -246,7 +253,11 @@ test("slice 4 GitHub board filtering, linking, creating task and reopening saved
   await page.route("**/api/github/items?*", async (route) => {
     const filter = new URL(route.request().url()).searchParams.get("filter");
     const tasks = await apiGet<{
-      tasks: { id: string; github_issue: string | null; github_pr: string | null }[];
+      tasks: {
+        id: string;
+        github_issue: string | null;
+        github_pr: string | null;
+      }[];
     }>(request, "/tasks?limit=100");
     const items = (
       filter === "assigned" ? [issue] : filter === "branches" ? [pull] : [issue, pull]
@@ -257,7 +268,13 @@ test("slice 4 GitHub board filtering, linking, creating task and reopening saved
         .map((task) => task.id),
     }));
     await route.fulfill({
-      json: { auth: "gh", login: "niradler", items, errors: [], truncated: false },
+      json: {
+        auth: "gh",
+        login: "niradler",
+        items,
+        errors: [],
+        truncated: false,
+      },
     });
   });
   await page.addInitScript((secret) => localStorage.setItem("orc_api_secret", secret), API_SECRET);

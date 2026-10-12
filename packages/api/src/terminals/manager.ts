@@ -102,6 +102,7 @@ export class TerminalManager {
       pid: number | null;
       backend: string;
       createdAt: Date;
+      host: string | null;
     },
     validate?: (info: TerminalInfo) => void,
   ): TerminalInfo | null {
@@ -111,6 +112,7 @@ export class TerminalManager {
       if (
         info.status === "running" &&
         info.pid === input.pid &&
+        info.host === input.host &&
         info.kind === (input.backend === "cursor-agent" ? "cursor" : input.backend) &&
         Math.floor(Date.parse(info.created_at) / 1000) <=
           Math.floor(input.createdAt.getTime() / 1000)

@@ -41,9 +41,10 @@ export function worktreeDeps(host: ExecHost = resolveExecHost()): RemoveWorktree
   };
 }
 
-export async function knownWorktrees(
-  projectId?: string,
-): Promise<{ repos: WorktreeListing[]; errors: { cwd: string; error: string }[] }> {
+export async function knownWorktrees(projectId?: string): Promise<{
+  repos: WorktreeListing[];
+  errors: { cwd: string; error: string }[];
+}> {
   const db = getDb();
   const host = resolveExecHost();
   const alias = host.kind === "ssh" ? host.alias : null;

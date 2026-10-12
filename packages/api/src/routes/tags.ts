@@ -67,7 +67,11 @@ app.openapi(listTagsRoute, async (c) => {
       .all();
 
     for (const row of rows) {
-      results.push({ name: row.tag, count: row.count, resource_type: type as string });
+      results.push({
+        name: row.tag,
+        count: row.count,
+        resource_type: type as string,
+      });
     }
   }
 

@@ -163,7 +163,9 @@ WantedBy=default.target
   mkdirSync(join(homedir(), ".config", "systemd", "user"), { recursive: true });
   writeFileSync(SYSTEMD_UNIT, unit);
   execSync("systemctl --user daemon-reload", { stdio: "inherit" });
-  execSync("systemctl --user enable --now orc-daemon.service", { stdio: "inherit" });
+  execSync("systemctl --user enable --now orc-daemon.service", {
+    stdio: "inherit",
+  });
   console.log(`\n  Installed systemd user service "orc-daemon" (auto-start, restart on failure).`);
   console.log(`  Unit:    ${SYSTEMD_UNIT}`);
   console.log(`  Manage:  systemctl --user status orc-daemon`);
@@ -195,7 +197,9 @@ function uninstallMacos(): void {
 
 function uninstallLinux(): void {
   try {
-    execSync("systemctl --user disable --now orc-daemon.service", { stdio: "ignore" });
+    execSync("systemctl --user disable --now orc-daemon.service", {
+      stdio: "ignore",
+    });
   } catch {}
   if (existsSync(SYSTEMD_UNIT)) {
     unlinkSync(SYSTEMD_UNIT);

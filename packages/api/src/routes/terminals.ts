@@ -2,7 +2,7 @@ import { basename, dirname } from "node:path";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
-import { listHostDirectories, resolveExecHost } from "@orc/core/exec-host";
+import { execHostFor, listHostDirectories, resolveExecHost } from "@orc/core/exec-host";
 import {
   AgentSetupSchema,
   buildPackagePlan,
@@ -86,10 +86,9 @@ const createTerminalRoute = createRoute({
             cwd: z.string().min(1).optional(),
             name: z.string().max(120).optional(),
             live_session_id: z.string().min(1).optional(),
-            worktree: z
-              .boolean()
-              .optional()
-              .openapi({ description: "Start an agent in a new git worktree of the cwd's repo" }),
+            worktree: z.boolean().optional().openapi({
+              description: "Start an agent in a new git worktree of the cwd's repo",
+            }),
             setup: AgentSetupSchema.optional(),
           }),
         },
@@ -125,7 +124,11 @@ const pickFolderRoute = createRoute({
   responses: {
     200: {
       description: "Chosen folder, or null when the dialog was cancelled",
-      content: { "application/json": { schema: z.object({ path: z.string().nullable() }) } },
+      content: {
+        "application/json": {
+          schema: z.object({ path: z.string().nullable() }),
+        },
+      },
     },
   },
 });
@@ -160,7 +163,10 @@ const getTerminalRoute = createRoute({
   summary: "Get a terminal",
   request: { params: idParam },
   responses: {
-    200: { description: "Terminal", content: { "application/json": { schema: TerminalSchema } } },
+    200: {
+      description: "Terminal",
+      content: { "application/json": { schema: TerminalSchema } },
+    },
   },
 });
 
@@ -223,8 +229,8 @@ app.openapi(createTerminalRoute, async (c) => {
   requireTerminals(config);
   const body = c.req.valid("json");
   const manager = getTerminalManager();
-  const host = resolveExecHost(config);
-  const deps = await launchDeps(config, host);
+  let host = resolveExecHost(config);
+  let deps = await launchDeps(config, host);
   const checkRules = (cwd: string | undefined | null): void => {
     if (!config.rules.enabled) return;
     if (new RuleStore(getSqlite()).active(cwd ?? deps.home).length)
@@ -286,6 +292,8 @@ app.openapi(createTerminalRoute, async (c) => {
       ),
     });
     if (!row) throw new NotFoundError("Live session", body.live_session_id);
+    host = execHostFor(row.execution_host ?? null, config);
+    deps = await launchDeps(config, host);
     checkRules(row.cwd);
     if (row.status === "idle" || row.status === "running") {
       const original = manager.linkLiveSession(
@@ -294,6 +302,7 @@ app.openapi(createTerminalRoute, async (c) => {
           pid: row.pid,
           backend: row.backend,
           createdAt: row.created_at,
+          host: row.execution_host ?? null,
         },
         (info) => checkRules(info.cwd),
       );
@@ -332,7 +341,10 @@ app.openapi(createTerminalRoute, async (c) => {
   );
   if (launch.kind !== "shell") checkRules(cwd);
   const name = body.name ?? (cwd !== launch.cwd ? worktreeName(cwd) : undefined);
-  const info = manager.create({ launch: await launchOnHost(host, { ...launch, cwd }), name });
+  const info = manager.create({
+    launch: await launchOnHost(host, { ...launch, cwd }),
+    name,
+  });
   rememberTerminalFolder(info.cwd);
   return c.json(info, 201);
 });

@@ -63,7 +63,9 @@ export type FlowCondition =
 export const FlowConditionSchema: z.ZodType<FlowCondition> = z.lazy(() =>
   z.union([
     z.strictObject({ always: z.literal(true) }),
-    z.strictObject({ outcome: z.union([z.string(), z.array(z.string()).min(1)]) }),
+    z.strictObject({
+      outcome: z.union([z.string(), z.array(z.string()).min(1)]),
+    }),
     z.strictObject({
       visits: z
         .strictObject({
@@ -229,22 +231,34 @@ export function validateFlowGraph(def: FlowDefinition): FlowValidationIssue[] {
     return issues;
   }
   if (!def.nodes[def.entry]) {
-    issues.push({ path: "entry", message: `entry node "${def.entry}" is not defined` });
+    issues.push({
+      path: "entry",
+      message: `entry node "${def.entry}" is not defined`,
+    });
   }
 
   const entryNode = def.nodes[def.entry];
   if (entryNode?.join) {
-    issues.push({ path: "entry", message: `entry node "${def.entry}" cannot be a join node` });
+    issues.push({
+      path: "entry",
+      message: `entry node "${def.entry}" cannot be a join node`,
+    });
   }
 
   const outgoing = new Map<string, FlowEdge[]>();
   const incoming = new Map<string, FlowEdge[]>();
   for (const [i, edge] of def.edges.entries()) {
     if (!def.nodes[edge.from]) {
-      issues.push({ path: `edges[${i}].from`, message: `unknown node "${edge.from}"` });
+      issues.push({
+        path: `edges[${i}].from`,
+        message: `unknown node "${edge.from}"`,
+      });
     }
     if (!def.nodes[edge.to]) {
-      issues.push({ path: `edges[${i}].to`, message: `unknown node "${edge.to}"` });
+      issues.push({
+        path: `edges[${i}].to`,
+        message: `unknown node "${edge.to}"`,
+      });
     }
     const outs = outgoing.get(edge.from);
     if (outs) outs.push(edge);
@@ -259,7 +273,10 @@ export function validateFlowGraph(def: FlowDefinition): FlowValidationIssue[] {
 
     if (node.kind === "terminal") {
       if (outs.length > 0) {
-        issues.push({ path: `nodes.${id}`, message: "terminal nodes cannot have outgoing edges" });
+        issues.push({
+          path: `nodes.${id}`,
+          message: "terminal nodes cannot have outgoing edges",
+        });
       }
     } else if (outs.length === 0) {
       issues.push({
@@ -297,7 +314,10 @@ export function validateFlowGraph(def: FlowDefinition): FlowValidationIssue[] {
     if (node.join) {
       for (const [j, from] of node.join.from.entries()) {
         if (!def.nodes[from]) {
-          issues.push({ path: `nodes.${id}.join.from[${j}]`, message: `unknown node "${from}"` });
+          issues.push({
+            path: `nodes.${id}.join.from[${j}]`,
+            message: `unknown node "${from}"`,
+          });
           continue;
         }
         const feeds = (incoming.get(id) ?? []).some((e) => e.from === from);
@@ -355,7 +375,10 @@ export function validateFlowGraph(def: FlowDefinition): FlowValidationIssue[] {
     }
     for (const id of nodeIds) {
       if (!seen.has(id)) {
-        issues.push({ path: `nodes.${id}`, message: "node is unreachable from entry" });
+        issues.push({
+          path: `nodes.${id}`,
+          message: "node is unreachable from entry",
+        });
       }
     }
     const reachableTerminal = [...seen].some((id) => def.nodes[id]?.kind === "terminal");
@@ -449,7 +472,10 @@ export function parseFlowDefinition(raw: unknown): ParsedFlow {
   try {
     const issues = validateFlowGraph(parsed.data);
     if (issues.length > 0) {
-      return { ok: false, errors: issues.map((i) => `${i.path}: ${i.message}`) };
+      return {
+        ok: false,
+        errors: issues.map((i) => `${i.path}: ${i.message}`),
+      };
     }
   } catch (err) {
     return {

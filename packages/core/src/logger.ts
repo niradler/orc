@@ -11,7 +11,12 @@ import { join } from "node:path";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
-const LEVELS: Record<LogLevel, number> = { debug: 0, info: 1, warn: 2, error: 3 };
+const LEVELS: Record<LogLevel, number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+};
 
 const COLORS: Record<LogLevel, string> = {
   debug: "\x1b[36m",

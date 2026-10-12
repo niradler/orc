@@ -53,7 +53,10 @@ app.openapi(
         },
       },
     },
-    responses: { 204: { description: "File saved" }, 409: { description: "File changed on disk" } },
+    responses: {
+      204: { description: "File saved" },
+      409: { description: "File changed on disk" },
+    },
   }),
   async (c) => {
     const body = c.req.valid("json");
@@ -68,7 +71,10 @@ app.openapi(
     path: "/terminals/{id}/files",
     tags: ["Terminals"],
     summary: "Browse or preview files inside a terminal checkout",
-    request: { params, query: z.object({ path: z.string().max(4096).default("") }) },
+    request: {
+      params,
+      query: z.object({ path: z.string().max(4096).default("") }),
+    },
     responses: {
       200: {
         description: "Checkout files",
@@ -78,7 +84,13 @@ app.openapi(
               root: z.string(),
               path: z.string(),
               entries: z
-                .array(z.object({ name: z.string(), path: z.string(), directory: z.boolean() }))
+                .array(
+                  z.object({
+                    name: z.string(),
+                    path: z.string(),
+                    directory: z.boolean(),
+                  }),
+                )
                 .nullable(),
               content: z.string().nullable(),
               binary: z.boolean(),
@@ -104,7 +116,9 @@ app.openapi(
       params,
       body: {
         content: {
-          "application/json": { schema: z.object({ branch: z.string().min(1).max(1024) }) },
+          "application/json": {
+            schema: z.object({ branch: z.string().min(1).max(1024) }),
+          },
         },
       },
     },
@@ -202,7 +216,9 @@ app.openapi(
       200: {
         description: "Diff",
         content: {
-          "application/json": { schema: z.object({ diff: z.string(), truncated: z.boolean() }) },
+          "application/json": {
+            schema: z.object({ diff: z.string(), truncated: z.boolean() }),
+          },
         },
       },
     },
@@ -227,7 +243,10 @@ app.openapi(
         description: "Worktrees",
         content: {
           "application/json": {
-            schema: z.object({ root: z.string().nullable(), worktrees: z.array(WorktreeSchema) }),
+            schema: z.object({
+              root: z.string().nullable(),
+              worktrees: z.array(WorktreeSchema),
+            }),
           },
         },
       },
@@ -249,7 +268,9 @@ app.openapi(
       body: {
         content: {
           "application/json": {
-            schema: z.object({ paths: z.array(z.string().min(1)).min(1).max(100) }),
+            schema: z.object({
+              paths: z.array(z.string().min(1)).min(1).max(100),
+            }),
           },
         },
       },
@@ -296,7 +317,9 @@ app.openapi(
     responses: {
       201: {
         description: "Created",
-        content: { "application/json": { schema: z.object({ path: z.string() }) } },
+        content: {
+          "application/json": { schema: z.object({ path: z.string() }) },
+        },
       },
     },
   }),
@@ -305,7 +328,9 @@ app.openapi(
     if (!(await gitStatus(host, cwd)).root) throw new ValidationError("Not a git repository");
     const deps = sessionDirDeps(await launchDeps(loadConfig(), host), host);
     return c.json(
-      { path: await prepareSessionDirectory({ cwd, worktree: true }, { ...deps, newId: ulid }) },
+      {
+        path: await prepareSessionDirectory({ cwd, worktree: true }, { ...deps, newId: ulid }),
+      },
       201,
     );
   },

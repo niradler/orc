@@ -22,7 +22,10 @@ test.describe("Skills", () => {
         `---\nname: ${name}\ndescription: Multi-file browser workflow\n---\nRead references/deep/guide.md and run scripts/check.py.`,
       );
     const resources = [
-      { path: "references/deep/guide.md", content: "# Detailed workflow\nRead only when needed." },
+      {
+        path: "references/deep/guide.md",
+        content: "# Detailed workflow\nRead only when needed.",
+      },
       { path: "scripts/check.py", content: "print('bundle verified')" },
     ];
     for (const resource of resources) {
@@ -51,7 +54,9 @@ test.describe("Skills", () => {
     await expect(page.getByTestId("skill-file-content")).toContainText(
       "Read references/deep/guide.md",
     );
-    await page.screenshot({ path: "../../.claude/multi-file-skills-browser.png" });
+    await page.screenshot({
+      path: "../../.claude/multi-file-skills-browser.png",
+    });
   });
 
   test("imports a skill folder with nested documentation and a binary asset", async ({ page }) => {

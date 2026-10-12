@@ -63,7 +63,11 @@ describe("folderPickerLaunch", () => {
 
   test("a machine with no folder dialog reports that", () => {
     expect(() =>
-      folderPickerLaunch({ platform: "linux", which: () => null, initial: undefined }),
+      folderPickerLaunch({
+        platform: "linux",
+        which: () => null,
+        initial: undefined,
+      }),
     ).toThrow(/folder picker/);
   });
 });

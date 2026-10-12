@@ -32,7 +32,9 @@ export function configuredEmbeddingProvider(
         signal: AbortSignal.timeout(settings.timeout_ms),
       });
       if (!response.ok) throw new Error("Embedding provider request failed");
-      const result = (await response.json()) as { data?: { index: number; embedding: number[] }[] };
+      const result = (await response.json()) as {
+        data?: { index: number; embedding: number[] }[];
+      };
       if (!Array.isArray(result.data) || result.data.length !== texts.length)
         throw new Error("Invalid embedding provider response");
       const sorted = [...result.data].sort((a, b) => a.index - b.index);

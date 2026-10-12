@@ -10,6 +10,7 @@ import {
 } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
+import { sessionExecHost } from "./execution-host.js";
 import { readLines } from "./io.js";
 import { registerBackend } from "./registry.js";
 import type {
@@ -51,7 +52,10 @@ type AcpxUpdate = {
   rawInput?: unknown;
   rawOutput?: string;
   _meta?: {
-    claudeCode?: { toolName?: string; toolResponse?: { stdout?: string; stderr?: string } };
+    claudeCode?: {
+      toolName?: string;
+      toolResponse?: { stdout?: string; stderr?: string };
+    };
   };
 };
 
@@ -362,14 +366,20 @@ class AcpxSession implements AgentSession {
     this.proc = handle.proc;
     this.killProc = handle.kill;
 
-    logger.info("ACPX process started", { agent: this.agent, pid: this.proc.pid });
+    logger.info("ACPX process started", {
+      agent: this.agent,
+      pid: this.proc.pid,
+    });
 
     if (this.proc.stdout) {
       void readLines(this.proc.stdout, (line) => this.handleLine(line))
         .then(() => this.handleEof())
         .catch((err) => {
           logger.error("Error reading ACPX stdout", { err, agent: this.agent });
-          this.push({ type: "error", data: `ACPX stream error: ${String(err)}` });
+          this.push({
+            type: "error",
+            data: `ACPX stream error: ${String(err)}`,
+          });
           this.handleEof();
         });
     }
@@ -418,7 +428,9 @@ class AcpxSession implements AgentSession {
 
 async function acpxVersion(host: ExecHost, cmd: string[]): Promise<string | null> {
   try {
-    const result = await hostExec(host, [...cmd, "--version"], { timeoutMs: 30_000 });
+    const result = await hostExec(host, [...cmd, "--version"], {
+      timeoutMs: 30_000,
+    });
     if (result.code !== 0) return null;
     return result.stdout.trim().split("\n")[0]?.trim() || null;
   } catch {
@@ -437,12 +449,18 @@ function createAcpxBackend(): AgentBackend {
       try {
         resolved = await resolveAcpx(host);
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
       }
       if (!resolved) return { ok: false, error: acpxMissingMessage(host) };
       const version = await acpxVersion(host, resolved.cmd);
       if (!version) {
-        return { ok: false, error: `Found acpx at ${resolved.path} but \`--version\` failed` };
+        return {
+          ok: false,
+          error: `Found acpx at ${resolved.path} but \`--version\` failed`,
+        };
       }
       return { ok: true };
     },
@@ -466,7 +484,7 @@ function createAcpxBackend(): AgentBackend {
     },
 
     async startSession(opts) {
-      const host = resolveExecHost();
+      const host = sessionExecHost(opts);
       const resolved = await resolveAcpx(host);
       if (!resolved) throw new Error(acpxMissingMessage(host));
       const session = new AcpxSession(opts, resolved.cmd, host);
@@ -475,7 +493,7 @@ function createAcpxBackend(): AgentBackend {
     },
 
     async resumeSession(runtimeSessionId, opts) {
-      const host = resolveExecHost();
+      const host = sessionExecHost(opts);
       const resolved = await resolveAcpx(host);
       if (!resolved) throw new Error(acpxMissingMessage(host));
       return new AcpxSession({ ...opts, runtimeSessionId }, resolved.cmd, host);

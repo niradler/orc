@@ -1,7 +1,7 @@
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig } from "@orc/core/config";
+import { configuredApiSecret, loadConfig } from "@orc/core/config";
 import {
   type ExecHost,
   orcUrlOnHost,
@@ -50,10 +50,11 @@ export function buildOrcMcpServer(host: ExecHost = resolveExecHost()): OrcHttpMc
       `Cannot start a tool-restricted agent session: ORC config unavailable, so the ORC MCP server (mcp__orc__*) cannot be injected: ${String(err)}`,
     );
   }
+  const secret = configuredApiSecret(api.secret);
   return {
     type: "http",
     url: host.kind === "ssh" ? `${orcUrlOnHost(host)}/mcp` : `http://${api.host}:${api.port}/mcp`,
-    ...(api.secret ? { headers: { Authorization: `Bearer ${api.secret}` } } : {}),
+    ...(secret ? { headers: { Authorization: `Bearer ${secret}` } } : {}),
   };
 }
 

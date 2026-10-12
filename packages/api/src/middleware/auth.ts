@@ -1,3 +1,4 @@
+import { configuredApiSecret } from "@orc/core/config";
 import { UnauthorizedError } from "@orc/core/errors";
 import type { MiddlewareHandler } from "hono";
 
@@ -7,10 +8,11 @@ const PUBLIC_PATHS = new Set(["/health", "/api/health"]);
 
 export function bearerAuth(secret: string | undefined): MiddlewareHandler {
   return async (c, next) => {
-    if (!secret) return next();
+    const required = configuredApiSecret(secret);
+    if (!required) return next();
     if (PUBLIC_PATHS.has(c.req.path)) return next();
     const auth = c.req.header("Authorization");
-    if (!auth?.startsWith("Bearer ") || auth.slice(7) !== secret) {
+    if (!auth?.startsWith("Bearer ") || auth.slice(7) !== required) {
       throw new UnauthorizedError();
     }
     return next();

@@ -19,7 +19,10 @@ test("should retain idempotent contributions, source evidence, and page revision
     };
     const id = wiki.enqueue(input);
     expect(wiki.enqueue(input)).toBe(id);
-    const retrieved = await index.search({ query: "grandchild", project_id: "orc" });
+    const retrieved = await index.search({
+      query: "grandchild",
+      project_id: "orc",
+    });
     const evidence = retrieved.passages.map((passage) => passage.id);
     const edit = {
       slug: "socket-recovery",
@@ -68,8 +71,13 @@ test("should retain idempotent contributions, source evidence, and page revision
     expect(wiki.contributions("orc")).toHaveLength(2);
     expect(wiki.list("other")).toEqual([]);
     expect(
-      (await index.search({ query: "process tree", project_id: "orc", kinds: ["wiki"] })).passages
-        .length,
+      (
+        await index.search({
+          query: "process tree",
+          project_id: "orc",
+          kinds: ["wiki"],
+        })
+      ).passages.length,
     ).toBeGreaterThan(0);
   } finally {
     sqlite.close();
@@ -90,7 +98,10 @@ describe("Skill proposal evidence and evaluation history", () => {
         location: "orc://sessions/s",
       });
       const evidence = (
-        await new PassageIndex(sqlite).search({ query: "verification", project_id: "orc" })
+        await new PassageIndex(sqlite).search({
+          query: "verification",
+          project_id: "orc",
+        })
       ).passages.map((p) => p.id);
       const input = {
         project_id: "orc",

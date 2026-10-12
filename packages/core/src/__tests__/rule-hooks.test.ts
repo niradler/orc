@@ -23,7 +23,12 @@ test("normalizes native events without claiming a post-tool event can block exec
     });
     expect(JSON.stringify(output)).toContain("deny");
     expect(
-      ruleHookOutput(backend, event, { decision: "abstain", reasons: [], context: [], jobs: [] }),
+      ruleHookOutput(backend, event, {
+        decision: "abstain",
+        reasons: [],
+        context: [],
+        jobs: [],
+      }),
     ).toEqual({});
     expect(
       ruleHookOutput(

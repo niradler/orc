@@ -10,7 +10,10 @@ export async function readPrimitiveFolder(uploaded: FileList): Promise<SkillFile
       if (file.size > 8 * 1024 * 1024) throw new Error(`${path} exceeds 8 MiB`);
       const bytes = new Uint8Array(await file.arrayBuffer());
       try {
-        const content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+        const content = new TextDecoder("utf-8", {
+          fatal: true,
+          ignoreBOM: true,
+        }).decode(bytes);
         if (!content.includes("\0")) return { path, content, encoding: "utf8" };
       } catch {
         // Binary assets need lossless JSON transport.

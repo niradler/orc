@@ -54,9 +54,15 @@ export function FileEditor({
       const changed = document.current !== savedContent;
       setDirty(changed);
       if (active.current) dirtyCallback.current(changed);
-      if (changed) drafts.set(draftKey, { original: savedContent, content: document.current });
+      if (changed)
+        drafts.set(draftKey, {
+          original: savedContent,
+          content: document.current,
+        });
       else drafts.delete(draftKey);
-      void queryClient.invalidateQueries({ queryKey: ["checkout-files", terminalId, path] });
+      void queryClient.invalidateQueries({
+        queryKey: ["checkout-files", terminalId, path],
+      });
       void queryClient.invalidateQueries({ queryKey: ["git", terminalId] });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save file");

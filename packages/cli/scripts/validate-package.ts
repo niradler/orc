@@ -55,8 +55,10 @@ function resolveSdkBinary(req: NodeRequire): string | null {
 // Deps that are intentionally external (not bundled) and therefore must be
 // resolvable from the installed package's node_modules. `binary`, when set,
 // resolves a runtime executable the dep loads relative to its own location.
-const EXTERNAL_RUNTIME_DEPS: Array<{ pkg: string; binary?: (req: NodeRequire) => string | null }> =
-  [{ pkg: "@anthropic-ai/claude-agent-sdk", binary: resolveSdkBinary }, { pkg: "zod" }];
+const EXTERNAL_RUNTIME_DEPS: Array<{
+  pkg: string;
+  binary?: (req: NodeRequire) => string | null;
+}> = [{ pkg: "@anthropic-ai/claude-agent-sdk", binary: resolveSdkBinary }, { pkg: "zod" }];
 
 const failures: string[] = [];
 const fail = (msg: string) => {

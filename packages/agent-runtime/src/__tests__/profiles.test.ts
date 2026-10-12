@@ -43,7 +43,10 @@ describe("portable shared profiles", () => {
           throw new Error("No previous session");
         },
       }));
-      const session = await openAgentSession(backendName, { cwd: process.cwd(), agentProfile: id });
+      const session = await openAgentSession(backendName, {
+        cwd: process.cwd(),
+        agentProfile: id,
+      });
       await session.send("Inspect this task");
     }
     expect(prompts).toHaveLength(2);
@@ -65,7 +68,10 @@ describe("portable shared profiles", () => {
       "tool whitelist",
     );
     await expect(
-      openAgentSession("profile-backend-a", { cwd: process.cwd(), agentProfile: restrictedId }),
+      openAgentSession("profile-backend-a", {
+        cwd: process.cwd(),
+        agentProfile: restrictedId,
+      }),
     ).rejects.toThrow("cannot honor profile model");
     await expect(
       openAgentSession("profile-backend-b", {

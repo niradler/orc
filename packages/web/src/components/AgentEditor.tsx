@@ -25,7 +25,10 @@ type Props = {
 type EditorToolRow = ToolRow & { key: string };
 
 function editableTools(fields: Record<string, unknown>): EditorToolRow[] {
-  return agentTools(fields).map((tool) => ({ ...tool, key: crypto.randomUUID() }));
+  return agentTools(fields).map((tool) => ({
+    ...tool,
+    key: crypto.randomUUID(),
+  }));
 }
 
 export function AgentEditor({ agent, pending, error, onSave }: Props) {
@@ -232,7 +235,10 @@ export function AgentEditor({ agent, pending, error, onSave }: Props) {
                                 changeToolRows(
                                   tools.map((entry, position) =>
                                     position === index
-                                      ? { ...entry, allowed: event.target.checked }
+                                      ? {
+                                          ...entry,
+                                          allowed: event.target.checked,
+                                        }
                                       : entry,
                                   ),
                                 )
@@ -264,7 +270,11 @@ export function AgentEditor({ agent, pending, error, onSave }: Props) {
                         onClick={() =>
                           changeToolRows([
                             ...tools,
-                            { key: crypto.randomUUID(), name: "", allowed: true },
+                            {
+                              key: crypto.randomUUID(),
+                              name: "",
+                              allowed: true,
+                            },
                           ])
                         }
                       >

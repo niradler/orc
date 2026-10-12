@@ -15,15 +15,26 @@ test("multiplexer splits terminal, Git and file panes, resizes and restores them
     ["config", "user.email", "test@example.com"],
     ["config", "user.name", "test"],
   ])
-    execFileSync("git", ["-C", repo, ...args], { timeout: 15_000, windowsHide: true });
+    execFileSync("git", ["-C", repo, ...args], {
+      timeout: 15_000,
+      windowsHide: true,
+    });
   writeFileSync(join(repo, "hello.txt"), "workspace preview\n");
   mkdirSync(join(repo, "src", "nested"), { recursive: true });
   writeFileSync(join(repo, "src", "nested", "example.ts"), "export const example = 42;\n");
   writeFileSync(join(repo, "binary.bin"), Buffer.from([0, 1, 2]));
   execFileSync("git", ["-C", repo, "add", "."], { timeout: 15_000 });
-  execFileSync("git", ["-C", repo, "commit", "-m", "init"], { timeout: 15_000 });
-  const first = await apiPost<{ id: string }>(request, "/terminals", { kind: "shell", cwd: repo });
-  const second = await apiPost<{ id: string }>(request, "/terminals", { kind: "shell", cwd: repo });
+  execFileSync("git", ["-C", repo, "commit", "-m", "init"], {
+    timeout: 15_000,
+  });
+  const first = await apiPost<{ id: string }>(request, "/terminals", {
+    kind: "shell",
+    cwd: repo,
+  });
+  const second = await apiPost<{ id: string }>(request, "/terminals", {
+    kind: "shell",
+    cwd: repo,
+  });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.addInitScript((secret) => localStorage.setItem("orc_api_secret", secret), API_SECRET);
@@ -79,7 +90,9 @@ test("multiplexer splits terminal, Git and file panes, resizes and restores them
   const previewBounds = await files.getByTestId("file-preview").boundingBox();
   if (!treeBounds || !previewBounds) throw new Error("Missing file explorer geometry");
   expect(previewBounds.x).toBeGreaterThanOrEqual(treeBounds.x + treeBounds.width);
-  await files.screenshot({ path: "../../output/playwright/files-tree-wide.png" });
+  await files.screenshot({
+    path: "../../output/playwright/files-tree-wide.png",
+  });
   await page.setViewportSize({ width: 1440, height: 900 });
   await files.getByTestId("files-refresh").click();
   await expect(example).toBeVisible();
@@ -147,7 +160,10 @@ test("should edit, save and reopen text files while preserving drafts and reject
   request,
 }) => {
   const repo = mkdtempSync(join(tmpdir(), "orc-editor-"));
-  execFileSync("git", ["-C", repo, "init", "-b", "main"], { timeout: 15_000, windowsHide: true });
+  execFileSync("git", ["-C", repo, "init", "-b", "main"], {
+    timeout: 15_000,
+    windowsHide: true,
+  });
   writeFileSync(join(repo, "example.ts"), "export const answer = 42;\r\n");
   writeFileSync(join(repo, "other.txt"), "another file\n");
   const terminal = await apiPost<{ id: string }>(request, "/terminals", {
@@ -211,5 +227,7 @@ test("should edit, save and reopen text files while preserving drafts and reject
   await page.getByTestId("file-reload").click();
   await expect(input).toContainText("answer = 99");
   await expect(page.getByTestId("file-save-status")).toHaveText("Saved");
-  await page.screenshot({ path: "../../output/playwright/file-editor-save-reopen.png" });
+  await page.screenshot({
+    path: "../../output/playwright/file-editor-save-reopen.png",
+  });
 });

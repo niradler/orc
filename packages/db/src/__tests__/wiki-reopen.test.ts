@@ -24,7 +24,10 @@ test("should reopen persisted wiki evidence, contribution history and promoted s
     };
     const contribution = wiki.enqueue(source);
     const evidence = (
-      await new PassageIndex(sqlite).search({ query: "ownership", project_id: "orc" })
+      await new PassageIndex(sqlite).search({
+        query: "ownership",
+        project_id: "orc",
+      })
     ).passages.map((p) => p.id);
     wiki.apply({
       contribution_id: contribution,

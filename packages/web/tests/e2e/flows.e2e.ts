@@ -51,8 +51,14 @@ test.describe("Flows browser", () => {
   });
 
   test.afterAll(async ({ request }) => {
-    rmSync(join(PROJECT_FLOWS, SHADOWING_FLOW.name), { recursive: true, force: true });
-    rmSync(join(PROJECT_FLOWS, BROKEN_FLOW.name), { recursive: true, force: true });
+    rmSync(join(PROJECT_FLOWS, SHADOWING_FLOW.name), {
+      recursive: true,
+      force: true,
+    });
+    rmSync(join(PROJECT_FLOWS, BROKEN_FLOW.name), {
+      recursive: true,
+      force: true,
+    });
     await apiGet(request, "/flows?reload=true");
   });
 

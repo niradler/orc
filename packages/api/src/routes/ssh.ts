@@ -1,6 +1,6 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { hostClaudeLoggedIn } from "@orc/agent-runtime";
-import { loadConfig, updateGlobalConfig } from "@orc/core/config";
+import { configuredApiSecret, loadConfig, updateGlobalConfig } from "@orc/core/config";
 import { ConflictError, ValidationError } from "@orc/core/errors";
 import {
   ALIAS_PATTERN,
@@ -11,6 +11,7 @@ import {
   retireSshMaster,
   sshBinary,
 } from "@orc/core/exec-host";
+import { refreshConfiguredSessionAdapters } from "../session-watcher.js";
 
 const app = new OpenAPIHono();
 
@@ -21,11 +22,13 @@ const SshStateSchema = z
       description: "Port the reverse tunnel opens on the host so agents there reach orc",
     }),
     hosts: z.array(z.string()).openapi({ description: "Host aliases from ~/.ssh/config" }),
-    locked: z.boolean().openapi({ description: "ORC_SSH_HOST is set, so the selection is fixed" }),
+    locked: z.boolean().openapi({
+      description: "ORC_SSH_HOST is set, so the selection is fixed",
+    }),
     supported: z.boolean(),
     unsupported_reason: z.string().nullable(),
     secret_set: z.boolean().openapi({
-      description: "api.secret is set; required, since the tunnel exposes orc on the host",
+      description: "api.secret is set; required before selecting an SSH execution host",
     }),
   })
   .openapi("SshState");
@@ -48,7 +51,10 @@ const SshTestSchema = z
   })
   .openapi("SshTest");
 
-function platformSupport(): { supported: boolean; unsupported_reason: string | null } {
+function platformSupport(): {
+  supported: boolean;
+  unsupported_reason: string | null;
+} {
   try {
     sshBinary();
     return { supported: true, unsupported_reason: null };
@@ -72,7 +78,7 @@ function sshState() {
     hosts,
     locked: process.env.ORC_SSH_HOST !== undefined,
     ...platformSupport(),
-    secret_set: Boolean(config.api.secret),
+    secret_set: Boolean(configuredApiSecret(config.api.secret)),
   };
 }
 
@@ -82,7 +88,10 @@ const getRoute = createRoute({
   tags: ["System"],
   summary: "SSH execution host: selection and the hosts ~/.ssh/config offers",
   responses: {
-    200: { description: "SSH state", content: { "application/json": { schema: SshStateSchema } } },
+    200: {
+      description: "SSH state",
+      content: { "application/json": { schema: SshStateSchema } },
+    },
   },
 });
 
@@ -109,7 +118,10 @@ const putRoute = createRoute({
     },
   },
   responses: {
-    200: { description: "SSH state", content: { "application/json": { schema: SshStateSchema } } },
+    200: {
+      description: "SSH state",
+      content: { "application/json": { schema: SshStateSchema } },
+    },
   },
 });
 
@@ -121,9 +133,9 @@ app.openapi(putRoute, async (c) => {
   if (body.host) {
     const support = platformSupport();
     if (!support.supported) throw new ValidationError(support.unsupported_reason ?? "unsupported");
-    if (!before.api.secret)
+    if (!configuredApiSecret(before.api.secret))
       throw new ValidationError(
-        "Set api.secret (or ORC_API_SECRET) first: the SSH tunnel exposes orc's API on the host",
+        "Set api.secret (or ORC_API_SECRET) first: host agents and terminals can execute arbitrary commands through orc",
       );
   }
   const after = updateGlobalConfig((raw) => {
@@ -137,6 +149,7 @@ app.openapi(putRoute, async (c) => {
   if ((after.ssh.host ?? null) !== body.host)
     throw new ConflictError("ssh.host is overridden by ./.orc/config.json in orc's working folder");
   if (before.ssh.host && before.ssh.host !== after.ssh.host) await retireSshMaster(before.ssh.host);
+  refreshConfiguredSessionAdapters();
   return c.json(sshState());
 });
 
@@ -149,13 +162,18 @@ const testRoute = createRoute({
     body: {
       content: {
         "application/json": {
-          schema: z.object({ host: z.string().regex(ALIAS_PATTERN).optional() }),
+          schema: z.object({
+            host: z.string().regex(ALIAS_PATTERN).optional(),
+          }),
         },
       },
     },
   },
   responses: {
-    200: { description: "Test result", content: { "application/json": { schema: SshTestSchema } } },
+    200: {
+      description: "Test result",
+      content: { "application/json": { schema: SshTestSchema } },
+    },
   },
 });
 

@@ -69,7 +69,9 @@ test.describe("Agent backends", () => {
     for (const backend of backends) {
       const marker = backend.available ? "●" : "○";
       await expect(
-        page.getByRole("option", { name: new RegExp(`^${backend.name} ${marker}`) }),
+        page.getByRole("option", {
+          name: new RegExp(`^${backend.name} ${marker}`),
+        }),
       ).toBeVisible();
     }
 

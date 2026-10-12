@@ -127,7 +127,9 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
       expect(allowed).not.toContain("mcp__orc__job_run");
       expect(allowed).not.toContain("Read");
       expect(cmd.join(" ")).not.toContain("s3cret");
-      const parsed = JSON.parse(configJson) as { mcpServers: Record<string, unknown> };
+      const parsed = JSON.parse(configJson) as {
+        mcpServers: Record<string, unknown>;
+      };
       expect(Object.keys(parsed.mcpServers)).toEqual(["orc"]);
       expect(parsed.mcpServers.orc).toEqual({
         type: "http",

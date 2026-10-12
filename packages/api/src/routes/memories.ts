@@ -61,7 +61,11 @@ const searchRoute = createRoute({
   responses: {
     200: {
       description: "Search results",
-      content: { "application/json": { schema: z.object({ results: z.array(MemorySchema) }) } },
+      content: {
+        "application/json": {
+          schema: z.object({ results: z.array(MemorySchema) }),
+        },
+      },
     },
   },
 });
@@ -82,7 +86,11 @@ const listRoute = createRoute({
   responses: {
     200: {
       description: "Memory list",
-      content: { "application/json": { schema: z.object({ memories: z.array(MemorySchema) }) } },
+      content: {
+        "application/json": {
+          schema: z.object({ memories: z.array(MemorySchema) }),
+        },
+      },
     },
   },
 });
@@ -92,9 +100,14 @@ const createRoute_ = createRoute({
   path: "/memories",
   tags: ["Memory"],
   summary: "Store a memory",
-  request: { body: { content: { "application/json": { schema: CreateMemorySchema } } } },
+  request: {
+    body: { content: { "application/json": { schema: CreateMemorySchema } } },
+  },
   responses: {
-    201: { description: "Created", content: { "application/json": { schema: MemorySchema } } },
+    201: {
+      description: "Created",
+      content: { "application/json": { schema: MemorySchema } },
+    },
   },
 });
 
@@ -120,7 +133,10 @@ const updateRoute = createRoute({
     body: { content: { "application/json": { schema: UpdateMemorySchema } } },
   },
   responses: {
-    200: { description: "Updated", content: { "application/json": { schema: MemorySchema } } },
+    200: {
+      description: "Updated",
+      content: { "application/json": { schema: MemorySchema } },
+    },
   },
 });
 
@@ -302,7 +318,9 @@ app.openapi(updateRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
   const body = c.req.valid("json");
-  const existing = await db.query.memories.findFirst({ where: eq(memories.id, id) });
+  const existing = await db.query.memories.findFirst({
+    where: eq(memories.id, id),
+  });
   if (!existing) throw new NotFoundError("Memory", id);
   captureMemoryEvidence(getSqlite(), id);
   const updates: Record<string, unknown> = { updated_at: new Date() };
@@ -322,7 +340,9 @@ app.openapi(updateRoute, async (c) => {
 app.openapi(deleteRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
-  const existing = await db.query.memories.findFirst({ where: eq(memories.id, id) });
+  const existing = await db.query.memories.findFirst({
+    where: eq(memories.id, id),
+  });
   if (!existing) throw new NotFoundError("Memory", id);
   await db.delete(memories).where(eq(memories.id, id));
   new PassageIndex(getSqlite()).retire("memory", id);

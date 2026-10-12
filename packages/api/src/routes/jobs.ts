@@ -116,7 +116,9 @@ const listRoute = createRoute({
   responses: {
     200: {
       description: "Jobs",
-      content: { "application/json": { schema: z.object({ jobs: z.array(JobSchema) }) } },
+      content: {
+        "application/json": { schema: z.object({ jobs: z.array(JobSchema) }) },
+      },
     },
   },
 });
@@ -128,7 +130,10 @@ const getRoute = createRoute({
   summary: "Get job",
   request: { params: z.object({ id: z.string() }) },
   responses: {
-    200: { description: "Job", content: { "application/json": { schema: JobSchema } } },
+    200: {
+      description: "Job",
+      content: { "application/json": { schema: JobSchema } },
+    },
   },
 });
 
@@ -137,9 +142,14 @@ const createRoute_ = createRoute({
   path: "/jobs",
   tags: ["Jobs"],
   summary: "Create job",
-  request: { body: { content: { "application/json": { schema: CreateJobSchema } } } },
+  request: {
+    body: { content: { "application/json": { schema: CreateJobSchema } } },
+  },
   responses: {
-    201: { description: "Created", content: { "application/json": { schema: JobSchema } } },
+    201: {
+      description: "Created",
+      content: { "application/json": { schema: JobSchema } },
+    },
   },
 });
 
@@ -172,7 +182,10 @@ const updateRoute = createRoute({
     body: { content: { "application/json": { schema: UpdateJobSchema } } },
   },
   responses: {
-    200: { description: "Updated", content: { "application/json": { schema: JobSchema } } },
+    200: {
+      description: "Updated",
+      content: { "application/json": { schema: JobSchema } },
+    },
   },
 });
 
@@ -196,7 +209,9 @@ const triggerRoute = createRoute({
   responses: {
     202: {
       description: "Triggered",
-      content: { "application/json": { schema: z.object({ run_id: z.string() }) } },
+      content: {
+        "application/json": { schema: z.object({ run_id: z.string() }) },
+      },
     },
   },
 });
@@ -208,12 +223,18 @@ const runsRoute = createRoute({
   summary: "List job runs",
   request: {
     params: z.object({ id: z.string() }),
-    query: z.object({ limit: z.coerce.number().int().min(1).max(50).optional().default(20) }),
+    query: z.object({
+      limit: z.coerce.number().int().min(1).max(50).optional().default(20),
+    }),
   },
   responses: {
     200: {
       description: "Runs",
-      content: { "application/json": { schema: z.object({ runs: z.array(JobRunSchema) }) } },
+      content: {
+        "application/json": {
+          schema: z.object({ runs: z.array(JobRunSchema) }),
+        },
+      },
     },
   },
 });
@@ -234,7 +255,9 @@ const runLogsRoute = createRoute({
     200: {
       description: "Log lines",
       content: {
-        "application/json": { schema: z.object({ logs: z.array(JobRunLogSchema) }) },
+        "application/json": {
+          schema: z.object({ logs: z.array(JobRunLogSchema) }),
+        },
       },
     },
   },
@@ -427,7 +450,9 @@ app.openapi(runLogsRoute, async (c) => {
   const { id, runId } = c.req.valid("param");
   const { stream, limit } = c.req.valid("query");
 
-  const run = await db.query.job_runs.findFirst({ where: eq(job_runs.id, runId) });
+  const run = await db.query.job_runs.findFirst({
+    where: eq(job_runs.id, runId),
+  });
   if (!run || run.job_id !== id) throw new NotFoundError("JobRun", runId);
 
   const rows = await db.query.job_run_logs.findMany({

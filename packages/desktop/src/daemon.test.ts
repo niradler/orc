@@ -49,9 +49,16 @@ describe("ensureDaemon", () => {
         `Bun.serve({ port: Number(process.argv[3]), fetch: () => Response.json({ status: "ok", secret: process.env.ORC_API_SECRET ?? null }) });
 await new Promise(() => {});`,
       );
-      const daemon = await ensureDaemon({ port, bin, secret: "s3cret", timeoutMs: 10_000 });
+      const daemon = await ensureDaemon({
+        port,
+        bin,
+        secret: "s3cret",
+        timeoutMs: 10_000,
+      });
       expect(daemon.owned).toBe(true);
-      const body = (await (await fetch(`${daemon.url}/api/health`)).json()) as { secret: string };
+      const body = (await (await fetch(`${daemon.url}/api/health`)).json()) as {
+        secret: string;
+      };
       expect(body.secret).toBe("s3cret");
       expect(await isHealthy(daemon.url)).toBe(true);
       daemon.stop();
@@ -72,7 +79,11 @@ await new Promise(() => {});`,
 
   test("throws when the binary is missing", async () => {
     await expect(
-      ensureDaemon({ port: freePort(), bin: join(dir, "missing"), timeoutMs: 1000 }),
+      ensureDaemon({
+        port: freePort(),
+        bin: join(dir, "missing"),
+        timeoutMs: 1000,
+      }),
     ).rejects.toThrow("orc binary not found");
   });
 });

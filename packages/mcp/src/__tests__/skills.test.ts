@@ -90,7 +90,10 @@ description: MCP test skill
 
 MCP test body.`;
 
-    const result = await executeTool("skill_create", { name: TEST_NAME, content });
+    const result = await executeTool("skill_create", {
+      name: TEST_NAME,
+      content,
+    });
     expect(result).toContain("Created skill");
     expect(result).toContain(TEST_NAME);
   });
@@ -127,7 +130,10 @@ describe("multi-file skills MCP", () => {
       name,
       content: `---\nname: ${name}\ndescription: Bundle\n---\nMain instructions`,
       files: [
-        { path: "scripts/run.py", content: "raise RuntimeError('do not execute while reading')" },
+        {
+          path: "scripts/run.py",
+          content: "raise RuntimeError('do not execute while reading')",
+        },
         { path: "references/deep/guide.md", content: "Detailed guide" },
       ],
     });
@@ -136,10 +142,16 @@ describe("multi-file skills MCP", () => {
     expect(entry).toContain("scripts/run.py");
     expect(entry).toContain("references/deep/guide.md");
     expect(entry).not.toContain("raise RuntimeError");
-    const script = await executeTool("skill_read", { name, ref: "scripts/run.py" });
+    const script = await executeTool("skill_read", {
+      name,
+      ref: "scripts/run.py",
+    });
     expect(script).toContain("raise RuntimeError");
-    expect(await executeTool("skill_read", { name, ref: "references/deep/guide.md" })).toContain(
-      "Detailed guide",
-    );
+    expect(
+      await executeTool("skill_read", {
+        name,
+        ref: "references/deep/guide.md",
+      }),
+    ).toContain("Detailed guide");
   });
 });

@@ -33,7 +33,13 @@ const makePolicy = (argv: string[], timeout_ms = 1000) => ({
       filter: {
         match: "all",
         conditions: [
-          { predicate: { field: "input.command", operator: "equals", value: "block-me" } },
+          {
+            predicate: {
+              field: "input.command",
+              operator: "equals",
+              value: "block-me",
+            },
+          },
         ],
       },
       target: { type: "script", mode: "sync", argv, timeout_ms },

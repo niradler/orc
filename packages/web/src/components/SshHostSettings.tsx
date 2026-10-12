@@ -69,8 +69,8 @@ export function SshHostSettings() {
         )}
         {!ssh.secret_set && (
           <p data-testid="ssh-secret-missing" className="font-body text-[11px] text-tertiary">
-            Set api.secret (or ORC_API_SECRET) before selecting a host: the tunnel exposes orc's API
-            on it.
+            Set api.secret (or ORC_API_SECRET) before selecting a host. Host agents and terminals
+            can execute arbitrary commands through orc.
           </p>
         )}
         <div className="space-y-2">
@@ -121,7 +121,12 @@ export function SshHostSettings() {
           <Button
             data-testid="ssh-save"
             disabled={disabled || (alias !== null && !portValid) || select.isPending}
-            onClick={() => select.mutate({ host: alias, remotePort: alias ? portNumber : null })}
+            onClick={() =>
+              select.mutate({
+                host: alias,
+                remotePort: alias ? portNumber : null,
+              })
+            }
             className="font-label text-xs uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
           >
             <Save size={12} className="mr-1.5" /> Use Host
