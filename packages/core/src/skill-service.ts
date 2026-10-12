@@ -58,7 +58,7 @@ export type SkillIssue = { path: string; error: string };
 export type SkillWarning = { path: string; message: string };
 
 export type SkillCache = {
-	version: 5;
+  version: 5;
   builtAt: string;
   skills: SkillMeta[];
   broken: SkillIssue[];
@@ -381,7 +381,7 @@ function loadCache(): SkillCache | null {
   try {
     const raw = readFileSync(CACHE_PATH, "utf-8");
     const cache = JSON.parse(raw) as SkillCache;
-		return cache.version === 5 ? cache : null;
+    return cache.version === 5 ? cache : null;
   } catch {
     return null;
   }
@@ -398,7 +398,7 @@ export function reloadCache(): SkillCache {
   const warnings: SkillCache["warnings"] = [];
   const skills = scanSkills(broken, warnings);
   const cache: SkillCache = {
-		version: 5,
+    version: 5,
     builtAt: new Date().toISOString(),
     skills,
     broken,
