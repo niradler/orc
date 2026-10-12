@@ -13,7 +13,10 @@ type QueryArgs = {
 };
 
 const queries: QueryArgs[] = [];
+// mock.module is process-wide, so keep the real exports for other test files.
+const actualSdk = await import("@anthropic-ai/claude-agent-sdk");
 mock.module("@anthropic-ai/claude-agent-sdk", () => ({
+  ...actualSdk,
   query: (args: QueryArgs) => {
     queries.push(args);
     return (async function* () {})();

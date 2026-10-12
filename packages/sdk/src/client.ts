@@ -1,15 +1,6 @@
 import { loadConfig } from "@orc/core/config";
-import type { EvidenceSource, Passage, RetrievalQuery, RetrievalResult } from "@orc/core/retrieval";
+import type { RuleEventCapability, RuleHookBackend } from "@orc/core/rule-events";
 import type { RuleDecision, RuleEvent, RulePolicy, RuleRevision } from "@orc/core/rule-types";
-import type {
-  SkillActivation,
-  SkillEvaluation,
-  SkillProposal,
-  WikiContribution,
-  WikiContributionAttempt,
-  WikiOutcome,
-  WikiPage,
-} from "@orc/core/wiki";
 import type {
   AgentBackendInfo,
   AgentFull,
@@ -142,71 +133,13 @@ export function createOrcClient(options?: OrcClientOptions) {
             error: string | null;
           }[];
           adapters: { backend: string; interception: string }[];
+          events: Record<RuleHookBackend, RuleEventCapability[]>;
         }>("GET", "/rules", undefined, { workspace }),
       activate: (policy: RulePolicy, expected_id: string | null, reason: string) =>
         c<RuleRevision>("POST", "/rules/activate", { policy, expected_id, reason }),
       revert: (id: string, reason: string) =>
         c<RuleRevision>("POST", "/rules/revert", { id, reason }),
       check: (event: RuleEvent) => c<RuleDecision>("POST", "/rules/check", event),
-    },
-    evolution: {
-      propose: (input: SkillProposal) => c<{ id: string }>("POST", "/skills/proposals", input),
-      evaluate: (input: SkillEvaluation) =>
-        c<{ id: string; result: string }>("POST", "/skills/evaluations", input),
-      proposals: (project_id?: string) =>
-        c<{
-          proposals: {
-            id: string;
-            skill_name: string;
-            status: string;
-            decision: string | null;
-            payload: string;
-          }[];
-          evaluations: { id: string; proposal_id: string; payload: string; result: string }[];
-        }>("GET", "/skills/proposals", undefined, { project_id }),
-      reject: (id: string, project_id: string | null, reason: string) =>
-        c<{ ok: true }>("POST", "/skills/proposals/reject", { id, project_id, reason }),
-      baseline: (name: string, project_id?: string) =>
-        c<{ hash: string; base_hash: string; raw: string }>(
-          "GET",
-          "/skills/evolution/baseline",
-          undefined,
-          { name, project_id },
-        ),
-      history: (project_id?: string) =>
-        c<{ history: SkillActivation[] }>("GET", "/skills/evolution", undefined, { project_id }),
-      revert: (id: string, project_id: string | null, reason: string) =>
-        c<{ id: string }>("POST", "/skills/evolution/revert", { id, project_id, reason }),
-    },
-    evidence: {
-      get: (ids: string[], project_id: string | null) =>
-        c<{ passages: Passage[] }>("POST", "/knowledge/passages/get", { ids, project_id }),
-      embed: (kind: EvidenceSource["kind"], source_id: string, project_id: string | null) =>
-        c<{ embedded: number; semantic: "off" | "ready" | "degraded" }>(
-          "POST",
-          "/knowledge/passages/embed",
-          { kind, source_id, project_id },
-        ),
-      search: (input: RetrievalQuery) =>
-        c<RetrievalResult>("POST", "/knowledge/passages/search", input),
-      index: (input: EvidenceSource) =>
-        c<{ version: string }>("POST", "/knowledge/passages/index", input),
-      expand: (id: string, project_id: string | null, radius = 1) =>
-        c<{ passages: Passage[] }>("POST", "/knowledge/passages/expand", {
-          id,
-          project_id,
-          radius,
-        }),
-    },
-    wiki: {
-      read: (project_id?: string, slug?: string) =>
-        c<{
-          pages: WikiPage[];
-          history: WikiPage[];
-          contributions: WikiContribution[];
-          attempts: WikiContributionAttempt[];
-        }>("GET", "/knowledge/wiki", undefined, { project_id, slug }),
-      apply: (input: WikiOutcome) => c<{ ok: true }>("POST", "/knowledge/wiki/apply", input),
     },
     tasks: {
       list: (params?: { project_id?: string; status?: string; tag?: string; limit?: number }) =>

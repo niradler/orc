@@ -310,21 +310,6 @@ describe("MCP context tool", () => {
 // ── Session log ───────────────────────────────────────────────────────────────
 
 describe("MCP session_log tool", () => {
-  test("should deduplicate repeated work-unit contributions", async () => {
-    const args = {
-      agent: "test-idempotency",
-      session_id: "dedup-work-unit",
-      summary: "Verified source evidence once",
-    };
-    await executeTool("session_log", args);
-    await executeTool("session_log", args);
-    const result = JSON.parse(await executeTool("wiki_read", {})) as {
-      contributions: { source_id: string }[];
-    };
-    expect(
-      result.contributions.filter((entry) => entry.source_id.endsWith(":dedup-work-unit")),
-    ).toHaveLength(1);
-  });
   test("session_log with agent_version stores session", async () => {
     const result = await executeTool("session_log", {
       agent: "codex",
@@ -455,11 +440,9 @@ describe("memory_update tool", () => {
   });
 
   test("update nonexistent returns not found", async () => {
-    const result = await executeTool("memory_update", {
-      id: "nonexistent",
-      content: "should fail",
-    });
-    expect(result).toContain("not found");
+    await expect(
+      executeTool("memory_update", { id: "nonexistent", content: "should fail" }),
+    ).rejects.toThrow("not found");
   });
 });
 
@@ -508,10 +491,18 @@ describe("memory_store source metadata", () => {
   });
 });
 
-// ── Similarity hint on store ─────────────────────────────────────────────────
+// ── Dedup on store ───────────────────────────────────────────────────────────
 
-describe("memory_store similarity hint", () => {
-  test("warns when storing near-duplicate", async () => {
+function storedId(result: string): string {
+  const match = result.match(
+    /^(?:Stored|Merged into|Skipped: near-identical to existing memory):? (\S+)/,
+  );
+  if (!match?.[1]) throw new Error(`No memory id in: ${result}`);
+  return match[1];
+}
+
+describe("memory_store dedup", () => {
+  test("should list similar memories and suggest merge_into or supersedes", async () => {
     await executeTool("memory_store", {
       content: "Always use biome for linting and formatting",
       type: "rule",
@@ -523,17 +514,56 @@ describe("memory_store similarity hint", () => {
       type: "rule",
       scope: "code-style",
     });
-    expect(result).toContain("Similar memory exists");
-    expect(result).toContain("memory_update");
+    expect(result).toStartWith("Stored:");
+    expect(result).toContain("Similar memories");
+    expect(result).toContain("merge_into");
   });
 
-  test("no warning for genuinely unique content", async () => {
+  test("should skip a near-identical memory", async () => {
+    const first = await executeTool("memory_store", {
+      content: "Deploy previews live under the staging subdomain only",
+      type: "fact",
+    });
+    const second = await executeTool("memory_store", {
+      content: "Deploy previews live under the staging subdomain only.",
+      type: "fact",
+    });
+    expect(second).toStartWith("Skipped:");
+    expect(storedId(second)).toBe(storedId(first));
+  });
+
+  test("should merge into and supersede existing memories", async () => {
+    const original = storedId(
+      await executeTool("memory_store", { content: "Queue workers poll every 30 seconds" }),
+    );
+    const merged = await executeTool("memory_store", {
+      content: "Queue workers poll every 30 seconds and back off to 5 minutes when idle",
+      merge_into: [original],
+    });
+    expect(merged).toStartWith("Merged into:");
+    expect(merged).toContain(`Replaced: ${original}`);
+    const combined = storedId(merged);
+
+    const replacement = await executeTool("memory_store", {
+      content: "Queue workers are push-based now; polling was removed",
+      supersedes: [combined],
+    });
+    expect(replacement).toContain(`Superseded: ${combined}`);
+    const search = await executeTool("memory_search", { query: "queue workers poll" });
+    expect(search).not.toContain(original);
+    expect(search).not.toContain(combined);
+    await expect(executeTool("memory_update", { id: original, title: "stale" })).rejects.toThrow(
+      "memory.merged",
+    );
+  });
+
+  test("should not list similar memories for genuinely unique content", async () => {
     const result = await executeTool("memory_store", {
       content: "xylophone zebra platypus narwhal 9f8a7b6c",
       type: "fact",
       scope: "unique-test-scope-12345",
     });
-    expect(result).not.toContain("Similar memory exists");
+    expect(result).not.toContain("Similar memories");
   });
 });
 

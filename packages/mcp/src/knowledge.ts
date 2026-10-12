@@ -17,8 +17,7 @@ import type {
   KnowledgeStatus,
 } from "@orc/core/knowledge";
 import { createLogger } from "@orc/core/logger";
-import { getDb, getSqlite } from "@orc/db/client";
-import { PassageIndex } from "@orc/db/retrieval";
+import { getDb } from "@orc/db/client";
 import { knowledge_collections } from "@orc/db/schema";
 import type { HybridQueryResult, QMDStore, SearchResult } from "@tobilu/qmd";
 import { eq } from "drizzle-orm";
@@ -210,7 +209,6 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
           updated_at: now,
         },
       });
-    await this.syncPassages([name]);
   }
 
   async removeCollection(name: string): Promise<boolean> {
@@ -220,12 +218,6 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
     // Clean up orc.db mapping
     const db = getDb();
     await db.delete(knowledge_collections).where(eq(knowledge_collections.name, name));
-    new PassageIndex(getSqlite());
-    getSqlite()
-      .query(
-        "UPDATE evidence_sources SET active=0 WHERE kind='document' AND source_id LIKE ? ESCAPE '\\'",
-      )
-      .run(`${name.replace(/[\\%_]/g, "\\$&")}/%`);
 
     return removed;
   }
@@ -241,7 +233,6 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
         validateKnowledgePattern(collection.glob_pattern);
     }
     const result = await store.update(opts?.collections ? { collections: opts.collections } : {});
-    await this.syncPassages(opts?.collections);
 
     // Auto-embed when hybrid mode is configured - enables vector search + reranking
     if (config.knowledge.search_mode === "hybrid" && (result.indexed > 0 || result.updated > 0)) {
@@ -277,61 +268,6 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
       dbPath: this.dbPath,
       searchMode: config.knowledge.search_mode,
     };
-  }
-
-  private async syncPassages(names?: string[]): Promise<void> {
-    const store = await this.getStore();
-    const collections = await this.listCollections();
-    const index = new PassageIndex(getSqlite());
-    for (const collection of collections) {
-      if (names && !names.includes(collection.name)) continue;
-      if (!collection.documentCount) {
-        const escaped = collection.name.replace(/[\\%_]/g, "\\$&");
-        getSqlite()
-          .query(
-            "UPDATE evidence_sources SET active=0 WHERE kind='document' AND source_id LIKE ? ESCAPE '\\'",
-          )
-          .run(`${escaped}/%`);
-        continue;
-      }
-      const results = await store.multiGet(`qmd://${collection.name}/**`, {
-        includeBody: true,
-        maxBytes: 2_000_000,
-      });
-      if (results.errors.length || results.docs.some((result) => result.skipped))
-        throw new OrcError(
-          "Knowledge passage synchronization was incomplete; previous passage index retained",
-          "KNOWLEDGE_SYNC_INCOMPLETE",
-          503,
-        );
-      getSqlite().transaction(() => {
-        const escaped = collection.name.replace(/[\\%_]/g, "\\$&");
-        getSqlite()
-          .query(
-            "UPDATE evidence_sources SET active=0 WHERE kind='document' AND source_id LIKE ? ESCAPE '\\'",
-          )
-          .run(`${escaped}/%`);
-        for (const result of results.docs) {
-          if (result.skipped) continue;
-          const doc = result.doc;
-          if (!doc.body) continue;
-          index.put({
-            kind: "document",
-            source_id: `${collection.name}/${doc.filepath}`,
-            project_id: collection.projectId,
-            title: doc.title,
-            content: doc.body,
-            location: doc.displayPath,
-            tags: [],
-            metadata: {
-              collection: collection.name,
-              docid: doc.docid,
-              modified_at: doc.modifiedAt,
-            },
-          });
-        }
-      })();
-    }
   }
 
   async close(): Promise<void> {

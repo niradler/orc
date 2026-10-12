@@ -1,15 +1,13 @@
 import type { Database } from "bun:sqlite";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError } from "@orc/core/errors";
-import { ulid } from "@orc/core/ids";
-import { normalizeTags } from "@orc/core/retrieval";
 import { getDb, getSqlite } from "@orc/db/client";
-import { captureMemoryEvidence } from "@orc/db/evidence-sync";
-import { PassageIndex } from "@orc/db/retrieval";
+import { MemoryStore, SIMILAR_MEMORY_HINT } from "@orc/db/memories";
 import { memories } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
 
 const app = new OpenAPIHono();
+const API_ACTOR = "api";
 
 const MemoryTypeSchema = z.enum(["fact", "decision", "event", "rule", "discovery"]);
 
@@ -41,8 +39,37 @@ const CreateMemorySchema = z
     tags: z.array(z.string()).optional(),
     importance: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
     expires_at: z.string().datetime().optional(),
+    merge_into: z
+      .array(z.string())
+      .min(1)
+      .max(20)
+      .optional()
+      .describe("Replace these memories with this one; they are removed and kept in the audit log"),
+    supersedes: z
+      .array(z.string())
+      .max(20)
+      .optional()
+      .describe("Memories this one contradicts; they are removed and kept in the audit log"),
   })
   .openapi("CreateMemory");
+
+const SimilarMemorySchema = z.object({
+  id: z.string(),
+  title: z.string().nullable(),
+  type: MemoryTypeSchema,
+  snippet: z.string(),
+  similarity: z.number(),
+});
+
+// The stored memory (or, on skip, the existing one kept) plus the dedup outcome beside it.
+const StoreMemoryResultSchema = MemorySchema.extend({
+  status: z.enum(["added", "merged", "skipped"]),
+  existing_id: z.string().optional().describe("Set on skip: the near-identical memory kept"),
+  merged: z.array(z.string()).optional().describe("Set on merge: the memories this one replaced"),
+  similar: z.array(SimilarMemorySchema),
+  superseded: z.array(z.string()),
+  hint: z.string().optional(),
+}).openapi("StoreMemoryResult");
 
 const searchRoute = createRoute({
   method: "get",
@@ -91,10 +118,17 @@ const createRoute_ = createRoute({
   method: "post",
   path: "/memories",
   tags: ["Memory"],
-  summary: "Store a memory",
+  summary: "Store a memory (skips near-duplicates, can merge or supersede)",
   request: { body: { content: { "application/json": { schema: CreateMemorySchema } } } },
   responses: {
-    201: { description: "Created", content: { "application/json": { schema: MemorySchema } } },
+    200: {
+      description: "Merged into an existing memory, or skipped as a near-duplicate",
+      content: { "application/json": { schema: StoreMemoryResultSchema } },
+    },
+    201: {
+      description: "Created",
+      content: { "application/json": { schema: StoreMemoryResultSchema } },
+    },
   },
 });
 
@@ -107,6 +141,11 @@ const UpdateMemorySchema = z
     scope: z.string().optional(),
     tags: z.array(z.string()).optional(),
     importance: z.enum(["low", "normal", "high", "critical"]).optional(),
+    supersedes: z
+      .array(z.string())
+      .max(20)
+      .optional()
+      .describe("Memories this one contradicts; they are removed and kept in the audit log"),
   })
   .openapi("UpdateMemory");
 
@@ -275,46 +314,35 @@ app.openapi(listRoute, async (c) => {
 app.openapi(createRoute_, async (c) => {
   const db = getDb();
   const body = c.req.valid("json");
-  const now = new Date();
-  const id = ulid();
-
-  await db.insert(memories).values({
-    id,
-    title: body.title,
-    type: body.type ?? "fact",
-    content: body.content,
-    source: body.source,
-    scope: body.scope,
-    project_id: body.project_id,
-    tags: body.tags ? normalizeTags(body.tags) : undefined,
-    importance: body.importance,
+  const result = new MemoryStore(getSqlite(db)).store({
+    ...body,
     expires_at: body.expires_at ? new Date(body.expires_at) : undefined,
-    created_at: now,
-    updated_at: now,
+    actor: API_ACTOR,
   });
-
-  const mem = await db.query.memories.findFirst({ where: eq(memories.id, id) });
-  captureMemoryEvidence(getSqlite(), id);
-  return c.json(toDto(mem as NonNullable<typeof mem>), 201);
+  const memoryId = result.status === "skipped" ? result.existing_id : result.id;
+  const mem = await db.query.memories.findFirst({ where: eq(memories.id, memoryId) });
+  if (!mem) throw new NotFoundError("Memory", memoryId);
+  const similar = result.status === "merged" ? [] : result.similar;
+  const response = {
+    ...toDto(mem),
+    status: result.status,
+    similar,
+    superseded: result.superseded,
+    ...(result.status === "skipped" ? { existing_id: result.existing_id } : {}),
+    ...(result.status === "merged" ? { merged: result.merged } : {}),
+    ...(similar.length > 0 ? { hint: SIMILAR_MEMORY_HINT } : {}),
+  };
+  return c.json(response, result.status === "added" ? 201 : 200);
 });
 
 app.openapi(updateRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
   const body = c.req.valid("json");
-  const existing = await db.query.memories.findFirst({ where: eq(memories.id, id) });
-  if (!existing) throw new NotFoundError("Memory", id);
-  captureMemoryEvidence(getSqlite(), id);
-  const updates: Record<string, unknown> = { updated_at: new Date() };
-  if (body.content !== undefined) updates.content = body.content;
-  if (body.title !== undefined) updates.title = body.title;
-  if (body.type !== undefined) updates.type = body.type;
-  if (body.source !== undefined) updates.source = body.source;
-  if (body.scope !== undefined) updates.scope = body.scope;
-  if (body.tags !== undefined) updates.tags = normalizeTags(body.tags);
-  if (body.importance !== undefined) updates.importance = body.importance;
-  await db.update(memories).set(updates).where(eq(memories.id, id));
-  captureMemoryEvidence(getSqlite(), id);
+  const store = new MemoryStore(getSqlite(db));
+  const { supersedes, ...fields } = body;
+  store.update(id, fields, { actor: API_ACTOR });
+  if (supersedes?.length) store.supersede(id, supersedes, { actor: API_ACTOR });
   const mem = await db.query.memories.findFirst({ where: eq(memories.id, id) });
   return c.json(toDto(mem as NonNullable<typeof mem>));
 });
@@ -322,10 +350,7 @@ app.openapi(updateRoute, async (c) => {
 app.openapi(deleteRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
-  const existing = await db.query.memories.findFirst({ where: eq(memories.id, id) });
-  if (!existing) throw new NotFoundError("Memory", id);
-  await db.delete(memories).where(eq(memories.id, id));
-  new PassageIndex(getSqlite()).retire("memory", id);
+  new MemoryStore(getSqlite(db)).remove(id, { actor: API_ACTOR });
   return new Response(null, { status: 204 });
 });
 

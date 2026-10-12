@@ -51,6 +51,7 @@ export async function gotoView(
     | "sessions"
     | "knowledge"
     | "skills"
+    | "rules"
     | "settings",
 ): Promise<void> {
   if (API_SECRET) {

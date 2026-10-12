@@ -2,6 +2,9 @@ import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { ConflictError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
+import { ruleEventCapability } from "@orc/core/rule-events";
+import { matchesRuleFilter } from "@orc/core/rule-filters";
+import { runRuleScript } from "@orc/core/rule-script";
 import type { RuleRevision } from "@orc/core/rule-types";
 import {
   canonicalWorkspace,
@@ -44,6 +47,9 @@ export function installRules(db: Database): void {
       UNIQUE(decision_id,rule_id)
     );
   `);
+  const columns = db.query<{ name: string }, []>("PRAGMA table_info(rule_actions)").all();
+  if (!columns.some((column) => column.name === "event_json"))
+    db.exec("ALTER TABLE rule_actions ADD COLUMN event_json TEXT");
 }
 
 type RevisionRow = Omit<RuleRevision, "policy" | "current"> & {
@@ -112,12 +118,18 @@ export class RuleStore {
         if (project !== null && !this.db.query("SELECT id FROM projects WHERE id=?").get(project))
           throw new ValidationError("Unknown policy project");
         for (const rule of policy?.rules ?? []) {
-          if (rule.kind !== "enqueue_job") continue;
+          const jobId =
+            rule.kind === "enqueue_job"
+              ? rule.job_id
+              : rule.kind === "event" && rule.target.type === "job"
+                ? rule.target.job_id
+                : null;
+          if (!jobId) continue;
           const job = this.db
             .query<{ project_id: string | null; command: string }, [string]>(
               "SELECT project_id,command FROM jobs WHERE id=? AND enabled=1",
             )
-            .get(rule.job_id);
+            .get(jobId);
           if (!job || job.project_id !== project || job.command.startsWith("__internal:"))
             throw new ValidationError(
               "Rule action requires an enabled ordinary job in the same project",
@@ -184,7 +196,32 @@ export class RuleStore {
     const serialized = JSON.stringify(event);
     if (serialized.length > 1_100_000) throw new ValidationError("Rule event exceeds input limit");
     const combined: RuleDecision = { decision: "abstain", reasons: [], context: [], jobs: [] };
-    for (const active of this.active(event.cwd)) {
+    const policies = this.active(event.cwd);
+    const synchronousBudget = policies.reduce(
+      (total, active) =>
+        total +
+        (active.policy?.rules.reduce(
+          (sum, rule) =>
+            sum +
+            (rule.kind === "event" &&
+            rule.enabled &&
+            rule.target.type === "script" &&
+            rule.target.mode === "sync" &&
+            (rule.scope.agents === "all" ||
+              rule.scope.agents.some((agent) => agent === event.backend)) &&
+            rule.scope.events.some(
+              (name) => name === event.phase || name === `native:${event.native_event}`,
+            ) &&
+            matchesRuleFilter(rule.filter, event)
+              ? rule.target.timeout_ms
+              : 0),
+          0,
+        ) ?? 0),
+      0,
+    );
+    if (process.env.ORC_RULE_ACTION !== "1" && synchronousBudget > 5000)
+      throw new ValidationError("Combined synchronous script timeout exceeds 5000ms");
+    for (const active of policies) {
       if (!active.policy) continue;
       const result = record
         ? this.record(active, event, serialized)
@@ -197,6 +234,10 @@ export class RuleStore {
       combined.reasons.push(...result.reasons);
       combined.context.push(...result.context);
       combined.jobs.push(...result.jobs);
+      if (result.scripts?.length) {
+        combined.scripts ??= [];
+        combined.scripts.push(...result.scripts);
+      }
     }
     if (combined.context.reduce((sum, text) => sum + text.length, 0) > 32000)
       throw new ValidationError("Combined rule context exceeds 32000 characters");
@@ -209,7 +250,7 @@ export class RuleStore {
     const eventKey = createHash("sha256")
       .update(JSON.stringify([active.id, event.backend, event.session_id, event.id, event.phase]))
       .digest("hex");
-    return this.db
+    const recorded = this.db
       .transaction(() => {
         const existing = this.db
           .query<{ input_hash: string; result: string }, [string]>(
@@ -219,16 +260,25 @@ export class RuleStore {
         if (existing) {
           if (existing.input_hash !== inputHash)
             throw new ConflictError("Event identity reused with different input");
-          return JSON.parse(existing.result) as RuleDecision;
+          return {
+            fresh: false,
+            finalized: true,
+            id: "",
+            result: JSON.parse(existing.result) as RuleDecision,
+          };
         }
         const result = evaluateRules(active.policy as RulePolicy, event, [
           this.db.filename,
           `${this.db.filename}-wal`,
           `${this.db.filename}-shm`,
         ]);
-        if (process.env.ORC_RULE_ACTION === "1") result.jobs = [];
+        if (process.env.ORC_RULE_ACTION === "1") {
+          result.jobs = [];
+          result.scripts = [];
+        }
         const id = ulid();
         const now = Date.now();
+        const synchronous = result.scripts?.some((script) => script.target.mode === "sync");
         this.db
           .query(
             "INSERT INTO rule_decisions(id,event_key,input_hash,revision_id,session_id,phase,tool,result,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -241,34 +291,122 @@ export class RuleStore {
             event.session_id,
             event.phase,
             event.tool ?? null,
-            JSON.stringify(result),
+            JSON.stringify(
+              synchronous
+                ? {
+                    ...result,
+                    decision: "deny",
+                    reasons: [
+                      ...result.reasons,
+                      {
+                        rule_id: "script-pending",
+                        reason: "Script execution incomplete; external effects unknown",
+                      },
+                    ],
+                  }
+                : result,
+            ),
             now,
           );
-        for (const job of result.jobs) {
-          const count =
-            this.db
-              .query<{ count: number }, []>(
-                "SELECT count(*) AS count FROM rule_actions WHERE status='pending'",
-              )
-              .get()?.count ?? 0;
-          this.db
-            .query(
-              "INSERT INTO rule_actions(id,decision_id,rule_id,job_id,status,error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)",
-            )
-            .run(
-              ulid(),
-              id,
-              job.rule_id,
-              job.job_id,
-              count >= 1000 ? "failed" : "pending",
-              count >= 1000 ? "Rule action queue capacity exceeded" : null,
-              now,
-              now,
-            );
-        }
-        return result;
+        if (!synchronous) this.enqueue(active, event, serialized, result, id);
+        return { fresh: true, finalized: !synchronous, id, result };
       })
       .immediate();
+    if (!recorded.fresh || recorded.finalized) return recorded.result;
+    const result = recorded.result;
+    for (const script of result.scripts ?? []) {
+      if (script.target.mode !== "sync") continue;
+      try {
+        const output = runRuleScript(script.target, event);
+        const capability = ruleEventCapability(event.backend, event.phase);
+        if (output.decision === "deny" && !capability?.block)
+          throw new Error("Script returned deny for a non-blocking event");
+        if (output.context.length && !capability?.context)
+          throw new Error("Script returned context for an event that cannot inject it");
+        if (output.decision === "deny") {
+          result.decision = "deny";
+          result.reasons.push({
+            rule_id: script.rule_id,
+            reason: output.reason ?? "Script denied event",
+          });
+        }
+        result.context.push(...output.context);
+      } catch {
+        result.decision = "deny";
+        result.reasons.push({
+          rule_id: script.rule_id,
+          reason: "Custom script failed or returned an unsupported result",
+        });
+      }
+    }
+    if (result.context.join("").length > 32000) {
+      result.context = [];
+      result.decision = "deny";
+      result.reasons.push({
+        rule_id: "context-limit",
+        reason: "Combined script context exceeds limit",
+      });
+    }
+    this.db
+      .transaction(() => {
+        this.db
+          .query("UPDATE rule_decisions SET result=? WHERE id=?")
+          .run(JSON.stringify(result), recorded.id);
+        this.enqueue(active, event, serialized, result, recorded.id);
+      })
+      .immediate();
+    return result;
+  }
+
+  private enqueue(
+    active: RuleRevision,
+    event: RuleEvent,
+    serialized: string,
+    result: RuleDecision,
+    decisionId: string,
+  ): void {
+    const now = Date.now();
+    const actions = [...result.jobs];
+    for (const script of result.scripts ?? []) {
+      if (script.target.mode !== "background") continue;
+      const jobId = `rule-script:${active.id}:${script.rule_id}`;
+      this.db
+        .query(
+          "INSERT INTO jobs(id,name,command,project_id,trigger_type,working_dir,timeout_secs,enabled,created_at,updated_at) VALUES (?,?,?,?,'manual',?,?,1,unixepoch(),unixepoch()) ON CONFLICT(id) DO NOTHING",
+        )
+        .run(
+          jobId,
+          jobId,
+          "__internal:rule-script",
+          active.project_id,
+          event.cwd,
+          Math.ceil(script.target.timeout_ms / 1000),
+        );
+      actions.push({ rule_id: script.rule_id, job_id: jobId });
+    }
+    for (const action of actions) {
+      const count =
+        this.db
+          .query<{ count: number }, []>(
+            "SELECT count(*) AS count FROM rule_actions WHERE status='pending'",
+          )
+          .get()?.count ?? 0;
+      this.db
+        .query(
+          "INSERT INTO rule_actions(id,decision_id,rule_id,job_id,status,error,created_at,updated_at,event_json) VALUES (?,?,?,?,?,?,?,?,?)",
+        )
+        .run(
+          ulid(),
+          decisionId,
+          action.rule_id,
+          action.job_id,
+          count >= 1000 ? "failed" : "pending",
+          count >= 1000 ? "Rule action queue capacity exceeded" : null,
+          now,
+          now,
+          count < 1000 && action.job_id.startsWith("rule-script:") ? serialized : null,
+        );
+    }
   }
 
   decisions(workspace?: string) {

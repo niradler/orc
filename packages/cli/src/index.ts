@@ -18,7 +18,6 @@ import { sessionCommand } from "./commands/session.js";
 import { skillCommand } from "./commands/skill.js";
 import { statusCommand } from "./commands/status.js";
 import { taskCommand } from "./commands/task.js";
-import { wikiCommand } from "./commands/wiki.js";
 
 type GlobalOpts = {
   db?: string;
@@ -65,7 +64,6 @@ const program = new Command()
   });
 
 program.addCommand(taskCommand());
-program.addCommand(wikiCommand());
 program.addCommand(rulesCommand());
 program.addCommand(projectCommand());
 program.addCommand(memCommand());

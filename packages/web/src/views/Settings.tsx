@@ -8,7 +8,6 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { ViewHeader } from "@/components/ViewHeader";
 import { TERMINAL_FONT_KEY } from "@/lib/terminal-runtime";
-import { RulesPanel } from "./RulesPanel";
 
 export default function Settings() {
   const [apiUrl, setApiUrl] = useState(getApiUrl);
@@ -133,8 +132,6 @@ export default function Settings() {
             Reset to Defaults
           </Button>
         </div>
-
-        <RulesPanel />
 
         {/* Info */}
         <section>

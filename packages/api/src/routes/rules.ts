@@ -1,6 +1,8 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { ForbiddenError } from "@orc/core/errors";
+import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
+import { RuleScriptSchema } from "@orc/core/rule-types";
 import { RuleEventSchema, RulePolicySchema } from "@orc/core/rules";
 import { getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
@@ -13,6 +15,7 @@ const ResultSchema = z.object({
   reasons: z.array(z.object({ rule_id: z.string(), reason: z.string() })),
   context: z.array(z.string()),
   jobs: z.array(z.object({ rule_id: z.string(), job_id: z.string() })),
+  scripts: z.array(z.object({ rule_id: z.string(), target: RuleScriptSchema })).optional(),
 });
 const RevisionSchema = z.object({
   id: z.string(),
@@ -64,6 +67,17 @@ app.openapi(
                 }),
               ),
               adapters: z.array(z.object({ backend: z.string(), interception: z.string() })),
+              events: z.record(
+                z.string(),
+                z.array(
+                  z.object({
+                    native: z.string(),
+                    event: z.string(),
+                    block: z.boolean(),
+                    context: z.boolean(),
+                  }),
+                ),
+              ),
             }),
           },
         },
@@ -79,10 +93,12 @@ app.openapi(
         history: store.history(workspace),
         decisions: store.decisions(workspace),
         actions: store.actions(workspace),
+        events: RULE_EVENT_ADAPTERS,
         adapters: [
           { backend: "claude", interception: "sdk_pre_tool" },
           { backend: "cursor", interception: "native_hook_requires_install_and_conformance" },
           { backend: "gemini", interception: "native_hook_requires_install_and_conformance" },
+          { backend: "codex", interception: "native_hook_requires_install_trust_and_conformance" },
           { backend: "other", interception: "unsupported" },
         ],
       },

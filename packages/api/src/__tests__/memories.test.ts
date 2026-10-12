@@ -215,4 +215,65 @@ describe("Memories CRUD", () => {
       expect(res.status).toBe(404);
     });
   });
+
+  describe("POST /memories dedup", () => {
+    const content = "dedupneedle the staging cluster drains nodes before every upgrade window";
+
+    test("should skip a near-identical memory and return the kept one", async () => {
+      const first = await (await req(app, "POST", "/memories", { content })).json();
+      expect(first.status).toBe("added");
+      const res = await req(app, "POST", "/memories", { content: `${content}!` });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body).toMatchObject({ status: "skipped", existing_id: first.id, id: first.id });
+    });
+
+    test("should report similar memories, merge into one and supersede another", async () => {
+      const related = await req(app, "POST", "/memories", {
+        content: "dedupneedle the staging cluster now skips draining during upgrades",
+      });
+      expect(related.status).toBe(201);
+      const relatedBody = await related.json();
+      expect(relatedBody.similar.length).toBeGreaterThan(0);
+      expect(relatedBody.hint).toContain("supersede");
+
+      const target = relatedBody.similar[0].id;
+      const merged = await (
+        await req(app, "POST", "/memories", {
+          content: "dedupneedle staging drains nodes before upgrades, then reschedules pods",
+          merge_into: [target],
+          supersedes: [relatedBody.id],
+        })
+      ).json();
+      expect(merged).toMatchObject({
+        status: "merged",
+        merged: [target],
+        superseded: [relatedBody.id],
+      });
+
+      const search = await (await req(app, "GET", "/memories/search?q=dedupneedle")).json();
+      const ids = search.results.map((item: { id: string }) => item.id);
+      expect(ids).toContain(merged.id);
+      expect(ids).not.toContain(target);
+      expect(ids).not.toContain(relatedBody.id);
+      const stale = await req(app, "PATCH", `/memories/${target}`, { title: "x" });
+      expect(stale.status).toBe(409);
+      expect((await stale.json()).error).toContain(`use ${merged.id}`);
+    });
+
+    test("should supersede through PATCH and reject an invalid target", async () => {
+      const old = await (
+        await req(app, "POST", "/memories", { content: "patchneedle old" })
+      ).json();
+      const next = await (
+        await req(app, "POST", "/memories", { content: "patchneedle new" })
+      ).json();
+      const res = await req(app, "PATCH", `/memories/${next.id}`, { supersedes: [old.id] });
+      expect(res.status).toBe(200);
+      const list = await (await req(app, "GET", "/memories/search?q=patchneedle")).json();
+      expect(list.results.map((item: { id: string }) => item.id)).toEqual([next.id]);
+      const invalid = await req(app, "PATCH", `/memories/${next.id}`, { supersedes: [next.id] });
+      expect(invalid.status).toBe(400);
+    });
+  });
 });

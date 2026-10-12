@@ -10,6 +10,7 @@ import {
   History,
   Package,
   Settings,
+  ShieldCheck,
   Terminal,
   TerminalSquare,
   Zap,
@@ -36,6 +37,7 @@ const NAV_ITEMS: {
   { id: "knowledge", path: "/knowledge", label: "Knowledge", icon: BookOpen },
   { id: "skills", path: "/skills", label: "Skills", icon: Zap },
   { id: "agents", path: "/agents", label: "Agents", icon: Brain },
+  { id: "rules", path: "/rules", label: "Rules", icon: ShieldCheck },
   { id: "packages", path: "/packages", label: "Packages", icon: Package },
 ];
 

@@ -30,13 +30,42 @@ Run `orc rules activate policy.json --reason "Project conventions"`. Updating re
 revisions, redacted decisions and action status. `orc rules revert <current-revision>
 --reason "Observed regression"` creates a new revision restoring the immediately previous
 policy; reverting the initial revision disables it. Stale updates/reverts return conflict.
-All previous versions and reasons remain stored. The dashboard's **Settings → Agent rules**
-provides file-protection controls, current/history views and human revert.
+All previous versions and reasons remain stored. The dashboard's **Rules** page (`/rules`)
+provides the Scope → Filtering → Target editor, file-protection presets, history and revert.
 
 API: `GET /api/rules`, `POST /api/rules/activate`, `POST /api/rules/revert` and
 `POST /api/rules/check`. Check accepts a normalized event and performs a dry run: it
-does not record a decision or enqueue a job. Rules are strict typed data, not scripts.
+does not record a decision, enqueue an action or execute a custom script. Rules are strict
+typed data; explicitly selected custom scripts are trusted executable actions.
 There is no MCP tool that lets a learning agent activate or weaken hard rules.
+
+## Scope, filtering and targets
+
+The `event` rule is the general editor model. Scope selects all supported agents or
+specific agents, events to listen to, and the policy's workspace/project. Canonical
+events such as `pre_tool` map to native names. Agent-specific events use `native:Name`
+and require a specific agent scope. Unsupported events are not delivered by a host.
+`GET /api/rules` returns the shared event/capability catalog used by UI and installers.
+
+Filters apply identically to every target. Conditions select dotted fields such as
+`input.command`, `tool`, `failed` or `payload.prompt`; operators are regex, contains,
+equals, in, starts_with, ends_with and exists. Combine with ALL/ANY and per-condition NOT.
+Equality and lists preserve scalar types. Regex uses pinned RE2JS with linear matching;
+lookaround/backreferences are rejected. Maximum 32 conditions and 512 characters per
+regex. Empty conditions match every event in scope.
+
+Targets are block, inject context, run an enabled ORC job, or run a custom script.
+Block/context require actual event capabilities. Synchronous scripts can return both
+a decision and context. Background scripts use the existing queue and cannot change
+the already completed hook decision. Existing policies and presets remain supported.
+Claude Notification/Setup are side-effect listeners without context injection. TaskCompleted
+and TeammateIdle remain action listeners: native exit-code feedback differs from SDK JSON
+control, so the shared catalog conservatively excludes declarative blocking there.
+
+For a command filter, select all agents, Pre-tool, field `input.command`, Contains,
+value `rm -rf`, then Block. This matches that spelling; regex/string filtering cannot
+classify every equivalent shell program. Use the conservative file-protection preset
+when that stronger policy is needed.
 
 ## Decisions and supported rules
 
@@ -66,8 +95,11 @@ Decision records store input hashes rather than raw tool arguments or file conte
 
 ## Agent coverage and failure behavior
 
-The supported managed adapter is **Claude through the Agent SDK**. ORC injects synchronous
-`PreToolUse` hooks before its automatic-approval paths, including SDK auto-approved tools.
+The supported managed adapter is **Claude through the Agent SDK**. ORC registers supported
+SDK lifecycle hooks, including synchronous `PreToolUse` before automatic-approval paths.
+Managed SessionStart is evaluated explicitly before each startup/resume query and its
+context is appended to the agent prompt. SDK startup callbacks are not relied on: some
+SDK launches register them after that native lifecycle event has already occurred.
 SDK settings are isolated for guarded sessions and ORC supplies its own MCP connection.
 The hook rechecks active policy on every event, so human policy changes/reverts apply to
 guarded sessions. Enable the host setting before starting sessions; already running
@@ -78,19 +110,26 @@ the Claude hook reference documents blocking SDK callback timeouts. Native comma
 failure blocking needs a newer Claude CLI; it must not be assumed for older installations.
 [Claude hook reference](https://code.claude.com/docs/en/hooks).
 
-`orc rules hook <claude|cursor|gemini> <event>` implements stdin JSON/stdout JSON protocols
+`orc rules hook <claude|cursor|gemini|codex> <event>` implements stdin JSON/stdout JSON protocols
 against the local configured SQLite DB. Denials/errors exit 2. This works without a running
 API, but is a transport adapter, not proof of coverage in every agent version.
-`orc rules install-hook cursor --target <settings-file>` preserves existing entries, makes
-a backup and adds explicit hooks with `failClosed: true`. Native host installation/version,
+`orc rules install-hook <claude|cursor|gemini|codex> --target <settings-file>` preserves
+existing entries, makes a backup and installs supported listeners. `--events` narrows
+listeners using comma-separated canonical or native names. Explicit targets are Claude
+settings JSON, Cursor hooks JSON, Gemini settings JSON, or Codex hooks JSON. Cursor uses
+`failClosed: true`; Claude uses `onFailure: "block"`, requiring CLI v2.1.295 or newer.
+Gemini timeouts are milliseconds; other native handler timeouts are seconds.
+WorktreeCreate is excluded because Claude requires its hook to replace native creation. Native host installation/version,
 timeouts, crashes and actual edit payloads must be qualified before relying on that path.
 [Cursor hook reference](https://cursor.com/docs/hooks),
-[Gemini hook reference](https://geminicli.com/docs/hooks/reference/).
+[Gemini hook reference](https://geminicli.com/docs/hooks/reference/),
+[Codex hook reference](https://learn.chatgpt.com/docs/hooks). Codex requires host trust;
+its native hooks do not intercept every hosted tool or execution path.
 
 Other managed backends refuse sessions in policy-protected workspaces. Protected chat
 cannot fall back to an unverified CLI/remote backend, and ORC refuses unqualified native
 agent terminals/package setups in protected workspaces. Human shell terminals remain
-available. Codex/ACPX/A2A/AgentAPI blocking coverage is not claimed by this release.
+available. Native Codex protocol support does not qualify ORC-managed Codex/ACPX/A2A/AgentAPI blocking.
 
 Hooks are not an OS sandbox. A human able to edit configuration, a process outside ORC,
 an unmediated remote execution channel, or another concurrent filesystem writer remains
@@ -110,8 +149,22 @@ rule action enqueueing in their descendants. The scheduler must be running to di
 
 External effects cannot be made universally exactly-once across process crashes. A claimed
 action is not blindly retried after restart: history records uncertain effects and the
-retained run should be inspected before a human triggers the job again. Automatic retries
-and arbitrary command actions are intentionally absent from this initial contract.
+retained run should be inspected before a human triggers the job again. Automatic retries remain absent.
+
+Custom scripts use an executable/argument array without shell interpolation and receive
+the normalized event as stdin JSON. A synchronous script returns strict JSON such as
+`{"decision":"deny","reason":"Policy rejected command","context":[]}` or
+`{"decision":"abstain","context":["Project guidance"]}`. Stdout is bounded to 64 KiB.
+Nonzero exit, timeout, malformed output or unsupported decisions fail closed. Each sync
+script has at most a 2-second timeout; matching scripts share a 5-second budget.
+A pending deny is persisted before execution: uncertain effects after a crash are not
+retried on receipt replay. Recognized structured edits protect referenced script files.
+
+Background scripts run through the ordinary executor with bounded timeouts and the
+event's working directory. Pending input is temporarily retained as JSON in the action
+queue and erased after completion, failure or cancellation. Unlike redacted decision
+records, pending script input may contain sensitive tool arguments. Protect the installation
+DB and select trusted scripts. Scripts inherit runner environment and are not a sandbox.
 
 ## Skill and flow quality
 
@@ -134,6 +187,14 @@ blocked comment/shell-delete attempts, protected-file hashes, unsupported backen
 deduplication and a real queued job. Retained state lives under `.claude/tooling/`;
 production databases and global hook settings are untouched.
 
+`bun scripts/validate-event-rules-runtime.ts` exercises the flexible editor model with
+a real Claude SDK agent under both bypassPermissions and whitelist auto-approval. It
+checks actual regex and synchronous-script denials with absent filesystem markers, allowed
+execution, observation of an injected random context token, and job/background script
+execution triggered by actual PostToolUse events. Only harmless marker writes are attempted.
+Failed and successful evidence is retained under `.claude/tooling/event-rules-runtime/`.
+This verifies managed Claude; other native hosts still require their own qualification.
+
 ## Optional evidence review flow
 
 Select `orc-evidence-review` on an already implemented task to use the existing reviewer
@@ -146,8 +207,10 @@ flow. This is a procedural option, not a measured quality improvement.
 against defective and clean expiry-boundary fixtures with a real agent.
 `bun scripts/validate-rule-hooks.ts` checks actual CLI processes and settings installation
 without changing global settings; `--executable=<path>` repeats it against a built binary.
-The generic Gemini protocol requires stable tool-call IDs and has no supported installer;
-payloads lacking IDs fail closed. Native host qualification remains separate.
+All four native protocols and settings merge/reinstallation are checked. Native host
+qualification remains separate from adapter/installer tests. Gemini events without stable
+tool IDs, and lifecycle events without generation/turn IDs, use fresh receipts; identical
+redeliveries without host identities cannot be universally deduplicated.
 
 `python scripts/validate-rules-binary.py <compiled-orc-path>` checks the embedded dashboard,
 authenticated policy API, actual guarded Claude chat, file hashes, retained history after

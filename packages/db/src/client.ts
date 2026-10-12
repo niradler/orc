@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import { drizzle } from "drizzle-orm/bun-sqlite";
+import { installAudit } from "./audit.js";
 import { installRules } from "./rules.js";
 import * as schema from "./schema.js";
 import { installWiki } from "./wiki.js";
@@ -433,6 +434,7 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE flow_runs ADD COLUMN paused_secs INTEGER NOT NULL DEFAULT 0",
     "DROP INDEX IF EXISTS flow_node_runs_attempt_idx",
     "CREATE UNIQUE INDEX IF NOT EXISTS flow_node_runs_attempt_idx ON flow_node_runs(flow_run_id, node_id, attempt, retry)",
+    // A contradicted memory is kept for history but points at the memory that replaced it.
   ];
   for (const statement of migrations) {
     try {
@@ -461,6 +463,31 @@ function setupDb(sqlite: Database): void {
   } catch {}
 }
 
+const LEGACY_WIKI_TABLES = [
+  "evidence_fts",
+  "evidence_embeddings",
+  "evidence_passages",
+  "evidence_versions",
+  "evidence_sources",
+  "wiki_contribution_attempts",
+  "wiki_contributions",
+  "skill_evaluation_jobs",
+  "skill_evaluations",
+  "skill_proposals",
+  "skill_activations",
+];
+
+// The first wiki (evidence passages, contribution queue, evaluated skill proposals) was replaced.
+// wiki_pages/wiki_revisions names are reused, so they are dropped only while they keep the old
+// JSON-payload shape.
+function dropLegacyWiki(sqlite: Database): void {
+  for (const table of LEGACY_WIKI_TABLES) sqlite.exec(`DROP TABLE IF EXISTS ${table}`);
+  for (const table of ["wiki_revisions", "wiki_pages"]) {
+    const columns = sqlite.query<{ name: string }, []>(`PRAGMA table_info(${table})`).all();
+    if (columns.some((column) => column.name === "payload")) sqlite.exec(`DROP TABLE ${table}`);
+  }
+}
+
 export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof schema>> {
   const config = loadConfig();
   const path = dbPath ?? config.db.path;
@@ -482,6 +509,8 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   sqlite.exec("PRAGMA wal_autocheckpoint=1000;");
 
   setupDb(sqlite);
+  dropLegacyWiki(sqlite);
+  installAudit(sqlite);
   installWiki(sqlite);
   installRules(sqlite);
 

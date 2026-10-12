@@ -1,10 +1,11 @@
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import { HOOK_EVENTS, query } from "@anthropic-ai/claude-agent-sdk";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
+import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
 import { resolveClaudeSdkLaunch } from "./claude-executable.js";
 import { buildOrcMcpServers, isImplicitOrcTool, withOrcAllowedTools } from "./orc-mcp.js";
 import { registerBackend } from "./registry.js";
-import { createRulesHook } from "./rules-hook.js";
+import { createRulesHook, sessionStartRuleContext } from "./rules-hook.js";
 import type {
   AgentBackend,
   AgentEvent,
@@ -85,6 +86,15 @@ class ClaudeSDKSession implements AgentSession {
       const rulesHook = this.opts.ruleGuard
         ? createRulesHook(this.opts.ruleGuard, this.opts.cwd, (event) => this.push(event))
         : undefined;
+      const startupContext = this.opts.ruleGuard
+        ? sessionStartRuleContext(
+            this.opts.ruleGuard,
+            this.opts.cwd,
+            this.runtimeSessionId ?? this.id,
+            ulid(),
+            this.runtimeSessionId ? "resume" : "startup",
+          )
+        : "";
 
       const q = query({
         prompt,
@@ -93,13 +103,13 @@ class ClaudeSDKSession implements AgentSession {
           cwd: this.opts.cwd,
           ...(rulesHook
             ? {
-                hooks: {
-                  PreToolUse: [{ hooks: [rulesHook], timeout: 10 }],
-                  PostToolUse: [{ hooks: [rulesHook], timeout: 10 }],
-                  PostToolUseFailure: [{ hooks: [rulesHook], timeout: 10 }],
-                  SessionStart: [{ hooks: [rulesHook], timeout: 10 }],
-                  SessionEnd: [{ hooks: [rulesHook], timeout: 10 }],
-                },
+                hooks: Object.fromEntries(
+                  HOOK_EVENTS.filter(
+                    (event) =>
+                      event !== "SessionStart" &&
+                      RULE_EVENT_ADAPTERS.claude.some((entry) => entry.native === event),
+                  ).map((event) => [event, [{ hooks: [rulesHook], timeout: 10 }]]),
+                ),
               }
             : {}),
           permissionMode,
@@ -117,7 +127,12 @@ class ClaudeSDKSession implements AgentSession {
           systemPrompt: {
             type: "preset",
             preset: "claude_code",
-            append: [ORC_SYSTEM_CONTEXT, this.opts.systemPromptAppend, this.opts.ruleGuard?.context]
+            append: [
+              ORC_SYSTEM_CONTEXT,
+              this.opts.systemPromptAppend,
+              this.opts.ruleGuard?.context,
+              startupContext,
+            ]
               .filter(Boolean)
               .join("\n\n"),
           },

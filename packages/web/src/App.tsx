@@ -16,6 +16,7 @@ import Knowledge from "@/views/Knowledge";
 import Memories from "@/views/Memories";
 import Packages from "@/views/Packages";
 import Projects from "@/views/Projects";
+import Rules from "@/views/Rules";
 import Sessions from "@/views/Sessions";
 import Settings from "@/views/Settings";
 import Skills from "@/views/Skills";
@@ -101,12 +102,13 @@ export default function App() {
                 <Route path="/projects" element={<Projects />} />
                 <Route path="/projects/:projectId" element={<Projects />} />
                 <Route path="/knowledge" element={<Knowledge projectId={projectId} />} />
-                <Route path="/skills" element={<Skills projectId={projectId} />} />
-                <Route path="/skills/:skillName" element={<Skills projectId={projectId} />} />
+                <Route path="/skills" element={<Skills />} />
+                <Route path="/skills/:skillName" element={<Skills />} />
                 <Route path="/agents" element={<Agents />} />
                 <Route path="/agents/:agentId" element={<Agents />} />
                 <Route path="/packages" element={<Packages />} />
                 <Route path="/settings" element={<Settings />} />
+                <Route path="/rules" element={<Rules />} />
                 <Route path="*" element={<Navigate to="/tasks" replace />} />
               </Routes>
             </div>

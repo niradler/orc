@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { loadConfig } from "@orc/core/config";
+import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
 import { normalizeRuleHook, type RuleHookBackend, ruleHookOutput } from "@orc/core/rule-hooks";
 import { getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
@@ -43,7 +44,7 @@ export function rulesCommand(): Command {
     .description("Native hook stdin/stdout protocol; denied/error exit 2")
     .action(async (backend, event) => {
       try {
-        if (!["claude", "cursor", "gemini"].includes(backend))
+        if (!Object.hasOwn(RULE_EVENT_ADAPTERS, backend))
           throw new Error("Unsupported hook backend");
         const decoder = new TextDecoder();
         let raw = "";
@@ -57,7 +58,12 @@ export function rulesCommand(): Command {
         const normalized = normalizeRuleHook(backend as RuleHookBackend, event, JSON.parse(raw));
         const result = new RuleStore(getSqlite()).evaluate(normalized);
         console.log(JSON.stringify(ruleHookOutput(backend as RuleHookBackend, normalized, result)));
-        if (result.decision === "deny") process.exitCode = 2;
+        if (result.decision === "deny") {
+          console.error(
+            result.reasons.map((reason) => `${reason.rule_id}: ${reason.reason}`).join("; "),
+          );
+          process.exitCode = 2;
+        }
       } catch (error) {
         console.error(`ORC rule hook blocked: ${String(error)}`);
         process.exitCode = 2;
@@ -66,12 +72,15 @@ export function rulesCommand(): Command {
   command
     .command("install-hook <backend>")
     .requiredOption("--target <settings-file>")
-    .description("Merge Cursor hooks into explicit settings target; existing hooks preserved")
+    .option(
+      "--events <events>",
+      "Comma-separated shared or native event names; defaults to all supported events",
+    )
+    .description(
+      "Merge native hooks into an explicit JSON settings target; existing hooks preserved",
+    )
     .action((backend, opts) => {
-      if (backend !== "cursor")
-        throw new Error(
-          "Only Cursor failClosed installation is supported. Claude SDK sessions need no installer; native Claude/Gemini failure semantics need version qualification.",
-        );
+      if (!Object.hasOwn(RULE_EVENT_ADAPTERS, backend)) throw new Error("Unsupported hook backend");
       const target = resolve(opts.target);
       let previous = "";
       try {
@@ -82,8 +91,12 @@ export function rulesCommand(): Command {
       const settings = previous ? JSON.parse(previous) : {};
       if (!settings || typeof settings !== "object" || Array.isArray(settings))
         throw new Error("Settings must be an object");
-      if (settings.version !== undefined && settings.version !== 1)
+      if (backend === "cursor" && settings.version !== undefined && settings.version !== 1)
         throw new Error("Unsupported Cursor hook settings version");
+      if (backend !== "cursor" && settings.version !== undefined)
+        throw new Error(
+          "This target appears to be a Cursor hooks file; select this agent's JSON settings file",
+        );
       const quote = (s: string) => {
         if (/[\r\n"$`%]/.test(s))
           throw new Error("Hook command path contains unsupported shell characters");
@@ -95,40 +108,80 @@ export function rulesCommand(): Command {
       const hooks = settings.hooks ?? {};
       if (!hooks || typeof hooks !== "object" || Array.isArray(hooks))
         throw new Error("hooks must be an object");
-      for (const event of [
-        "sessionStart",
-        "preToolUse",
-        "postToolUse",
-        "postToolUseFailure",
-        "sessionEnd",
-      ]) {
+      const catalog = RULE_EVENT_ADAPTERS[backend as RuleHookBackend];
+      const requested: string[] | undefined = opts.events
+        ?.split(",")
+        .map((event: string) => event.trim());
+      if (
+        requested?.some(
+          (event) =>
+            !catalog.some(
+              (entry) =>
+                entry.event === event ||
+                entry.native === event ||
+                `native:${entry.native}` === event,
+            ),
+        )
+      )
+        throw new Error("Unsupported selected event");
+      for (const { native: event } of catalog.filter(
+        (entry) =>
+          !requested ||
+          requested.includes(entry.event) ||
+          requested.includes(entry.native) ||
+          requested.includes(`native:${entry.native}`),
+      )) {
         const entries = hooks[event] ?? [];
         if (!Array.isArray(entries)) throw new Error("Hook entries must be arrays");
-        const hookCommand = `${prefix} --db ${quote(loadConfig().db.path)} rules hook cursor ${event}`;
+        const hookCommand = `${prefix} --db ${quote(loadConfig().db.path)} rules hook ${backend} ${event}`;
         const existing = entries.findIndex(
           (entry: unknown) =>
             typeof entry === "object" &&
             entry !== null &&
-            "command" in entry &&
-            entry.command === hookCommand,
+            (("command" in entry && entry.command === hookCommand) ||
+              ("hooks" in entry &&
+                Array.isArray(entry.hooks) &&
+                entry.hooks.some(
+                  (handler: Record<string, unknown>) => handler.command === hookCommand,
+                ))),
         );
         hooks[event] =
           existing < 0
-            ? [...entries, { command: hookCommand, timeout: 10, failClosed: true }]
+            ? [
+                ...entries,
+                backend === "cursor"
+                  ? { command: hookCommand, timeout: 10, failClosed: true }
+                  : {
+                      hooks: [
+                        {
+                          type: "command",
+                          command: hookCommand,
+                          timeout: backend === "gemini" ? 10000 : 10,
+                          ...(backend === "claude" ? { onFailure: "block" } : {}),
+                        },
+                      ],
+                    },
+              ]
             : entries.map((entry: Record<string, unknown>, index: number) =>
-                index === existing ? { ...entry, timeout: 10, failClosed: true } : entry,
+                index === existing && backend === "cursor"
+                  ? { ...entry, timeout: 10, failClosed: true }
+                  : entry,
               );
       }
       mkdirSync(dirname(target), { recursive: true });
       if (previous) writeFileSync(`${target}.${Date.now()}.bak`, previous, { mode: 0o600 });
       const temporary = `${target}.${randomUUID()}.tmp`;
-      writeFileSync(temporary, `${JSON.stringify({ ...settings, version: 1, hooks }, null, 2)}\n`, {
-        mode: 0o600,
-        flag: "wx",
-      });
+      writeFileSync(
+        temporary,
+        `${JSON.stringify({ ...settings, ...(backend === "cursor" ? { version: 1 } : {}), hooks }, null, 2)}\n`,
+        {
+          mode: 0o600,
+          flag: "wx",
+        },
+      );
       renameSync(temporary, target);
       console.log(
-        `Installed Cursor rule hooks in ${target}. Validate host failClosed support before relying on enforcement.`,
+        `Installed ${backend} rule hooks in ${target}. Host version, hook trust, and failure behavior must be qualified before relying on enforcement.`,
       );
     });
   return command;

@@ -7,13 +7,10 @@
     ".": "./src/index.ts",
     "./schema": "./src/schema.ts",
     "./client": "./src/client.ts",
-    "./retrieval": "./src/retrieval.ts",
-    "./passages": "./src/passages.ts",
-    "./evidence-sync": "./src/evidence-sync.ts",
+    "./rules": "./src/rules.ts",
+    "./audit": "./src/audit.ts",
     "./wiki": "./src/wiki.ts",
-    "./session-contributions": "./src/session-contributions.ts",
-    "./skill-evolution": "./src/skill-evolution.ts",
-    "./rules": "./src/rules.ts"
+    "./memories": "./src/memories.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

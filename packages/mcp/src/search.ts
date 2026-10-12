@@ -281,7 +281,8 @@ export function getLayer2(id: string, windowSize = 3): MemoryLayer2 | null {
   const before = sqlite
     .query<RawMemRow, [number, string | null, number]>(
       `SELECT ${SELECT_COLS} FROM memories m WHERE m.created_at < ?
-       AND m.project_id IS ? AND (m.expires_at IS NULL OR m.expires_at > unixepoch())
+       AND m.project_id IS ?
+       AND (m.expires_at IS NULL OR m.expires_at > unixepoch())
        ORDER BY m.created_at DESC, m.id DESC LIMIT ?`,
     )
     .all(target.created_at, target.project_id, windowSize);
@@ -289,7 +290,8 @@ export function getLayer2(id: string, windowSize = 3): MemoryLayer2 | null {
   const after = sqlite
     .query<RawMemRow, [number, string | null, number]>(
       `SELECT ${SELECT_COLS} FROM memories m WHERE m.created_at > ?
-       AND m.project_id IS ? AND (m.expires_at IS NULL OR m.expires_at > unixepoch())
+       AND m.project_id IS ?
+       AND (m.expires_at IS NULL OR m.expires_at > unixepoch())
        ORDER BY m.created_at ASC, m.id ASC LIMIT ?`,
     )
     .all(target.created_at, target.project_id, windowSize);

@@ -135,6 +135,7 @@ export default function Memories({ projectId: savedProjectId }: { projectId: str
             key={tab.value}
             type="button"
             onClick={() => setTypeFilter(tab.value)}
+            data-testid={`memory-type-filter-${tab.value}`}
             className={`font-label text-[11px] uppercase tracking-widest px-3 py-1.5 border transition-colors ${
               typeFilter === tab.value
                 ? "bg-primary/15 text-primary border-primary/30"

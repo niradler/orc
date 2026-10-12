@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import ts from "typescript";
+import { ruleEventCapability } from "./rule-events.js";
+import { matchesRuleFilter } from "./rule-filters.js";
 
 export type { RuleDecision, RuleEvent, RulePolicy, RuleRevision } from "./rule-types.js";
 export { RuleEventSchema, RulePolicySchema, RuleSchema } from "./rule-types.js";
@@ -27,7 +29,7 @@ function controlPath(path: string): boolean {
   const normalized = path.replaceAll("\\", "/").toLowerCase();
   return (
     normalized.split("/").includes(".orc") ||
-    /(?:^|\/)(?:\.claude\/settings(?:\.local)?\.json|\.cursor\/hooks\.json|\.gemini\/settings\.json)$/.test(
+    /(?:^|\/)(?:\.claude\/settings(?:\.local)?\.json|\.cursor\/hooks\.json|\.gemini\/settings\.json|\.codex\/(?:hooks\.json|config\.toml))$/.test(
       normalized,
     )
   );
@@ -54,8 +56,7 @@ const READ_TOOLS = new Set([
   "mcp__orc__context",
   "mcp__orc__memory_search",
   "mcp__orc__memory_get",
-  "mcp__orc__evidence_search",
-  "mcp__orc__evidence_get",
+  "mcp__orc__wiki_search",
   "mcp__orc__wiki_read",
   "mcp__orc__skill_read",
   "mcp__orc__skill_list",
@@ -179,7 +180,16 @@ export function evaluateRules(
         return result;
       }
       if (
-        protectedPaths.some(
+        [
+          ...protectedPaths,
+          ...policy.rules.flatMap((rule) =>
+            rule.kind === "event" && rule.target.type === "script"
+              ? rule.target.argv
+                  .filter((arg) => existsSync(resolve(event.cwd, arg)))
+                  .map((arg) => resolve(event.cwd, arg))
+              : [],
+          ),
+        ].some(
           (p) =>
             p !== ":memory:" &&
             relative(existsSync(p) ? realpathSync(p) : resolve(p), actual) === "",
@@ -191,6 +201,39 @@ export function evaluateRules(
     }
   }
   for (const rule of policy.rules) {
+    if (rule.kind === "event") {
+      if (
+        !rule.enabled ||
+        (rule.scope.agents !== "all" &&
+          !rule.scope.agents.includes(event.backend as "claude" | "cursor" | "gemini" | "codex"))
+      )
+        continue;
+      if (
+        !rule.scope.events.some(
+          (name) => name === event.phase || name === `native:${event.native_event}`,
+        )
+      )
+        continue;
+      if (!matchesRuleFilter(rule.filter, event)) continue;
+      const capability = ruleEventCapability(
+        event.backend,
+        event.native_event ? `native:${event.native_event}` : event.phase,
+      );
+      const target = rule.target;
+      if (target.type === "block") {
+        if (!capability?.block) throw new Error("Agent event does not support blocking");
+        deny(rule.id, rule.reason);
+      } else if (target.type === "inject_context") {
+        if (!capability?.context) throw new Error("Agent event does not support context injection");
+        result.context.push(target.content);
+      } else if (target.type === "job")
+        result.jobs.push({ rule_id: rule.id, job_id: target.job_id });
+      else {
+        result.scripts ??= [];
+        result.scripts.push({ rule_id: rule.id, target });
+      }
+      continue;
+    }
     if (rule.kind === "context" && event.phase === "session_start")
       result.context.push(rule.content);
     if (

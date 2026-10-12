@@ -3,14 +3,13 @@ import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors"
 import {
   createSkill,
   listSkills,
+  readSkill,
   type SkillFull,
   type SkillRefContent,
   type SkillSource,
   skillValidationIssues,
   skillWarnings,
 } from "@orc/core/skill-service";
-import { getSqlite } from "@orc/db/client";
-import { readEvolvedSkill } from "@orc/db/skill-evolution";
 
 const app = new OpenAPIHono();
 
@@ -105,7 +104,6 @@ const readRoute = createRoute({
         description:
           "Skill-relative file path (e.g. scripts/check.py); bare filenames read references/",
       }),
-      project_id: z.string().optional(),
     }),
   },
   responses: {
@@ -154,8 +152,8 @@ app.openapi(listRoute, (c) => {
 
 app.openapi(readRoute, (c) => {
   const { name } = c.req.valid("param");
-  const { ref, project_id } = c.req.valid("query");
-  const result = readEvolvedSkill(getSqlite(), name, project_id ?? null, ref);
+  const { ref } = c.req.valid("query");
+  const result = readSkill(name, ref);
   if (!result) throw new NotFoundError("Skill", name);
   return c.json(result as SkillFull | SkillRefContent);
 });
