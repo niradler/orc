@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { z } from "zod";
 import { oneLine } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
@@ -13,18 +13,29 @@ const ChatMeta = z.object({
   updatedAtMs: z.number().finite().optional(),
 });
 
-export function cursorAgentAdapter(root: string = CURSOR_CHATS_DIR): SessionAdapter {
+export function cursorAgentAdapter(
+  root: string | undefined = undefined,
+  runtime: HostRuntime = hostRuntime(LOCAL_HOST),
+): SessionAdapter {
   return {
     backend: "cursor-agent",
     minIntervalMs: 30_000,
     async list() {
-      if (!existsSync(root)) return [];
+      const chats = root ?? join(await runtime.home(), ".cursor", "chats");
       const records: SessionRecord[] = [];
-      for (const file of readdirSync(root, { recursive: true }) as string[]) {
-        if (!file.endsWith(`${process.platform === "win32" ? "\\" : "/"}meta.json`)) continue;
-        const id = file.split(/[\\/]/).at(-2);
+      for (const file of await runtime.listFiles(chats)) {
+        if (!/[\\/]meta\.json$/.test(file.path)) continue;
+        const id = file.path.split(/[\\/]/).at(-2);
         if (!id) continue;
-        const parsed = ChatMeta.safeParse(JSON.parse(readFileSync(join(root, file), "utf8")));
+        let content: unknown;
+        try {
+          content = JSON.parse(
+            new TextDecoder().decode(await runtime.readFile(file.path, 2 * 1024 * 1024)),
+          );
+        } catch {
+          continue;
+        }
+        const parsed = ChatMeta.safeParse(content);
         if (!parsed.success) continue;
         const data = parsed.data;
         records.push({

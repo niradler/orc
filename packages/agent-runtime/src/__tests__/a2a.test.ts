@@ -4,7 +4,10 @@ import { A2aSession } from "../a2a.js";
 describe("A2aSession", () => {
   describe("URL validation", () => {
     it("accepts valid http URL", () => {
-      const session = new A2aSession({ cwd: "/tmp", a2aUrl: "http://agent.example.com" });
+      const session = new A2aSession({
+        cwd: "/tmp",
+        a2aUrl: "http://agent.example.com",
+      });
       expect(session).toBeDefined();
     });
 

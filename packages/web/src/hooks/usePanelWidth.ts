@@ -82,5 +82,8 @@ export function usePanelWidth({
 
   const reset = useCallback(() => commit(initial), [commit, initial]);
 
-  return { width, handleProps: { onPointerDown, onKeyDown, onDoubleClick: reset } };
+  return {
+    width,
+    handleProps: { onPointerDown, onKeyDown, onDoubleClick: reset },
+  };
 }

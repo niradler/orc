@@ -42,7 +42,10 @@ export const EventRuleSchema = z
     target: z.discriminatedUnion("type", [
       z.object({ type: z.literal("block") }).strict(),
       z
-        .object({ type: z.literal("inject_context"), content: z.string().min(1).max(8000) })
+        .object({
+          type: z.literal("inject_context"),
+          content: z.string().min(1).max(8000),
+        })
         .strict(),
       z.object({ type: z.literal("job"), job_id: identity }).strict(),
       RuleScriptSchema,
@@ -55,9 +58,15 @@ export const EventRuleSchema = z
     for (const event of rule.scope.events) {
       const capabilities = agents.map((agent) => ruleEventCapability(agent, event));
       if (!capabilities.some(Boolean))
-        ctx.addIssue({ code: "custom", message: `No selected agent supports event ${event}` });
+        ctx.addIssue({
+          code: "custom",
+          message: `No selected agent supports event ${event}`,
+        });
       if (event.startsWith("native:") && rule.scope.agents === "all")
-        ctx.addIssue({ code: "custom", message: "Native events require specific agents" });
+        ctx.addIssue({
+          code: "custom",
+          message: "Native events require specific agents",
+        });
       if (rule.target.type === "block" && capabilities.some((entry) => entry && !entry.block))
         ctx.addIssue({
           code: "custom",
@@ -77,16 +86,29 @@ export const EventRuleSchema = z
       rule.target.mode === "sync" &&
       rule.target.timeout_ms > 2000
     )
-      ctx.addIssue({ code: "custom", message: "Synchronous script timeout cannot exceed 2000ms" });
+      ctx.addIssue({
+        code: "custom",
+        message: "Synchronous script timeout cannot exceed 2000ms",
+      });
   });
 export const RuleSchema = z.discriminatedUnion("kind", [
   EventRuleSchema,
   z
-    .object({ ...base, kind: z.literal("deny_tools"), tools: z.array(identity).min(1).max(100) })
+    .object({
+      ...base,
+      kind: z.literal("deny_tools"),
+      tools: z.array(identity).min(1).max(100),
+    })
     .strict(),
   z.object({ ...base, kind: z.literal("deny_delete") }).strict(),
   z.object({ ...base, kind: z.literal("deny_comments") }).strict(),
-  z.object({ ...base, kind: z.literal("context"), content: z.string().min(1).max(8000) }).strict(),
+  z
+    .object({
+      ...base,
+      kind: z.literal("context"),
+      content: z.string().min(1).max(8000),
+    })
+    .strict(),
   z
     .object({
       ...base,
@@ -123,7 +145,10 @@ export const RulePolicySchema = z
         0,
       ) > 16000
     )
-      ctx.addIssue({ code: "custom", message: "Policy context exceeds 16000 characters" });
+      ctx.addIssue({
+        code: "custom",
+        message: "Policy context exceeds 16000 characters",
+      });
     if (
       p.rules.reduce(
         (sum, r) =>
@@ -134,7 +159,10 @@ export const RulePolicySchema = z
         0,
       ) > 5000
     )
-      ctx.addIssue({ code: "custom", message: "Total synchronous script timeout exceeds 5000ms" });
+      ctx.addIssue({
+        code: "custom",
+        message: "Total synchronous script timeout exceeds 5000ms",
+      });
   });
 export const RuleEventSchema = z
   .object({

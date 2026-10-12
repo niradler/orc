@@ -4,7 +4,13 @@ import { GeminiSession, geminiText } from "./gemini.js";
 export type TranscriptBlock =
   | { type: "text"; text: string }
   | { type: "thinking"; text: string }
-  | { type: "tool_use"; name: string; input: string; id?: string; result?: string }
+  | {
+      type: "tool_use";
+      name: string;
+      input: string;
+      id?: string;
+      result?: string;
+    }
   | { type: "tool_result"; text: string; forId?: string };
 
 export type TranscriptTurn = {
@@ -29,9 +35,7 @@ const TOOL_RESULT_MAX = 4_000;
 const cut = (text: string, max: number) =>
   text.length > max ? `${text.slice(0, max)}\n… [${text.length - max} more characters]` : text;
 
-async function* jsonLines(path: string): AsyncGenerator<Record<string, unknown>> {
-  const decoder = new TextDecoder();
-  let tail = "";
+async function* jsonLines(content: string): AsyncGenerator<Record<string, unknown>> {
   const parse = (line: string) => {
     if (!line.trim()) return null;
     try {
@@ -40,16 +44,10 @@ async function* jsonLines(path: string): AsyncGenerator<Record<string, unknown>>
       return null;
     }
   };
-  for await (const chunk of Bun.file(path).stream()) {
-    const lines = (tail + decoder.decode(chunk, { stream: true })).split("\n");
-    tail = lines.pop() ?? "";
-    for (const line of lines) {
-      const parsed = parse(line);
-      if (parsed) yield parsed;
-    }
+  for (const line of content.split("\n")) {
+    const parsed = parse(line);
+    if (parsed) yield parsed;
   }
-  const parsed = parse(tail);
-  if (parsed) yield parsed;
 }
 
 function stringify(value: unknown): string {
@@ -119,8 +117,8 @@ type Draft = {
   key?: string;
 };
 
-async function* claudeTurns(path: string): AsyncGenerator<Draft> {
-  for await (const line of jsonLines(path)) {
+async function* claudeTurns(content: string): AsyncGenerator<Draft> {
+  for await (const line of jsonLines(content)) {
     const type = line.type;
     if ((type !== "user" && type !== "assistant") || line.isMeta) continue;
     const message = line.message as { id?: string; content?: unknown } | undefined;
@@ -128,17 +126,26 @@ async function* claudeTurns(path: string): AsyncGenerator<Draft> {
     if (blocks.length === 0) continue;
     const time = (line.timestamp as string | undefined) ?? null;
     if (type === "assistant") {
-      yield { role: "assistant", time, blocks, ...(message?.id ? { key: message.id } : {}) };
+      yield {
+        role: "assistant",
+        time,
+        blocks,
+        ...(message?.id ? { key: message.id } : {}),
+      };
       continue;
     }
     const onlyResults = blocks.every((b) => b.type === "tool_result");
     const systemish = blocks.every((b) => b.type === "text" && isSystemText(b.text));
-    yield { role: onlyResults ? "tool" : systemish ? "system" : "user", time, blocks };
+    yield {
+      role: onlyResults ? "tool" : systemish ? "system" : "user",
+      time,
+      blocks,
+    };
   }
 }
 
-async function* codexTurns(path: string): AsyncGenerator<Draft> {
-  for await (const line of jsonLines(path)) {
+async function* codexTurns(content: string): AsyncGenerator<Draft> {
+  for await (const line of jsonLines(content)) {
     if (line.type !== "response_item") continue;
     const p = line.payload as Record<string, unknown> | undefined;
     if (!p) continue;
@@ -205,8 +212,8 @@ function stripCursorWrappers(text: string): string {
   return (query?.[1] ?? text).replace(/<timestamp>[\s\S]*?<\/timestamp>\s*/g, "").trim();
 }
 
-async function* cursorTurns(path: string): AsyncGenerator<Draft> {
-  for await (const line of jsonLines(path)) {
+async function* cursorTurns(content: string): AsyncGenerator<Draft> {
+  for await (const line of jsonLines(content)) {
     if (line.role !== "user" && line.role !== "assistant") continue;
     const message = line.message as { content?: unknown } | undefined;
     const blocks = anthropicBlocks(message?.content).map((b) =>
@@ -222,12 +229,20 @@ async function* cursorTurns(path: string): AsyncGenerator<Draft> {
   }
 }
 
-async function* geminiTurns(path: string): AsyncGenerator<Draft> {
-  if (path.endsWith(".jsonl")) {
-    yield* cursorTurns(path);
+async function* geminiTurns(content: string): AsyncGenerator<Draft> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    yield* cursorTurns(content);
     return;
   }
-  const data = GeminiSession.parse(await Bun.file(path).json());
+  const result = GeminiSession.safeParse(parsed);
+  if (!result.success) {
+    yield* cursorTurns(content);
+    return;
+  }
+  const data = result.data;
   for (const message of data.messages) {
     const blocks: TranscriptBlock[] = [];
     const text = geminiText(message.content);
@@ -239,7 +254,9 @@ async function* geminiTurns(path: string): AsyncGenerator<Draft> {
         name: tool.name,
         input: cut(stringify(tool.args), TOOL_INPUT_MAX),
         ...(tool.result != null
-          ? { result: cut(geminiText(tool.result) || stringify(tool.result), TOOL_RESULT_MAX) }
+          ? {
+              result: cut(geminiText(tool.result) || stringify(tool.result), TOOL_RESULT_MAX),
+            }
           : {}),
       });
     }
@@ -252,7 +269,7 @@ async function* geminiTurns(path: string): AsyncGenerator<Draft> {
   }
 }
 
-const readers: Record<string, (path: string) => AsyncGenerator<Draft>> = {
+const readers: Record<string, (content: string) => AsyncGenerator<Draft>> = {
   claude: claudeTurns,
   codex: codexTurns,
   cursor: cursorTurns,
@@ -284,18 +301,20 @@ function pairToolCalls(turns: TranscriptTurn[]): TranscriptTurn[] {
 const PARSE_CACHE_SIZE = 4;
 const parseCache = new Map<string, { stamp: string; turns: TranscriptTurn[] }>();
 
-async function parseTranscript(path: string, backend: string): Promise<TranscriptTurn[]> {
+async function parseTranscriptContent(
+  content: string,
+  backend: string,
+  cacheKey: string,
+  stamp: string,
+): Promise<TranscriptTurn[]> {
   const reader = readers[backend];
   if (!reader) throw new Error(`No transcript reader for ${backend}`);
-  const st = statSync(path);
-  if (st.size > MAX_TRANSCRIPT_BYTES) throw new Error("Transcript is too large to render");
-  const stamp = `${st.mtimeMs}:${st.size}`;
-  const cached = parseCache.get(path);
+  const cached = parseCache.get(cacheKey);
   if (cached?.stamp === stamp) return cached.turns;
 
   const turns: TranscriptTurn[] = [];
   let lastKey: string | undefined;
-  for await (const draft of reader(path)) {
+  for await (const draft of reader(content)) {
     const prev = turns[turns.length - 1];
     if (draft.key && prev && lastKey === draft.key && prev.role === "assistant") {
       prev.blocks.push(...draft.blocks);
@@ -310,26 +329,39 @@ async function parseTranscript(path: string, backend: string): Promise<Transcrip
     }
   }
   const paired = pairToolCalls(turns);
-  parseCache.delete(path);
-  parseCache.set(path, { stamp, turns: paired });
+  parseCache.delete(cacheKey);
+  parseCache.set(cacheKey, { stamp, turns: paired });
   if (parseCache.size > PARSE_CACHE_SIZE) {
     parseCache.delete(parseCache.keys().next().value as string);
   }
   return paired;
 }
 
-export async function readTranscript(
-  path: string,
-  backend: string,
-  opts: { offset?: number; limit?: number; q?: string | undefined } = {},
-): Promise<TranscriptPage> {
-  const turns = await parseTranscript(path, backend);
+async function parseTranscript(path: string, backend: string): Promise<TranscriptTurn[]> {
+  const stat = statSync(path);
+  if (stat.size > MAX_TRANSCRIPT_BYTES) throw new Error("Transcript is too large to render");
+  return parseTranscriptContent(
+    await Bun.file(path).text(),
+    backend,
+    path,
+    `${stat.mtimeMs}:${stat.size}`,
+  );
+}
+
+function transcriptPage(
+  turns: TranscriptTurn[],
+  opts: { offset?: number; limit?: number; q?: string | undefined },
+): TranscriptPage {
   const needle = opts.q?.trim().toLowerCase();
   const matches: number[] = [];
   if (needle) {
     for (const turn of turns) {
       const text = turn.blocks
-        .map((b) => (b.type === "tool_use" ? `${b.name} ${b.input} ${b.result ?? ""}` : b.text))
+        .map((block) =>
+          block.type === "tool_use"
+            ? `${block.name} ${block.input} ${block.result ?? ""}`
+            : block.text,
+        )
         .join("\n")
         .toLowerCase();
       if (text.includes(needle)) matches.push(turn.index);
@@ -337,5 +369,35 @@ export async function readTranscript(
   }
   const offset = Math.max(0, opts.offset ?? 0);
   const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
-  return { total: turns.length, offset, turns: turns.slice(offset, offset + limit), matches };
+  return {
+    total: turns.length,
+    offset,
+    turns: turns.slice(offset, offset + limit),
+    matches,
+  };
+}
+
+export async function readTranscriptBytes(
+  bytes: Uint8Array,
+  backend: string,
+  cacheKey: string,
+  opts: { offset?: number; limit?: number; q?: string | undefined } = {},
+): Promise<TranscriptPage> {
+  if (bytes.byteLength > MAX_TRANSCRIPT_BYTES) throw new Error("Transcript is too large to render");
+  const content = new TextDecoder().decode(bytes);
+  const turns = await parseTranscriptContent(
+    content,
+    backend,
+    cacheKey,
+    `${bytes.byteLength}:${Bun.hash(content)}`,
+  );
+  return transcriptPage(turns, opts);
+}
+
+export async function readTranscript(
+  path: string,
+  backend: string,
+  opts: { offset?: number; limit?: number; q?: string | undefined } = {},
+): Promise<TranscriptPage> {
+  return transcriptPage(await parseTranscript(path, backend), opts);
 }

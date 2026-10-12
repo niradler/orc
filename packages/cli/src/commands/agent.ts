@@ -33,7 +33,10 @@ export function agentCommand(): Command {
     .action(async (id: string, opts: { file: string }) => {
       const content = readFileSync(opts.file, "utf8");
       parseAgent(content, `${id}.agent.md`);
-      const { data, error } = await createOrcClient().agents.create({ id, content });
+      const { data, error } = await createOrcClient().agents.create({
+        id,
+        content,
+      });
       if (error || !data) throw new Error(JSON.stringify(error));
       if (isJson()) return jsonOut(data);
       console.log(`Created shared agent ${data.id} at ${data.path}`);
@@ -109,7 +112,10 @@ export function agentPackageCommand(): Command {
       if (existsSync(root))
         throw new Error("Export destination already exists; choose a new directory");
       mkdirSync(root, { recursive: true });
-      writeFileSync(join(root, pkg.manifestFile), pkg.content, { encoding: "utf8", flag: "wx" });
+      writeFileSync(join(root, pkg.manifestFile), pkg.content, {
+        encoding: "utf8",
+        flag: "wx",
+      });
       for (const file of files) {
         const path = join(root, file.path);
         mkdirSync(dirname(path), { recursive: true });

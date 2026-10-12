@@ -266,7 +266,11 @@ export function resolveFlowForTask(opts: {
     if (!parsed.ok) {
       return { error: `Invalid inline flow: ${parsed.errors.join("; ")}` };
     }
-    return { definition: parsed.definition, source: "task", name: parsed.definition.name };
+    return {
+      definition: parsed.definition,
+      source: "task",
+      name: parsed.definition.name,
+    };
   }
 
   const name = opts.flowName || opts.defaultFlowName;

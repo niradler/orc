@@ -1,4 +1,5 @@
 import { ConflictError, NotFoundError } from "@orc/core/errors";
+import { trackHostProcess } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import type { Launch, LaunchKind } from "./launch.js";
 import { buildPtyEnv } from "./pty-env.js";
@@ -17,6 +18,7 @@ export interface TerminalInfo {
   name: string;
   kind: LaunchKind;
   cwd: string | null;
+  host: string | null;
   status: TerminalStatus;
   exit_code: number | null;
   pid: number | null;
@@ -100,6 +102,7 @@ export class TerminalManager {
       pid: number | null;
       backend: string;
       createdAt: Date;
+      host: string | null;
     },
     validate?: (info: TerminalInfo) => void,
   ): TerminalInfo | null {
@@ -109,6 +112,7 @@ export class TerminalManager {
       if (
         info.status === "running" &&
         info.pid === input.pid &&
+        info.host === input.host &&
         info.kind === (input.backend === "cursor-agent" ? "cursor" : input.backend) &&
         Math.floor(Date.parse(info.created_at) / 1000) <=
           Math.floor(input.createdAt.getTime() / 1000)
@@ -140,6 +144,7 @@ export class TerminalManager {
         name: input.name?.trim() || defaultName(input),
         kind: input.launch.kind,
         cwd: input.launch.cwd ?? null,
+        host: input.launch.host ?? null,
         status: "running",
         exit_code: null,
         pid: null,
@@ -154,14 +159,15 @@ export class TerminalManager {
       scrollback: [],
       scrollbackSize: 0,
     };
-    entry.pty = this.options.spawn(input.launch.argv, {
-      cwd: input.launch.cwd,
+    entry.pty = this.options.spawn(input.launch.spawnArgv ?? input.launch.argv, {
+      cwd: input.launch.host ? undefined : input.launch.cwd,
       env: buildPtyEnv(this.options.env),
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
       onData: (data) => this.onData(entry, data),
     });
     entry.info.pid = entry.pty.pid;
+    if (input.launch.host) trackHostProcess(input.launch.host, entry.pty.exited);
     this.entries.set(id, entry);
     entry.pty.exited.then((code) => this.onExit(entry, code));
     return { ...entry.info };

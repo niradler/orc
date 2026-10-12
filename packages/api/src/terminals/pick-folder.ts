@@ -80,7 +80,10 @@ export function folderPickerLaunch(req: FolderPickerRequest): FolderPickerLaunch
     }
     const kdialog = req.which("kdialog");
     if (kdialog) {
-      return { argv: [kdialog, "--getexistingdirectory", ...(start ? [start] : [])], env: {} };
+      return {
+        argv: [kdialog, "--getexistingdirectory", ...(start ? [start] : [])],
+        env: {},
+      };
     }
   }
   throw new ValidationError("No folder picker is available on this machine");

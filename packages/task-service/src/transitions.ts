@@ -61,13 +61,18 @@ export async function addTaskComment(
 
 export async function updateTaskStatus(opts: TransitionOpts): Promise<TransitionResult> {
   const db = getDb();
-  const task = await db.query.tasks.findFirst({ where: eq(tasks.id, opts.taskId) });
+  const task = await db.query.tasks.findFirst({
+    where: eq(tasks.id, opts.taskId),
+  });
   if (!task) return { ok: false, error: `Task not found: ${opts.taskId}` };
 
   const currentStatus = task.status as TaskStatus;
   const allowed = TASK_STATUS_TRANSITIONS[currentStatus];
   if (!allowed?.includes(opts.status)) {
-    return { ok: false, error: `Cannot transition from ${currentStatus} to ${opts.status}` };
+    return {
+      ok: false,
+      error: `Cannot transition from ${currentStatus} to ${opts.status}`,
+    };
   }
 
   if (opts.status === "doing") {
@@ -88,7 +93,10 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
   }
 
   const now = new Date();
-  const updates: Record<string, unknown> = { status: opts.status, updated_at: now };
+  const updates: Record<string, unknown> = {
+    status: opts.status,
+    updated_at: now,
+  };
 
   if ((opts.status === "doing" || opts.status === "queued") && opts.claimedBy) {
     updates.claimed_by = opts.claimedBy;
@@ -108,7 +116,9 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
 
   const shouldNotifyReview = opts.source !== "flow" || opts.notifyHuman === true;
   if (opts.status === "review" && shouldNotifyReview) {
-    const refreshed = await db.query.tasks.findFirst({ where: eq(tasks.id, opts.taskId) });
+    const refreshed = await db.query.tasks.findFirst({
+      where: eq(tasks.id, opts.taskId),
+    });
     if (refreshed?.required_review) {
       notifyReview(opts.taskId, task.title).catch((err) => {
         console.error(`notifyReview failed for task ${opts.taskId}: ${String(err)}`);
@@ -236,6 +246,8 @@ export async function updateTaskStatus(opts: TransitionOpts): Promise<Transition
       .catch((err) => logger.warn("triggerTaskCheck failed", { err }));
   }
 
-  const updated = await db.query.tasks.findFirst({ where: eq(tasks.id, opts.taskId) });
+  const updated = await db.query.tasks.findFirst({
+    where: eq(tasks.id, opts.taskId),
+  });
   return { ok: true, task: updated ?? undefined };
 }

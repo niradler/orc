@@ -1,5 +1,6 @@
 import { statSync } from "node:fs";
 import { basename } from "node:path";
+import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { getDb } from "@orc/db/client";
 import { projects } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
@@ -36,25 +37,30 @@ export function oneLine(text: string, max: number): string {
 
 const projectByCwd = new Map<string, string | null>();
 
-export async function projectIdFor(cwd: string | null | undefined): Promise<string | null> {
+export async function projectIdFor(
+  cwd: string | null | undefined,
+  runtime: HostRuntime = hostRuntime(LOCAL_HOST),
+): Promise<string | null> {
   if (!cwd) return null;
-  const cached = projectByCwd.get(cwd);
+  const key = `${runtime.host.kind === "ssh" ? runtime.host.alias : "local"}:${cwd}`;
+  const cached = projectByCwd.get(key);
   if (cached !== undefined) return cached;
   let id: string | null = null;
   try {
-    const proc = Bun.spawn(["git", "-C", cwd, "remote", "get-url", "origin"], {
-      stdout: "pipe",
-      stderr: "ignore",
+    const result = await runtime.exec(["git", "-C", cwd, "remote", "get-url", "origin"], {
+      timeoutMs: 30_000,
     });
-    const url = (await new Response(proc.stdout).text()).trim();
+    const url = result.code === 0 ? result.stdout.trim() : "";
     if (url) {
       const name = basename(url).replace(/\.git$/, "");
-      const row = await getDb().query.projects.findFirst({ where: eq(projects.name, name) });
+      const row = await getDb().query.projects.findFirst({
+        where: eq(projects.name, name),
+      });
       id = row?.id ?? null;
     }
   } catch {
     id = null;
   }
-  projectByCwd.set(cwd, id);
+  projectByCwd.set(key, id);
   return id;
 }

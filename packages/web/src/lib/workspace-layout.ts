@@ -2,7 +2,13 @@ export type PaneKind = "terminal" | "git" | "files";
 export type Pane = { id: string; kind: PaneKind; terminalId: string | null };
 export type Layout =
   | Pane
-  | { id: string; direction: "row" | "column"; ratio: number; first: Layout; second: Layout };
+  | {
+      id: string;
+      direction: "row" | "column";
+      ratio: number;
+      first: Layout;
+      second: Layout;
+    };
 export function leaves(layout: Layout): Pane[] {
   return "kind" in layout ? [layout] : [...leaves(layout.first), ...leaves(layout.second)];
 }
@@ -19,7 +25,11 @@ export function closePane(layout: Layout, id: string): Layout {
   if ("kind" in layout) return layout;
   if (layout.first.id === id) return layout.second;
   if (layout.second.id === id) return layout.first;
-  return { ...layout, first: closePane(layout.first, id), second: closePane(layout.second, id) };
+  return {
+    ...layout,
+    first: closePane(layout.first, id),
+    second: closePane(layout.second, id),
+  };
 }
 export function readLayout(value: unknown, depth = 0): Layout | null {
   if (!value || typeof value !== "object" || depth > 7) return null;

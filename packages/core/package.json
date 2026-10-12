@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./config": "./src/config.ts",
+    "./exec-host": "./src/exec-host.ts",
     "./types": "./src/types.ts",
     "./logger": "./src/logger.ts",
     "./live-session": "./src/live-session.ts",
@@ -29,10 +30,10 @@
     "./validate": "./src/validate.ts",
     "./rules": "./src/rules.ts",
     "./rule-hooks": "./src/rule-hooks.ts",
+    "./rule-types": "./src/rule-types.ts",
     "./rule-events": "./src/rule-events.ts",
     "./rule-filters": "./src/rule-filters.ts",
-    "./rule-script": "./src/rule-script.ts",
-    "./rule-types": "./src/rule-types.ts"
+    "./rule-script": "./src/rule-script.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -44,7 +45,7 @@
     "ajv": "^8.18.0",
     "re2js": "2.8.6",
     "skills": "1.7.2",
-    "typescript": "^6.0.3",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "typescript": "^6.0.3"
   }
 }

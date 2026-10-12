@@ -64,7 +64,14 @@ describe("terminalSocketUrl", () => {
 });
 
 function key(code: string, mods: Partial<TerminalKeyInput> = {}): TerminalKeyInput {
-  return { code, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...mods };
+  return {
+    code,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+    altKey: false,
+    ...mods,
+  };
 }
 
 describe("resolveTerminalKey on macOS", () => {
@@ -164,7 +171,14 @@ describe("terminal links", () => {
 });
 
 describe("terminal mouse", () => {
-  const grid = { left: 10, top: 20, width: 800, height: 400, cols: 80, rows: 20 };
+  const grid = {
+    left: 10,
+    top: 20,
+    width: 800,
+    height: 400,
+    cols: 80,
+    rows: 20,
+  };
   const click: ClickState = {
     alternateScreen: false,
     scrolledBack: false,
@@ -178,7 +192,10 @@ describe("terminal mouse", () => {
 
   test("cellAt maps pixels to cells and rejects points outside the grid", () => {
     expect(cellAt(grid, 10, 20)).toEqual({ col: 0, row: 0 });
-    expect(cellAt(grid, 10 + 10 * 5 + 1, 20 + 20 * 3 + 1)).toEqual({ col: 5, row: 3 });
+    expect(cellAt(grid, 10 + 10 * 5 + 1, 20 + 20 * 3 + 1)).toEqual({
+      col: 5,
+      row: 3,
+    });
     expect(cellAt(grid, 809, 419)).toEqual({ col: 79, row: 19 });
     expect(cellAt(grid, 9, 30)).toBeNull();
     expect(cellAt(grid, 810, 30)).toBeNull();

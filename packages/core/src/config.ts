@@ -1,6 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 
 const ChannelDefaultModeSchema = z
@@ -82,7 +82,26 @@ export const OrcConfigSchema = z.object({
       scrollback_bytes: z.number().int().min(0).default(524288),
       allow_without_secret: z.boolean().default(false),
     })
-    .default({ enabled: true, max: 8, scrollback_bytes: 524288, allow_without_secret: false }),
+    .default({
+      enabled: true,
+      max: 8,
+      scrollback_bytes: 524288,
+      allow_without_secret: false,
+    }),
+
+  ssh: z
+    .object({
+      host: z
+        .string()
+        .regex(
+          /^[A-Za-z0-9_.@][A-Za-z0-9_.@-]*$/,
+          "ssh.host must be a Host alias from ~/.ssh/config",
+        )
+        .optional(),
+      remote_port: z.number().int().min(1).max(65535).optional(),
+      connect_timeout_secs: z.number().int().min(1).max(120).default(10),
+    })
+    .default({ connect_timeout_secs: 10 }),
 
   mcp: z
     .object({
@@ -96,7 +115,10 @@ export const OrcConfigSchema = z.object({
       telegram: GatewayPlatformConfigSchema.default(DEFAULT_GATEWAY_PLATFORM),
       slack: GatewayPlatformConfigSchema.default(DEFAULT_GATEWAY_PLATFORM),
     })
-    .default({ telegram: DEFAULT_GATEWAY_PLATFORM, slack: DEFAULT_GATEWAY_PLATFORM }),
+    .default({
+      telegram: DEFAULT_GATEWAY_PLATFORM,
+      slack: DEFAULT_GATEWAY_PLATFORM,
+    }),
 
   runner: z
     .object({
@@ -104,7 +126,11 @@ export const OrcConfigSchema = z.object({
       max_concurrent_jobs: z.number().int().default(5),
       log_retention_days: z.number().int().default(30),
     })
-    .default({ default_timeout_secs: 300, max_concurrent_jobs: 5, log_retention_days: 30 }),
+    .default({
+      default_timeout_secs: 300,
+      max_concurrent_jobs: 5,
+      log_retention_days: 30,
+    }),
 
   context: z
     .object({
@@ -112,7 +138,11 @@ export const OrcConfigSchema = z.object({
       layer1_task_limit: z.number().int().default(10),
       layer1_memory_limit: z.number().int().default(5),
     })
-    .default({ snapshot_max_bytes: 2048, layer1_task_limit: 10, layer1_memory_limit: 5 }),
+    .default({
+      snapshot_max_bytes: 2048,
+      layer1_task_limit: 10,
+      layer1_memory_limit: 5,
+    }),
 
   knowledge: z
     .object({
@@ -120,7 +150,11 @@ export const OrcConfigSchema = z.object({
       default_limit: z.number().int().min(1).max(50).default(10),
       search_mode: z.enum(["hybrid", "lexical"]).default("lexical"),
     })
-    .default({ db_path: "~/.orc/knowledge.db", default_limit: 10, search_mode: "lexical" }),
+    .default({
+      db_path: "~/.orc/knowledge.db",
+      default_limit: 10,
+      search_mode: "lexical",
+    }),
 
   rules: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
 
@@ -245,6 +279,11 @@ function fromEnv(): Record<string, unknown> {
     );
   if (Object.keys(terminals).length) env.terminals = terminals;
 
+  const ssh: Record<string, unknown> = {};
+  if (process.env.ORC_SSH_HOST !== undefined) ssh.host = process.env.ORC_SSH_HOST || undefined;
+  if (process.env.ORC_SSH_REMOTE_PORT) ssh.remote_port = Number(process.env.ORC_SSH_REMOTE_PORT);
+  if (Object.keys(ssh).length) env.ssh = ssh;
+
   const runner: Record<string, unknown> = {};
   if (process.env.ORC_RUNNER_TIMEOUT)
     runner.default_timeout_secs = Number(process.env.ORC_RUNNER_TIMEOUT);
@@ -330,16 +369,21 @@ function fromEnv(): Record<string, unknown> {
   return env;
 }
 
+export function configuredApiSecret(secret: string | undefined | null): string | undefined {
+  const value = typeof secret === "string" ? secret.trim() : "";
+  return value || undefined;
+}
+
 let _config: OrcConfig | null = null;
 
 export function loadConfig(overrides?: Partial<OrcConfig>): OrcConfig {
   if (_config && !overrides) return _config;
 
-  const globalConfigPath = join(homedir(), ".orc", "config.json");
+  const globalPath = globalConfigPath();
   const localConfigPath = join(process.cwd(), ".orc", "config.json");
 
   let raw: Record<string, unknown> = {};
-  if (existsSync(globalConfigPath)) raw = deepMerge(raw, loadJsonFile(globalConfigPath));
+  if (existsSync(globalPath)) raw = deepMerge(raw, loadJsonFile(globalPath));
   if (existsSync(localConfigPath)) raw = deepMerge(raw, loadJsonFile(localConfigPath));
   raw = deepMerge(raw, fromEnv());
   if (overrides) raw = deepMerge(raw, overrides as Record<string, unknown>);
@@ -363,4 +407,27 @@ export function loadConfig(overrides?: Partial<OrcConfig>): OrcConfig {
 
 export function resetConfig(): void {
   _config = null;
+}
+
+export function globalConfigPath(): string {
+  return join(homedir(), ".orc", "config.json");
+}
+
+export function updateGlobalConfig(mutate: (raw: Record<string, unknown>) => void): OrcConfig {
+  const path = globalConfigPath();
+  let raw: Record<string, unknown> = {};
+  if (existsSync(path)) {
+    try {
+      raw = JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
+    } catch {
+      throw new Error(`Refusing to rewrite ${path}: it is not valid JSON`);
+    }
+  }
+  mutate(raw);
+  mkdirSync(dirname(path), { recursive: true });
+  const temp = `${path}.${process.pid}.tmp`;
+  writeFileSync(temp, `${JSON.stringify(raw, null, 2)}\n`, { mode: 0o600 });
+  renameSync(temp, path);
+  resetConfig();
+  return loadConfig();
 }

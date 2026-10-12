@@ -248,7 +248,10 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                           value={s.task?.id ?? ""}
                           disabled={link.isPending}
                           onChange={(e) =>
-                            link.mutate({ id: s.id, taskId: e.target.value || null })
+                            link.mutate({
+                              id: s.id,
+                              taskId: e.target.value || null,
+                            })
                           }
                         >
                           <option value="">No task</option>

@@ -114,8 +114,14 @@ describe("Projects CRUD", () => {
 
   describe("GET /projects/:id/summary", () => {
     test("returns project summary with counts", async () => {
-      await req(app, "POST", "/tasks", { title: "Summary task", project_id: projectId });
-      await req(app, "POST", "/memories", { content: "Summary memory", project_id: projectId });
+      await req(app, "POST", "/tasks", {
+        title: "Summary task",
+        project_id: projectId,
+      });
+      await req(app, "POST", "/memories", {
+        content: "Summary memory",
+        project_id: projectId,
+      });
 
       const res = await req(app, "GET", `/projects/${projectId}/summary`);
       expect(res.status).toBe(200);
@@ -134,7 +140,9 @@ describe("Projects CRUD", () => {
 
   describe("PATCH /projects/:id", () => {
     test("updates name", async () => {
-      const res = await req(app, "PATCH", `/projects/${projectId}`, { name: "renamed-proj" });
+      const res = await req(app, "PATCH", `/projects/${projectId}`, {
+        name: "renamed-proj",
+      });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.name).toBe("renamed-proj");
@@ -150,35 +158,45 @@ describe("Projects CRUD", () => {
     });
 
     test("updates status", async () => {
-      const res = await req(app, "PATCH", `/projects/${projectId}`, { status: "archived" });
+      const res = await req(app, "PATCH", `/projects/${projectId}`, {
+        status: "archived",
+      });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.status).toBe("archived");
     });
 
     test("updates tags", async () => {
-      const res = await req(app, "PATCH", `/projects/${projectId}`, { tags: ["updated"] });
+      const res = await req(app, "PATCH", `/projects/${projectId}`, {
+        tags: ["updated"],
+      });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.tags).toEqual(["updated"]);
     });
 
     test("updates scope", async () => {
-      const res = await req(app, "PATCH", `/projects/${projectId}`, { scope: "new scope" });
+      const res = await req(app, "PATCH", `/projects/${projectId}`, {
+        scope: "new scope",
+      });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.scope).toBe("new scope");
     });
 
     test("returns 404 for non-existent project", async () => {
-      const res = await req(app, "PATCH", "/projects/nonexistent-id", { name: "x" });
+      const res = await req(app, "PATCH", "/projects/nonexistent-id", {
+        name: "x",
+      });
       expect(res.status).toBe(404);
     });
   });
 
   describe("DELETE /projects/:id", () => {
     test("deletes a project", async () => {
-      const createRes = await req(app, "POST", "/projects", { name: "to-delete" });
+      const createRes = await req(app, "POST", "/projects", {
+        name: "to-delete",
+      });
       const created = await createRes.json();
 
       const res = await req(app, "DELETE", `/projects/${created.id}`);

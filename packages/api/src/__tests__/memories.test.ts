@@ -203,7 +203,9 @@ describe("Memories CRUD", () => {
 
   describe("DELETE /memories/:id", () => {
     test("deletes a memory", async () => {
-      const createRes = await req(app, "POST", "/memories", { content: "To be deleted" });
+      const createRes = await req(app, "POST", "/memories", {
+        content: "To be deleted",
+      });
       const created = await createRes.json();
 
       const res = await req(app, "DELETE", `/memories/${created.id}`);

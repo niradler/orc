@@ -87,10 +87,9 @@ const CreateFlowSchema = z
   .object({
     definition: z.record(z.string(), z.unknown()),
     overwrite: z.boolean().optional(),
-    shadow_builtin: z
-      .boolean()
-      .optional()
-      .openapi({ description: "Deliberately shadow a built-in flow of the same name" }),
+    shadow_builtin: z.boolean().optional().openapi({
+      description: "Deliberately shadow a built-in flow of the same name",
+    }),
   })
   .openapi("CreateFlow");
 
@@ -159,7 +158,10 @@ const readRoute = createRoute({
   summary: "Read a flow definition",
   request: { params: z.object({ name: z.string() }) },
   responses: {
-    200: { description: "Flow", content: { "application/json": { schema: FlowFullSchema } } },
+    200: {
+      description: "Flow",
+      content: { "application/json": { schema: FlowFullSchema } },
+    },
     404: { description: "Flow not found" },
   },
 });
@@ -169,7 +171,9 @@ const createFlowRoute = createRoute({
   path: "/flows",
   tags: ["Flows"],
   summary: "Create a user flow",
-  request: { body: { content: { "application/json": { schema: CreateFlowSchema } } } },
+  request: {
+    body: { content: { "application/json": { schema: CreateFlowSchema } } },
+  },
   responses: {
     201: {
       description: "Created flow",
@@ -185,7 +189,9 @@ const validateRoute = createRoute({
   path: "/flows/validate",
   tags: ["Flows"],
   summary: "Validate a flow definition without saving it",
-  request: { body: { content: { "application/json": { schema: ValidateFlowSchema } } } },
+  request: {
+    body: { content: { "application/json": { schema: ValidateFlowSchema } } },
+  },
   responses: {
     200: {
       description: "Validation result",
@@ -205,7 +211,10 @@ const getTaskFlowRoute = createRoute({
   summary: "Get a task's most recent flow run and its ledger",
   request: { params: z.object({ id: z.string() }) },
   responses: {
-    200: { description: "Flow run", content: { "application/json": { schema: FlowRunSchema } } },
+    200: {
+      description: "Flow run",
+      content: { "application/json": { schema: FlowRunSchema } },
+    },
     404: { description: "No flow run for this task" },
   },
 });
@@ -252,7 +261,10 @@ const resumeRoute = createRoute({
       description: "Resumed",
       content: {
         "application/json": {
-          schema: z.object({ ok: z.boolean(), next_nodes: z.array(z.string()) }),
+          schema: z.object({
+            ok: z.boolean(),
+            next_nodes: z.array(z.string()),
+          }),
         },
       },
     },
@@ -268,13 +280,19 @@ const haltRoute = createRoute({
   request: {
     params: z.object({ id: z.string() }),
     body: {
-      content: { "application/json": { schema: z.object({ reason: z.string().optional() }) } },
+      content: {
+        "application/json": {
+          schema: z.object({ reason: z.string().optional() }),
+        },
+      },
     },
   },
   responses: {
     200: {
       description: "Halt result",
-      content: { "application/json": { schema: z.object({ halted: z.boolean() }) } },
+      content: {
+        "application/json": { schema: z.object({ halted: z.boolean() }) },
+      },
     },
   },
 });
@@ -283,7 +301,11 @@ const haltRoute = createRoute({
 
 app.openapi(listRoute, (c) => {
   const { q, source, reload } = c.req.valid("query");
-  const flows = listFlows({ q, source: source as FlowSource | undefined, reload });
+  const flows = listFlows({
+    q,
+    source: source as FlowSource | undefined,
+    reload,
+  });
   return c.json({
     flows,
     broken: listBrokenFlows(),
@@ -295,7 +317,10 @@ app.openapi(readRoute, (c) => {
   const { name } = c.req.valid("param");
   const flow = readFlow(name);
   if (!flow) throw new NotFoundError("Flow", name);
-  return c.json({ ...flow, definition: flow.definition as Record<string, unknown> });
+  return c.json({
+    ...flow,
+    definition: flow.definition as Record<string, unknown>,
+  });
 });
 
 app.openapi(validateRoute, (c) => {
@@ -349,7 +374,11 @@ app.openapi(attachRoute, async (c) => {
     if (!parsed.ok) throw new ValidationError(`Invalid flow: ${parsed.errors.join("; ")}`);
     await db
       .update(tasks)
-      .set({ flow_override: parsed.definition, flow_name: null, updated_at: new Date() })
+      .set({
+        flow_override: parsed.definition,
+        flow_name: null,
+        updated_at: new Date(),
+      })
       .where(eq(tasks.id, id));
     attached = parsed.definition.name;
   } else {

@@ -88,7 +88,11 @@ const searchRoute = createRoute({
   responses: {
     200: {
       description: "Search results",
-      content: { "application/json": { schema: z.object({ results: z.array(MemorySchema) }) } },
+      content: {
+        "application/json": {
+          schema: z.object({ results: z.array(MemorySchema) }),
+        },
+      },
     },
   },
 });
@@ -109,7 +113,11 @@ const listRoute = createRoute({
   responses: {
     200: {
       description: "Memory list",
-      content: { "application/json": { schema: z.object({ memories: z.array(MemorySchema) }) } },
+      content: {
+        "application/json": {
+          schema: z.object({ memories: z.array(MemorySchema) }),
+        },
+      },
     },
   },
 });
@@ -159,7 +167,10 @@ const updateRoute = createRoute({
     body: { content: { "application/json": { schema: UpdateMemorySchema } } },
   },
   responses: {
-    200: { description: "Updated", content: { "application/json": { schema: MemorySchema } } },
+    200: {
+      description: "Updated",
+      content: { "application/json": { schema: MemorySchema } },
+    },
   },
 });
 

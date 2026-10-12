@@ -1,4 +1,9 @@
-type MarkdownNode = { type: string; value?: string; url?: string; children?: MarkdownNode[] };
+type MarkdownNode = {
+  type: string;
+  value?: string;
+  url?: string;
+  children?: MarkdownNode[];
+};
 
 /** Transform text nodes only, leaving code and existing links literal. */
 export function remarkWikiLinks() {
@@ -14,7 +19,10 @@ export function remarkWikiLinks() {
         let offset = 0;
         for (const match of node.value.matchAll(/\[\[([a-z0-9]+(?:-[a-z0-9]+)*)\]\]/g)) {
           if (match.index > offset)
-            parts.push({ type: "text", value: node.value.slice(offset, match.index) });
+            parts.push({
+              type: "text",
+              value: node.value.slice(offset, match.index),
+            });
           parts.push({
             type: "link",
             url: `#wiki-${match[1]}`,

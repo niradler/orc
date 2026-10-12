@@ -72,7 +72,9 @@ async function call<T>(
     if (str) url += `?${str}`;
   }
 
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
   if (secret) headers.Authorization = `Bearer ${secret}`;
 
   try {
@@ -89,7 +91,10 @@ async function call<T>(
       const err = json as { error?: string; code?: string };
       return {
         data: null,
-        error: { error: err.error ?? "Unknown error", code: err.code ?? "UNKNOWN" },
+        error: {
+          error: err.error ?? "Unknown error",
+          code: err.code ?? "UNKNOWN",
+        },
       };
     }
 
@@ -136,7 +141,11 @@ export function createOrcClient(options?: OrcClientOptions) {
           events: Record<RuleHookBackend, RuleEventCapability[]>;
         }>("GET", "/rules", undefined, { workspace }),
       activate: (policy: RulePolicy, expected_id: string | null, reason: string) =>
-        c<RuleRevision>("POST", "/rules/activate", { policy, expected_id, reason }),
+        c<RuleRevision>("POST", "/rules/activate", {
+          policy,
+          expected_id,
+          reason,
+        }),
       revert: (id: string, reason: string) =>
         c<RuleRevision>("POST", "/rules/revert", { id, reason }),
       check: (event: RuleEvent) => c<RuleDecision>("POST", "/rules/check", event),
@@ -328,7 +337,9 @@ export function createOrcClient(options?: OrcClientOptions) {
       create: (input: CreateFlowInput) => c<FlowFull>("POST", "/flows", input),
 
       validate: (definition: Record<string, unknown>) =>
-        c<{ valid: boolean; errors: string[] }>("POST", "/flows/validate", { definition }),
+        c<{ valid: boolean; errors: string[] }>("POST", "/flows/validate", {
+          definition,
+        }),
     },
 
     projects: {
@@ -448,7 +459,12 @@ export function createOrcClient(options?: OrcClientOptions) {
     knowledge: {
       search: (
         q: string,
-        opts?: { collection?: string; project_id?: string; mode?: string; limit?: number },
+        opts?: {
+          collection?: string;
+          project_id?: string;
+          mode?: string;
+          limit?: number;
+        },
       ) =>
         c<{
           results: {

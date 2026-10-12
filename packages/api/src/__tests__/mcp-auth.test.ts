@@ -36,7 +36,10 @@ describe("MCP HTTP endpoint auth", () => {
   test("POST /mcp with a wrong bearer token is rejected", async () => {
     const res = await app.request("/mcp", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer nope" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer nope",
+      },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
     });
     expect(res.status).toBe(401);

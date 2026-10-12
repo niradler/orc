@@ -14,7 +14,13 @@ const field = z
   );
 export const RulePredicateSchema = z.discriminatedUnion("operator", [
   z.object({ field, operator: z.literal("equals"), value: scalar }).strict(),
-  z.object({ field, operator: z.literal("in"), value: z.array(scalar).min(1).max(100) }).strict(),
+  z
+    .object({
+      field,
+      operator: z.literal("in"),
+      value: z.array(scalar).min(1).max(100),
+    })
+    .strict(),
   z.object({ field, operator: z.literal("exists") }).strict(),
   z
     .object({
@@ -47,7 +53,14 @@ export const RuleFilterSchema = z
   .object({
     match: z.enum(["all", "any"]),
     conditions: z
-      .array(z.object({ predicate: RulePredicateSchema, negate: z.boolean().optional() }).strict())
+      .array(
+        z
+          .object({
+            predicate: RulePredicateSchema,
+            negate: z.boolean().optional(),
+          })
+          .strict(),
+      )
       .max(32),
   })
   .strict();

@@ -53,7 +53,10 @@ export function validateCollectionPath(path: string): string {
   return resolved;
 }
 
-export function validateTaskTitle(title: string): { valid: boolean; error?: string } {
+export function validateTaskTitle(title: string): {
+  valid: boolean;
+  error?: string;
+} {
   const trimmed = title.trim();
 
   if (trimmed.length === 0) {

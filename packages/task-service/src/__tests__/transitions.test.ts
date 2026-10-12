@@ -50,15 +50,25 @@ describe("updateTaskStatus", () => {
   test("adds comment on transition", async () => {
     const db = getDb();
     const id = await createTask();
-    await updateTaskStatus({ taskId: id, status: "doing", comment: "Starting work" });
-    const rows = await db.query.comments.findMany({ where: eq(comments.resource_id, id) });
+    await updateTaskStatus({
+      taskId: id,
+      status: "doing",
+      comment: "Starting work",
+    });
+    const rows = await db.query.comments.findMany({
+      where: eq(comments.resource_id, id),
+    });
     expect(rows.length).toBe(1);
     expect(rows[0].content).toBe("Starting work");
   });
 
   test("sets claimed_by on doing transition", async () => {
     const id = await createTask();
-    await updateTaskStatus({ taskId: id, status: "doing", claimedBy: "session-123" });
+    await updateTaskStatus({
+      taskId: id,
+      status: "doing",
+      claimedBy: "session-123",
+    });
     const db = getDb();
     const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
     expect(task?.claimed_by).toBe("session-123");
@@ -66,7 +76,11 @@ describe("updateTaskStatus", () => {
 
   test("sets claimed_by on queued transition", async () => {
     const id = await createTask();
-    await updateTaskStatus({ taskId: id, status: "queued", claimedBy: "session-456" });
+    await updateTaskStatus({
+      taskId: id,
+      status: "queued",
+      claimedBy: "session-456",
+    });
     const db = getDb();
     const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
     expect(task?.claimed_by).toBe("session-456");
@@ -101,7 +115,10 @@ describe("updateTaskStatus", () => {
       link_type: "blocks",
       created_at: new Date(),
     });
-    const result = await updateTaskStatus({ taskId: blockedId, status: "doing" });
+    const result = await updateTaskStatus({
+      taskId: blockedId,
+      status: "doing",
+    });
     expect(result.ok).toBe(false);
     expect(result.error).toContain("blocked by");
   });
@@ -120,7 +137,9 @@ describe("updateTaskStatus", () => {
     await updateTaskStatus({ taskId: blockerId, status: "doing" });
     await updateTaskStatus({ taskId: blockerId, status: "review" });
     await updateTaskStatus({ taskId: blockerId, status: "done" });
-    const blocked = await db.query.tasks.findFirst({ where: eq(tasks.id, blockedId) });
+    const blocked = await db.query.tasks.findFirst({
+      where: eq(tasks.id, blockedId),
+    });
     expect(blocked?.status).toBe("todo");
   });
 
@@ -197,7 +216,9 @@ describe("addTaskComment", () => {
     const id = await createTask();
     const commentId = await addTaskComment(id, "Test comment", "human");
     expect(commentId).toBeTruthy();
-    const row = await db.query.comments.findFirst({ where: eq(comments.id, commentId) });
+    const row = await db.query.comments.findFirst({
+      where: eq(comments.id, commentId),
+    });
     expect(row?.content).toBe("Test comment");
     expect(row?.author).toBe("human");
     expect(row?.resource_type).toBe("task");

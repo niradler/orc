@@ -7,7 +7,10 @@ export const API_BASE = `http://127.0.0.1:${API_PORT}/api`;
 export const API_SECRET = process.env.ORC_API_SECRET ?? "";
 
 export const AUTH_HEADERS: Record<string, string> = API_SECRET
-  ? { Authorization: `Bearer ${API_SECRET}`, "Content-Type": "application/json" }
+  ? {
+      Authorization: `Bearer ${API_SECRET}`,
+      "Content-Type": "application/json",
+    }
   : { "Content-Type": "application/json" };
 
 /**
@@ -21,7 +24,9 @@ export function repoRoot(): string {
     const pkg = join(dir, "package.json");
     if (existsSync(pkg)) {
       try {
-        const parsed = JSON.parse(readFileSync(pkg, "utf-8")) as { workspaces?: unknown };
+        const parsed = JSON.parse(readFileSync(pkg, "utf-8")) as {
+          workspaces?: unknown;
+        };
         if (parsed.workspaces) return dir;
       } catch {
         /* keep walking */
@@ -69,7 +74,9 @@ export async function apiDelete(request: APIRequestContext, path: string): Promi
 }
 
 export async function apiGet<T>(request: APIRequestContext, path: string): Promise<T> {
-  const res = await request.get(`${API_BASE}${path}`, { headers: AUTH_HEADERS });
+  const res = await request.get(`${API_BASE}${path}`, {
+    headers: AUTH_HEADERS,
+  });
   if (!res.ok()) throw new Error(`GET ${path} failed: ${res.status()}`);
   return (await res.json()) as T;
 }

@@ -1,3 +1,4 @@
+import { type HostProcess, hostSpawn, resolveExecHost } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { getDb } from "@orc/db/client";
@@ -11,7 +12,12 @@ export type RunOptions = {
   runId?: string;
   triggerBy?: string;
   envOverrides?: Record<string, string>;
-  execution?: { argv: string[]; stdin: string; timeout_ms: number; cwd: string };
+  execution?: {
+    argv: string[];
+    stdin: string;
+    timeout_ms: number;
+    cwd: string;
+  };
 };
 
 export async function executeJob(opts: RunOptions): Promise<string> {
@@ -22,7 +28,9 @@ export async function executeJob(opts: RunOptions): Promise<string> {
   let runRowExists = Boolean(opts.runId);
 
   try {
-    const job = await db.query.jobs.findFirst({ where: eq(jobs.id, opts.jobId) });
+    const job = await db.query.jobs.findFirst({
+      where: eq(jobs.id, opts.jobId),
+    });
     if (!job) throw new Error(`Job not found: ${opts.jobId}`);
 
     const now = new Date();
@@ -60,16 +68,32 @@ export async function executeJob(opts: RunOptions): Promise<string> {
 
     const timeout = opts.execution?.timeout_ms ?? (job.timeout_secs ?? 300) * 1000;
 
-    const proc = Bun.spawn({
-      cmd: opts.execution?.argv ?? ["sh", "-c", job.command],
-      cwd: opts.execution?.cwd ?? job.working_dir ?? process.cwd(),
-      env: env as Record<string, string>,
-      stdout: "pipe",
-      stderr: "pipe",
-      stdin: opts.execution ? new TextEncoder().encode(opts.execution.stdin) : "ignore",
-      timeout,
-      killSignal: "SIGKILL",
-    });
+    const host = opts.execution ? null : resolveExecHost();
+    let handle: HostProcess;
+    if (host?.kind === "ssh") {
+      handle = await hostSpawn(host, ["sh", "-c", job.command], {
+        cwd: job.working_dir ?? undefined,
+        env,
+        passEnv: [
+          "ORC_JOB_RUN_ID",
+          ...Object.keys(job.env_vars ?? {}),
+          ...Object.keys(opts.envOverrides ?? {}),
+        ],
+      });
+    } else {
+      const local = Bun.spawn({
+        cmd: opts.execution?.argv ?? ["sh", "-c", job.command],
+        cwd: opts.execution?.cwd ?? job.working_dir ?? process.cwd(),
+        env: env as Record<string, string>,
+        stdout: "pipe",
+        stderr: "pipe",
+        stdin: opts.execution ? new TextEncoder().encode(opts.execution.stdin) : "ignore",
+        timeout,
+        killSignal: "SIGKILL",
+      });
+      handle = { proc: local, kill: () => local.kill() };
+    }
+    const proc = handle.proc;
 
     const MAX_STREAM_BYTES = opts.execution ? 65536 : 100 * 1024 * 1024;
     const stdoutLines: string[] = [];
@@ -85,7 +109,7 @@ export async function executeJob(opts: RunOptions): Promise<string> {
       line: string;
     }> = [];
 
-    const timeoutHandle = setTimeout(() => proc.kill(), timeout);
+    const timeoutHandle = setTimeout(() => handle.kill(), timeout);
 
     const readStream = async (reader: ReadableStream<Uint8Array>, stream: "stdout" | "stderr") => {
       const dec = new TextDecoder();

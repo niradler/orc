@@ -1,6 +1,6 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { z } from "zod";
 import { oneLine } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
@@ -42,18 +42,29 @@ export function geminiText(content: unknown): string {
     .join("\n");
 }
 
-export function geminiAdapter(root: string = GEMINI_TMP_DIR): SessionAdapter {
+export function geminiAdapter(
+  root: string | undefined = undefined,
+  runtime: HostRuntime = hostRuntime(LOCAL_HOST),
+): SessionAdapter {
   return {
     backend: "gemini",
     minIntervalMs: 30_000,
     async list() {
-      if (!existsSync(root)) return [];
+      const sessions = root ?? join(await runtime.home(), ".gemini", "tmp");
       const records: SessionRecord[] = [];
-      for (const file of readdirSync(root, { recursive: true }) as string[]) {
-        if (!file.endsWith(".json") || !file.split(/[\\/]/).pop()?.startsWith("session-")) continue;
-        const path = join(root, file);
-        if (statSync(path).size > 50 * 1024 * 1024) continue;
-        const parsed = GeminiSession.safeParse(JSON.parse(readFileSync(path, "utf8")));
+      for (const file of await runtime.listFiles(sessions)) {
+        if (!file.path.endsWith(".json") || !file.path.split(/[\\/]/).pop()?.startsWith("session-"))
+          continue;
+        if (file.size > 50 * 1024 * 1024) continue;
+        let content: unknown;
+        try {
+          content = JSON.parse(
+            new TextDecoder().decode(await runtime.readFile(file.path, 50 * 1024 * 1024)),
+          );
+        } catch {
+          continue;
+        }
+        const parsed = GeminiSession.safeParse(content);
         if (!parsed.success) continue;
         const data = parsed.data;
         const prompt = geminiText(
@@ -68,7 +79,7 @@ export function geminiAdapter(root: string = GEMINI_TMP_DIR): SessionAdapter {
           status: "stopped",
           createdAt: new Date(data.startTime),
           lastActivityAt: new Date(data.lastUpdated),
-          transcriptPath: path,
+          transcriptPath: file.path,
           tokensUsed:
             data.messages.reduce((sum, message) => sum + (message.tokens?.total ?? 0), 0) || null,
         });

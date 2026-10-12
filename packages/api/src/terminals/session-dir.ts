@@ -1,19 +1,18 @@
 import { basename, dirname, join } from "node:path";
 import { ValidationError } from "@orc/core/errors";
+import { type ExecHost, type ExecResult, hostExec, LOCAL_HOST } from "@orc/core/exec-host";
 
-export interface GitResult {
-  code: number | null;
-  stdout: string;
-  stderr: string;
-}
+export type GitResult = ExecResult;
+
+export type GitRunner = (argv: string[]) => Promise<GitResult>;
 
 export interface SessionDirDeps {
-  isDirectory: (path: string) => boolean;
+  isDirectory: (path: string) => boolean | Promise<boolean>;
   home: string;
-  runGit: (argv: string[]) => Promise<GitResult>;
-  makeDirectory: (path: string) => void;
+  runGit: GitRunner;
+  makeDirectory: (path: string) => unknown;
   newId: () => string;
-  validateDirectory?: (path: string) => void;
+  validateDirectory?: (path: string) => unknown;
 }
 
 export interface SessionDirRequest {
@@ -21,22 +20,15 @@ export interface SessionDirRequest {
   worktree?: boolean | undefined;
 }
 
-export async function runGit(argv: string[]): Promise<GitResult> {
-  const proc = Bun.spawn(argv, {
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-    windowsHide: true,
-    timeout: 30_000,
-  });
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  return { code, stdout, stderr };
+export function gitRunner(host: ExecHost): GitRunner {
+  return (argv) =>
+    hostExec(host, argv, {
+      env: { GIT_TERMINAL_PROMPT: "0" },
+      timeoutMs: 30_000,
+    });
 }
+
+export const runGit: GitRunner = gitRunner(LOCAL_HOST);
 
 export function gitError(result: GitResult, fallback: string): Error {
   const message = result.stderr.trim() || result.stdout.trim() || fallback;
@@ -66,7 +58,7 @@ export async function prepareSessionDirectory(
 ): Promise<string> {
   const cwd = req.cwd?.trim();
   if (!cwd) return deps.home;
-  if (!deps.isDirectory(cwd)) throw new ValidationError(`cwd is not a directory: ${cwd}`);
+  if (!(await deps.isDirectory(cwd))) throw new ValidationError(`cwd is not a directory: ${cwd}`);
   if (!req.worktree) return cwd;
 
   const root = await repoRoot(cwd, deps.runGit);
@@ -74,8 +66,8 @@ export async function prepareSessionDirectory(
 
   const id = deps.newId();
   const path = worktreePath(root, id);
-  deps.validateDirectory?.(path);
-  deps.makeDirectory(dirname(path));
+  await deps.validateDirectory?.(path);
+  await deps.makeDirectory(dirname(path));
   const added = await deps.runGit(["git", "-C", root, "worktree", "add", "-b", `orc/${id}`, path]);
   if (added.code !== 0) throw gitError(added, "git worktree add failed");
   return path;

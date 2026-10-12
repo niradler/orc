@@ -219,7 +219,10 @@ export function jobCommand() {
         }
 
         if (opts.sessions) {
-          const { data: sessData } = await client.sessions.list({ job_run_id: r.id, limit: 5 });
+          const { data: sessData } = await client.sessions.list({
+            job_run_id: r.id,
+            limit: 5,
+          });
           for (const s of sessData?.sessions ?? []) {
             const summary = s.summary ? `  ${s.summary.split("\n")[0]?.slice(0, 60)}` : "";
             console.log(

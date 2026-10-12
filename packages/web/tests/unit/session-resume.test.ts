@@ -7,6 +7,7 @@ const session: LiveSession = {
   agent: "claude",
   session_id: "session-id",
   cwd: null,
+  host: null,
   name: "Test",
   summary: null,
   status: "idle",

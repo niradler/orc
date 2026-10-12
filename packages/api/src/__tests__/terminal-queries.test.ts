@@ -61,7 +61,12 @@ describe("TerminalQueryResponder", () => {
 
 describe("buildPtyEnv", () => {
   test("describes the terminal and keeps the user's environment", () => {
-    const env = buildPtyEnv({ PATH: "/bin", HOME: "/home/me", TERM: "dumb", UNSET: undefined });
+    const env = buildPtyEnv({
+      PATH: "/bin",
+      HOME: "/home/me",
+      TERM: "dumb",
+      UNSET: undefined,
+    });
     expect(env).toEqual({
       PATH: "/bin",
       HOME: "/home/me",

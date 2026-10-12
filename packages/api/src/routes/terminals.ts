@@ -2,6 +2,7 @@ import { basename, dirname } from "node:path";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
+import { execHostFor, listHostDirectories, resolveExecHost } from "@orc/core/exec-host";
 import {
   AgentSetupSchema,
   buildPackagePlan,
@@ -18,6 +19,7 @@ import { availableLaunchers, buildLaunch, LAUNCH_KINDS } from "../terminals/laun
 import {
   getTerminalManager,
   launchDeps,
+  launchOnHost,
   pickFolderOnce,
   requireTerminals,
   sessionDirDeps,
@@ -35,6 +37,7 @@ const TerminalSchema = z
     name: z.string(),
     kind: LaunchKindSchema,
     cwd: z.string().nullable(),
+    host: z.string().nullable(),
     status: z.enum(["running", "exited"]),
     exit_code: z.number().nullable(),
     pid: z.number().nullable(),
@@ -59,6 +62,7 @@ const listRoute = createRoute({
             enabled: z.boolean(),
             ready: z.boolean(),
             reason: z.string().nullable(),
+            host: z.string().nullable(),
             launchers: z.array(LaunchKindSchema),
             terminals: z.array(TerminalSchema),
           }),
@@ -82,10 +86,9 @@ const createTerminalRoute = createRoute({
             cwd: z.string().min(1).optional(),
             name: z.string().max(120).optional(),
             live_session_id: z.string().min(1).optional(),
-            worktree: z
-              .boolean()
-              .optional()
-              .openapi({ description: "Start an agent in a new git worktree of the cwd's repo" }),
+            worktree: z.boolean().optional().openapi({
+              description: "Start an agent in a new git worktree of the cwd's repo",
+            }),
             setup: AgentSetupSchema.optional(),
           }),
         },
@@ -121,7 +124,34 @@ const pickFolderRoute = createRoute({
   responses: {
     200: {
       description: "Chosen folder, or null when the dialog was cancelled",
-      content: { "application/json": { schema: z.object({ path: z.string().nullable() }) } },
+      content: {
+        "application/json": {
+          schema: z.object({ path: z.string().nullable() }),
+        },
+      },
+    },
+  },
+});
+
+const browseRoute = createRoute({
+  method: "get",
+  path: "/terminals/browse",
+  tags: ["Terminals"],
+  summary: "List the folders inside a folder on the machine where terminals run",
+  request: { query: z.object({ path: z.string().max(4096).default("") }) },
+  responses: {
+    200: {
+      description: "Folders",
+      content: {
+        "application/json": {
+          schema: z.object({
+            host: z.string().nullable(),
+            path: z.string(),
+            parent: z.string().nullable(),
+            directories: z.array(z.string()),
+          }),
+        },
+      },
     },
   },
 });
@@ -133,7 +163,10 @@ const getTerminalRoute = createRoute({
   summary: "Get a terminal",
   request: { params: idParam },
   responses: {
-    200: { description: "Terminal", content: { "application/json": { schema: TerminalSchema } } },
+    200: {
+      description: "Terminal",
+      content: { "application/json": { schema: TerminalSchema } },
+    },
   },
 });
 
@@ -164,16 +197,28 @@ const ticketRoute = createRoute({
   },
 });
 
-app.openapi(listRoute, (c) => {
+app.openapi(listRoute, async (c) => {
   const config = loadConfig();
-  const { ready, reason } = terminalsAvailability(config);
+  const availability = terminalsAvailability(config);
+  const host = resolveExecHost(config);
+  let { ready, reason } = availability;
+  let launchers: ReturnType<typeof availableLaunchers> = [];
+  if (ready) {
+    try {
+      launchers = availableLaunchers(await launchDeps(config, host));
+    } catch (error) {
+      ready = false;
+      reason = error instanceof Error ? error.message : String(error);
+    }
+  }
   return c.json(
     {
       enabled: config.terminals.enabled,
       ready,
       reason,
-      launchers: ready ? availableLaunchers(launchDeps(config)) : [],
-      terminals: ready ? getTerminalManager().list() : [],
+      host: host.kind === "ssh" ? host.alias : null,
+      launchers,
+      terminals: availability.ready ? getTerminalManager().list() : [],
     },
     200,
   );
@@ -184,24 +229,31 @@ app.openapi(createTerminalRoute, async (c) => {
   requireTerminals(config);
   const body = c.req.valid("json");
   const manager = getTerminalManager();
-  const deps = launchDeps(config);
-  const checkRules = (cwd: string | undefined | null, planned = false): void => {
+  let host = resolveExecHost(config);
+  let deps = await launchDeps(config, host);
+  const checkRules = (cwd: string | undefined | null): void => {
     if (!config.rules.enabled) return;
-    let scope = cwd ?? deps.home;
-    if (planned) {
-      while (!deps.isDirectory(scope)) {
-        const parent = dirname(scope);
-        if (parent === scope) throw new ValidationError("Cannot resolve planned workspace");
-        scope = parent;
-      }
-    }
-    if (new RuleStore(getSqlite()).active(scope).length)
+    if (new RuleStore(getSqlite()).active(cwd ?? deps.home).length)
       throw new ValidationError(
         "Protected workspace requires the Claude SDK adapter; native agent terminals have unverified hook coverage",
       );
   };
+  const checkPlannedRules = async (path: string): Promise<void> => {
+    if (!config.rules.enabled) return;
+    let scope = path;
+    while (!(await deps.isDirectory(scope))) {
+      const parent = dirname(scope);
+      if (parent === scope) throw new ValidationError("Cannot resolve planned workspace");
+      scope = parent;
+    }
+    checkRules(scope);
+  };
 
   if (body.setup) {
+    if (host.kind === "ssh")
+      throw new ValidationError(
+        `Package setups install files and run Bun on the machine running orc, so they cannot start on the SSH host ${host.alias} yet`,
+      );
     checkRules(body.setup.cwd);
     if (body.live_session_id || body.worktree)
       throw new ValidationError(
@@ -240,6 +292,8 @@ app.openapi(createTerminalRoute, async (c) => {
       ),
     });
     if (!row) throw new NotFoundError("Live session", body.live_session_id);
+    host = execHostFor(row.execution_host ?? null, config);
+    deps = await launchDeps(config, host);
     checkRules(row.cwd);
     if (row.status === "idle" || row.status === "running") {
       const original = manager.linkLiveSession(
@@ -248,12 +302,13 @@ app.openapi(createTerminalRoute, async (c) => {
           pid: row.pid,
           backend: row.backend,
           createdAt: row.created_at,
+          host: row.execution_host ?? null,
         },
         (info) => checkRules(info.cwd),
       );
       if (original) return c.json(original, 200);
     }
-    const launch = buildLaunch(
+    const launch = await buildLaunch(
       {
         live: {
           agent: row.backend,
@@ -263,8 +318,9 @@ app.openapi(createTerminalRoute, async (c) => {
       },
       deps,
     );
+    manager.assertCapacity();
     const info = manager.create({
-      launch,
+      launch: await launchOnHost(host, launch),
       name: body.name ?? row.title ?? undefined,
       liveSessionId: row.id,
     });
@@ -273,7 +329,7 @@ app.openapi(createTerminalRoute, async (c) => {
   }
 
   // Validate the launcher and limit before making a worktree, so a failed start leaves nothing behind.
-  const launch = buildLaunch({ kind: body.kind, cwd: body.cwd }, deps);
+  const launch = await buildLaunch({ kind: body.kind, cwd: body.cwd }, deps);
   if (launch.kind !== "shell") checkRules(launch.cwd);
   if (body.worktree && launch.kind === "shell") {
     throw new ValidationError("Worktrees are only created for agent terminals");
@@ -281,11 +337,14 @@ app.openapi(createTerminalRoute, async (c) => {
   manager.assertCapacity();
   const cwd = await prepareSessionDirectory(
     { cwd: body.cwd, worktree: body.worktree },
-    { ...sessionDirDeps(deps), validateDirectory: (path) => checkRules(path, true) },
+    { ...sessionDirDeps(deps, host), validateDirectory: checkPlannedRules },
   );
   if (launch.kind !== "shell") checkRules(cwd);
   const name = body.name ?? (cwd !== launch.cwd ? worktreeName(cwd) : undefined);
-  const info = manager.create({ launch: { ...launch, cwd }, name });
+  const info = manager.create({
+    launch: await launchOnHost(host, { ...launch, cwd }),
+    name,
+  });
   rememberTerminalFolder(info.cwd);
   return c.json(info, 201);
 });
@@ -299,6 +358,14 @@ app.openapi(pickFolderRoute, async (c) => {
   requireTerminals(loadConfig());
   const { initial } = c.req.valid("json");
   return c.json({ path: await pickFolderOnce(initial) }, 200);
+});
+
+app.openapi(browseRoute, async (c) => {
+  const config = loadConfig();
+  requireTerminals(config);
+  const host = resolveExecHost(config);
+  const listing = await listHostDirectories(host, c.req.valid("query").path);
+  return c.json({ host: host.kind === "ssh" ? host.alias : null, ...listing }, 200);
 });
 
 app.openapi(getTerminalRoute, (c) => {

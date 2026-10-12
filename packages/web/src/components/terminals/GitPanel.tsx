@@ -136,7 +136,9 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
                 void status.refetch();
                 void trees.refetch();
                 void github.refetch();
-                void client.invalidateQueries({ queryKey: ["git", terminal.id, "diff"] });
+                void client.invalidateQueries({
+                  queryKey: ["git", terminal.id, "diff"],
+                });
               }}
             >
               Refresh

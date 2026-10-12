@@ -60,7 +60,11 @@ describe("Tasks", () => {
       priority: "high",
     });
     expect(res.status).toBe(201);
-    const body = (await res.json()) as { id: string; status: string; title: string };
+    const body = (await res.json()) as {
+      id: string;
+      status: string;
+      title: string;
+    };
     expect(body.title).toBe("Implement auth");
     expect(body.status).toBe("todo");
     taskId = body.id;
@@ -96,7 +100,9 @@ describe("Tasks", () => {
     const reviewed = (await reviewRes.json()) as { status: string };
     expect(reviewed.status).toBe("review");
 
-    const approveRes = await req("PATCH", `/tasks/${taskId}`, { status: "done" });
+    const approveRes = await req("PATCH", `/tasks/${taskId}`, {
+      status: "done",
+    });
     expect(approveRes.status).toBe(200);
     const approved = (await approveRes.json()) as { status: string };
     expect(approved.status).toBe("done");
@@ -244,7 +250,11 @@ describe("Sessions", () => {
     const res = await req("GET", "/sessions?agent=cursor&limit=5");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      sessions: { agent: string; agent_version: string | null; summary: string | null }[];
+      sessions: {
+        agent: string;
+        agent_version: string | null;
+        summary: string | null;
+      }[];
     };
     const s = body.sessions.find((s) => s.agent === "cursor");
     expect(s).toBeDefined();
@@ -302,7 +312,11 @@ describe("Sessions - job_run_id filter", () => {
     const res = await req("GET", `/sessions?job_run_id=${runId}`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      sessions: { agent: string; job_run_id: string | null; summary: string | null }[];
+      sessions: {
+        agent: string;
+        job_run_id: string | null;
+        summary: string | null;
+      }[];
     };
     expect(body.sessions.length).toBeGreaterThanOrEqual(1);
     const sess = body.sessions[0];

@@ -1,7 +1,15 @@
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig } from "@orc/core/config";
+import { configuredApiSecret, loadConfig } from "@orc/core/config";
+import {
+  type ExecHost,
+  orcUrlOnHost,
+  remoteTempPath,
+  removeHostFile,
+  resolveExecHost,
+  writeHostFile,
+} from "@orc/core/exec-host";
 
 export const ORC_MCP_SERVER_NAME = "orc";
 export const ORC_TOOL_PREFIX = `mcp__${ORC_MCP_SERVER_NAME}__`;
@@ -33,7 +41,7 @@ export function isImplicitOrcTool(toolName: string): boolean {
   return IMPLICIT_ORC_TOOLS.includes(toolName);
 }
 
-export function buildOrcMcpServer(): OrcHttpMcpServer {
+export function buildOrcMcpServer(host: ExecHost = resolveExecHost()): OrcHttpMcpServer {
   let api: { host: string; port: number; secret?: string | undefined };
   try {
     api = loadConfig().api;
@@ -42,15 +50,18 @@ export function buildOrcMcpServer(): OrcHttpMcpServer {
       `Cannot start a tool-restricted agent session: ORC config unavailable, so the ORC MCP server (mcp__orc__*) cannot be injected: ${String(err)}`,
     );
   }
+  const secret = configuredApiSecret(api.secret);
   return {
     type: "http",
-    url: `http://${api.host}:${api.port}/mcp`,
-    ...(api.secret ? { headers: { Authorization: `Bearer ${api.secret}` } } : {}),
+    url: host.kind === "ssh" ? `${orcUrlOnHost(host)}/mcp` : `http://${api.host}:${api.port}/mcp`,
+    ...(secret ? { headers: { Authorization: `Bearer ${secret}` } } : {}),
   };
 }
 
-export function buildOrcMcpServers(): Record<string, OrcHttpMcpServer> {
-  return { [ORC_MCP_SERVER_NAME]: buildOrcMcpServer() };
+export function buildOrcMcpServers(
+  host: ExecHost = resolveExecHost(),
+): Record<string, OrcHttpMcpServer> {
+  return { [ORC_MCP_SERVER_NAME]: buildOrcMcpServer(host) };
 }
 
 export function withOrcAllowedTools(allowed: readonly string[]): string[] {
@@ -61,10 +72,18 @@ export type OrcMcpConfigFile = { path: string; cleanup: () => void };
 
 // The bearer secret must not appear on argv (visible in process listings), so the
 // CLI backend receives the MCP config as a private temp file instead of inline JSON.
-export function writeOrcMcpConfigFile(): OrcMcpConfigFile {
+export async function writeOrcMcpConfigFile(
+  host: ExecHost = resolveExecHost(),
+): Promise<OrcMcpConfigFile> {
+  const content = JSON.stringify({ mcpServers: buildOrcMcpServers(host) });
+  if (host.kind === "ssh") {
+    const path = remoteTempPath(".mcp.json");
+    await writeHostFile(host, path, content);
+    return { path, cleanup: () => void removeHostFile(host, path) };
+  }
   const dir = mkdtempSync(join(tmpdir(), "orc-mcp-"));
   const path = join(dir, "mcp.json");
-  writeFileSync(path, JSON.stringify({ mcpServers: buildOrcMcpServers() }), { mode: 0o600 });
+  writeFileSync(path, content, { mode: 0o600 });
   try {
     chmodSync(dir, 0o700);
   } catch {}

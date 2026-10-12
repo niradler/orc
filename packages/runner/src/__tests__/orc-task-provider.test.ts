@@ -115,9 +115,13 @@ describe("OrcTaskProvider.pickWorkTasks()", () => {
       .insert(tasks)
       .values(makeTask({ id: blockerId, title: "Blocker task", status: "todo" }));
     // blocked task — eligible otherwise
-    await db
-      .insert(tasks)
-      .values(makeTask({ id: blockedId, title: "Blocked task", skill_name: "my-skill" }));
+    await db.insert(tasks).values(
+      makeTask({
+        id: blockedId,
+        title: "Blocked task",
+        skill_name: "my-skill",
+      }),
+    );
     // link: blockerId blocks blockedId
     await db.insert(task_links).values({
       id: ulid(),
@@ -139,13 +143,26 @@ describe("OrcTaskProvider.pickWorkTasks()", () => {
     const doneId = ulid();
     const doingId = ulid();
 
-    await db
-      .insert(tasks)
-      .values([
-        makeTask({ id: reviewId, title: "Review task", status: "review", skill_name: "my-skill" }),
-        makeTask({ id: doneId, title: "Done task", status: "done", skill_name: "my-skill" }),
-        makeTask({ id: doingId, title: "Doing task", status: "doing", skill_name: "my-skill" }),
-      ]);
+    await db.insert(tasks).values([
+      makeTask({
+        id: reviewId,
+        title: "Review task",
+        status: "review",
+        skill_name: "my-skill",
+      }),
+      makeTask({
+        id: doneId,
+        title: "Done task",
+        status: "done",
+        skill_name: "my-skill",
+      }),
+      makeTask({
+        id: doingId,
+        title: "Doing task",
+        status: "doing",
+        skill_name: "my-skill",
+      }),
+    ]);
 
     const result = await provider.pickWorkTasks();
     expect(result.find((t) => t.id === reviewId)).toBeUndefined();
@@ -170,12 +187,18 @@ describe("OrcTaskProvider.pickReviewTasks()", () => {
     const todoId = ulid();
     const doingId = ulid();
 
-    await db
-      .insert(tasks)
-      .values([
-        makeTask({ id: todoId, title: "Todo task for review test", status: "todo" }),
-        makeTask({ id: doingId, title: "Doing task for review test", status: "doing" }),
-      ]);
+    await db.insert(tasks).values([
+      makeTask({
+        id: todoId,
+        title: "Todo task for review test",
+        status: "todo",
+      }),
+      makeTask({
+        id: doingId,
+        title: "Doing task for review test",
+        status: "doing",
+      }),
+    ]);
 
     const result = await provider.pickReviewTasks();
     expect(result.find((t) => t.id === todoId)).toBeUndefined();
@@ -187,11 +210,14 @@ describe("OrcTaskProvider.pickReviewTasks()", () => {
     const db = getDb();
     const id = ulid();
     const sessionId = ulid();
-    await db
-      .insert(tasks)
-      .values(
-        makeTask({ id, title: "Claimed review task", status: "review", claimed_by: sessionId }),
-      );
+    await db.insert(tasks).values(
+      makeTask({
+        id,
+        title: "Claimed review task",
+        status: "review",
+        claimed_by: sessionId,
+      }),
+    );
     const result = await provider.pickReviewTasks();
     expect(result.find((t) => t.id === id)).toBeUndefined();
   });
@@ -232,9 +258,14 @@ describe("OrcTaskProvider.releaseTask()", () => {
     const db = getDb();
     const id = ulid();
     const sessionId = ulid();
-    await db
-      .insert(tasks)
-      .values(makeTask({ id, title: "Release me", claimed_by: sessionId, status: "doing" }));
+    await db.insert(tasks).values(
+      makeTask({
+        id,
+        title: "Release me",
+        claimed_by: sessionId,
+        status: "doing",
+      }),
+    );
 
     await provider.releaseTask(id);
 
@@ -250,7 +281,10 @@ describe("OrcTaskProvider.updateTaskStatus()", () => {
     const id = ulid();
     await db.insert(tasks).values(makeTask({ id, title: "Transition task" }));
 
-    const result = await provider.updateTaskStatus({ taskId: id, status: "doing" });
+    const result = await provider.updateTaskStatus({
+      taskId: id,
+      status: "doing",
+    });
     expect(result.ok).toBe(true);
     expect(result.error).toBeUndefined();
   });
@@ -274,7 +308,10 @@ describe("OrcTaskProvider.updateTaskStatus()", () => {
     await db.insert(tasks).values(makeTask({ id, title: "Same status task" }));
 
     // todo → todo is the one invalid transition (cannot transition to same status)
-    const result = await provider.updateTaskStatus({ taskId: id, status: "todo" });
+    const result = await provider.updateTaskStatus({
+      taskId: id,
+      status: "todo",
+    });
     expect(result.ok).toBe(false);
     expect(result.error).toBeDefined();
     expect(result.error).toContain("todo");
@@ -319,9 +356,14 @@ describe("OrcTaskProvider.getTask()", () => {
     const provider = new OrcTaskProvider();
     const db = getDb();
     const id = ulid();
-    await db
-      .insert(tasks)
-      .values(makeTask({ id, title: "Get me", skill_name: "skill-x", agent_backend: "claude" }));
+    await db.insert(tasks).values(
+      makeTask({
+        id,
+        title: "Get me",
+        skill_name: "skill-x",
+        agent_backend: "claude",
+      }),
+    );
 
     const task = await provider.getTask(id);
     expect(task).not.toBeNull();

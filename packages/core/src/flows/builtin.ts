@@ -19,7 +19,11 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
     description:
       "Optional bounded review tracing connected code and concrete defect triggers. Does not replace the default flow or claim measured quality gains.",
     entry: "review",
-    limits: { max_node_executions: 4, execution_timeout_secs: 3600, max_parallel: 1 },
+    limits: {
+      max_node_executions: 4,
+      execution_timeout_secs: 3600,
+      max_parallel: 1,
+    },
     nodes: {
       review: {
         kind: "agent",
@@ -39,7 +43,11 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
     },
     edges: [
       { from: "review", to: "done", when: { outcome: "approved" } },
-      { from: "review", to: "rejected", when: { outcome: "changes_requested" } },
+      {
+        from: "review",
+        to: "rejected",
+        when: { outcome: "changes_requested" },
+      },
       { from: "review", to: "escalated", when: { always: true } },
     ],
   },
@@ -91,16 +99,36 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
       },
     },
     edges: [
-      { from: "build", to: "review_gate", when: { outcome: "submitted" }, label: "submitted" },
-      { from: "build", to: "blocked_out", when: { outcome: "blocked" }, label: "blocked" },
+      {
+        from: "build",
+        to: "review_gate",
+        when: { outcome: "submitted" },
+        label: "submitted",
+      },
+      {
+        from: "build",
+        to: "blocked_out",
+        when: { outcome: "blocked" },
+        label: "blocked",
+      },
       {
         from: "review_gate",
         to: "review",
         when: { var: "required_review", eq: true },
         label: "review required",
       },
-      { from: "review_gate", to: "done", when: { always: true }, label: "review not required" },
-      { from: "review", to: "done", when: { outcome: "approved" }, label: "approved" },
+      {
+        from: "review_gate",
+        to: "done",
+        when: { always: true },
+        label: "review not required",
+      },
+      {
+        from: "review",
+        to: "done",
+        when: { outcome: "approved" },
+        label: "approved",
+      },
       {
         from: "review",
         to: "build",
@@ -112,7 +140,12 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
         },
         label: "changes requested, budget left",
       },
-      { from: "review", to: "escalated", when: { always: true }, label: "out of rounds / error" },
+      {
+        from: "review",
+        to: "escalated",
+        when: { always: true },
+        label: "out of rounds / error",
+      },
     ],
   },
 
@@ -141,14 +174,24 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
       escalated: { kind: "terminal", task_status: "paused" },
     },
     edges: [
-      { from: "review", to: "done", when: { outcome: "approved" }, label: "approved" },
+      {
+        from: "review",
+        to: "done",
+        when: { outcome: "approved" },
+        label: "approved",
+      },
       {
         from: "review",
         to: "rejected",
         when: { outcome: "changes_requested" },
         label: "changes requested",
       },
-      { from: "review", to: "escalated", when: { always: true }, label: "review error" },
+      {
+        from: "review",
+        to: "escalated",
+        when: { always: true },
+        label: "review error",
+      },
     ],
   },
 
@@ -212,24 +255,51 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
       escalated: { kind: "terminal", task_status: "paused" },
     },
     edges: [
-      { from: "plan", to: "build", when: { outcome: "ready" }, label: "plan ready" },
+      {
+        from: "plan",
+        to: "build",
+        when: { outcome: "ready" },
+        label: "plan ready",
+      },
       {
         from: "plan",
         to: "needs_input",
         when: { outcome: "insufficient_context" },
         label: "not enough to plan against",
       },
-      { from: "plan", to: "escalated", when: { always: true }, label: "planning failed" },
-      { from: "build", to: "verify", when: { outcome: "submitted" }, label: "submitted" },
-      { from: "build", to: "blocked_out", when: { outcome: "blocked" }, label: "blocked" },
+      {
+        from: "plan",
+        to: "escalated",
+        when: { always: true },
+        label: "planning failed",
+      },
+      {
+        from: "build",
+        to: "verify",
+        when: { outcome: "submitted" },
+        label: "submitted",
+      },
+      {
+        from: "build",
+        to: "blocked_out",
+        when: { outcome: "blocked" },
+        label: "blocked",
+      },
       { from: "verify", to: "done", when: { outcome: "pass" }, label: "pass" },
       {
         from: "verify",
         to: "build",
-        when: { all: [{ outcome: "fail" }, { visits: { node: "build", lt: 4 } }] },
+        when: {
+          all: [{ outcome: "fail" }, { visits: { node: "build", lt: 4 } }],
+        },
         label: "fail, retry",
       },
-      { from: "verify", to: "escalated", when: { always: true }, label: "out of attempts" },
+      {
+        from: "verify",
+        to: "escalated",
+        when: { always: true },
+        label: "out of attempts",
+      },
     ],
   },
 
@@ -270,16 +340,33 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
       escalated: { kind: "terminal", task_status: "paused" },
     },
     edges: [
-      { from: "fix", to: "verify", when: { outcome: "submitted" }, label: "submitted" },
-      { from: "fix", to: "blocked_out", when: { outcome: "blocked" }, label: "cannot reproduce" },
+      {
+        from: "fix",
+        to: "verify",
+        when: { outcome: "submitted" },
+        label: "submitted",
+      },
+      {
+        from: "fix",
+        to: "blocked_out",
+        when: { outcome: "blocked" },
+        label: "cannot reproduce",
+      },
       { from: "verify", to: "done", when: { outcome: "pass" }, label: "fixed" },
       {
         from: "verify",
         to: "fix",
-        when: { all: [{ outcome: "fail" }, { visits: { node: "fix", lt: 3 } }] },
+        when: {
+          all: [{ outcome: "fail" }, { visits: { node: "fix", lt: 3 } }],
+        },
         label: "not fixed, retry",
       },
-      { from: "verify", to: "escalated", when: { always: true }, label: "out of attempts" },
+      {
+        from: "verify",
+        to: "escalated",
+        when: { always: true },
+        label: "out of attempts",
+      },
     ],
   },
 
@@ -292,7 +379,11 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
     // so the wall clock has to allow for that or it trips first — and halting
     // cancels the executor's node, discarding the accumulated context that
     // reset_on_revisit: false exists to preserve.
-    limits: { max_node_executions: 24, execution_timeout_secs: 172_800, max_parallel: 1 },
+    limits: {
+      max_node_executions: 24,
+      execution_timeout_secs: 172_800,
+      max_parallel: 1,
+    },
     nodes: {
       execute: {
         kind: "agent",
@@ -344,8 +435,18 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
         when: { any: [{ outcome: "milestone" }, { outcome: "complete" }] },
         label: "checkpoint",
       },
-      { from: "execute", to: "blocked_out", when: { outcome: "blocked" }, label: "blocked" },
-      { from: "supervise", to: "done", when: { outcome: "verified" }, label: "verified" },
+      {
+        from: "execute",
+        to: "blocked_out",
+        when: { outcome: "blocked" },
+        label: "blocked",
+      },
+      {
+        from: "supervise",
+        to: "done",
+        when: { outcome: "verified" },
+        label: "verified",
+      },
       {
         from: "supervise",
         to: "execute",
@@ -357,7 +458,12 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
         },
         label: "keep going",
       },
-      { from: "supervise", to: "escalated", when: { always: true }, label: "no convergence" },
+      {
+        from: "supervise",
+        to: "escalated",
+        when: { always: true },
+        label: "no convergence",
+      },
     ],
   },
 
@@ -366,7 +472,11 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
     description:
       "Build once, then review three ways concurrently (correctness, security, tests) and join on all three before deciding. Fan-out costs tokens; use it where a single reviewer demonstrably misses things.",
     entry: "build",
-    limits: { max_node_executions: 24, execution_timeout_secs: 21_600, max_parallel: 3 },
+    limits: {
+      max_node_executions: 24,
+      execution_timeout_secs: 21_600,
+      max_parallel: 3,
+    },
     nodes: {
       build: {
         kind: "agent",
@@ -428,15 +538,28 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
       verdict: {
         kind: "gate",
         description: "Waits for all three reviews, then decides from their vars",
-        join: { mode: "all", from: ["review_correctness", "review_security", "review_tests"] },
+        join: {
+          mode: "all",
+          from: ["review_correctness", "review_security", "review_tests"],
+        },
       },
       done: { kind: "terminal", task_status: "done" },
       blocked_out: { kind: "terminal", task_status: "blocked" },
       escalated: { kind: "terminal", task_status: "paused" },
     },
     edges: [
-      { from: "build", to: "fan_out", when: { outcome: "submitted" }, label: "submitted" },
-      { from: "build", to: "blocked_out", when: { outcome: "blocked" }, label: "blocked" },
+      {
+        from: "build",
+        to: "fan_out",
+        when: { outcome: "submitted" },
+        label: "submitted",
+      },
+      {
+        from: "build",
+        to: "blocked_out",
+        when: { outcome: "blocked" },
+        label: "blocked",
+      },
       { from: "fan_out", to: "review_correctness" },
       { from: "fan_out", to: "review_security" },
       { from: "fan_out", to: "review_tests" },
@@ -461,7 +584,12 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
         when: { visits: { node: "build", lt: { var: "max_review_rounds" } } },
         label: "findings, rework",
       },
-      { from: "verdict", to: "escalated", when: { always: true }, label: "out of rounds" },
+      {
+        from: "verdict",
+        to: "escalated",
+        when: { always: true },
+        label: "out of rounds",
+      },
     ],
   },
 };

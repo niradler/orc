@@ -20,7 +20,12 @@ test("managed startup and resume deliver context before query and fail closed on
           evaluate(event) {
             expect(event.phase).toBe("session_start");
             expect(event.payload?.source).toBe(source);
-            return { decision: "abstain", reasons: [], context: ["injected"], jobs: [] };
+            return {
+              decision: "abstain",
+              reasons: [],
+              context: ["injected"],
+              jobs: [],
+            };
           },
         },
         root,
@@ -69,7 +74,14 @@ test("sessions created before policy activation pick it up; unsupported adapter 
     {
       workspace: root,
       project_id: null,
-      rules: [{ id: "shell", kind: "deny_tools", tools: ["Bash"], reason: "No shell" }],
+      rules: [
+        {
+          id: "shell",
+          kind: "deny_tools",
+          tools: ["Bash"],
+          reason: "No shell",
+        },
+      ],
     },
     null,
     "Activate during session",
@@ -113,7 +125,9 @@ test("SDK pre-tool callback fails closed on evaluator errors and malformed input
   };
   const options = { signal: new AbortController().signal };
   const result = await hook(input, "one", options);
-  expect(result).toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+  expect(result).toMatchObject({
+    hookSpecificOutput: { permissionDecision: "deny" },
+  });
   expect(JSON.stringify(result)).toContain("Storage unavailable");
   expect(await hook({ ...input, tool_input: [] }, "two", options)).toMatchObject({
     hookSpecificOutput: { permissionDecision: "deny" },
@@ -139,7 +153,12 @@ test("SDK maps failed tools and session context without granting native permissi
       context: "",
       evaluate: (event) => {
         phases.push(`${event.phase}:${event.failed}`);
-        return { decision: "abstain", reasons: [], jobs: [], context: ["Project context"] };
+        return {
+          decision: "abstain",
+          reasons: [],
+          jobs: [],
+          context: ["Project context"],
+        };
       },
     },
     root,
@@ -160,7 +179,10 @@ test("SDK maps failed tools and session context without granting native permissi
       options,
     ),
   ).toMatchObject({
-    hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: "Project context" },
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse",
+      additionalContext: "Project context",
+    },
   });
   await hook(
     {
@@ -176,6 +198,8 @@ test("SDK maps failed tools and session context without granting native permissi
   );
   expect(
     await hook({ ...base, hook_event_name: "SessionStart", source: "resume" }, undefined, options),
-  ).toMatchObject({ hookSpecificOutput: { additionalContext: "Project context" } });
+  ).toMatchObject({
+    hookSpecificOutput: { additionalContext: "Project context" },
+  });
   expect(phases).toEqual(["pre_tool:false", "post_tool_failure:true", "session_start:false"]);
 });

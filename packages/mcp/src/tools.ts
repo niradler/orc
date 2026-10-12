@@ -960,9 +960,15 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
 
     case "job_status": {
       const { run_id } = args as { run_id: string };
-      const run = await db.query.job_runs.findFirst({ where: eq(job_runs.id, run_id) });
+      const run = await db.query.job_runs.findFirst({
+        where: eq(job_runs.id, run_id),
+      });
       if (!run) return `Run not found: ${run_id}`;
-      return JSON.stringify({ status: run.status, exit_code: run.exit_code, error: run.error_msg });
+      return JSON.stringify({
+        status: run.status,
+        exit_code: run.exit_code,
+        error: run.error_msg,
+      });
     }
 
     case "context": {
@@ -975,7 +981,9 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const resolved = explicitScope
         ? projectId == null
           ? null
-          : await db.query.projects.findFirst({ where: eq(projects.id, projectId) })
+          : await db.query.projects.findFirst({
+              where: eq(projects.id, projectId),
+            })
         : resolveProjectId(input.project);
       const scoped = explicitScope || Boolean(resolved);
       const scopeId = resolved?.id ?? null;
@@ -1123,7 +1131,12 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
 
       const sqlite = getSqlite();
 
-      type EventRow = { type: string; priority: number; data: string; data_hash?: string };
+      type EventRow = {
+        type: string;
+        priority: number;
+        data: string;
+        data_hash?: string;
+      };
       const events = sqlite
         .query<EventRow, string>(
           `SELECT type, priority, data FROM session_events
@@ -1656,9 +1669,15 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "flow_list": {
-      const { q, source } = args as { q?: string; source?: "builtin" | "user" | "project" };
+      const { q, source } = args as {
+        q?: string;
+        source?: "builtin" | "user" | "project";
+      };
       const { listFlows, listBrokenFlows } = await import("@orc/core/flow-service");
-      const flows = listFlows({ ...(q ? { q } : {}), ...(source ? { source } : {}) });
+      const flows = listFlows({
+        ...(q ? { q } : {}),
+        ...(source ? { source } : {}),
+      });
       if (flows.length === 0) return "No flows found.";
       const lines = flows.map(
         (f) =>
@@ -1720,7 +1739,9 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       };
       if (!flowName && !definition) return "Error: pass either name or definition.";
 
-      const target = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
+      const target = await db.query.tasks.findFirst({
+        where: eq(tasks.id, taskId),
+      });
       if (!target) return `Task not found: ${taskId}`;
 
       if (definition) {
@@ -1729,14 +1750,22 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         if (!parsed.ok) return `Error: invalid flow definition:\n  ${parsed.errors.join("\n  ")}`;
         await db
           .update(tasks)
-          .set({ flow_override: parsed.definition, flow_name: null, updated_at: new Date() })
+          .set({
+            flow_override: parsed.definition,
+            flow_name: null,
+            updated_at: new Date(),
+          })
           .where(eq(tasks.id, taskId));
       } else {
         const { readFlow } = await import("@orc/core/flow-service");
         if (!readFlow(flowName as string)) return `Flow not found: ${flowName}`;
         await db
           .update(tasks)
-          .set({ flow_name: flowName, flow_override: null, updated_at: new Date() })
+          .set({
+            flow_name: flowName,
+            flow_override: null,
+            updated_at: new Date(),
+          })
           .where(eq(tasks.id, taskId));
       }
 

@@ -24,10 +24,19 @@ export default function Packages() {
   const cache = useQueryClient();
   const navigate = useNavigate();
   const terminals = useTerminals();
-  const packages = useQuery({ queryKey: ["agent-packages"], queryFn: api.agentPackages.list });
-  const setups = useQuery({ queryKey: ["agent-setups"], queryFn: api.agentSetups.list });
+  const packages = useQuery({
+    queryKey: ["agent-packages"],
+    queryFn: api.agentPackages.list,
+  });
+  const setups = useQuery({
+    queryKey: ["agent-setups"],
+    queryFn: api.agentSetups.list,
+  });
   const agents = useQuery({ queryKey: ["agents"], queryFn: api.agents.list });
-  const tools = useQuery({ queryKey: ["package-tools"], queryFn: api.packageTools.list });
+  const tools = useQuery({
+    queryKey: ["package-tools"],
+    queryFn: api.packageTools.list,
+  });
   const [selected, setSelected] = useState<string>();
   const [creating, setCreating] = useState(false);
   const [setup, setSetup] = useState<AgentSetup>();
@@ -108,7 +117,9 @@ export default function Packages() {
             : strToU8(content.content);
       }
       const url = URL.createObjectURL(
-        new Blob([new Uint8Array(zipSync(archive))], { type: "application/zip" }),
+        new Blob([new Uint8Array(zipSync(archive))], {
+          type: "application/zip",
+        }),
       );
       const link = document.createElement("a");
       link.href = url;
@@ -132,7 +143,11 @@ export default function Packages() {
         await cache.invalidateQueries({ queryKey: ["agent-setups"] });
         setSetup(undefined);
       } else {
-        const terminal = await terminals.create({ kind: setup.backend, name: setup.name, setup });
+        const terminal = await terminals.create({
+          kind: setup.backend,
+          name: setup.name,
+          setup,
+        });
         setSetup(undefined);
         navigate(`/terminals/${terminal.id}`);
       }
@@ -309,7 +324,10 @@ export default function Packages() {
               className="bg-surface-low border p-2"
               value={setup.backend}
               onChange={(e) =>
-                setSetup({ ...setup, backend: e.target.value as AgentSetup["backend"] })
+                setSetup({
+                  ...setup,
+                  backend: e.target.value as AgentSetup["backend"],
+                })
               }
             >
               {["claude", "codex", "copilot"].map((kind) => (
@@ -327,7 +345,12 @@ export default function Packages() {
               data-testid="setup-tool"
               className="bg-surface-low border p-2"
               value={setup.tool}
-              onChange={(e) => setSetup({ ...setup, tool: e.target.value as AgentSetup["tool"] })}
+              onChange={(e) =>
+                setSetup({
+                  ...setup,
+                  tool: e.target.value as AgentSetup["tool"],
+                })
+              }
             >
               <option value="apm">APM {tools.data?.apm ? "" : "(not installed)"}</option>
               <option value="skills">Vercel skills (skills-only plugins)</option>

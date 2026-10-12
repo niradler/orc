@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { LOCAL_HOST } from "@orc/core/exec-host";
 import { gitStatus, parseStatus } from "../git/panel.js";
 import { listWorktrees } from "../git/worktrees.js";
 import { shutdownTerminals } from "../terminals/service.js";
@@ -31,7 +32,10 @@ beforeAll(async () => {
   await runGit(["git", "-C", repo, "add", "."]);
   await runGit(["git", "-C", repo, "commit", "-m", "init"]);
   app = setupTestApp();
-  const response = await req(app, "POST", "/terminals", { kind: "shell", cwd: repo });
+  const response = await req(app, "POST", "/terminals", {
+    kind: "shell",
+    cwd: repo,
+  });
   expect(response.status).toBe(201);
   terminalId = (await response.json()).id;
 });
@@ -57,7 +61,7 @@ describe("terminal git panel", () => {
     const index = join(checkout, ".git", "index");
     const before = readFileSync(index);
     utimesSync(file, new Date(0), new Date(0));
-    expect((await gitStatus(checkout)).files).toEqual([]);
+    expect((await gitStatus(LOCAL_HOST, checkout)).files).toEqual([]);
     expect(readFileSync(index)).toEqual(before);
     expect(
       (await listWorktrees(checkout, { runGit, platform: process.platform })).worktrees[0]?.dirty,
@@ -67,7 +71,11 @@ describe("terminal git panel", () => {
   test("should save text, preserve shorter writes and refuse stale or unsafe file edits", async () => {
     const route = `/terminals/${terminalId}/files`;
     writeFileSync(join(repo, "editor.txt"), "long original text\r\n");
-    const body = { path: "editor.txt", original: "long original text\r\n", content: "short\r\n" };
+    const body = {
+      path: "editor.txt",
+      original: "long original text\r\n",
+      content: "short\r\n",
+    };
     expect((await req(app, "PUT", route, body)).status).toBe(204);
     expect((await (await req(app, "GET", `${route}?path=editor.txt`)).json()).content).toBe(
       "short\r\n",
@@ -90,13 +98,23 @@ describe("terminal git panel", () => {
     ).toBe(401);
     writeFileSync(join(repo, "editor-binary.bin"), Buffer.from([0, 1, 2]));
     expect(
-      (await req(app, "PUT", route, { ...body, path: "editor-binary.bin", original: "\0\x01\x02" }))
-        .status,
+      (
+        await req(app, "PUT", route, {
+          ...body,
+          path: "editor-binary.bin",
+          original: "\0\x01\x02",
+        })
+      ).status,
     ).toBe(400);
     writeFileSync(join(repo, "editor-encoding.bin"), Buffer.from([255, 254, 65]));
     expect(
-      (await req(app, "PUT", route, { ...body, path: "editor-encoding.bin", original: "��A" }))
-        .status,
+      (
+        await req(app, "PUT", route, {
+          ...body,
+          path: "editor-encoding.bin",
+          original: "��A",
+        })
+      ).status,
     ).toBe(400);
     expect((await (await req(app, "GET", `${route}?path=editor-encoding.bin`)).json()).binary).toBe(
       true,
@@ -142,10 +160,10 @@ describe("terminal git panel", () => {
     await runGit(["git", "-C", repo, "branch", "feature"]);
     const route = `/terminals/${terminalId}/git/switch`;
     expect((await req(app, "POST", route, { branch: "feature" })).status).toBe(204);
-    expect((await gitStatus(repo)).branch).toBe("feature");
+    expect((await gitStatus(LOCAL_HOST, repo)).branch).toBe("feature");
     writeFileSync(join(repo, "file.txt"), "pending change\n");
     expect((await req(app, "POST", route, { branch: "main" })).status).toBe(400);
-    expect((await gitStatus(repo)).branch).toBe("feature");
+    expect((await gitStatus(LOCAL_HOST, repo)).branch).toBe("feature");
     expect((await req(app, "POST", route, { branch: "--detach" })).status).toBe(400);
     writeFileSync(join(repo, "file.txt"), "before\n");
     expect((await req(app, "POST", route, { branch: "main" })).status).toBe(204);
@@ -178,20 +196,31 @@ describe("terminal git panel", () => {
       (await req(app, "GET", `/terminals/${terminalId}/git/diff?path=../outside`)).status,
     ).toBe(400);
     expect(
-      (await req(app, "POST", `/terminals/${terminalId}/git/stage`, { paths: ["../outside"] }))
-        .status,
+      (
+        await req(app, "POST", `/terminals/${terminalId}/git/stage`, {
+          paths: ["../outside"],
+        })
+      ).status,
     ).toBe(400);
     expect(
-      (await req(app, "POST", `/terminals/${terminalId}/git/stage`, { paths: ["file.txt"] }))
-        .status,
+      (
+        await req(app, "POST", `/terminals/${terminalId}/git/stage`, {
+          paths: ["file.txt"],
+        })
+      ).status,
     ).toBe(204);
     const staged = await req(app, "GET", `/terminals/${terminalId}/git/diff?staged=1`);
     expect((await staged.json()).diff).toContain("+after");
     expect(
-      (await req(app, "POST", `/terminals/${terminalId}/git/commit`, { message: "panel commit" }))
-        .status,
+      (
+        await req(app, "POST", `/terminals/${terminalId}/git/commit`, {
+          message: "panel commit",
+        })
+      ).status,
     ).toBe(204);
-    expect((await gitStatus(repo)).files.map((file) => file.path)).toEqual(["keep.txt"]);
+    expect((await gitStatus(LOCAL_HOST, repo)).files.map((file) => file.path)).toEqual([
+      "keep.txt",
+    ]);
   });
   test("should persist and clear task checkout and GitHub links through detail and list APIs", async () => {
     const created = await req(app, "POST", "/tasks", {
@@ -211,7 +240,11 @@ describe("terminal git panel", () => {
       ).github_issue,
     ).toContain("/issues/12");
     expect(
-      (await req(app, "PATCH", `/tasks/${task.id}`, { github_pr: "javascript:alert(1)" })).status,
+      (
+        await req(app, "PATCH", `/tasks/${task.id}`, {
+          github_pr: "javascript:alert(1)",
+        })
+      ).status,
     ).toBe(400);
     const updated = await req(app, "PATCH", `/tasks/${task.id}`, {
       git_branch: null,
@@ -223,12 +256,19 @@ describe("terminal git panel", () => {
     mkdirSync(join(repo, "sub"));
     writeFileSync(join(repo, "literal[1].txt"), "selected\n");
     writeFileSync(join(repo, "literal1.txt"), "leave alone\n");
-    const created = await req(app, "POST", "/terminals", { kind: "shell", cwd: join(repo, "sub") });
+    const created = await req(app, "POST", "/terminals", {
+      kind: "shell",
+      cwd: join(repo, "sub"),
+    });
     const id = (await created.json()).id;
     expect(
-      (await req(app, "POST", `/terminals/${id}/git/stage`, { paths: ["literal[1].txt"] })).status,
+      (
+        await req(app, "POST", `/terminals/${id}/git/stage`, {
+          paths: ["literal[1].txt"],
+        })
+      ).status,
     ).toBe(204);
-    const status = await gitStatus(repo);
+    const status = await gitStatus(LOCAL_HOST, repo);
     expect(status.files.find((file) => file.path === "literal[1].txt")?.index).toBe("A");
     expect(status.files.find((file) => file.path === "literal1.txt")?.index).toBe("?");
     const diff = await req(
@@ -264,8 +304,13 @@ describe("terminal git panel", () => {
       ).status,
     ).toBe(400);
     expect(
-      (await req(app, "PUT", route, { path: "git-alias/config", original: "", content: "changed" }))
-        .status,
+      (
+        await req(app, "PUT", route, {
+          path: "git-alias/config",
+          original: "",
+          content: "changed",
+        })
+      ).status,
     ).toBe(400);
     writeFileSync(join(repo, "binary.bin"), Buffer.from([0, 1, 2]));
     const binary = await (await req(app, "GET", `${route}?path=binary.bin`)).json();

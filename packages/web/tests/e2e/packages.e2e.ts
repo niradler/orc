@@ -64,11 +64,12 @@ test("portable package import, resource inspection, lossless export and saved se
   await expect(page.getByTestId("setup-cwd")).toHaveValue(root);
   await expect(page.getByTestId("setup-model")).toHaveValue("selected-model");
   await expect(page.getByTestId("setup-prompt")).toHaveValue("Use the portable package");
-  const stored = await apiGet<{ setups: { name: string; packages: string[] }[] }>(
-    request,
-    "/agent-setups",
-  );
+  const stored = await apiGet<{
+    setups: { name: string; packages: string[] }[];
+  }>(request, "/agent-setups");
   expect(stored.setups.find((setup) => setup.name === name)?.packages).toEqual([name]);
   expect(errors).toEqual([]);
-  await page.screenshot({ path: "../../.claude/portable-packages-browser.png" });
+  await page.screenshot({
+    path: "../../.claude/portable-packages-browser.png",
+  });
 });

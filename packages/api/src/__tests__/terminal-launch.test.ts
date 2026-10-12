@@ -35,8 +35,8 @@ const live = (over = {}) => ({
 });
 
 describe("resume launch", () => {
-  test("claude resumes with --resume and the session cwd", () => {
-    const l = buildLaunch({ live: live() }, deps());
+  test("claude resumes with --resume and the session cwd", async () => {
+    const l = await buildLaunch({ live: live() }, deps());
     expect(l).toEqual({
       kind: "claude",
       argv: ["/bin/claude", "--resume", "abc-123"],
@@ -45,15 +45,15 @@ describe("resume launch", () => {
     });
   });
 
-  test("codex resumes with the resume subcommand", () => {
-    const l = buildLaunch({ live: live({ agent: "codex" }) }, deps());
+  test("codex resumes with the resume subcommand", async () => {
+    const l = await buildLaunch({ live: live({ agent: "codex" }) }, deps());
     expect(l.argv).toEqual(["/bin/codex", "resume", "abc-123"]);
   });
 
   test.each(["cursor-agent", "gemini"])(
     "should resume %s with its original id and working folder",
-    (agent) => {
-      const launch = buildLaunch({ live: live({ agent }) }, deps());
+    async (agent) => {
+      const launch = await buildLaunch({ live: live({ agent }) }, deps());
       expect(launch).toMatchObject({
         kind: agent === "cursor-agent" ? "cursor" : "gemini",
         cwd: "/work/app",
@@ -67,16 +67,20 @@ describe("resume launch", () => {
     },
   );
 
-  test("null cwd spawns with no cwd override", () => {
-    expect(buildLaunch({ live: live({ cwd: null }) }, deps()).cwd).toBeUndefined();
+  test("null cwd spawns with no cwd override", async () => {
+    expect((await buildLaunch({ live: live({ cwd: null }) }, deps())).cwd).toBeUndefined();
   });
 
-  test("agents without a resume command are rejected", () => {
-    expect(() => buildLaunch({ live: live({ agent: "cursor" }) }, deps())).toThrow(/not supported/);
+  test("agents without a resume command are rejected", async () => {
+    await expect(buildLaunch({ live: live({ agent: "cursor" }) }, deps())).rejects.toThrow(
+      /not supported/,
+    );
   });
 
-  test("a missing session id is rejected", () => {
-    expect(() => buildLaunch({ live: live({ session_id: null }) }, deps())).toThrow(/no agent/);
+  test("a missing session id is rejected", async () => {
+    await expect(buildLaunch({ live: live({ session_id: null }) }, deps())).rejects.toThrow(
+      /no agent/,
+    );
   });
 
   test.each([
@@ -93,67 +97,79 @@ describe("resume launch", () => {
     'a"b',
     "a;b",
     "$(id)",
-  ])("a malformed session id is rejected: %j", (id) => {
+  ])("a malformed session id is rejected: %j", async (id) => {
     expect(isValidSessionId(id)).toBe(false);
-    expect(() => buildLaunch({ live: live({ session_id: id }) }, deps())).toThrow(/Malformed/);
+    await expect(buildLaunch({ live: live({ session_id: id }) }, deps())).rejects.toThrow(
+      /Malformed/,
+    );
   });
 
   test.each(["33583f12-72b3-4edf-a18d-8616b7d10723", "cx-1", "thread_01.a:b"])(
     "a plausible session id is accepted: %j",
-    (id) => {
+    async (id) => {
       expect(isValidSessionId(id)).toBe(true);
     },
   );
 
-  test("an empty session id counts as missing", () => {
+  test("an empty session id counts as missing", async () => {
     expect(isValidSessionId("")).toBe(false);
-    expect(() => buildLaunch({ live: live({ session_id: "" }) }, deps())).toThrow(/no agent/);
+    await expect(buildLaunch({ live: live({ session_id: "" }) }, deps())).rejects.toThrow(
+      /no agent/,
+    );
   });
 
-  test("a vanished cwd is rejected instead of silently spawning elsewhere", () => {
-    expect(() => buildLaunch({ live: live({ cwd: "/gone" }) }, deps())).toThrow(/not a directory/);
+  test("a vanished cwd is rejected instead of silently spawning elsewhere", async () => {
+    await expect(buildLaunch({ live: live({ cwd: "/gone" }) }, deps())).rejects.toThrow(
+      /not a directory/,
+    );
   });
 
-  test("an uninstalled agent binary is rejected", () => {
-    expect(() => buildLaunch({ live: live() }, deps({ which: () => null }))).toThrow(
+  test("an uninstalled agent binary is rejected", async () => {
+    await expect(buildLaunch({ live: live() }, deps({ which: () => null }))).rejects.toThrow(
       /not installed/,
     );
   });
 });
 
 describe("fresh launches", () => {
-  test("shell uses the platform default", () => {
-    expect(buildLaunch({ kind: "shell", cwd: "/work/x" }, deps()).argv).toEqual(["/bin/zsh"]);
+  test("shell uses the platform default", async () => {
+    expect((await buildLaunch({ kind: "shell", cwd: "/work/x" }, deps())).argv).toEqual([
+      "/bin/zsh",
+    ]);
   });
 
-  test("agents start with just their binary", () => {
-    expect(buildLaunch({ kind: "cursor" }, deps()).argv).toEqual(["/bin/cursor-agent"]);
-    expect(buildLaunch({ kind: "codex" }, deps()).argv).toEqual(["/bin/codex"]);
+  test("agents start with just their binary", async () => {
+    expect((await buildLaunch({ kind: "cursor" }, deps())).argv).toEqual(["/bin/cursor-agent"]);
+    expect((await buildLaunch({ kind: "codex" }, deps())).argv).toEqual(["/bin/codex"]);
   });
 
-  test("cursor falls back to the newer agent binary", () => {
+  test("cursor falls back to the newer agent binary", async () => {
     const which = (c: string) => (c === "agent" ? "/bin/agent" : null);
-    expect(buildLaunch({ kind: "cursor" }, deps({ which })).argv).toEqual(["/bin/agent"]);
+    expect((await buildLaunch({ kind: "cursor" }, deps({ which }))).argv).toEqual(["/bin/agent"]);
     expect(availableLaunchers(deps({ which, shell: "/bin/sh" }))).toEqual(["shell", "cursor"]);
   });
 
-  test("no cwd starts in the home folder", () => {
-    expect(buildLaunch({ kind: "shell" }, deps()).cwd).toBe("/home/me");
-    expect(buildLaunch({ kind: "codex", cwd: "" }, deps()).cwd).toBe("/home/me");
-    expect(buildLaunch({ kind: "shell", cwd: "/work/x" }, deps()).cwd).toBe("/work/x");
+  test("no cwd starts in the home folder", async () => {
+    expect((await buildLaunch({ kind: "shell" }, deps())).cwd).toBe("/home/me");
+    expect((await buildLaunch({ kind: "codex", cwd: "" }, deps())).cwd).toBe("/home/me");
+    expect((await buildLaunch({ kind: "shell", cwd: "/work/x" }, deps())).cwd).toBe("/work/x");
   });
 
-  test("cwd must be a directory", () => {
-    expect(() => buildLaunch({ kind: "shell", cwd: "/etc" }, deps())).toThrow(/not a directory/);
+  test("cwd must be a directory", async () => {
+    await expect(buildLaunch({ kind: "shell", cwd: "/etc" }, deps())).rejects.toThrow(
+      /not a directory/,
+    );
   });
 
-  test("unknown kind is rejected", () => {
-    expect(() => buildLaunch({ kind: "rm" as never }, deps())).toThrow(/Unknown terminal kind/);
+  test("unknown kind is rejected", async () => {
+    await expect(buildLaunch({ kind: "rm" as never }, deps())).rejects.toThrow(
+      /Unknown terminal kind/,
+    );
   });
 });
 
 describe("platform shells", () => {
-  test("windows prefers pwsh, then powershell, then COMSPEC", () => {
+  test("windows prefers pwsh, then powershell, then COMSPEC", async () => {
     const win = { platform: "win32" as const };
     expect(defaultShell(deps(win))).toEqual(["C:\\pwsh.exe", "-NoLogo"]);
     expect(
@@ -162,18 +178,18 @@ describe("platform shells", () => {
     expect(defaultShell(deps({ ...win, which: () => null }))).toEqual(["C:\\cmd.exe"]);
   });
 
-  test("mac starts a login shell, falling back to zsh", () => {
+  test("mac starts a login shell, falling back to zsh", async () => {
     expect(defaultShell(deps({ platform: "darwin" }))).toEqual(["/bin/zsh", "-l"]);
     expect(defaultShell(deps({ platform: "darwin", env: {} }))).toEqual(["/bin/zsh", "-l"]);
   });
 
-  test("the configured shell wins on every platform", () => {
+  test("the configured shell wins on every platform", async () => {
     expect(defaultShell(deps({ platform: "win32", shell: "D:\\fish.exe" }))).toEqual([
       "D:\\fish.exe",
     ]);
   });
 
-  test("only installed launchers are offered", () => {
+  test("only installed launchers are offered", async () => {
     expect(availableLaunchers(deps())).toEqual(["shell", "claude", "codex", "cursor", "gemini"]);
     expect(
       availableLaunchers(deps({ which: (c) => (c === "claude" ? "/bin/claude" : null) })),

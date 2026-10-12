@@ -147,7 +147,11 @@ app.openapi(listRoute, (c) => {
     source: source as SkillSource | undefined,
     reload,
   });
-  return c.json({ skills, broken: skillValidationIssues(), warnings: skillWarnings() });
+  return c.json({
+    skills,
+    broken: skillValidationIssues(),
+    warnings: skillWarnings(),
+  });
 });
 
 app.openapi(readRoute, (c) => {

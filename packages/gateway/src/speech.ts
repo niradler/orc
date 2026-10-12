@@ -42,7 +42,11 @@ export function convertAudio(
   if (targetFormat === "mp3") args.push("-ac", "1", "-ar", "16000");
   if (targetFormat === "ogg") args.push("-c:a", "libopus");
   args.push(targetPath);
-  const result = Bun.spawnSync({ cmd: [ffmpeg, ...args], stdout: "ignore", stderr: "pipe" });
+  const result = Bun.spawnSync({
+    cmd: [ffmpeg, ...args],
+    stdout: "ignore",
+    stderr: "pipe",
+  });
   if (result.exitCode !== 0) {
     const message = new TextDecoder().decode(result.stderr);
     rmSync(dir, { recursive: true, force: true });
@@ -124,7 +128,9 @@ export async function transcribeAudio(input: {
   if (config.speech.language) form.append("language", config.speech.language);
   form.append(
     "file",
-    new File([data], `audio.${formatToExt(format)}`, { type: mimeForFormat(format) }),
+    new File([data], `audio.${formatToExt(format)}`, {
+      type: mimeForFormat(format),
+    }),
   );
 
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/audio/transcriptions`, {

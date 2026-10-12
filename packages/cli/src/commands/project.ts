@@ -28,7 +28,11 @@ export async function resolveProject(
 }
 
 function statusIcon(status: string): string {
-  const icons: Record<string, string> = { active: "●", paused: "◐", archived: "○" };
+  const icons: Record<string, string> = {
+    active: "●",
+    paused: "◐",
+    archived: "○",
+  };
   return icons[status] ?? "?";
 }
 
@@ -55,7 +59,12 @@ function taskStatusIcon(status: string): string {
 }
 
 function priorityIcon(priority: string): string {
-  const icons: Record<string, string> = { low: "↓", normal: "→", high: "↑", critical: "‼" };
+  const icons: Record<string, string> = {
+    low: "↓",
+    normal: "→",
+    high: "↑",
+    critical: "‼",
+  };
   return icons[priority] ?? " ";
 }
 
@@ -166,7 +175,14 @@ export function projectCommand() {
       const jobs = jobsRes.data?.jobs ?? [];
       const memories = memoriesRes.data?.memories ?? [];
 
-      if (isJson()) return jsonOut({ project, summary: summary ?? null, tasks, jobs, memories });
+      if (isJson())
+        return jsonOut({
+          project,
+          summary: summary ?? null,
+          tasks,
+          jobs,
+          memories,
+        });
 
       console.log(`${project.name} (${project.status})`);
       if (project.description) console.log(`  ${project.description}`);
@@ -265,7 +281,9 @@ export function projectCommand() {
       const { data: project, error: findErr } = await client.projects.getByName(name);
       if (findErr || !project) return console.error(`Project not found: ${name}`);
 
-      const { data, error } = await client.projects.update(project.id, { status: "archived" });
+      const { data, error } = await client.projects.update(project.id, {
+        status: "archived",
+      });
       if (error) return console.error("Error:", error);
       if (isJson()) return jsonOut(data);
       console.log(`Archived: ${data?.name} [${shortId(data?.id)}]`);
