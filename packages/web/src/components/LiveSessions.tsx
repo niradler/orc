@@ -192,7 +192,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                     <TableCell className="font-label text-xs">
                       <span className="inline-flex items-center gap-2" data-testid="live-status">
                         <span className={`h-2 w-2 rounded-full ${st.dot}`} />
-                        {st.label}
+                        {s.handoff?.status === "ready" ? "Ready" : st.label}
                       </span>
                     </TableCell>
                     <TableCell className="font-label text-[11px] uppercase tracking-widest text-primary">

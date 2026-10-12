@@ -1,4 +1,4 @@
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, posix, win32 } from "node:path";
 import { ValidationError } from "@orc/core/errors";
 import { type ExecHost, type ExecResult, hostExec, LOCAL_HOST } from "@orc/core/exec-host";
 
@@ -48,7 +48,13 @@ export async function repoRoot(cwd: string, run: SessionDirDeps["runGit"]): Prom
   return root;
 }
 
-export function worktreePath(root: string, id: string): string {
+export function worktreePath(
+  root: string,
+  id: string,
+  location: "sibling" | "repo" = "sibling",
+): string {
+  if (location === "repo")
+    return (root.startsWith("/") ? posix : win32).join(root, ".orc", "worktrees", id);
   return join(dirname(root), "worktrees", basename(root), id);
 }
 
