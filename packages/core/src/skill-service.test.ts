@@ -105,7 +105,11 @@ describe("multi-file skill bundles", () => {
       { path: "references/legacy.md", content: "Legacy reference" },
       { path: "scripts/check.py", content: "print('validated')" },
       { path: "extra.md", content: "More instructions" },
-      { path: "assets/sample.bin", content: bytes.toString("base64"), encoding: "base64" },
+      {
+        path: "assets/sample.bin",
+        content: bytes.toString("base64"),
+        encoding: "base64",
+      },
     ]);
     expect(skill.files.map((file) => file.name)).toEqual([
       "assets/sample.bin",
@@ -169,7 +173,13 @@ describe("multi-file skill bundles", () => {
         { path: "scripts", content: "file" },
         { path: "scripts/run.py", content: "script" },
       ],
-      [{ path: "assets/x.bin", content: "not-base64!", encoding: "base64" as const }],
+      [
+        {
+          path: "assets/x.bin",
+          content: "not-base64!",
+          encoding: "base64" as const,
+        },
+      ],
       [{ path: "big.txt", content: "a".repeat(8 * 1024 * 1024 + 1) }],
     ];
     for (const files of bundles) {

@@ -36,7 +36,10 @@ const listRoute = createRoute({
       description: "Worktrees; root is null when the folder is not in a git repo",
       content: {
         "application/json": {
-          schema: z.object({ root: z.string().nullable(), worktrees: z.array(WorktreeSchema) }),
+          schema: z.object({
+            root: z.string().nullable(),
+            worktrees: z.array(WorktreeSchema),
+          }),
         },
       },
     },
@@ -95,7 +98,10 @@ app.openapi(removeRoute, async (c) => {
   return c.body(null, 204);
 });
 
-const ListingSchema = z.object({ root: z.string().nullable(), worktrees: z.array(WorktreeSchema) });
+const ListingSchema = z.object({
+  root: z.string().nullable(),
+  worktrees: z.array(WorktreeSchema),
+});
 app.openapi(
   createRoute({
     method: "get",
@@ -156,7 +162,11 @@ app.openapi(
           "application/json": {
             schema: z.object({
               results: z.array(
-                z.object({ path: z.string(), removed: z.boolean(), error: z.string().nullable() }),
+                z.object({
+                  path: z.string(),
+                  removed: z.boolean(),
+                  error: z.string().nullable(),
+                }),
               ),
             }),
           },

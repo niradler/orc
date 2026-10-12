@@ -170,6 +170,7 @@ function setupDb(sqlite: Database): void {
       backend TEXT NOT NULL,
       mode TEXT NOT NULL,
       runtime_session_id TEXT,
+      execution_host TEXT,
       cwd TEXT,
       title TEXT,
       model TEXT,
@@ -418,6 +419,7 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE gateway_sessions ADD COLUMN summary TEXT",
     "ALTER TABLE gateway_sessions ADD COLUMN transcript_path TEXT",
     "ALTER TABLE gateway_sessions ADD COLUMN tokens_used INTEGER",
+    "ALTER TABLE gateway_sessions ADD COLUMN execution_host TEXT",
     // Drift fix: schema.ts has declared bridge_chats.project_id for a while, but
     // it was only ever added to existing DBs out-of-band — fresh installs never
     // got it, so any drizzle insert into bridge_chats failed. Skipped as a

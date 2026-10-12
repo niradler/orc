@@ -18,7 +18,9 @@ describe("Claude SDK executable resolution", () => {
     const shim = join(root, "claude.cmd");
     const script = join(root, "node_modules", "@anthropic-ai", "claude-code", "cli.js");
     expect(() => resolveClaudeSdkLaunch(true, () => shim)).toThrow("shell shim");
-    mkdirSync(join(root, "node_modules", "@anthropic-ai", "claude-code"), { recursive: true });
+    mkdirSync(join(root, "node_modules", "@anthropic-ai", "claude-code"), {
+      recursive: true,
+    });
     writeFileSync(script, "// retained executable-resolution fixture\n");
     const which = (name: string) => (name === "claude" ? shim : name === "bun" ? "/bun" : null);
     expect(resolveClaudeSdkLaunch(true, which)).toEqual({

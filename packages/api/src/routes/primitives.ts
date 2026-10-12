@@ -33,7 +33,11 @@ app.openapi(
         description: "Upstream tooling availability",
         content: {
           "application/json": {
-            schema: z.object({ apm: z.boolean(), skills: z.boolean(), bun: z.boolean() }),
+            schema: z.object({
+              apm: z.boolean(),
+              skills: z.boolean(),
+              bun: z.boolean(),
+            }),
           },
         },
       },
@@ -74,7 +78,9 @@ app.openapi(
     method: "post",
     path: "/agent-setups",
     tags: ["Agent packages"],
-    request: { body: { content: { "application/json": { schema: AgentSetupSchema } } } },
+    request: {
+      body: { content: { "application/json": { schema: AgentSetupSchema } } },
+    },
     responses: {
       201: {
         description: "Saved setup",
@@ -99,9 +105,10 @@ const AgentSchema = z
     fields: z.record(z.string(), z.unknown()),
   })
   .openapi("AgentProfile");
-const AgentFullSchema = AgentSchema.extend({ content: z.string(), raw: z.string() }).openapi(
-  "AgentFull",
-);
+const AgentFullSchema = AgentSchema.extend({
+  content: z.string(),
+  raw: z.string(),
+}).openapi("AgentFull");
 const PackageSchema = z
   .object({
     name: z.string(),
@@ -195,7 +202,10 @@ app.openapi(
         description: "Agent profiles and validation errors",
         content: {
           "application/json": {
-            schema: z.object({ agents: z.array(AgentSchema), broken: z.array(BrokenSchema) }),
+            schema: z.object({
+              agents: z.array(AgentSchema),
+              broken: z.array(BrokenSchema),
+            }),
           },
         },
       },
@@ -274,7 +284,10 @@ app.openapi(
         description: "Installed packages",
         content: {
           "application/json": {
-            schema: z.object({ packages: z.array(PackageSchema), broken: z.array(BrokenSchema) }),
+            schema: z.object({
+              packages: z.array(PackageSchema),
+              broken: z.array(BrokenSchema),
+            }),
           },
         },
       },
@@ -297,7 +310,9 @@ app.openapi(
       200: {
         description: "Package manifest or file",
         content: {
-          "application/json": { schema: z.union([PackageFullSchema, FileContentSchema]) },
+          "application/json": {
+            schema: z.union([PackageFullSchema, FileContentSchema]),
+          },
         },
       },
       400: { description: "Invalid file path" },

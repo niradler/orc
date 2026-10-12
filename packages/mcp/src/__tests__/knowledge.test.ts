@@ -28,8 +28,20 @@ beforeAll(() => {
   const now = new Date();
   db.insert(projects)
     .values([
-      { id: projectAId, name: "project-alpha", status: "active", created_at: now, updated_at: now },
-      { id: projectBId, name: "project-beta", status: "active", created_at: now, updated_at: now },
+      {
+        id: projectAId,
+        name: "project-alpha",
+        status: "active",
+        created_at: now,
+        updated_at: now,
+      },
+      {
+        id: projectBId,
+        name: "project-beta",
+        status: "active",
+        created_at: now,
+        updated_at: now,
+      },
     ])
     .run();
 
@@ -77,7 +89,10 @@ describe("collections", () => {
   });
 
   test("add a collection indexes documents", async () => {
-    await engine.addCollection("test-docs", { path: docsDir, pattern: "**/*.md" });
+    await engine.addCollection("test-docs", {
+      path: docsDir,
+      pattern: "**/*.md",
+    });
     const collections = await engine.listCollections();
     expect(collections).toHaveLength(1);
     expect(collections[0]?.name).toBe("test-docs");
@@ -106,7 +121,10 @@ describe("collections", () => {
           .get(),
       ).toBeNull();
     }
-    await engine.addCollection("normal-alternatives", { path: docsDir, pattern: "**/*.{md,txt}" });
+    await engine.addCollection("normal-alternatives", {
+      path: docsDir,
+      pattern: "**/*.{md,txt}",
+    });
     expect(
       (await engine.listCollections()).find(
         (collection) => collection.name === "normal-alternatives",
@@ -132,7 +150,9 @@ describe("collections", () => {
 
 describe("search", () => {
   test("lexical search returns matching documents", async () => {
-    const results = await engine.search("authentication token", { mode: "lexical" });
+    const results = await engine.search("authentication token", {
+      mode: "lexical",
+    });
     expect(results.length).toBeGreaterThan(0);
     const authResult = results.find((r) => r.path.includes("auth"));
     expect(authResult).toBeDefined();
@@ -145,7 +165,9 @@ describe("search", () => {
   });
 
   test("search with no results returns empty array", async () => {
-    const results = await engine.search("xyznonexistent123gibberish", { mode: "lexical" });
+    const results = await engine.search("xyznonexistent123gibberish", {
+      mode: "lexical",
+    });
     expect(results).toEqual([]);
   });
 });
@@ -211,7 +233,9 @@ describe("project scoping", () => {
   });
 
   test("listCollections with project_id filters correctly", async () => {
-    const alphaCollections = await engine.listCollections({ project_id: projectAId });
+    const alphaCollections = await engine.listCollections({
+      project_id: projectAId,
+    });
     expect(alphaCollections.every((c) => c.projectId === projectAId)).toBe(true);
     expect(alphaCollections.find((c) => c.name === "alpha-notes")).toBeDefined();
     // test-docs has no project, shouldn't appear in alpha filter
@@ -247,7 +271,9 @@ describe("project scoping", () => {
       project_id: projectBId,
     });
     await engine.removeCollection("temp-project-col");
-    const betaCollections = await engine.listCollections({ project_id: projectBId });
+    const betaCollections = await engine.listCollections({
+      project_id: projectBId,
+    });
     expect(betaCollections.find((c) => c.name === "temp-project-col")).toBeUndefined();
   });
 });

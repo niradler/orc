@@ -9,7 +9,10 @@ describe("parseAcpxLine", () => {
   });
 
   it("parses error messages", () => {
-    const line = JSON.stringify({ jsonrpc: "2.0", error: { message: "something broke" } });
+    const line = JSON.stringify({
+      jsonrpc: "2.0",
+      error: { message: "something broke" },
+    });
     const event = parseAcpxLine(line);
     expect(event).toEqual({ type: "error", data: "something broke" });
   });
@@ -24,7 +27,10 @@ describe("parseAcpxLine", () => {
     const line = JSON.stringify({
       jsonrpc: "2.0",
       id: 1,
-      result: { stopReason: "end_turn", usage: { inputTokens: 100, outputTokens: 50 } },
+      result: {
+        stopReason: "end_turn",
+        usage: { inputTokens: 100, outputTokens: 50 },
+      },
     });
     const event = parseAcpxLine(line);
     expect(event?.type).toBe("result");
@@ -35,7 +41,11 @@ describe("parseAcpxLine", () => {
   });
 
   it("returns null for result without stopReason or usage", () => {
-    const line = JSON.stringify({ jsonrpc: "2.0", id: 1, result: { sessionId: "abc" } });
+    const line = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      result: { sessionId: "abc" },
+    });
     expect(parseAcpxLine(line)).toBeNull();
   });
 
@@ -73,7 +83,9 @@ describe("parseAcpxLine", () => {
     const line = JSON.stringify({
       jsonrpc: "2.0",
       method: "session/update",
-      params: { update: { sessionUpdate: "agent_message_chunk", content: null } },
+      params: {
+        update: { sessionUpdate: "agent_message_chunk", content: null },
+      },
     });
     expect(parseAcpxLine(line)).toBeNull();
   });
@@ -129,7 +141,9 @@ describe("parseAcpxLine", () => {
           status: "completed",
           toolCallId: "tc-123",
           rawOutput: "file contents here",
-          _meta: { claudeCode: { toolResponse: { stdout: "stdout", stderr: "" } } },
+          _meta: {
+            claudeCode: { toolResponse: { stdout: "stdout", stderr: "" } },
+          },
         },
       },
     });
@@ -150,7 +164,11 @@ describe("parseAcpxLine", () => {
           sessionUpdate: "tool_call_update",
           status: "completed",
           toolCallId: "tc-789",
-          _meta: { claudeCode: { toolResponse: { stdout: "output", stderr: "error happened" } } },
+          _meta: {
+            claudeCode: {
+              toolResponse: { stdout: "output", stderr: "error happened" },
+            },
+          },
         },
       },
     });
@@ -165,7 +183,11 @@ describe("parseAcpxLine", () => {
       jsonrpc: "2.0",
       method: "session/update",
       params: {
-        update: { sessionUpdate: "tool_call_update", status: "running", toolCallId: "tc-999" },
+        update: {
+          sessionUpdate: "tool_call_update",
+          status: "running",
+          toolCallId: "tc-999",
+        },
       },
     });
     expect(parseAcpxLine(line)).toBeNull();
@@ -181,7 +203,11 @@ describe("parseAcpxLine", () => {
   });
 
   it("ignores non session/update methods", () => {
-    const line = JSON.stringify({ jsonrpc: "2.0", method: "session/start", params: {} });
+    const line = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "session/start",
+      params: {},
+    });
     expect(parseAcpxLine(line)).toBeNull();
   });
 });

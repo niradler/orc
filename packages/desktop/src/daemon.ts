@@ -12,7 +12,9 @@ export type Daemon = {
 
 export async function isHealthy(url: string): Promise<boolean> {
   try {
-    const res = await fetch(`${url}/api/health`, { signal: AbortSignal.timeout(1500) });
+    const res = await fetch(`${url}/api/health`, {
+      signal: AbortSignal.timeout(1500),
+    });
     if (!res.ok) return false;
     const body = (await res.json()) as { status?: string };
     return body.status === "ok";
@@ -41,7 +43,10 @@ export async function ensureDaemon(opts: {
     windowsHide: true,
   });
   if (logFd !== null) closeSync(logFd);
-  const state: { error: Error | null; exited: boolean } = { error: null, exited: false };
+  const state: { error: Error | null; exited: boolean } = {
+    error: null,
+    exited: false,
+  };
   child.once("error", (err) => {
     state.error = err;
   });

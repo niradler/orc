@@ -1,6 +1,7 @@
 import { type ExecHost, hostBinary, hostSpawn, resolveExecHost } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
+import { sessionExecHost } from "./execution-host.js";
 import { endStdin, readLines, writeToStdin } from "./io.js";
 import { registerBackend } from "./registry.js";
 import type {
@@ -55,7 +56,10 @@ export class CodexSession implements AgentSession {
   private readonly eventQueue: AgentEvent[] = [];
   private resolveNext: (() => void) | null = null;
   private done = false;
-  private readonly state: StreamState = { hasReceivedResult: false, lastAssistantText: "" };
+  private readonly state: StreamState = {
+    hasReceivedResult: false,
+    lastAssistantText: "",
+  };
   private runtimeSessionId: string | undefined;
   private readonly permissionResolvers = new Map<string, (result: PermissionResult) => void>();
   private stderrLines: string[] = [];
@@ -158,7 +162,10 @@ export class CodexSession implements AgentSession {
       const permPromise = new Promise<PermissionResult>((resolve) => {
         this.permissionResolvers.set(requestId, resolve);
       });
-      this.push({ type: "permission_request", data: { requestId, tool, command } });
+      this.push({
+        type: "permission_request",
+        data: { requestId, tool, command },
+      });
       void permPromise.then((result) => {
         if (result !== "denied") {
           const response = JSON.stringify({
@@ -191,7 +198,10 @@ export class CodexSession implements AgentSession {
     if (this.state.hasReceivedResult || this.done) return;
     if (code !== 0) {
       const stderr = this.stderrLines.join("\n").trim();
-      this.push({ type: "error", data: stderr || `codex exited with code ${code}` });
+      this.push({
+        type: "error",
+        data: stderr || `codex exited with code ${code}`,
+      });
     }
     this.done = true;
     this.resolveNext?.();
@@ -274,7 +284,10 @@ function createCodexBackend(): AgentBackend {
       try {
         if (await hostBinary(host, "codex")) return { ok: true };
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
       }
       return {
         ok: false,
@@ -298,12 +311,12 @@ function createCodexBackend(): AgentBackend {
     },
 
     async startSession(opts) {
-      const session = new CodexSession(opts);
+      const session = new CodexSession(opts, sessionExecHost(opts));
       return session;
     },
 
     async resumeSession(runtimeSessionId, opts) {
-      const session = new CodexSession({ ...opts, runtimeSessionId });
+      const session = new CodexSession({ ...opts, runtimeSessionId }, sessionExecHost(opts));
       return session;
     },
 

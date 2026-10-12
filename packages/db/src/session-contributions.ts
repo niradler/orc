@@ -35,6 +35,10 @@ export function contributeStoppedSession(sqlite: Database, id: string): string |
     content,
     location: `orc://sessions/live/${id}`,
     tags: ["session-evidence"],
-    metadata: { capture: "lifecycle-summary", status: row.status, task_id: row.task_id ?? "" },
+    metadata: {
+      capture: "lifecycle-summary",
+      status: row.status,
+      task_id: row.task_id ?? "",
+    },
   });
 }

@@ -58,7 +58,10 @@ describe("Shared passage retrieval", () => {
             "# Different procedure\n\nA zombie socket needs the whole child process tree stopped.",
         }),
       );
-      const result = await index.search({ query: "zombie socket", project_id: "orc" });
+      const result = await index.search({
+        query: "zombie socket",
+        project_id: "orc",
+      });
       expect(result.passages).toHaveLength(2);
       expect(result.passages.some((p) => p.headings.includes("Different procedure"))).toBe(true);
     } finally {
@@ -72,7 +75,12 @@ describe("Shared passage retrieval", () => {
       const index = new PassageIndex(sqlite);
       index.put(source());
       index.put(source({ source_id: "foreign", project_id: "other" }));
-      index.put(source({ source_id: "expired", valid_until: Math.floor(Date.now() / 1000) - 1 }));
+      index.put(
+        source({
+          source_id: "expired",
+          valid_until: Math.floor(Date.now() / 1000) - 1,
+        }),
+      );
       index.put(
         source({
           source_id: "untagged",
@@ -101,10 +109,21 @@ describe("Shared passage retrieval", () => {
       expect(passage).toBeDefined();
       expect(index.expand(passage?.id ?? "", "other")).toEqual([]);
       expect(index.expand(passage?.id ?? "", "orc").length).toBeGreaterThan(0);
-      const budget = await index.search({ query: "zombie", project_id: "orc", token_budget: 64 });
+      const budget = await index.search({
+        query: "zombie",
+        project_id: "orc",
+        token_budget: 64,
+      });
       expect(budget.estimated_tokens).toBeLessThanOrEqual(64);
-      index.put(source({ content: "Revised recovery: use verified process tree termination." }));
-      const revised = await index.search({ query: "zombie", project_id: "orc" });
+      index.put(
+        source({
+          content: "Revised recovery: use verified process tree termination.",
+        }),
+      );
+      const revised = await index.search({
+        query: "zombie",
+        project_id: "orc",
+      });
       expect(revised.passages.some((p) => p.source_id === "manual")).toBe(false);
       expect(
         sqlite
@@ -132,11 +151,17 @@ describe("Shared passage retrieval", () => {
       index.put(source());
       expect(await index.embedSource("document", "manual")).toBeGreaterThan(0);
       expect(await index.embedSource("document", "manual")).toBe(0);
-      const semantic = await index.search({ query: "orphaned listener", project_id: "orc" });
+      const semantic = await index.search({
+        query: "orphaned listener",
+        project_id: "orc",
+      });
       expect(semantic.capabilities.semantic).toBe("ready");
       expect(semantic.passages.length).toBeGreaterThan(0);
       failing = true;
-      const degraded = await index.search({ query: "zombie socket", project_id: "orc" });
+      const degraded = await index.search({
+        query: "zombie socket",
+        project_id: "orc",
+      });
       expect(degraded.capabilities.semantic).toBe("degraded");
       expect(degraded.passages.length).toBeGreaterThan(0);
     } finally {

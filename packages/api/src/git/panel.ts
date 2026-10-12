@@ -42,7 +42,12 @@ async function isRegularFile(host: ExecHost, path: string): Promise<boolean> {
 export async function gitStatus(
   host: ExecHost,
   cwd: string,
-): Promise<{ root: string | null; branch: string | null; files: GitFile[]; branches: string[] }> {
+): Promise<{
+  root: string | null;
+  branch: string | null;
+  files: GitFile[];
+  branches: string[];
+}> {
   const runGit = gitRunner(host);
   const root = await repoRoot(cwd, runGit);
   if (!root) return { root: null, branch: null, files: [], branches: [] };
@@ -96,7 +101,10 @@ export async function gitDiff(
   ]);
   if (result.code !== 0 && !(untracked && result.code === 1))
     throw gitError(result, "Cannot read diff");
-  return { diff: result.stdout.slice(0, 200_000), truncated: result.stdout.length > 200_000 };
+  return {
+    diff: result.stdout.slice(0, 200_000),
+    truncated: result.stdout.length > 200_000,
+  };
 }
 
 export async function switchBranch(host: ExecHost, cwd: string, branch: string): Promise<void> {

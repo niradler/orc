@@ -191,7 +191,12 @@ export class WikiStore {
       if (!queued.length) {
         const proposal = this.sqlite
           .query<
-            { id: string; project_id: string | null; skill_name: string; payload: string },
+            {
+              id: string;
+              project_id: string | null;
+              skill_name: string;
+              payload: string;
+            },
             [string]
           >("SELECT id,project_id,skill_name,payload FROM skill_proposals WHERE id=?")
           .get(next.id);

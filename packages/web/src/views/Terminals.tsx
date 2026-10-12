@@ -197,7 +197,9 @@ export default function Terminals() {
         setClosing(null);
         if (terminal.id === terminalId) {
           const next = terminals.find((t) => t.id !== terminal.id);
-          navigate(next ? `/terminals/${next.id}` : "/terminals", { replace: true });
+          navigate(next ? `/terminals/${next.id}` : "/terminals", {
+            replace: true,
+          });
         }
       } catch (e) {
         setClosing(null);
@@ -242,7 +244,7 @@ export default function Terminals() {
             {info.reason ?? "The API has not enabled terminals."}
           </p>
           <p className="font-body text-xs text-outline">
-            Terminals run processes on the machine hosting the API, so they need an API secret (
+            Terminals run processes on the selected execution host, so they need an API secret (
             <code className="text-primary">api.secret</code> or{" "}
             <code className="text-primary">ORC_API_SECRET</code>), or{" "}
             <code className="text-primary">terminals.allow_without_secret: true</code> on a

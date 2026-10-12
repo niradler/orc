@@ -144,6 +144,7 @@ export type LiveSession = {
   tokens_used: number | null;
   tokens_estimated: boolean;
   cwd: string | null;
+  host: string | null;
   pid: number | null;
   status: LiveSessionStatus;
   project_id: string | null;
@@ -157,12 +158,22 @@ export type LiveSessionHit = LiveSession & {
   matched: string[];
   snippets: string[];
 };
-export type SessionSearchResult = { rg: boolean; ms: number; hits: LiveSessionHit[] };
+export type SessionSearchResult = {
+  rg: boolean;
+  ms: number;
+  hits: LiveSessionHit[];
+};
 
 export type TranscriptBlock =
   | { type: "text"; text: string }
   | { type: "thinking"; text: string }
-  | { type: "tool_use"; name: string; input: string; id?: string; result?: string }
+  | {
+      type: "tool_use";
+      name: string;
+      input: string;
+      id?: string;
+      result?: string;
+    }
   | { type: "tool_result"; text: string; forId?: string };
 export type TranscriptTurn = {
   index: number;
@@ -177,7 +188,12 @@ export type TranscriptPage = {
   turns: TranscriptTurn[];
 };
 
-export type SessionSyncResult = { backend: string; seen: number; ms: number; error?: string };
+export type SessionSyncResult = {
+  backend: string;
+  seen: number;
+  ms: number;
+  error?: string;
+};
 
 export type SessionDetail = Session & {
   events: SessionEvent[];
@@ -209,7 +225,11 @@ export type HealthResponse = {
   status: "ok";
   version: string;
   uptime: number;
-  agent_loop: { enabled: boolean; poll_interval_minutes: number; max_workers: number };
+  agent_loop: {
+    enabled: boolean;
+    poll_interval_minutes: number;
+    max_workers: number;
+  };
 };
 
 export type CreateTaskInput = TaskGitLinks & {

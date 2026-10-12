@@ -44,7 +44,9 @@ function persistSecret(secret: string): void {
   const config = readConfig();
   config.api = { ...config.api, secret };
   mkdirSync(orcDir, { recursive: true });
-  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, {
+    mode: 0o600,
+  });
 }
 
 function injectSecret(origin: string, secret: string): void {
@@ -53,7 +55,10 @@ function injectSecret(origin: string, secret: string): void {
     { urls: [`http://${host}/*`, `ws://${host}/*`] },
     (details, callback) => {
       callback({
-        requestHeaders: { ...details.requestHeaders, Authorization: `Bearer ${secret}` },
+        requestHeaders: {
+          ...details.requestHeaders,
+          Authorization: `Bearer ${secret}`,
+        },
       });
     },
   );
@@ -76,7 +81,13 @@ function isWeb(url: string): boolean {
 const iconPath = resolve(import.meta.dirname, "../build/icon.png");
 const statePath = () => join(app.getPath("userData"), "window-state.json");
 
-type WindowState = { x?: number; y?: number; width: number; height: number; maximized: boolean };
+type WindowState = {
+  x?: number;
+  y?: number;
+  width: number;
+  height: number;
+  maximized: boolean;
+};
 
 function loadWindowState(): WindowState {
   const fallback: WindowState = { width: 1440, height: 900, maximized: false };
@@ -98,7 +109,10 @@ function loadWindowState(): WindowState {
 }
 
 function saveWindowState(w: BrowserWindow): void {
-  const state: WindowState = { ...w.getNormalBounds(), maximized: w.isMaximized() };
+  const state: WindowState = {
+    ...w.getNormalBounds(),
+    maximized: w.isMaximized(),
+  };
   try {
     writeFileSync(statePath(), JSON.stringify(state));
   } catch {}
@@ -227,7 +241,10 @@ function autostartEnabled(): boolean {
 
 function setAutostart(enabled: boolean): void {
   if (process.platform === "linux") {
-    setLinuxAutostart({ enabled, exec: process.env.APPIMAGE ?? process.execPath });
+    setLinuxAutostart({
+      enabled,
+      exec: process.env.APPIMAGE ?? process.execPath,
+    });
     return;
   }
   app.setLoginItemSettings({ openAtLogin: enabled, args: [HIDDEN_FLAG] });
@@ -304,7 +321,10 @@ async function start(): Promise<void> {
 
 app.setName("orc");
 app.enableSandbox();
-app.setAboutPanelOptions({ applicationName: "orc", applicationVersion: app.getVersion() });
+app.setAboutPanelOptions({
+  applicationName: "orc",
+  applicationVersion: app.getVersion(),
+});
 
 if (!app.requestSingleInstanceLock() || process.argv.includes(QUIT_FLAG)) {
   app.quit();

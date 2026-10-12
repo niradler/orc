@@ -38,8 +38,14 @@ export function hasWriter(path: string): boolean {
 
 function hasWindowsWriter(path: string): boolean {
   const library = dlopen("kernel32.dll", {
-    CreateFileW: { args: ["ptr", "u32", "u32", "ptr", "u32", "u32", "u64"], returns: "u64" },
-    LockFileEx: { args: ["u64", "u32", "u32", "u32", "u32", "ptr"], returns: "i32" },
+    CreateFileW: {
+      args: ["ptr", "u32", "u32", "ptr", "u32", "u32", "u64"],
+      returns: "u64",
+    },
+    LockFileEx: {
+      args: ["u64", "u32", "u32", "u32", "u32", "ptr"],
+      returns: "i32",
+    },
     UnlockFileEx: { args: ["u64", "u32", "u32", "u32", "ptr"], returns: "i32" },
     GetLastError: { args: [], returns: "u32" },
     CloseHandle: { args: ["u64"], returns: "i32" },

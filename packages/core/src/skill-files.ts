@@ -8,7 +8,10 @@ export type SkillFileInput = {
   content: string;
   encoding?: "utf8" | "base64" | undefined;
 };
-export type SkillRefContent = SkillRef & { content: string; encoding: "utf8" | "base64" };
+export type SkillRefContent = SkillRef & {
+  content: string;
+  encoding: "utf8" | "base64";
+};
 
 export const MAX_SKILL_FILES = 512;
 export const MAX_SKILL_FILE_BYTES = 8 * 1024 * 1024;
@@ -100,7 +103,10 @@ export function readSkillFile(
 
 export function encodeSkillFile(bytes: Buffer): Pick<SkillRefContent, "content" | "encoding"> {
   try {
-    const content = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+    const content = new TextDecoder("utf-8", {
+      fatal: true,
+      ignoreBOM: true,
+    }).decode(bytes);
     if (!content.includes("\0")) return { content, encoding: "utf8" };
   } catch {
     // Non-UTF-8 assets need lossless transport over JSON.

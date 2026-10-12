@@ -35,7 +35,9 @@ test.describe("Chat panel - end-to-end SSE round-trip", () => {
     await expect(input).toBeDisabled();
 
     // Wait for SSE 'done' -> flag flips back
-    await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 45_000 });
+    await expect(panel).toHaveAttribute("data-streaming", "false", {
+      timeout: 45_000,
+    });
     await expect(input).toBeEnabled();
     await expect(input).toHaveValue("");
 
@@ -60,7 +62,9 @@ test.describe("Chat panel - end-to-end SSE round-trip", () => {
     for (const marker of ["PW-E2E-SEQ-A", "PW-E2E-SEQ-B"]) {
       await input.fill(ask(marker));
       await input.press("Enter");
-      await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 45_000 });
+      await expect(panel).toHaveAttribute("data-streaming", "false", {
+        timeout: 45_000,
+      });
       await expect(input).toBeEnabled();
     }
 

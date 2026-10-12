@@ -82,7 +82,12 @@ export const OrcConfigSchema = z.object({
       scrollback_bytes: z.number().int().min(0).default(524288),
       allow_without_secret: z.boolean().default(false),
     })
-    .default({ enabled: true, max: 8, scrollback_bytes: 524288, allow_without_secret: false }),
+    .default({
+      enabled: true,
+      max: 8,
+      scrollback_bytes: 524288,
+      allow_without_secret: false,
+    }),
 
   ssh: z
     .object({
@@ -110,7 +115,10 @@ export const OrcConfigSchema = z.object({
       telegram: GatewayPlatformConfigSchema.default(DEFAULT_GATEWAY_PLATFORM),
       slack: GatewayPlatformConfigSchema.default(DEFAULT_GATEWAY_PLATFORM),
     })
-    .default({ telegram: DEFAULT_GATEWAY_PLATFORM, slack: DEFAULT_GATEWAY_PLATFORM }),
+    .default({
+      telegram: DEFAULT_GATEWAY_PLATFORM,
+      slack: DEFAULT_GATEWAY_PLATFORM,
+    }),
 
   runner: z
     .object({
@@ -118,7 +126,11 @@ export const OrcConfigSchema = z.object({
       max_concurrent_jobs: z.number().int().default(5),
       log_retention_days: z.number().int().default(30),
     })
-    .default({ default_timeout_secs: 300, max_concurrent_jobs: 5, log_retention_days: 30 }),
+    .default({
+      default_timeout_secs: 300,
+      max_concurrent_jobs: 5,
+      log_retention_days: 30,
+    }),
 
   context: z
     .object({
@@ -126,7 +138,11 @@ export const OrcConfigSchema = z.object({
       layer1_task_limit: z.number().int().default(10),
       layer1_memory_limit: z.number().int().default(5),
     })
-    .default({ snapshot_max_bytes: 2048, layer1_task_limit: 10, layer1_memory_limit: 5 }),
+    .default({
+      snapshot_max_bytes: 2048,
+      layer1_task_limit: 10,
+      layer1_memory_limit: 5,
+    }),
 
   knowledge: z
     .object({
@@ -144,7 +160,11 @@ export const OrcConfigSchema = z.object({
         })
         .optional(),
     })
-    .default({ db_path: "~/.orc/knowledge.db", default_limit: 10, search_mode: "lexical" }),
+    .default({
+      db_path: "~/.orc/knowledge.db",
+      default_limit: 10,
+      search_mode: "lexical",
+    }),
 
   rules: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
 
@@ -364,6 +384,11 @@ function fromEnv(): Record<string, unknown> {
   }
 
   return env;
+}
+
+export function configuredApiSecret(secret: string | undefined | null): string | undefined {
+  const value = typeof secret === "string" ? secret.trim() : "";
+  return value || undefined;
 }
 
 let _config: OrcConfig | null = null;

@@ -60,7 +60,9 @@ export function memCommand() {
         source: opts.source,
         importance: opts.importance,
         ...(opts.tags
-          ? { tags: (opts.tags as string).split(",").map((t: string) => t.trim()) }
+          ? {
+              tags: (opts.tags as string).split(",").map((t: string) => t.trim()),
+            }
           : {}),
       });
       if (error) return console.error("Error:", error);
@@ -139,7 +141,9 @@ export function memCommand() {
     .option("-t, --tags <tags>", "Comma-separated tags")
     .action(async (id: string, opts) => {
       const client = createOrcClient();
-      const { data: listData, error: listErr } = await client.memories.list({ limit: 100 });
+      const { data: listData, error: listErr } = await client.memories.list({
+        limit: 100,
+      });
       if (listErr) return console.error("Error:", listErr);
       const mem = (listData?.memories ?? []).find((m) => m.id === id || m.id.endsWith(id));
       if (!mem) return console.error(`Memory not found: ${id}`);
@@ -166,7 +170,9 @@ export function memCommand() {
     .description("Delete a memory")
     .action(async (id: string) => {
       const client = createOrcClient();
-      const { data, error: listErr } = await client.memories.list({ limit: 100 });
+      const { data, error: listErr } = await client.memories.list({
+        limit: 100,
+      });
       if (listErr) return console.error("Error:", listErr);
       const mem = (data?.memories ?? []).find((m) => m.id === id || m.id.endsWith(id));
       if (!mem) return console.error(`Memory not found: ${id}`);

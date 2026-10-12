@@ -33,7 +33,12 @@ describe("parseWorktreeList", () => {
     const [main, one, two] = parseWorktreeList(porcelain);
     expect(main).toMatchObject({ branch: "master", main: true, head: "aaa" });
     expect(one).toMatchObject({ branch: "orc/one", main: false, locked: true });
-    expect(two).toMatchObject({ branch: null, detached: true, prunable: true, main: false });
+    expect(two).toMatchObject({
+      branch: null,
+      detached: true,
+      prunable: true,
+      main: false,
+    });
   });
 
   test("a bare repo's own entry is left out but still counts as the main one", () => {
@@ -63,7 +68,11 @@ describe("path helpers", () => {
 describe("worktrees with git", () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "orc-worktrees-")));
   const repo = join(root, "repo");
-  const deps = { runGit, platform: process.platform, terminalUsing: () => null };
+  const deps = {
+    runGit,
+    platform: process.platform,
+    terminalUsing: () => null,
+  };
 
   async function git(args: string[], cwd: string): Promise<string> {
     const result = await runGit(["git", "-C", cwd, ...args]);
@@ -97,7 +106,10 @@ describe("worktrees with git", () => {
   test("a plain folder has no listing", async () => {
     const plain = join(root, "plain");
     mkdirSync(plain);
-    expect(await listWorktrees(plain, deps)).toEqual({ root: null, worktrees: [] });
+    expect(await listWorktrees(plain, deps)).toEqual({
+      root: null,
+      worktrees: [],
+    });
   });
 
   test("lists the main checkout and linked worktrees with their branch and dirty state", async () => {

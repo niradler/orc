@@ -38,7 +38,11 @@ app.openapi(
     method: "post",
     path: "/knowledge/passages/search",
     tags: ["Knowledge"],
-    request: { body: { content: { "application/json": { schema: RetrievalQuerySchema } } } },
+    request: {
+      body: {
+        content: { "application/json": { schema: RetrievalQuerySchema } },
+      },
+    },
     responses: {
       200: {
         description: "Current cited passages within an estimated token budget",
@@ -60,11 +64,17 @@ app.openapi(
     method: "post",
     path: "/knowledge/passages/index",
     tags: ["Knowledge"],
-    request: { body: { content: { "application/json": { schema: EvidenceSourceSchema } } } },
+    request: {
+      body: {
+        content: { "application/json": { schema: EvidenceSourceSchema } },
+      },
+    },
     responses: {
       200: {
         description: "Indexed source version",
-        content: { "application/json": { schema: z.object({ version: z.string() }) } },
+        content: {
+          "application/json": { schema: z.object({ version: z.string() }) },
+        },
       },
     },
   }),
@@ -101,14 +111,20 @@ app.openapi(
     responses: {
       200: {
         description: "Neighboring current source passages",
-        content: { "application/json": { schema: z.object({ passages: z.array(PassageSchema) }) } },
+        content: {
+          "application/json": {
+            schema: z.object({ passages: z.array(PassageSchema) }),
+          },
+        },
       },
     },
   }),
   async (c) => {
     const input = c.req.valid("json");
     return c.json(
-      { passages: new PassageIndex(getSqlite()).expand(input.id, input.project_id, input.radius) },
+      {
+        passages: new PassageIndex(getSqlite()).expand(input.id, input.project_id, input.radius),
+      },
       200,
     );
   },
@@ -184,14 +200,20 @@ app.openapi(
     responses: {
       200: {
         description: "Explicit immutable citations, including archived source versions",
-        content: { "application/json": { schema: z.object({ passages: z.array(PassageSchema) }) } },
+        content: {
+          "application/json": {
+            schema: z.object({ passages: z.array(PassageSchema) }),
+          },
+        },
       },
     },
   }),
   async (c) => {
     const input = c.req.valid("json");
     return c.json(
-      { passages: new PassageIndex(getSqlite()).get(input.ids, input.project_id) },
+      {
+        passages: new PassageIndex(getSqlite()).get(input.ids, input.project_id),
+      },
       200,
     );
   },

@@ -80,7 +80,11 @@ test("should retain drafts on a stale save and refresh the profile when editing 
   const external = current.raw.replace("Original", "External update");
   const changed = await request.put(`${API_BASE}/agents/${id}`, {
     headers: AUTH_HEADERS,
-    data: { content: external, expectedRaw: current.raw, expectedPath: current.path },
+    data: {
+      content: external,
+      expectedRaw: current.raw,
+      expectedPath: current.path,
+    },
   });
   expect(changed.status()).toBe(200);
   await page.getByTestId("agent-submit").click();
@@ -162,7 +166,9 @@ test("APM folder import shares packaged agents and skills", async ({ page }) => 
   const temporary = mkdtempSync(join(tmpdir(), "orc-apm-browser-"));
   const folder = join(temporary, name);
   mkdirSync(join(folder, ".apm/agents"), { recursive: true });
-  mkdirSync(join(folder, `.apm/skills/${skillName}/scripts`), { recursive: true });
+  mkdirSync(join(folder, `.apm/skills/${skillName}/scripts`), {
+    recursive: true,
+  });
   writeFileSync(
     join(folder, "apm.yml"),
     `name: ${name}\nversion: '1.0.0'\ndescription: Shared package\n`,
@@ -243,7 +249,10 @@ test("should delete one duplicate name and recover from a failed deletion", asyn
   await firstRow.click();
   await page.route(`**/api/agents/${firstId}`, async (route) => {
     if (route.request().method() === "DELETE") {
-      await route.fulfill({ status: 409, json: { error: "Profile is unavailable" } });
+      await route.fulfill({
+        status: 409,
+        json: { error: "Profile is unavailable" },
+      });
     } else {
       await route.continue();
     }

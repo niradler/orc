@@ -39,10 +39,15 @@ async function resolveBackend(
     if (resolveExecHost().kind === "ssh") {
       throw new Error(preflight.error ?? "Claude SDK preflight failed");
     }
-    logger.warn("Claude SDK preflight failed, falling back to ACPX", { error: preflight.error });
+    logger.warn("Claude SDK preflight failed, falling back to ACPX", {
+      error: preflight.error,
+    });
     // fall through to ACPX
   } else if (hasBackend(name)) {
-    return { backend: createBackend(name as AgentBackendName), resolvedOpts: opts };
+    return {
+      backend: createBackend(name as AgentBackendName),
+      resolvedOpts: opts,
+    };
   }
 
   // Unknown name → treat as acpx agent identifier (e.g. "codex", "claude" fallback)
@@ -151,7 +156,9 @@ export async function pickUsableBackend(priority: string[]): Promise<AgentBacken
     try {
       const preflight = await backend.preflight();
       if (preflight.ok) return backend;
-      logger.debug(`Backend ${name} is registered but not usable`, { error: preflight.error });
+      logger.debug(`Backend ${name} is registered but not usable`, {
+        error: preflight.error,
+      });
     } catch (err) {
       logger.debug(`Backend ${name} preflight threw`, { err });
     }

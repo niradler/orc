@@ -21,7 +21,11 @@ export type FlowNodeKind = "agent" | "gate" | "human" | "terminal";
 
 const NODE_KINDS: FlowNodeKind[] = ["agent", "gate", "human", "terminal"];
 
-export type FlowJoin = { mode: "all" | "any"; from: string[]; cancel_siblings?: boolean };
+export type FlowJoin = {
+  mode: "all" | "any";
+  from: string[];
+  cancel_siblings?: boolean;
+};
 
 export type FlowGraphNode = {
   id: string;
@@ -361,7 +365,10 @@ function outgoing(def: FlowGraphDefinition): Adjacency {
 function classifyEdges(
   def: FlowGraphDefinition,
   adjacency: Adjacency,
-): { kinds: Map<FlowGraphEdge, "forward" | "back" | "self">; discovery: Map<string, number> } {
+): {
+  kinds: Map<FlowGraphEdge, "forward" | "back" | "self">;
+  discovery: Map<string, number>;
+} {
   const kinds = new Map<FlowGraphEdge, "forward" | "back" | "self">();
   const discovery = new Map<string, number>();
   const onStack = new Set<string>();
@@ -519,7 +526,15 @@ export function layoutFlowGraph(def: FlowGraphDefinition): FlowGraphLayout {
       const path =
         `M ${cx - 26} ${from.y} C ${cx - 30} ${from.y - SELF_LANE}, ` +
         `${cx + 30} ${from.y - SELF_LANE}, ${cx + 26} ${from.y}`;
-      return { ...edge, kind, text, index, path, labelX: cx, labelY: from.y - SELF_LANE + 4 };
+      return {
+        ...edge,
+        kind,
+        text,
+        index,
+        path,
+        labelX: cx,
+        labelY: from.y - SELF_LANE + 4,
+      };
     }
 
     if (kind === "back") {

@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import { homedir } from "node:os";
-import { loadConfig, type OrcConfig } from "@orc/core/config";
+import { configuredApiSecret, loadConfig, type OrcConfig } from "@orc/core/config";
 import { ConflictError, ForbiddenError, ValidationError } from "@orc/core/errors";
 import {
   type ExecHost,
@@ -32,9 +32,8 @@ export interface Availability {
   reason: string | null;
 }
 
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
-
 let manager: TerminalManager | null = null;
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
 export function terminalsAvailability(
   config: OrcConfig,
@@ -53,7 +52,7 @@ export function terminalsAvailability(
       reason: `Terminals need Bun ${MIN_BUN_VERSION} or newer (running ${bunVersion}).`,
     };
   }
-  if (!config.api.secret) {
+  if (!configuredApiSecret(config.api.secret)) {
     if (!config.terminals.allow_without_secret) {
       return {
         ready: false,
@@ -132,7 +131,10 @@ export async function launchOnHost(host: ExecHost, launch: Launch): Promise<Laun
   };
 }
 
-export function terminalHost(id: string): { host: ExecHost; cwd: string | null } {
+export function terminalHost(id: string): {
+  host: ExecHost;
+  cwd: string | null;
+} {
   const info = getTerminalManager().get(id);
   return { host: execHostFor(info.host), cwd: info.cwd };
 }

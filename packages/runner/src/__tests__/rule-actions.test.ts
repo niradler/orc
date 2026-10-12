@@ -138,7 +138,13 @@ test("should dispatch background scripts once through the runner using event cwd
         filter: {
           match: "all",
           conditions: [
-            { predicate: { field: "input.command", operator: "contains", value: "allowed" } },
+            {
+              predicate: {
+                field: "input.command",
+                operator: "contains",
+                value: "allowed",
+              },
+            },
           ],
         },
         target: {

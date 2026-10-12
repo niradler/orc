@@ -87,15 +87,22 @@ async function until<T>(
 }
 
 async function healthy(): Promise<boolean> {
-  const res = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(1500) });
+  const res = await fetch(`${base}/api/health`, {
+    signal: AbortSignal.timeout(1500),
+  });
   return res.ok;
 }
 
 function stopApp(c: ChildProcess, force: boolean): void {
-  if (force && win) spawnSync("taskkill", ["/PID", String(c.pid), "/T", "/F"], { stdio: "ignore" });
+  if (force && win)
+    spawnSync("taskkill", ["/PID", String(c.pid), "/T", "/F"], {
+      stdio: "ignore",
+    });
   else if (force) c.kill("SIGKILL");
   else {
-    const quit = spawn(app as string, ["--quit", ...appFlags()], { stdio: "inherit" });
+    const quit = spawn(app as string, ["--quit", ...appFlags()], {
+      stdio: "inherit",
+    });
     quit.once("exit", (code) => console.log(`quit launcher exited with ${code}`));
   }
 }
@@ -167,13 +174,20 @@ async function run(): Promise<void> {
   if (anon.status !== 401) throw new Error(`unauthenticated /api/terminals gave ${anon.status}`);
   pass("unauthenticated request rejected (401)");
 
-  const auth = { Authorization: `Bearer ${secret}`, "content-type": "application/json" };
+  const auth = {
+    Authorization: `Bearer ${secret}`,
+    "content-type": "application/json",
+  };
   const created = await fetch(`${base}/api/terminals`, {
     method: "POST",
     headers: auth,
     body: JSON.stringify({ kind: "shell", name: "smoke" }),
   });
-  const terminal = (await created.json()) as { id?: string; status?: string; error?: string };
+  const terminal = (await created.json()) as {
+    id?: string;
+    status?: string;
+    error?: string;
+  };
   if (created.status !== 201 || terminal.status !== "running") {
     throw new Error(`terminal create gave ${created.status}: ${JSON.stringify(terminal)}`);
   }

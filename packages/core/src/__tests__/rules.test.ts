@@ -36,7 +36,14 @@ describe("deterministic rules", () => {
     const toolPolicy = RulePolicySchema.parse({
       workspace: root,
       project_id: null,
-      rules: [{ id: "tools", kind: "deny_tools", tools: ["Bash"], reason: "No shell" }],
+      rules: [
+        {
+          id: "tools",
+          kind: "deny_tools",
+          tools: ["Bash"],
+          reason: "No shell",
+        },
+      ],
     });
     for (const path of [
       ".orc/config.json",
@@ -76,13 +83,19 @@ describe("deterministic rules", () => {
     expect(
       evaluateRules(
         policy("deny_delete"),
-        event("Write", { file_path: join(root, "safe.ts"), content: "const x=1;" }),
+        event("Write", {
+          file_path: join(root, "safe.ts"),
+          content: "const x=1;",
+        }),
       ).decision,
     ).toBe("abstain");
     expect(
       evaluateRules(
         policy("deny_delete"),
-        event("Write", { file_path: join(root, "..", "outside.ts"), content: "" }),
+        event("Write", {
+          file_path: join(root, "..", "outside.ts"),
+          content: "",
+        }),
       ).decision,
     ).toBe("deny");
   });
@@ -92,19 +105,30 @@ describe("deterministic rules", () => {
     expect(
       evaluateRules(
         policy("deny_comments"),
-        event("Edit", { file_path: path, old_string: "x = 1", new_string: "x = 2" }),
+        event("Edit", {
+          file_path: path,
+          old_string: "x = 1",
+          new_string: "x = 2",
+        }),
       ).decision,
     ).toBe("abstain");
     expect(
       evaluateRules(
         policy("deny_comments"),
-        event("Edit", { file_path: path, old_string: "x = 1", new_string: "x = 2; // added" }),
+        event("Edit", {
+          file_path: path,
+          old_string: "x = 1",
+          new_string: "x = 2; // added",
+        }),
       ).decision,
     ).toBe("deny");
     expect(
       evaluateRules(
         policy("deny_comments"),
-        event("Write", { file_path: path, content: "// existing\n// existing\nconst x=1;" }),
+        event("Write", {
+          file_path: path,
+          content: "// existing\n// existing\nconst x=1;",
+        }),
       ).decision,
     ).toBe("deny");
     expect(
@@ -148,7 +172,11 @@ describe("deterministic rules", () => {
     expect(
       evaluateRules(
         policy("deny_comments"),
-        event("Edit", { file_path: path, old_string: "x=1", new_string: "x=2" }),
+        event("Edit", {
+          file_path: path,
+          old_string: "x=1",
+          new_string: "x=2",
+        }),
       ).decision,
     ).toBe("deny");
     expect(
@@ -158,7 +186,10 @@ describe("deterministic rules", () => {
   test("project rules only match descendant workspaces; duplicate IDs and extra keys fail", () => {
     mkdirSync(join(root, "child"));
     expect(
-      evaluateRules(policy("deny_delete"), { ...event("Bash"), cwd: join(root, "child") }).decision,
+      evaluateRules(policy("deny_delete"), {
+        ...event("Bash"),
+        cwd: join(root, "child"),
+      }).decision,
     ).toBe("deny");
     expect(evaluateRules(policy("deny_delete"), { ...event("Bash"), cwd: tmpdir() }).decision).toBe(
       "abstain",

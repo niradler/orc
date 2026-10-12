@@ -1,6 +1,6 @@
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { loadConfig } from "@orc/core/config";
+import { configuredApiSecret, loadConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
 import { ORC_VERSION } from "@orc/core/version";
@@ -40,7 +40,7 @@ export function createApp() {
   const config = loadConfig();
   const app = new OpenAPIHono();
 
-  if (!config.api.secret && !LOOPBACK_HOSTS.has(config.api.host)) {
+  if (!configuredApiSecret(config.api.secret) && !LOOPBACK_HOSTS.has(config.api.host)) {
     logger.warn(
       `SECURITY: API is bound to ${config.api.host} with NO authentication. ` +
         "Every endpoint — including job execution (arbitrary shell commands) and MCP tools — is open to the network. " +
@@ -48,7 +48,7 @@ export function createApp() {
     );
   }
 
-  const auth = bearerAuth(config.api.secret);
+  const auth = bearerAuth(configuredApiSecret(config.api.secret));
   for (const path of ["/api/*", "/openapi.json", "/docs"]) app.use(path, auth);
 
   app.onError((err, c) => {
@@ -96,7 +96,12 @@ export function createApp() {
       version: ORC_VERSION,
       description: "AI Orchestration Hub API",
     },
-    servers: [{ url: `http://${config.api.host}:${config.api.port}`, description: "Local" }],
+    servers: [
+      {
+        url: `http://${config.api.host}:${config.api.port}`,
+        description: "Local",
+      },
+    ],
   });
 
   app.get("/docs", swaggerUI({ url: "/openapi.json" }));

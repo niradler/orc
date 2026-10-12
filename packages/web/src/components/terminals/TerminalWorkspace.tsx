@@ -219,7 +219,11 @@ export function TerminalWorkspace(props: WorkspaceProps) {
       const stored = readLayout(JSON.parse(localStorage.getItem("orc_workspace_layout") ?? "null"));
       if (stored) return stored;
     } catch {}
-    return { id: crypto.randomUUID(), kind: "terminal", terminalId: props.selected.id };
+    return {
+      id: crypto.randomUUID(),
+      kind: "terminal",
+      terminalId: props.selected.id,
+    };
   });
   const [active, setActive] = useState(() => leaves(layout)[0]?.id ?? layout.id);
   const previousSelection = useRef<string | null>(null);

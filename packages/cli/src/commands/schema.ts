@@ -44,7 +44,9 @@ export function schemaCommand() {
     .action(async (resource?: string, opts?: { list?: boolean }) => {
       let res: Response;
       try {
-        res = await fetch(`${apiBase()}/openapi.json`, { headers: authHeaders() });
+        res = await fetch(`${apiBase()}/openapi.json`, {
+          headers: authHeaders(),
+        });
       } catch {
         return console.error("Cannot connect to orc API. Is it running? (orc api or orc daemon)");
       }

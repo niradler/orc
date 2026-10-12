@@ -124,7 +124,10 @@ class AgentApiSession implements AgentSession {
             seenRunning = true;
           } else if (sc.status === "stable" && seenRunning) {
             // Agent finished this turn
-            this.push({ type: "result", data: { runtimeSessionId: this.runtimeId } });
+            this.push({
+              type: "result",
+              data: { runtimeSessionId: this.runtimeId },
+            });
             this.done = true;
             this.resolveNext?.();
             return;
@@ -133,7 +136,11 @@ class AgentApiSession implements AgentSession {
         }
 
         if (event === "message_update") {
-          const msg = JSON.parse(data) as { id: number; message: string; role: string };
+          const msg = JSON.parse(data) as {
+            id: number;
+            message: string;
+            role: string;
+          };
           // Skip messages that existed before our prompt
           if (msg.id <= lastMsgId) continue;
           if (msg.role !== "agent") continue;
@@ -147,7 +154,10 @@ class AgentApiSession implements AgentSession {
 
         if (event === "agent_error") {
           const err = JSON.parse(data) as { level: string; message: string };
-          this.push({ type: "error", data: `agentapi [${err.level}]: ${err.message}` });
+          this.push({
+            type: "error",
+            data: `agentapi [${err.level}]: ${err.message}`,
+          });
         }
       }
     } catch (err) {
@@ -157,7 +167,10 @@ class AgentApiSession implements AgentSession {
       }
     } finally {
       if (!this.done) {
-        this.push({ type: "result", data: { runtimeSessionId: this.runtimeId } });
+        this.push({
+          type: "result",
+          data: { runtimeSessionId: this.runtimeId },
+        });
         this.done = true;
         this.resolveNext?.();
       }
@@ -215,11 +228,16 @@ function createAgentApiBackend(): AgentBackend {
     async preflight() {
       const url = process.env.AGENTAPI_URL ?? DEFAULT_URL;
       try {
-        const res = await fetch(`${url}/status`, { signal: AbortSignal.timeout(5000) });
+        const res = await fetch(`${url}/status`, {
+          signal: AbortSignal.timeout(5000),
+        });
         if (!res.ok) return { ok: false, error: `agentapi /status → ${res.status}` };
         return { ok: true };
       } catch (err) {
-        return { ok: false, error: `Cannot reach agentapi at ${url}: ${String(err)}` };
+        return {
+          ok: false,
+          error: `Cannot reach agentapi at ${url}: ${String(err)}`,
+        };
       }
     },
 

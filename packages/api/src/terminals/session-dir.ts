@@ -21,7 +21,11 @@ export interface SessionDirRequest {
 }
 
 export function gitRunner(host: ExecHost): GitRunner {
-  return (argv) => hostExec(host, argv, { env: { GIT_TERMINAL_PROMPT: "0" }, timeoutMs: 30_000 });
+  return (argv) =>
+    hostExec(host, argv, {
+      env: { GIT_TERMINAL_PROMPT: "0" },
+      timeoutMs: 30_000,
+    });
 }
 
 export const runGit: GitRunner = gitRunner(LOCAL_HOST);

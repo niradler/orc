@@ -37,7 +37,11 @@ export type PackageMeta = {
   version: string;
   description: string;
   path: string;
-  manifest: Record<string, unknown> & { name: string; version?: string; description?: string };
+  manifest: Record<string, unknown> & {
+    name: string;
+    version?: string;
+    description?: string;
+  };
   format: PackageFormat;
   manifestFile: "apm.yml" | "plugin.json";
   warnings: string[];

@@ -37,7 +37,10 @@ export function createRulesHook(
       const result = guard.evaluate(event);
       if (result?.decision === "deny") {
         const reason = result.reasons.map((r) => `${r.rule_id}: ${r.reason}`).join("; ");
-        emit({ type: "system_status", data: `ORC rule denied tool: ${reason}` });
+        emit({
+          type: "system_status",
+          data: `ORC rule denied tool: ${reason}`,
+        });
       }
       return ruleHookOutput("claude", event, result) as SyncHookJSONOutput;
     } catch (error) {

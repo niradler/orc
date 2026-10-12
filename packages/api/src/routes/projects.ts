@@ -80,7 +80,11 @@ const listRoute = createRoute({
   responses: {
     200: {
       description: "Projects",
-      content: { "application/json": { schema: z.object({ projects: z.array(ProjectSchema) }) } },
+      content: {
+        "application/json": {
+          schema: z.object({ projects: z.array(ProjectSchema) }),
+        },
+      },
     },
   },
 });
@@ -92,7 +96,10 @@ const getRoute = createRoute({
   summary: "Get project by ID",
   request: { params: z.object({ id: z.string() }) },
   responses: {
-    200: { description: "Project", content: { "application/json": { schema: ProjectSchema } } },
+    200: {
+      description: "Project",
+      content: { "application/json": { schema: ProjectSchema } },
+    },
   },
 });
 
@@ -101,9 +108,14 @@ const createRoute_ = createRoute({
   path: "/projects",
   tags: ["Projects"],
   summary: "Create project",
-  request: { body: { content: { "application/json": { schema: CreateProjectSchema } } } },
+  request: {
+    body: { content: { "application/json": { schema: CreateProjectSchema } } },
+  },
   responses: {
-    201: { description: "Created", content: { "application/json": { schema: ProjectSchema } } },
+    201: {
+      description: "Created",
+      content: { "application/json": { schema: ProjectSchema } },
+    },
   },
 });
 
@@ -117,7 +129,10 @@ const updateRoute = createRoute({
     body: { content: { "application/json": { schema: UpdateProjectSchema } } },
   },
   responses: {
-    200: { description: "Updated", content: { "application/json": { schema: ProjectSchema } } },
+    200: {
+      description: "Updated",
+      content: { "application/json": { schema: ProjectSchema } },
+    },
   },
 });
 
@@ -139,7 +154,10 @@ const getByNameRoute = createRoute({
   summary: "Get project by name (case-insensitive)",
   request: { params: z.object({ name: z.string() }) },
   responses: {
-    200: { description: "Project", content: { "application/json": { schema: ProjectSchema } } },
+    200: {
+      description: "Project",
+      content: { "application/json": { schema: ProjectSchema } },
+    },
   },
 });
 
@@ -231,7 +249,9 @@ app.openapi(getByNameRoute, async (c) => {
 app.openapi(summaryRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
-  const project = await db.query.projects.findFirst({ where: eq(projects.id, id) });
+  const project = await db.query.projects.findFirst({
+    where: eq(projects.id, id),
+  });
   if (!project) throw new NotFoundError("Project", id);
 
   const sqlite = (db as unknown as { $client: Database }).$client;
@@ -271,7 +291,9 @@ app.openapi(summaryRoute, async (c) => {
 app.openapi(getRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
-  const project = await db.query.projects.findFirst({ where: eq(projects.id, id) });
+  const project = await db.query.projects.findFirst({
+    where: eq(projects.id, id),
+  });
   if (!project) throw new NotFoundError("Project", id);
   return c.json(toDto(project));
 });
@@ -295,7 +317,9 @@ app.openapi(createRoute_, async (c) => {
     updated_at: now,
   });
 
-  const project = await db.query.projects.findFirst({ where: eq(projects.id, id) });
+  const project = await db.query.projects.findFirst({
+    where: eq(projects.id, id),
+  });
   if (!project) throw new Error("Expected project to exist after write");
   return c.json(toDto(project), 201);
 });
@@ -305,7 +329,9 @@ app.openapi(updateRoute, async (c) => {
   const { id } = c.req.valid("param");
   const body = c.req.valid("json");
 
-  const existing = await db.query.projects.findFirst({ where: eq(projects.id, id) });
+  const existing = await db.query.projects.findFirst({
+    where: eq(projects.id, id),
+  });
   if (!existing) throw new NotFoundError("Project", id);
 
   await db
@@ -322,7 +348,9 @@ app.openapi(updateRoute, async (c) => {
     })
     .where(eq(projects.id, id));
 
-  const updated = await db.query.projects.findFirst({ where: eq(projects.id, id) });
+  const updated = await db.query.projects.findFirst({
+    where: eq(projects.id, id),
+  });
   if (!updated) throw new Error("Expected updated to exist after write");
   return c.json(toDto(updated));
 });
@@ -330,7 +358,9 @@ app.openapi(updateRoute, async (c) => {
 app.openapi(deleteRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
-  const existing = await db.query.projects.findFirst({ where: eq(projects.id, id) });
+  const existing = await db.query.projects.findFirst({
+    where: eq(projects.id, id),
+  });
   if (!existing) throw new NotFoundError("Project", id);
   await db.transaction(async (tx) => {
     await tx.update(tasks).set({ project_id: null }).where(eq(tasks.project_id, id));
@@ -413,7 +443,9 @@ function commentToDto(c: typeof comments.$inferSelect) {
 app.openapi(listCommentsRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
-  const project = await db.query.projects.findFirst({ where: eq(projects.id, id) });
+  const project = await db.query.projects.findFirst({
+    where: eq(projects.id, id),
+  });
   if (!project) throw new NotFoundError("Project", id);
   const rows = await db.query.comments.findMany({
     where: and(eq(comments.resource_type, "project"), eq(comments.resource_id, id)),
@@ -426,7 +458,9 @@ app.openapi(addCommentRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
   const { content, author } = c.req.valid("json");
-  const project = await db.query.projects.findFirst({ where: eq(projects.id, id) });
+  const project = await db.query.projects.findFirst({
+    where: eq(projects.id, id),
+  });
   if (!project) throw new NotFoundError("Project", id);
   const commentId = ulid();
   const now = new Date();
@@ -438,7 +472,9 @@ app.openapi(addCommentRoute, async (c) => {
     author,
     created_at: now,
   });
-  const row = await db.query.comments.findFirst({ where: eq(comments.id, commentId) });
+  const row = await db.query.comments.findFirst({
+    where: eq(comments.id, commentId),
+  });
   if (!row) throw new Error("Expected comment to exist after write");
   return c.json(commentToDto(row), 201);
 });

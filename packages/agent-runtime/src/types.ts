@@ -3,6 +3,8 @@ import type { SessionRuleGuard } from "./rules.js";
 export type AgentBackendName = "claude" | "acpx" | "a2a" | (string & {});
 
 export type SessionOpts = {
+  /** Undefined follows the currently selected host; null explicitly means local. */
+  executionHost?: string | null | undefined;
   ruleGuard?: SessionRuleGuard;
   cwd: string;
   model?: string | undefined;
@@ -28,9 +30,18 @@ export type AgentEvent =
   | { type: "text"; data: string }
   | { type: "thinking"; data: string }
   | { type: "tool_use"; data: { id: string; name: string; input: string } }
-  | { type: "tool_result"; data: { toolUseId: string; content: string; isError: boolean } }
-  | { type: "permission_request"; data: { requestId: string; tool: string; command: string } }
-  | { type: "result"; data: { runtimeSessionId?: string | undefined; usage?: unknown } }
+  | {
+      type: "tool_result";
+      data: { toolUseId: string; content: string; isError: boolean };
+    }
+  | {
+      type: "permission_request";
+      data: { requestId: string; tool: string; command: string };
+    }
+  | {
+      type: "result";
+      data: { runtimeSessionId?: string | undefined; usage?: unknown };
+    }
   | { type: "error"; data: string }
   | { type: "system_status"; data: string };
 

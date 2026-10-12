@@ -206,7 +206,10 @@ export class PassageIndex {
         return {
           passages: [],
           estimated_tokens: 0,
-          capabilities: { lexical: true, semantic: this.provider ? "degraded" : "off" },
+          capabilities: {
+            lexical: true,
+            semantic: this.provider ? "degraded" : "off",
+          },
         };
       constraints.push(`p.kind IN (${options.kinds.map(() => "?").join(",")})`);
       params.push(...options.kinds);
@@ -255,7 +258,10 @@ export class PassageIndex {
         .all(...params, ...topics);
       fuse(tagged, 0.2);
     }
-    const capabilities: RetrievalResult["capabilities"] = { lexical: true, semantic: "off" };
+    const capabilities: RetrievalResult["capabilities"] = {
+      lexical: true,
+      semantic: "off",
+    };
     if (this.provider) {
       try {
         const vectors = await this.provider.embed([options.query]);

@@ -10,7 +10,11 @@ import { EventRuleEditor } from "./EventRuleEditor";
 
 export function RulesPanel() {
   const client = useQueryClient();
-  const state = useQuery({ queryKey: ["rules"], queryFn: () => api.rules.list(), retry: false });
+  const state = useQuery({
+    queryKey: ["rules"],
+    queryFn: () => api.rules.list(),
+    retry: false,
+  });
   const [workspace, setWorkspace] = useState("");
   const [reason, setReason] = useState("");
   const [denyDelete, setDenyDelete] = useState(true);
@@ -320,7 +324,10 @@ export function RulesPanel() {
             <summary>Recent decisions and actions</summary>
             <pre className="text-xs whitespace-pre-wrap break-all">
               {JSON.stringify(
-                { decisions: state.data?.decisions, actions: state.data?.actions },
+                {
+                  decisions: state.data?.decisions,
+                  actions: state.data?.actions,
+                },
                 null,
                 2,
               )}

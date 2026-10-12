@@ -12,7 +12,12 @@ export type RunOptions = {
   runId?: string;
   triggerBy?: string;
   envOverrides?: Record<string, string>;
-  execution?: { argv: string[]; stdin: string; timeout_ms: number; cwd: string };
+  execution?: {
+    argv: string[];
+    stdin: string;
+    timeout_ms: number;
+    cwd: string;
+  };
 };
 
 export async function executeJob(opts: RunOptions): Promise<string> {
@@ -23,7 +28,9 @@ export async function executeJob(opts: RunOptions): Promise<string> {
   let runRowExists = Boolean(opts.runId);
 
   try {
-    const job = await db.query.jobs.findFirst({ where: eq(jobs.id, opts.jobId) });
+    const job = await db.query.jobs.findFirst({
+      where: eq(jobs.id, opts.jobId),
+    });
     if (!job) throw new Error(`Job not found: ${opts.jobId}`);
 
     const now = new Date();

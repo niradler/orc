@@ -10,7 +10,9 @@ const activeWatchers = new Map<string, ReturnType<typeof chokidar.watch>>();
 
 export async function startWatchers(): Promise<void> {
   const db = getDb();
-  const watchJobs = await db.query.jobs.findMany({ where: eq(jobs.enabled, true) });
+  const watchJobs = await db.query.jobs.findMany({
+    where: eq(jobs.enabled, true),
+  });
 
   for (const job of watchJobs) {
     if (job.trigger_type === "watch" && job.watch_path) {
@@ -55,7 +57,11 @@ export function stopWatcher(jobId: string): void {
 async function triggerWatch(jobId: string, name: string, path: string): Promise<void> {
   logger.info(`Watch trigger: ${name} (${path})`);
   try {
-    await executeJob({ jobId, triggerBy: "watch", envOverrides: { WATCH_PATH: path } });
+    await executeJob({
+      jobId,
+      triggerBy: "watch",
+      envOverrides: { WATCH_PATH: path },
+    });
   } catch (err) {
     logger.error(`Watch job failed: ${name}`, err);
   }

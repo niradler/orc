@@ -102,7 +102,11 @@ describe("lifecycle parity", () => {
       const row = (await (await req(app, "GET", `/sessions/live?agent=${backend}`)).json())
         .sessions[0];
       expect(
-        (await req(app, "PATCH", `/sessions/live/${row.id}`, { task_id: task.id })).status,
+        (
+          await req(app, "PATCH", `/sessions/live/${row.id}`, {
+            task_id: task.id,
+          })
+        ).status,
       ).toBe(200);
       writeRegistration({ ...record, status: "running" }, registry);
       await runSync([adapter], { force: true });
@@ -213,10 +217,20 @@ test("should discover Cursor CLI chat metadata", async () => {
   mkdirSync(rootPath, { recursive: true });
   writeFileSync(
     join(rootPath, "meta.json"),
-    JSON.stringify({ title: "CLI chat", cwd: root, createdAtMs: 1000, updatedAtMs: 2000 }),
+    JSON.stringify({
+      title: "CLI chat",
+      cwd: root,
+      createdAtMs: 1000,
+      updatedAtMs: 2000,
+    }),
   );
   expect(await cursorAgentAdapter(join(root, "cursor-cli")).list(new Map())).toMatchObject([
-    { backend: "cursor-agent", externalId: "chat-one", title: "CLI chat", cwd: root },
+    {
+      backend: "cursor-agent",
+      externalId: "chat-one",
+      title: "CLI chat",
+      cwd: root,
+    },
   ]);
 });
 

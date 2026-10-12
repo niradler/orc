@@ -33,7 +33,9 @@ describe("ensureSystemJob", () => {
     const jobId = await ensureSystemJob();
     expect(jobId).toBeTruthy();
 
-    const job = await db.query.jobs.findFirst({ where: eq(jobs.name, SYSTEM_JOB_NAME) });
+    const job = await db.query.jobs.findFirst({
+      where: eq(jobs.name, SYSTEM_JOB_NAME),
+    });
     expect(job).toBeTruthy();
     expect(job?.trigger_type).toBe("cron");
     expect(job?.command).toBe("__internal:task-loop-cycle__");
@@ -53,11 +55,15 @@ describe("recordedCycle", () => {
 
     await recordedCycle();
 
-    const job = await db.query.jobs.findFirst({ where: eq(jobs.name, SYSTEM_JOB_NAME) });
+    const job = await db.query.jobs.findFirst({
+      where: eq(jobs.name, SYSTEM_JOB_NAME),
+    });
     expect(job).toBeTruthy();
     if (!job) throw new Error("expected job");
 
-    const runs = await db.query.job_runs.findMany({ where: eq(job_runs.job_id, job.id) });
+    const runs = await db.query.job_runs.findMany({
+      where: eq(job_runs.job_id, job.id),
+    });
     expect(runs.length).toBeGreaterThanOrEqual(1);
 
     const lastRun = runs[runs.length - 1];
@@ -69,13 +75,17 @@ describe("recordedCycle", () => {
 
   test("increments job run_count", async () => {
     const db = getDb();
-    const job = await db.query.jobs.findFirst({ where: eq(jobs.name, SYSTEM_JOB_NAME) });
+    const job = await db.query.jobs.findFirst({
+      where: eq(jobs.name, SYSTEM_JOB_NAME),
+    });
     if (!job) throw new Error("expected job");
     const countBefore = job.run_count;
 
     await recordedCycle();
 
-    const jobAfter = await db.query.jobs.findFirst({ where: eq(jobs.name, SYSTEM_JOB_NAME) });
+    const jobAfter = await db.query.jobs.findFirst({
+      where: eq(jobs.name, SYSTEM_JOB_NAME),
+    });
     expect(jobAfter?.run_count).toBe(countBefore + 1);
   });
 });
@@ -120,7 +130,9 @@ describe("cleanupStaleSessions", () => {
     expect(session.last_error).toBe("idle timeout");
 
     // Task should be released back to todo
-    const task = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
+    const task = await db.query.tasks.findFirst({
+      where: eq(tasks.id, taskId),
+    });
     expect(task?.status).toBe("todo");
     expect(task?.claimed_by).toBeNull();
   });

@@ -4,7 +4,12 @@ import ts from "typescript";
 import { ruleEventCapability } from "./rule-events.js";
 import { matchesRuleFilter } from "./rule-filters.js";
 
-export type { RuleDecision, RuleEvent, RulePolicy, RuleRevision } from "./rule-types.js";
+export type {
+  RuleDecision,
+  RuleEvent,
+  RulePolicy,
+  RuleRevision,
+} from "./rule-types.js";
 export { RuleEventSchema, RulePolicySchema, RuleSchema } from "./rule-types.js";
 
 import type { RuleDecision, RuleEvent, RulePolicy } from "./rule-types.js";
@@ -162,7 +167,12 @@ export function evaluateRules(
   event: RuleEvent,
   protectedPaths: readonly string[] = [],
 ): RuleDecision {
-  const result: RuleDecision = { decision: "abstain", reasons: [], context: [], jobs: [] };
+  const result: RuleDecision = {
+    decision: "abstain",
+    reasons: [],
+    context: [],
+    jobs: [],
+  };
   const root = canonicalWorkspace(policy.workspace);
   if (!withinWorkspace(root, canonicalWorkspace(event.cwd))) return result;
   const deny = (id: string, reason: string): void => {

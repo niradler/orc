@@ -34,7 +34,11 @@ const listLinksRoute = createRoute({
   responses: {
     200: {
       description: "Links",
-      content: { "application/json": { schema: z.object({ links: z.array(TaskLinkSchema) }) } },
+      content: {
+        "application/json": {
+          schema: z.object({ links: z.array(TaskLinkSchema) }),
+        },
+      },
     },
   },
 });
@@ -49,7 +53,10 @@ const createLinkRoute = createRoute({
     body: { content: { "application/json": { schema: CreateLinkSchema } } },
   },
   responses: {
-    201: { description: "Created", content: { "application/json": { schema: TaskLinkSchema } } },
+    201: {
+      description: "Created",
+      content: { "application/json": { schema: TaskLinkSchema } },
+    },
   },
 });
 
@@ -112,7 +119,9 @@ app.openapi(createLinkRoute, async (c) => {
     created_at: new Date(),
   });
 
-  const link = await db.query.task_links.findFirst({ where: eq(task_links.id, linkId) });
+  const link = await db.query.task_links.findFirst({
+    where: eq(task_links.id, linkId),
+  });
   if (!link) throw new Error("Expected link to exist after write");
   return c.json(linkToDto(link), 201);
 });
@@ -121,7 +130,9 @@ app.openapi(deleteLinkRoute, async (c) => {
   const db = getDb();
   const { id, linkId } = c.req.valid("param");
 
-  const link = await db.query.task_links.findFirst({ where: eq(task_links.id, linkId) });
+  const link = await db.query.task_links.findFirst({
+    where: eq(task_links.id, linkId),
+  });
   if (!link || (link.from_task_id !== id && link.to_task_id !== id)) {
     throw new NotFoundError("TaskLink", linkId);
   }

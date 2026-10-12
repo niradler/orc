@@ -1,16 +1,9 @@
-import {
-  closeSync,
-  existsSync,
-  openSync,
-  readdirSync,
-  readFileSync,
-  readSync,
-  statSync,
-} from "node:fs";
+import { closeSync, openSync, readFileSync, readSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
+import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { z } from "zod";
-import { isAlive, mtimeOf, oneLine } from "./common.js";
+import { isAlive, oneLine } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
 
 export const CLAUDE_REGISTRY_DIR = join(homedir(), ".claude", "sessions");
@@ -65,28 +58,13 @@ export function registryRecord(entry: RegistryEntry): SessionRecord {
   };
 }
 
-function indexTranscripts(projectsDir: string): Map<string, string> {
-  const byId = new Map<string, string>();
-  if (!existsSync(projectsDir)) return byId;
-  for (const dir of readdirSync(projectsDir)) {
-    let files: string[];
-    try {
-      files = readdirSync(join(projectsDir, dir));
-    } catch {
-      continue;
-    }
-    for (const file of files) {
-      if (file.endsWith(".jsonl")) byId.set(file.slice(0, -6), join(projectsDir, dir, file));
-    }
-  }
-  return byId;
+export async function claudeTokens(path: string): Promise<number> {
+  return claudeTokensFromText(await Bun.file(path).text());
 }
 
-export async function claudeTokens(path: string): Promise<number> {
+function claudeTokensFromText(content: string): number {
   const seen = new Set<string>();
   let total = 0;
-  let tail = "";
-  const decoder = new TextDecoder();
   const take = (line: string) => {
     if (!line.includes('"usage"')) return;
     try {
@@ -100,12 +78,7 @@ export async function claudeTokens(path: string): Promise<number> {
         (usage.cache_creation_input_tokens ?? 0);
     } catch {}
   };
-  for await (const chunk of Bun.file(path).stream()) {
-    const lines = (tail + decoder.decode(chunk, { stream: true })).split("\n");
-    tail = lines.pop() ?? "";
-    for (const line of lines) take(line);
-  }
-  take(tail);
+  for (const line of content.split("\n")) take(line);
   return total;
 }
 
@@ -115,47 +88,70 @@ export function firstPrompt(path: string): string | null {
     const buf = Buffer.alloc(200_000);
     const bytes = readSync(fd, buf, 0, buf.length, 0);
     closeSync(fd);
-    const head = buf.subarray(0, bytes).toString("utf-8");
-    for (const line of head.split("\n")) {
-      if (!line.includes('"type":"user"')) continue;
-      const content = JSON.parse(line)?.message?.content;
-      const text =
-        typeof content === "string"
-          ? content
-          : Array.isArray(content)
-            ? content.find((b: { type?: string }) => b.type === "text")?.text
-            : null;
-      if (text && !text.trimStart().startsWith("<")) return oneLine(text, 400);
-    }
+    return firstPromptFromText(buf.subarray(0, bytes).toString("utf-8"));
   } catch {}
   return null;
 }
 
+function firstPromptFromText(content: string): string | null {
+  for (const line of content.slice(0, 200_000).split("\n")) {
+    if (!line.includes('"type":"user"')) continue;
+    try {
+      const body = JSON.parse(line)?.message?.content;
+      const text =
+        typeof body === "string"
+          ? body
+          : Array.isArray(body)
+            ? body.find((block: { type?: string }) => block.type === "text")?.text
+            : null;
+      if (text && !text.trimStart().startsWith("<")) return oneLine(text, 400);
+    } catch {}
+  }
+  return null;
+}
+
 export function claudeAdapter(
-  dirs: { registry?: string; desktop?: string | null; projects?: string | null } = {},
+  dirs: {
+    registry?: string;
+    desktop?: string | null;
+    projects?: string | null;
+  } = {},
+  runtime: HostRuntime = hostRuntime(LOCAL_HOST),
 ): SessionAdapter {
-  const registryDir = dirs.registry ?? CLAUDE_REGISTRY_DIR;
-  const desktopDir = dirs.desktop === undefined ? CLAUDE_DESKTOP_DIR : dirs.desktop;
-  const projectsDir = dirs.projects === undefined ? CLAUDE_PROJECTS_DIR : dirs.projects;
   const desktopCache = new Map<string, { mtime: number; record: SessionRecord | null }>();
 
   return {
     backend: "claude",
     minIntervalMs: 30_000,
     async list(known) {
-      const transcripts = projectsDir ? indexTranscripts(projectsDir) : new Map<string, string>();
+      const home = await runtime.home();
+      const registryDir = dirs.registry ?? join(home, ".claude", "sessions");
+      const desktopDir =
+        dirs.desktop === undefined
+          ? join(home, "Library", "Application Support", "Claude", "claude-code-sessions")
+          : dirs.desktop;
+      const projectsDir =
+        dirs.projects === undefined ? join(home, ".claude", "projects") : dirs.projects;
+      const projectFiles = projectsDir ? await runtime.listFiles(projectsDir) : [];
+      const transcripts = new Map(
+        projectFiles
+          .filter((file) => file.path.endsWith(".jsonl"))
+          .map((file) => [basename(file.path, ".jsonl"), file] as const),
+      );
       const records = new Map<string, SessionRecord>();
 
-      if (desktopDir && existsSync(desktopDir)) {
-        for (const rel of readdirSync(desktopDir, { recursive: true }) as string[]) {
-          if (!basename(rel).startsWith("local_") || !rel.endsWith(".json")) continue;
-          const path = join(desktopDir, rel);
-          const mtime = statSync(path).mtimeMs;
+      if (desktopDir) {
+        for (const file of await runtime.listFiles(desktopDir)) {
+          if (!basename(file.path).startsWith("local_") || !file.path.endsWith(".json")) continue;
+          const path = file.path;
+          const mtime = file.mtimeMs;
           let cached = desktopCache.get(path);
           if (cached?.mtime !== mtime) {
             let record: SessionRecord | null = null;
             try {
-              const d = DesktopEntry.parse(JSON.parse(readFileSync(path, "utf-8")));
+              const d = DesktopEntry.parse(
+                JSON.parse(new TextDecoder().decode(await runtime.readFile(path, 2 * 1024 * 1024))),
+              );
               if (!d.isArchived) {
                 const last = new Date(d.lastActivityAt ?? d.createdAt ?? Date.now());
                 record = {
@@ -176,32 +172,53 @@ export function claudeAdapter(
         }
       }
 
-      if (existsSync(registryDir)) {
-        for (const file of readdirSync(registryDir)) {
-          if (!file.endsWith(".json")) continue;
-          const entry = readRegistryFile(join(registryDir, file));
-          if (!entry) continue;
-          const live = registryRecord(entry);
-          const base = records.get(entry.sessionId);
-          records.set(entry.sessionId, {
-            ...base,
-            ...live,
-            title: base?.title ?? live.title,
-            createdAt: base?.createdAt ?? live.createdAt,
-          });
+      for (const file of await runtime.listFiles(registryDir, 10_000)) {
+        if (!file.path.endsWith(".json")) continue;
+        let entry: RegistryEntry;
+        try {
+          entry = RegistryEntry.parse(
+            JSON.parse(new TextDecoder().decode(await runtime.readFile(file.path, 1024 * 1024))),
+          );
+        } catch {
+          continue;
         }
+        const now = Date.now();
+        const live: SessionRecord = {
+          backend: "claude",
+          externalId: entry.sessionId,
+          title: entry.name ?? basename(entry.cwd),
+          cwd: entry.cwd,
+          pid: entry.pid,
+          status: !(await runtime.processAlive(entry.pid))
+            ? "stopped"
+            : entry.status === "busy"
+              ? "running"
+              : "idle",
+          createdAt: new Date(entry.startedAt ?? now),
+          lastActivityAt: new Date(entry.updatedAt ?? now),
+        };
+        const base = records.get(entry.sessionId);
+        records.set(entry.sessionId, {
+          ...base,
+          ...live,
+          title: base?.title ?? live.title,
+          createdAt: base?.createdAt ?? live.createdAt,
+        });
       }
 
       for (const record of records.values()) {
-        const path = transcripts.get(record.externalId);
-        if (!path) continue;
-        record.transcriptPath = path;
+        const transcript = transcripts.get(record.externalId);
+        if (!transcript) continue;
+        record.transcriptPath = transcript.path;
         const before = known.get(record.externalId);
-        const mtime = mtimeOf(path) ?? 0;
+        const mtime = transcript.mtimeMs;
         record.lastActivityAt = new Date(Math.max(record.lastActivityAt.getTime(), mtime));
         if (!before || before.tokensUsed == null || mtime - before.lastActivityMs >= 1000) {
-          record.tokens = () => claudeTokens(path);
-          record.summary = firstPrompt(path);
+          const content = new TextDecoder().decode(
+            await runtime.readFile(transcript.path, 150 * 1024 * 1024),
+          );
+          record.tokens = async () => claudeTokensFromText(content);
+          record.summary = firstPromptFromText(content);
         }
       }
       return [...records.values()];

@@ -22,7 +22,9 @@ describe("GET /skills", () => {
   test("lists built-in skills", async () => {
     const res = await req(app, "GET", "/skills");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { skills: { name: string; source: string }[] };
+    const body = (await res.json()) as {
+      skills: { name: string; source: string }[];
+    };
     expect(body.skills.length).toBeGreaterThan(0);
     const names = body.skills.map((s) => s.name);
     expect(names).toContain("orc-coder");
@@ -64,7 +66,11 @@ describe("GET /skills/:name", () => {
   test("reads a built-in skill", async () => {
     const res = await req(app, "GET", "/skills/orc-coder");
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { name: string; content: string; references: unknown[] };
+    const body = (await res.json()) as {
+      name: string;
+      content: string;
+      references: unknown[];
+    };
     expect(body.name).toBe("orc-coder");
     expect(body.content).toContain("Coder");
     expect(Array.isArray(body.references)).toBe(true);
@@ -104,7 +110,11 @@ API test body.`;
 
     const res = await req(app, "POST", "/skills", { name: TEST_NAME, content });
     expect(res.status).toBe(201);
-    const body = (await res.json()) as { name: string; source: string; content: string };
+    const body = (await res.json()) as {
+      name: string;
+      source: string;
+      content: string;
+    };
     expect(body.name).toBe(TEST_NAME);
     expect(body.source).toBe("user");
     expect(body.content).toBe("API test body.");
@@ -125,7 +135,10 @@ API test body.`;
   });
 
   test("rejects empty name", async () => {
-    const res = await req(app, "POST", "/skills", { name: "", content: "---\nname: x\n---\nbody" });
+    const res = await req(app, "POST", "/skills", {
+      name: "",
+      content: "---\nname: x\n---\nbody",
+    });
     expect(res.status).toBe(400);
   });
 
@@ -184,7 +197,12 @@ describe("multi-file skills API", () => {
     });
     expect(invalid.status).toBe(400);
     expect(
-      (await req(app, "POST", "/skills", { name: invalidName, content: "plain Markdown" })).status,
+      (
+        await req(app, "POST", "/skills", {
+          name: invalidName,
+          content: "plain Markdown",
+        })
+      ).status,
     ).toBe(400);
   });
 

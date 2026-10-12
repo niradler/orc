@@ -26,7 +26,15 @@ export function SourceEditor({
 }: CodeEditorProps) {
   const parent = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
-  const initial = useRef({ path, value, readOnly, testId, id, label, placeholder });
+  const initial = useRef({
+    path,
+    value,
+    readOnly,
+    testId,
+    id,
+    label,
+    placeholder,
+  });
   const changeAction = useRef(onChange);
   changeAction.current = onChange;
   const saveAction = useRef(onSave);
@@ -75,9 +83,16 @@ export function SourceEditor({
           ]),
           wrapping.current.of([]),
           EditorView.theme({
-            "&": { height: "100%", backgroundColor: "#090e1a", fontSize: "12px" },
+            "&": {
+              height: "100%",
+              backgroundColor: "#090e1a",
+              fontSize: "12px",
+            },
             ".cm-scroller": { overflow: "auto", fontFamily: "monospace" },
-            ".cm-gutters": { backgroundColor: "#111827", borderRight: "1px solid #1e2537" },
+            ".cm-gutters": {
+              backgroundColor: "#111827",
+              borderRight: "1px solid #1e2537",
+            },
             ".cm-activeLine": { backgroundColor: "#1e253744" },
             ".cm-content": { padding: "12px 0" },
             ".cm-line": { padding: "0 12px" },
@@ -100,7 +115,9 @@ export function SourceEditor({
   }, []);
 
   useEffect(() => {
-    view.current?.dispatch({ effects: language.current.reconfigure(editorLanguage(path)) });
+    view.current?.dispatch({
+      effects: language.current.reconfigure(editorLanguage(path)),
+    });
     setPreview(false);
   }, [path]);
   useEffect(() => {

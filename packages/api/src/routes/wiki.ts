@@ -5,7 +5,10 @@ import { getSkillSnapshot, revertSkill } from "@orc/db/skill-evolution";
 import { WikiStore } from "@orc/db/wiki";
 
 const app = new OpenAPIHono();
-const projectQuery = z.object({ project_id: z.string().optional(), slug: z.string().optional() });
+const projectQuery = z.object({
+  project_id: z.string().optional(),
+  slug: z.string().optional(),
+});
 const PageSchema = z.object({
   slug: z.string(),
   project_id: z.string().nullable(),
@@ -77,11 +80,15 @@ app.openapi(
     method: "post",
     path: "/knowledge/wiki/apply",
     tags: ["Knowledge"],
-    request: { body: { content: { "application/json": { schema: WikiOutcomeSchema } } } },
+    request: {
+      body: { content: { "application/json": { schema: WikiOutcomeSchema } } },
+    },
     responses: {
       200: {
         description: "Outcome recorded",
-        content: { "application/json": { schema: z.object({ ok: z.literal(true) }) } },
+        content: {
+          "application/json": { schema: z.object({ ok: z.literal(true) }) },
+        },
       },
     },
   }),
@@ -95,11 +102,17 @@ app.openapi(
     method: "post",
     path: "/skills/proposals",
     tags: ["Skills"],
-    request: { body: { content: { "application/json": { schema: SkillProposalSchema } } } },
+    request: {
+      body: {
+        content: { "application/json": { schema: SkillProposalSchema } },
+      },
+    },
     responses: {
       201: {
         description: "Proposal retained",
-        content: { "application/json": { schema: z.object({ id: z.string() }) } },
+        content: {
+          "application/json": { schema: z.object({ id: z.string() }) },
+        },
       },
     },
   }),
@@ -110,12 +123,18 @@ app.openapi(
     method: "post",
     path: "/skills/evaluations",
     tags: ["Skills"],
-    request: { body: { content: { "application/json": { schema: SkillEvaluationSchema } } } },
+    request: {
+      body: {
+        content: { "application/json": { schema: SkillEvaluationSchema } },
+      },
+    },
     responses: {
       201: {
         description: "Evaluation retained",
         content: {
-          "application/json": { schema: z.object({ id: z.string(), result: z.string() }) },
+          "application/json": {
+            schema: z.object({ id: z.string(), result: z.string() }),
+          },
         },
       },
     },
@@ -203,7 +222,9 @@ app.openapi(
     responses: {
       200: {
         description: "Rejection retained",
-        content: { "application/json": { schema: z.object({ ok: z.literal(true) }) } },
+        content: {
+          "application/json": { schema: z.object({ ok: z.literal(true) }) },
+        },
       },
     },
   }),
@@ -293,13 +314,20 @@ app.openapi(
     responses: {
       200: {
         description: "Reverted current version, history retained",
-        content: { "application/json": { schema: z.object({ id: z.string() }) } },
+        content: {
+          "application/json": { schema: z.object({ id: z.string() }) },
+        },
       },
     },
   }),
   async (c) => {
     const input = c.req.valid("json");
-    return c.json({ id: revertSkill(getSqlite(), input.id, input.project_id, input.reason) }, 200);
+    return c.json(
+      {
+        id: revertSkill(getSqlite(), input.id, input.project_id, input.reason),
+      },
+      200,
+    );
   },
 );
 app.openapi(
@@ -307,13 +335,19 @@ app.openapi(
     method: "get",
     path: "/skills/evolution/baseline",
     tags: ["Skills"],
-    request: { query: z.object({ name: z.string(), project_id: z.string().optional() }) },
+    request: {
+      query: z.object({ name: z.string(), project_id: z.string().optional() }),
+    },
     responses: {
       200: {
         description: "Active baseline package identity",
         content: {
           "application/json": {
-            schema: z.object({ hash: z.string(), base_hash: z.string(), raw: z.string() }),
+            schema: z.object({
+              hash: z.string(),
+              base_hash: z.string(),
+              raw: z.string(),
+            }),
           },
         },
       },

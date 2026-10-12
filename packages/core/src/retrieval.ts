@@ -41,11 +41,18 @@ export type Passage = {
   ordinal: number;
   tags: string[];
 };
-export type CitedPassage = Passage & { score: number; estimated_tokens: number };
+export type CitedPassage = Passage & {
+  score: number;
+  estimated_tokens: number;
+};
 export type RetrievalResult = {
   passages: CitedPassage[];
   estimated_tokens: number;
-  capabilities: { lexical: true; semantic: "off" | "ready" | "degraded"; reason?: string };
+  capabilities: {
+    lexical: true;
+    semantic: "off" | "ready" | "degraded";
+    reason?: string;
+  };
 };
 
 export interface EmbeddingProvider {

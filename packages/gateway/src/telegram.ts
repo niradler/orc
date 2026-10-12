@@ -247,7 +247,9 @@ export function createTelegramAdapter(startTime: number): TelegramAdapter {
     },
 
     async sendWithButtons(chatId, text, buttons, opts) {
-      const params: Record<string, unknown> = { reply_markup: buildKeyboard(buttons) };
+      const params: Record<string, unknown> = {
+        reply_markup: buildKeyboard(buttons),
+      };
       if (opts?.parseMode === "html") params.parse_mode = "HTML";
       // biome-ignore lint/suspicious/noExplicitAny: grammy params type is too narrow for dynamic options
       const sent = await bot.api.sendMessage(chatId, text.slice(0, 4096), params as any);
@@ -279,7 +281,10 @@ export function createTelegramAdapter(startTime: number): TelegramAdapter {
 
     async registerCommands(commands) {
       await bot.api.setMyCommands(
-        commands.map((c) => ({ command: c.command, description: c.description })),
+        commands.map((c) => ({
+          command: c.command,
+          description: c.description,
+        })),
       );
     },
   };

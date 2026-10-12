@@ -44,14 +44,20 @@ describe("1. Project Setup", () => {
       description: "Desktop app that reminds you to stretch every 25 minutes",
     });
     expect(res.status).toBe(201);
-    const body = (await res.json()) as { id: string; name: string; max_workers: number | null };
+    const body = (await res.json()) as {
+      id: string;
+      name: string;
+      max_workers: number | null;
+    };
     expect(body.name).toBe("stretch-reminder");
     expect(body.max_workers).toBeNull();
     projectId = body.id;
   });
 
   test("human sets per-project concurrency limit", async () => {
-    const res = await req(app, "PATCH", `/projects/${projectId}`, { max_workers: 2 });
+    const res = await req(app, "PATCH", `/projects/${projectId}`, {
+      max_workers: 2,
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { max_workers: number };
     expect(body.max_workers).toBe(2);
@@ -195,13 +201,18 @@ describe("3. Planning Phase - Batch Task Creation", () => {
     expect(task.required_review).toBe(true);
 
     const res2 = await req(app, "GET", `/tasks/${t2Id}`);
-    const task2 = (await res2.json()) as { max_review_rounds: number; required_review: boolean };
+    const task2 = (await res2.json()) as {
+      max_review_rounds: number;
+      required_review: boolean;
+    };
     expect(task2.max_review_rounds).toBe(2);
     expect(task2.required_review).toBe(true);
   });
 
   test("all tasks visible via MCP task_list", async () => {
-    const result = await executeTool("task_list", { project: "stretch-reminder" });
+    const result = await executeTool("task_list", {
+      project: "stretch-reminder",
+    });
     expect(result).toContain("Build stretch reminder app");
     expect(result).toContain("Design REST API schema");
     expect(result).toContain("Implement timer service");
@@ -243,7 +254,9 @@ describe("4. Execution - Happy Path (T1: Design API)", () => {
 
   test("T1 comments recorded from both sides", async () => {
     const res = await req(app, "GET", `/tasks/${t1Id}/comments`);
-    const body = (await res.json()) as { comments: { content: string; author: string }[] };
+    const body = (await res.json()) as {
+      comments: { content: string; author: string }[];
+    };
     expect(body.comments.length).toBeGreaterThanOrEqual(3);
     const contents = body.comments.map((c) => c.content);
     expect(contents).toContain("Starting REST API design");
@@ -264,12 +277,18 @@ describe("5. Blocker / Unblock Side-Effects", () => {
   });
 
   test("T3 CANNOT start (blocked by T2 which is in progress)", async () => {
-    const result = await executeTool("task_update", { id: t3Id, status: "doing" });
+    const result = await executeTool("task_update", {
+      id: t3Id,
+      status: "doing",
+    });
     expect(result).toContain("blocked by");
   });
 
   test("T4 CANNOT start (blocked by T2 and T3)", async () => {
-    const result = await executeTool("task_update", { id: t4Id, status: "doing" });
+    const result = await executeTool("task_update", {
+      id: t4Id,
+      status: "doing",
+    });
     expect(result).toContain("blocked by");
   });
 });
@@ -364,7 +383,11 @@ describe("7. Parent Rollup", () => {
       comment: "Writing e2e tests",
     });
     expect(result).toBe(`Updated: ${t4Id}`);
-    await executeTool("task_update", { id: t4Id, status: "review", comment: "All tests passing" });
+    await executeTool("task_update", {
+      id: t4Id,
+      status: "review",
+      comment: "All tests passing",
+    });
     const res = await req(app, "PATCH", `/tasks/${t4Id}`, {
       status: "done",
       comment: "Tests look comprehensive",
@@ -394,7 +417,10 @@ describe("8. Max Review Rounds - Auto Pause", () => {
       project_id: projectId,
     });
     expect(res.status).toBe(201);
-    const body = (await res.json()) as { id: string; max_review_rounds: number };
+    const body = (await res.json()) as {
+      id: string;
+      max_review_rounds: number;
+    };
     flakyId = body.id;
     expect(body.max_review_rounds).toBe(2);
   });
@@ -420,7 +446,11 @@ describe("8. Max Review Rounds - Auto Pause", () => {
 
   test("cycle 1: changes_requested increments review_rounds", async () => {
     await updateTaskStatus({ taskId: flakyId, status: "doing" });
-    await updateTaskStatus({ taskId: flakyId, status: "review", comment: "Attempt 1" });
+    await updateTaskStatus({
+      taskId: flakyId,
+      status: "review",
+      comment: "Attempt 1",
+    });
     await updateTaskStatus({
       taskId: flakyId,
       status: "changes_requested",
@@ -433,13 +463,23 @@ describe("8. Max Review Rounds - Auto Pause", () => {
     expect(session.review_rounds).toBe(1);
 
     const db = getDb();
-    const task = await db.query.tasks.findFirst({ where: eq(tasks.id, flakyId) });
+    const task = await db.query.tasks.findFirst({
+      where: eq(tasks.id, flakyId),
+    });
     expect(task?.status).toBe("changes_requested");
   });
 
   test("cycle 2: exceeds max rounds → auto-paused", async () => {
-    await updateTaskStatus({ taskId: flakyId, status: "doing", comment: "Reworking sound" });
-    await updateTaskStatus({ taskId: flakyId, status: "review", comment: "Attempt 2" });
+    await updateTaskStatus({
+      taskId: flakyId,
+      status: "doing",
+      comment: "Reworking sound",
+    });
+    await updateTaskStatus({
+      taskId: flakyId,
+      status: "review",
+      comment: "Attempt 2",
+    });
     await updateTaskStatus({
       taskId: flakyId,
       status: "changes_requested",
@@ -447,7 +487,9 @@ describe("8. Max Review Rounds - Auto Pause", () => {
     });
 
     const db = getDb();
-    const task = await db.query.tasks.findFirst({ where: eq(tasks.id, flakyId) });
+    const task = await db.query.tasks.findFirst({
+      where: eq(tasks.id, flakyId),
+    });
     expect(task?.status).toBe("paused");
     expect(task?.claimed_by).toBeNull();
 
@@ -480,22 +522,32 @@ describe("9. New Status Transitions", () => {
     });
     expect(result.ok).toBe(true);
     const db = getDb();
-    const updated = await db.query.tasks.findFirst({ where: eq(tasks.id, task.id) });
+    const updated = await db.query.tasks.findFirst({
+      where: eq(tasks.id, task.id),
+    });
     expect(updated?.claimed_by).toBe("session-abc");
   });
 
   test("queued → todo clears claimed_by", async () => {
     const res = await req(app, "POST", "/tasks", { title: "Queued→todo test" });
     const task = (await res.json()) as { id: string };
-    await updateTaskStatus({ taskId: task.id, status: "queued", claimedBy: "session-xyz" });
+    await updateTaskStatus({
+      taskId: task.id,
+      status: "queued",
+      claimedBy: "session-xyz",
+    });
     await updateTaskStatus({ taskId: task.id, status: "todo" });
     const db = getDb();
-    const updated = await db.query.tasks.findFirst({ where: eq(tasks.id, task.id) });
+    const updated = await db.query.tasks.findFirst({
+      where: eq(tasks.id, task.id),
+    });
     expect(updated?.claimed_by).toBeNull();
   });
 
   test("queued → doing works", async () => {
-    const res = await req(app, "POST", "/tasks", { title: "Queued→doing test" });
+    const res = await req(app, "POST", "/tasks", {
+      title: "Queued→doing test",
+    });
     const task = (await res.json()) as { id: string };
     await updateTaskStatus({ taskId: task.id, status: "queued" });
     const result = await updateTaskStatus({ taskId: task.id, status: "doing" });
@@ -506,10 +558,16 @@ describe("9. New Status Transitions", () => {
   test("doing → paused clears claimed_by", async () => {
     const res = await req(app, "POST", "/tasks", { title: "Paused test" });
     const task = (await res.json()) as { id: string };
-    await updateTaskStatus({ taskId: task.id, status: "doing", claimedBy: "session-p" });
+    await updateTaskStatus({
+      taskId: task.id,
+      status: "doing",
+      claimedBy: "session-p",
+    });
     await updateTaskStatus({ taskId: task.id, status: "paused" });
     const db = getDb();
-    const updated = await db.query.tasks.findFirst({ where: eq(tasks.id, task.id) });
+    const updated = await db.query.tasks.findFirst({
+      where: eq(tasks.id, task.id),
+    });
     expect(updated?.status).toBe("paused");
     expect(updated?.claimed_by).toBeNull();
   });
@@ -535,7 +593,10 @@ describe("9. New Status Transitions", () => {
     await updateTaskStatus({ taskId: task.id, status: "doing" });
     await updateTaskStatus({ taskId: task.id, status: "review" });
     await updateTaskStatus({ taskId: task.id, status: "changes_requested" });
-    const result = await updateTaskStatus({ taskId: task.id, status: "paused" });
+    const result = await updateTaskStatus({
+      taskId: task.id,
+      status: "paused",
+    });
     expect(result.ok).toBe(true);
     expect(result.task?.status).toBe("paused");
   });
@@ -556,7 +617,9 @@ describe("10. Context Tool", () => {
   });
 
   test("context shows project tasks and memory", async () => {
-    const result = await executeTool("context", { project: "stretch-reminder" });
+    const result = await executeTool("context", {
+      project: "stretch-reminder",
+    });
     expect(result).toContain("stretch-reminder");
     expect(result).toContain("Active Tasks");
     expect(result).toContain("Key Memory");
@@ -620,14 +683,19 @@ describe("11. Task Loop Eligibility", () => {
   });
 
   test("task with agent tag is eligible", async () => {
-    const res = await req(app, "POST", "/tasks", { title: "Eligible: agent tag", tags: ["agent"] });
+    const res = await req(app, "POST", "/tasks", {
+      title: "Eligible: agent tag",
+      tags: ["agent"],
+    });
     const task = (await res.json()) as { id: string };
     const rows = getSqlite().query(PICK_SQL).all() as { id: string }[];
     expect(rows.some((r) => r.id === task.id)).toBe(true);
   });
 
   test("plain task without agent markers is NOT eligible", async () => {
-    const res = await req(app, "POST", "/tasks", { title: "Not eligible: plain task" });
+    const res = await req(app, "POST", "/tasks", {
+      title: "Not eligible: plain task",
+    });
     const task = (await res.json()) as { id: string };
     const rows = getSqlite().query(PICK_SQL).all() as { id: string }[];
     expect(rows.some((r) => r.id === task.id)).toBe(false);

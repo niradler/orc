@@ -15,7 +15,10 @@ export type SessionRecord = {
   tokens?: () => Promise<number | null>;
 };
 
-export type KnownSession = { lastActivityMs: number; tokensUsed: number | null };
+export type KnownSession = {
+  lastActivityMs: number;
+  tokensUsed: number | null;
+};
 
 export type SessionAdapter = {
   backend: string;

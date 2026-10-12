@@ -39,7 +39,9 @@ const LOOP_FLOW = {
     {
       from: "review",
       to: "build",
-      when: { all: [{ outcome: "changes_requested" }, { visits: { node: "build", lt: 3 } }] },
+      when: {
+        all: [{ outcome: "changes_requested" }, { visits: { node: "build", lt: 3 } }],
+      },
       label: "rework",
     },
     { from: "review", to: "escalated", when: { always: true } },
@@ -65,7 +67,12 @@ describe("toFlowDefinition", () => {
       name: "sloppy",
       entry: "a",
       nodes: {
-        a: { kind: "agent", skill: "s", max_visits: "three", routing: "sideways" },
+        a: {
+          kind: "agent",
+          skill: "s",
+          max_visits: "three",
+          routing: "sideways",
+        },
         b: { kind: "terminal" },
         c: { kind: "not-a-kind" },
       },
@@ -155,7 +162,9 @@ describe("describeCondition", () => {
     expect(describeCondition({ var: "notes", exists: true })).toBe("notes set");
     expect(describeCondition({ not: { outcome: "pass" } })).toBe("not (outcome pass)");
     expect(
-      describeCondition({ all: [{ outcome: "fail" }, { visits: { node: "build", lt: 2 } }] }),
+      describeCondition({
+        all: [{ outcome: "fail" }, { visits: { node: "build", lt: 2 } }],
+      }),
     ).toBe("outcome fail and build visits < 2");
     expect(describeCondition({ any: [{ outcome: "a" }, { outcome: "b" }] })).toBe(
       "outcome a or outcome b",
@@ -197,7 +206,10 @@ describe("layoutFlowGraph", () => {
       def({
         name: "retry",
         entry: "work",
-        nodes: { work: { kind: "agent", skill: "s" }, done: { kind: "terminal" } },
+        nodes: {
+          work: { kind: "agent", skill: "s" },
+          done: { kind: "terminal" },
+        },
         edges: [
           { from: "work", to: "work", when: { outcome: "again" } },
           { from: "work", to: "done", when: { always: true } },
@@ -331,8 +343,18 @@ describe("nodeLedgerStates", () => {
       ...run,
       nodes: [
         ...run.nodes,
-        { ...run.nodes[0], node_id: "gate_a", status: "awaiting_human", outcome: null },
-        { ...run.nodes[0], node_id: "gate_b", status: "awaiting_human", outcome: null },
+        {
+          ...run.nodes[0],
+          node_id: "gate_a",
+          status: "awaiting_human",
+          outcome: null,
+        },
+        {
+          ...run.nodes[0],
+          node_id: "gate_b",
+          status: "awaiting_human",
+          outcome: null,
+        },
       ],
     };
     // Ledger order is creation order, and the API answers the oldest parked node.

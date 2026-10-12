@@ -1,5 +1,5 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import { loadConfig } from "@orc/core/config";
+import { configuredApiSecret, loadConfig } from "@orc/core/config";
 import { ForbiddenError } from "@orc/core/errors";
 import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
 import { RuleScriptSchema } from "@orc/core/rule-types";
@@ -28,7 +28,7 @@ const RevisionSchema = z.object({
   current: z.boolean(),
 });
 const controls = (): RuleStore => {
-  if (!loadConfig().api.secret)
+  if (!configuredApiSecret(loadConfig().api.secret))
     throw new ForbiddenError("Set ORC_API_SECRET before administering rule policies");
   return new RuleStore(getSqlite());
 };
@@ -96,9 +96,18 @@ app.openapi(
         events: RULE_EVENT_ADAPTERS,
         adapters: [
           { backend: "claude", interception: "sdk_pre_tool" },
-          { backend: "cursor", interception: "native_hook_requires_install_and_conformance" },
-          { backend: "gemini", interception: "native_hook_requires_install_and_conformance" },
-          { backend: "codex", interception: "native_hook_requires_install_trust_and_conformance" },
+          {
+            backend: "cursor",
+            interception: "native_hook_requires_install_and_conformance",
+          },
+          {
+            backend: "gemini",
+            interception: "native_hook_requires_install_and_conformance",
+          },
+          {
+            backend: "codex",
+            interception: "native_hook_requires_install_trust_and_conformance",
+          },
           { backend: "other", interception: "unsupported" },
         ],
       },
@@ -148,7 +157,10 @@ app.openapi(
         content: {
           "application/json": {
             schema: z
-              .object({ id: z.string().min(1), reason: z.string().trim().min(1).max(4000) })
+              .object({
+                id: z.string().min(1),
+                reason: z.string().trim().min(1).max(4000),
+              })
               .strict(),
           },
         },
@@ -171,7 +183,9 @@ app.openapi(
     method: "post",
     path: "/rules/check",
     tags: ["Rules"],
-    request: { body: { content: { "application/json": { schema: RuleEventSchema } } } },
+    request: {
+      body: { content: { "application/json": { schema: RuleEventSchema } } },
+    },
     responses: {
       200: {
         description: "Dry run; no recorded decision or action",

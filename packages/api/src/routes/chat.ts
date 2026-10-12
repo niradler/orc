@@ -203,7 +203,10 @@ app.post("/chat/stream", async (c) => {
         503,
       );
     }
-    logger.debug("chat via in-process backend", { backend: fallbackBackend.name, agent });
+    logger.debug("chat via in-process backend", {
+      backend: fallbackBackend.name,
+      agent,
+    });
     return streamSSE(c, async (s) => {
       await s.writeSSE({ data: JSON.stringify({ type: "open" }) });
       let session: Awaited<ReturnType<typeof fallbackBackend.startSession>> | null = null;
@@ -220,9 +223,13 @@ app.post("/chat/stream", async (c) => {
         await session.send(prompt);
         for await (const event of session.events()) {
           if (event.type === "text") {
-            await s.writeSSE({ data: JSON.stringify({ type: "text", text: event.data }) });
+            await s.writeSSE({
+              data: JSON.stringify({ type: "text", text: event.data }),
+            });
           } else if (event.type === "error") {
-            await s.writeSSE({ data: JSON.stringify({ type: "error", message: event.data }) });
+            await s.writeSSE({
+              data: JSON.stringify({ type: "error", message: event.data }),
+            });
           } else if (event.type === "result") {
             break;
           }
@@ -346,7 +353,10 @@ app.post("/chat/stream", async (c) => {
     const exitCode = await proc.exited;
     if (exitCode !== 0 && !aborted) {
       await s.writeSSE({
-        data: JSON.stringify({ type: "error", message: `acpx exited with code ${exitCode}` }),
+        data: JSON.stringify({
+          type: "error",
+          message: `acpx exited with code ${exitCode}`,
+        }),
       });
     }
 

@@ -41,19 +41,28 @@ const BOT_COMMANDS = [
   { command: "help", description: "Show available commands" },
   { command: "status", description: "System status and sessions" },
   { command: "projects", description: "List and select active project" },
-  { command: "project", description: "Show or set active project: /project <name>" },
+  {
+    command: "project",
+    description: "Show or set active project: /project <name>",
+  },
   { command: "tasks", description: "List active tasks" },
   { command: "task", description: "Task details: /task <id>" },
   { command: "create", description: "Quick-create a task: /create <title>" },
   { command: "approve", description: "Approve task or permission" },
   { command: "reject", description: "Reject task or deny permission" },
-  { command: "assign", description: "Assign task to agent: /assign <id> <agent>" },
+  {
+    command: "assign",
+    description: "Assign task to agent: /assign <id> <agent>",
+  },
   { command: "jobs", description: "List jobs" },
   { command: "run", description: "Run a job: /run <name>" },
   { command: "mem", description: "Search memories: /mem <query>" },
   { command: "agent", description: "Switch agent: /agent <name>" },
   { command: "sessions", description: "List agent sessions" },
-  { command: "session", description: "Session lifecycle: new|list|switch|stop" },
+  {
+    command: "session",
+    description: "Session lifecycle: new|list|switch|stop",
+  },
   { command: "mode", description: "Switch routing mode" },
   { command: "cwd", description: "Set working directory" },
 ];
@@ -99,7 +108,10 @@ class GatewayManager {
         try {
           await (adapter as SupportsCommandRegistration).registerCommands(BOT_COMMANDS);
         } catch (err) {
-          logger.warn("Failed to register bot commands", { platform: adapter.platform, err });
+          logger.warn("Failed to register bot commands", {
+            platform: adapter.platform,
+            err,
+          });
         }
       }
     }
@@ -238,7 +250,10 @@ class GatewayManager {
 
     if (!text && audio && config.speech.enabled) {
       try {
-        const transcript = await transcribeAudio({ audio: audio.data, format: audio.format });
+        const transcript = await transcribeAudio({
+          audio: audio.data,
+          format: audio.format,
+        });
         await this.handleIncoming({
           ...message,
           text: transcript,
@@ -290,10 +305,16 @@ class GatewayManager {
           message.chatId,
           outText,
           commandResult.buttons,
-          { threadId: message.threadId, parseMode },
+          {
+            threadId: message.threadId,
+            parseMode,
+          },
         );
       } else if (adapter) {
-        await adapter.send(message.chatId, outText, { threadId: message.threadId, parseMode });
+        await adapter.send(message.chatId, outText, {
+          threadId: message.threadId,
+          parseMode,
+        });
       }
       if (message.fromVoice && plainText) await this.trySendVoiceReply(message, plainText);
       await appendMessage({
@@ -362,6 +383,7 @@ class GatewayManager {
     session: {
       id: string;
       backend: string;
+      execution_host: string | null;
       cwd: string | null;
       model: string | null;
       runtime_session_id: string | null;
@@ -407,7 +429,10 @@ class GatewayManager {
       }, 4000);
     }
 
-    await updateGatewaySession(session.id, { status: "running", last_activity_at: new Date() });
+    await updateGatewaySession(session.id, {
+      status: "running",
+      last_activity_at: new Date(),
+    });
 
     try {
       const result = await runAgentTurn(
@@ -420,6 +445,7 @@ class GatewayManager {
           session: {
             id: session.id,
             backend: session.backend,
+            execution_host: session.execution_host,
             cwd: session.cwd,
             model: session.model,
             runtime_session_id: session.runtime_session_id,
@@ -455,9 +481,15 @@ class GatewayManager {
           .updateMessage(message.chatId, previewMsgId, result.output, {
             threadId: message.threadId,
           })
-          .catch(() => adapter.send(message.chatId, result.output, { threadId: message.threadId }));
+          .catch(() =>
+            adapter.send(message.chatId, result.output, {
+              threadId: message.threadId,
+            }),
+          );
       } else {
-        await adapter.send(message.chatId, result.output, { threadId: message.threadId });
+        await adapter.send(message.chatId, result.output, {
+          threadId: message.threadId,
+        });
       }
 
       await appendMessage({
@@ -486,8 +518,14 @@ class GatewayManager {
       const errMsg = errorText.slice(0, 1000);
       if (previewMsgId && "updateMessage" in adapter) {
         await (adapter as GatewayAdapter & SupportsMessageUpdate)
-          .updateMessage(message.chatId, previewMsgId, errMsg, { threadId: message.threadId })
-          .catch(() => adapter.send(message.chatId, errMsg, { threadId: message.threadId }));
+          .updateMessage(message.chatId, previewMsgId, errMsg, {
+            threadId: message.threadId,
+          })
+          .catch(() =>
+            adapter.send(message.chatId, errMsg, {
+              threadId: message.threadId,
+            }),
+          );
       } else {
         await adapter.send(message.chatId, errMsg, { threadId: message.threadId }).catch(() => {});
       }
@@ -541,13 +579,18 @@ class GatewayManager {
               chat.chat_id,
               text,
               buttons,
-              { parseMode: "html" },
+              {
+                parseMode: "html",
+              },
             );
           } else {
             await adapter.send(chat.chat_id, text, { parseMode: "html" });
           }
         } catch (err) {
-          logger.warn("Failed to send review notification", { err, chat: chat.id });
+          logger.warn("Failed to send review notification", {
+            err,
+            chat: chat.id,
+          });
         }
       }),
     );

@@ -7,7 +7,12 @@ export {
 } from "./acpx.js";
 export { hostClaudeLoggedIn } from "./claude-sdk.js";
 export { type BackendProbe, probeBackend, probeBackends } from "./probe.js";
-export { createBackend, hasBackend, listRegisteredBackends, registerBackend } from "./registry.js";
+export {
+  createBackend,
+  hasBackend,
+  listRegisteredBackends,
+  registerBackend,
+} from "./registry.js";
 export { openAgentSession, pickUsableBackend } from "./session-factory.js";
 export type {
   AgentBackend,

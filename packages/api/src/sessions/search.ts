@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
+import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { getDb } from "@orc/db/client";
 import { gateway_sessions } from "@orc/db/schema";
 import { and, desc, eq } from "drizzle-orm";
@@ -34,18 +35,22 @@ export function findRg(locations: string[] = RG_LOCATIONS): string | null {
   );
 }
 
-function roots(): string[] {
+async function roots(runtime: HostRuntime): Promise<string[]> {
   const configured = process.env.ORC_SESSION_SEARCH_ROOTS;
+  const home = await runtime.home();
   const all = configured
     ? configured.split(delimiter)
     : [
-        join(homedir(), ".claude", "projects"),
-        join(homedir(), ".codex", "sessions"),
-        join(homedir(), ".cursor", "projects"),
-        join(homedir(), ".gemini", "tmp"),
-        join(homedir(), ".orc", "live-sessions", "transcripts"),
+        join(home, ".claude", "projects"),
+        join(home, ".codex", "sessions"),
+        join(home, ".cursor", "projects"),
+        join(home, ".gemini", "tmp"),
+        join(home, ".orc", "live-sessions", "transcripts"),
       ];
-  return all.filter((dir) => existsSync(dir));
+  const present = await Promise.all(
+    all.map(async (dir) => ((await runtime.isDirectory(dir)) ? dir : null)),
+  );
+  return present.filter((dir): dir is string => dir !== null);
 }
 
 function escapeRegex(text: string): string {
@@ -62,12 +67,12 @@ function cleanSnippet(raw: string): string {
   );
 }
 
-async function ripgrep(q: string): Promise<Map<string, string[]> | null> {
-  const rg = findRg();
-  const dirs = roots();
+async function ripgrep(q: string, runtime: HostRuntime): Promise<Map<string, string[]> | null> {
+  const rg = (await runtime.binary("rg")) ?? (runtime.host.kind === "local" ? findRg() : null);
+  const dirs = await roots(runtime);
   if (!rg) return null;
   if (dirs.length === 0) return new Map();
-  const proc = Bun.spawn(
+  const result = await runtime.exec(
     [
       rg,
       "-i",
@@ -86,11 +91,9 @@ async function ripgrep(q: string): Promise<Map<string, string[]> | null> {
       `.{0,80}${escapeRegex(q)}.{0,80}`,
       ...dirs,
     ],
-    { stdout: "pipe", stderr: "ignore" },
+    { timeoutMs: RG_TIMEOUT_MS },
   );
-  const timer = setTimeout(() => proc.kill(), RG_TIMEOUT_MS);
-  const out = await new Response(proc.stdout).text();
-  clearTimeout(timer);
+  const out = result.stdout;
   const byFile = new Map<string, string[]>();
   for (const line of out.split("\n")) {
     const at = line.indexOf("\0");
@@ -107,6 +110,7 @@ export async function searchSessions(opts: {
   q: string;
   agent?: string | undefined;
   limit?: number;
+  runtime?: HostRuntime;
 }): Promise<SearchResult> {
   const started = Date.now();
   const q = opts.q.trim();
@@ -120,7 +124,7 @@ export async function searchSessions(opts: {
       ),
       orderBy: [desc(gateway_sessions.last_activity_at)],
     }),
-    ripgrep(q),
+    ripgrep(q, opts.runtime ?? hostRuntime(LOCAL_HOST)),
   ]);
 
   const byPath = new Map(

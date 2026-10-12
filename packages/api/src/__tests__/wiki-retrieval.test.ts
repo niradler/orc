@@ -26,7 +26,9 @@ test("should enforce authentication and reject invalid retrieval input", async (
 });
 
 test("should read cited evidence, save wiki revisions, and isolate projects through the API", async () => {
-  const projectResponse = await req(app, "POST", "/projects", { name: "wiki-api" });
+  const projectResponse = await req(app, "POST", "/projects", {
+    name: "wiki-api",
+  });
   const project = await projectResponse.json();
   const wiki = new WikiStore(getSqlite());
   const id = wiki.enqueue({
@@ -179,7 +181,10 @@ test("should retain original memory versions through updates and retirement", as
   ).json();
   expect(search.passages).toEqual([]);
   const citation = await (
-    await req(app, "POST", "/knowledge/passages/get", { ids: [historical?.id], project_id: null })
+    await req(app, "POST", "/knowledge/passages/get", {
+      ids: [historical?.id],
+      project_id: null,
+    })
   ).json();
   expect(citation.passages[0].content).toContain("Original socket ownership");
   const foreign = await (
@@ -306,7 +311,11 @@ test("should scope maintenance reads by explicit ID or null before installation 
   for (const name of ["skill_history", "skill_baseline"]) {
     const result = await req(app, "POST", "/mcp/tool", {
       name,
-      args: { name: "orc-worker-base", project_id: null, project: "not-the-assigned-project" },
+      args: {
+        name: "orc-worker-base",
+        project_id: null,
+        project: "not-the-assigned-project",
+      },
     });
     expect(result.status).toBe(200);
   }

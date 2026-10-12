@@ -79,7 +79,13 @@ export const SkillEvaluationSchema = z.object({
   project_id: z.string().nullable(),
   suite: z.string().min(1),
   cases: z
-    .array(z.object({ id: z.string().min(1), baseline: z.boolean(), candidate: z.boolean() }))
+    .array(
+      z.object({
+        id: z.string().min(1),
+        baseline: z.boolean(),
+        candidate: z.boolean(),
+      }),
+    )
     .min(1)
     .max(1000),
   validation_passed: z.boolean(),

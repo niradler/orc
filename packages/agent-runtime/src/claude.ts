@@ -7,6 +7,7 @@ import {
 } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
+import { sessionExecHost } from "./execution-host.js";
 import { endStdin, readLines, writeToStdin } from "./io.js";
 import { type OrcMcpConfigFile, withOrcAllowedTools, writeOrcMcpConfigFile } from "./orc-mcp.js";
 import { registerBackend } from "./registry.js";
@@ -28,7 +29,11 @@ type ClaudeStdinMsg =
   | { type: "user"; message: { role: "user"; content: string } }
   | { type: "control_response"; id: string; result: "approve" | "deny" };
 
-type ContentBlock = { type: string; text?: string | undefined; thinking?: string | undefined };
+type ContentBlock = {
+  type: string;
+  text?: string | undefined;
+  thinking?: string | undefined;
+};
 
 type ClaudeStdoutMsg = {
   type: string;
@@ -237,7 +242,11 @@ class ClaudeSession implements AgentSession {
       const id = msg.id ?? ulid();
       this.push({
         type: "tool_use",
-        data: { id, name: msg.name ?? "", input: JSON.stringify(msg.input ?? {}) },
+        data: {
+          id,
+          name: msg.name ?? "",
+          input: JSON.stringify(msg.input ?? {}),
+        },
       });
       return;
     }
@@ -264,7 +273,10 @@ class ClaudeSession implements AgentSession {
       const permPromise = new Promise<PermissionResult>((resolve) => {
         this.permissionResolvers.set(requestId, resolve);
       });
-      this.push({ type: "permission_request", data: { requestId, tool, command } });
+      this.push({
+        type: "permission_request",
+        data: { requestId, tool, command },
+      });
       void permPromise.then((result) => this.sendControlResponse(requestId, result));
       return;
     }
@@ -403,21 +415,29 @@ function createClaudeBackend(): AgentBackend {
       try {
         const path = await findClaudeCli(host);
         if (!path) return { ok: false, error: claudeMissing(host) };
-        const result = await hostExec(host, [path, "--version"], { timeoutMs: 30_000 });
+        const result = await hostExec(host, [path, "--version"], {
+          timeoutMs: 30_000,
+        });
         const out = result.stdout;
         if (result.code !== 0) return { ok: false, error: "claude --version failed" };
         const match = /(\d+)\./.exec(out);
         const major = match ? Number(match[1]) : 0;
         if (major < 2)
-          return { ok: false, error: `claude CLI too old (${out.trim()}), need >= 2.x` };
+          return {
+            ok: false,
+            error: `claude CLI too old (${out.trim()}), need >= 2.x`,
+          };
         return { ok: true };
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        };
       }
     },
 
     async startSession(opts) {
-      const host = resolveExecHost();
+      const host = sessionExecHost(opts);
       const path = await findClaudeCli(host);
       if (!path) throw new Error(claudeMissing(host));
       const session = new ClaudeSession(opts, path, host);
@@ -426,7 +446,7 @@ function createClaudeBackend(): AgentBackend {
     },
 
     async resumeSession(runtimeSessionId, opts) {
-      const host = resolveExecHost();
+      const host = sessionExecHost(opts);
       const path = await findClaudeCli(host);
       if (!path) throw new Error(claudeMissing(host));
       const session = new ClaudeSession({ ...opts, runtimeSessionId }, path, host);

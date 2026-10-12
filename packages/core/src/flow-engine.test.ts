@@ -168,7 +168,9 @@ describe("orc-default", () => {
   test("changes_requested loops back to build within the task's budget, then escalates", () => {
     const { state, trail } = drive(
       flow,
-      (node) => ({ outcome: node === "build" ? "submitted" : "changes_requested" }),
+      (node) => ({
+        outcome: node === "build" ? "submitted" : "changes_requested",
+      }),
       { vars },
     );
     // max_review_rounds 3 → build runs 3 times, matching the pre-flow
@@ -214,7 +216,9 @@ describe("orc-default", () => {
   test("a missing max_review_rounds var cannot open an unbounded loop", () => {
     const { state, trail } = drive(
       flow,
-      (node) => ({ outcome: node === "build" ? "submitted" : "changes_requested" }),
+      (node) => ({
+        outcome: node === "build" ? "submitted" : "changes_requested",
+      }),
       { vars: { required_review: true } },
     );
     // The loopback guard cannot resolve its budget, so it never fires: one
@@ -293,7 +297,9 @@ describe("termination rails", () => {
   });
 
   test("an unroutable outcome halts instead of hanging", () => {
-    const { state } = drive(loopFlow, () => ({ outcome: "unexpected" }), { maxSteps: 5 });
+    const { state } = drive(loopFlow, () => ({ outcome: "unexpected" }), {
+      maxSteps: 5,
+    });
     // The catch-all edge takes it to done; remove that and it must halt.
     expect(state.status).toBe("completed");
 
@@ -431,7 +437,11 @@ describe("fan-out and joins", () => {
       step = advanceFlow(
         flow,
         step.state,
-        { ...branch, outcome: "reviewed", vars: { [varName]: results[branch.nodeId] } },
+        {
+          ...branch,
+          outcome: "reviewed",
+          vars: { [varName]: results[branch.nodeId] },
+        },
         { now: NOW },
       );
     }
@@ -632,7 +642,11 @@ describe("revisit semantics", () => {
     let step = startFlow(flow, { now: NOW });
     const first = step.state.active[0];
     if (!first) throw new Error("expected execute");
-    expect(step.actions[0]).toMatchObject({ kind: "spawn", nodeId: "execute", resume: false });
+    expect(step.actions[0]).toMatchObject({
+      kind: "spawn",
+      nodeId: "execute",
+      resume: false,
+    });
 
     step = advanceFlow(flow, step.state, { ...first, outcome: "milestone" }, { now: NOW });
     const supervise = step.state.active[0];
@@ -685,7 +699,11 @@ describe("revisit semantics", () => {
     let step = startFlow(flow, { now: NOW, vars });
     const build = step.state.active[0];
     if (!build) throw new Error("expected build");
-    expect(step.actions[0]).toMatchObject({ nodeId: "build", attempt: 1, resume: false });
+    expect(step.actions[0]).toMatchObject({
+      nodeId: "build",
+      attempt: 1,
+      resume: false,
+    });
 
     step = advanceFlow(flow, step.state, { ...build, outcome: "submitted" }, { now: NOW });
     const review = step.state.active[0];

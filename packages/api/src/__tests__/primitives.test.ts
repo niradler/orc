@@ -59,8 +59,12 @@ describe("shared agent and package contracts", () => {
   });
   test("should reject invalid definitions and require configured authentication", async () => {
     expect(
-      (await req(app, "POST", "/agents", { id: "invalid", content: "---\nname: bad\n---\nBody" }))
-        .status,
+      (
+        await req(app, "POST", "/agents", {
+          id: "invalid",
+          content: "---\nname: bad\n---\nBody",
+        })
+      ).status,
     ).toBe(400);
     expect(
       (

@@ -18,6 +18,7 @@ import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
 import { resolveClaudeSdkLaunch } from "./claude-executable.js";
+import { sessionExecHost } from "./execution-host.js";
 import { buildOrcMcpServers, isImplicitOrcTool, withOrcAllowedTools } from "./orc-mcp.js";
 import { registerBackend } from "./registry.js";
 import { createRulesHook, sessionStartRuleContext } from "./rules-hook.js";
@@ -66,7 +67,9 @@ export async function hostClaudeLoggedIn(
   const key = `${host.alias}\0${claudePath}`;
   const cached = authCache.get(key);
   if (!fresh && cached && Date.now() - cached.at < AUTH_CACHE_TTL_MS) return cached.loggedIn;
-  const result = await hostExec(host, [claudePath, "auth", "status"], { timeoutMs: 30_000 });
+  const result = await hostExec(host, [claudePath, "auth", "status"], {
+    timeoutMs: 30_000,
+  });
   let loggedIn: boolean | null = null;
   try {
     const parsed = JSON.parse(result.stdout) as { loggedIn?: unknown };
@@ -91,9 +94,15 @@ async function sshSdkLaunch(host: SshExecHost): Promise<Partial<Options>> {
         inline.length > 0 ? ["env", ...inline, ...command] : command,
         options.cwd,
       );
-      const child = spawn(bin, args, { env: process.env, stdio: ["pipe", "pipe", "pipe"] });
+      const child = spawn(bin, args, {
+        env: process.env,
+        stdio: ["pipe", "pipe", "pipe"],
+      });
       child.stderr.on("data", (chunk: Buffer) => {
-        logger.debug("claude stderr (ssh)", { host: host.alias, data: chunk.toString() });
+        logger.debug("claude stderr (ssh)", {
+          host: host.alias,
+          data: chunk.toString(),
+        });
       });
       prepared.track(new Promise((resolve) => child.once("exit", resolve)));
       const killLocal = child.kill.bind(child);
@@ -217,14 +226,20 @@ class ClaudeSDKSession implements AgentSession {
               this.opts.toolAllowlist !== undefined &&
               !this.opts.toolAllowlist.includes(toolName)
             ) {
-              return { behavior: "deny", message: "Tool is outside the agent profile whitelist" };
+              return {
+                behavior: "deny",
+                message: "Tool is outside the agent profile whitelist",
+              };
             }
             if (this.opts.toolAllowlist !== undefined && this.opts.autoApprove)
               return { behavior: "allow", updatedInput: input };
             const requestId = ulid();
             const command = JSON.stringify(input);
             logger.info("canUseTool called", { toolName, requestId });
-            this.push({ type: "permission_request", data: { requestId, tool: toolName, command } });
+            this.push({
+              type: "permission_request",
+              data: { requestId, tool: toolName, command },
+            });
             const result = await new Promise<PermissionResult>((resolve) => {
               this.permissionResolvers.set(requestId, resolve);
             });
@@ -253,7 +268,11 @@ class ClaudeSDKSession implements AgentSession {
             } else if (block.type === "tool_use") {
               this.push({
                 type: "tool_use",
-                data: { id: block.id, name: block.name, input: JSON.stringify(block.input) },
+                data: {
+                  id: block.id,
+                  name: block.name,
+                  input: JSON.stringify(block.input),
+                },
               });
             }
           }
@@ -264,7 +283,10 @@ class ClaudeSDKSession implements AgentSession {
           this.runtimeSessionId = msg.session_id;
           if (msg.is_error) {
             const errors = "errors" in msg ? (msg.errors as string[]) : [];
-            this.push({ type: "error", data: errors.join("\n") || `Claude error: ${msg.subtype}` });
+            this.push({
+              type: "error",
+              data: errors.join("\n") || `Claude error: ${msg.subtype}`,
+            });
           } else {
             this.push({
               type: "result",
@@ -277,7 +299,10 @@ class ClaudeSDKSession implements AgentSession {
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         logger.error("Claude SDK query error", { err });
-        this.push({ type: "error", data: err instanceof Error ? err.message : String(err) });
+        this.push({
+          type: "error",
+          data: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
@@ -341,7 +366,10 @@ async function sshPreflight(host: SshExecHost): Promise<{ ok: boolean; error?: s
     }
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -400,11 +428,11 @@ function createClaudeSDKBackend(): AgentBackend {
     },
 
     async startSession(opts) {
-      return new ClaudeSDKSession(opts, resolveExecHost());
+      return new ClaudeSDKSession(opts, sessionExecHost(opts));
     },
 
     async resumeSession(runtimeSessionId, opts) {
-      return new ClaudeSDKSession({ ...opts, runtimeSessionId }, resolveExecHost());
+      return new ClaudeSDKSession({ ...opts, runtimeSessionId }, sessionExecHost(opts));
     },
 
     async stop() {},

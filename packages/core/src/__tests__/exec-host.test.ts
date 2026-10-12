@@ -13,6 +13,7 @@ import {
   remoteCommand,
   type SshExecHost,
   shQuote,
+  sshArgv,
 } from "../exec-host.js";
 
 const host: SshExecHost = {
@@ -25,7 +26,10 @@ const host: SshExecHost = {
 };
 
 async function runRemote(script: string): Promise<{ code: number; stdout: string }> {
-  const proc = Bun.spawn(["/bin/sh", "-c", script], { stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn(["/bin/sh", "-c", script], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const stdout = await new Response(proc.stdout).text();
   return { code: await proc.exited, stdout };
 }
@@ -60,13 +64,19 @@ describe("remoteCommand", () => {
   });
 
   test("expands a leading ~ in cwd to the remote home", async () => {
-    const script = remoteCommand(["/bin/sh", "-c", "pwd"], { cwd: "~", login: false });
+    const script = remoteCommand(["/bin/sh", "-c", "pwd"], {
+      cwd: "~",
+      login: false,
+    });
     const { stdout } = await runRemote(`HOME=/tmp; ${script}`);
     expect(realpathSync(stdout.trim())).toBe(realpathSync("/tmp"));
   });
 
   test("fails instead of running in the wrong folder when cwd is missing", async () => {
-    const script = remoteCommand(["/bin/echo", "ran"], { cwd: "/no/such/dir", login: false });
+    const script = remoteCommand(["/bin/echo", "ran"], {
+      cwd: "/no/such/dir",
+      login: false,
+    });
     const { code, stdout } = await runRemote(script);
     expect(code).not.toBe(0);
     expect(stdout).toBe("");
@@ -108,18 +118,37 @@ describe("execHostFor", () => {
       api: { ...config.api, host: "0.0.0.0", port: 7701 },
       ssh: { ...config.ssh, remote_port: undefined },
     });
-    expect(resolved).toMatchObject({ kind: "ssh", apiTarget: "127.0.0.1:7701", remotePort: 7701 });
+    expect(resolved).toMatchObject({
+      kind: "ssh",
+      apiTarget: "127.0.0.1:7701",
+      remotePort: 7701,
+    });
   });
 
   test("brackets an IPv6 bind address and rejects option-like aliases", () => {
     const config = loadConfig();
-    const resolved = execHostFor("box", { ...config, api: { ...config.api, host: "fd00::1" } });
-    expect(resolved).toMatchObject({ apiTarget: `[fd00::1]:${config.api.port}` });
+    const resolved = execHostFor("box", {
+      ...config,
+      api: { ...config.api, host: "fd00::1" },
+    });
+    expect(resolved).toMatchObject({
+      apiTarget: `[fd00::1]:${config.api.port}`,
+    });
     expect(() => execHostFor("-oProxyCommand=id", config)).toThrow();
   });
 
   test("an empty alias means local", () => {
     expect(execHostFor(null)).toEqual({ kind: "local" });
+  });
+});
+
+describe("sshArgv", () => {
+  test("keeps ordinary commands independent from control sockets", () => {
+    const argv = sshArgv(host, "true", { tty: true });
+    expect(argv).toContain("ControlMaster=no");
+    expect(argv).toContain("ControlPath=none");
+    expect(argv).not.toContain("ControlMaster=yes");
+    expect(argv).toContain("-tt");
   });
 });
 
@@ -158,7 +187,11 @@ describe("parseProbe", () => {
       os: "Linux",
       home: "/home/me",
       shell: "/usr/bin/fish",
-      binaries: { claude: "/home/me/.local/bin/claude", codex: null, git: null },
+      binaries: {
+        claude: "/home/me/.local/bin/claude",
+        codex: null,
+        git: null,
+      },
     });
   });
 });

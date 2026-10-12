@@ -90,7 +90,13 @@ describe("GitHub authentication and relevant feed", () => {
     expect(
       (
         await fetchGithubFeed(
-          [{ name: "owner/repo", branches: ["feat/current"], linked: [unrelated.html_url] }],
+          [
+            {
+              name: "owner/repo",
+              branches: ["feat/current"],
+              linked: [unrelated.html_url],
+            },
+          ],
           "relevant",
           deps,
         )
@@ -134,7 +140,10 @@ describe("GitHub authentication and relevant feed", () => {
             {
               ...pull,
               number: 4,
-              head: { ref: "feat/current", repo: { full_name: "outsider/repo" } },
+              head: {
+                ref: "feat/current",
+                repo: { full_name: "outsider/repo" },
+              },
             },
           ]);
         return Response.json([unrelated]);
@@ -173,7 +182,10 @@ describe("GitHub API boundary", () => {
     expect(project).toBe("project");
     const raw = await response.text();
     const body = z
-      .object({ auth: z.string(), items: z.array(z.object({ number: z.number() })) })
+      .object({
+        auth: z.string(),
+        items: z.array(z.object({ number: z.number() })),
+      })
       .parse(JSON.parse(raw));
     expect(body.auth).toBe("gh");
     expect(body.items.map((item: { number: number }) => item.number)).toEqual([3]);

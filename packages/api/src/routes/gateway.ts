@@ -37,11 +37,15 @@ const sendRoute = createRoute({
   path: "/gateway/send",
   tags: ["Gateway"],
   summary: "Send a message via the gateway",
-  request: { body: { content: { "application/json": { schema: GatewaySendSchema } } } },
+  request: {
+    body: { content: { "application/json": { schema: GatewaySendSchema } } },
+  },
   responses: {
     204: { description: "Message sent" },
     503: {
-      content: { "application/json": { schema: z.object({ error: z.string() }) } },
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
       description: "Gateway not running",
     },
   },
