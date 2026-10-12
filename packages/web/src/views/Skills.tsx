@@ -1,10 +1,13 @@
-import { Plus, Search } from "lucide-react";
+import { Download, Plus, Search } from "lucide-react";
 import { useState } from "react";
 import type { SkillFull, SkillRefContent, SkillSource } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
 import { DetailField } from "@/components/DetailField";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { ImportSkillDialog } from "@/components/ImportSkillDialog";
+import { SkillFileEditor } from "@/components/SkillFileEditor";
+import { SkillSync } from "@/components/SkillSync";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -54,6 +57,7 @@ export default function Skills({ projectId }: { projectId?: string } = {}) {
     closeDetail: closeSkillDetail,
   } = useDetailRoute("/skills", "skillName");
   const [creating, setCreating] = useState(false);
+  const [importingRepository, setImportingRepository] = useState(false);
 
   const {
     data: library,
@@ -78,14 +82,24 @@ export default function Skills({ projectId }: { projectId?: string } = {}) {
         title="Skills"
         meta={`${(skills ?? []).length} skills`}
         action={
-          <Button
-            data-testid="new-skill-button"
-            size="sm"
-            onClick={() => setCreating(true)}
-            className="font-label text-xs uppercase tracking-widest bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
-          >
-            <Plus size={12} className="mr-1" /> New Skill
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              data-testid="import-skill-button"
+              size="sm"
+              variant="outline"
+              onClick={() => setImportingRepository(true)}
+            >
+              <Download size={12} className="mr-1" /> Import from GitHub
+            </Button>
+            <Button
+              data-testid="new-skill-button"
+              size="sm"
+              onClick={() => setCreating(true)}
+              className="font-label text-xs uppercase tracking-widest bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
+            >
+              <Plus size={12} className="mr-1" /> New Skill
+            </Button>
+          </div>
         }
       />
 
@@ -209,6 +223,7 @@ export default function Skills({ projectId }: { projectId?: string } = {}) {
       />
 
       {creating && <CreateSkillDialog open={creating} onClose={() => setCreating(false)} />}
+      {importingRepository && <ImportSkillDialog onClose={() => setImportingRepository(false)} />}
     </div>
   );
 }
@@ -229,6 +244,7 @@ function SkillDetailSheet({
   const [selectedFile, setSelectedFile] = useState<string | undefined>();
   const fileQuery = useSkill(skillName, selectedFile ?? "SKILL.md", projectId);
   const file = fileQuery.data as SkillRefContent | undefined;
+  const [editingFile, setEditingFile] = useState<{ path: string; content: string } | null>(null);
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
@@ -240,93 +256,120 @@ function SkillDetailSheet({
           )}
         </SheetHeader>
         <SheetBody>
-          {error ? (
-            <ErrorState message={(error as Error).message} onRetry={() => void refetch()} />
-          ) : isLoading || !skill ? (
-            <div className="space-y-3">
-              {[...Array(4)].map((_, i) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
-                <Skeleton key={i} className="h-8 w-full bg-surface-highest" />
-              ))}
-            </div>
+          {editingFile && skillName ? (
+            <SkillFileEditor
+              name={skillName}
+              path={editingFile.path}
+              content={editingFile.content}
+              onClose={() => setEditingFile(null)}
+            />
           ) : (
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <DetailField label="Source">
-                  <span
-                    className={`inline-flex px-2 py-0.5 font-label text-[11px] uppercase tracking-wider border ${SOURCE_COLORS[skill.source]}`}
-                  >
-                    {skill.source}
-                  </span>
-                </DetailField>
-                <DetailField label="Path">
-                  <code className="font-mono text-[11px] text-outline break-all">{skill.path}</code>
-                </DetailField>
-              </div>
-
-              <div>
-                <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-2">
-                  {selectedFile ?? "SKILL.md"}
+            <>
+              {skillName && skill && <SkillSync name={skillName} />}
+              {skill?.source === "user" && file?.encoding === "utf8" && (
+                <Button
+                  data-testid="skill-edit-file"
+                  variant="outline"
+                  size="sm"
+                  className="mb-3"
+                  onClick={() =>
+                    setEditingFile({ path: selectedFile ?? "SKILL.md", content: file.content })
+                  }
+                >
+                  Edit {selectedFile ?? "SKILL.md"}
+                </Button>
+              )}
+              {error ? (
+                <ErrorState message={(error as Error).message} onRetry={() => void refetch()} />
+              ) : isLoading || !skill ? (
+                <div className="space-y-3">
+                  {[...Array(4)].map((_, i) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
+                    <Skeleton key={i} className="h-8 w-full bg-surface-highest" />
+                  ))}
                 </div>
-                {selectedFile && (
-                  <Button
-                    data-testid="skill-show-entry"
-                    variant="ghost"
-                    onClick={() => setSelectedFile(undefined)}
-                  >
-                    Show SKILL.md
-                  </Button>
-                )}
-                <div className="border border-surface-highest rounded-sm overflow-hidden">
-                  {fileQuery.error ? (
-                    <p role="alert">{(fileQuery.error as Error).message}</p>
-                  ) : fileQuery.isLoading ? (
-                    <p>Loading...</p>
-                  ) : (
-                    <CodeEditor
-                      path={selectedFile ?? "SKILL.md"}
-                      value={file?.content ?? ""}
-                      readOnly
-                      height={400}
-                      testId="skill-file-content"
-                    />
-                  )}
-                  {file?.encoding === "base64" && (
-                    <p className="p-4 text-xs text-outline">
-                      Binary asset shown as base64 (read-only).
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {skill.files?.length > 0 && (
-                <div>
-                  <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-2">
-                    Supporting files
-                  </div>
-                  <div className="space-y-1">
-                    {skill.files.map((ref) => (
-                      <button
-                        type="button"
-                        data-testid="skill-file"
-                        data-file-name={ref.name}
-                        onClick={() => setSelectedFile(ref.name)}
-                        aria-pressed={selectedFile === ref.name}
-                        key={ref.name}
-                        className="flex w-full items-center gap-3 px-3 py-2 border border-surface-highest rounded-sm text-left hover:bg-surface-low"
+              ) : (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 gap-4">
+                    <DetailField label="Source">
+                      <span
+                        className={`inline-flex px-2 py-0.5 font-label text-[11px] uppercase tracking-wider border ${SOURCE_COLORS[skill.source]}`}
                       >
-                        <span className="font-body text-xs font-medium text-on-surface">
-                          {ref.name}
-                        </span>
-                        <code className="font-mono text-[11px] text-outline truncate">
-                          {ref.path}
-                        </code>
-                      </button>
-                    ))}
+                        {skill.source}
+                      </span>
+                    </DetailField>
+                    <DetailField label="Path">
+                      <code className="font-mono text-[11px] text-outline break-all">
+                        {skill.path}
+                      </code>
+                    </DetailField>
                   </div>
+
+                  <div>
+                    <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-2">
+                      {selectedFile ?? "SKILL.md"}
+                    </div>
+                    {selectedFile && (
+                      <Button
+                        data-testid="skill-show-entry"
+                        variant="ghost"
+                        onClick={() => setSelectedFile(undefined)}
+                      >
+                        Show SKILL.md
+                      </Button>
+                    )}
+                    <div className="border border-surface-highest rounded-sm overflow-hidden">
+                      {fileQuery.error ? (
+                        <p role="alert">{(fileQuery.error as Error).message}</p>
+                      ) : fileQuery.isLoading ? (
+                        <p>Loading...</p>
+                      ) : (
+                        <CodeEditor
+                          path={selectedFile ?? "SKILL.md"}
+                          value={file?.content ?? ""}
+                          readOnly
+                          height={400}
+                          testId="skill-file-content"
+                        />
+                      )}
+                      {file?.encoding === "base64" && (
+                        <p className="p-4 text-xs text-outline">
+                          Binary asset shown as base64 (read-only).
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {skill.files?.length > 0 && (
+                    <div>
+                      <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-2">
+                        Supporting files
+                      </div>
+                      <div className="space-y-1">
+                        {skill.files.map((ref) => (
+                          <button
+                            type="button"
+                            data-testid="skill-file"
+                            data-file-name={ref.name}
+                            onClick={() => setSelectedFile(ref.name)}
+                            aria-pressed={selectedFile === ref.name}
+                            key={ref.name}
+                            className="flex w-full items-center gap-3 px-3 py-2 border border-surface-highest rounded-sm text-left hover:bg-surface-low"
+                          >
+                            <span className="font-body text-xs font-medium text-on-surface">
+                              {ref.name}
+                            </span>
+                            <code className="font-mono text-[11px] text-outline truncate">
+                              {ref.path}
+                            </code>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
+            </>
           )}
         </SheetBody>
       </SheetContent>

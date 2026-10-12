@@ -1,4 +1,14 @@
 import type { RuleEventCapability } from "@orc/core/rule-events";
+import type {
+  SkillDiscovery,
+  SkillImportInput,
+  SkillImportOrigin,
+  SkillSyncInput,
+  SkillSyncResult,
+} from "@orc/sdk/types";
+
+export type { SkillDiscovery, SkillImportInput, SkillImportOrigin } from "@orc/sdk/types";
+
 import type { RulePolicy, RuleRevision } from "@orc/core/rule-types";
 
 // Browser-compatible ORC API client.
@@ -545,6 +555,15 @@ export const api = {
   },
 
   skills: {
+    discover: (source: string) => req<SkillDiscovery>("POST", "/skills/discover", { source }),
+    import: (input: SkillImportInput) =>
+      req<{ skills: SkillFull[] }>("POST", "/skills/import", input),
+    origin: (name: string) =>
+      req<SkillImportOrigin | null>("GET", `/skills/${encodeURIComponent(name)}/origin`),
+    sync: (name: string, input: SkillSyncInput = {}) =>
+      req<SkillSyncResult>("POST", `/skills/${encodeURIComponent(name)}/sync`, input),
+    editFile: (name: string, input: { path: string; content: string; expectedContent: string }) =>
+      req<SkillFull>("PUT", `/skills/${encodeURIComponent(name)}/file`, input),
     list: (params?: { q?: string; source?: "builtin" | "user"; reload?: boolean }) =>
       req<{ skills: SkillMeta[]; broken: BrokenAgent[] }>(
         "GET",

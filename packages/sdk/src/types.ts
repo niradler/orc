@@ -1,3 +1,11 @@
+export type {
+  SkillDiscovery,
+  SkillImportInput,
+  SkillImportOrigin,
+  SkillSyncInput,
+  SkillSyncResult,
+} from "@orc/core/skill-import-types";
+
 export type TaskStatus =
   | "todo"
   | "queued"
