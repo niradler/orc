@@ -58,8 +58,13 @@ export const spawnPty: SpawnPty = (argv, options) => {
   }
   return {
     pid: proc.pid ?? null,
-    write: (data) => terminal.write(data),
-    resize: (cols, rows) => terminal.resize(cols, rows),
+    // Output callbacks may arrive after close, before the exit promise reaches the manager.
+    write: (data) => {
+      if (!terminal.closed) terminal.write(data);
+    },
+    resize: (cols, rows) => {
+      if (!terminal.closed) terminal.resize(cols, rows);
+    },
     kill: () => {
       if (proc.pid) killProcessTree(proc.pid);
       try {

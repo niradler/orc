@@ -2,6 +2,11 @@ import { loadConfig } from "@orc/core/config";
 import type { RuleEventCapability, RuleHookBackend } from "@orc/core/rule-events";
 import type { RuleDecision, RuleEvent, RulePolicy, RuleRevision } from "@orc/core/rule-types";
 import type {
+  SessionHandoff,
+  SessionHandoffInput,
+  SessionHandoffUpload,
+} from "@orc/core/session-handoff";
+import type {
   AgentBackendInfo,
   AgentFull,
   AgentProfile,
@@ -116,6 +121,13 @@ export function createOrcClient(options?: OrcClientOptions) {
   ) => call<T>(baseUrl, secret, method, `/api${path}`, body, query);
 
   return {
+    handoffs: {
+      create: (input: SessionHandoffInput) =>
+        c<SessionHandoffUpload>("POST", "/session-handoffs", input),
+      get: (id: string) => c<SessionHandoff>("GET", `/session-handoffs/${encodeURIComponent(id)}`),
+      prepare: (id: string) =>
+        c<SessionHandoff>("POST", `/session-handoffs/${encodeURIComponent(id)}/prepare`),
+    },
     rules: {
       list: (workspace?: string) =>
         c<{

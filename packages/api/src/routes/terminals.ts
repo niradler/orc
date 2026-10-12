@@ -14,6 +14,7 @@ import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions } from "@orc/db/schema";
 import { and, eq } from "drizzle-orm";
 import { rememberTerminalFolder } from "../git/registry.js";
+import { getHandoffService } from "../handoffs/service.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
 import { availableLaunchers, buildLaunch, LAUNCH_KINDS } from "../terminals/launch.js";
 import {
@@ -292,6 +293,7 @@ app.openapi(createTerminalRoute, async (c) => {
       ),
     });
     if (!row) throw new NotFoundError("Live session", body.live_session_id);
+    const handoff = await getHandoffService().verifyResume(row.id);
     host = execHostFor(row.execution_host ?? null, config);
     deps = await launchDeps(config, host);
     checkRules(row.cwd);
@@ -318,12 +320,20 @@ app.openapi(createTerminalRoute, async (c) => {
       },
       deps,
     );
-    manager.assertCapacity();
+    if (handoff && launch.kind === "codex" && launch.cwd) launch.argv.push("--cd", launch.cwd);
+    const resumedLaunch = await launchOnHost(host, launch);
+    const concurrent = manager.findByLiveSession(row.id);
+    if (concurrent) {
+      checkRules(concurrent.cwd);
+      return c.json(concurrent, 200);
+    }
+    checkRules(row.cwd);
     const info = manager.create({
-      launch: await launchOnHost(host, launch),
+      launch: resumedLaunch,
       name: body.name ?? row.title ?? undefined,
       liveSessionId: row.id,
     });
+    if (handoff) await getHandoffService().markResumed(row.id);
     rememberTerminalFolder(info.cwd);
     return c.json(info, 201);
   }

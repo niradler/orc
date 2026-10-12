@@ -10,6 +10,7 @@
     "./types": "./src/types.ts",
     "./logger": "./src/logger.ts",
     "./live-session": "./src/live-session.ts",
+    "./session-handoff": "./src/session-handoff.ts",
     "./ids": "./src/ids.ts",
     "./errors": "./src/errors.ts",
     "./version": "./src/version.ts",

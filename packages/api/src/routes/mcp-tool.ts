@@ -44,7 +44,9 @@ app.openapi(mcpToolRoute, async (c) => {
   const parsed = toolDef.inputSchema.safeParse(args ?? {});
   if (!parsed.success) throw new ValidationError(`Invalid args: ${parsed.error.message}`);
 
-  const result = await executeTool(name as Parameters<typeof executeTool>[0], parsed.data);
+  const result = await executeTool(name as Parameters<typeof executeTool>[0], parsed.data, {
+    publicApiBaseUrl: new URL(c.req.url).origin,
+  });
   return c.json({ result });
 });
 

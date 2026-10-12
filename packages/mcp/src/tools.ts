@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createAgent, discoverAgents, readAgent } from "@orc/core/agent-service";
 import { loadConfig } from "@orc/core/config";
-import { NotFoundError } from "@orc/core/errors";
+import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { shortId, ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import {
@@ -10,6 +10,7 @@ import {
   readPackage,
   readPackageFile,
 } from "@orc/core/package-service";
+import { SessionHandoffInputSchema, SessionHandoffUploadSchema } from "@orc/core/session-handoff";
 import {
   createSkill as createSkillFs,
   listSkills,
@@ -59,6 +60,12 @@ const scopedProjectParams = z.object({
 });
 
 export const toolDefinitions = [
+  {
+    name: "session_handoff",
+    description:
+      "Move a Claude Code or Codex session to ORC. FIRST commit and push the intended changes. Report the pushed repository, branch and exact commit SHA, project name, source cwd and native session ID. Returns a single-use upload URL for native session files. Upload through HTTP; then use Sessions → Open in terminal. See orc-handoff skill.",
+    inputSchema: SessionHandoffInputSchema,
+  },
   {
     name: "memory_search",
     description:
@@ -680,7 +687,41 @@ function resolveScopedProject(input: z.infer<typeof scopedProjectParams>): strin
   return resolveProjectId(input.project)?.id ?? null;
 }
 
-export async function executeTool(name: ToolName, args: unknown): Promise<string> {
+export async function executeTool(
+  name: ToolName,
+  args: unknown,
+  options: { publicApiBaseUrl?: string } = {},
+): Promise<string> {
+  if (name === "session_handoff") {
+    const input = SessionHandoffInputSchema.parse(args);
+    const config = loadConfig();
+    const hostname =
+      config.api.host === "0.0.0.0" || config.api.host === "::" ? "127.0.0.1" : config.api.host;
+    const base = process.env.ORC_API_BASE ?? `http://${hostname}:${config.api.port}`;
+    const response = await fetch(`${base.replace(/\/$/, "")}/api/session-handoffs`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.api.secret ?? ""}`,
+      },
+      body: JSON.stringify(input),
+      signal: AbortSignal.timeout(60_000),
+    });
+    const body: unknown = await response.json();
+    if (!response.ok)
+      throw new ValidationError(
+        `Handoff request failed (${response.status}); verify project scope, pushed branch and API access`,
+      );
+    const handoff = SessionHandoffUploadSchema.parse(body);
+    if (options.publicApiBaseUrl) {
+      const upload = new URL(handoff.upload_url);
+      handoff.upload_url = new URL(
+        `${upload.pathname}${upload.search}`,
+        options.publicApiBaseUrl,
+      ).toString();
+    }
+    return JSON.stringify(handoff);
+  }
   const db = getDb();
 
   switch (name) {

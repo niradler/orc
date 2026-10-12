@@ -18,7 +18,7 @@ export function toolListing() {
   }));
 }
 
-export function createMcpServer() {
+export function createMcpServer(options: { publicApiBaseUrl?: string } = {}) {
   const server = new Server({ name: "orc", version: "0.0.1" }, { capabilities: { tools: {} } });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -27,7 +27,7 @@ export function createMcpServer() {
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    logger.debug(`Tool call: ${name}`, args);
+    logger.debug(`Tool call: ${name}`, name === "session_handoff" ? undefined : args);
 
     try {
       const toolDef = toolDefinitions.find((t) => t.name === name);
@@ -51,7 +51,7 @@ export function createMcpServer() {
         };
       }
 
-      const result = await executeTool(name as ToolName, parsed.data);
+      const result = await executeTool(name as ToolName, parsed.data, options);
       return { content: [{ type: "text" as const, text: result }] };
     } catch (err) {
       logger.error(`Tool error: ${name}`, err);

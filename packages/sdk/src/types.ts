@@ -1,3 +1,9 @@
+export type {
+  SessionHandoff,
+  SessionHandoffInput,
+  SessionHandoffUpload,
+} from "@orc/core/session-handoff";
+
 export type TaskStatus =
   | "todo"
   | "queued"
@@ -136,6 +142,7 @@ export type Session = {
 
 export type LiveSessionStatus = "idle" | "running" | "stopped" | "error";
 export type LiveSession = {
+  handoff?: { id: string; branch: string; commit: string; status: "ready" | "resumed" } | null;
   id: string;
   agent: string;
   session_id: string | null;

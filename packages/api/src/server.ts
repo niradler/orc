@@ -20,6 +20,7 @@ import { memoriesRouter } from "./routes/memories.js";
 import { primitivesRouter } from "./routes/primitives.js";
 import { projectsRouter } from "./routes/projects.js";
 import { rulesRouter } from "./routes/rules.js";
+import { sessionHandoffsRouter } from "./routes/session-handoffs.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import { skillsRouter } from "./routes/skills.js";
 import { sshRouter } from "./routes/ssh.js";
@@ -77,6 +78,7 @@ export function createApp() {
   app.route("/api", memoriesRouter);
   app.route("/api", knowledgeRouter);
   app.route("/api", sessionsRouter);
+  app.route("/api", sessionHandoffsRouter);
   app.route("/api", jobsRouter);
   app.route("/api", gatewayRouter);
   app.route("/api", tagsRouter);
