@@ -6,8 +6,7 @@ import {
   readAgent,
   updateAgent,
 } from "@orc/core/agent-service";
-import { configuredApiSecret, loadConfig } from "@orc/core/config";
-import { ForbiddenError, NotFoundError } from "@orc/core/errors";
+import { NotFoundError } from "@orc/core/errors";
 import {
   acquireApmSource,
   discoverRepositoryPackages,
@@ -35,13 +34,6 @@ import {
 } from "@orc/core/package-service";
 
 const app = new OpenAPIHono();
-function requirePackageOperations() {
-  if (!configuredApiSecret(loadConfig().api.secret))
-    throw new ForbiddenError(
-      "Set ORC_API_SECRET before running package operations",
-      "PACKAGE_OPERATIONS_UNAVAILABLE",
-    );
-}
 app.openapi(
   createRoute({
     method: "get",
@@ -109,7 +101,6 @@ app.openapi(
     },
   }),
   (c) => {
-    requirePackageOperations();
     return c.json(saveAgentSetup(c.req.valid("json")), 201);
   },
 );
@@ -479,7 +470,6 @@ app.openapi(
     },
   }),
   async (c) => {
-    requirePackageOperations();
     return c.json(await acquireApmSource(c.req.valid("json").source));
   },
 );
@@ -507,7 +497,6 @@ app.openapi(
     },
   }),
   (c) => {
-    requirePackageOperations();
     const input = c.req.valid("json");
     return c.json(importAcquiredPackage(input.token, input.path), 201);
   },
@@ -534,7 +523,6 @@ app.openapi(
     },
   }),
   async (c) => {
-    requirePackageOperations();
     return c.json(await discoverRepositoryPackages(c.req.valid("json").source));
   },
 );
@@ -567,7 +555,6 @@ app.openapi(
     },
   }),
   async (c) => {
-    requirePackageOperations();
     return c.json(await importRepositoryPackage(c.req.valid("json")), 201);
   },
 );
@@ -589,7 +576,6 @@ app.openapi(
     },
   }),
   async (c) => {
-    requirePackageOperations();
     return c.json(await exportPackageArtifact(c.req.valid("param").name));
   },
 );
@@ -611,7 +597,6 @@ app.openapi(
     },
   }),
   (c) => {
-    requirePackageOperations();
     const tools = packageToolCommands();
     if (!tools.bun) throw new NotFoundError("Executable", "bun");
     const plan = buildPackagePlan(c.req.valid("json"), tools);

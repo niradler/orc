@@ -28,7 +28,7 @@ const SshStateSchema = z
     supported: z.boolean(),
     unsupported_reason: z.string().nullable(),
     secret_set: z.boolean().openapi({
-      description: "api.secret is set; required before selecting an SSH execution host",
+      description: "Whether API bearer authentication is configured",
     }),
   })
   .openapi("SshState");
@@ -133,10 +133,6 @@ app.openapi(putRoute, async (c) => {
   if (body.host) {
     const support = platformSupport();
     if (!support.supported) throw new ValidationError(support.unsupported_reason ?? "unsupported");
-    if (!configuredApiSecret(before.api.secret))
-      throw new ValidationError(
-        "Set api.secret (or ORC_API_SECRET) first: host agents and terminals can execute arbitrary commands through orc",
-      );
   }
   const after = updateGlobalConfig((raw) => {
     const ssh = { ...((raw.ssh as Record<string, unknown> | undefined) ?? {}) };

@@ -1,6 +1,5 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import { configuredApiSecret, loadConfig } from "@orc/core/config";
-import { ForbiddenError } from "@orc/core/errors";
+import { loadConfig } from "@orc/core/config";
 import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
 import { RuleScriptSchema } from "@orc/core/rule-types";
 import { RuleEventSchema, RulePolicySchema } from "@orc/core/rules";
@@ -27,11 +26,7 @@ const RevisionSchema = z.object({
   created_at: z.number(),
   current: z.boolean(),
 });
-const controls = (): RuleStore => {
-  if (!configuredApiSecret(loadConfig().api.secret))
-    throw new ForbiddenError("Set ORC_API_SECRET before administering rule policies");
-  return new RuleStore(getSqlite());
-};
+const controls = (): RuleStore => new RuleStore(getSqlite());
 app.openapi(
   createRoute({
     method: "get",

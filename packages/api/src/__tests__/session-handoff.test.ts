@@ -14,10 +14,11 @@ import { getDb } from "@orc/db/client";
 import { gateway_sessions, projects, session_handoffs } from "@orc/db/schema";
 import { executeTool } from "@orc/mcp/tools";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { handoffAdapters } from "../handoffs/adapters.js";
 import { repositoryIdentity } from "../handoffs/git.js";
 import { HandoffService, setHandoffService } from "../handoffs/service.js";
-import type { createApp } from "../server.js";
+import { createApp } from "../server.js";
 import { TerminalManager } from "../terminals/manager.js";
 import { setTerminalManager } from "../terminals/service.js";
 import type { PtyHandle, SpawnOptions } from "../terminals/spawn.js";
@@ -238,6 +239,30 @@ afterAll(() => {
 });
 
 describe("native session handoff", () => {
+  test("should create and inspect a handoff without a bearer token in open mode", async () => {
+    try {
+      process.env.ORC_API_SECRET = "";
+      resetConfig();
+      const openApp = createApp();
+      const created = await openApp.request("/api/session-handoffs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input()),
+      });
+      expect(created.status).toBe(201);
+      const handoff = z
+        .object({ id: z.string(), upload_url: z.string() })
+        .parse(await created.json());
+      expect((await openApp.request(`/api/session-handoffs/${handoff.id}`)).status).toBe(200);
+      expect(
+        (await upload(handoff.upload_url.replace(/token=.*/, `token=${"a".repeat(43)}`), bundle()))
+          .status,
+      ).toBe(401);
+    } finally {
+      process.env.ORC_API_SECRET = "test-secret";
+      resetConfig();
+    }
+  });
   test("should require auth for creation, inspection and preparation, and an upload token for PUT", async () => {
     expect((await app.request("/api/session-handoffs", { method: "POST" })).status).toBe(401);
     const handoff = await create();

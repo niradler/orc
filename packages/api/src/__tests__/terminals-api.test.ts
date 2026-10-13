@@ -14,7 +14,8 @@ import { loadConfig, OrcConfigSchema, resetConfig } from "@orc/core/config";
 import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { bridge_chats, gateway_sessions } from "@orc/db/schema";
-import type { createApp } from "../server.js";
+import { z } from "zod";
+import { createApp } from "../server.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
 import { TerminalManager } from "../terminals/manager.js";
 import {
@@ -130,11 +131,10 @@ afterAll(() => {
 });
 
 describe("availability", () => {
-  test("on by default, but refuses to run without an api secret", () => {
+  test("should be on by default with or without an API secret", () => {
     expect(OrcConfigSchema.parse({}).terminals.enabled).toBe(true);
     const noSecret = terminalsAvailability(OrcConfigSchema.parse({}));
-    expect(noSecret.ready).toBe(false);
-    expect(noSecret.reason).toContain("api.secret");
+    expect(noSecret).toEqual({ ready: true, reason: null });
     const ok = terminalsAvailability(OrcConfigSchema.parse({ api: { secret: "s" } }));
     expect(ok).toEqual({
       ready: true,
@@ -142,18 +142,17 @@ describe("availability", () => {
     });
   });
 
-  test("allow_without_secret opts in on loopback only", () => {
-    const optIn = { terminals: { allow_without_secret: true } };
-    expect(terminalsAvailability(OrcConfigSchema.parse(optIn))).toEqual({
-      ready: true,
-      reason: null,
-    });
-    const exposed = terminalsAvailability(
-      OrcConfigSchema.parse({ ...optIn, api: { host: "0.0.0.0" } }),
-    );
-    expect(exposed.ready).toBe(false);
-    expect(exposed.reason).toContain("loopback");
-    expect(OrcConfigSchema.parse({}).terminals.allow_without_secret).toBe(false);
+  test("should follow open mode regardless of host or the legacy opt-in flag", () => {
+    for (const host of ["127.0.0.1", "::1", "localhost", "0.0.0.0"]) {
+      for (const allow_without_secret of [true, false]) {
+        expect(
+          terminalsAvailability(
+            OrcConfigSchema.parse({ api: { host }, terminals: { allow_without_secret } }),
+            "1.4.2",
+          ),
+        ).toEqual({ ready: true, reason: null });
+      }
+    }
   });
 
   test("can be switched off", () => {
@@ -185,6 +184,29 @@ describe("availability", () => {
 });
 
 describe("POST /terminals", () => {
+  test("should launch a shell and mint its socket ticket without a bearer token in open mode", async () => {
+    try {
+      process.env.ORC_API_SECRET = "";
+      process.env.ORC_TERMINALS_ALLOW_WITHOUT_SECRET = "0";
+      resetConfig();
+      const openApp = createApp();
+      const created = await openApp.request("/api/terminals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "shell", cwd: root }),
+      });
+      expect(created.status).toBe(201);
+      const terminal = z.object({ id: z.string() }).parse(await created.json());
+      expect(
+        (await openApp.request(`/api/terminals/${terminal.id}/ticket`, { method: "POST" })).status,
+      ).toBe(200);
+      getTerminalManager().stop(terminal.id);
+    } finally {
+      process.env.ORC_API_SECRET = "test-secret";
+      delete process.env.ORC_TERMINALS_ALLOW_WITHOUT_SECRET;
+      resetConfig();
+    }
+  });
   test("protected workspaces refuse fresh, resumed and packaged agents but permit human shells", async () => {
     const fresh = await req(app, "POST", "/terminals", {
       kind: "claude",

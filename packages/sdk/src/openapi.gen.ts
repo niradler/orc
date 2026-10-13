@@ -6213,7 +6213,7 @@ export interface components {
             locked: boolean;
             supported: boolean;
             unsupported_reason: string | null;
-            /** @description api.secret is set; required before selecting an SSH execution host */
+            /** @description Whether API bearer authentication is configured */
             secret_set: boolean;
         };
         SshTest: {

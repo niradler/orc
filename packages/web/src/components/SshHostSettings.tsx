@@ -67,12 +67,6 @@ export function SshHostSettings() {
             {ssh.unsupported_reason}
           </p>
         )}
-        {!ssh.secret_set && (
-          <p data-testid="ssh-secret-missing" className="font-body text-[11px] text-tertiary">
-            Set api.secret (or ORC_API_SECRET) before selecting a host. Host agents and terminals
-            can execute arbitrary commands through orc.
-          </p>
-        )}
         <div className="space-y-2">
           <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
             Host

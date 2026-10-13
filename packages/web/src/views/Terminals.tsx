@@ -244,11 +244,7 @@ export default function Terminals() {
             {info.reason ?? "The API has not enabled terminals."}
           </p>
           <p className="font-body text-xs text-outline">
-            Terminals run processes on the selected execution host, so they need an API secret (
-            <code className="text-primary">api.secret</code> or{" "}
-            <code className="text-primary">ORC_API_SECRET</code>), or{" "}
-            <code className="text-primary">terminals.allow_without_secret: true</code> on a
-            loopback-only API. Restart the API after changing it. They can be turned off with{" "}
+            Terminals require Bun 1.4.2 or newer and can be turned off with{" "}
             <code className="text-primary">terminals.enabled: false</code>.
           </p>
         </div>
