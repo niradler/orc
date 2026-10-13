@@ -17,7 +17,12 @@ import type { AgentFields, AgentFull, AgentProfile, BrokenAgent } from "./primit
 
 import { readSkillFile, validateSkillPath } from "./skill-files.js";
 
-export type { AgentFields, AgentFull, AgentProfile, BrokenAgent } from "./primitive-types.js";
+export type {
+  AgentFields,
+  AgentFull,
+  AgentProfile,
+  BrokenAgent,
+} from "./primitive-types.js";
 
 export const AgentFieldsSchema = z
   .object({
@@ -59,7 +64,10 @@ export function parseAgent(
   if (!fields.success)
     throw new ValidationError(`Invalid agent frontmatter: ${fields.error.message}`);
   return {
-    fields: { ...fields.data, name: fields.data.name ?? basename(filename, ".agent.md") },
+    fields: {
+      ...fields.data,
+      name: fields.data.name ?? basename(filename, ".agent.md"),
+    },
     body: parsed.body,
   };
 }
@@ -122,7 +130,10 @@ export function discoverAgents(cwd = process.cwd()): {
   const projectApm = join(cwd, ".apm");
   if (!existsSync(projectApm) || !lstatSync(projectApm).isSymbolicLink())
     scan(join(projectApm, "agents"), "project");
-  return { agents: [...agents.values()].sort((a, b) => a.id.localeCompare(b.id)), broken };
+  return {
+    agents: [...agents.values()].sort((a, b) => a.id.localeCompare(b.id)),
+    broken,
+  };
 }
 
 export function readAgent(id: string, cwd = process.cwd()): AgentFull | null {

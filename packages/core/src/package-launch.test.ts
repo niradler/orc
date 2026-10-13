@@ -14,7 +14,11 @@ import { createPackage, getPackagesDir } from "./package-service.js";
 import { listSkills, reloadCache } from "./skill-service.js";
 
 const cwd = mkdtempSync(join(tmpdir(), "orc-launch-test-"));
-Bun.spawnSync(["git", "init", cwd], { stdout: "ignore", stderr: "ignore", timeout: 10000 });
+Bun.spawnSync(["git", "init", cwd], {
+  stdout: "ignore",
+  stderr: "ignore",
+  timeout: 10000,
+});
 const name = `portable-test-${process.pid}`;
 const profileName = `portable-profile-${process.pid}`;
 const input = {

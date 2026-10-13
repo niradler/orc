@@ -254,7 +254,10 @@ describe("TerminalManager", () => {
 
   test("finds a running terminal by live session only", async () => {
     const { manager, ptys } = setup();
-    const { id } = manager.create({ launch: launch(), liveSessionId: "live-1" });
+    const { id } = manager.create({
+      launch: launch(),
+      liveSessionId: "live-1",
+    });
     expect(manager.findByLiveSession("live-1")?.id).toBe(id);
     expect(manager.findByLiveSession("live-2")).toBeNull();
     ptys[0]?.exit(0);
@@ -278,6 +281,7 @@ describe("TerminalManager", () => {
       pid: terminal.pid,
       backend: "claude",
       createdAt: new Date(1001),
+      host: null,
     };
     expect(manager.linkLiveSession({ ...input, pid: null })).toBeNull();
     expect(manager.linkLiveSession({ ...input, pid: 99 })).toBeNull();

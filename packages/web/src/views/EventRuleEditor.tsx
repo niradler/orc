@@ -119,7 +119,10 @@ export function EventRuleEditor({
         reason,
         kind: "event",
         enabled,
-        scope: { agents: agents === "all" ? "all" : agents.split(","), events: eventNames },
+        scope: {
+          agents: agents === "all" ? "all" : agents.split(","),
+          events: eventNames,
+        },
         filter: {
           match,
           conditions: conditions.map((condition) => ({
@@ -358,7 +361,9 @@ export function EventRuleEditor({
                     type="checkbox"
                     checked={condition.ignoreCase}
                     onChange={(event) =>
-                      updateCondition(index, { ignoreCase: event.target.checked })
+                      updateCondition(index, {
+                        ignoreCase: event.target.checked,
+                      })
                     }
                   />{" "}
                   Ignore case
@@ -413,7 +418,8 @@ export function EventRuleEditor({
             Block{!supports("block") ? " (unavailable for this scope)" : ""}
           </option>
           <option value="inject_context" disabled={!supports("context")}>
-            Inject context{!supports("context") ? " (unavailable for this scope)" : ""}
+            Inject context
+            {!supports("context") ? " (unavailable for this scope)" : ""}
           </option>
           <option value="job">Run ORC job</option>
           <option value="script">Run custom script</option>

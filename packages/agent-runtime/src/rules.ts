@@ -2,7 +2,10 @@ import { loadConfig } from "@orc/core/config";
 import type { RuleDecision, RuleEvent } from "@orc/core/rules";
 import type { SessionOpts } from "./types.js";
 
-export type SessionRuleGuard = { evaluate: (event: RuleEvent) => RuleDecision; context: string };
+export type SessionRuleGuard = {
+  evaluate: (event: RuleEvent) => RuleDecision;
+  context: string;
+};
 
 export async function sessionRules(backend: string, opts: SessionOpts): Promise<SessionOpts> {
   if (!loadConfig().rules.enabled) return opts;

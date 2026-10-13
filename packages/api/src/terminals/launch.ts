@@ -29,7 +29,7 @@ export interface LaunchDeps {
   platform: NodeJS.Platform;
   env: Record<string, string | undefined>;
   which: (command: string) => string | null;
-  isDirectory: (path: string) => boolean;
+  isDirectory: (path: string) => boolean | Promise<boolean>;
   home: string;
   shell?: string | undefined;
 }
@@ -51,6 +51,8 @@ export interface Launch {
   argv: string[];
   cwd: string | undefined;
   resume: boolean;
+  host?: string | null | undefined;
+  spawnArgv?: string[] | undefined;
 }
 
 export function isValidSessionId(id: string): boolean {
@@ -87,13 +89,16 @@ function resolveBinary(kind: Exclude<LaunchKind, "shell">, deps: LaunchDeps): st
   return resolved;
 }
 
-function checkedCwd(cwd: string | null | undefined, deps: LaunchDeps): string | undefined {
+async function checkedCwd(
+  cwd: string | null | undefined,
+  deps: LaunchDeps,
+): Promise<string | undefined> {
   if (!cwd) return undefined;
-  if (!deps.isDirectory(cwd)) throw new ValidationError(`cwd is not a directory: ${cwd}`);
+  if (!(await deps.isDirectory(cwd))) throw new ValidationError(`cwd is not a directory: ${cwd}`);
   return cwd;
 }
 
-export function resumeLaunch(live: LiveSessionRef, deps: LaunchDeps): Launch {
+export async function resumeLaunch(live: LiveSessionRef, deps: LaunchDeps): Promise<Launch> {
   if (!["claude", "codex", "cursor-agent", "gemini"].includes(live.agent)) {
     throw new ValidationError(`Resume is not supported for ${live.agent} sessions`);
   }
@@ -104,14 +109,14 @@ export function resumeLaunch(live: LiveSessionRef, deps: LaunchDeps): Launch {
   const binary = resolveBinary(kind, deps);
   const argv =
     kind === "codex" ? [binary, "resume", live.session_id] : [binary, "--resume", live.session_id];
-  return { kind, argv, cwd: checkedCwd(live.cwd, deps), resume: true };
+  return { kind, argv, cwd: await checkedCwd(live.cwd, deps), resume: true };
 }
 
-export function buildLaunch(req: LaunchRequest, deps: LaunchDeps): Launch {
+export async function buildLaunch(req: LaunchRequest, deps: LaunchDeps): Promise<Launch> {
   if (req.live) return resumeLaunch(req.live, deps);
   const kind = req.kind ?? "shell";
   if (!LAUNCH_KINDS.includes(kind)) throw new ValidationError(`Unknown terminal kind: ${kind}`);
-  const cwd = checkedCwd(req.cwd, deps) ?? deps.home;
+  const cwd = (await checkedCwd(req.cwd, deps)) ?? deps.home;
   if (kind === "shell") {
     const shell = defaultShell(deps);
     if (!shell) throw new ValidationError("No shell found on this machine");

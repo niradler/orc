@@ -20,7 +20,11 @@ import {
 import { parseFrontmatter, reloadCache } from "./skill-service.js";
 
 export { getPackagesDir } from "./package-paths.js";
-export type { ApmManifest, PackageFull, PackageMeta } from "./primitive-types.js";
+export type {
+  ApmManifest,
+  PackageFull,
+  PackageMeta,
+} from "./primitive-types.js";
 
 const validator = new Ajv({ allErrors: true, strict: false });
 const manifestValidators = new Map([
@@ -132,7 +136,10 @@ export function listPackages(): {
       broken.push({ path, error: (error as Error).message });
     }
   }
-  return { packages: packages.sort((a, b) => a.name.localeCompare(b.name)), broken };
+  return {
+    packages: packages.sort((a, b) => a.name.localeCompare(b.name)),
+    broken,
+  };
 }
 
 export function readPackage(name: string): PackageFull | null {
@@ -179,7 +186,10 @@ export function createPackage(
   if (existsSync(path)) throw new ConflictError(`Package already exists: ${name}`);
   mkdirSync(root, { recursive: true });
   mkdirSync(path);
-  writeFileSync(join(path, manifestFile), content, { encoding: "utf8", flag: "wx" });
+  writeFileSync(join(path, manifestFile), content, {
+    encoding: "utf8",
+    flag: "wx",
+  });
   for (const file of prepared) {
     const destination = join(path, file.path);
     mkdirSync(dirname(destination), { recursive: true });

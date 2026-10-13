@@ -86,6 +86,7 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
       "task_create",
       "task_update",
       "skill_create",
+      "skill_update",
       "agent_create",
       "agent_package_import",
     ]) {
@@ -130,7 +131,9 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
       expect(allowed).not.toContain("mcp__orc__job_run");
       expect(allowed).not.toContain("Read");
       expect(cmd.join(" ")).not.toContain("s3cret");
-      const parsed = JSON.parse(configJson) as { mcpServers: Record<string, unknown> };
+      const parsed = JSON.parse(configJson) as {
+        mcpServers: Record<string, unknown>;
+      };
       expect(Object.keys(parsed.mcpServers)).toEqual(["orc"]);
       expect(parsed.mcpServers.orc).toEqual({
         type: "http",
@@ -149,10 +152,13 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
       cwd: process.cwd(),
       autoApprove: true,
       toolAllowlist: ["Read", "mcp__orc__task_update"],
+      mcpAlwaysLoad: true,
     });
     await session.send("go");
     await Bun.sleep(20);
     const { options } = queries[0] as QueryArgs;
+    expect(options.tools).toEqual(["Read"]);
+    expect(options.mcpServers?.orc).toHaveProperty("alwaysLoad", true);
     expect((await options.canUseTool("mcp__orc__task_update", {})).behavior).toBe("allow");
     expect((await options.canUseTool("mcp__orc__job_run", {})).behavior).toBe("deny");
     await session.close();

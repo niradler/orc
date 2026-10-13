@@ -44,3 +44,6 @@ packages/cli/README.md
 
 # Local browser validation artifacts
 output/playwright/
+
+# SDK public types depend on this generated API contract.
+!packages/sdk/src/openapi.gen.ts

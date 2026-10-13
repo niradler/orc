@@ -39,7 +39,9 @@ test.describe("Tasks CRUD", () => {
       priority: "normal",
     });
     try {
-      await apiPatch<Task>(request, `/tasks/${created.id}`, { status: "doing" });
+      await apiPatch<Task>(request, `/tasks/${created.id}`, {
+        status: "doing",
+      });
       await gotoView(page, "tasks");
       const tableBtn = page.getByTitle("Table view");
       if (await tableBtn.isVisible().catch(() => false)) await tableBtn.click();

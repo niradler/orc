@@ -225,6 +225,35 @@ describe("MemoryStore", () => {
     expect(() => store.remove(id)).toThrow("memory.deleted");
   });
 
+  test("should roll back an update and its audit when supersession validation fails", () => {
+    const id = addedId(store.store({ content, project_id: "p1" }));
+    const other = addedId(store.store({ content: "Another project note", project_id: "p2" }));
+    const before = audit.list();
+    for (const target of ["missing", id, other]) {
+      expect(() => store.update(id, { content: "Changed" }, {}, [target])).toThrow();
+      expect(sqlite.query("SELECT content FROM memories WHERE id = ?").get(id)).toEqual({
+        content,
+      });
+      expect(audit.list()).toEqual(before);
+      expect(exists(other)).toBe(true);
+    }
+  });
+
+  test("should update and supersede together with both audit entries", () => {
+    const id = addedId(store.store({ content, project_id: "p1" }));
+    const old = addedId(store.store({ content: "Old procedure", project_id: "p1" }));
+    expect(store.update(id, { content: "Verified procedure" }, { actor: "review" }, [old])).toEqual(
+      [old],
+    );
+    expect(exists(old)).toBe(false);
+    expect(
+      audit
+        .list()
+        .slice(0, 2)
+        .map((entry) => entry.action),
+    ).toEqual(["memory.superseded", "memory.updated"]);
+  });
+
   test("should throw not found for an unknown id", () => {
     expect(() => store.store({ content, merge_into: ["missing"] })).toThrow("not found");
   });

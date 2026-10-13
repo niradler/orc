@@ -1,10 +1,10 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
+import { hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
 import { knownWorktrees, worktreeDeps } from "../git/registry.js";
-import { isInside, listWorktrees, removeWorktree } from "../git/worktrees.js";
-import { getTerminalManager, launchDeps, requireTerminals } from "../terminals/service.js";
-import { runGit } from "../terminals/session-dir.js";
+import { listWorktrees, removeWorktree, samePath, trackedWorktrees } from "../git/worktrees.js";
+import { requireTerminals } from "../terminals/service.js";
 
 const app = new OpenAPIHono();
 
@@ -36,7 +36,10 @@ const listRoute = createRoute({
       description: "Worktrees; root is null when the folder is not in a git repo",
       content: {
         "application/json": {
-          schema: z.object({ root: z.string().nullable(), worktrees: z.array(WorktreeSchema) }),
+          schema: z.object({
+            root: z.string().nullable(),
+            worktrees: z.array(WorktreeSchema),
+          }),
         },
       },
     },
@@ -68,16 +71,16 @@ const removeRoute = createRoute({
 });
 
 // These run git in folders on the API machine, so they sit behind the same gate as terminals.
-function checkedFolder(cwd: string): string {
-  const deps = launchDeps(loadConfig());
-  if (!deps.isDirectory(cwd)) throw new ValidationError(`Not a directory: ${cwd}`);
+async function checkedFolder(cwd: string): Promise<string> {
+  if (!(await hostIsDirectory(resolveExecHost(), cwd)))
+    throw new ValidationError(`Not a directory: ${cwd}`);
   return cwd;
 }
 
 app.openapi(listRoute, async (c) => {
   requireTerminals(loadConfig());
-  const cwd = checkedFolder(c.req.valid("query").cwd);
-  return c.json(await listWorktrees(cwd, { runGit, platform: process.platform }), 200);
+  const cwd = await checkedFolder(c.req.valid("query").cwd);
+  return c.json(await listWorktrees(cwd, worktreeDeps()), 200);
 });
 
 app.openapi(removeRoute, async (c) => {
@@ -85,25 +88,20 @@ app.openapi(removeRoute, async (c) => {
   const body = c.req.valid("json");
   await removeWorktree(
     {
-      cwd: checkedFolder(body.cwd),
+      cwd: await checkedFolder(body.cwd),
       path: body.path,
       force: body.force,
       delete_branch: body.delete_branch,
     },
-    {
-      runGit,
-      platform: process.platform,
-      terminalUsing: (path) =>
-        getTerminalManager()
-          .list()
-          .find((t) => t.status === "running" && t.cwd && isInside(t.cwd, path, process.platform))
-          ?.name ?? null,
-    },
+    worktreeDeps(),
   );
   return c.body(null, 204);
 });
 
-const ListingSchema = z.object({ root: z.string().nullable(), worktrees: z.array(WorktreeSchema) });
+const ListingSchema = z.object({
+  root: z.string().nullable(),
+  worktrees: z.array(WorktreeSchema),
+});
 app.openapi(
   createRoute({
     method: "get",
@@ -164,7 +162,11 @@ app.openapi(
           "application/json": {
             schema: z.object({
               results: z.array(
-                z.object({ path: z.string(), removed: z.boolean(), error: z.string().nullable() }),
+                z.object({
+                  path: z.string(),
+                  removed: z.boolean(),
+                  error: z.string().nullable(),
+                }),
               ),
             }),
           },
@@ -178,10 +180,9 @@ app.openapi(
     const results: { path: string; removed: boolean; error: string | null }[] = [];
     for (const item of c.req.valid("json").items) {
       try {
-        const { trackedWorktrees, samePath } = await import("../git/worktrees.js");
-        const listing = await trackedWorktrees(checkedFolder(item.cwd), deps);
+        const listing = await trackedWorktrees(await checkedFolder(item.cwd), deps);
         const tree = listing.worktrees.find((tree) =>
-          samePath(tree.path, item.path, process.platform),
+          samePath(tree.path, item.path, deps.platform),
         );
         if (
           !tree ||

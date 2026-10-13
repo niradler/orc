@@ -90,7 +90,11 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
   const handleAddComment = () => {
     if (!taskId || !commentText.trim()) return;
     addComment.mutate(
-      { id: taskId, content: commentText.trim(), author: commentAuthor || "human" },
+      {
+        id: taskId,
+        content: commentText.trim(),
+        author: commentAuthor || "human",
+      },
       {
         onSuccess: () => {
           setCommentText("");

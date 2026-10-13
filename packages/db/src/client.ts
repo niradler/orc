@@ -4,8 +4,10 @@ import { dirname } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { installAudit } from "./audit.js";
+import { installDigest } from "./digest.js";
 import { installRules } from "./rules.js";
 import * as schema from "./schema.js";
+import { installSkillHistory } from "./skill-history.js";
 import { installWiki } from "./wiki.js";
 
 export type OrcDb = ReturnType<typeof createDb>;
@@ -171,6 +173,7 @@ function setupDb(sqlite: Database): void {
       backend TEXT NOT NULL,
       mode TEXT NOT NULL,
       runtime_session_id TEXT,
+      execution_host TEXT,
       cwd TEXT,
       title TEXT,
       model TEXT,
@@ -419,6 +422,7 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE gateway_sessions ADD COLUMN summary TEXT",
     "ALTER TABLE gateway_sessions ADD COLUMN transcript_path TEXT",
     "ALTER TABLE gateway_sessions ADD COLUMN tokens_used INTEGER",
+    "ALTER TABLE gateway_sessions ADD COLUMN execution_host TEXT",
     // Drift fix: schema.ts has declared bridge_chats.project_id for a while, but
     // it was only ever added to existing DBs out-of-band — fresh installs never
     // got it, so any drizzle insert into bridge_chats failed. Skipped as a
@@ -509,9 +513,27 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   sqlite.exec("PRAGMA wal_autocheckpoint=1000;");
 
   setupDb(sqlite);
+  sqlite.exec(`CREATE TABLE IF NOT EXISTS session_handoffs (
+    id TEXT PRIMARY KEY,
+    project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+    request TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    execution_host TEXT,
+    repo_root TEXT NOT NULL,
+    token_hash TEXT,
+    expires_at INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    cwd TEXT,
+    live_session_id TEXT REFERENCES gateway_sessions(id) ON DELETE CASCADE,
+    error TEXT,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+  )`);
   dropLegacyWiki(sqlite);
   installAudit(sqlite);
   installWiki(sqlite);
+  installSkillHistory(sqlite);
+  installDigest(sqlite);
   installRules(sqlite);
 
   return drizzle(sqlite, { schema });

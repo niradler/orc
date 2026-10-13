@@ -21,7 +21,10 @@ export function KanbanColumn({
   onCardClick,
   isValidDrop,
 }: KanbanColumnProps) {
-  const { setNodeRef, isOver } = useDroppable({ id: status, data: { type: "column", status } });
+  const { setNodeRef, isOver } = useDroppable({
+    id: status,
+    data: { type: "column", status },
+  });
 
   let borderClass = "border-surface-highest";
   if (isValidDrop === true && isOver) {

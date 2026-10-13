@@ -1,10 +1,11 @@
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { loadConfig } from "@orc/core/config";
+import { configuredApiSecret, loadConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
 import { ORC_VERSION } from "@orc/core/version";
 import { bearerAuth } from "./middleware/auth.js";
+import { auditRouter } from "./routes/audit.js";
 import { backendsRouter } from "./routes/backends.js";
 import { chatRouter } from "./routes/chat.js";
 import { flowsRouter } from "./routes/flows.js";
@@ -20,13 +21,16 @@ import { memoriesRouter } from "./routes/memories.js";
 import { primitivesRouter } from "./routes/primitives.js";
 import { projectsRouter } from "./routes/projects.js";
 import { rulesRouter } from "./routes/rules.js";
+import { sessionHandoffsRouter } from "./routes/session-handoffs.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import { skillsRouter } from "./routes/skills.js";
+import { sshRouter } from "./routes/ssh.js";
 import { tagsRouter } from "./routes/tags.js";
 import { taskLinksRouter } from "./routes/task-links.js";
 import { tasksRouter } from "./routes/tasks.js";
 import { terminalGitRouter } from "./routes/terminal-git.js";
 import { terminalsRouter } from "./routes/terminals.js";
+import { wikiRouter } from "./routes/wiki.js";
 import { createWebStatic } from "./static.js";
 
 const logger = createLogger("api");
@@ -37,7 +41,7 @@ export function createApp() {
   const config = loadConfig();
   const app = new OpenAPIHono();
 
-  if (!config.api.secret && !LOOPBACK_HOSTS.has(config.api.host)) {
+  if (!configuredApiSecret(config.api.secret) && !LOOPBACK_HOSTS.has(config.api.host)) {
     logger.warn(
       `SECURITY: API is bound to ${config.api.host} with NO authentication. ` +
         "Every endpoint — including job execution (arbitrary shell commands) and MCP tools — is open to the network. " +
@@ -45,7 +49,7 @@ export function createApp() {
     );
   }
 
-  const auth = bearerAuth(config.api.secret);
+  const auth = bearerAuth(configuredApiSecret(config.api.secret));
   for (const path of ["/api/*", "/openapi.json", "/docs"]) app.use(path, auth);
 
   app.onError((err, c) => {
@@ -61,6 +65,7 @@ export function createApp() {
   });
 
   app.route("/api", backendsRouter);
+  app.route("/api", sshRouter);
   app.route("/api", chatRouter);
   app.route("/api", healthRouter);
   app.route("/api", mcpToolRouter);
@@ -73,8 +78,11 @@ export function createApp() {
   app.route("/api", tasksRouter);
   app.route("/api", taskLinksRouter);
   app.route("/api", memoriesRouter);
+  app.route("/api", wikiRouter);
+  app.route("/api", auditRouter);
   app.route("/api", knowledgeRouter);
   app.route("/api", sessionsRouter);
+  app.route("/api", sessionHandoffsRouter);
   app.route("/api", jobsRouter);
   app.route("/api", gatewayRouter);
   app.route("/api", tagsRouter);
@@ -90,7 +98,12 @@ export function createApp() {
       version: ORC_VERSION,
       description: "AI Orchestration Hub API",
     },
-    servers: [{ url: `http://${config.api.host}:${config.api.port}`, description: "Local" }],
+    servers: [
+      {
+        url: `http://${config.api.host}:${config.api.port}`,
+        description: "Local",
+      },
+    ],
   });
 
   app.get("/docs", swaggerUI({ url: "/openapi.json" }));

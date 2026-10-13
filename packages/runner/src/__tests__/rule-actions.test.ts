@@ -90,13 +90,18 @@ test("mutated job ownership and disabled jobs are rejected at dispatch; recursiv
     tool: "Write",
     input: {},
   };
+  const previousActionIds = new Set(store.actions().map((action) => action.id));
   store.evaluate(event);
+  const ownershipAction = store.actions().find((action) => !previousActionIds.has(action.id));
+  expect(ownershipAction).toBeDefined();
   db.query(
     "INSERT INTO projects(id,name,created_at,updated_at) VALUES('other','other',unixepoch(),unixepoch())",
   ).run();
   db.query("UPDATE jobs SET project_id='other' WHERE id='job'").run();
   await drainRuleActions();
-  expect(store.actions()[0]?.status).toBe("cancelled");
+  expect(store.actions().find((action) => action.id === ownershipAction?.id)?.status).toBe(
+    "cancelled",
+  );
   db.query("UPDATE jobs SET project_id=NULL WHERE id='job'").run();
   store.evaluate({ ...event, id: "disabled" });
   db.query("UPDATE jobs SET enabled=0 WHERE id='job'").run();
@@ -138,7 +143,13 @@ test("should dispatch background scripts once through the runner using event cwd
         filter: {
           match: "all",
           conditions: [
-            { predicate: { field: "input.command", operator: "contains", value: "allowed" } },
+            {
+              predicate: {
+                field: "input.command",
+                operator: "contains",
+                value: "allowed",
+              },
+            },
           ],
         },
         target: {

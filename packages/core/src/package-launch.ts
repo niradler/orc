@@ -41,7 +41,11 @@ export type PackageStep = {
   apmDependencies?: string[];
   expectedPlugins?: string[];
 };
-export type PackagePlan = { setup: AgentSetup; steps: PackageStep[]; notice: string };
+export type PackagePlan = {
+  setup: AgentSetup;
+  steps: PackageStep[];
+  notice: string;
+};
 
 export function resolvePackageAgentBinary(name: string): string | null {
   if (name === "copilot" && process.env.ORC_COPILOT_PATH) {
@@ -109,7 +113,10 @@ export function saveAgentSetup(input: AgentSetup, root = setupRoot()): AgentSetu
   mkdirSync(root, { recursive: true });
   const path = join(root, `${setup.name}.json`);
   if (existsSync(path)) throw new ConflictError(`Agent setup already exists: ${setup.name}`);
-  writeFileSync(path, JSON.stringify(setup, null, 2), { mode: 0o600, flag: "wx" });
+  writeFileSync(path, JSON.stringify(setup, null, 2), {
+    mode: 0o600,
+    flag: "wx",
+  });
   return setup;
 }
 

@@ -86,7 +86,10 @@ export function WorktreeRegistry() {
                       setSelected((old) => {
                         const next = { ...old };
                         if (event.target.checked)
-                          next[tree.path] = { cwd: repo.root ?? "", path: tree.path };
+                          next[tree.path] = {
+                            cwd: repo.root ?? "",
+                            path: tree.path,
+                          };
                         else delete next[tree.path];
                         return next;
                       })

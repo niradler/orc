@@ -1,3 +1,4 @@
+import { hostAlias, resolveExecHost } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import type { GatewayMode, GatewayPlatform } from "@orc/core/types";
 import { getDb } from "@orc/db/client";
@@ -21,7 +22,9 @@ export async function getOrCreateChat(input: {
 }): Promise<typeof bridge_chats.$inferSelect> {
   const db = getDb();
   const id = `${input.platform}:${input.chatId}`;
-  const existing = await db.query.bridge_chats.findFirst({ where: eq(bridge_chats.id, id) });
+  const existing = await db.query.bridge_chats.findFirst({
+    where: eq(bridge_chats.id, id),
+  });
   if (existing) {
     await db
       .update(bridge_chats)
@@ -33,7 +36,11 @@ export async function getOrCreateChat(input: {
         updated_at: new Date(),
       })
       .where(eq(bridge_chats.id, id));
-    return (await db.query.bridge_chats.findFirst({ where: eq(bridge_chats.id, id) })) ?? existing;
+    return (
+      (await db.query.bridge_chats.findFirst({
+        where: eq(bridge_chats.id, id),
+      })) ?? existing
+    );
   }
 
   await db.insert(bridge_chats).values({
@@ -123,6 +130,7 @@ export async function createGatewaySession(input: {
     id,
     chat_id: input.chatKey,
     backend: input.backend,
+    execution_host: hostAlias(resolveExecHost()),
     cwd: input.cwd,
     mode: input.mode,
     title: input.title,
@@ -143,7 +151,9 @@ export async function createGatewaySession(input: {
 
 export async function getActiveGatewaySession(chatKey: string) {
   const db = getDb();
-  const chat = await db.query.bridge_chats.findFirst({ where: eq(bridge_chats.id, chatKey) });
+  const chat = await db.query.bridge_chats.findFirst({
+    where: eq(bridge_chats.id, chatKey),
+  });
   if (chat?.session_id) {
     const current = await db.query.gateway_sessions.findFirst({
       where: eq(gateway_sessions.id, chat.session_id),
@@ -230,7 +240,9 @@ export async function resolvePermission(permissionId: string, approved: boolean)
 export async function findPermission(input: string) {
   const db = getDb();
   if (input.length === 26) {
-    return db.query.bridge_permissions.findFirst({ where: eq(bridge_permissions.id, input) });
+    return db.query.bridge_permissions.findFirst({
+      where: eq(bridge_permissions.id, input),
+    });
   }
   const rows = await db.query.bridge_permissions.findMany({
     limit: 20,
@@ -252,12 +264,17 @@ export async function listReviewTargets() {
 
 export async function listGatewayChats() {
   const db = getDb();
-  return db.query.bridge_chats.findMany({ orderBy: [desc(bridge_chats.updated_at)] });
+  return db.query.bridge_chats.findMany({
+    orderBy: [desc(bridge_chats.updated_at)],
+  });
 }
 
 export async function listGatewayRunLinks(jobRunId: string) {
   const db = getDb();
-  return db.query.job_runs.findMany({ where: eq(job_runs.id, jobRunId), limit: 1 });
+  return db.query.job_runs.findMany({
+    where: eq(job_runs.id, jobRunId),
+    limit: 1,
+  });
 }
 
 export async function assignTaskToSession(sessionId: string, taskId: string): Promise<void> {

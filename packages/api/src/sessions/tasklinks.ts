@@ -16,7 +16,9 @@ export function sessionIdsIn(body: string | null): string[] {
 }
 
 async function tasksWithSessionLines(): Promise<TaskRow[]> {
-  return getDb().query.tasks.findMany({ where: like(tasks.body, "%session:%") });
+  return getDb().query.tasks.findMany({
+    where: like(tasks.body, "%session:%"),
+  });
 }
 
 export async function bodyLinkIndex(): Promise<Map<string, TaskRow>> {

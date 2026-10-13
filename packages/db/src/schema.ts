@@ -1,3 +1,4 @@
+import type { SessionHandoffRequest } from "@orc/core/session-handoff";
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
@@ -74,7 +75,9 @@ export const comments = sqliteTable(
   "comments",
   {
     id: text("id").primaryKey(),
-    resource_type: text("resource_type", { enum: ["task", "project", "job", "memory"] }).notNull(),
+    resource_type: text("resource_type", {
+      enum: ["task", "project", "job", "memory"],
+    }).notNull(),
     resource_id: text("resource_id").notNull(),
     content: text("content").notNull(),
     author: text("author").default("human").notNull(),
@@ -116,14 +119,18 @@ export const memories = sqliteTable("memories", {
   id: text("id").primaryKey(),
   project_id: text("project_id").references(() => projects.id),
   title: text("title"),
-  type: text("type", { enum: ["fact", "decision", "event", "rule", "discovery"] })
+  type: text("type", {
+    enum: ["fact", "decision", "event", "rule", "discovery"],
+  })
     .default("fact")
     .notNull(),
   content: text("content").notNull(),
   source: text("source"),
   scope: text("scope"),
   tags: text("tags", { mode: "json" }).$type<string[]>(),
-  importance: text("importance", { enum: ["low", "normal", "high", "critical"] })
+  importance: text("importance", {
+    enum: ["low", "normal", "high", "critical"],
+  })
     .default("normal")
     .notNull(),
   expires_at: integer("expires_at", { mode: "timestamp" }),
@@ -212,7 +219,9 @@ export const sessions = sqliteTable("sessions", {
   agent: text("agent").notNull(),
   agent_version: text("agent_version"),
   project_id: text("project_id").references(() => projects.id),
-  job_run_id: text("job_run_id").references(() => job_runs.id, { onDelete: "set null" }),
+  job_run_id: text("job_run_id").references(() => job_runs.id, {
+    onDelete: "set null",
+  }),
   summary: text("summary"),
   events: text("events", { mode: "json" }).$type<unknown[]>(),
   snapshot: text("snapshot"),
@@ -224,7 +233,9 @@ export const bridge_chats = sqliteTable(
   "bridge_chats",
   {
     id: text("id").primaryKey(),
-    platform: text("platform", { enum: ["telegram", "slack", "discord", "feishu"] }).notNull(),
+    platform: text("platform", {
+      enum: ["telegram", "slack", "discord", "feishu"],
+    }).notNull(),
     chat_id: text("chat_id").notNull(),
     username: text("username"),
     display_name: text("display_name"),
@@ -233,7 +244,9 @@ export const bridge_chats = sqliteTable(
     session_id: text("session_id"),
     thread_id: text("thread_id"),
     working_dir: text("working_dir"),
-    project_id: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    project_id: text("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
     updated_at: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
     created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
   },
@@ -248,7 +261,9 @@ export const bridge_messages = sqliteTable("bridge_messages", {
     .default("user")
     .notNull(),
   text: text("text"),
-  job_run_id: text("job_run_id").references(() => job_runs.id, { onDelete: "set null" }),
+  job_run_id: text("job_run_id").references(() => job_runs.id, {
+    onDelete: "set null",
+  }),
   gateway_session_id: text("gateway_session_id").references(() => gateway_sessions.id),
   platform_msg_id: text("platform_msg_id"),
   thread_id: text("thread_id"),
@@ -260,7 +275,9 @@ export const bridge_permissions = sqliteTable("bridge_permissions", {
   id: text("id").primaryKey(),
   chat_id: text("chat_id"),
   gateway_session_id: text("gateway_session_id").references(() => gateway_sessions.id),
-  job_run_id: text("job_run_id").references(() => job_runs.id, { onDelete: "set null" }),
+  job_run_id: text("job_run_id").references(() => job_runs.id, {
+    onDelete: "set null",
+  }),
   tool: text("tool").notNull(),
   command: text("command"),
   scope: text("scope", { enum: ["once", "session"] })
@@ -279,10 +296,13 @@ export const gateway_sessions = sqliteTable(
   "gateway_sessions",
   {
     id: text("id").primaryKey(),
-    chat_id: text("chat_id").references(() => bridge_chats.id, { onDelete: "cascade" }),
+    chat_id: text("chat_id").references(() => bridge_chats.id, {
+      onDelete: "cascade",
+    }),
     backend: text("backend").notNull(),
     mode: text("mode").notNull(),
     runtime_session_id: text("runtime_session_id"),
+    execution_host: text("execution_host"),
     cwd: text("cwd"),
     acpx_agent: text("acpx_agent"),
     a2a_url: text("a2a_url"),
@@ -296,11 +316,15 @@ export const gateway_sessions = sqliteTable(
     summary: text("summary"),
     transcript_path: text("transcript_path"),
     tokens_used: integer("tokens_used"),
-    task_id: text("task_id").references(() => tasks.id, { onDelete: "set null" }),
+    task_id: text("task_id").references(() => tasks.id, {
+      onDelete: "set null",
+    }),
     last_error: text("last_error"),
     role: text("role", { enum: ["main", "worker", "reviewer"] }),
     pid: integer("pid"),
-    project_id: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    project_id: text("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
     review_rounds: integer("review_rounds").default(0).notNull(),
     last_activity_at: integer("last_activity_at", { mode: "timestamp" }),
     created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
@@ -308,6 +332,26 @@ export const gateway_sessions = sqliteTable(
   },
   (t) => [index("gateway_sessions_chat_idx").on(t.chat_id, t.updated_at)],
 );
+
+export const session_handoffs = sqliteTable("session_handoffs", {
+  id: text("id").primaryKey(),
+  project_id: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+  request: text("request", { mode: "json" }).notNull().$type<SessionHandoffRequest>(),
+  session_id: text("session_id").notNull(),
+  execution_host: text("execution_host"),
+  repo_root: text("repo_root").notNull(),
+  token_hash: text("token_hash"),
+  expires_at: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  status: text("status", {
+    enum: ["pending", "uploading", "uploaded", "preparing", "ready", "resumed", "error"],
+  }).notNull(),
+  cwd: text("cwd"),
+  live_session_id: text("live_session_id").references(() => gateway_sessions.id, {
+    onDelete: "cascade",
+  }),
+  error: text("error"),
+  ...timestamps,
+});
 
 /**
  * One execution of a flow graph against one task.
@@ -323,11 +367,17 @@ export const flow_runs = sqliteTable(
     task_id: text("task_id")
       .notNull()
       .references(() => tasks.id, { onDelete: "cascade" }),
-    project_id: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+    project_id: text("project_id").references(() => projects.id, {
+      onDelete: "set null",
+    }),
     flow_name: text("flow_name").notNull(),
-    flow_source: text("flow_source", { enum: ["builtin", "user", "project", "task"] }).notNull(),
+    flow_source: text("flow_source", {
+      enum: ["builtin", "user", "project", "task"],
+    }).notNull(),
     definition: text("definition", { mode: "json" }).$type<unknown>().notNull(),
-    status: text("status", { enum: ["running", "completed", "halted", "cancelled"] })
+    status: text("status", {
+      enum: ["running", "completed", "halted", "cancelled"],
+    })
       .default("running")
       .notNull(),
     // Engine state, persisted so a daemon restart resumes mid-graph.
@@ -365,7 +415,9 @@ export const flow_node_runs = sqliteTable(
       .notNull()
       .references(() => tasks.id, { onDelete: "cascade" }),
     node_id: text("node_id").notNull(),
-    node_kind: text("node_kind", { enum: ["agent", "gate", "human", "terminal"] }).notNull(),
+    node_kind: text("node_kind", {
+      enum: ["agent", "gate", "human", "terminal"],
+    }).notNull(),
     // The graph visit this row belongs to (the engine's attempt number).
     attempt: integer("attempt").default(1).notNull(),
     // Which session for that visit. An infrastructure retry re-runs the same

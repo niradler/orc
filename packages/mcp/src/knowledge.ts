@@ -76,7 +76,12 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
 
   async search(
     query: string,
-    opts?: { collection?: string; project_id?: string; limit?: number; mode?: KnowledgeSearchMode },
+    opts?: {
+      collection?: string;
+      project_id?: string;
+      limit?: number;
+      mode?: KnowledgeSearchMode;
+    },
   ): Promise<KnowledgeSearchResult[]> {
     const config = loadConfig();
     const store = await this.getStore();
@@ -119,7 +124,10 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
     const allResults: KnowledgeSearchResult[] = [];
     for (const col of collectionNames) {
       if (mode === "lexical") {
-        const results = await store.searchLex(query, { limit, collection: col });
+        const results = await store.searchLex(query, {
+          limit,
+          collection: col,
+        });
         allResults.push(...results.map((r) => this.mapSearchResult(r, query)));
       } else {
         const results = await store.search({ query, limit, collection: col });
@@ -187,7 +195,9 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
       try {
         await store.embed();
       } catch (err) {
-        logger.warn("Embedding failed after adding collection", { error: String(err) });
+        logger.warn("Embedding failed after adding collection", {
+          error: String(err),
+        });
       }
     }
 

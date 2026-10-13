@@ -1,7 +1,8 @@
+import type { WikiScope } from "@orc/sdk/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type CreateSkillInput } from "@/api/client";
 
-export function useSkills(params?: { q?: string; source?: "builtin" | "user" }) {
+export function useSkills(params?: { q?: string; source?: "builtin" | "user" } & WikiScope) {
   return useQuery({
     queryKey: ["skills", params],
     queryFn: () => api.skills.list(params),
@@ -9,10 +10,10 @@ export function useSkills(params?: { q?: string; source?: "builtin" | "user" }) 
   });
 }
 
-export function useSkill(name: string | null, ref?: string) {
+export function useSkill(name: string | null, ref?: string, scope: WikiScope = {}) {
   return useQuery({
-    queryKey: ["skill", name, ref],
-    queryFn: () => api.skills.get(name as string, ref),
+    queryKey: ["skill", name, ref, scope],
+    queryFn: () => api.skills.get(name as string, ref, scope),
     enabled: Boolean(name),
   });
 }

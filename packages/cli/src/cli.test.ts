@@ -13,7 +13,11 @@ async function cli(
   ...args: string[]
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = Bun.spawn(["bun", CLI, "--port", String(port), "--secret", SECRET, ...args], {
-    env: { ...process.env, ORC_API_PORT: String(port), ORC_API_SECRET: SECRET },
+    env: {
+      ...process.env,
+      ORC_API_PORT: String(port),
+      ORC_API_SECRET: SECRET,
+    },
     stdout: "pipe",
     stderr: "pipe",
   });

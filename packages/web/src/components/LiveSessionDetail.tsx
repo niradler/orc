@@ -89,7 +89,11 @@ function useSearchHighlight(
       clearTimeout(timer);
       timer = setTimeout(paint, 150);
     });
-    observer.observe(el, { childList: true, subtree: true, characterData: true });
+    observer.observe(el, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
     return () => {
       clearTimeout(timer);
       observer.disconnect();
@@ -359,7 +363,10 @@ export function LiveSessionDetail({
                       id={`turn-${turn.index}`}
                       data-testid="transcript-turn"
                       data-role={turn.role}
-                      style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
+                      style={{
+                        contentVisibility: "auto",
+                        containIntrinsicSize: "auto 120px",
+                      }}
                       className={`rounded-sm border px-3 py-2 space-y-2 ${ROLE_STYLE[turn.role]} ${turn.index === target ? "ring-1 ring-primary" : ""}`}
                     >
                       <div className="font-label text-[11px] uppercase tracking-widest text-outline">

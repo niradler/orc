@@ -42,7 +42,10 @@ describe("MCP memory tools", () => {
   });
 
   test("memory_search finds stored fact by keyword", async () => {
-    const result = await executeTool("memory_search", { query: "ULID primary keys", limit: 5 });
+    const result = await executeTool("memory_search", {
+      query: "ULID primary keys",
+      limit: 5,
+    });
     expect(result).toContain(shortId(memId));
   });
 
@@ -148,9 +151,21 @@ describe("Session event dedup", () => {
 
   test("duplicate events are silently dropped", async () => {
     const data = { path: "src/auth.ts", tool: "Write" };
-    const r1 = await executeTool("session_event", { type: "file", priority: 1, data });
-    const r2 = await executeTool("session_event", { type: "file", priority: 1, data });
-    const r3 = await executeTool("session_event", { type: "file", priority: 1, data });
+    const r1 = await executeTool("session_event", {
+      type: "file",
+      priority: 1,
+      data,
+    });
+    const r2 = await executeTool("session_event", {
+      type: "file",
+      priority: 1,
+      data,
+    });
+    const r3 = await executeTool("session_event", {
+      type: "file",
+      priority: 1,
+      data,
+    });
 
     expect(r1).toContain("Event recorded");
     expect(r2).toBe("Duplicate event skipped.");
@@ -198,20 +213,26 @@ describe("Session snapshot round-trip", () => {
       data: { content: "Use Bun instead of Node" },
     });
 
-    const snap = await executeTool("session_snapshot", { session_id: sessionId });
+    const snap = await executeTool("session_snapshot", {
+      session_id: sessionId,
+    });
     expect(snap).toContain("<session>");
     expect(snap).toContain("</session>");
     expect(snap).toContain("<tasks>");
   });
 
   test("session_restore returns stored snapshot", async () => {
-    const restored = await executeTool("session_restore", { session_id: sessionId });
+    const restored = await executeTool("session_restore", {
+      session_id: sessionId,
+    });
     expect(restored).toContain("Session Restored");
     expect(restored).toContain("<session>");
   });
 
   test("snapshot XML stays within 2KB", async () => {
-    const snap = await executeTool("session_snapshot", { session_id: sessionId });
+    const snap = await executeTool("session_snapshot", {
+      session_id: sessionId,
+    });
     expect(Buffer.byteLength(snap, "utf-8")).toBeLessThanOrEqual(2048);
   });
 });
@@ -243,7 +264,10 @@ describe("MCP task tools", () => {
   });
 
   test("task_update changes status", async () => {
-    const result = await executeTool("task_update", { id: taskId, status: "doing" });
+    const result = await executeTool("task_update", {
+      id: taskId,
+      status: "doing",
+    });
     expect(result).toBe(`Updated: ${taskId}`);
   });
 
@@ -292,7 +316,10 @@ describe("MCP job tools", () => {
   test("job_status returns run status", async () => {
     await Bun.sleep(400);
     const result = await executeTool("job_status", { run_id: runId });
-    const parsed = JSON.parse(result) as { status: string; exit_code: number | null };
+    const parsed = JSON.parse(result) as {
+      status: string;
+      exit_code: number | null;
+    };
     expect(["success", "running", "pending"]).toContain(parsed.status);
   });
 });
@@ -356,7 +383,9 @@ describe("MCP session_log tool", () => {
 // ── HTTP endpoint ─────────────────────────────────────────────────────────────
 
 describe("MCP /mcp/tool HTTP endpoint", () => {
-  let app: { request: (path: string, init?: RequestInit) => Response | Promise<Response> };
+  let app: {
+    request: (path: string, init?: RequestInit) => Response | Promise<Response>;
+  };
 
   beforeAll(async () => {
     const { createApp } = await import("@orc/api/server");

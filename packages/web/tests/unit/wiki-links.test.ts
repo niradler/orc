@@ -21,9 +21,17 @@ test("wiki links transform prose but preserve code and existing link labels", ()
   remarkWikiLinks()(tree);
   expect(tree.children[0]?.children).toEqual([
     { type: "text", value: "See " },
-    { type: "link", url: "#wiki-queue-order", children: [{ type: "text", value: "queue-order" }] },
+    {
+      type: "link",
+      url: "#wiki-queue-order",
+      children: [{ type: "text", value: "queue-order" }],
+    },
     { type: "text", value: " and " },
-    { type: "link", url: "#wiki-missing", children: [{ type: "text", value: "missing" }] },
+    {
+      type: "link",
+      url: "#wiki-missing",
+      children: [{ type: "text", value: "missing" }],
+    },
     { type: "text", value: "." },
   ]);
   expect(tree.children[1]?.value).toBe("[[queue-order]]");

@@ -95,7 +95,12 @@ export function useTranscript(id: string | null, q: string, live: boolean) {
 export function useTaskSessions(taskId: string | null) {
   return useQuery({
     queryKey: ["sessions", "live", "task", taskId],
-    queryFn: () => api.sessions.live({ task_id: taskId as string, active: false, limit: 100 }),
+    queryFn: () =>
+      api.sessions.live({
+        task_id: taskId as string,
+        active: false,
+        limit: 100,
+      }),
     enabled: Boolean(taskId),
     refetchInterval: 10_000,
     select: (data) => data.sessions,

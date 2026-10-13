@@ -1,7 +1,7 @@
-import { Database } from "bun:sqlite";
-import { closeSync, existsSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { oneLine, statusFromMtime } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
 
@@ -22,6 +22,15 @@ export const CURSOR_STATE_DB = cursorStateDbPath();
 
 const pathBySlug = new Map<string, string | null>();
 
+// Windows slugs lead with the drive letter ("c-Users-me-proj"); POSIX ones start at "/".
+function slugRoot(slug: string, windows: boolean): { root: string; parts: string[] } {
+  const parts = slug.split("-");
+  const drive = parts[0] ?? "";
+  if (windows && /^[A-Za-z]$/.test(drive))
+    return { root: `${drive.toUpperCase()}:\\`, parts: parts.slice(1) };
+  return { root: "/", parts };
+}
+
 export function resolveSlugPath(slug: string): string | null {
   const cached = pathBySlug.get(slug);
   if (cached !== undefined) return cached;
@@ -36,124 +45,128 @@ export function resolveSlugPath(slug: string): string | null {
     }
     return null;
   };
-  const parts = slug.split("-");
-  // Windows slugs lead with the drive letter ("c-Users-me-proj"); POSIX ones start at "/".
-  const windowsDrive = process.platform === "win32" && /^[A-Za-z]$/.test(parts[0] ?? "");
-  const resolved = windowsDrive
-    ? walk(`${(parts[0] as string).toUpperCase()}:\\`, parts.slice(1))
-    : walk("/", parts);
+  const { root, parts } = slugRoot(slug, process.platform === "win32");
+  const resolved = walk(root, parts);
   pathBySlug.set(slug, resolved);
   return resolved;
 }
 
-function firstQuery(path: string): string | null {
+function firstQueryFromText(content: string): string | null {
   try {
-    const fd = openSync(path, "r");
-    const buf = Buffer.alloc(60_000);
-    const bytes = readSync(fd, buf, 0, buf.length, 0);
-    closeSync(fd);
-    const line = buf.subarray(0, bytes).toString("utf-8").split("\n")[0] ?? "";
+    const line = content.slice(0, 60_000).split("\n")[0] ?? "";
     const text = JSON.parse(line)?.message?.content?.find(
-      (b: { type?: string }) => b.type === "text",
+      (block: { type?: string }) => block.type === "text",
     )?.text as string | undefined;
     if (!text) return null;
-    const m = text.match(/<user_query>\s*([\s\S]*?)\s*<\/user_query>/);
-    return m?.[1] ?? text;
+    const match = text.match(/<user_query>\s*([\s\S]*?)\s*<\/user_query>/);
+    return match?.[1] ?? text;
   } catch {
     return null;
   }
 }
 
-function transcriptRecords(projectsDir: string): SessionRecord[] {
-  const out: SessionRecord[] = [];
-  if (!existsSync(projectsDir)) return out;
-  for (const slug of readdirSync(projectsDir)) {
-    const root = join(projectsDir, slug, "agent-transcripts");
-    if (!existsSync(root)) continue;
-    for (const id of readdirSync(root)) {
-      const file = join(root, id, `${id}.jsonl`);
-      let st: ReturnType<typeof statSync>;
-      try {
-        st = statSync(file);
-      } catch {
-        continue;
+async function resolveSlugPathOnHost(slug: string, runtime: HostRuntime): Promise<string | null> {
+  const walk = async (current: string, parts: string[]): Promise<string | null> => {
+    if (parts.length === 0) return current;
+    for (let take = 1; take <= parts.length; take++) {
+      const next = join(current, parts.slice(0, take).join("-"));
+      if (await runtime.isDirectory(next)) {
+        const found = await walk(next, parts.slice(take));
+        if (found) return found;
       }
-      const prompt = firstQuery(file);
-      out.push({
-        backend: "cursor",
-        externalId: id,
-        title: oneLine(prompt ?? id, 120),
-        summary: prompt ? oneLine(prompt, 400) : null,
-        cwd: resolveSlugPath(slug),
-        status: statusFromMtime(st.mtimeMs),
-        createdAt: new Date(st.birthtimeMs || st.mtimeMs),
-        lastActivityAt: new Date(st.mtimeMs),
-        transcriptPath: file,
-        tokensUsed: Math.round(st.size / 4),
-      });
     }
-  }
-  return out;
-}
-
-function composerRecords(dbPath: string): SessionRecord[] {
-  if (!existsSync(dbPath)) return [];
-  const db = new Database(dbPath, { readonly: true });
-  try {
-    const rows = db
-      .query<{ id: string; f: string | null }, []>(
-        `SELECT substr(key, 14) AS id,
-                json_extract(value, '$.name', '$.createdAt', '$.lastUpdatedAt',
-                  '$.contextTokensUsed', '$.latestConversationSummary.summary.summary',
-                  '$.fullConversationHeadersOnly[0].grouping.textPreview') AS f
-         FROM cursorDiskKV WHERE key >= 'composerData:' AND key < 'composerData;'
-           AND COALESCE(json_extract(value, '$.isArchived'), 0) = 0`,
-      )
-      .all();
-    const out: SessionRecord[] = [];
-    for (const row of rows) {
-      if (!row.f) continue;
-      const [name, created, updated, tokens, summary, preview] = JSON.parse(row.f) as [
-        string | null,
-        number | null,
-        number | null,
-        number | null,
-        string | null,
-        string | null,
-      ];
-      if (!name) continue;
-      const last = updated ?? created ?? Date.now();
-      const text = summary || preview;
-      out.push({
-        backend: "cursor",
-        externalId: row.id,
-        title: oneLine(name, 120),
-        summary: text ? oneLine(text, 400) : null,
-        status: statusFromMtime(last),
-        createdAt: new Date(created ?? last),
-        lastActivityAt: new Date(last),
-        tokensUsed: tokens ?? null,
-      });
-    }
-    return out;
-  } finally {
-    db.close();
-  }
+    return null;
+  };
+  // SSH hosts are POSIX; only a local host can be Windows.
+  const { root, parts } = slugRoot(
+    slug,
+    runtime.host.kind === "local" && process.platform === "win32",
+  );
+  return walk(root, parts);
 }
 
 export function cursorAdapter(
-  opts: { projects?: string | null; stateDb?: string | null } = {},
+  opts: { projects?: string | null; stateDb?: string | null; runtime?: HostRuntime } = {},
 ): SessionAdapter {
-  const projectsDir = opts.projects === undefined ? CURSOR_PROJECTS_DIR : opts.projects;
-  const stateDb = opts.stateDb === undefined ? CURSOR_STATE_DB : opts.stateDb;
+  const runtime = opts.runtime ?? hostRuntime(LOCAL_HOST);
   return {
     backend: "cursor",
     minIntervalMs: 30_000,
     async list() {
       const byId = new Map<string, SessionRecord>();
-      if (stateDb) for (const r of composerRecords(stateDb)) byId.set(r.externalId, r);
+      const home = await runtime.home();
+      const projectsDir =
+        opts.projects === undefined ? join(home, ".cursor", "projects") : opts.projects;
+      const stateDb =
+        opts.stateDb === undefined
+          ? ((
+              await Promise.all(
+                (["linux", "darwin"] as const).map(async (platform) => {
+                  const path = cursorStateDbPath(platform, home, {});
+                  return (await runtime.isFile(path)) ? path : null;
+                }),
+              )
+            ).find((path): path is string => path !== null) ?? null)
+          : opts.stateDb;
+      if (stateDb && (await runtime.isFile(stateDb))) {
+        const rows = await runtime.sqliteQuery<{
+          id: string;
+          f: string | null;
+        }>(
+          stateDb,
+          `SELECT substr(key, 14) AS id,
+                  json_extract(value, '$.name', '$.createdAt', '$.lastUpdatedAt',
+                    '$.contextTokensUsed', '$.latestConversationSummary.summary.summary',
+                    '$.fullConversationHeadersOnly[0].grouping.textPreview') AS f
+           FROM cursorDiskKV WHERE key >= 'composerData:' AND key < 'composerData;'
+             AND COALESCE(json_extract(value, '$.isArchived'), 0) = 0`,
+        );
+        for (const row of rows) {
+          if (!row.f) continue;
+          const [name, created, updated, tokens, summary, preview] = JSON.parse(row.f) as [
+            string | null,
+            number | null,
+            number | null,
+            number | null,
+            string | null,
+            string | null,
+          ];
+          if (!name) continue;
+          const last = updated ?? created ?? Date.now();
+          const text = summary || preview;
+          byId.set(row.id, {
+            backend: "cursor",
+            externalId: row.id,
+            title: oneLine(name, 120),
+            summary: text ? oneLine(text, 400) : null,
+            status: statusFromMtime(last),
+            createdAt: new Date(created ?? last),
+            lastActivityAt: new Date(last),
+            tokensUsed: tokens ?? null,
+          });
+        }
+      }
       if (projectsDir) {
-        for (const r of transcriptRecords(projectsDir)) {
+        for (const file of await runtime.listFiles(projectsDir)) {
+          const match = /[\\/]([^\\/]+)[\\/]agent-transcripts[\\/]([^\\/]+)[\\/]\2\.jsonl$/.exec(
+            file.path,
+          );
+          if (!match?.[1] || !match[2]) continue;
+          const prompt = firstQueryFromText(
+            new TextDecoder().decode(await runtime.readFile(file.path, 150 * 1024 * 1024)),
+          );
+          const r: SessionRecord = {
+            backend: "cursor",
+            externalId: match[2],
+            title: oneLine(prompt ?? match[2], 120),
+            summary: prompt ? oneLine(prompt, 400) : null,
+            cwd: await resolveSlugPathOnHost(match[1], runtime),
+            status: statusFromMtime(file.mtimeMs),
+            createdAt: new Date(file.birthtimeMs || file.mtimeMs),
+            lastActivityAt: new Date(file.mtimeMs),
+            transcriptPath: file.path,
+            tokensUsed: Math.round(file.size / 4),
+          };
           const composer = byId.get(r.externalId);
           byId.set(r.externalId, {
             ...composer,

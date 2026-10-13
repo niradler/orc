@@ -25,7 +25,9 @@ const claudeLines = [
   {
     type: "user",
     timestamp: "2026-09-30T10:00:01Z",
-    message: { content: [{ type: "text", text: "why does the needle-abc test flake?" }] },
+    message: {
+      content: [{ type: "text", text: "why does the needle-abc test flake?" }],
+    },
   },
   {
     type: "assistant",
@@ -40,21 +42,35 @@ const claudeLines = [
     type: "assistant",
     message: {
       id: "m1",
-      content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "bun test" } }],
+      content: [
+        {
+          type: "tool_use",
+          id: "t1",
+          name: "Bash",
+          input: { command: "bun test" },
+        },
+      ],
       usage: { output_tokens: 5 },
     },
   },
   {
     type: "user",
-    message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "3 pass 1 fail" }] },
+    message: {
+      content: [{ type: "tool_result", tool_use_id: "t1", content: "3 pass 1 fail" }],
+    },
   },
   {
     type: "user",
-    message: { content: [{ type: "tool_result", tool_use_id: "ghost", content: "orphan output" }] },
+    message: {
+      content: [{ type: "tool_result", tool_use_id: "ghost", content: "orphan output" }],
+    },
   },
   {
     type: "assistant",
-    message: { id: "m2", content: [{ type: "text", text: "A race in the watcher." }] },
+    message: {
+      id: "m2",
+      content: [{ type: "text", text: "A race in the watcher." }],
+    },
   },
 ];
 
@@ -103,7 +119,12 @@ afterAll(() => {
   delete process.env.ORC_SESSION_SEARCH_ROOTS;
   teardownTestApp();
   // Windows keeps a just-closed fs.watch handle on the directory for a moment.
-  rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  rmSync(root, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 100,
+  });
 });
 
 describe("transcript readers", () => {
@@ -129,7 +150,10 @@ describe("transcript readers", () => {
       name: "Bash",
       result: "3 pass 1 fail",
     });
-    expect(page.turns[3]?.blocks[0]).toMatchObject({ type: "tool_result", text: "orphan output" });
+    expect(page.turns[3]?.blocks[0]).toMatchObject({
+      type: "tool_result",
+      text: "orphan output",
+    });
     expect(page.matches).toEqual([4]);
   });
 
@@ -167,7 +191,10 @@ describe("transcript readers", () => {
         {
           timestamp: "t3",
           type: "response_item",
-          payload: { type: "reasoning", summary: [{ text: "thinking about it" }] },
+          payload: {
+            type: "reasoning",
+            summary: [{ text: "thinking about it" }],
+          },
         },
         {
           timestamp: "t4",
@@ -182,7 +209,11 @@ describe("transcript readers", () => {
         {
           timestamp: "t5",
           type: "response_item",
-          payload: { type: "function_call_output", call_id: "c1", output: "diff --git a b" },
+          payload: {
+            type: "function_call_output",
+            call_id: "c1",
+            output: "diff --git a b",
+          },
         },
         {
           timestamp: "t6",
@@ -202,7 +233,10 @@ describe("transcript readers", () => {
       ["assistant", "tool_use"],
       ["assistant", "text"],
     ]);
-    expect(page.turns[2]?.blocks[0]).toMatchObject({ type: "tool_use", result: "diff --git a b" });
+    expect(page.turns[2]?.blocks[0]).toMatchObject({
+      type: "tool_use",
+      result: "diff --git a b",
+    });
     expect(page.matches).toEqual([3]);
   });
 
@@ -217,7 +251,10 @@ describe("transcript readers", () => {
             type: "message",
             role: "user",
             content: [
-              { type: "input_text", text: "<recommended_plugins>\nBox\n</recommended_plugins>" },
+              {
+                type: "input_text",
+                text: "<recommended_plugins>\nBox\n</recommended_plugins>",
+              },
             ],
           },
         },
@@ -251,11 +288,17 @@ describe("transcript readers", () => {
             ],
           },
         },
-        { role: "assistant", message: { content: [{ type: "text", text: "done" }] } },
+        {
+          role: "assistant",
+          message: { content: [{ type: "text", text: "done" }] },
+        },
       ]),
     );
     const page = await readTranscript(path, "cursor");
-    expect(page.turns[0]?.blocks[0]).toEqual({ type: "text", text: "build it" });
+    expect(page.turns[0]?.blocks[0]).toEqual({
+      type: "text",
+      text: "build it",
+    });
     expect(page.turns.map((t) => t.role)).toEqual(["user", "assistant"]);
   });
 });
@@ -278,7 +321,10 @@ describe("ripgrep lookup", () => {
 describe("transcript and search routes", () => {
   const rowFor = async (sessionId: string) => {
     const res = await req(app, "GET", "/sessions/live?active=false&limit=100");
-    const sessions = (await res.json()).sessions as { id: string; session_id: string }[];
+    const sessions = (await res.json()).sessions as {
+      id: string;
+      session_id: string;
+    }[];
     return sessions.find((s) => s.session_id === sessionId);
   };
 

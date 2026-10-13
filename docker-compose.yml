@@ -1,10 +1,9 @@
 services:
   orc:
     image: niradler/orc:latest
-    # Or build locally:
-    # build: .
+    build: .
     ports:
-      - "7700:7700"
+      - "127.0.0.1:7700:7700"
     environment:
       # Anthropic API key (required only for the "claude" backend; not needed for "agentapi")
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
@@ -41,12 +40,18 @@ services:
       - ORC_API_HOST=0.0.0.0
       - ORC_AGENT_LOOP_DEFAULT_BACKEND=${ORC_AGENT_LOOP_DEFAULT_BACKEND:-agentapi}
       - AGENTAPI_URL=${AGENTAPI_URL:-http://host.docker.internal:3284}
+      # Run agents, terminals and git on an SSH host from the mounted ~/.ssh/config.
+      # Passed through only when set in your shell; the reverse tunnel needs ORC_API_SECRET.
+      - ORC_SSH_HOST
+      - ORC_SSH_SOURCE=/ssh-host
 
     volumes:
       # Persistent ORC data: SQLite DB, logs, sessions
       - orc-data:/data
-      # Claude Code auth (needed only if using agentapi with claude agent on host)
-      - ${HOME}/.claude:/home/orc/.claude:ro
+      # Container-local coding-agent config/session stores when no SSH host is selected.
+      - orc-home:/home/bun
+      # Read-only source copied into /home/bun/.ssh with OpenSSH-safe ownership/modes.
+      - ${HOME}/.ssh:/ssh-host:ro
 
     restart: unless-stopped
     # Lets the container resolve host.docker.internal → the host machine
@@ -55,3 +60,4 @@ services:
 
 volumes:
   orc-data:
+  orc-home:

@@ -70,7 +70,10 @@ describe("APM authored agents and packages", () => {
   const manifest = `name: ${name}\nversion: '1.0.0'\ndescription: Shared specialists\ntargets: [claude, codex, cursor]\nx-custom: preserved\nscripts:\n  validate: bun scripts/check.ts\ndependencies:\n  apm: [example/dependency]\n`;
   afterAll(() => {
     rmSync(join(getPackagesDir(), name), { recursive: true, force: true });
-    rmSync(join(getPackagesDir(), rootSkillPackage), { recursive: true, force: true });
+    rmSync(join(getPackagesDir(), rootSkillPackage), {
+      recursive: true,
+      force: true,
+    });
     rmSync(join(getUserAgentsDir(), `${agentId}.agent.md`), { force: true });
     reloadCache();
   });
@@ -78,7 +81,12 @@ describe("APM authored agents and packages", () => {
     const parsed = parseAgent(agent, "review.agent.md");
     expect(parsed.fields.tools).toEqual({ Read: true, Bash: false });
     expect(parsed.fields.handoffs).toEqual([
-      { agent: "build", label: "Fix findings", prompt: "Apply fixes", send: false },
+      {
+        agent: "build",
+        label: "Fix findings",
+        prompt: "Apply fixes",
+        send: false,
+      },
     ]);
     expect(parsed.fields["custom-field"]).toBe("preserved");
     expect(
@@ -103,7 +111,10 @@ describe("APM authored agents and packages", () => {
         path: `.apm/skills/${skillName}/SKILL.md`,
         content: `---\nname: ${skillName}\ndescription: Shared workflow\n---\nRead references/guide.md.`,
       },
-      { path: `.apm/skills/${skillName}/references/guide.md`, content: "Shared guide" },
+      {
+        path: `.apm/skills/${skillName}/references/guide.md`,
+        content: "Shared guide",
+      },
       { path: "references/policy.md", content: "Review policy" },
       {
         path: ".apm/instructions/always.instructions.md",
@@ -114,7 +125,10 @@ describe("APM authored agents and packages", () => {
         content:
           "---\ndescription: Frontend rules\napplyTo: '**/*.{css,scss},**/*.tsx'\n---\nUse styles.",
       },
-      { path: "scripts/check.ts", content: "throw new Error('must not execute during import')" },
+      {
+        path: "scripts/check.ts",
+        content: "throw new Error('must not execute during import')",
+      },
       { path: "assets/example.bin", content: "AP8=", encoding: "base64" },
     ]);
     expect(pkg.files).toHaveLength(8);
@@ -148,7 +162,10 @@ describe("APM authored agents and packages", () => {
     const invalid = `${name}-invalid`;
     expect(() =>
       createPackage(invalid, manifest.replace(name, invalid), [
-        { path: ".apm/agents/bad.agent.md", content: "---\nname: x\n---\nBody" },
+        {
+          path: ".apm/agents/bad.agent.md",
+          content: "---\nname: x\n---\nBody",
+        },
       ]),
     ).toThrow("description");
     expect(existsSync(join(getPackagesDir(), invalid))).toBe(false);
@@ -178,7 +195,12 @@ describe("APM authored agents and packages", () => {
       name: "profile-flow",
       entry: "review",
       nodes: {
-        review: { kind: "agent", agent: `${name}/review`, backend: "codex", outcomes: ["pass"] },
+        review: {
+          kind: "agent",
+          agent: `${name}/review`,
+          backend: "codex",
+          outcomes: ["pass"],
+        },
         done: { kind: "terminal", task_status: "done" },
       },
       edges: [{ from: "review", to: "done", when: { outcome: "pass" } }],

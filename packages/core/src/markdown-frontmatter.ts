@@ -17,5 +17,8 @@ export function parseMarkdownFrontmatter(content: string): {
   if (!fields || typeof fields !== "object" || Array.isArray(fields)) {
     throw new ValidationError("YAML frontmatter must be a mapping");
   }
-  return { fields: fields as Record<string, unknown>, body: (match[2] ?? "").trim() };
+  return {
+    fields: fields as Record<string, unknown>,
+    body: (match[2] ?? "").trim(),
+  };
 }

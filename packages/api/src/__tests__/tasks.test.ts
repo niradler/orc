@@ -48,7 +48,9 @@ describe("Tasks CRUD", () => {
     });
 
     test("creates a task with a project_id", async () => {
-      const projRes = await req(app, "POST", "/projects", { name: "task-proj" });
+      const projRes = await req(app, "POST", "/projects", {
+        name: "task-proj",
+      });
       const proj = await projRes.json();
 
       const res = await req(app, "POST", "/tasks", {
@@ -123,42 +125,54 @@ describe("Tasks CRUD", () => {
 
   describe("PATCH /tasks/:id", () => {
     test("updates title", async () => {
-      const res = await req(app, "PATCH", `/tasks/${taskId}`, { title: "Updated title" });
+      const res = await req(app, "PATCH", `/tasks/${taskId}`, {
+        title: "Updated title",
+      });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.title).toBe("Updated title");
     });
 
     test("updates status", async () => {
-      const res = await req(app, "PATCH", `/tasks/${taskId}`, { status: "doing" });
+      const res = await req(app, "PATCH", `/tasks/${taskId}`, {
+        status: "doing",
+      });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.status).toBe("doing");
     });
 
     test("updates priority", async () => {
-      const res = await req(app, "PATCH", `/tasks/${taskId}`, { priority: "critical" });
+      const res = await req(app, "PATCH", `/tasks/${taskId}`, {
+        priority: "critical",
+      });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.priority).toBe("critical");
     });
 
     test("updates body", async () => {
-      const res = await req(app, "PATCH", `/tasks/${taskId}`, { body: "New body content" });
+      const res = await req(app, "PATCH", `/tasks/${taskId}`, {
+        body: "New body content",
+      });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.body).toBe("New body content");
     });
 
     test("updates tags", async () => {
-      const res = await req(app, "PATCH", `/tasks/${taskId}`, { tags: ["new-tag"] });
+      const res = await req(app, "PATCH", `/tasks/${taskId}`, {
+        tags: ["new-tag"],
+      });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.tags).toEqual(["new-tag"]);
     });
 
     test("returns 404 for non-existent task", async () => {
-      const res = await req(app, "PATCH", "/tasks/nonexistent-id", { title: "x" });
+      const res = await req(app, "PATCH", "/tasks/nonexistent-id", {
+        title: "x",
+      });
       expect(res.status).toBe(404);
     });
   });

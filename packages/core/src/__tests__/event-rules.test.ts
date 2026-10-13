@@ -13,7 +13,13 @@ const rule = {
   filter: {
     match: "all",
     conditions: [
-      { predicate: { field: "input.command", operator: "regex", value: "\\brm\\s+-rf\\b" } },
+      {
+        predicate: {
+          field: "input.command",
+          operator: "regex",
+          value: "\\brm\\s+-rf\\b",
+        },
+      },
     ],
   },
   target: { type: "block" },
@@ -41,7 +47,10 @@ test("should apply the same regex to every native agent before execution while a
     const denied = evaluateRules(policy, event);
     expect(denied.decision).toBe("deny");
     expect(JSON.stringify(ruleHookOutput(backend, event, denied))).toContain("deny");
-    const allowed = evaluateRules(policy, { ...event, input: { command: "bun test" } });
+    const allowed = evaluateRules(policy, {
+      ...event,
+      input: { command: "bun test" },
+    });
     expect(allowed.decision).toBe("abstain");
     expect(ruleHookOutput(backend, event, allowed)).toEqual({});
   }
@@ -60,7 +69,13 @@ test("should share filters across targets, honor disabled/specific scopes, and p
     filter: {
       match: "all",
       conditions: [
-        { predicate: { field: "payload.prompt", operator: "contains", value: "Inspect" } },
+        {
+          predicate: {
+            field: "payload.prompt",
+            operator: "contains",
+            value: "Inspect",
+          },
+        },
       ],
     },
   };
@@ -80,8 +95,12 @@ test("should share filters across targets, honor disabled/specific scopes, and p
     { rule_id: rule.id, job_id: "lint" },
   ]);
   expect(
-    evaluate({ type: "script", mode: "background", argv: ["bun", "lint.ts"], timeout_ms: 1000 })
-      .scripts?.length,
+    evaluate({
+      type: "script",
+      mode: "background",
+      argv: ["bun", "lint.ts"],
+      timeout_ms: 1000,
+    }).scripts?.length,
   ).toBe(1);
   expect(evaluate({ type: "block" }, false).decision).toBe("abstain");
   const specific = RulePolicySchema.parse({
@@ -98,11 +117,16 @@ test("should share filters across targets, honor disabled/specific scopes, and p
     }).decision,
   ).toBe("abstain");
   expect(
-    EventRuleSchema.safeParse({ ...rule, scope: { agents: "all", events: ["post_tool"] } }).success,
+    EventRuleSchema.safeParse({
+      ...rule,
+      scope: { agents: "all", events: ["post_tool"] },
+    }).success,
   ).toBe(false);
   expect(
-    EventRuleSchema.safeParse({ ...rule, scope: { agents: "all", events: ["native:PreToolUse"] } })
-      .success,
+    EventRuleSchema.safeParse({
+      ...rule,
+      scope: { agents: "all", events: ["native:PreToolUse"] },
+    }).success,
   ).toBe(false);
   for (const event of ["notification", "setup"]) {
     expect(
@@ -128,16 +152,28 @@ test("should compose AND/OR/NOT and handle missing and typed fields without prot
         },
       },
       {
-        predicate: { field: "input.path", operator: "ends_with", value: ".test.ts" },
+        predicate: {
+          field: "input.path",
+          operator: "ends_with",
+          value: ".test.ts",
+        },
         negate: true,
       },
       { predicate: { field: "failed", operator: "in", value: [false] } },
     ],
   });
-  expect(matchesRuleFilter(filter, { input: { path: "src/main.ts" }, failed: false })).toBe(true);
-  expect(matchesRuleFilter(filter, { input: { path: "src/main.test.ts" }, failed: false })).toBe(
-    false,
-  );
+  expect(
+    matchesRuleFilter(filter, {
+      input: { path: "src/main.ts" },
+      failed: false,
+    }),
+  ).toBe(true);
+  expect(
+    matchesRuleFilter(filter, {
+      input: { path: "src/main.test.ts" },
+      failed: false,
+    }),
+  ).toBe(false);
   expect(matchesRuleFilter(filter, { input: {}, failed: false })).toBe(false);
   expect(matchesRuleFilter({ ...filter, match: "any" }, { input: {}, failed: false })).toBe(true);
   expect(
@@ -151,7 +187,15 @@ test("should compose AND/OR/NOT and handle missing and typed fields without prot
 test("should evaluate a pathological backtracking pattern within bounded time and reject unsupported regex syntax", () => {
   const filter = RuleFilterSchema.parse({
     match: "all",
-    conditions: [{ predicate: { field: "input.command", operator: "regex", value: "(a+)+$" } }],
+    conditions: [
+      {
+        predicate: {
+          field: "input.command",
+          operator: "regex",
+          value: "(a+)+$",
+        },
+      },
+    ],
   });
   const start = performance.now();
   expect(matchesRuleFilter(filter, { input: { command: `${"a".repeat(100000)}!` } })).toBe(false);

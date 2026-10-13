@@ -192,7 +192,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                     <TableCell className="font-label text-xs">
                       <span className="inline-flex items-center gap-2" data-testid="live-status">
                         <span className={`h-2 w-2 rounded-full ${st.dot}`} />
-                        {st.label}
+                        {s.handoff?.status === "ready" ? "Ready" : st.label}
                       </span>
                     </TableCell>
                     <TableCell className="font-label text-[11px] uppercase tracking-widest text-primary">
@@ -248,7 +248,10 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                           value={s.task?.id ?? ""}
                           disabled={link.isPending}
                           onChange={(e) =>
-                            link.mutate({ id: s.id, taskId: e.target.value || null })
+                            link.mutate({
+                              id: s.id,
+                              taskId: e.target.value || null,
+                            })
                           }
                         >
                           <option value="">No task</option>

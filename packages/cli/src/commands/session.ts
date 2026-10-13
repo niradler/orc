@@ -1,4 +1,4 @@
-import { loadConfig } from "@orc/core/config";
+import { configuredApiSecret, loadConfig } from "@orc/core/config";
 import { shortId } from "@orc/core/ids";
 import { Command } from "commander";
 import { isJson, jsonOut } from "../output.js";
@@ -44,7 +44,9 @@ function apiBase(): string {
 }
 
 function authHeaders(): Record<string, string> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
   const secret =
     process.env.ORC_API_SECRET ??
     (() => {
@@ -54,7 +56,8 @@ function authHeaders(): Record<string, string> {
         return undefined;
       }
     })();
-  if (secret) headers.Authorization = `Bearer ${secret}`;
+  const bearer = configuredApiSecret(secret);
+  if (bearer) headers.Authorization = `Bearer ${bearer}`;
   return headers;
 }
 
@@ -72,7 +75,9 @@ export function sessionCommand() {
 
       let res: Response;
       try {
-        res = await fetch(`${apiBase()}/sessions?${qs}`, { headers: authHeaders() });
+        res = await fetch(`${apiBase()}/sessions?${qs}`, {
+          headers: authHeaders(),
+        });
       } catch {
         return console.error("Cannot connect to orc API. Is it running? (orc api or orc daemon)");
       }
@@ -116,7 +121,9 @@ export function sessionCommand() {
 
       let res: Response;
       try {
-        res = await fetch(`${apiBase()}/sessions/${resolvedId}`, { headers: authHeaders() });
+        res = await fetch(`${apiBase()}/sessions/${resolvedId}`, {
+          headers: authHeaders(),
+        });
       } catch {
         return console.error("Cannot connect to orc API.");
       }
@@ -188,7 +195,9 @@ export function sessionCommand() {
     .action(async (summary: string, opts) => {
       const config = loadConfig();
       const base = `http://${config.api.host}:${config.api.port}/api`;
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
       if (config.api.secret) headers.Authorization = `Bearer ${config.api.secret}`;
 
       const res = await fetch(`${base}/mcp/tool`, {

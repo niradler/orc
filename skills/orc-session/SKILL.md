@@ -1,7 +1,7 @@
 ---
 name: orc-session
 description: Use when starting any agent session on an ORC-backed project, when resuming after context compaction, when recording significant actions during work, or when ending a work unit. This is the foundational ORC workflow - call context() first, record events as you work, snapshot before compaction, restore after. Essential for Claude Code, Cursor, Codex, and Gemini CLI agents.
-allowed-tools: mcp__orc__context mcp__orc__session_event mcp__orc__session_snapshot mcp__orc__session_restore mcp__orc__session_log
+allowed-tools: mcp__orc__skill_read mcp__orc__audit_list mcp__orc__memory_get mcp__orc__memory_update mcp__orc__memory_store mcp__orc__wiki_search mcp__orc__wiki_get mcp__orc__wiki_write mcp__orc__context mcp__orc__session_event mcp__orc__session_snapshot mcp__orc__session_restore mcp__orc__session_log
 ---
 
 # ORC Session Workflow
@@ -27,6 +27,8 @@ Returns ~200 tokens: active tasks, key memories, last session summary. Pass `pro
 
 Use `skill_list` to see available skills. Use `skill_read` to load specific skill content when you need a structured workflow (e.g. for code review, planning, or bug fixes).
 
+During memory writes, pass the same explicit `session_id` you use for session events/logging. HTTP MCP calls share a server process, so do not rely on the server environment to identify your work unit. Preserve returned memory IDs for the end-of-session review.
+
 ### 3. Record events as you work
 
 Call `session_event` after anything worth surviving compaction. Events are deduplicated automatically.
@@ -48,7 +50,7 @@ Rules and decisions get highest priority in snapshots and future `context()` cal
 
 ### 5. Log completed work
 
-At the end of a task or work block, call `session_log` with a summary. It auto-derives touched files, task changes, and stored memories from your session events.
+At the end of a task or work block, load `orc-memory-review` with `skill_read` and follow its review steps inline before calling `session_log` with a summary. Use ordinary `wiki_search` / `search` / `knowledge_search` for lessons as needed; normal `skill_read` returns edited instructions in the selected project. It auto-derives touched files, task changes, and stored memories from your session events.
 
 ---
 

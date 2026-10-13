@@ -60,7 +60,12 @@ beforeAll(() => {
 afterAll(() => {
   teardownTestApp();
   // Windows keeps a just-closed fs.watch handle on the directory for a moment.
-  rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  rmSync(root, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 100,
+  });
 });
 
 describe("claude adapter: live registry", () => {
@@ -98,9 +103,14 @@ describe("claude adapter: live registry", () => {
   test("links a task and unlinks it", async () => {
     const task = await (await req(app, "POST", "/tasks", { title: "link me" })).json();
     const [row] = await live();
-    const linked = await req(app, "PATCH", `/sessions/live/${row?.id}`, { task_id: task.id });
+    const linked = await req(app, "PATCH", `/sessions/live/${row?.id}`, {
+      task_id: task.id,
+    });
     expect(linked.status).toBe(200);
-    expect((await linked.json()).task).toMatchObject({ id: task.id, title: "link me" });
+    expect((await linked.json()).task).toMatchObject({
+      id: task.id,
+      title: "link me",
+    });
     await runSync([claude()], { force: true });
     expect((await live())[0]?.task?.id).toBe(task.id);
     const byTask = await (
@@ -109,15 +119,21 @@ describe("claude adapter: live registry", () => {
     expect(byTask.sessions.map((r: { id: string }) => r.id)).toEqual([row?.id]);
     const other = await (await req(app, "GET", "/sessions/live?task_id=nope&active=false")).json();
     expect(other.sessions).toEqual([]);
-    const cleared = await req(app, "PATCH", `/sessions/live/${row?.id}`, { task_id: null });
+    const cleared = await req(app, "PATCH", `/sessions/live/${row?.id}`, {
+      task_id: null,
+    });
     expect((await cleared.json()).task).toBeNull();
   });
 
   test("rejects an unknown task and an unknown session", async () => {
     const [row] = await live();
-    expect((await req(app, "PATCH", `/sessions/live/${row?.id}`, { task_id: "nope" })).status).toBe(
-      404,
-    );
+    expect(
+      (
+        await req(app, "PATCH", `/sessions/live/${row?.id}`, {
+          task_id: "nope",
+        })
+      ).status,
+    ).toBe(404);
     expect((await req(app, "PATCH", "/sessions/live/nope", { task_id: null })).status).toBe(404);
   });
 
@@ -176,7 +192,11 @@ describe("claude adapter: ended sessions, tokens and summary", () => {
     );
     writeFileSync(
       join(desktop, "local_archived.json"),
-      JSON.stringify({ cliSessionId: "archived-one", cwd: "/tmp/x", isArchived: true }),
+      JSON.stringify({
+        cliSessionId: "archived-one",
+        cwd: "/tmp/x",
+        isArchived: true,
+      }),
     );
     const usage = (input: number, output: number, cache: number) => ({
       input_tokens: input,
@@ -185,8 +205,16 @@ describe("claude adapter: ended sessions, tokens and summary", () => {
       cache_read_input_tokens: 999_999,
     });
     const lines = [
-      { type: "user", message: { content: "<system-reminder>ignore me</system-reminder>" } },
-      { type: "user", message: { content: [{ type: "text", text: "fix the flaky test please" }] } },
+      {
+        type: "user",
+        message: { content: "<system-reminder>ignore me</system-reminder>" },
+      },
+      {
+        type: "user",
+        message: {
+          content: [{ type: "text", text: "fix the flaky test please" }],
+        },
+      },
       { type: "assistant", message: { id: "m1", usage: usage(10, 20, 30) } },
       { type: "assistant", message: { id: "m1", usage: usage(10, 20, 30) } },
       { type: "assistant", message: { id: "m2", usage: usage(1, 2, 3) } },
@@ -305,13 +333,20 @@ describe("cursor adapter", () => {
     const body = JSON.stringify({
       role: "user",
       message: {
-        content: [{ type: "text", text: "<user_query>\nbuild the slack worker\n</user_query>" }],
+        content: [
+          {
+            type: "text",
+            text: "<user_query>\nbuild the slack worker\n</user_query>",
+          },
+        ],
       },
     });
     writeFileSync(join(transcript, `${id}.jsonl`), body);
     utimesSync(join(transcript, `${id}.jsonl`), 1_700_000_000, 1_700_000_000);
 
-    await runSync([cursorAdapter({ projects, stateDb: null })], { force: true });
+    await runSync([cursorAdapter({ projects, stateDb: null })], {
+      force: true,
+    });
     const rows = await live({ active: false, agent: "cursor" });
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({

@@ -136,7 +136,10 @@ describe("availability", () => {
     expect(noSecret.ready).toBe(false);
     expect(noSecret.reason).toContain("api.secret");
     const ok = terminalsAvailability(OrcConfigSchema.parse({ api: { secret: "s" } }));
-    expect(ok).toEqual({ ready: true, reason: null });
+    expect(ok).toEqual({
+      ready: true,
+      reason: null,
+    });
   });
 
   test("allow_without_secret opts in on loopback only", () => {
@@ -155,7 +158,10 @@ describe("availability", () => {
 
   test("can be switched off", () => {
     const off = terminalsAvailability(
-      OrcConfigSchema.parse({ terminals: { enabled: false }, api: { secret: "s" } }),
+      OrcConfigSchema.parse({
+        terminals: { enabled: false },
+        api: { secret: "s" },
+      }),
     );
     expect(off.ready).toBe(false);
     expect(off.reason).toContain("disabled");
@@ -163,7 +169,9 @@ describe("availability", () => {
 
   test("needs a Bun that can attach a PTY", () => {
     const config = OrcConfigSchema.parse({ api: { secret: "s" } });
-    expect(terminalsAvailability(config, "1.2.21")).toMatchObject({ ready: false });
+    expect(terminalsAvailability(config, "1.2.21")).toMatchObject({
+      ready: false,
+    });
     expect(terminalsAvailability(config, "1.2.21").reason).toContain("1.4.2");
     expect(terminalsAvailability(config, "1.4.2").ready).toBe(true);
     expect(terminalsAvailability(config, "1.5.0").ready).toBe(true);
@@ -178,7 +186,10 @@ describe("availability", () => {
 
 describe("POST /terminals", () => {
   test("protected workspaces refuse fresh, resumed and packaged agents but permit human shells", async () => {
-    const fresh = await req(app, "POST", "/terminals", { kind: "claude", cwd: root });
+    const fresh = await req(app, "POST", "/terminals", {
+      kind: "claude",
+      cwd: root,
+    });
     expect(fresh.status).toBe(201);
     const terminal = await fresh.json();
     await seedLive("live-protected-existing", { pid: terminal.pid });
@@ -187,9 +198,14 @@ describe("POST /terminals", () => {
       pid: terminal.pid,
       backend: "claude",
       createdAt: new Date(terminal.created_at),
+      host: null,
     });
     await seedLive("live-protected-resume");
-    await seedLive("live-protected-link", { pid: terminal.pid, cwd: tmpdir(), status: "idle" });
+    await seedLive("live-protected-link", {
+      pid: terminal.pid,
+      cwd: tmpdir(),
+      status: "idle",
+    });
     const store = new RuleStore(getSqlite());
     const revision = store.activate(
       {
@@ -226,7 +242,10 @@ describe("POST /terminals", () => {
       }
       expect(ptys.length).toBe(before);
       expect(getTerminalManager().findByLiveSession("live-protected-link")).toBeNull();
-      const shell = await req(app, "POST", "/terminals", { kind: "shell", cwd: root });
+      const shell = await req(app, "POST", "/terminals", {
+        kind: "shell",
+        cwd: root,
+      });
       expect(shell.status).toBe(201);
       await req(app, "DELETE", `/terminals/${(await shell.json()).id}`);
     } finally {
@@ -252,7 +271,10 @@ describe("POST /terminals", () => {
     expect(ptys.length).toBe(count);
   });
   test("starts a plain shell in a directory", async () => {
-    const res = await req(app, "POST", "/terminals", { kind: "shell", cwd: root });
+    const res = await req(app, "POST", "/terminals", {
+      kind: "shell",
+      cwd: root,
+    });
     expect(res.status).toBe(201);
     const body = await res.json();
     expect(body).toMatchObject({ kind: "shell", cwd: root, status: "running" });
@@ -260,7 +282,10 @@ describe("POST /terminals", () => {
   });
 
   test("rejects a cwd that is not a directory", async () => {
-    const res = await req(app, "POST", "/terminals", { kind: "shell", cwd: join(root, "nope") });
+    const res = await req(app, "POST", "/terminals", {
+      kind: "shell",
+      cwd: join(root, "nope"),
+    });
     expect(res.status).toBe(400);
   });
 
@@ -271,7 +296,9 @@ describe("POST /terminals", () => {
 
   test("an unknown live session is 404 and nothing is spawned", async () => {
     const before = ptys.length;
-    const res = await req(app, "POST", "/terminals", { live_session_id: "does-not-exist" });
+    const res = await req(app, "POST", "/terminals", {
+      live_session_id: "does-not-exist",
+    });
     expect(res.status).toBe(404);
     expect(ptys.length).toBe(before);
   });
@@ -279,28 +306,36 @@ describe("POST /terminals", () => {
   test("an agent with no resume command is rejected", async () => {
     await seedLive("live-cursor", { backend: "cursor" });
     const before = ptys.length;
-    const res = await req(app, "POST", "/terminals", { live_session_id: "live-cursor" });
+    const res = await req(app, "POST", "/terminals", {
+      live_session_id: "live-cursor",
+    });
     expect(res.status).toBe(400);
     expect(ptys.length).toBe(before);
   });
 
   test("a live session without an agent session id is rejected", async () => {
     await seedLive("live-noid", { runtime_session_id: null });
-    const res = await req(app, "POST", "/terminals", { live_session_id: "live-noid" });
+    const res = await req(app, "POST", "/terminals", {
+      live_session_id: "live-noid",
+    });
     expect(res.status).toBe(400);
   });
 
   test("a malformed agent session id never reaches spawn", async () => {
     await seedLive("live-bad", { runtime_session_id: "x; rm -rf /" });
     const before = ptys.length;
-    const res = await req(app, "POST", "/terminals", { live_session_id: "live-bad" });
+    const res = await req(app, "POST", "/terminals", {
+      live_session_id: "live-bad",
+    });
     expect(res.status).toBe(400);
     expect(ptys.length).toBe(before);
   });
 
   test("resumes claude with server-built argv and the session cwd, and reattaches on repeat", async () => {
     await seedLive("live-ok");
-    const first = await req(app, "POST", "/terminals", { live_session_id: "live-ok" });
+    const first = await req(app, "POST", "/terminals", {
+      live_session_id: "live-ok",
+    });
     expect(first.status).toBe(201);
     const info = await first.json();
     const pty = ptys.at(-1);
@@ -310,7 +345,9 @@ describe("POST /terminals", () => {
     expect(info.live_session_id).toBe("live-ok");
 
     const spawned = ptys.length;
-    const again = await req(app, "POST", "/terminals", { live_session_id: "live-ok" });
+    const again = await req(app, "POST", "/terminals", {
+      live_session_id: "live-ok",
+    });
     expect(again.status).toBe(200);
     expect((await again.json()).id).toBe(info.id);
     expect(ptys.length).toBe(spawned);
@@ -319,7 +356,9 @@ describe("POST /terminals", () => {
 
   test("resumes codex with the resume subcommand", async () => {
     await seedLive("live-codex", { backend: "codex" });
-    const res = await req(app, "POST", "/terminals", { live_session_id: "live-codex" });
+    const res = await req(app, "POST", "/terminals", {
+      live_session_id: "live-codex",
+    });
     expect(res.status).toBe(201);
     expect(ptys.at(-1)?.argv.slice(1)).toEqual(["resume", "sess-live-codex"]);
     await req(app, "DELETE", `/terminals/${(await res.json()).id}`);
@@ -337,7 +376,9 @@ test("should reopen a fresh agent terminal without spawning a resume", async () 
     created_at: new Date(Date.parse(created.created_at) + 1),
   });
   const before = ptys.length;
-  const response = await req(app, "POST", "/terminals", { live_session_id: "live-fresh" });
+  const response = await req(app, "POST", "/terminals", {
+    live_session_id: "live-fresh",
+  });
   expect(response.status).toBe(200);
   expect(await response.json()).toMatchObject({
     id: created.id,
@@ -526,7 +567,10 @@ describe("terminal WebSocket", () => {
 
     two.ws.send('{"type":"stop"}');
     await until(() => two.text.length > 1);
-    expect(JSON.parse(two.text[1] as string)).toEqual({ type: "exit", code: 137 });
+    expect(JSON.parse(two.text[1] as string)).toEqual({
+      type: "exit",
+      code: 137,
+    });
     expect(pty.killed).toBe(1);
     expect(manager.get(info.id).status).toBe("exited");
     two.ws.close();
@@ -554,7 +598,10 @@ describe("worktree terminals and /git/worktrees", () => {
   const worktrees = join(root, "worktrees", "wtrepo");
 
   async function git(args: string[], cwd: string): Promise<string> {
-    const proc = Bun.spawn(["git", "-C", cwd, ...args], { stdout: "pipe", stderr: "pipe" });
+    const proc = Bun.spawn(["git", "-C", cwd, ...args], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
     const [out, err, code] = await Promise.all([
       new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),
@@ -579,7 +626,11 @@ describe("worktree terminals and /git/worktrees", () => {
 
   test("a shell never gets a worktree", async () => {
     const before = ptys.length;
-    const res = await req(app, "POST", "/terminals", { kind: "shell", cwd: repo, worktree: true });
+    const res = await req(app, "POST", "/terminals", {
+      kind: "shell",
+      cwd: repo,
+      worktree: true,
+    });
     expect(res.status).toBe(400);
     expect(ptys.length).toBe(before);
     expect(existsSync(worktrees)).toBe(false);
@@ -624,10 +675,22 @@ describe("worktree terminals and /git/worktrees", () => {
     const { root: repoRoot, worktrees: rows } = await list.json();
     expect(repoRoot).toBe(repo);
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({ path: repo, main: true, branch: "main", dirty: false });
-    expect(rows[1]).toMatchObject({ path: terminal.cwd, main: false, branch: `orc/${id}` });
+    expect(rows[0]).toMatchObject({
+      path: repo,
+      main: true,
+      branch: "main",
+      dirty: false,
+    });
+    expect(rows[1]).toMatchObject({
+      path: terminal.cwd,
+      main: false,
+      branch: `orc/${id}`,
+    });
 
-    const busy = await req(app, "POST", "/git/worktrees/remove", { cwd: repo, path: terminal.cwd });
+    const busy = await req(app, "POST", "/git/worktrees/remove", {
+      cwd: repo,
+      path: terminal.cwd,
+    });
     expect(busy.status).toBe(409);
 
     await req(app, "DELETE", `/terminals/${terminal.id}`);
@@ -651,9 +714,15 @@ describe("worktree terminals and /git/worktrees", () => {
   });
 
   test("the main checkout and outside paths cannot be removed", async () => {
-    const main = await req(app, "POST", "/git/worktrees/remove", { cwd: repo, path: repo });
+    const main = await req(app, "POST", "/git/worktrees/remove", {
+      cwd: repo,
+      path: repo,
+    });
     expect(main.status).toBe(400);
-    const outside = await req(app, "POST", "/git/worktrees/remove", { cwd: repo, path: plain });
+    const outside = await req(app, "POST", "/git/worktrees/remove", {
+      cwd: repo,
+      path: plain,
+    });
     expect(outside.status).toBe(400);
     expect(existsSync(plain)).toBe(true);
   });
@@ -666,7 +735,13 @@ describe("worktree terminals and /git/worktrees", () => {
       {
         workspace: protectedRoot,
         project_id: null,
-        rules: [{ id: "files", kind: "deny_delete", reason: "Protect derived workspaces" }],
+        rules: [
+          {
+            id: "files",
+            kind: "deny_delete",
+            reason: "Protect derived workspaces",
+          },
+        ],
       },
       null,
       "Isolated derived workspace regression",

@@ -138,7 +138,12 @@ function BrokenFlows({
 
 function flowHint(
   value: string,
-  flows: Array<{ name: string; description: string; source: string; shadows: string | null }>,
+  flows: Array<{
+    name: string;
+    description: string;
+    source: string;
+    shadows: string | null;
+  }>,
   defaultFlow: string | undefined,
 ): string {
   const name = value === USE_DEFAULT_FLOW ? defaultFlow : value;

@@ -10,7 +10,12 @@ export type Attachment =
       format: string;
       duration?: number | undefined;
     }
-  | { kind: "image"; data: Uint8Array; mimeType: string; fileName?: string | undefined };
+  | {
+      kind: "image";
+      data: Uint8Array;
+      mimeType: string;
+      fileName?: string | undefined;
+    };
 
 export type IncomingMessage = {
   platform: GatewayPlatform;

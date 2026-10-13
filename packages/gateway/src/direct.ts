@@ -171,7 +171,9 @@ export async function handleDirectCommand(input: {
 
   if (command === "/agent") {
     if (!argText) {
-      return { text: "Usage: /agent <name> (e.g. claude, codex, gemini, copilot, a2a)" };
+      return {
+        text: "Usage: /agent <name> (e.g. claude, codex, gemini, copilot, a2a)",
+      };
     }
     const mode = `agent:${argText}` as GatewayMode;
     await updateChatMode(input.chatKey, mode);
@@ -248,7 +250,9 @@ export async function handleDirectCommand(input: {
     const task = await apiFindTask(id);
     if (!task) return { text: `No task or permission found for ${id}` };
     await apiRejectTask(task.id, note || "Changes requested from gateway");
-    return { text: `🔁 Changes requested for [${shortId(task.id)}] ${task.title}` };
+    return {
+      text: `🔁 Changes requested for [${shortId(task.id)}] ${task.title}`,
+    };
   }
 
   if (command === "/assign") {
@@ -334,7 +338,9 @@ export async function handleDirectCommand(input: {
         title: `Session ${shortId(ulid())}`,
       });
       await setActiveGatewaySession(input.chatKey, session.id);
-      return { text: `Created and activated ${backend} session [${shortId(session.id)}]` };
+      return {
+        text: `Created and activated ${backend} session [${shortId(session.id)}]`,
+      };
     }
 
     if (subcommand === "list") {
@@ -357,7 +363,9 @@ export async function handleDirectCommand(input: {
         : sessions.find((s) => s.id === target || s.id.endsWith(target));
       if (!session) return { text: `Session not found: ${target}` };
       await setActiveGatewaySession(input.chatKey, session.id);
-      return { text: `Active session: [${shortId(session.id)}] ${session.backend}` };
+      return {
+        text: `Active session: [${shortId(session.id)}] ${session.backend}`,
+      };
     }
 
     if (subcommand === "stop") {
@@ -406,13 +414,17 @@ export async function handleDirectCommand(input: {
       return { text: `Mode set: ${modeLabels[resolved]}` };
     }
 
-    return { text: "Usage: /session <new|list|switch <id>|stop|mode [default|plan|edit|bypass]>" };
+    return {
+      text: "Usage: /session <new|list|switch <id>|stop|mode [default|plan|edit|bypass]>",
+    };
   }
 
   if (command === "/projects") {
     const rows = await apiListProjects().catch(() => []);
     if (rows.length === 0) {
-      return { text: "No active projects. Create one with: orc project add <name>" };
+      return {
+        text: "No active projects. Create one with: orc project add <name>",
+      };
     }
     const active = input.currentProjectId;
     const lines = ["<b>📁 Projects</b> — tap to activate", ""];
@@ -425,7 +437,10 @@ export async function handleDirectCommand(input: {
     let rowBuf: Array<{ label: string; value: string }> = [];
     for (const row of rows) {
       const marker = row.id === active ? "▶ " : "";
-      rowBuf.push({ label: `${marker}${row.name}`, value: `project:set:${row.id}` });
+      rowBuf.push({
+        label: `${marker}${row.name}`,
+        value: `project:set:${row.id}`,
+      });
       if (rowBuf.length === 3) {
         btnRows.push(rowBuf);
         rowBuf = [];
@@ -452,7 +467,9 @@ export async function handleDirectCommand(input: {
     }
     const proj = await apiFindProjectByName(argText);
     if (!proj) {
-      return { text: `Project not found: ${argText}\n\nUse /projects to see available projects.` };
+      return {
+        text: `Project not found: ${argText}\n\nUse /projects to see available projects.`,
+      };
     }
     await updateChatProject(input.chatKey, proj.id);
     return { text: `✅ Active project: ${proj.name}`, projectId: proj.id };
@@ -464,7 +481,9 @@ export async function handleDirectCommand(input: {
     return { text: `✅ Created task [${shortId(task.id)}] ${task.title}` };
   }
 
-  return { text: `Unknown command: ${command}\n\nType /help for available commands.` };
+  return {
+    text: `Unknown command: ${command}\n\nType /help for available commands.`,
+  };
 }
 
 export async function ensureAgentSession(input: {

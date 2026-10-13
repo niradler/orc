@@ -1,13 +1,30 @@
-import { mkdirSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { homedir } from "node:os";
-import { loadConfig, type OrcConfig } from "@orc/core/config";
-import { ConflictError, ForbiddenError } from "@orc/core/errors";
+import { configuredApiSecret, loadConfig, type OrcConfig } from "@orc/core/config";
+import { ConflictError, ForbiddenError, ValidationError } from "@orc/core/errors";
+import {
+  type ExecHost,
+  ensureSshMaster,
+  envScript,
+  execHostFor,
+  forwardedEnv,
+  hostIsDirectory,
+  hostMakeDirectory,
+  LOCAL_HOST,
+  probeHost,
+  remoteCommand,
+  remoteTempPath,
+  resolveExecHost,
+  sshArgv,
+  writeHostFile,
+} from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { resolvePackageAgentBinary } from "@orc/core/package-launch";
-import type { LaunchDeps } from "./launch.js";
+import type { Launch, LaunchDeps } from "./launch.js";
 import { TerminalManager } from "./manager.js";
 import { folderPickerLaunch, pickFolder } from "./pick-folder.js";
-import { runGit, type SessionDirDeps } from "./session-dir.js";
+import { buildPtyEnv } from "./pty-env.js";
+import { gitRunner, type SessionDirDeps } from "./session-dir.js";
 import { MIN_BUN_VERSION, spawnPty } from "./spawn.js";
 
 export interface Availability {
@@ -15,9 +32,8 @@ export interface Availability {
   reason: string | null;
 }
 
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
-
 let manager: TerminalManager | null = null;
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
 export function terminalsAvailability(
   config: OrcConfig,
@@ -36,7 +52,7 @@ export function terminalsAvailability(
       reason: `Terminals need Bun ${MIN_BUN_VERSION} or newer (running ${bunVersion}).`,
     };
   }
-  if (!config.api.secret) {
+  if (!configuredApiSecret(config.api.secret)) {
     if (!config.terminals.allow_without_secret) {
       return {
         ready: false,
@@ -59,7 +75,20 @@ export function requireTerminals(config: OrcConfig): void {
   if (!ready) throw new ForbiddenError(reason ?? "Terminals unavailable", "TERMINALS_UNAVAILABLE");
 }
 
-export function launchDeps(config: OrcConfig): LaunchDeps {
+export async function launchDeps(
+  config: OrcConfig,
+  host: ExecHost = resolveExecHost(config),
+): Promise<LaunchDeps> {
+  if (host.kind === "ssh") {
+    const probe = await probeHost(host);
+    return {
+      platform: "linux",
+      env: { SHELL: probe.shell },
+      which: (command) => probe.binaries[command] ?? null,
+      isDirectory: (path) => hostIsDirectory(host, path),
+      home: probe.home,
+    };
+  }
   return {
     platform: process.platform,
     env: process.env,
@@ -78,20 +107,46 @@ export function launchDeps(config: OrcConfig): LaunchDeps {
   };
 }
 
-export function sessionDirDeps(deps: LaunchDeps): SessionDirDeps {
+export function sessionDirDeps(deps: LaunchDeps, host: ExecHost = LOCAL_HOST): SessionDirDeps {
   return {
     isDirectory: deps.isDirectory,
     home: deps.home,
-    runGit,
-    makeDirectory: (path) => mkdirSync(path, { recursive: true }),
+    runGit: gitRunner(host),
+    makeDirectory: (path) => hostMakeDirectory(host, path),
     newId: ulid,
   };
+}
+
+export async function launchOnHost(host: ExecHost, launch: Launch): Promise<Launch> {
+  if (host.kind === "local") return { ...launch, host: null };
+  await ensureSshMaster(host);
+  const envFile = remoteTempPath(".env");
+  await writeHostFile(host, envFile, envScript(forwardedEnv(host, buildPtyEnv(process.env))));
+  return {
+    ...launch,
+    host: host.alias,
+    spawnArgv: sshArgv(host, remoteCommand(launch.argv, { cwd: launch.cwd, envFile }), {
+      tty: true,
+    }),
+  };
+}
+
+export function terminalHost(id: string): {
+  host: ExecHost;
+  cwd: string | null;
+} {
+  const info = getTerminalManager().get(id);
+  return { host: execHostFor(info.host), cwd: info.cwd };
 }
 
 let picking = false;
 
 // One native dialog at a time: a second click while one is open would stack hidden dialogs.
 export async function pickFolderOnce(initial: string | undefined): Promise<string | null> {
+  if (resolveExecHost().kind === "ssh")
+    throw new ValidationError(
+      "An SSH host is selected, so folders live on that host. Browse its folders instead of the native dialog.",
+    );
   if (picking) throw new ConflictError("A folder dialog is already open");
   picking = true;
   try {

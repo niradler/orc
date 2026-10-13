@@ -24,6 +24,15 @@ test("the unified view retains staged-only, untracked, deleted, renamed and part
 test("all unmerged status pairs require resolution before committing", () => {
   for (const pair of ["DD", "AU", "UD", "UA", "DU", "AA", "UU"])
     expect(
-      fileChangeState({ index: pair[0] ?? "", working: pair[1] ?? "", original: null }),
-    ).toMatchObject({ conflict: true, staged: false, working: true, label: "Conflict" });
+      fileChangeState({
+        index: pair[0] ?? "",
+        working: pair[1] ?? "",
+        original: null,
+      }),
+    ).toMatchObject({
+      conflict: true,
+      staged: false,
+      working: true,
+      label: "Conflict",
+    });
 });

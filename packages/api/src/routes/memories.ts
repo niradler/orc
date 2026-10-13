@@ -34,6 +34,7 @@ const CreateMemorySchema = z
     title: z.string().optional(),
     type: MemoryTypeSchema.optional().default("fact"),
     source: z.string().optional(),
+    session_id: z.string().min(1).max(200).optional(),
     scope: z.string().optional(),
     project_id: z.string().optional(),
     tags: z.array(z.string()).optional(),
@@ -88,7 +89,11 @@ const searchRoute = createRoute({
   responses: {
     200: {
       description: "Search results",
-      content: { "application/json": { schema: z.object({ results: z.array(MemorySchema) }) } },
+      content: {
+        "application/json": {
+          schema: z.object({ results: z.array(MemorySchema) }),
+        },
+      },
     },
   },
 });
@@ -109,7 +114,11 @@ const listRoute = createRoute({
   responses: {
     200: {
       description: "Memory list",
-      content: { "application/json": { schema: z.object({ memories: z.array(MemorySchema) }) } },
+      content: {
+        "application/json": {
+          schema: z.object({ memories: z.array(MemorySchema) }),
+        },
+      },
     },
   },
 });
@@ -122,7 +131,7 @@ const createRoute_ = createRoute({
   request: { body: { content: { "application/json": { schema: CreateMemorySchema } } } },
   responses: {
     200: {
-      description: "Merged into an existing memory, or skipped as a near-duplicate",
+      description: "Created a merged replacement, or kept a near-duplicate",
       content: { "application/json": { schema: StoreMemoryResultSchema } },
     },
     201: {
@@ -138,6 +147,7 @@ const UpdateMemorySchema = z
     title: z.string().optional(),
     type: MemoryTypeSchema.optional(),
     source: z.string().optional(),
+    session_id: z.string().min(1).max(200).optional(),
     scope: z.string().optional(),
     tags: z.array(z.string()).optional(),
     importance: z.enum(["low", "normal", "high", "critical"]).optional(),
@@ -159,7 +169,10 @@ const updateRoute = createRoute({
     body: { content: { "application/json": { schema: UpdateMemorySchema } } },
   },
   responses: {
-    200: { description: "Updated", content: { "application/json": { schema: MemorySchema } } },
+    200: {
+      description: "Updated",
+      content: { "application/json": { schema: MemorySchema } },
+    },
   },
 });
 
@@ -340,9 +353,8 @@ app.openapi(updateRoute, async (c) => {
   const { id } = c.req.valid("param");
   const body = c.req.valid("json");
   const store = new MemoryStore(getSqlite(db));
-  const { supersedes, ...fields } = body;
-  store.update(id, fields, { actor: API_ACTOR });
-  if (supersedes?.length) store.supersede(id, supersedes, { actor: API_ACTOR });
+  const { supersedes, session_id, ...fields } = body;
+  store.update(id, fields, { actor: API_ACTOR, session_id }, supersedes);
   const mem = await db.query.memories.findFirst({ where: eq(memories.id, id) });
   return c.json(toDto(mem as NonNullable<typeof mem>));
 });

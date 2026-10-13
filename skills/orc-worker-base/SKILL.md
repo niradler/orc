@@ -152,3 +152,5 @@ You're successful when:
 - **orc-knowledge**: memory search and storage patterns
 - **orc-session**: event recording and session lifecycle
 - **orc-tasks**: task status transitions and HITL review
+
+Before reporting your final flow outcome, load `orc-memory-review` with `skill_read` and review this work unit inline. Search wiki/KB when relevant and read edited skills normally; no startup wiki dump is needed. Do not claim untested observations are verified.

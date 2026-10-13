@@ -37,7 +37,10 @@ test("restoring a layout clamps ratios and rejects duplicate PTY mounts and inva
   expect(readLayout({ ...layout, ratio: 200 })).toMatchObject({ ratio: 80 });
   expect(readLayout({ ...layout, ratio: Number.NaN })).toBeNull();
   expect(
-    readLayout({ ...layout, second: { id: "duplicate", kind: "terminal", terminalId: "one" } }),
+    readLayout({
+      ...layout,
+      second: { id: "duplicate", kind: "terminal", terminalId: "one" },
+    }),
   ).toBeNull();
   expect(readLayout({ id: "invalid", kind: "unknown", terminalId: "one" })).toBeNull();
 });

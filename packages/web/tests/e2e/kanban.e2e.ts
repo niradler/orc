@@ -21,7 +21,10 @@ async function dragCardTo(page: Page, taskId: string, targetStatus: string): Pro
   const cardBox = await card.boundingBox();
   if (!cardBox) throw new Error("card not in viewport after scroll");
 
-  const from = { x: cardBox.x + cardBox.width / 2, y: cardBox.y + cardBox.height / 2 };
+  const from = {
+    x: cardBox.x + cardBox.width / 2,
+    y: cardBox.y + cardBox.height / 2,
+  };
 
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
@@ -42,7 +45,9 @@ async function dragCardTo(page: Page, taskId: string, targetStatus: string): Pro
       const centerX = targetBox.x + targetBox.width / 2;
       const inView = centerX >= 0 && centerX <= viewport.width;
       if (inView) {
-        await page.mouse.move(centerX, targetBox.y + targetBox.height / 2, { steps: 10 });
+        await page.mouse.move(centerX, targetBox.y + targetBox.height / 2, {
+          steps: 10,
+        });
         await page.mouse.up();
         dropped = true;
         break;

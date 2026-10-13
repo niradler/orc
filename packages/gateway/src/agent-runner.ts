@@ -1,3 +1,4 @@
+import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
 import { openAgentSession } from "./agent-runtime/index.js";
 import type { AgentSession, SessionOpts } from "./agent-runtime/types.js";
@@ -34,6 +35,7 @@ export type RunnerContext = {
   session: {
     id: string;
     backend: string;
+    execution_host: string | null;
     cwd: string;
     model: string | null;
     runtime_session_id: string | null;
@@ -98,10 +100,13 @@ async function createAgentSession(
 function claudeSessionOpts(ctx: RunnerContext, extra?: Partial<SessionOpts>): SessionOpts {
   return {
     cwd: ctx.session.cwd,
+    executionHost: ctx.session.execution_host,
     model: ctx.session.model ?? undefined,
     autoApprove: ctx.session.auto_approve,
     ...(ctx.session.permission_mode
-      ? { permissionMode: ctx.session.permission_mode as SessionOpts["permissionMode"] }
+      ? {
+          permissionMode: ctx.session.permission_mode as SessionOpts["permissionMode"],
+        }
       : {}),
     ...extra,
   };
@@ -192,7 +197,10 @@ async function driveEventLoop(
             ctx.chatId,
             permText,
             buttons,
-            { threadId: ctx.threadId, parseMode: "html" },
+            {
+              threadId: ctx.threadId,
+              parseMode: "html",
+            },
           );
         } else {
           await ctx.adapter.send(ctx.chatId, permText, {
@@ -238,7 +246,12 @@ async function driveEventLoop(
   return { output: accumulated.trim() || "(no output)", runtimeSessionId };
 }
 
-type IdleWatchdog = { reset(): void; pause(): void; resume(): void; clear(): void };
+type IdleWatchdog = {
+  reset(): void;
+  pause(): void;
+  resume(): void;
+  clear(): void;
+};
 
 function startIdleWatchdog(sessionId: string, session: AgentSession): IdleWatchdog {
   let paused = false;
@@ -296,14 +309,20 @@ export async function preflightBackends(): Promise<void> {
   // Same probe the API and `orc doctor` report, so the startup log and the UI
   // cannot disagree about which backends are usable.
   const { probeBackends } = await import("@orc/agent-runtime");
+  const defaultBackend = loadConfig().agent_loop.default_backend;
   for (const probe of await probeBackends()) {
     if (probe.available) {
       logger.info(`Agent backend ready: ${probe.name}`, {
         kind: probe.kind,
         ...(probe.target ? { target: probe.target } : {}),
       });
-    } else {
+    } else if (probe.name === defaultBackend) {
       logger.warn(`Agent backend unavailable: ${probe.name}`, {
+        error: probe.error,
+        requires: probe.requires,
+      });
+    } else {
+      logger.debug(`Optional agent backend unavailable: ${probe.name}`, {
         error: probe.error,
         requires: probe.requires,
       });

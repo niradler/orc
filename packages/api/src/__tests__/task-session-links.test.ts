@@ -17,12 +17,21 @@ const C = "cccccccc-1111-4222-8333-000000000003";
 const writeSession = (pid: number, id: string) =>
   writeFileSync(
     join(root, `${pid}.json`),
-    JSON.stringify({ pid, sessionId: id, cwd: "/tmp/x", name: `s-${pid}`, status: "idle" }),
+    JSON.stringify({
+      pid,
+      sessionId: id,
+      cwd: "/tmp/x",
+      name: `s-${pid}`,
+      status: "idle",
+    }),
   );
 
 const live = async (query = "") => {
   const res = await req(app, "GET", `/sessions/live?active=false${query}`);
-  return (await res.json()).sessions as { session_id: string; task: { id: string } | null }[];
+  return (await res.json()).sessions as {
+    session_id: string;
+    task: { id: string } | null;
+  }[];
 };
 
 beforeAll(async () => {
@@ -50,7 +59,10 @@ describe("session lines in a task body", () => {
 
   test("a task collects every session named in its body, without a manual link", async () => {
     const task = await (
-      await req(app, "POST", "/tasks", { title: "one goal", body: `session: ${A}\nsession: ${B}` })
+      await req(app, "POST", "/tasks", {
+        title: "one goal",
+        body: `session: ${A}\nsession: ${B}`,
+      })
     ).json();
     const rows = await live(`&task_id=${task.id}`);
     expect(rows.map((r) => r.session_id).sort()).toEqual([A, B]);
@@ -60,11 +72,17 @@ describe("session lines in a task body", () => {
 
   test("a session named by two tasks shows the most recently updated one", async () => {
     const older = await (
-      await req(app, "POST", "/tasks", { title: "older", body: `session: ${C}` })
+      await req(app, "POST", "/tasks", {
+        title: "older",
+        body: `session: ${C}`,
+      })
     ).json();
     await Bun.sleep(1100);
     const newer = await (
-      await req(app, "POST", "/tasks", { title: "newer", body: `session: ${C}` })
+      await req(app, "POST", "/tasks", {
+        title: "newer",
+        body: `session: ${C}`,
+      })
     ).json();
     expect((await live()).find((r) => r.session_id === C)?.task?.id).toBe(newer.id);
     expect((await live(`&task_id=${older.id}`)).map((r) => r.session_id)).toContain(C);

@@ -1,3 +1,30 @@
+import type { components } from "./openapi.gen.js";
+
+export type {
+  SkillUpdate,
+  WikiChange,
+  WikiIndexEntry,
+  WikiPage,
+  WikiRevision,
+  WikiScope,
+  WikiSearchHit,
+  WikiWrite,
+} from "@orc/core/wiki";
+export type AuditEntry = components["schemas"]["AuditEntry"];
+export type SkillChange = components["schemas"]["SkillChange"];
+export type {
+  SessionHandoff,
+  SessionHandoffInput,
+  SessionHandoffUpload,
+} from "@orc/core/session-handoff";
+export type {
+  SkillDiscovery,
+  SkillImportInput,
+  SkillImportOrigin,
+  SkillSyncInput,
+  SkillSyncResult,
+} from "@orc/core/skill-import-types";
+
 export type TaskStatus =
   | "todo"
   | "queued"
@@ -136,6 +163,7 @@ export type Session = {
 
 export type LiveSessionStatus = "idle" | "running" | "stopped" | "error";
 export type LiveSession = {
+  handoff?: { id: string; branch: string; commit: string; status: "ready" | "resumed" } | null;
   id: string;
   agent: string;
   session_id: string | null;
@@ -144,6 +172,7 @@ export type LiveSession = {
   tokens_used: number | null;
   tokens_estimated: boolean;
   cwd: string | null;
+  host: string | null;
   pid: number | null;
   status: LiveSessionStatus;
   project_id: string | null;
@@ -157,12 +186,22 @@ export type LiveSessionHit = LiveSession & {
   matched: string[];
   snippets: string[];
 };
-export type SessionSearchResult = { rg: boolean; ms: number; hits: LiveSessionHit[] };
+export type SessionSearchResult = {
+  rg: boolean;
+  ms: number;
+  hits: LiveSessionHit[];
+};
 
 export type TranscriptBlock =
   | { type: "text"; text: string }
   | { type: "thinking"; text: string }
-  | { type: "tool_use"; name: string; input: string; id?: string; result?: string }
+  | {
+      type: "tool_use";
+      name: string;
+      input: string;
+      id?: string;
+      result?: string;
+    }
   | { type: "tool_result"; text: string; forId?: string };
 export type TranscriptTurn = {
   index: number;
@@ -177,7 +216,12 @@ export type TranscriptPage = {
   turns: TranscriptTurn[];
 };
 
-export type SessionSyncResult = { backend: string; seen: number; ms: number; error?: string };
+export type SessionSyncResult = {
+  backend: string;
+  seen: number;
+  ms: number;
+  error?: string;
+};
 
 export type SessionDetail = Session & {
   events: SessionEvent[];
@@ -209,7 +253,11 @@ export type HealthResponse = {
   status: "ok";
   version: string;
   uptime: number;
-  agent_loop: { enabled: boolean; poll_interval_minutes: number; max_workers: number };
+  agent_loop: {
+    enabled: boolean;
+    poll_interval_minutes: number;
+    max_workers: number;
+  };
 };
 
 export type CreateTaskInput = TaskGitLinks & {
@@ -278,6 +326,7 @@ export type TaskHandoffInput = {
 };
 
 export type CreateMemoryInput = {
+  session_id?: string;
   content: string;
   project_id?: string;
   type?: "fact" | "decision" | "event" | "rule" | "discovery";
@@ -289,6 +338,7 @@ export type CreateMemoryInput = {
 };
 
 export type UpdateMemoryInput = {
+  session_id?: string;
   content?: string;
   title?: string;
   type?: "fact" | "decision" | "event" | "rule" | "discovery";
@@ -342,6 +392,7 @@ export type {
 } from "@orc/core/primitive-types";
 
 export type SkillMeta = {
+  mutation?: { id: string; project_id: string | null; updated_at: number; author: string };
   name: string;
   description: string;
   source: SkillSource;

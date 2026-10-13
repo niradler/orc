@@ -28,7 +28,11 @@ describe("Jobs enable/disable against a live scheduler", () => {
     });
     const { id } = await created.json();
     const countRuns = async () =>
-      (await getDb().query.job_runs.findMany({ where: eq(job_runs.job_id, id) })).length;
+      (
+        await getDb().query.job_runs.findMany({
+          where: eq(job_runs.job_id, id),
+        })
+      ).length;
 
     await Bun.sleep(2500);
     expect(await countRuns()).toBeGreaterThanOrEqual(1);
@@ -176,14 +180,18 @@ describe("Jobs CRUD", () => {
 
   describe("PATCH /jobs/:id", () => {
     test("updates name", async () => {
-      const res = await req(app, "PATCH", `/jobs/${jobId}`, { name: "renamed-job" });
+      const res = await req(app, "PATCH", `/jobs/${jobId}`, {
+        name: "renamed-job",
+      });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.name).toBe("renamed-job");
     });
 
     test("updates command", async () => {
-      const res = await req(app, "PATCH", `/jobs/${jobId}`, { command: "echo updated" });
+      const res = await req(app, "PATCH", `/jobs/${jobId}`, {
+        command: "echo updated",
+      });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.command).toBe("echo updated");
@@ -208,14 +216,18 @@ describe("Jobs CRUD", () => {
     });
 
     test("updates description", async () => {
-      const res = await req(app, "PATCH", `/jobs/${jobId}`, { description: "New desc" });
+      const res = await req(app, "PATCH", `/jobs/${jobId}`, {
+        description: "New desc",
+      });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.description).toBe("New desc");
     });
 
     test("returns 404 for non-existent job", async () => {
-      const res = await req(app, "PATCH", "/jobs/nonexistent-id", { name: "x" });
+      const res = await req(app, "PATCH", "/jobs/nonexistent-id", {
+        name: "x",
+      });
       expect(res.status).toBe(404);
     });
   });
@@ -287,7 +299,9 @@ describe("Jobs CRUD", () => {
       expect(res.status).toBe(204);
 
       // The session survives with its run reference nulled out.
-      const session = await db.query.sessions.findFirst({ where: eq(sessions.id, sessionId) });
+      const session = await db.query.sessions.findFirst({
+        where: eq(sessions.id, sessionId),
+      });
       expect(session).toBeDefined();
       expect(session?.job_run_id).toBeNull();
     });

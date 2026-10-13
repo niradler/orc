@@ -10,7 +10,9 @@
     "./rules": "./src/rules.ts",
     "./audit": "./src/audit.ts",
     "./wiki": "./src/wiki.ts",
-    "./memories": "./src/memories.ts"
+    "./memories": "./src/memories.ts",
+    "./skill-history": "./src/skill-history.ts",
+    "./digest": "./src/digest.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

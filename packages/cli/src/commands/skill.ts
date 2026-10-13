@@ -14,6 +14,92 @@ function color(text: string, code: string) {
 export function skillCommand() {
   const cmd = new Command("skill").description("Manage skills");
   cmd
+    .command("import <source>")
+    .description("Discover or import public GitHub / skills.sh skills")
+    .option("--list", "List skills without installing")
+    .option("-s, --skill <names...>", "Import skills by name (all available skills if omitted)")
+    .action(async (source: string, options: { list?: boolean; skill?: string[] }) => {
+      const client = createOrcClient();
+      const discovery = await client.skills.discover(source);
+      if (discovery.error || !discovery.data) throw new Error(JSON.stringify(discovery.error));
+      for (const issue of discovery.data.issues) console.error(`${issue.path}: ${issue.error}`);
+      if (options.list) {
+        if (isJson()) return jsonOut(discovery.data);
+        for (const skill of discovery.data.skills)
+          console.log(
+            `${skill.name}${skill.installed ? " [installed]" : ""} - ${skill.description}`,
+          );
+        return;
+      }
+      if (
+        options.skill?.some((name) => !discovery.data?.skills.some((skill) => skill.name === name))
+      )
+        throw new Error("Selected skill not found in repository");
+      const selected = discovery.data.skills.filter(
+        (skill) => !skill.installed && (!options.skill || options.skill.includes(skill.name)),
+      );
+      if (!selected.length)
+        throw new Error("No new skills selected; use --list to inspect the source");
+      const result = await client.skills.import({
+        source,
+        commit: discovery.data.commit,
+        paths: selected.map((skill) => skill.path),
+      });
+      if (result.error || !result.data) throw new Error(JSON.stringify(result.error));
+      if (isJson()) return jsonOut(result.data);
+      for (const skill of result.data.skills) console.log(`Imported ${skill.name}`);
+    });
+  cmd
+    .command("history <name>")
+    .description("Read audited instruction history")
+    .option("--project-id <id>", "Project scope; omitted means global")
+    .action(async (name: string, options: { projectId?: string }) => {
+      const result = await createOrcClient().skills.history(
+        name,
+        options.projectId ? { project_id: options.projectId } : { scope: "global" },
+      );
+      if (result.error || !result.data) throw new Error(JSON.stringify(result.error));
+      if (isJson()) return jsonOut(result.data);
+      for (const change of result.data.changes)
+        console.log(`${change.id} ${change.action} ${change.author}: ${change.reason}`);
+    });
+  cmd
+    .command("revert <name> <change-id>")
+    .description("Restore instructions before an audited change")
+    .requiredOption("--expected-change-id <id>", "Current mutation ID from history")
+    .requiredOption("--reason <text>", "Reason for revert")
+    .option("--project-id <id>", "Project scope; omitted means global")
+    .action(
+      async (
+        name: string,
+        changeId: string,
+        options: { projectId?: string; expectedChangeId: string; reason: string },
+      ) => {
+        const result = await createOrcClient().skills.revert(name, {
+          project_id: options.projectId ?? null,
+          change_id: changeId,
+          expected_change_id: options.expectedChangeId,
+          reason: options.reason,
+        });
+        if (result.error || !result.data) throw new Error(JSON.stringify(result.error));
+        if (isJson()) return jsonOut(result.data);
+        console.log(`Reverted ${name}; retained audit and history`);
+      },
+    );
+  cmd
+    .command("sync <name>")
+    .description("Pull GitHub updates while preserving local edits")
+    .action(async (name: string) => {
+      const result = await createOrcClient().skills.sync(name);
+      if (result.error || !result.data) throw new Error(JSON.stringify(result.error));
+      if (isJson()) return jsonOut(result.data);
+      if (!result.data.applied)
+        return console.log(
+          `Conflicts: ${result.data.conflicts.join(", ")}. Review overrides in the Skills dashboard.`,
+        );
+      console.log(`Synced ${name}: ${result.data.changed.length} files updated`);
+    });
+  cmd
     .command("export <name> <directory>")
     .description("Export the original SKILL.md and every supporting file")
     .action(async (name: string, directory: string) => {
@@ -86,11 +172,12 @@ export function skillCommand() {
 
   cmd
     .command("read <name>")
-    .description("Read a skill")
+    .description("Read effective skill instructions")
+    .option("--project-id <id>", "Project instruction scope; omitted means global")
     .option("--ref <path>", "Read a skill-relative file path (bare filenames read references/)")
     .action(async (name: string, opts) => {
       const client = createOrcClient();
-      const { data, error } = await client.skills.read(name, opts.ref);
+      const { data, error } = await client.skills.read(name, opts.ref, opts.projectId);
       if (error) return console.error("Error:", error);
       if (!data) return console.error("Skill not found.");
       if (isJson()) return jsonOut(data);
@@ -153,7 +240,11 @@ export function skillCommand() {
             ...encodeSkillFile(readFileSync(file.path)),
           }))
         : undefined;
-      const { data, error } = await client.skills.create({ name, content, files });
+      const { data, error } = await client.skills.create({
+        name,
+        content,
+        files,
+      });
       if (error) return console.error("Error:", error);
       if (!data) return console.error("Failed to create skill.");
       if (isJson()) return jsonOut(data);

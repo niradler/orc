@@ -1,14 +1,14 @@
 import type { Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError } from "@orc/core/errors";
+import { execHostFor, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { getDb } from "@orc/db/client";
-import { gateway_sessions, sessions, tasks } from "@orc/db/schema";
+import { gateway_sessions, session_handoffs, sessions, tasks } from "@orc/db/schema";
 import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { LIVE_CHAT_ID, syncNow } from "../session-watcher.js";
 import { searchSessions } from "../sessions/search.js";
 import { bodyLinkIndex, sessionIdsOfTask } from "../sessions/tasklinks.js";
-import { readTranscript } from "../sessions/transcript.js";
+import { MAX_TRANSCRIPT_BYTES, readTranscriptBytes } from "../sessions/transcript.js";
 
 const app = new OpenAPIHono();
 
@@ -48,10 +48,19 @@ const LiveSessionSchema = z
     tokens_used: z.number().nullable(),
     tokens_estimated: z.boolean(),
     cwd: z.string().nullable(),
+    host: z.string().nullable(),
     pid: z.number().nullable(),
     status: z.enum(["idle", "running", "stopped", "error"]),
     project_id: z.string().nullable(),
     task: z.object({ id: z.string(), title: z.string(), status: z.string() }).nullable(),
+    handoff: z
+      .object({
+        id: z.string(),
+        branch: z.string(),
+        commit: z.string(),
+        status: z.enum(["ready", "resumed"]),
+      })
+      .nullable(),
     last_activity_at: z.string().datetime().nullable(),
     created_at: z.string().datetime(),
   })
@@ -78,7 +87,9 @@ const liveListRoute = createRoute({
     200: {
       description: "Live sessions",
       content: {
-        "application/json": { schema: z.object({ sessions: z.array(LiveSessionSchema) }) },
+        "application/json": {
+          schema: z.object({ sessions: z.array(LiveSessionSchema) }),
+        },
       },
     },
   },
@@ -128,7 +139,11 @@ const TranscriptBlockSchema = z.discriminatedUnion("type", [
     id: z.string().optional(),
     result: z.string().optional(),
   }),
-  z.object({ type: z.literal("tool_result"), text: z.string(), forId: z.string().optional() }),
+  z.object({
+    type: z.literal("tool_result"),
+    text: z.string(),
+    forId: z.string().optional(),
+  }),
 ]);
 
 const liveTranscriptRoute = createRoute({
@@ -203,7 +218,11 @@ const liveLinkRoute = createRoute({
   request: {
     params: z.object({ id: z.string() }),
     body: {
-      content: { "application/json": { schema: z.object({ task_id: z.string().nullable() }) } },
+      content: {
+        "application/json": {
+          schema: z.object({ task_id: z.string().nullable() }),
+        },
+      },
     },
   },
   responses: {
@@ -234,7 +253,10 @@ const listRoute = createRoute({
       description: "Sessions list",
       content: {
         "application/json": {
-          schema: z.object({ sessions: z.array(SessionSchema), total: z.number().int() }),
+          schema: z.object({
+            sessions: z.array(SessionSchema),
+            total: z.number().int(),
+          }),
         },
       },
     },
@@ -272,14 +294,26 @@ function toDto(s: typeof sessions.$inferSelect) {
 type GatewayRow = typeof gateway_sessions.$inferSelect;
 
 async function toLiveDtos(rows: GatewayRow[]) {
+  const handoffs = rows.length
+    ? await getDb().query.session_handoffs.findMany({
+        where: inArray(
+          session_handoffs.live_session_id,
+          rows.map((row) => row.id),
+        ),
+      })
+    : [];
+  const handoffsBySession = new Map(handoffs.map((row) => [row.live_session_id, row]));
   const taskIds = [...new Set(rows.map((r) => r.task_id).filter((id): id is string => !!id))];
   const linked =
     taskIds.length > 0
-      ? await getDb().query.tasks.findMany({ where: inArray(tasks.id, taskIds) })
+      ? await getDb().query.tasks.findMany({
+          where: inArray(tasks.id, taskIds),
+        })
       : [];
   const byId = new Map(linked.map((t) => [t.id, t]));
   const fromBody = await bodyLinkIndex();
   return rows.map((r) => {
+    const handoff = handoffsBySession.get(r.id);
     const t = r.task_id
       ? byId.get(r.task_id)
       : fromBody.get((r.runtime_session_id ?? "").toLowerCase());
@@ -292,9 +326,19 @@ async function toLiveDtos(rows: GatewayRow[]) {
       tokens_used: r.tokens_used ?? null,
       tokens_estimated: r.backend === "cursor" && r.tokens_used != null,
       cwd: r.cwd ?? null,
+      host: r.execution_host ?? null,
       pid: r.pid ?? null,
       status: r.status,
       project_id: r.project_id ?? null,
+      handoff:
+        handoff && (handoff.status === "ready" || handoff.status === "resumed")
+          ? {
+              id: handoff.id,
+              branch: handoff.request.branch,
+              commit: handoff.request.commit,
+              status: handoff.status,
+            }
+          : null,
       task: t ? { id: t.id, title: t.title, status: t.status } : null,
       last_activity_at: r.last_activity_at?.toISOString() ?? null,
       created_at: r.created_at.toISOString(),
@@ -320,7 +364,12 @@ app.openapi(liveListRoute, async (c) => {
               : undefined,
           )
         : undefined,
-      active ? ne(gateway_sessions.status, "stopped") : undefined,
+      active
+        ? or(
+            ne(gateway_sessions.status, "stopped"),
+            sql`EXISTS (SELECT 1 FROM session_handoffs h WHERE h.live_session_id = ${gateway_sessions.id} AND h.status = 'ready')`,
+          )
+        : undefined,
     ),
     orderBy: [desc(gateway_sessions.last_activity_at)],
     limit,
@@ -330,7 +379,12 @@ app.openapi(liveListRoute, async (c) => {
 
 app.openapi(liveSearchRoute, async (c) => {
   const { q, agent, limit } = c.req.valid("query");
-  const result = await searchSessions({ q, agent, limit });
+  const result = await searchSessions({
+    q,
+    agent,
+    limit,
+    runtime: hostRuntime(resolveExecHost()),
+  });
   const dtos = await toLiveDtos(result.hits.map((h) => h.row));
   return c.json(
     {
@@ -354,10 +408,22 @@ app.openapi(liveTranscriptRoute, async (c) => {
     where: and(eq(gateway_sessions.id, id), eq(gateway_sessions.chat_id, LIVE_CHAT_ID)),
   });
   if (!row) throw new NotFoundError("Session", id);
-  if (!row.transcript_path || !existsSync(row.transcript_path)) {
+  if (!row.transcript_path) {
     throw new NotFoundError("Transcript for session", id);
   }
-  return c.json(await readTranscript(row.transcript_path, row.backend, { offset, limit, q }), 200);
+  const runtime = hostRuntime(execHostFor(row.execution_host ?? null));
+  if (!(await runtime.isFile(row.transcript_path)))
+    throw new NotFoundError("Transcript for session", id);
+  const bytes = await runtime.readFile(row.transcript_path, MAX_TRANSCRIPT_BYTES);
+  const host = runtime.host.kind === "ssh" ? runtime.host.alias : "local";
+  return c.json(
+    await readTranscriptBytes(bytes, row.backend, `${host}:${row.transcript_path}`, {
+      offset,
+      limit,
+      q,
+    }),
+    200,
+  );
 });
 
 app.openapi(liveSyncRoute, async (c) => c.json({ results: await syncNow() }, 200));
@@ -400,14 +466,19 @@ app.openapi(listRoute, async (c) => {
   });
   const [counted] = await db.select({ total: sql<number>`count(*)` }).from(sessions).where(where);
 
-  return c.json({ sessions: rows.map(toDto), total: Number(counted?.total ?? 0) });
+  return c.json({
+    sessions: rows.map(toDto),
+    total: Number(counted?.total ?? 0),
+  });
 });
 
 app.openapi(getRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
 
-  const session = await db.query.sessions.findFirst({ where: eq(sessions.id, id) });
+  const session = await db.query.sessions.findFirst({
+    where: eq(sessions.id, id),
+  });
   if (!session) throw new NotFoundError("Session", id);
 
   const sqlite = (db as unknown as { $client: Database }).$client;

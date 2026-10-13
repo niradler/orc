@@ -15,7 +15,9 @@ test("registered agents share idle visibility, transcripts, task links and termi
   mkdirSync(LIVE_REGISTRY_DIR, { recursive: true });
   for (const backend of agents) {
     const transcriptPath = join(LIVE_REGISTRY_DIR, `${prefix}-${backend}.jsonl`);
-    const message = { content: [{ type: "text", text: `Hello from ${backend}` }] };
+    const message = {
+      content: [{ type: "text", text: `Hello from ${backend}` }],
+    };
     const line =
       backend === "claude"
         ? { type: "user", message }
@@ -42,7 +44,9 @@ test("registered agents share idle visibility, transcripts, task links and termi
     });
   }
   await apiPost(request, "/sessions/live/sync", {});
-  const task = await apiPost<{ id: string }>(request, "/tasks", { title: `${prefix} task` });
+  const task = await apiPost<{ id: string }>(request, "/tasks", {
+    title: `${prefix} task`,
+  });
   await gotoView(page, "sessions");
   for (const backend of agents) {
     await page.getByTestId("agent-filter").selectOption(backend);

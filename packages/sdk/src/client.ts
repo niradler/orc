@@ -2,11 +2,24 @@ import { loadConfig } from "@orc/core/config";
 import type { RuleEventCapability, RuleHookBackend } from "@orc/core/rule-events";
 import type { RuleDecision, RuleEvent, RulePolicy, RuleRevision } from "@orc/core/rule-types";
 import type {
+  SessionHandoff,
+  SessionHandoffInput,
+  SessionHandoffUpload,
+} from "@orc/core/session-handoff";
+import type {
+  SkillDiscovery,
+  SkillImportInput,
+  SkillImportOrigin,
+  SkillSyncInput,
+  SkillSyncResult,
+} from "@orc/core/skill-import-types";
+import type {
   AgentBackendInfo,
   AgentFull,
   AgentProfile,
   ApiResult,
   AttachFlowInput,
+  AuditEntry,
   BrokenAgent,
   BrokenFlow,
   CreateFlowInput,
@@ -35,11 +48,13 @@ import type {
   SessionDetail,
   SessionSearchResult,
   SessionSyncResult,
+  SkillChange,
   SkillFileInput,
   SkillFull,
   SkillMeta,
   SkillRefContent,
   SkillSource,
+  SkillUpdate,
   Task,
   TaskLink,
   TranscriptPage,
@@ -47,6 +62,13 @@ import type {
   UpdateMemoryInput,
   UpdateProjectInput,
   UpdateTaskInput,
+  WikiChange,
+  WikiIndexEntry,
+  WikiPage,
+  WikiRevision,
+  WikiScope,
+  WikiSearchHit,
+  WikiWrite,
 } from "./types.js";
 
 export type OrcClientOptions = {
@@ -72,7 +94,9 @@ async function call<T>(
     if (str) url += `?${str}`;
   }
 
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
   if (secret) headers.Authorization = `Bearer ${secret}`;
 
   try {
@@ -89,7 +113,10 @@ async function call<T>(
       const err = json as { error?: string; code?: string };
       return {
         data: null,
-        error: { error: err.error ?? "Unknown error", code: err.code ?? "UNKNOWN" },
+        error: {
+          error: err.error ?? "Unknown error",
+          code: err.code ?? "UNKNOWN",
+        },
       };
     }
 
@@ -111,6 +138,13 @@ export function createOrcClient(options?: OrcClientOptions) {
   ) => call<T>(baseUrl, secret, method, `/api${path}`, body, query);
 
   return {
+    handoffs: {
+      create: (input: SessionHandoffInput) =>
+        c<SessionHandoffUpload>("POST", "/session-handoffs", input),
+      get: (id: string) => c<SessionHandoff>("GET", `/session-handoffs/${encodeURIComponent(id)}`),
+      prepare: (id: string) =>
+        c<SessionHandoff>("POST", `/session-handoffs/${encodeURIComponent(id)}/prepare`),
+    },
     rules: {
       list: (workspace?: string) =>
         c<{
@@ -136,7 +170,11 @@ export function createOrcClient(options?: OrcClientOptions) {
           events: Record<RuleHookBackend, RuleEventCapability[]>;
         }>("GET", "/rules", undefined, { workspace }),
       activate: (policy: RulePolicy, expected_id: string | null, reason: string) =>
-        c<RuleRevision>("POST", "/rules/activate", { policy, expected_id, reason }),
+        c<RuleRevision>("POST", "/rules/activate", {
+          policy,
+          expected_id,
+          reason,
+        }),
       revert: (id: string, reason: string) =>
         c<RuleRevision>("POST", "/rules/revert", { id, reason }),
       check: (event: RuleEvent) => c<RuleDecision>("POST", "/rules/check", event),
@@ -265,7 +303,41 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     skills: {
-      list: (params?: { q?: string; source?: SkillSource; reload?: boolean }) =>
+      updateInstructions: (name: string, input: Omit<SkillUpdate, "skill_name">) =>
+        c<SkillFull>("PUT", `/skills/${encodeURIComponent(name)}/instructions`, input),
+      history: (name: string, scope: WikiScope = {}) =>
+        c<{ changes: SkillChange[] }>(
+          "GET",
+          `/skills/${encodeURIComponent(name)}/history`,
+          undefined,
+          scope,
+        ),
+      revert: (
+        name: string,
+        input: {
+          project_id: string | null;
+          change_id: string;
+          expected_change_id: string;
+          reason: string;
+        },
+      ) => c<SkillFull>("POST", `/skills/${encodeURIComponent(name)}/revert`, input),
+
+      discover: (source: string) => c<SkillDiscovery>("POST", "/skills/discover", { source }),
+      import: (input: SkillImportInput) =>
+        c<{ skills: SkillFull[] }>("POST", "/skills/import", input),
+      origin: (name: string) =>
+        c<SkillImportOrigin | null>("GET", `/skills/${encodeURIComponent(name)}/origin`),
+      sync: (name: string, input: SkillSyncInput = {}) =>
+        c<SkillSyncResult>("POST", `/skills/${encodeURIComponent(name)}/sync`, input),
+      editFile: (name: string, input: { path: string; content: string; expectedContent: string }) =>
+        c<SkillFull>("PUT", `/skills/${encodeURIComponent(name)}/file`, input),
+      list: (params?: {
+        q?: string;
+        source?: SkillSource;
+        reload?: boolean;
+        project_id?: string;
+        scope?: "global";
+      }) =>
         c<{
           skills: SkillMeta[];
           broken: BrokenAgent[];
@@ -328,7 +400,9 @@ export function createOrcClient(options?: OrcClientOptions) {
       create: (input: CreateFlowInput) => c<FlowFull>("POST", "/flows", input),
 
       validate: (definition: Record<string, unknown>) =>
-        c<{ valid: boolean; errors: string[] }>("POST", "/flows/validate", { definition }),
+        c<{ valid: boolean; errors: string[] }>("POST", "/flows/validate", {
+          definition,
+        }),
     },
 
     projects: {
@@ -445,10 +519,38 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<null>("POST", "/gateway/send", input),
     },
 
+    wiki: {
+      list: (scope: WikiScope = {}) =>
+        c<{ pages: WikiIndexEntry[] }>("GET", "/wiki", undefined, scope),
+      changes: (scope: WikiScope = {}) =>
+        c<{ changes: WikiChange[] }>("GET", "/wiki/changes", undefined, scope),
+      search: (q: string, scope: WikiScope = {}) =>
+        c<{ results: WikiSearchHit[] }>("GET", "/wiki/search", undefined, { ...scope, q }),
+      get: (slug: string, scope: WikiScope = {}) =>
+        c<WikiPage>("GET", `/wiki/${encodeURIComponent(slug)}`, undefined, scope),
+      history: (slug: string, scope: WikiScope = {}) =>
+        c<{ revisions: WikiRevision[] }>(
+          "GET",
+          `/wiki/${encodeURIComponent(slug)}/history`,
+          undefined,
+          scope,
+        ),
+      write: (input: WikiWrite) => c<WikiRevision>("POST", "/wiki", input),
+    },
+    audit: {
+      list: (scope: WikiScope = {}) =>
+        c<{ entries: AuditEntry[] }>("GET", "/audit", undefined, scope),
+    },
+
     knowledge: {
       search: (
         q: string,
-        opts?: { collection?: string; project_id?: string; mode?: string; limit?: number },
+        opts?: {
+          collection?: string;
+          project_id?: string;
+          mode?: string;
+          limit?: number;
+        },
       ) =>
         c<{
           results: {

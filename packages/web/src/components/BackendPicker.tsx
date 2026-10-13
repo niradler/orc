@@ -68,7 +68,12 @@ export function BackendPicker({ value, onChange, testId }: BackendPickerProps) {
   );
 }
 
-type Backend = { name: string; available: boolean; requires: string; error: string | null };
+type Backend = {
+  name: string;
+  available: boolean;
+  requires: string;
+  error: string | null;
+};
 
 function hint(
   value: string,

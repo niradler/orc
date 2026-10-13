@@ -195,7 +195,9 @@ export function FilePanel({ terminal }: { terminal: Terminal }): ReactElement {
           aria-label="Refresh files"
           title="Refresh files"
           onClick={() =>
-            void queryClient.invalidateQueries({ queryKey: ["checkout-files", terminal.id] })
+            void queryClient.invalidateQueries({
+              queryKey: ["checkout-files", terminal.id],
+            })
           }
           className="rounded p-1 text-outline hover:bg-surface-highest hover:text-primary"
         >

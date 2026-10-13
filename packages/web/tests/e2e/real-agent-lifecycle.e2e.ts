@@ -325,7 +325,9 @@ test.describe("Real Agent Lifecycle Demo", () => {
       }
       if (projectId) {
         await request
-          .delete(`${API_BASE}/projects/${projectId}`, { headers: AUTH_HEADERS })
+          .delete(`${API_BASE}/projects/${projectId}`, {
+            headers: AUTH_HEADERS,
+          })
           .catch(() => {});
       }
     }

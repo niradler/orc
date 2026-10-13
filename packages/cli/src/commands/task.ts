@@ -139,7 +139,9 @@ export function taskCommand() {
       const client = createOrcClient();
       const full = await resolveTaskId(client, id);
       if (!full) return;
-      const { data, error } = await client.tasks.update(full, { status: "done" });
+      const { data, error } = await client.tasks.update(full, {
+        status: "done",
+      });
       if (error) {
         if (isJson()) return jsonErr(String(error));
         return console.error("Error:", error);
@@ -155,7 +157,9 @@ export function taskCommand() {
       const client = createOrcClient();
       const full = await resolveTaskId(client, id);
       if (!full) return;
-      const { data, error } = await client.tasks.update(full, { status: "review" });
+      const { data, error } = await client.tasks.update(full, {
+        status: "review",
+      });
       if (error) {
         if (isJson()) return jsonErr(String(error));
         return console.error("Error:", error);
@@ -180,7 +184,9 @@ export function taskCommand() {
       if (task?.status !== "review") {
         return console.error(`Task is not in review (current: ${task?.status})`);
       }
-      const { data, error } = await client.tasks.update(full, { status: "done" });
+      const { data, error } = await client.tasks.update(full, {
+        status: "done",
+      });
       if (error) {
         if (isJson()) return jsonErr(String(error));
         return console.error("Error:", error);
@@ -206,7 +212,9 @@ export function taskCommand() {
       if (task?.status !== "review") {
         return console.error(`Task is not in review (current: ${task?.status})`);
       }
-      const { data, error } = await client.tasks.update(full, { status: "changes_requested" });
+      const { data, error } = await client.tasks.update(full, {
+        status: "changes_requested",
+      });
       if (error) {
         if (isJson()) return jsonErr(String(error));
         return console.error("Error:", error);
@@ -254,7 +262,11 @@ export function taskCommand() {
         const links = linkData?.links ?? [];
         if (!opts.comments) return jsonOut({ ...task, links });
         const { data: commentData } = await client.tasks.listComments(full);
-        return jsonOut({ ...task, links, comments: commentData?.comments ?? [] });
+        return jsonOut({
+          ...task,
+          links,
+          comments: commentData?.comments ?? [],
+        });
       }
 
       const label = (l: string, v: string | null | undefined) => {
@@ -348,7 +360,10 @@ export function taskCommand() {
       if (noProject) {
         updates.project_id = null;
       } else if (typeof opts.project === "string") {
-        const project = await resolveProject(client, { project: opts.project, noProject: false });
+        const project = await resolveProject(client, {
+          project: opts.project,
+          noProject: false,
+        });
         if (project) updates.project_id = project.id;
       }
 
@@ -426,7 +441,13 @@ function priorityIcon(priority: string): string {
 }
 
 function formatTask(
-  t: { id: string; title: string; status: string; priority: string; project_id?: string | null },
+  t: {
+    id: string;
+    title: string;
+    status: string;
+    priority: string;
+    project_id?: string | null;
+  },
   projectNames?: Map<string, string>,
 ): string {
   const si = statusIcon(t.status);

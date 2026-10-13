@@ -1,10 +1,12 @@
 import {
-  ACPX_MISSING_MESSAGE,
+  type AcpxResolution,
+  acpxMissingMessage,
   pickUsableBackend,
   probeBackend,
-  resolveAcpxCli,
+  resolveAcpx,
 } from "@orc/agent-runtime";
 import { loadConfig } from "@orc/core/config";
+import { type HostProcess, hostHome, hostSpawn, resolveExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
 import { getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
@@ -163,9 +165,22 @@ app.post("/chat/stream", async (c) => {
   // natively: it spawns no external binary, so a fresh `npm i -g orc-ai` can
   // chat immediately. acpx is what makes *other* agents (gemini, codex, …)
   // reachable, so it stays the path for anything else.
+  const host = resolveExecHost();
   const nativeBackend = agent === "claude" ? await pickUsableBackend(["claude"]) : null;
+  if (host.kind === "ssh" && agent === "claude" && !nativeBackend) {
+    const claudeProbe = await probeBackend("claude");
+    return c.json({ error: claudeProbe.error ?? `claude is not usable on ${host.alias}` }, 503);
+  }
+  let cwd: string;
+  let acpx: AcpxResolution | null = null;
+  try {
+    cwd = host.kind === "ssh" ? await hostHome(host) : process.cwd();
+    if (!nativeBackend) acpx = await resolveAcpx(host);
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+  }
   const protectedWorkspace =
-    loadConfig().rules.enabled && new RuleStore(getSqlite()).active(process.cwd()).length > 0;
+    loadConfig().rules.enabled && new RuleStore(getSqlite()).active(cwd).length > 0;
   if (protectedWorkspace && !nativeBackend)
     return c.json(
       {
@@ -174,8 +189,6 @@ app.post("/chat/stream", async (c) => {
       },
       503,
     );
-  const acpx = nativeBackend ? null : resolveAcpxCli();
-
   if (!acpx) {
     // agentapi last: it is a service, so it only answers if someone set it up.
     const fallbackBackend = nativeBackend ?? (await pickUsableBackend(["agentapi"]));
@@ -184,13 +197,16 @@ app.post("/chat/stream", async (c) => {
       return c.json(
         {
           error:
-            `No agent backend can run "${agent}". ${ACPX_MISSING_MESSAGE}` +
+            `No agent backend can run "${agent}". ${acpxMissingMessage(host)}` +
             (claudeProbe.error ? ` Built-in claude backend: ${claudeProbe.error}` : ""),
         },
         503,
       );
     }
-    logger.debug("chat via in-process backend", { backend: fallbackBackend.name, agent });
+    logger.debug("chat via in-process backend", {
+      backend: fallbackBackend.name,
+      agent,
+    });
     return streamSSE(c, async (s) => {
       await s.writeSSE({ data: JSON.stringify({ type: "open" }) });
       let session: Awaited<ReturnType<typeof fallbackBackend.startSession>> | null = null;
@@ -203,13 +219,17 @@ app.post("/chat/stream", async (c) => {
       }, CHAT_STREAM_MAX_MS);
       s.onAbort(() => void session?.close().catch(() => {}));
       try {
-        session = await fallbackBackend.startSession({ cwd: process.cwd(), autoApprove });
+        session = await fallbackBackend.startSession({ cwd, autoApprove });
         await session.send(prompt);
         for await (const event of session.events()) {
           if (event.type === "text") {
-            await s.writeSSE({ data: JSON.stringify({ type: "text", text: event.data }) });
+            await s.writeSSE({
+              data: JSON.stringify({ type: "text", text: event.data }),
+            });
           } else if (event.type === "error") {
-            await s.writeSSE({ data: JSON.stringify({ type: "error", message: event.data }) });
+            await s.writeSSE({
+              data: JSON.stringify({ type: "error", message: event.data }),
+            });
           } else if (event.type === "result") {
             break;
           }
@@ -226,7 +246,7 @@ app.post("/chat/stream", async (c) => {
     });
   }
 
-  // `resolveAcpxCli()` already returns a spawn-ready command: a bare binary, or
+  // `resolveAcpx()` already returns a spawn-ready command: a bare binary, or
   // an interpreter plus acpx's cli.js (which is what the Windows `.cmd` shim and
   // a bundled install both need).
   return streamSSE(c, async (s) => {
@@ -243,21 +263,27 @@ app.post("/chat/stream", async (c) => {
 
     logger.debug("spawning acpx", { agent, autoApprove, source: acpx.source });
 
-    const proc = Bun.spawn(args, {
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    let handle: HostProcess;
+    try {
+      handle = await hostSpawn(host, args, {
+        ...(host.kind === "ssh" ? { cwd } : {}),
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await s.writeSSE({ data: JSON.stringify({ type: "error", message }) });
+      await s.writeSSE({ data: JSON.stringify({ type: "done" }) });
+      return;
+    }
+    const proc = handle.proc;
 
     let aborted = false;
     const cleanup = () => {
       if (aborted) return;
       aborted = true;
-      try {
-        proc.kill();
-      } catch {
-        /* ignore */
-      }
+      handle.kill();
     };
     s.onAbort(cleanup);
     c.req.raw.signal.addEventListener("abort", cleanup);
@@ -327,7 +353,10 @@ app.post("/chat/stream", async (c) => {
     const exitCode = await proc.exited;
     if (exitCode !== 0 && !aborted) {
       await s.writeSSE({
-        data: JSON.stringify({ type: "error", message: `acpx exited with code ${exitCode}` }),
+        data: JSON.stringify({
+          type: "error",
+          message: `acpx exited with code ${exitCode}`,
+        }),
       });
     }
 

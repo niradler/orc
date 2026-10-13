@@ -141,7 +141,12 @@ describe("user flows", () => {
   });
 
   test("an invalid user flow is reported, not silently loaded", () => {
-    writeUserFlow(TEST_FLOW, { name: TEST_FLOW, entry: "ghost", nodes: {}, edges: [] });
+    writeUserFlow(TEST_FLOW, {
+      name: TEST_FLOW,
+      entry: "ghost",
+      nodes: {},
+      edges: [],
+    });
     expect(readFlow(TEST_FLOW)).toBeNull();
     const broken = listBrokenFlows().find((b) => b.name === TEST_FLOW);
     expect(broken).toBeTruthy();
@@ -228,7 +233,10 @@ describe("resolveFlowForTask", () => {
 
   test("null and undefined overrides are ignored rather than treated as a graph", () => {
     for (const flowOverride of [null, undefined]) {
-      const resolved = resolveFlowForTask({ flowOverride, defaultFlowName: "orc-default" });
+      const resolved = resolveFlowForTask({
+        flowOverride,
+        defaultFlowName: "orc-default",
+      });
       expect("definition" in resolved && resolved.name).toBe("orc-default");
     }
   });

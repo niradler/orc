@@ -70,7 +70,10 @@ describe("validateFlowGraph", () => {
   });
 
   test("catches an edge pointing at an undefined node", () => {
-    const bad = { ...MINIMAL, edges: [{ from: "work", to: "typo", when: { outcome: "ok" } }] };
+    const bad = {
+      ...MINIMAL,
+      edges: [{ from: "work", to: "typo", when: { outcome: "ok" } }],
+    };
     expect(issues(bad).join()).toContain('unknown node "typo"');
   });
 
@@ -89,7 +92,10 @@ describe("validateFlowGraph", () => {
     const bad = {
       name: "stuck",
       entry: "work",
-      nodes: { work: { kind: "agent", skill: "s" }, done: { kind: "terminal" } },
+      nodes: {
+        work: { kind: "agent", skill: "s" },
+        done: { kind: "terminal" },
+      },
       edges: [],
     };
     expect(issues(bad).join()).toContain("no outgoing edges");
@@ -109,7 +115,10 @@ describe("validateFlowGraph", () => {
     const endless = {
       name: "endless",
       entry: "work",
-      nodes: { work: { kind: "agent", skill: "s" }, done: { kind: "terminal" } },
+      nodes: {
+        work: { kind: "agent", skill: "s" },
+        done: { kind: "terminal" },
+      },
       edges: [{ from: "work", to: "work", when: { always: true } }],
     };
     expect(issues(endless).join()).toContain("no terminal node is reachable");
@@ -118,7 +127,10 @@ describe("validateFlowGraph", () => {
   test("catches an unconditional edge that shadows later ones", () => {
     const shadowed = {
       ...MINIMAL,
-      nodes: { ...MINIMAL.nodes, other: { kind: "terminal", task_status: "paused" } },
+      nodes: {
+        ...MINIMAL.nodes,
+        other: { kind: "terminal", task_status: "paused" },
+      },
       edges: [
         { from: "work", to: "done", when: { always: true } },
         { from: "work", to: "other", when: { outcome: "ok" } },
@@ -172,7 +184,10 @@ describe("validateFlowGraph", () => {
   test("catches a declared outcome nothing routes on", () => {
     const bad = {
       ...MINIMAL,
-      nodes: { ...MINIMAL.nodes, work: { kind: "agent", skill: "s", outcomes: ["ok", "ghost"] } },
+      nodes: {
+        ...MINIMAL.nodes,
+        work: { kind: "agent", skill: "s", outcomes: ["ok", "ghost"] },
+      },
     };
     expect(issues(bad).join()).toContain('outcome "ghost" is declared');
   });
@@ -180,13 +195,19 @@ describe("validateFlowGraph", () => {
   test("rejects agent-only fields on other node kinds", () => {
     const bad = {
       ...MINIMAL,
-      nodes: { ...MINIMAL.nodes, done: { kind: "terminal", skill: "orc-coder" } },
+      nodes: {
+        ...MINIMAL.nodes,
+        done: { kind: "terminal", skill: "orc-coder" },
+      },
     };
     expect(issues(bad).join()).toContain("only apply to agent nodes");
   });
 
   test("rejects an agent node with nothing to do", () => {
-    const bad = { ...MINIMAL, nodes: { ...MINIMAL.nodes, work: { kind: "agent" } } };
+    const bad = {
+      ...MINIMAL,
+      nodes: { ...MINIMAL.nodes, work: { kind: "agent" } },
+    };
     expect(issues(bad).join()).toContain("needs an agent profile, skill or prompt");
   });
 });
@@ -210,7 +231,11 @@ describe("declaredOutcomes", () => {
 });
 
 describe("resolvePlaceholder", () => {
-  const task = { skill_name: "orc-coder", agent_backend: null, agent_model: undefined };
+  const task = {
+    skill_name: "orc-coder",
+    agent_backend: null,
+    agent_model: undefined,
+  };
 
   test("substitutes task fields and passes other values through", () => {
     expect(resolvePlaceholder("$task.skill_name", task)).toBe("orc-coder");

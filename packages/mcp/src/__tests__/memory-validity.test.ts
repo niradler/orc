@@ -27,19 +27,31 @@ describe("Memory eligibility", () => {
     await getDb()
       .insert(tasks)
       .values([
-        { id: "scope-task-a", title: "Assigned scoped task", project_id: "scope-a" },
+        {
+          id: "scope-task-a",
+          title: "Assigned scoped task",
+          project_id: "scope-a",
+        },
         { id: "scope-task-none", title: "Unassigned scoped task" },
       ]);
     await getDb()
       .insert(memories)
       .values([
-        { id: "scope-memory-a", content: "Assigned scoped memory", project_id: "scope-a" },
+        {
+          id: "scope-memory-a",
+          content: "Assigned scoped memory",
+          project_id: "scope-a",
+        },
         { id: "scope-memory-none", content: "Unassigned scoped memory" },
       ]);
     await getDb()
       .insert(sessions)
       .values([
-        { id: "scope-session-none", agent: "test", summary: "Unassigned session summary" },
+        {
+          id: "scope-session-none",
+          agent: "test",
+          summary: "Unassigned session summary",
+        },
         {
           id: "scope-session-a",
           agent: "test",
@@ -55,7 +67,10 @@ describe("Memory eligibility", () => {
     expect(assigned).toContain("Assigned scoped memory");
     expect(assigned).toContain("Assigned session summary");
     expect(assigned).not.toContain("Unassigned");
-    const unassigned = await executeTool("context", { project: "validity-a", project_id: null });
+    const unassigned = await executeTool("context", {
+      project: "validity-a",
+      project_id: null,
+    });
     expect(unassigned).toContain("Unassigned scoped task");
     expect(unassigned).toContain("Unassigned scoped memory");
     expect(unassigned).toContain("Unassigned session summary");
@@ -121,7 +136,11 @@ describe("Memory eligibility", () => {
           project_id: "validity-b",
           created_at: new Date(now - 15_000),
         },
-        { id: "timeline-global", content: "global", created_at: new Date(now - 15_000) },
+        {
+          id: "timeline-global",
+          content: "global",
+          created_at: new Date(now - 15_000),
+        },
         {
           id: "timeline-expired",
           content: "expired",

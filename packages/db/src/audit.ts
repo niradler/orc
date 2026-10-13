@@ -53,6 +53,7 @@ export type AuditEntry = {
 export type AuditQuery = {
   projectId?: string | null | undefined;
   entityType?: string | undefined;
+  sessionId?: string | undefined;
   since?: number | undefined;
   limit?: number | undefined;
 };
@@ -114,6 +115,10 @@ export class AuditLog {
     if (query.entityType) {
       conditions.push("entity_type = ?");
       params.push(query.entityType);
+    }
+    if (query.sessionId !== undefined) {
+      conditions.push("session_id = ?");
+      params.push(query.sessionId);
     }
     if (query.since !== undefined) {
       conditions.push("created_at >= ?");

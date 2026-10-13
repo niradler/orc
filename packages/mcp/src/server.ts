@@ -11,18 +11,23 @@ export function toolListing() {
   return toolDefinitions.map((t) => ({
     name: t.name,
     description: t.description,
-    inputSchema: z.toJSONSchema(t.inputSchema, { target: "draft-7", io: "input" }),
+    inputSchema: z.toJSONSchema(t.inputSchema, {
+      target: "draft-7",
+      io: "input",
+    }),
   }));
 }
 
-export function createMcpServer() {
+export function createMcpServer(options: { publicApiBaseUrl?: string } = {}) {
   const server = new Server({ name: "orc", version: "0.0.1" }, { capabilities: { tools: {} } });
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: toolListing() }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: toolListing(),
+  }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
-    logger.debug(`Tool call: ${name}`, args);
+    logger.debug(`Tool call: ${name}`, name === "session_handoff" ? undefined : args);
 
     try {
       const toolDef = toolDefinitions.find((t) => t.name === name);
@@ -36,12 +41,17 @@ export function createMcpServer() {
       const parsed = toolDef.inputSchema.safeParse(args ?? {});
       if (!parsed.success) {
         return {
-          content: [{ type: "text" as const, text: `Invalid args: ${parsed.error.message}` }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Invalid args: ${parsed.error.message}`,
+            },
+          ],
           isError: true,
         };
       }
 
-      const result = await executeTool(name as ToolName, parsed.data);
+      const result = await executeTool(name as ToolName, parsed.data, options);
       return { content: [{ type: "text" as const, text: result }] };
     } catch (err) {
       logger.error(`Tool error: ${name}`, err);

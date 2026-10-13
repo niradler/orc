@@ -91,6 +91,7 @@ function buildScopeTypeFilter(
   scope?: string,
   type?: string,
   project_id?: string,
+  unabsorbed = false,
 ): { clause: string; params: (string | null)[] } {
   const conditions: string[] = ["(m.expires_at IS NULL OR m.expires_at > unixepoch())"];
   const params: (string | null)[] = [];
@@ -106,6 +107,13 @@ function buildScopeTypeFilter(
     conditions.push("m.project_id = ?");
     params.push(project_id);
   }
+  if (unabsorbed) {
+    conditions.push(`NOT EXISTS (SELECT 1 FROM wiki_pages p, json_each(p.sources) source
+      WHERE source.value = 'memory:' || m.id
+      AND (p.project_id IS ? OR (p.project_id IS NULL AND NOT EXISTS (
+        SELECT 1 FROM wiki_pages shadow WHERE shadow.project_id IS ? AND shadow.slug=p.slug))))`);
+    params.push(project_id ?? null, project_id ?? null);
+  }
   return {
     clause: conditions.length ? ` AND ${conditions.join(" AND ")}` : "",
     params,
@@ -120,8 +128,9 @@ function ftsQuery(
   type: string | undefined,
   limit: number,
   project_id?: string,
+  unabsorbed = false,
 ): RawMemRow[] {
-  const { clause, params } = buildScopeTypeFilter(scope, type, project_id);
+  const { clause, params } = buildScopeTypeFilter(scope, type, project_id, unabsorbed);
   const sql = `SELECT ${SELECT_COLS}
     FROM ${table} f JOIN memories m ON m.id = f.id
     WHERE f.${table} MATCH ?${clause}
@@ -168,6 +177,7 @@ export function searchLayer1(
   limit = 10,
   type?: string,
   project_id?: string,
+  unabsorbed = false,
 ): MemoryLayer1[] {
   const sqlite = getSqlite();
   const trimmed = query.trim();
@@ -196,6 +206,7 @@ export function searchLayer1(
     type,
     limit,
     project_id,
+    unabsorbed,
   );
   results.push(...dedupe(porterAnd, "porter"));
   if (results.length >= limit) return renumber(results.slice(0, limit));
@@ -208,6 +219,7 @@ export function searchLayer1(
     type,
     limit,
     project_id,
+    unabsorbed,
   );
   results.push(...dedupe(porterOr, "porter"));
   if (results.length >= limit) return renumber(results.slice(0, limit));
@@ -220,6 +232,7 @@ export function searchLayer1(
     type,
     limit,
     project_id,
+    unabsorbed,
   );
   results.push(...dedupe(trigramAnd, "trigram"));
   if (results.length >= limit) return renumber(results.slice(0, limit));
@@ -232,12 +245,13 @@ export function searchLayer1(
     type,
     limit,
     project_id,
+    unabsorbed,
   );
   results.push(...dedupe(trigramOr, "trigram"));
   if (results.length >= limit) return renumber(results.slice(0, limit));
 
   if (results.length === 0) {
-    const { clause, params } = buildScopeTypeFilter(scope, type, project_id);
+    const { clause, params } = buildScopeTypeFilter(scope, type, project_id, unabsorbed);
     const allParams: (string | number | null)[] = [`%${trimmed.toLowerCase()}%`, ...params, limit];
     const fallbackRows = sqlite
       .query(

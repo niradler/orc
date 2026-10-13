@@ -1,4 +1,24 @@
 import type { RuleEventCapability } from "@orc/core/rule-events";
+import type {
+  AuditEntry,
+  SkillChange,
+  SkillDiscovery,
+  SkillImportInput,
+  SkillImportOrigin,
+  SkillSyncInput,
+  SkillSyncResult,
+  SkillUpdate,
+  WikiChange,
+  WikiIndexEntry,
+  WikiPage,
+  WikiRevision,
+  WikiScope,
+  WikiSearchHit,
+  WikiWrite,
+} from "@orc/sdk/types";
+
+export type { SkillDiscovery, SkillImportInput, SkillImportOrigin } from "@orc/sdk/types";
+
 import type { RulePolicy, RuleRevision } from "@orc/core/rule-types";
 
 // Browser-compatible ORC API client.
@@ -134,6 +154,7 @@ export type Terminal = {
   exit_code: number | null;
   pid: number | null;
   live_session_id: string | null;
+  host: string | null;
   created_at: string;
 };
 
@@ -142,7 +163,37 @@ export type TerminalsInfo = {
   ready: boolean;
   reason: string | null;
   launchers: TerminalKind[];
+  host: string | null;
   terminals: Terminal[];
+};
+
+export type HostDirectoryListing = {
+  host: string | null;
+  path: string;
+  parent: string | null;
+  directories: string[];
+};
+
+export type SshState = {
+  host: string | null;
+  remote_port: number;
+  hosts: string[];
+  locked: boolean;
+  supported: boolean;
+  unsupported_reason: string | null;
+  secret_set: boolean;
+};
+
+export type SshTest = {
+  ok: boolean;
+  host: string;
+  error: string | null;
+  os: string | null;
+  home: string | null;
+  shell: string | null;
+  binaries: Record<string, string | null>;
+  claude_logged_in: boolean | null;
+  api_key_forwarded: boolean;
 };
 
 export type CreateTerminalInput = {
@@ -173,7 +224,12 @@ export type WorktreeListing = { root: string | null; worktrees: Worktree[] };
 export type GitStatus = {
   root: string | null;
   branch: string | null;
-  files: { path: string; index: string; working: string; original: string | null }[];
+  files: {
+    path: string;
+    index: string;
+    working: string;
+    original: string | null;
+  }[];
   branches: string[];
 };
 export type GithubItem = {
@@ -236,7 +292,9 @@ async function req<T>(
     const q = params.toString();
     if (q) url += `?${q}`;
   }
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
   const secret = getApiSecret();
   if (secret) headers.Authorization = `Bearer ${secret}`;
   const res = await fetch(url, {
@@ -286,7 +344,11 @@ export const api = {
         }[];
       }>("GET", "/rules"),
     activate: (policy: RulePolicy, expected_id: string | null, reason: string) =>
-      req<RuleRevision>("POST", "/rules/activate", { policy, expected_id, reason }),
+      req<RuleRevision>("POST", "/rules/activate", {
+        policy,
+        expected_id,
+        reason,
+      }),
     revert: (id: string, reason: string) =>
       req<RuleRevision>("POST", "/rules/revert", { id, reason }),
   },
@@ -315,7 +377,9 @@ export const api = {
     deleteLink: (id: string, linkId: string) => req<null>("DELETE", `/tasks/${id}/links/${linkId}`),
     // null (not an error) when the task has never run a flow.
     flow: (id: string) =>
-      req<FlowRun | null>("GET", `/tasks/${id}/flow`, undefined, undefined, { nullOn404: true }),
+      req<FlowRun | null>("GET", `/tasks/${id}/flow`, undefined, undefined, {
+        nullOn404: true,
+      }),
     resumeFlow: (id: string, data: ResumeFlowInput) =>
       req<{ ok: boolean; next_nodes: string[] }>("POST", `/tasks/${id}/flow/resume`, data),
     haltFlow: (id: string, reason?: string) =>
@@ -448,15 +512,50 @@ export const api = {
   },
 
   skills: {
-    list: (params?: { q?: string; source?: "builtin" | "user"; reload?: boolean }) =>
+    updateInstructions: (name: string, input: Omit<SkillUpdate, "skill_name">) =>
+      req<SkillFull>("PUT", `/skills/${encodeURIComponent(name)}/instructions`, input),
+    history: (name: string, scope: WikiScope = {}) =>
+      req<{ changes: SkillChange[] }>(
+        "GET",
+        `/skills/${encodeURIComponent(name)}/history`,
+        undefined,
+        scope,
+      ),
+    revert: (
+      name: string,
+      input: {
+        project_id: string | null;
+        change_id: string;
+        expected_change_id: string;
+        reason: string;
+      },
+    ) => req<SkillFull>("POST", `/skills/${encodeURIComponent(name)}/revert`, input),
+
+    discover: (source: string) => req<SkillDiscovery>("POST", "/skills/discover", { source }),
+    import: (input: SkillImportInput) =>
+      req<{ skills: SkillFull[] }>("POST", "/skills/import", input),
+    origin: (name: string) =>
+      req<SkillImportOrigin | null>("GET", `/skills/${encodeURIComponent(name)}/origin`),
+    sync: (name: string, input: SkillSyncInput = {}) =>
+      req<SkillSyncResult>("POST", `/skills/${encodeURIComponent(name)}/sync`, input),
+    editFile: (name: string, input: { path: string; content: string; expectedContent: string }) =>
+      req<SkillFull>("PUT", `/skills/${encodeURIComponent(name)}/file`, input),
+    list: (params?: {
+      q?: string;
+      source?: "builtin" | "user";
+      reload?: boolean;
+      project_id?: string;
+      scope?: "global";
+    }) =>
       req<{ skills: SkillMeta[]; broken: BrokenAgent[] }>(
         "GET",
         "/skills",
         undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
-    get: (name: string, ref?: string) =>
+    get: (name: string, ref?: string, scope: WikiScope = {}) =>
       req<SkillFull | SkillRefContent>("GET", `/skills/${encodeURIComponent(name)}`, undefined, {
+        ...scope,
         ref,
       }),
     create: (data: CreateSkillInput) => req<SkillFull>("POST", "/skills", data),
@@ -493,6 +592,29 @@ export const api = {
     list: () => req<{ apm: boolean; skills: boolean; bun: boolean }>("GET", "/package-tools"),
   },
 
+  wiki: {
+    list: (scope: WikiScope = {}) =>
+      req<{ pages: WikiIndexEntry[] }>("GET", "/wiki", undefined, scope),
+    changes: (scope: WikiScope = {}) =>
+      req<{ changes: WikiChange[] }>("GET", "/wiki/changes", undefined, scope),
+    search: (q: string, scope: WikiScope = {}) =>
+      req<{ results: WikiSearchHit[] }>("GET", "/wiki/search", undefined, { ...scope, q }),
+    get: (slug: string, scope: WikiScope = {}) =>
+      req<WikiPage>("GET", `/wiki/${encodeURIComponent(slug)}`, undefined, scope),
+    history: (slug: string, scope: WikiScope = {}) =>
+      req<{ revisions: WikiRevision[] }>(
+        "GET",
+        `/wiki/${encodeURIComponent(slug)}/history`,
+        undefined,
+        scope,
+      ),
+    write: (input: WikiWrite) => req<WikiRevision>("POST", "/wiki", input),
+  },
+  audit: {
+    list: (scope: WikiScope = {}) =>
+      req<{ entries: AuditEntry[] }>("GET", "/audit", undefined, scope),
+  },
+
   knowledge: {
     collections: (params?: { project_id?: string }) =>
       req<{
@@ -512,7 +634,12 @@ export const api = {
       ),
     search: (
       q: string,
-      opts?: { collection?: string; project_id?: string; mode?: string; limit?: number },
+      opts?: {
+        collection?: string;
+        project_id?: string;
+        mode?: string;
+        limit?: number;
+      },
     ) =>
       req<{
         results: {
@@ -587,6 +714,20 @@ export const api = {
       ),
     pickFolder: (initial?: string) =>
       req<{ path: string | null }>("POST", "/terminals/pick-folder", initial ? { initial } : {}),
+    browse: (path?: string) =>
+      req<HostDirectoryListing>("GET", "/terminals/browse", undefined, {
+        path,
+      }),
+  },
+
+  ssh: {
+    get: () => req<SshState>("GET", "/ssh"),
+    select: (host: string | null, remote_port?: number | null) =>
+      req<SshState>("PUT", "/ssh", {
+        host,
+        ...(remote_port !== undefined ? { remote_port } : {}),
+      }),
+    test: (host?: string) => req<SshTest>("POST", "/ssh/test", host ? { host } : {}),
   },
 
   git: {
@@ -602,13 +743,21 @@ export const api = {
     terminalWorktrees: (id: string) =>
       req<WorktreeListing>("GET", `/terminals/${encodeURIComponent(id)}/git/worktrees`),
     stage: (id: string, paths: string[]) =>
-      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/stage`, { paths }),
+      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/stage`, {
+        paths,
+      }),
     switchBranch: (id: string, branch: string) =>
-      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/switch`, { branch }),
+      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/switch`, {
+        branch,
+      }),
     checkoutGithub: (id: string) =>
       req<GithubFeed>("GET", `/terminals/${encodeURIComponent(id)}/git/github`),
     saveFile: (id: string, path: string, content: string, original: string) =>
-      req<null>("PUT", `/terminals/${encodeURIComponent(id)}/files`, { path, content, original }),
+      req<null>("PUT", `/terminals/${encodeURIComponent(id)}/files`, {
+        path,
+        content,
+        original,
+      }),
     files: (id: string, path: string) =>
       req<{
         root: string;
@@ -617,26 +766,29 @@ export const api = {
         content: string | null;
         binary: boolean;
         truncated: boolean;
-      }>("GET", `/terminals/${encodeURIComponent(id)}/files`, undefined, { path }),
+      }>("GET", `/terminals/${encodeURIComponent(id)}/files`, undefined, {
+        path,
+      }),
     commit: (id: string, message: string) =>
-      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/commit`, { message }),
+      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/commit`, {
+        message,
+      }),
     addWorktree: (id: string) =>
       req<{ path: string }>("POST", `/terminals/${encodeURIComponent(id)}/git/worktrees`),
     githubItems: (filter: string, project_id?: string) =>
-      req<GithubFeed>("GET", "/github/items", undefined, { filter, project_id }),
+      req<GithubFeed>("GET", "/github/items", undefined, {
+        filter,
+        project_id,
+      }),
     registry: (project_id?: string) =>
-      req<{ repos: WorktreeListing[]; errors: { cwd: string; error: string }[] }>(
-        "GET",
-        "/git/registry",
-        undefined,
-        { project_id },
-      ),
+      req<{
+        repos: WorktreeListing[];
+        errors: { cwd: string; error: string }[];
+      }>("GET", "/git/registry", undefined, { project_id }),
     cleanup: (items: { cwd: string; path: string; delete_branch?: boolean }[]) =>
-      req<{ results: { path: string; removed: boolean; error: string | null }[] }>(
-        "POST",
-        "/git/worktrees/cleanup",
-        { items },
-      ),
+      req<{
+        results: { path: string; removed: boolean; error: string | null }[];
+      }>("POST", "/git/worktrees/cleanup", { items }),
     worktrees: (cwd: string) => req<WorktreeListing>("GET", "/git/worktrees", undefined, { cwd }),
     removeWorktree: (data: { cwd: string; path: string; force?: boolean }) =>
       req<null>("POST", "/git/worktrees/remove", data),

@@ -79,6 +79,11 @@ export const SkillUpdateSchema = z.object({
     .max(100000)
     .describe("Full new SKILL.md including frontmatter (name must stay the same)"),
   reason: z.string().trim().min(1).max(2000),
+  expected_content: z
+    .string()
+    .max(100000)
+    .describe("Current full SKILL.md; a mismatch rejects a stale edit"),
+  session_id: z.string().min(1).max(200).optional(),
   wiki_pages: z.array(slugSchema).max(20).default([]),
   author: z.string().trim().min(1).max(200).optional(),
 });
@@ -94,3 +99,47 @@ export type SkillActivation = {
   reason: string;
   created_at: number;
 };
+
+export const WikiScopeSchema = z.object({
+  project_id: z.string().min(1).max(200).optional(),
+  scope: z.literal("global").optional(),
+});
+export type WikiScope = z.infer<typeof WikiScopeSchema>;
+
+export const WikiPageSchema = z.object({
+  slug: slugSchema,
+  project_id: z.string().nullable(),
+  kind: WikiPageKindSchema,
+  revision: z.number().int().positive(),
+  title: z.string(),
+  summary: z.string(),
+  content: z.string(),
+  tags: z.array(z.string()),
+  sources: z.array(z.string()),
+  author: z.string(),
+  updated_at: z.number(),
+});
+export const WikiIndexEntrySchema = WikiPageSchema.pick({
+  slug: true,
+  project_id: true,
+  kind: true,
+  revision: true,
+  title: true,
+  summary: true,
+  tags: true,
+  updated_at: true,
+});
+export const WikiRevisionSchema = WikiPageSchema.extend({
+  note: z.string(),
+  session_id: z.string().nullable(),
+});
+export const WikiChangeSchema = WikiRevisionSchema.omit({
+  summary: true,
+  content: true,
+  tags: true,
+  sources: true,
+});
+export const WikiSearchHitSchema = WikiIndexEntrySchema.extend({
+  snippet: z.string(),
+  score: z.number(),
+});

@@ -1,7 +1,8 @@
 import { lstat } from "node:fs/promises";
 import { join } from "node:path";
 import { ValidationError } from "@orc/core/errors";
-import { gitError, repoRoot, runGit } from "../terminals/session-dir.js";
+import { type ExecHost, hostExec } from "@orc/core/exec-host";
+import { gitError, gitRunner, repoRoot } from "../terminals/session-dir.js";
 
 export interface GitFile {
   path: string;
@@ -26,9 +27,28 @@ export function parseStatus(output: string): GitFile[] {
   return files;
 }
 
+async function isRegularFile(host: ExecHost, path: string): Promise<boolean> {
+  if (host.kind === "local") return (await lstat(path)).isFile();
+  const result = await hostExec(
+    host,
+    ["/bin/sh", "-c", 'test -f "$1" && test ! -L "$1"', "sh", path],
+    {
+      login: false,
+    },
+  );
+  return result.code === 0;
+}
+
 export async function gitStatus(
+  host: ExecHost,
   cwd: string,
-): Promise<{ root: string | null; branch: string | null; files: GitFile[]; branches: string[] }> {
+): Promise<{
+  root: string | null;
+  branch: string | null;
+  files: GitFile[];
+  branches: string[];
+}> {
+  const runGit = gitRunner(host);
   const root = await repoRoot(cwd, runGit);
   if (!root) return { root: null, branch: null, files: [], branches: [] };
   const [status, branch, branches] = await Promise.all([
@@ -47,16 +67,18 @@ export async function gitStatus(
 }
 
 export async function gitDiff(
+  host: ExecHost,
   cwd: string,
   staged: boolean,
   path?: string,
 ): Promise<{ diff: string; truncated: boolean }> {
+  const runGit = gitRunner(host);
   const root = await repoRoot(cwd, runGit);
   if (!root) throw new ValidationError("Not a git repository");
-  const file = path ? (await gitStatus(root)).files.find((file) => file.path === path) : null;
+  const file = path ? (await gitStatus(host, root)).files.find((file) => file.path === path) : null;
   if (path && !file) throw new ValidationError("Path is not in this checkout's status");
   const untracked = !staged && file?.index === "?";
-  if (untracked && path && !(await lstat(join(root, path))).isFile())
+  if (untracked && path && !(await isRegularFile(host, join(root, path))))
     return {
       diff: "Untracked symbolic link or special file; stage it to view its Git diff.",
       truncated: false,
@@ -79,22 +101,25 @@ export async function gitDiff(
   ]);
   if (result.code !== 0 && !(untracked && result.code === 1))
     throw gitError(result, "Cannot read diff");
-  return { diff: result.stdout.slice(0, 200_000), truncated: result.stdout.length > 200_000 };
+  return {
+    diff: result.stdout.slice(0, 200_000),
+    truncated: result.stdout.length > 200_000,
+  };
 }
 
-export async function switchBranch(cwd: string, branch: string): Promise<void> {
-  const status = await gitStatus(cwd);
+export async function switchBranch(host: ExecHost, cwd: string, branch: string): Promise<void> {
+  const status = await gitStatus(host, cwd);
   if (!status.root || !status.branches.includes(branch))
     throw new ValidationError("Select an existing local branch");
   if (status.branch === branch) return;
   if (status.files.length)
     throw new ValidationError("Commit or stash your changes before switching branches");
-  const result = await runGit(["git", "-C", status.root, "switch", "--", branch]);
+  const result = await gitRunner(host)(["git", "-C", status.root, "switch", "--", branch]);
   if (result.code !== 0) throw gitError(result, "Cannot switch branch");
 }
 
-export async function stageFiles(cwd: string, paths: string[]): Promise<void> {
-  const status = await gitStatus(cwd);
+export async function stageFiles(host: ExecHost, cwd: string, paths: string[]): Promise<void> {
+  const status = await gitStatus(host, cwd);
   if (!status.root) throw new ValidationError("Not a git repository");
   const available = new Set(
     status.files.flatMap((file) => (file.original ? [file.path, file.original] : [file.path])),
@@ -105,7 +130,7 @@ export async function stageFiles(cwd: string, paths: string[]): Promise<void> {
     )
   )
     throw new ValidationError("Select paths from this checkout's current status");
-  const result = await runGit([
+  const result = await gitRunner(host)([
     "git",
     "--literal-pathspecs",
     "-C",
@@ -117,7 +142,7 @@ export async function stageFiles(cwd: string, paths: string[]): Promise<void> {
   if (result.code !== 0) throw gitError(result, "Cannot stage files");
 }
 
-export async function commitStaged(cwd: string, message: string): Promise<void> {
-  const result = await runGit(["git", "-C", cwd, "commit", "-m", message]);
+export async function commitStaged(host: ExecHost, cwd: string, message: string): Promise<void> {
+  const result = await gitRunner(host)(["git", "-C", cwd, "commit", "-m", message]);
   if (result.code !== 0) throw gitError(result, "Cannot commit staged changes");
 }

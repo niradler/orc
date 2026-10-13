@@ -168,6 +168,12 @@ export class WikiStore {
 
   write(input: WikiWrite): WikiRevision {
     const page = WikiWriteSchema.parse(input);
+    if (
+      page.project_id !== null &&
+      !this.sqlite.query("SELECT id FROM projects WHERE id = ?").get(page.project_id)
+    ) {
+      throw new NotFoundError("Project", page.project_id);
+    }
     const key = projectKey(page.project_id);
     const tags = normalizeTags(page.tags);
     const author = page.author ?? DEFAULT_AUTHOR;

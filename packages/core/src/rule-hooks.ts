@@ -88,7 +88,12 @@ export function ruleHookOutput(
     return {
       ...(denied ? { decision: "deny", reason } : {}),
       ...(context
-        ? { hookSpecificOutput: { hookEventName: native, additionalContext: context } }
+        ? {
+            hookSpecificOutput: {
+              hookEventName: native,
+              additionalContext: context,
+            },
+          }
         : {}),
     };
   if (denied && event.phase !== "pre_tool") return { decision: "block", reason };

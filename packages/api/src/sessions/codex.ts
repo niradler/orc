@@ -1,8 +1,7 @@
-import { Database } from "bun:sqlite";
-import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { mtimeOf, oneLine, statusFromMtime } from "./common.js";
+import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
+import { oneLine, statusFromMtime } from "./common.js";
 import { hasWriter } from "./ownership.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
 
@@ -23,57 +22,58 @@ type ThreadRow = {
   updated_at: number;
 };
 
-function turnStatuses(dbPath: string): Map<string, string> {
-  if (!existsSync(dbPath)) return new Map();
-  const db = new Database(dbPath, { readonly: true });
-  try {
-    return new Map(
-      db
-        .query<{ thread_id: string; status: string }, []>(`
-      SELECT thread_id, status FROM (
-        SELECT thread_id, status, ROW_NUMBER() OVER (PARTITION BY thread_id ORDER BY rollout_ordinal DESC) AS rank
-        FROM thread_turns
-      ) WHERE rank = 1`)
-        .all()
-        .map((row) => [row.thread_id, row.status]),
-    );
-  } finally {
-    db.close();
-  }
-}
-
 export function codexAdapter(
   dbPath = CODEX_STATE_DB,
-  options: { writer?: (path: string) => boolean; historyDb?: string } = {},
+  options: {
+    writer?: (path: string) => boolean;
+    historyDb?: string;
+    runtime?: HostRuntime;
+  } = {},
 ): SessionAdapter {
+  const runtime = options.runtime ?? hostRuntime(LOCAL_HOST);
   return {
     backend: "codex",
     minIntervalMs: 5_000,
     async list() {
-      if (!existsSync(dbPath)) return [];
-      const home = dirname(dbPath);
-      const statuses = turnStatuses(options.historyDb ?? join(home, "thread_history_1.sqlite"));
-      const db = new Database(dbPath, { readonly: true });
+      const home =
+        dbPath === CODEX_STATE_DB ? join(await runtime.home(), ".codex") : dirname(dbPath);
+      const stateDb = dbPath === CODEX_STATE_DB ? join(home, "state_5.sqlite") : dbPath;
+      if (!(await runtime.isFile(stateDb))) return [];
+      let statuses = new Map<string, string>();
       try {
-        const rows = db
-          .query<ThreadRow, []>(
-            `SELECT id, title, name, cwd, preview, first_user_message, tokens_used, rollout_path,
-                    created_at_ms, created_at, updated_at_ms, updated_at
-             FROM threads WHERE archived = 0`,
-          )
-          .all();
-        return rows.map((r): SessionRecord => {
+        statuses = new Map(
+          (
+            await runtime.sqliteQuery<{ thread_id: string; status: string }>(
+              options.historyDb ?? join(home, "thread_history_1.sqlite"),
+              `SELECT thread_id, status FROM (
+                 SELECT thread_id, status, ROW_NUMBER() OVER
+                   (PARTITION BY thread_id ORDER BY rollout_ordinal DESC) AS rank
+                 FROM thread_turns
+               ) WHERE rank = 1`,
+            )
+          ).map((row) => [row.thread_id, row.status]),
+        );
+      } catch {}
+      const rows = await runtime.sqliteQuery<ThreadRow>(
+        stateDb,
+        `SELECT id, title, name, cwd, preview, first_user_message, tokens_used, rollout_path,
+                created_at_ms, created_at, updated_at_ms, updated_at
+         FROM threads WHERE archived = 0`,
+      );
+      return Promise.all(
+        rows.map(async (r): Promise<SessionRecord> => {
           const updated = r.updated_at_ms ?? r.updated_at * 1000;
-          const live = mtimeOf(r.rollout_path);
-          const owned = (options.writer ?? hasWriter)(
-            join(home, "thread-writer-locks", `${r.id}.lock`),
-          );
+          const live = (await runtime.stat(r.rollout_path))?.mtimeMs ?? null;
+          const owned =
+            runtime.host.kind === "local"
+              ? (options.writer ?? hasWriter)(join(home, "thread-writer-locks", `${r.id}.lock`))
+              : statuses.get(r.id) === "inProgress";
           const turn = statuses.get(r.id);
           const status = owned
             ? turn === "inProgress"
               ? "running"
               : "idle"
-            : existsSync(join(home, "thread-writer-locks"))
+            : (await runtime.isDirectory(join(home, "thread-writer-locks")))
               ? "stopped"
               : live
                 ? statusFromMtime(live)
@@ -90,10 +90,8 @@ export function codexAdapter(
             transcriptPath: r.rollout_path,
             tokensUsed: r.tokens_used > 0 ? r.tokens_used : null,
           };
-        });
-      } finally {
-        db.close();
-      }
+        }),
+      );
     },
   };
 }

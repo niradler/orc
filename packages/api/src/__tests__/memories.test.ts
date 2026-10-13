@@ -203,7 +203,9 @@ describe("Memories CRUD", () => {
 
   describe("DELETE /memories/:id", () => {
     test("deletes a memory", async () => {
-      const createRes = await req(app, "POST", "/memories", { content: "To be deleted" });
+      const createRes = await req(app, "POST", "/memories", {
+        content: "To be deleted",
+      });
       const created = await createRes.json();
 
       const res = await req(app, "DELETE", `/memories/${created.id}`);
@@ -272,8 +274,14 @@ describe("Memories CRUD", () => {
       expect(res.status).toBe(200);
       const list = await (await req(app, "GET", "/memories/search?q=patchneedle")).json();
       expect(list.results.map((item: { id: string }) => item.id)).toEqual([next.id]);
-      const invalid = await req(app, "PATCH", `/memories/${next.id}`, { supersedes: [next.id] });
+      const invalid = await req(app, "PATCH", `/memories/${next.id}`, {
+        content: "Must not persist",
+        supersedes: [next.id],
+      });
       expect(invalid.status).toBe(400);
+      const unchanged = await (await req(app, "GET", "/memories/search?q=patchneedle")).json();
+      expect(unchanged.results).toHaveLength(1);
+      expect(unchanged.results[0].content).toBe("patchneedle new");
     });
   });
 });

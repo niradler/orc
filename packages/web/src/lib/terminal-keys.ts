@@ -10,7 +10,9 @@ export interface TerminalKeyInput {
 
 export function isMacPlatform(): boolean {
   if (typeof navigator === "undefined") return false;
-  const withUserAgentData = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const withUserAgentData = navigator as Navigator & {
+    userAgentData?: { platform?: string };
+  };
   const platform =
     withUserAgentData.userAgentData?.platform || navigator.platform || navigator.userAgent;
   return /mac|iphone|ipad|ipod/i.test(platform);

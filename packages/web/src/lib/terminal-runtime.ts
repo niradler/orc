@@ -209,7 +209,11 @@ function attachClickToMove(runtime: TerminalRuntime, encoder: TextEncoder): void
   element.addEventListener(
     "mousedown",
     (e) => {
-      press = { x: e.clientX, y: e.clientY, wasFocused: element.contains(document.activeElement) };
+      press = {
+        x: e.clientX,
+        y: e.clientY,
+        wasFocused: element.contains(document.activeElement),
+      };
     },
     true,
   );

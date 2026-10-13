@@ -1,8 +1,9 @@
 import { loadConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
+import { type ExecHost, resolveExecHost } from "@orc/core/exec-host";
 import { getDb } from "@orc/db/client";
 import { z } from "zod";
-import { type GitResult, runGit } from "../terminals/session-dir.js";
+import { type GitResult, gitRunner, runGit } from "../terminals/session-dir.js";
 import { gitStatus } from "./panel.js";
 import { knownWorktrees } from "./registry.js";
 
@@ -45,7 +46,10 @@ const IssueSchema = z.object({
 });
 const PullSchema = IssueSchema.extend({
   body: z.string().nullable().optional(),
-  head: z.object({ ref: z.string(), repo: z.object({ full_name: z.string() }).nullable() }),
+  head: z.object({
+    ref: z.string(),
+    repo: z.object({ full_name: z.string() }).nullable(),
+  }),
 });
 
 export function githubRemote(remote: string): string | null {
@@ -227,9 +231,10 @@ export async function githubFeed(
     (task) => !projectId || task.project_id === projectId,
   );
   const repos = new Map<string, GithubRepo>();
+  const hostGit = gitRunner(resolveExecHost());
   for (const repository of registry.repos) {
     if (!repository.root) continue;
-    const remote = await runGit(["git", "-C", repository.root, "remote", "get-url", "origin"]);
+    const remote = await hostGit(["git", "-C", repository.root, "remote", "get-url", "origin"]);
     const name = remote.code === 0 ? githubRemote(remote.stdout) : null;
     if (!name) continue;
     const previous = repos.get(name);
@@ -258,16 +263,27 @@ export async function githubFeed(
     item.task_ids = tasks
       .filter((task) => task.github_issue === item.url || task.github_pr === item.url)
       .map((task) => task.id);
-  feed.errors.push(...registry.errors.map((error) => ({ repo: error.cwd, error: error.error })));
+  feed.errors.push(
+    ...registry.errors.map((error) => ({
+      repo: error.cwd,
+      error: error.error,
+    })),
+  );
   return feed;
 }
 
-export async function checkoutGithubFeed(cwd: string): Promise<GithubFeed> {
-  const status = await gitStatus(cwd);
-  const remote = await runGit(["git", "-C", cwd, "remote", "get-url", "origin"]);
+export async function checkoutGithubFeed(host: ExecHost, cwd: string): Promise<GithubFeed> {
+  const status = await gitStatus(host, cwd);
+  const remote = await gitRunner(host)(["git", "-C", cwd, "remote", "get-url", "origin"]);
   const name = remote.code === 0 ? githubRemote(remote.stdout) : null;
   if (!name || !status.branch)
-    return { auth: "none", login: null, items: [], errors: [], truncated: false };
+    return {
+      auth: "none",
+      login: null,
+      items: [],
+      errors: [],
+      truncated: false,
+    };
   return fetchGithubFeed([{ name, branches: [status.branch], linked: [] }], "branches", {
     run: runGit,
     fetch,

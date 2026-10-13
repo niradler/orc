@@ -202,8 +202,13 @@ export class MemoryStore {
     )();
   }
 
-  update(id: string, fields: MemoryFields, actor: AuditActor = {}): void {
-    this.sqlite.transaction((): void => {
+  update(
+    id: string,
+    fields: MemoryFields,
+    actor: AuditActor = {},
+    supersedes: string[] = [],
+  ): string[] {
+    return this.sqlite.transaction((): string[] => {
       const before = this.require(id);
       this.sqlite
         .query(
@@ -227,6 +232,7 @@ export class MemoryStore {
         project_id: before.project_id,
         snapshot: [before],
       });
+      return this.supersedeWithin(this.require(id), supersedes, actor);
     })();
   }
 

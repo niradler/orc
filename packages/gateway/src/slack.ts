@@ -60,7 +60,11 @@ export function createSlackAdapter(startTime: number): SlackAdapter {
       method: "POST",
       headers: { Authorization: `Bearer ${appToken}` },
     });
-    const body = (await response.json()) as { ok?: boolean; url?: string; error?: string };
+    const body = (await response.json()) as {
+      ok?: boolean;
+      url?: string;
+      error?: string;
+    };
     if (!response.ok || !body.ok || !body.url) {
       throw new Error(body.error ?? `Slack socket connect failed (${response.status})`);
     }

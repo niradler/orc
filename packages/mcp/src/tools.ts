@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createAgent, discoverAgents, readAgent } from "@orc/core/agent-service";
 import { loadConfig } from "@orc/core/config";
-import { NotFoundError } from "@orc/core/errors";
+import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { shortId, ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import {
@@ -10,10 +10,10 @@ import {
   readPackage,
   readPackageFile,
 } from "@orc/core/package-service";
+import { SessionHandoffInputSchema, SessionHandoffUploadSchema } from "@orc/core/session-handoff";
 import {
   createSkill as createSkillFs,
   listSkills,
-  readSkill,
   type SkillFileInput,
   type SkillFull,
   type SkillRefContent,
@@ -23,7 +23,10 @@ import {
 import type { TaskStatus } from "@orc/core/types";
 import { AgentBackendSchema } from "@orc/core/types";
 import { PathValidationError, validateCollectionPath } from "@orc/core/validate";
+import { SkillUpdateSchema, WikiWriteSchema } from "@orc/core/wiki";
+import { AuditLog } from "@orc/db/audit";
 import { getDb, getSqlite } from "@orc/db/client";
+import { DigestStore } from "@orc/db/digest";
 import {
   type MemoryImportance,
   MemoryStore,
@@ -32,6 +35,8 @@ import {
   type StoreMemoryResult,
 } from "@orc/db/memories";
 import { job_runs, jobs, memories, projects, sessions, tasks } from "@orc/db/schema";
+import { SkillHistory } from "@orc/db/skill-history";
+import { WikiStore } from "@orc/db/wiki";
 import { executeJob } from "@orc/runner/executor";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 
@@ -58,7 +63,107 @@ const scopedProjectParams = z.object({
     ),
 });
 
+const wikiScopeParams = z.object({ project: projectParam, scope: z.literal("global").optional() });
+const wikiSearchParams = wikiScopeParams.extend({
+  query: z.string().trim().min(1).max(2000),
+  limit: z.number().int().min(1).max(50).default(10),
+});
+const wikiReadParams = wikiScopeParams.extend({ slug: WikiWriteSchema.shape.slug });
+const wikiWriteParams = WikiWriteSchema.omit({ project_id: true })
+  .extend(wikiScopeParams.shape)
+  .strict();
+const wikiIndexParams = wikiScopeParams.extend({
+  limit: z.number().int().min(1).max(100).default(20),
+});
+const auditParams = wikiScopeParams.extend({
+  entity_type: z.enum(["memory", "wiki", "skill", "digest"]).optional(),
+  session_id: z.string().min(1).max(200).optional(),
+  since: z.number().int().min(0).optional(),
+  limit: z.number().int().min(1).max(100).default(50),
+});
+
+const skillUpdateParams = SkillUpdateSchema.omit({ project_id: true })
+  .extend(wikiScopeParams.shape)
+  .strict();
+const skillHistoryParams = wikiScopeParams.extend({ name: z.string().min(1).max(200) });
+const skillRevertParams = skillHistoryParams.extend({
+  change_id: z.string().min(1),
+  expected_change_id: z.string().min(1),
+  reason: z.string().trim().min(1).max(2000),
+});
+const digestCompleteParams = z
+  .object({
+    token: z.string().uuid(),
+    outcome: z.enum(["applied", "no_change"]),
+    note: z.string().trim().min(1).max(2000),
+  })
+  .strict();
 export const toolDefinitions = [
+  {
+    name: "skill_update",
+    description:
+      "Update effective SKILL.md instructions from verified wiki lessons. Read current raw SKILL.md first and pass expected_content. Changes are audited with history; supporting authored files stay intact. Normal skill_read returns the edited version in scope.",
+    inputSchema: skillUpdateParams,
+  },
+  {
+    name: "skill_history",
+    description: "Read instruction change history, including prior raw content for manual revert.",
+    inputSchema: skillHistoryParams,
+  },
+  {
+    name: "skill_revert",
+    description:
+      "Manually revert a skill change. Pin expected_change_id from the current mutation and give a reason.",
+    inputSchema: skillRevertParams,
+  },
+  {
+    name: "digest_complete",
+    description:
+      "Finish an assigned knowledge digest only after reviewing its input and applying warranted changes. Pass the assigned token; this advances the watermark. Never call for unrelated work.",
+    inputSchema: digestCompleteParams,
+  },
+  {
+    name: "wiki_search",
+    description:
+      "Ordinary scoped wiki search. Returns summaries; wiki_get loads full content on demand.",
+    inputSchema: wikiSearchParams,
+  },
+  {
+    name: "wiki_index",
+    description:
+      "Visible wiki summaries and recent learning. Project pages shadow global pages. Use scope: global to explicitly read global pages; wiki_get loads full content.",
+    inputSchema: wikiIndexParams,
+  },
+  {
+    name: "wiki_get",
+    description:
+      "Read one wiki page on demand by slug and scope. Follow search/wiki_index before loading full content.",
+    inputSchema: wikiReadParams,
+  },
+  {
+    name: "wiki_write",
+    description:
+      "Compile a verified procedure, lesson or decision into a wiki page. Cite memory:<id> sources, include a change note, and use expected_revision (0 for new). Stale revisions conflict; read and reconcile before retrying. scope: global explicitly writes a shared page.",
+    inputSchema: wikiWriteParams,
+  },
+  {
+    name: "wiki_history",
+    description:
+      "Read immutable revisions with author, note and source session for one resolved wiki page.",
+    inputSchema: wikiReadParams,
+  },
+  {
+    name: "audit_list",
+    description:
+      "Review central knowledge audit entries, optionally by session_id. Removed memories survive in snapshot; result_ids identify replacements. Use at session end with orc-memory-review.",
+    inputSchema: auditParams,
+  },
+  {
+    name: "session_handoff",
+    description:
+      "Move a Claude Code or Codex session to ORC. FIRST commit and push the intended changes. Report the pushed repository, branch and exact commit SHA, project name, source cwd and native session ID. Returns a single-use upload URL for native session files. Upload through HTTP; then use Sessions → Open in terminal. See orc-handoff skill.",
+    inputSchema: SessionHandoffInputSchema,
+  },
   {
     name: "memory_search",
     description:
@@ -94,6 +199,12 @@ export const toolDefinitions = [
       "re-store with merge_into to replace them with one combined memory, or supersedes to retire " +
       "ones yours contradicts. Replaced memories are removed and kept in the audit log.",
     inputSchema: z.object({
+      session_id: z
+        .string()
+        .min(1)
+        .max(200)
+        .optional()
+        .describe("Work-unit session ID for end-of-session review"),
       content: z.string().min(1).max(2_000_000).describe("Content to remember"),
       title: z
         .string()
@@ -128,6 +239,12 @@ export const toolDefinitions = [
       "Prefer this over delete+recreate to preserve history (created_at, access_count). " +
       "Pass supersedes to retire memories this one contradicts.",
     inputSchema: z.object({
+      session_id: z
+        .string()
+        .min(1)
+        .max(200)
+        .optional()
+        .describe("Work-unit session ID for end-of-session review"),
       id: z.string().describe("Memory ID to update"),
       content: z.string().min(1).max(2_000_000).optional().describe("New content"),
       title: z.string().optional().describe("New title - what it is and when to use it"),
@@ -262,14 +379,13 @@ export const toolDefinitions = [
   {
     name: "search",
     description:
-      "Unified search across tasks and memories. Returns mixed results with resource_type indicator. " +
-      "Use instead of separate memory_search + task_search calls.",
+      "Ordinary search: wiki summaries first, unabsorbed memories next, KB documents as fallback/citations, plus tasks. Full wiki/KB content loads on demand.",
     inputSchema: z.object({
       query: z.string().describe("Search query"),
       resources: z
-        .array(z.enum(["tasks", "memories", "knowledge"]))
+        .array(z.enum(["wiki", "tasks", "memories", "knowledge"]))
         .optional()
-        .default(["tasks", "memories"]),
+        .default(["wiki", "tasks", "memories"]),
       project: projectParam,
       limit: z.number().int().min(1).max(20).optional().default(10),
     }),
@@ -452,6 +568,7 @@ export const toolDefinitions = [
     inputSchema: z.object({
       name: z.string().describe("Skill name"),
       project: projectParam,
+      scope: z.literal("global").optional(),
       ref: z
         .string()
         .optional()
@@ -668,6 +785,10 @@ function resolveProjectId(projectName?: string): { id: string; name: string } | 
   return row;
 }
 
+function resolveWikiScope(input: z.infer<typeof wikiScopeParams>): string | null {
+  return input.scope === "global" ? null : (resolveProjectId(input.project)?.id ?? null);
+}
+
 function resolveScopedProject(input: z.infer<typeof scopedProjectParams>): string | null {
   if (input.project_id !== undefined) {
     if (
@@ -680,10 +801,130 @@ function resolveScopedProject(input: z.infer<typeof scopedProjectParams>): strin
   return resolveProjectId(input.project)?.id ?? null;
 }
 
-export async function executeTool(name: ToolName, args: unknown): Promise<string> {
+export async function executeTool(
+  name: ToolName,
+  args: unknown,
+  options: { publicApiBaseUrl?: string } = {},
+): Promise<string> {
+  if (name === "session_handoff") {
+    const input = SessionHandoffInputSchema.parse(args);
+    const config = loadConfig();
+    const hostname =
+      config.api.host === "0.0.0.0" || config.api.host === "::" ? "127.0.0.1" : config.api.host;
+    const base = process.env.ORC_API_BASE ?? `http://${hostname}:${config.api.port}`;
+    const response = await fetch(`${base.replace(/\/$/, "")}/api/session-handoffs`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.api.secret ?? ""}`,
+      },
+      body: JSON.stringify(input),
+      signal: AbortSignal.timeout(60_000),
+    });
+    const body: unknown = await response.json();
+    if (!response.ok)
+      throw new ValidationError(
+        `Handoff request failed (${response.status}); verify project scope, pushed branch and API access`,
+      );
+    const handoff = SessionHandoffUploadSchema.parse(body);
+    if (options.publicApiBaseUrl) {
+      const upload = new URL(handoff.upload_url);
+      handoff.upload_url = new URL(
+        `${upload.pathname}${upload.search}`,
+        options.publicApiBaseUrl,
+      ).toString();
+    }
+    return JSON.stringify(handoff);
+  }
   const db = getDb();
 
   switch (name) {
+    case "skill_update": {
+      const { project, scope, ...input } = skillUpdateParams.parse(args);
+      return JSON.stringify(
+        new SkillHistory(getSqlite(db)).update({
+          ...input,
+          project_id: resolveWikiScope({ project, scope }),
+          author: input.author ?? process.env.ORC_AGENT ?? "agent",
+          session_id: input.session_id ?? process.env.ORC_SESSION_ID,
+        }),
+      );
+    }
+    case "skill_history": {
+      const input = skillHistoryParams.parse(args);
+      return JSON.stringify({
+        changes: new SkillHistory(getSqlite(db)).history(input.name, resolveWikiScope(input)),
+      });
+    }
+    case "skill_revert": {
+      const input = skillRevertParams.parse(args);
+      return JSON.stringify(
+        new SkillHistory(getSqlite(db)).revert(
+          input.name,
+          resolveWikiScope(input),
+          input.change_id,
+          input.expected_change_id,
+          input.reason,
+        ),
+      );
+    }
+    case "digest_complete": {
+      const input = digestCompleteParams.parse(args);
+      new DigestStore(getSqlite(db)).complete(input.token, input.outcome, input.note);
+      return "Digest completed";
+    }
+    case "wiki_search": {
+      const input = wikiSearchParams.parse(args);
+      return JSON.stringify({
+        results: new WikiStore(getSqlite(db)).search(input.query, {
+          projectId: resolveWikiScope(input),
+          limit: input.limit,
+        }),
+      });
+    }
+    case "wiki_index": {
+      const input = wikiIndexParams.parse(args);
+      const store = new WikiStore(getSqlite(db));
+      const projectId = resolveWikiScope(input);
+      return JSON.stringify({
+        pages: store.list(projectId).slice(0, input.limit),
+        changes: store.changes(projectId, Math.min(input.limit, 5)),
+      });
+    }
+    case "wiki_get":
+    case "wiki_history": {
+      const input = wikiReadParams.parse(args);
+      const store = new WikiStore(getSqlite(db));
+      const projectId = resolveWikiScope(input);
+      return JSON.stringify(
+        name === "wiki_get"
+          ? store.get(projectId, input.slug)
+          : { revisions: store.history(projectId, input.slug) },
+      );
+    }
+    case "wiki_write": {
+      const { project, scope, ...page } = wikiWriteParams.parse(args);
+      return JSON.stringify(
+        new WikiStore(getSqlite(db)).write({
+          ...page,
+          project_id: resolveWikiScope({ project, scope }),
+          author: page.author ?? process.env.ORC_AGENT ?? process.env.CLAUDE_MODEL ?? "agent",
+          session_id: page.session_id ?? process.env.ORC_SESSION_ID,
+        }),
+      );
+    }
+    case "audit_list": {
+      const input = auditParams.parse(args);
+      return JSON.stringify({
+        entries: new AuditLog(getSqlite(db)).list({
+          projectId: resolveWikiScope(input),
+          entityType: input.entity_type,
+          sessionId: input.session_id,
+          since: input.since,
+          limit: input.limit,
+        }),
+      });
+    }
     case "memory_search": {
       const { query, scope, type, limit, project } = args as {
         query: string;
@@ -716,7 +957,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           const header = m.title
             ? `[${m.id}] [${m.type}] "${m.title}" (${m.importance})`
             : `[${m.id}] [${m.type}] (${m.importance})`;
-          const meta = m.source ? `\nsource: ${m.source}` : "";
+          const meta = `${m.source ? `\nsource: ${m.source}` : ""}\ntags: ${JSON.stringify(m.tags ?? [])}`;
           return `${header}${meta}\n${m.content}`;
         })
         .join("\n\n---\n\n");
@@ -724,6 +965,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
 
     case "memory_store": {
       const {
+        session_id,
         content,
         title,
         type,
@@ -735,6 +977,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         supersedes,
         project,
       } = args as {
+        session_id?: string;
         content: string;
         title?: string;
         type?: MemoryType;
@@ -749,7 +992,7 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const resolved = resolveProjectId(project);
       const autoSource =
         [process.env.ORC_AGENT, process.env.CLAUDE_MODEL].filter(Boolean).join("/") || "unknown";
-      const sessionId = process.env.ORC_SESSION_ID;
+      const sessionId = session_id ?? process.env.ORC_SESSION_ID;
       const resolvedSource = source ?? (sessionId ? `${autoSource}@${sessionId}` : autoSource);
       const stored = new MemoryStore(getSqlite(db)).store({
         content,
@@ -769,24 +1012,30 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "memory_update": {
-      const { id, content, title, type, scope, tags, importance, source, supersedes } = args as {
-        id: string;
-        supersedes?: string[];
-        content?: string;
-        title?: string;
-        type?: MemoryType;
-        scope?: string;
-        tags?: string[];
-        importance?: MemoryImportance;
-        source?: string;
-      };
+      const { session_id, id, content, title, type, scope, tags, importance, source, supersedes } =
+        args as {
+          session_id?: string;
+          id: string;
+          supersedes?: string[];
+          content?: string;
+          title?: string;
+          type?: MemoryType;
+          scope?: string;
+          tags?: string[];
+          importance?: MemoryImportance;
+          source?: string;
+        };
       const store = new MemoryStore(getSqlite(db));
       const actor = {
         actor: [process.env.ORC_AGENT, process.env.CLAUDE_MODEL].filter(Boolean).join("/") || null,
-        session_id: process.env.ORC_SESSION_ID ?? null,
+        session_id: session_id ?? process.env.ORC_SESSION_ID ?? null,
       };
-      store.update(id, { content, title, type, scope, tags, importance, source }, actor);
-      const superseded = supersedes?.length ? store.supersede(id, supersedes, actor) : [];
+      const superseded = store.update(
+        id,
+        { content, title, type, scope, tags, importance, source },
+        actor,
+        supersedes,
+      );
       const updated = await db.query.memories.findFirst({ where: eq(memories.id, id) });
       const supersededNote = superseded.length > 0 ? `; superseded ${superseded.join(", ")}` : "";
       return `Updated: ${id} [${updated?.type ?? type}]${supersededNote}`;
@@ -960,9 +1209,15 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
 
     case "job_status": {
       const { run_id } = args as { run_id: string };
-      const run = await db.query.job_runs.findFirst({ where: eq(job_runs.id, run_id) });
+      const run = await db.query.job_runs.findFirst({
+        where: eq(job_runs.id, run_id),
+      });
       if (!run) return `Run not found: ${run_id}`;
-      return JSON.stringify({ status: run.status, exit_code: run.exit_code, error: run.error_msg });
+      return JSON.stringify({
+        status: run.status,
+        exit_code: run.exit_code,
+        error: run.error_msg,
+      });
     }
 
     case "context": {
@@ -975,7 +1230,9 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const resolved = explicitScope
         ? projectId == null
           ? null
-          : await db.query.projects.findFirst({ where: eq(projects.id, projectId) })
+          : await db.query.projects.findFirst({
+              where: eq(projects.id, projectId),
+            })
         : resolveProjectId(input.project);
       const scoped = explicitScope || Boolean(resolved);
       const scopeId = resolved?.id ?? null;
@@ -1123,7 +1380,12 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
 
       const sqlite = getSqlite();
 
-      type EventRow = { type: string; priority: number; data: string; data_hash?: string };
+      type EventRow = {
+        type: string;
+        priority: number;
+        data: string;
+        data_hash?: string;
+      };
       const events = sqlite
         .query<EventRow, string>(
           `SELECT type, priority, data FROM session_events
@@ -1333,7 +1595,22 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       const resolved = resolveProjectId(project);
       const lim = limit ?? 10;
       const parts: string[] = [];
-
+      let knowledgeHits = 0;
+      if (!resources || resources.includes("wiki")) {
+        const pages = new WikiStore(getSqlite(db)).search(query, {
+          projectId: resolved?.id ?? null,
+          limit: lim,
+        });
+        knowledgeHits += pages.length;
+        if (pages.length)
+          parts.push(
+            "## Wiki",
+            ...pages.map(
+              (page) =>
+                `  [wiki] ${page.slug} (${page.project_id ?? "global"}) ${page.title}: ${page.summary}`,
+            ),
+          );
+      }
       if (!resources || resources.includes("memories")) {
         const memResults = searchLayer1(
           query,
@@ -1341,7 +1618,9 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
           Math.ceil(lim / 2),
           undefined,
           resolved?.id,
+          true,
         );
+        knowledgeHits += memResults.length;
         if (memResults.length > 0) {
           parts.push("## Memories");
           for (const m of memResults) {
@@ -1388,11 +1667,15 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         }
       }
 
-      if (resources?.includes("knowledge")) {
+      if (
+        ((!resources || resources.includes("wiki")) && knowledgeHits === 0) ||
+        resources?.includes("knowledge")
+      ) {
         try {
           const engine = getKnowledgeEngine();
           const knowledgeResults = await engine.search(query, {
             limit: Math.ceil(lim / 3),
+            ...(resolved ? { project_id: resolved.id } : {}),
           });
           if (knowledgeResults.length > 0) {
             parts.push("## Knowledge");
@@ -1402,8 +1685,9 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
               );
             }
           }
-        } catch {
-          // Knowledge store may not exist - silently skip
+        } catch (error) {
+          logger.warn("Knowledge fallback search failed", { error });
+          parts.push("## Knowledge unavailable; wiki and memory results remain available.");
         }
       }
 
@@ -1530,8 +1814,17 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "skill_read": {
-      const { name: sName, ref } = args as { name: string; ref?: string };
-      const result = readSkill(sName, ref);
+      const {
+        name: sName,
+        ref,
+        project,
+        scope,
+      } = args as { name: string; ref?: string; project?: string; scope?: "global" };
+      const result = new SkillHistory(getSqlite(db)).read(
+        sName,
+        resolveWikiScope({ project, scope }),
+        ref,
+      );
       if (!result) return `Skill not found: ${sName}`;
       if (ref) {
         const rc = result as SkillRefContent;
@@ -1656,9 +1949,15 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
     }
 
     case "flow_list": {
-      const { q, source } = args as { q?: string; source?: "builtin" | "user" | "project" };
+      const { q, source } = args as {
+        q?: string;
+        source?: "builtin" | "user" | "project";
+      };
       const { listFlows, listBrokenFlows } = await import("@orc/core/flow-service");
-      const flows = listFlows({ ...(q ? { q } : {}), ...(source ? { source } : {}) });
+      const flows = listFlows({
+        ...(q ? { q } : {}),
+        ...(source ? { source } : {}),
+      });
       if (flows.length === 0) return "No flows found.";
       const lines = flows.map(
         (f) =>
@@ -1720,7 +2019,9 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
       };
       if (!flowName && !definition) return "Error: pass either name or definition.";
 
-      const target = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
+      const target = await db.query.tasks.findFirst({
+        where: eq(tasks.id, taskId),
+      });
       if (!target) return `Task not found: ${taskId}`;
 
       if (definition) {
@@ -1729,14 +2030,22 @@ export async function executeTool(name: ToolName, args: unknown): Promise<string
         if (!parsed.ok) return `Error: invalid flow definition:\n  ${parsed.errors.join("\n  ")}`;
         await db
           .update(tasks)
-          .set({ flow_override: parsed.definition, flow_name: null, updated_at: new Date() })
+          .set({
+            flow_override: parsed.definition,
+            flow_name: null,
+            updated_at: new Date(),
+          })
           .where(eq(tasks.id, taskId));
       } else {
         const { readFlow } = await import("@orc/core/flow-service");
         if (!readFlow(flowName as string)) return `Flow not found: ${flowName}`;
         await db
           .update(tasks)
-          .set({ flow_name: flowName, flow_override: null, updated_at: new Date() })
+          .set({
+            flow_name: flowName,
+            flow_override: null,
+            updated_at: new Date(),
+          })
           .where(eq(tasks.id, taskId));
       }
 
