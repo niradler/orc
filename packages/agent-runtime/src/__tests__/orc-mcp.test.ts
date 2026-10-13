@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
+import * as claudeSdk from "@anthropic-ai/claude-agent-sdk";
 import { resetConfig } from "@orc/core/config";
 
 type QueryArgs = {
@@ -12,8 +13,10 @@ type QueryArgs = {
   };
 };
 
+const sdkExports = { ...claudeSdk };
 const queries: QueryArgs[] = [];
 mock.module("@anthropic-ai/claude-agent-sdk", () => ({
+  ...sdkExports,
   query: (args: QueryArgs) => {
     queries.push(args);
     return (async function* () {})();

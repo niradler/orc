@@ -20,7 +20,7 @@ app.use("/mcp", (c, next) => bearerAuth(loadConfig().api.secret)(c, next));
 // server+transport pair per request. This is the pattern recommended in the
 // SDK docs for stateless HTTP MCP.
 app.all("/mcp", async (c) => {
-  const server = createMcpServer();
+  const server = createMcpServer({ publicApiBaseUrl: new URL(c.req.url).origin });
   const transport = new WebStandardStreamableHTTPServerTransport({});
   // handleRequest returns while the SSE body is still streaming, so the
   // per-request server is released on transport close, never in a finally.

@@ -3,7 +3,7 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError } from "@orc/core/errors";
 import { execHostFor, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { getDb } from "@orc/db/client";
-import { gateway_sessions, sessions, tasks } from "@orc/db/schema";
+import { gateway_sessions, session_handoffs, sessions, tasks } from "@orc/db/schema";
 import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { LIVE_CHAT_ID, syncNow } from "../session-watcher.js";
 import { searchSessions } from "../sessions/search.js";
@@ -53,6 +53,14 @@ const LiveSessionSchema = z
     status: z.enum(["idle", "running", "stopped", "error"]),
     project_id: z.string().nullable(),
     task: z.object({ id: z.string(), title: z.string(), status: z.string() }).nullable(),
+    handoff: z
+      .object({
+        id: z.string(),
+        branch: z.string(),
+        commit: z.string(),
+        status: z.enum(["ready", "resumed"]),
+      })
+      .nullable(),
     last_activity_at: z.string().datetime().nullable(),
     created_at: z.string().datetime(),
   })
@@ -286,6 +294,15 @@ function toDto(s: typeof sessions.$inferSelect) {
 type GatewayRow = typeof gateway_sessions.$inferSelect;
 
 async function toLiveDtos(rows: GatewayRow[]) {
+  const handoffs = rows.length
+    ? await getDb().query.session_handoffs.findMany({
+        where: inArray(
+          session_handoffs.live_session_id,
+          rows.map((row) => row.id),
+        ),
+      })
+    : [];
+  const handoffsBySession = new Map(handoffs.map((row) => [row.live_session_id, row]));
   const taskIds = [...new Set(rows.map((r) => r.task_id).filter((id): id is string => !!id))];
   const linked =
     taskIds.length > 0
@@ -296,6 +313,7 @@ async function toLiveDtos(rows: GatewayRow[]) {
   const byId = new Map(linked.map((t) => [t.id, t]));
   const fromBody = await bodyLinkIndex();
   return rows.map((r) => {
+    const handoff = handoffsBySession.get(r.id);
     const t = r.task_id
       ? byId.get(r.task_id)
       : fromBody.get((r.runtime_session_id ?? "").toLowerCase());
@@ -312,6 +330,15 @@ async function toLiveDtos(rows: GatewayRow[]) {
       pid: r.pid ?? null,
       status: r.status,
       project_id: r.project_id ?? null,
+      handoff:
+        handoff && (handoff.status === "ready" || handoff.status === "resumed")
+          ? {
+              id: handoff.id,
+              branch: handoff.request.branch,
+              commit: handoff.request.commit,
+              status: handoff.status,
+            }
+          : null,
       task: t ? { id: t.id, title: t.title, status: t.status } : null,
       last_activity_at: r.last_activity_at?.toISOString() ?? null,
       created_at: r.created_at.toISOString(),
@@ -337,7 +364,12 @@ app.openapi(liveListRoute, async (c) => {
               : undefined,
           )
         : undefined,
-      active ? ne(gateway_sessions.status, "stopped") : undefined,
+      active
+        ? or(
+            ne(gateway_sessions.status, "stopped"),
+            sql`EXISTS (SELECT 1 FROM session_handoffs h WHERE h.live_session_id = ${gateway_sessions.id} AND h.status = 'ready')`,
+          )
+        : undefined,
     ),
     orderBy: [desc(gateway_sessions.last_activity_at)],
     limit,

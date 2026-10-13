@@ -26,7 +26,7 @@ const host: SshExecHost = {
 };
 
 async function runRemote(script: string): Promise<{ code: number; stdout: string }> {
-  const proc = Bun.spawn(["/bin/sh", "-c", script], {
+  const proc = Bun.spawn(["sh", "-c", script], {
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -50,15 +50,20 @@ describe("remoteCommand", () => {
     const envFile = join(dir, "env");
     const pidFile = join(dir, "pid");
     writeFileSync(envFile, envScript({ ORC_TEST_VALUE: "it's $not expanded", "BAD-KEY": "x" }));
-    const script = remoteCommand(["/bin/sh", "-c", 'printf "%s|%s" "$ORC_TEST_VALUE" "$(pwd)"'], {
-      cwd: dir,
-      envFile,
-      pidFile,
-      login: false,
-    });
+    // A relative read proves the cwd without comparing path formats (MSYS pwd prints /tmp/...).
+    writeFileSync(join(dir, "marker"), "in-cwd");
+    const script = remoteCommand(
+      ["/bin/sh", "-c", 'printf "%s|%s" "$ORC_TEST_VALUE" "$(cat marker)"'],
+      {
+        cwd: dir,
+        envFile,
+        pidFile,
+        login: false,
+      },
+    );
     const { code, stdout } = await runRemote(script);
     expect(code).toBe(0);
-    expect(stdout).toBe(`it's $not expanded|${dir}`);
+    expect(stdout).toBe("it's $not expanded|in-cwd");
     expect(existsSync(envFile)).toBe(false);
     expect(Number(readFileSync(pidFile, "utf8").trim())).toBeGreaterThan(0);
   });
@@ -144,6 +149,10 @@ describe("execHostFor", () => {
 
 describe("sshArgv", () => {
   test("keeps ordinary commands independent from control sockets", () => {
+    if (process.platform === "win32") {
+      expect(() => sshArgv(host, "true")).toThrow("Windows does not support");
+      return;
+    }
     const argv = sshArgv(host, "true", { tty: true });
     expect(argv).toContain("ControlMaster=no");
     expect(argv).toContain("ControlPath=none");

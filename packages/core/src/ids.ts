@@ -1,7 +1,9 @@
 import { randomBytes } from "node:crypto";
+import { ID_LEN } from "./id-format.js";
+
+export { ID_LEN } from "./id-format.js";
 
 const ENCODING = "0123456789abcdefghijklmnopqrstuvwxyz";
-export const ID_LEN = 6;
 
 export function ulid(): string {
   const bytes = randomBytes(ID_LEN);

@@ -22,6 +22,15 @@ export const CURSOR_STATE_DB = cursorStateDbPath();
 
 const pathBySlug = new Map<string, string | null>();
 
+// Windows slugs lead with the drive letter ("c-Users-me-proj"); POSIX ones start at "/".
+function slugRoot(slug: string, windows: boolean): { root: string; parts: string[] } {
+  const parts = slug.split("-");
+  const drive = parts[0] ?? "";
+  if (windows && /^[A-Za-z]$/.test(drive))
+    return { root: `${drive.toUpperCase()}:\\`, parts: parts.slice(1) };
+  return { root: "/", parts };
+}
+
 export function resolveSlugPath(slug: string): string | null {
   const cached = pathBySlug.get(slug);
   if (cached !== undefined) return cached;
@@ -36,12 +45,8 @@ export function resolveSlugPath(slug: string): string | null {
     }
     return null;
   };
-  const parts = slug.split("-");
-  // Windows slugs lead with the drive letter ("c-Users-me-proj"); POSIX ones start at "/".
-  const windowsDrive = process.platform === "win32" && /^[A-Za-z]$/.test(parts[0] ?? "");
-  const resolved = windowsDrive
-    ? walk(`${(parts[0] as string).toUpperCase()}:\\`, parts.slice(1))
-    : walk("/", parts);
+  const { root, parts } = slugRoot(slug, process.platform === "win32");
+  const resolved = walk(root, parts);
   pathBySlug.set(slug, resolved);
   return resolved;
 }
@@ -72,7 +77,12 @@ async function resolveSlugPathOnHost(slug: string, runtime: HostRuntime): Promis
     }
     return null;
   };
-  return walk("/", slug.split("-"));
+  // SSH hosts are POSIX; only a local host can be Windows.
+  const { root, parts } = slugRoot(
+    slug,
+    runtime.host.kind === "local" && process.platform === "win32",
+  );
+  return walk(root, parts);
 }
 
 export function cursorAdapter(

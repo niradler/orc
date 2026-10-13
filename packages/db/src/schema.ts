@@ -1,3 +1,4 @@
+import type { SessionHandoffRequest } from "@orc/core/session-handoff";
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
@@ -333,6 +334,26 @@ export const gateway_sessions = sqliteTable(
   },
   (t) => [index("gateway_sessions_chat_idx").on(t.chat_id, t.updated_at)],
 );
+
+export const session_handoffs = sqliteTable("session_handoffs", {
+  id: text("id").primaryKey(),
+  project_id: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+  request: text("request", { mode: "json" }).notNull().$type<SessionHandoffRequest>(),
+  session_id: text("session_id").notNull(),
+  execution_host: text("execution_host"),
+  repo_root: text("repo_root").notNull(),
+  token_hash: text("token_hash"),
+  expires_at: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+  status: text("status", {
+    enum: ["pending", "uploading", "uploaded", "preparing", "ready", "resumed", "error"],
+  }).notNull(),
+  cwd: text("cwd"),
+  live_session_id: text("live_session_id").references(() => gateway_sessions.id, {
+    onDelete: "cascade",
+  }),
+  error: text("error"),
+  ...timestamps,
+});
 
 /**
  * One execution of a flow graph against one task.
