@@ -3,6 +3,13 @@ import type { EvidenceSource, Passage, RetrievalQuery, RetrievalResult } from "@
 import type { RuleEventCapability, RuleHookBackend } from "@orc/core/rule-events";
 import type { RuleDecision, RuleEvent, RulePolicy, RuleRevision } from "@orc/core/rule-types";
 import type {
+  SkillDiscovery,
+  SkillImportInput,
+  SkillImportOrigin,
+  SkillSyncInput,
+  SkillSyncResult,
+} from "@orc/core/skill-import-types";
+import type {
   SkillActivation,
   SkillEvaluation,
   SkillProposal,
@@ -359,6 +366,15 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     skills: {
+      discover: (source: string) => c<SkillDiscovery>("POST", "/skills/discover", { source }),
+      import: (input: SkillImportInput) =>
+        c<{ skills: SkillFull[] }>("POST", "/skills/import", input),
+      origin: (name: string) =>
+        c<SkillImportOrigin | null>("GET", `/skills/${encodeURIComponent(name)}/origin`),
+      sync: (name: string, input: SkillSyncInput = {}) =>
+        c<SkillSyncResult>("POST", `/skills/${encodeURIComponent(name)}/sync`, input),
+      editFile: (name: string, input: { path: string; content: string; expectedContent: string }) =>
+        c<SkillFull>("PUT", `/skills/${encodeURIComponent(name)}/file`, input),
       list: (params?: { q?: string; source?: SkillSource; reload?: boolean }) =>
         c<{
           skills: SkillMeta[];

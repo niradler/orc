@@ -602,6 +602,16 @@ orc skill validate ./my-workflow
 orc skill export my-workflow ./exported/my-workflow
 ```
 
+Import public GitHub skills from **Skills → Import from GitHub**. Paste a repository URL, `owner/repo`, a GitHub skill-folder URL, or a `https://skills.sh/owner/repo/skill` link, discover the skills, then select which to import. ORC copies each complete folder at the displayed commit, including nested documentation, scripts and binary assets. Existing names are never overwritten by an import. Select up to 16 skills per import (64 MiB total).
+
+```bash
+orc skill import vercel-labs/agent-skills --list
+orc skill import vercel-labs/agent-skills --skill web-design-guidelines
+orc skill sync web-design-guidelines
+```
+
+Imported skills remain editable: open the skill, choose `SKILL.md` or a supporting text file, then **Edit** and **Save changes**. **Sync from GitHub** fetches the source again and compares each file against its last imported version. Local edits are kept when upstream has not changed that file. If both sides changed the same file, the whole sync pauses and lists conflicts. **Review override → Replace listed files** requires confirmation and replaces only those conflicts with upstream versions; unrelated local edits remain. If the local files or upstream commit changed since review, ORC requires a new sync check. Sync retains the previous folder under `~/.orc/skill-sync-backups/`; import provenance and upstream baselines live under `~/.orc/skill-imports/`. These backups are retained until manually removed. Private repositories and non-GitHub sources are not supported by this importer.
+
 The dashboard can import a skill folder or add supporting files individually, then open each file from the detail sheet. API `POST /api/skills` and MCP `skill_create` accept optional `files: [{ path, content, encoding? }]` alongside `name` and the full `SKILL.md` `content`. Encoding defaults to `utf8`. Bundles allow 512 supporting files, 8 MiB per file and 16 MiB total. Paths must stay inside the skill folder; symlinks are excluded and cannot be read. The legacy `references` inventory is retained for existing clients. Worker prompts include the skill's entry path and file inventory so relative links resolve from the skill directory.
 
 ### Shared agents and portable packages
