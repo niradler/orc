@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { resetConfig } from "@orc/core/config";
 import { hostRuntime } from "@orc/core/exec-host";
 import {
@@ -30,6 +30,7 @@ const target = join(root, "target");
 const agentHome = join(root, "home");
 const sourceId = "12345678-1234-4234-8234-123456789abc";
 const originalApiBase = process.env.ORC_API_BASE;
+const originalPath = process.env.PATH;
 let app: ReturnType<typeof createApp>;
 let commit: string;
 let service: HandoffService;
@@ -154,6 +155,17 @@ class FakePty implements PtyHandle {
 }
 
 beforeAll(async () => {
+  // These tests inject a PTY; launcher discovery must not depend on real installed agents.
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  for (const name of ["claude", "codex"]) {
+    writeFileSync(
+      join(bin, process.platform === "win32" ? `${name}.cmd` : name),
+      process.platform === "win32" ? "@echo off\r\nexit /b 0\r\n" : "#!/bin/sh\nexit 0\n",
+      { mode: 0o755 },
+    );
+  }
+  process.env.PATH = `${bin}${delimiter}${originalPath ?? ""}`;
   await git("init", "--bare", remote);
   await git("init", source);
   writeFileSync(join(source, ".gitignore"), "# Worktree exclusions are installed by ORC\n");
@@ -214,6 +226,8 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  if (originalPath === undefined) delete process.env.PATH;
+  else process.env.PATH = originalPath;
   manager.shutdown();
   setTerminalManager(null);
   setHandoffService(null);
@@ -311,6 +325,9 @@ describe("native session handoff", () => {
       live_session_id: ready.live_session_id,
     });
     expect(started.status).toBe(201);
+    expect(launches.at(-1)?.argv).toContain(
+      join(root, "bin", process.platform === "win32" ? "codex.cmd" : "codex"),
+    );
     const terminal = await started.json();
     expect(terminal.cwd).toBe(ready.cwd);
     expect(launches.at(-1)?.argv.slice(1)).toEqual([
@@ -440,6 +457,7 @@ describe("native session handoff", () => {
           `import { executeTool } from '@orc/mcp/tools'; const result = JSON.parse(await executeTool('session_handoff', ${JSON.stringify(input())})); if (result.status !== 'pending') throw new Error('Unexpected status'); console.log('API_ONLY_OK');`,
         ],
         {
+          cwd: join(import.meta.dir, "../.."),
           env: { ...process.env, ORC_DB_PATH: join(source, "work.txt") },
           stdout: "pipe",
           stderr: "pipe",
