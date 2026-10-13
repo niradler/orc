@@ -23,6 +23,7 @@
     "./agent-service": "./src/agent-service.ts",
     "./package-service": "./src/package-service.ts",
     "./package-launch": "./src/package-launch.ts",
+    "./package-catalog": "./src/package-catalog.ts",
     "./plugin-service": "./src/plugin-service.ts",
     "./primitive-types": "./src/primitive-types.ts",
     "./flow": "./src/flow.ts",

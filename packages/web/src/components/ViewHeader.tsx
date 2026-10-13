@@ -8,8 +8,8 @@ interface ViewHeaderProps {
 
 export function ViewHeader({ title, action, meta }: ViewHeaderProps) {
   return (
-    <div className="flex items-center justify-between mb-6">
-      <div className="flex items-center gap-4">
+    <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1">
         <h1
           data-testid="view-title"
           className="font-headline font-extrabold text-sm uppercase tracking-widest text-on-surface"

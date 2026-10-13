@@ -85,6 +85,7 @@ export function agentPackageCommand(): Command {
         content,
         files,
         format,
+        imported: true,
       });
       if (error || !data) throw new Error(JSON.stringify(error));
       if (isJson()) return jsonOut(data);

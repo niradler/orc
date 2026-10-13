@@ -33,15 +33,15 @@ test("portable package import, resource inspection, lossless export and saved se
   page.on("pageerror", (error) => errors.push(error.message));
   await gotoView(page, "skills");
   await page.getByTestId("nav-packages").click();
+  await page.getByTestId("package-import-button").click();
+  await page.getByTestId("package-import-folder").click();
   await page.getByTestId("agent-package-folder").setInputFiles(folder);
   const card = page.locator(`[data-testid="agent-package-row"][data-package-name="${name}"]`);
   await expect(card).toContainText("Agent Plugins");
   await page.reload();
-  await card.getByTestId("package-inspect").click();
   await expect(page.getByTestId("package-file-content")).toContainText("x-preserved");
-  await page.keyboard.press("Escape");
   const downloading = page.waitForEvent("download");
-  await card.getByTestId("package-export").click();
+  await page.getByTestId("package-export").click();
   const download = await downloading;
   const archivePath = await download.path();
   if (!archivePath) throw Error("Missing exported archive");
@@ -51,6 +51,7 @@ test("portable package import, resource inspection, lossless export and saved se
   if (!exportedManifest || !exportedAsset) throw Error("Missing exported package files");
   expect(Buffer.from(exportedManifest).toString()).toBe(manifest);
   expect(Array.from(exportedAsset)).toEqual([0, 255, 1, 128]);
+  await page.keyboard.press("Escape");
   await card.getByTestId("package-run").click();
   await expect(page.getByTestId("setup-components")).toContainText("1 skill files");
   await page.getByTestId("setup-name").fill(name);
@@ -58,6 +59,7 @@ test("portable package import, resource inspection, lossless export and saved se
   await page.getByTestId("setup-model").fill("selected-model");
   await page.getByTestId("setup-prompt").fill("Use the portable package");
   await page.getByTestId("setup-save").click();
+  await page.getByTestId("packages-setups-tab").click();
   await expect(page.getByTestId("agent-setup-row").filter({ hasText: name })).toBeVisible();
   await page.reload();
   await page.getByTestId("agent-setup-row").filter({ hasText: name }).click();

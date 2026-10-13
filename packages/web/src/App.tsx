@@ -9,12 +9,11 @@ import { BREAKPOINTS } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
 import { TerminalsProvider } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
-import Agents from "@/views/Agents";
 import Dashboard from "@/views/Dashboard";
 import Jobs from "@/views/Jobs";
 import Knowledge from "@/views/Knowledge";
 import Memories from "@/views/Memories";
-import Packages from "@/views/Packages";
+import Packages, { LegacyAgentsRedirect } from "@/views/PackageCatalog";
 import Projects from "@/views/Projects";
 import Rules from "@/views/Rules";
 import Sessions from "@/views/Sessions";
@@ -106,9 +105,13 @@ export default function App() {
                 <Route path="/knowledge" element={<Knowledge projectId={projectId} />} />
                 <Route path="/skills" element={<Skills projectId={projectId} />} />
                 <Route path="/skills/:skillName" element={<Skills projectId={projectId} />} />
-                <Route path="/agents" element={<Agents />} />
-                <Route path="/agents/:agentId" element={<Agents />} />
+                <Route path="/agents" element={<LegacyAgentsRedirect />} />
+                <Route path="/agents/:agentId" element={<LegacyAgentsRedirect />} />
                 <Route path="/packages" element={<Packages />} />
+                <Route path="/packages/item" element={<Packages />} />
+                <Route path="/packages/item/:packageName" element={<Packages />} />
+                <Route path="/packages/agents" element={<Packages />} />
+                <Route path="/packages/agents/:agentId" element={<Packages />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/rules" element={<Rules />} />
                 <Route path="*" element={<Navigate to="/tasks" replace />} />

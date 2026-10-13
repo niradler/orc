@@ -6,23 +6,42 @@ import {
   readAgent,
   updateAgent,
 } from "@orc/core/agent-service";
-import { loadConfig } from "@orc/core/config";
-import { NotFoundError } from "@orc/core/errors";
+import { configuredApiSecret, loadConfig } from "@orc/core/config";
+import { ForbiddenError, NotFoundError } from "@orc/core/errors";
+import {
+  acquireApmSource,
+  discoverRepositoryPackages,
+  exportPackageArtifact,
+  importAcquiredPackage,
+  importRepositoryPackage,
+  writePackageCommand,
+} from "@orc/core/package-catalog";
 import {
   AgentSetupSchema,
+  buildPackagePlan,
   listAgentSetups,
+  packagePlanArgv,
   packageToolCommands,
   saveAgentSetup,
 } from "@orc/core/package-launch";
 import {
   createPackage,
   listPackages,
+  packageRevision,
+  packageSkillFiles,
   readPackage,
   readPackageFile,
+  updatePackage,
 } from "@orc/core/package-service";
-import { requireTerminals } from "../terminals/service.js";
 
 const app = new OpenAPIHono();
+function requirePackageOperations() {
+  if (!configuredApiSecret(loadConfig().api.secret))
+    throw new ForbiddenError(
+      "Set ORC_API_SECRET before running package operations",
+      "PACKAGE_OPERATIONS_UNAVAILABLE",
+    );
+}
 app.openapi(
   createRoute({
     method: "get",
@@ -90,7 +109,7 @@ app.openapi(
     },
   }),
   (c) => {
-    requireTerminals(loadConfig());
+    requirePackageOperations();
     return c.json(saveAgentSetup(c.req.valid("json")), 201);
   },
 );
@@ -125,6 +144,7 @@ const FileSchema = z.object({ name: z.string(), path: z.string() });
 const PackageFullSchema = PackageSchema.extend({
   content: z.string(),
   files: z.array(FileSchema),
+  revision: z.string().optional(),
 }).openapi("ApmPackageFull");
 const FileContentSchema = FileSchema.extend({
   content: z.string(),
@@ -325,7 +345,7 @@ app.openapi(
     if (ref) return c.json(readPackageFile(name, ref));
     const pkg = readPackage(name);
     if (!pkg) throw new NotFoundError("Package", name);
-    return c.json(pkg);
+    return c.json({ ...pkg, revision: packageRevision(pkg) });
   },
 );
 
@@ -344,6 +364,8 @@ app.openapi(
               content: z.string().min(1),
               files: z.array(FileInputSchema).max(512),
               format: z.enum(["apm", "agent-plugin"]).optional(),
+              skills: z.array(z.string().min(1).max(200)).max(32).optional(),
+              imported: z.boolean().optional(),
             }),
           },
         },
@@ -359,8 +381,245 @@ app.openapi(
     },
   }),
   (c) => {
-    const { name, content, files, format } = c.req.valid("json");
-    return c.json(createPackage(name, content, files, format), 201);
+    const { name, content, files, format, skills, imported } = c.req.valid("json");
+    return c.json(
+      createPackage(
+        name,
+        content,
+        [...files, ...packageSkillFiles(skills ?? [], format ?? "apm")],
+        format,
+        imported,
+      ),
+      201,
+    );
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "put",
+    path: "/agent-packages/{name}",
+    tags: ["Agent packages"],
+    request: {
+      params: z.object({ name: z.string().min(1).max(200) }),
+      body: {
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                content: z
+                  .string()
+                  .min(1)
+                  .max(8 * 1024 * 1024),
+                files: z.array(FileInputSchema).max(512),
+                expectedRevision: z.string().regex(/^[a-f0-9]{64}$/),
+                skills: z.array(z.string().min(1).max(200)).max(32).optional(),
+              })
+              .strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Updated package",
+        content: { "application/json": { schema: PackageFullSchema } },
+      },
+      409: { description: "Package changed" },
+    },
+  }),
+  (c) => {
+    const pkg = updatePackage(c.req.valid("param").name, c.req.valid("json"));
+    return c.json({ ...pkg, revision: packageRevision(pkg) });
+  },
+);
+
+const DiscoverySchema = z.object({
+  source: z.string(),
+  repository: z.string(),
+  commit: z.string(),
+  packages: z.array(
+    z.object({
+      name: z.string(),
+      description: z.string(),
+      path: z.string(),
+      format: z.enum(["apm", "agent-plugin"]),
+      installed: z.boolean(),
+    }),
+  ),
+  issues: z.array(BrokenSchema),
+});
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/agent-packages/acquire",
+    tags: ["Agent packages"],
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({ source: z.string().min(1).max(2048) }).strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "APM acquired source for catalog inspection",
+        content: {
+          "application/json": {
+            schema: z.object({
+              token: z.string(),
+              source: z.string(),
+              packages: DiscoverySchema.shape.packages,
+            }),
+          },
+        },
+      },
+    },
+  }),
+  async (c) => {
+    requirePackageOperations();
+    return c.json(await acquireApmSource(c.req.valid("json").source));
+  },
+);
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/agent-packages/import-acquired",
+    tags: ["Agent packages"],
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z
+              .object({ token: z.string().uuid(), path: z.string().min(1).max(1024) })
+              .strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      201: {
+        description: "Acquired source added to the catalog",
+        content: { "application/json": { schema: PackageFullSchema } },
+      },
+    },
+  }),
+  (c) => {
+    requirePackageOperations();
+    const input = c.req.valid("json");
+    return c.json(importAcquiredPackage(input.token, input.path), 201);
+  },
+);
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/agent-packages/discover",
+    tags: ["Agent packages"],
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({ source: z.string().min(1).max(2048) }).strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Packages at an immutable Git commit",
+        content: { "application/json": { schema: DiscoverySchema } },
+      },
+    },
+  }),
+  async (c) => {
+    requirePackageOperations();
+    return c.json(await discoverRepositoryPackages(c.req.valid("json").source));
+  },
+);
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/agent-packages/import-git",
+    tags: ["Agent packages"],
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                source: z.string().min(1).max(2048),
+                commit: z.string().regex(/^[a-f0-9]{40}$/),
+                path: z.string().max(1024),
+                format: z.enum(["apm", "agent-plugin"]),
+              })
+              .strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      201: {
+        description: "APM acquired package saved in the catalog",
+        content: { "application/json": { schema: PackageFullSchema } },
+      },
+    },
+  }),
+  async (c) => {
+    requirePackageOperations();
+    return c.json(await importRepositoryPackage(c.req.valid("json")), 201);
+  },
+);
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/agent-packages/{name}/export",
+    tags: ["Agent packages"],
+    request: { params: z.object({ name: z.string().min(1).max(200) }) },
+    responses: {
+      200: {
+        description: "APM built installation artifact",
+        content: {
+          "application/json": {
+            schema: z.object({ filename: z.string(), content: z.string(), format: z.string() }),
+          },
+        },
+      },
+    },
+  }),
+  async (c) => {
+    requirePackageOperations();
+    return c.json(await exportPackageArtifact(c.req.valid("param").name));
+  },
+);
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/agent-setups/command",
+    tags: ["Agent packages"],
+    request: { body: { content: { "application/json": { schema: AgentSetupSchema } } } },
+    responses: {
+      200: {
+        description: "Command to execute this plan on the API machine",
+        content: {
+          "application/json": {
+            schema: z.object({ command: z.string(), shell: z.string(), notice: z.string() }),
+          },
+        },
+      },
+    },
+  }),
+  (c) => {
+    requirePackageOperations();
+    const tools = packageToolCommands();
+    if (!tools.bun) throw new NotFoundError("Executable", "bun");
+    const plan = buildPackagePlan(c.req.valid("json"), tools);
+    return c.json({
+      command: writePackageCommand(packagePlanArgv(plan, tools.bun)),
+      shell: process.platform === "win32" ? "PowerShell" : "sh",
+      notice: plan.notice,
+    });
   },
 );
 

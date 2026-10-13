@@ -47,3 +47,5 @@ output/playwright/
 
 # SDK public types depend on this generated API contract.
 !packages/sdk/src/openapi.gen.ts
+
+.playwright-cli

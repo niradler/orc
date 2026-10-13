@@ -32,6 +32,20 @@ export type ApmManifest = Record<string, unknown> & {
   description?: string;
 };
 export type PackageFormat = "apm" | "agent-plugin";
+export type PackageCandidate = {
+  name: string;
+  description: string;
+  path: string;
+  format: PackageFormat;
+  installed: boolean;
+};
+export type PackageDiscovery = {
+  repository: string;
+  commit: string;
+  source: string;
+  packages: PackageCandidate[];
+  issues: { path: string; error: string }[];
+};
 export type PackageMeta = {
   name: string;
   version: string;
