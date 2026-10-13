@@ -30,6 +30,9 @@ export type KnowledgeDocument = {
   title: string;
   content: string;
   modifiedAt: string;
+  editable?: boolean;
+  readOnlyReason?: string;
+  indexingWarning?: string;
 };
 
 export type KnowledgeStatus = {
@@ -53,6 +56,8 @@ export interface KnowledgeEngine {
   ): Promise<KnowledgeSearchResult[]>;
 
   get(docidOrPath: string): Promise<KnowledgeDocument | null>;
+
+  edit(docidOrPath: string, content: string, expectedContent: string): Promise<KnowledgeDocument>;
 
   listCollections(opts?: { project_id?: string }): Promise<KnowledgeCollection[]>;
 

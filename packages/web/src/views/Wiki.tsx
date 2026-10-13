@@ -1,8 +1,9 @@
 import type { WikiScope } from "@orc/sdk/types";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
+import { confirmDocumentClose, DocumentWorkspace } from "@/components/DocumentWorkspace";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,8 @@ export default function Wiki({ projectId }: { projectId: string }) {
   const pageScope: WikiScope = params.get("scope") === "global" ? { scope: "global" } : scope;
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
+  const queryClient = useQueryClient();
+  const documentId = `wiki:${pageScope.project_id ?? "global"}:${slug}`;
   const pages = useQuery({
     queryKey: ["wiki", scope, query],
     queryFn: () =>
@@ -51,6 +54,7 @@ export default function Wiki({ projectId }: { projectId: string }) {
     enabled: Boolean(slug),
   });
   function selectPage(nextSlug: string, owner: string | null): void {
+    if (!confirmDocumentClose(documentId)) return;
     setParams((previous) => {
       const next = new URLSearchParams(previous);
       next.set("page", nextSlug);
@@ -184,7 +188,7 @@ export default function Wiki({ projectId }: { projectId: string }) {
       <Sheet
         open={Boolean(slug)}
         onOpenChange={(open) => {
-          if (!open)
+          if (!open && confirmDocumentClose(documentId))
             setParams((previous) => {
               const next = new URLSearchParams(previous);
               next.delete("page");
@@ -193,7 +197,7 @@ export default function Wiki({ projectId }: { projectId: string }) {
             });
         }}
       >
-        <SheetContent>
+        <SheetContent className="w-screen max-w-full sm:w-[1120px] sm:max-w-[96vw]">
           <SheetHeader>
             <SheetTitle>{page.data?.title ?? "Wiki page"}</SheetTitle>
           </SheetHeader>
@@ -206,7 +210,37 @@ export default function Wiki({ projectId }: { projectId: string }) {
                   Revision {page.data.revision} · {page.data.author} ·{" "}
                   {page.data.project_id ? "Project" : "Global"}
                 </p>
-                <Markdown
+                <DocumentWorkspace
+                  key={documentId}
+                  documentId={documentId}
+                  path={`${page.data.slug}.md`}
+                  content={page.data.content}
+                  testId="wiki-editor-content"
+                  onSave={async (content, expectedContent) => {
+                    const current = page.data;
+                    if (!current || current.content !== expectedContent)
+                      throw new Error(
+                        "This page changed since it was opened. Reopen it before saving.",
+                      );
+                    const saved = await api.wiki.write({
+                      project_id: current.project_id,
+                      slug: current.slug,
+                      kind: current.kind,
+                      title: current.title,
+                      summary: current.summary,
+                      tags: current.tags,
+                      sources: current.sources,
+                      expected_revision: current.revision,
+                      content,
+                      author: "human",
+                      note: "Manual Markdown edit",
+                    });
+                    await queryClient.invalidateQueries({ queryKey: ["wiki-page"] });
+                    await queryClient.invalidateQueries({ queryKey: ["wiki-history"] });
+                    await queryClient.invalidateQueries({ queryKey: ["wiki"] });
+                    await queryClient.invalidateQueries({ queryKey: ["wiki-changes"] });
+                    return saved.content;
+                  }}
                   wikiLinks={{
                     slugs: (pages.data ?? []).map((entry) => entry.slug),
                     select: (next) => {
@@ -214,9 +248,7 @@ export default function Wiki({ projectId }: { projectId: string }) {
                       if (target) selectPage(next, target.project_id);
                     },
                   }}
-                >
-                  {page.data.content}
-                </Markdown>
+                />
                 <div>
                   <h3 className="text-xs font-semibold">Sources</h3>
                   <ul className="text-xs break-all">

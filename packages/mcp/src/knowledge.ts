@@ -7,7 +7,7 @@
  */
 
 import { loadConfig } from "@orc/core/config";
-import { OrcError } from "@orc/core/errors";
+import { NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
 import type {
   KnowledgeCollection,
   KnowledgeDocument,
@@ -16,6 +16,11 @@ import type {
   KnowledgeSearchResult,
   KnowledgeStatus,
 } from "@orc/core/knowledge";
+import {
+  editKnowledgeFile,
+  readKnowledgeFile,
+  resolveKnowledgeFile,
+} from "@orc/core/knowledge-files";
 import { createLogger } from "@orc/core/logger";
 import { getDb } from "@orc/db/client";
 import { knowledge_collections } from "@orc/db/schema";
@@ -142,7 +147,7 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
     const store = await this.getStore();
     const result = await store.get(docidOrPath, { includeBody: true });
     if ("error" in result) return null;
-    return {
+    const document: KnowledgeDocument = {
       docid: result.docid,
       path: result.displayPath,
       collection: result.collectionName,
@@ -150,6 +155,80 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
       content: result.body ?? "",
       modifiedAt: result.modifiedAt,
     };
+    try {
+      const source = await this.resolveSource(document);
+      document.content = readKnowledgeFile(
+        resolveKnowledgeFile(source.document, source.collection),
+      );
+      document.editable = true;
+    } catch (cause) {
+      if (!(cause instanceof ValidationError) && (cause as NodeJS.ErrnoException).code !== "ENOENT")
+        throw cause;
+      document.editable = false;
+      document.readOnlyReason =
+        "The indexed source is unavailable, ambiguous, or not an editable UTF-8 Markdown file.";
+    }
+    return document;
+  }
+
+  private async resolveSource(
+    document: KnowledgeDocument,
+  ): Promise<{ document: KnowledgeDocument; collection: KnowledgeCollection }> {
+    const collection = (await this.listCollections()).find(
+      (entry) => entry.name === document.collection,
+    );
+    if (!collection) throw new ValidationError("The source collection is no longer registered");
+    validateKnowledgePattern(collection.pattern);
+    // QMD normalizes filenames when indexing (e.g. spaces become dashes).
+    // Use its own normalization and require one unique physical source, never guess a write target.
+    const { handelize } = (await import(
+      new URL("./store.js", import.meta.resolve("@tobilu/qmd")).href
+    )) as { handelize: (path: string) => string };
+    const relativePath = document.path.slice(`${collection.name}/`.length);
+    const matches: string[] = [];
+    const ignored = new Set(["node_modules", ".git", ".cache", "vendor", "dist", "build"]);
+    for await (const entry of new Bun.Glob(collection.pattern).scan({
+      cwd: collection.path,
+      onlyFiles: true,
+      followSymlinks: false,
+      dot: false,
+    })) {
+      const filename = entry.replace(/\\/g, "/");
+      if (filename.split("/").some((part) => part.startsWith(".") || ignored.has(part))) continue;
+      if (handelize(filename) === relativePath) matches.push(filename);
+      if (matches.length > 1) break;
+    }
+    if (matches.length !== 1)
+      throw new ValidationError("The indexed document does not have one unique source file");
+    return { document: { ...document, path: `${collection.name}/${matches[0]}` }, collection };
+  }
+
+  async edit(
+    docidOrPath: string,
+    content: string,
+    expectedContent: string,
+  ): Promise<KnowledgeDocument> {
+    const document = await this.get(docidOrPath);
+    if (!document) throw new NotFoundError("Document", docidOrPath);
+    if (
+      ![document.docid, `#${document.docid}`, document.path, `qmd://${document.path}`].includes(
+        docidOrPath,
+      )
+    )
+      throw new ValidationError("Use the exact indexed document ID or path when editing");
+    const source = await this.resolveSource(document);
+    editKnowledgeFile(source.document, source.collection, content, expectedContent);
+    // The source file is already saved. Indexing can be retried independently.
+    let indexingWarning: string | undefined;
+    try {
+      await this.update({ collections: [document.collection] });
+    } catch (cause) {
+      logger.warn("Document saved, but knowledge reindex failed", { error: String(cause) });
+      indexingWarning =
+        "The source file was saved, but the search index could not be updated. Reindex this collection to refresh search results.";
+    }
+    const saved = (await this.get(`qmd://${document.path}`)) ?? { ...document, content };
+    return { ...saved, ...(indexingWarning ? { indexingWarning } : {}) };
   }
 
   async listCollections(opts?: { project_id?: string }): Promise<KnowledgeCollection[]> {

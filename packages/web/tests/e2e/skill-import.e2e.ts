@@ -32,34 +32,28 @@ test("imports a real GitHub skill, edits it, reopens it and preserves edits on s
   await expect(row).toBeVisible({ timeout: 60000 });
   await row.click();
   await expect(page.getByTestId("skill-sync")).toBeVisible();
-  await page.getByTestId("skill-edit-file").click();
-  const editor = page.getByTestId("skill-edit-content");
+  await page.getByTestId("markdown-mode-edit").click();
+  const editor = page.getByTestId("skill-file-content");
   await editor.press("Control+End");
   await page.keyboard.insertText("\n\nLocal customization: consult ORC's skill library first.\n");
   const saved = page.waitForResponse(
     (response) =>
       response.url().endsWith("/skills/find-skills/file") && response.request().method() === "PUT",
   );
-  await page.getByTestId("skill-save-edit").click();
+  await page.getByTestId("document-save").click();
   expect((await saved).status()).toBe(200);
-  await page.getByTestId("code-editor-preview-toggle").click();
-  await expect(page.getByTestId("code-editor-markdown-preview")).toContainText(
-    "Local customization:",
-  );
+  await page.getByTestId("markdown-mode-read").click();
+  await expect(page.getByTestId("markdown-preview")).toContainText("Local customization:");
   await page.reload();
-  await page.getByTestId("code-editor-preview-toggle").click();
-  await expect(page.getByTestId("code-editor-markdown-preview")).toContainText(
-    "Local customization:",
-  );
+  await page.getByTestId("markdown-mode-read").click();
+  await expect(page.getByTestId("markdown-preview")).toContainText("Local customization:");
   await page.getByTestId("skill-sync").click();
   await expect(page.getByTestId("skill-sync-status")).toContainText("Local edits preserved", {
     timeout: 60000,
   });
   await page.reload();
-  await page.getByTestId("code-editor-preview-toggle").click();
-  await expect(page.getByTestId("code-editor-markdown-preview")).toContainText(
-    "Local customization:",
-  );
+  await page.getByTestId("markdown-mode-read").click();
+  await expect(page.getByTestId("markdown-preview")).toContainText("Local customization:");
   await page.screenshot({ path: "../../.claude/skill-github-import-browser.png" });
 });
 

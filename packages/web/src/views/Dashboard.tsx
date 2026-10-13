@@ -114,7 +114,7 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
           label="Memories"
           value={memories?.length ?? 0}
           accent="muted"
-          onClick={() => navigate("/memories")}
+          onClick={() => navigate("/knowledge?tab=memories")}
         />
         <StatCard
           label="Projects"

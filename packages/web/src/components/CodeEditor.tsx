@@ -1,4 +1,7 @@
-import { lazy, Suspense } from "react";
+import type { ReactNode } from "react";
+import { MarkdownEditor } from "@/components/MarkdownEditor";
+import { SourceCodeEditor } from "@/components/SourceCodeEditor";
+import { isMarkdownFile } from "@/lib/editor-language";
 
 export type CodeEditorProps = {
   path: string;
@@ -11,22 +14,12 @@ export type CodeEditorProps = {
   id?: string;
   label?: string;
   placeholder?: string;
+  hidePreview?: boolean;
+  defaultWrap?: boolean;
+  header?: ReactNode;
 };
 
-const SourceEditor = lazy(() =>
-  import("./SourceEditor").then((module) => ({ default: module.SourceEditor })),
-);
-
 export function CodeEditor(props: CodeEditorProps) {
-  return (
-    <Suspense
-      fallback={
-        <div style={{ height: props.height ?? 320 }} className="p-3 text-xs text-outline">
-          Loading editor...
-        </div>
-      }
-    >
-      <SourceEditor {...props} />
-    </Suspense>
-  );
+  if (isMarkdownFile(props.path) && !props.hidePreview) return <MarkdownEditor {...props} />;
+  return <SourceCodeEditor {...props} />;
 }

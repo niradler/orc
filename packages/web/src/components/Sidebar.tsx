@@ -1,7 +1,6 @@
 import {
   Activity,
   BookOpen,
-  Brain,
   CheckSquare,
   ChevronLeft,
   ChevronRight,
@@ -31,7 +30,6 @@ const NAV_ITEMS: {
   { id: "tasks", path: "/tasks", label: "Tasks", icon: CheckSquare },
   { id: "jobs", path: "/jobs", label: "Jobs", icon: TerminalSquare },
   { id: "terminals", path: "/terminals", label: "Terminals", icon: Terminal },
-  { id: "memories", path: "/memories", label: "Memories", icon: Brain },
   { id: "projects", path: "/projects", label: "Projects", icon: Folder },
   { id: "sessions", path: "/sessions", label: "Sessions", icon: History },
   { id: "wiki", path: "/wiki", label: "Wiki", icon: BookOpen },

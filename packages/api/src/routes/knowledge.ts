@@ -24,6 +24,9 @@ const KnowledgeDocumentSchema = z
     title: z.string(),
     content: z.string(),
     modifiedAt: z.string(),
+    editable: z.boolean().optional(),
+    readOnlyReason: z.string().optional(),
+    indexingWarning: z.string().optional(),
   })
   .openapi("KnowledgeDocument");
 
@@ -115,6 +118,45 @@ app.openapi(getRoute, async (c) => {
 });
 
 // --- List collections ---
+
+app.openapi(
+  createRoute({
+    method: "put",
+    path: "/knowledge/documents/{id}",
+    tags: ["Knowledge"],
+    summary: "Save an existing Markdown source file with a stale-content check",
+    request: {
+      params: z.object({ id: z.string().min(1).max(2000) }),
+      body: {
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                content: z.string().max(2 * 1024 * 1024),
+                expectedContent: z.string().max(2 * 1024 * 1024),
+              })
+              .strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Saved document",
+        content: { "application/json": { schema: KnowledgeDocumentSchema } },
+      },
+      400: { description: "Source is not an editable Markdown file" },
+      404: { description: "Document not found" },
+      409: { description: "Source content changed since it was opened" },
+    },
+  }),
+  async (c) => {
+    const { content, expectedContent } = c.req.valid("json");
+    return c.json(
+      await getKnowledgeEngine().edit(c.req.valid("param").id, content, expectedContent),
+    );
+  },
+);
 
 const listCollectionsRoute = createRoute({
   method: "get",

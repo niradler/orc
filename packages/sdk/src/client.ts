@@ -1,4 +1,5 @@
 import { loadConfig } from "@orc/core/config";
+import type { KnowledgeDocument } from "@orc/core/knowledge";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
 import type { RuleEventCapability, RuleHookBackend } from "@orc/core/rule-events";
 import type { RuleDecision, RuleEvent, RulePolicy, RuleRevision } from "@orc/core/rule-types";
@@ -603,14 +604,13 @@ export function createOrcClient(options?: OrcClientOptions) {
         }),
 
       get: (id: string) =>
-        c<{
-          docid: string;
-          path: string;
-          collection: string;
-          title: string;
-          content: string;
-          modifiedAt: string;
-        }>("GET", `/knowledge/documents/${encodeURIComponent(id)}`),
+        c<KnowledgeDocument>("GET", `/knowledge/documents/${encodeURIComponent(id)}`),
+
+      edit: (id: string, content: string, expectedContent: string) =>
+        c<KnowledgeDocument>("PUT", `/knowledge/documents/${encodeURIComponent(id)}`, {
+          content,
+          expectedContent,
+        }),
 
       collections: (params?: { project_id?: string }) =>
         c<{

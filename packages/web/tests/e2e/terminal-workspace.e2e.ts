@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
@@ -166,6 +166,7 @@ test("should edit, save and reopen text files while preserving drafts and reject
   });
   writeFileSync(join(repo, "example.ts"), "export const answer = 42;\r\n");
   writeFileSync(join(repo, "other.txt"), "another file\n");
+  writeFileSync(join(repo, "guide.md"), "# Terminal Markdown\nOriginal document.\n");
   const terminal = await apiPost<{ id: string }>(request, "/terminals", {
     kind: "shell",
     cwd: repo,
@@ -230,4 +231,23 @@ test("should edit, save and reopen text files while preserving drafts and reject
   await page.screenshot({
     path: "../../output/playwright/file-editor-save-reopen.png",
   });
+  await page
+    .getByTestId("file-entry")
+    .filter({ hasText: /^guide.md$/ })
+    .click();
+  await page.getByTestId("markdown-mode-edit").click();
+  await input.fill("# Terminal Markdown\nSaved from expanded view.\n");
+  await page.getByTestId("markdown-expand").click();
+  await page.getByTestId("file-save").click();
+  await expect(page.getByTestId("file-save-status")).toHaveText("Saved");
+  expect(readFileSync(join(repo, "guide.md"), "utf8")).toContain("Saved from expanded view");
+  await input.fill("# Terminal Markdown\nMy draft in fullscreen.\n");
+  writeFileSync(join(repo, "guide.md"), "# Terminal Markdown\nConcurrent external edit.\n");
+  await page.getByTestId("file-save").click();
+  await expect(page.getByRole("alert")).toContainText("File changed on disk");
+  await expect(input).toContainText("My draft in fullscreen");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByTestId("file-reload").click();
+  await expect(input).toContainText("Concurrent external edit");
+  await page.getByTestId("markdown-expand").click();
 });

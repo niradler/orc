@@ -4004,7 +4004,57 @@ export interface paths {
                 };
             };
         };
-        put?: never;
+        /** Save an existing Markdown source file with a stale-content check */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        content: string;
+                        expectedContent: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Saved document */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["KnowledgeDocument"];
+                    };
+                };
+                /** @description Source is not an editable Markdown file */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Document not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Source content changed since it was opened */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         post?: never;
         delete?: never;
         options?: never;
@@ -6827,6 +6877,9 @@ export interface components {
             title: string;
             content: string;
             modifiedAt: string;
+            editable?: boolean;
+            readOnlyReason?: string;
+            indexingWarning?: string;
         };
         KnowledgeCollection: {
             name: string;
