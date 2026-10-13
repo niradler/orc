@@ -143,7 +143,7 @@ export function PackageEditor({
         >
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="rounded bg-surface-high px-3 py-1">
-              {format === "apm" ? "APM · apm.yml" : "Agent Plugins v1 · plugin.json"}
+              {format === "apm" ? "APM" : "Plugin"}
             </span>
             {!initial && (
               <Button

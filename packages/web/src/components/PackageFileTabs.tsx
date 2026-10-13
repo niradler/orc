@@ -67,13 +67,13 @@ export function PackageFileTabs({
       {files
         .filter((file) => opened.includes(file.path) || active === file.path)
         .map((file) => (
-          <div key={file.path} role="tabpanel" aria-label={file.path} hidden={active !== file.path}>
-            <div
-              className="truncate border-t border-surface-highest px-4 py-2 text-xs text-outline"
-              title={file.path}
-            >
-              {file.path}
-            </div>
+          <div
+            key={file.path}
+            role="tabpanel"
+            aria-label={file.path}
+            hidden={active !== file.path}
+            className="[&_[data-testid=code-editor]>div>span[title]]:hidden [&_[data-testid=markdown-editor]>div>span[title]]:hidden"
+          >
             <CodeEditor
               path={file.path}
               value={file.content}
