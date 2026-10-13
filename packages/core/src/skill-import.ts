@@ -146,7 +146,7 @@ function githubUrl(repository: string, route: string): string {
   return `https://api.github.com/repos/${repository}/${route}`;
 }
 
-async function resolveCommit(repository: string, ref: string): Promise<string> {
+export async function resolveCommit(repository: string, ref: string): Promise<string> {
   const bytes = await readRemote(
     githubUrl(repository, `commits/${encodeURIComponent(ref)}`),
     2 * 1024 * 1024,
@@ -155,7 +155,7 @@ async function resolveCommit(repository: string, ref: string): Promise<string> {
     .sha;
 }
 
-async function readTree(repository: string, commit: string): Promise<TreeEntry[]> {
+export async function readTree(repository: string, commit: string): Promise<TreeEntry[]> {
   const bytes = await readRemote(
     githubUrl(repository, `git/trees/${commit}?recursive=1`),
     12 * 1024 * 1024,
@@ -165,7 +165,7 @@ async function readTree(repository: string, commit: string): Promise<TreeEntry[]
   return parsed.tree;
 }
 
-async function readRepositoryFile(
+export async function readRepositoryFile(
   repository: string,
   commit: string,
   path: string,

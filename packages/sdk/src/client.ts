@@ -1,4 +1,5 @@
 import { loadConfig } from "@orc/core/config";
+import type { PackageDiscovery } from "@orc/core/primitive-types";
 import type { RuleEventCapability, RuleHookBackend } from "@orc/core/rule-events";
 import type { RuleDecision, RuleEvent, RulePolicy, RuleRevision } from "@orc/core/rule-types";
 import type {
@@ -379,7 +380,39 @@ export function createOrcClient(options?: OrcClientOptions) {
         content: string;
         files: SkillFileInput[];
         format?: "apm" | "agent-plugin";
+        skills?: string[];
+        imported?: boolean;
       }) => c<PackageFull>("POST", "/agent-packages", input),
+      update: (
+        name: string,
+        input: {
+          content: string;
+          files: SkillFileInput[];
+          expectedRevision: string;
+          skills?: string[];
+        },
+      ) => c<PackageFull>("PUT", `/agent-packages/${encodeURIComponent(name)}`, input),
+      discover: (source: string) =>
+        c<PackageDiscovery>("POST", "/agent-packages/discover", { source }),
+      importGit: (input: {
+        source: string;
+        commit: string;
+        path: string;
+        format: "apm" | "agent-plugin";
+      }) => c<PackageFull>("POST", "/agent-packages/import-git", input),
+      acquire: (source: string) =>
+        c<{ token: string; source: string; packages: PackageDiscovery["packages"] }>(
+          "POST",
+          "/agent-packages/acquire",
+          { source },
+        ),
+      importAcquired: (input: { token: string; path: string }) =>
+        c<PackageFull>("POST", "/agent-packages/import-acquired", input),
+      exportArtifact: (name: string) =>
+        c<{ filename: string; content: string; format: string }>(
+          "POST",
+          `/agent-packages/${encodeURIComponent(name)}/export`,
+        ),
     },
 
     backends: {

@@ -31,6 +31,7 @@ export const AgentSetupSchema = z
     agent: z.string().min(1).max(200).optional(),
     model: z.string().min(1).max(200).optional(),
     prompt: z.string().max(16000).default(""),
+    operation: z.enum(["run", "install"]).optional(),
   })
   .strict();
 export type AgentSetup = z.infer<typeof AgentSetupSchema>;
@@ -153,11 +154,12 @@ export function buildPackagePlan(
         ? "Install apm-cli 0.33.0 or newer and set ORC_APM_PATH if it is not on PATH"
         : "Install Node.js 22.20 or newer for the bundled Vercel skills CLI",
     );
-  const binary = which(setup.backend);
-  if (!binary) throw new ValidationError(`${setup.backend} is not installed or not on PATH`);
+  const binary = setup.operation === "install" ? null : which(setup.backend);
+  if (setup.operation !== "install" && !binary)
+    throw new ValidationError(`${setup.backend} is not installed or not on PATH`);
   if (setup.tool === "apm") qualify(command, "0.33.0");
   else qualify(command, "1.7.2");
-  if (setup.backend === "copilot") qualify([binary], "1.0.81");
+  if (setup.backend === "copilot" && binary) qualify([binary], "1.0.81");
   const steps: PackageStep[] = [];
   const deployedSkillNames = new Set<string>();
   if (setup.tool === "apm" && packages.some((pkg) => pkg.format === "agent-plugin")) {
@@ -235,8 +237,17 @@ export function buildPackagePlan(
         .filter((pkg) => pkg.format === "agent-plugin")
         .map((pkg) => pkg.name),
     });
+    if (setup.backend === "codex")
+      steps.push({ argv: [...command, "compile", "--target", "codex"], cwd, timeout: 300000 });
   }
-  const argv = [binary];
+  if (setup.operation === "install")
+    return {
+      setup: { ...setup, cwd },
+      steps,
+      notice:
+        "Installs selected packages into this project through APM. Project configuration remains available to your coding agent after installation.",
+    };
+  const argv = [binary as string];
   const profile = setup.agent ? readAgent(setup.agent, cwd) : null;
   if (setup.agent && !profile) throw new NotFoundError("Agent", setup.agent);
   if (profile && setup.backend !== "claude")

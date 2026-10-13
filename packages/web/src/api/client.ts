@@ -1,4 +1,8 @@
+import type { PackageDiscovery } from "@orc/core/primitive-types";
 import type { RuleEventCapability } from "@orc/core/rule-events";
+
+export type { PackageDiscovery } from "@orc/core/primitive-types";
+
 import type {
   AuditEntry,
   SkillChange,
@@ -143,6 +147,7 @@ export type AgentSetup = {
   agent?: string;
   model?: string;
   prompt: string;
+  operation?: "run" | "install";
 };
 
 export type Terminal = {
@@ -569,9 +574,17 @@ export const api = {
       req<AgentFull>("PUT", `/agents/${encodeURIComponent(id)}`, input),
   },
   agentPackages: {
+    acquire: (source: string) =>
+      req<{ token: string; source: string; packages: PackageDiscovery["packages"] }>(
+        "POST",
+        "/agent-packages/acquire",
+        { source },
+      ),
+    importAcquired: (input: { token: string; path: string }) =>
+      req<PackageFull>("POST", "/agent-packages/import-acquired", input),
     list: () => req<{ packages: PackageMeta[]; broken: BrokenAgent[] }>("GET", "/agent-packages"),
     get: (name: string, ref?: string) =>
-      req<PackageFull | SkillRefContent>(
+      req<(PackageFull & { revision?: string }) | SkillRefContent>(
         "GET",
         `/agent-packages/${encodeURIComponent(name)}`,
         undefined,
@@ -582,11 +595,41 @@ export const api = {
       content: string;
       files: SkillFileInput[];
       format?: "apm" | "agent-plugin";
+      skills?: string[];
+      imported?: boolean;
     }) => req<PackageFull>("POST", "/agent-packages", input),
+    update: (
+      name: string,
+      input: {
+        content: string;
+        files: SkillFileInput[];
+        expectedRevision: string;
+        skills?: string[];
+      },
+    ) => req<PackageFull>("PUT", `/agent-packages/${encodeURIComponent(name)}`, input),
+    discover: (source: string) =>
+      req<PackageDiscovery>("POST", "/agent-packages/discover", { source }),
+    importGit: (input: {
+      source: string;
+      commit: string;
+      path: string;
+      format: "apm" | "agent-plugin";
+    }) => req<PackageFull>("POST", "/agent-packages/import-git", input),
+    exportArtifact: (name: string) =>
+      req<{ filename: string; content: string; format: string }>(
+        "POST",
+        `/agent-packages/${encodeURIComponent(name)}/export`,
+      ),
   },
   agentSetups: {
     list: () => req<{ setups: AgentSetup[]; broken: BrokenAgent[] }>("GET", "/agent-setups"),
     create: (input: AgentSetup) => req<AgentSetup>("POST", "/agent-setups", input),
+    command: (input: AgentSetup) =>
+      req<{ command: string; shell: string; notice: string }>(
+        "POST",
+        "/agent-setups/command",
+        input,
+      ),
   },
   packageTools: {
     list: () => req<{ apm: boolean; skills: boolean; bun: boolean }>("GET", "/package-tools"),

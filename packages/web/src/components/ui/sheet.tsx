@@ -46,7 +46,10 @@ const SheetContent = React.forwardRef<
       {...props}
     >
       {children}
-      <DialogPrimitive.Close className="absolute right-4 top-4 text-outline hover:text-on-surface transition-colors">
+      <DialogPrimitive.Close
+        className="absolute right-1 top-1 flex size-11 items-center justify-center text-outline hover:text-on-surface transition-colors"
+        aria-label="Close panel"
+      >
         <X size={16} />
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
@@ -57,7 +60,7 @@ SheetContent.displayName = "SheetContent";
 function SheetHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("px-6 py-4 border-b border-surface-highest shrink-0", className)}
+      className={cn("pl-4 pr-14 py-4 sm:pl-6 border-b border-surface-highest shrink-0", className)}
       {...props}
     />
   );
@@ -65,10 +68,12 @@ function SheetHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
 
 function SheetTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
   return (
-    <h3
-      className={cn("font-headline text-sm uppercase tracking-widest text-on-surface", className)}
-      {...props}
-    />
+    <DialogPrimitive.Title asChild>
+      <h3
+        className={cn("font-headline text-sm uppercase tracking-widest text-on-surface", className)}
+        {...props}
+      />
+    </DialogPrimitive.Title>
   );
 }
 
@@ -77,7 +82,7 @@ function SheetDescription({ className, ...props }: React.HTMLAttributes<HTMLPara
 }
 
 function SheetBody({ className, ...props }: React.ComponentPropsWithRef<"div">) {
-  return <div className={cn("flex-1 overflow-y-auto px-6 py-4", className)} {...props} />;
+  return <div className={cn("flex-1 overflow-y-auto px-4 sm:px-6 py-4", className)} {...props} />;
 }
 
 function SheetFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

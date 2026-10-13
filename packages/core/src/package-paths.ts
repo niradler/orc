@@ -1,6 +1,8 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 export function getPackagesDir(): string {
-  return join(homedir(), ".orc", "packages");
+  return process.env.ORC_PACKAGES_DIR
+    ? resolve(process.env.ORC_PACKAGES_DIR)
+    : join(homedir(), ".orc", "packages");
 }

@@ -1210,12 +1210,12 @@ export interface paths {
                                                     field: string;
                                                     /** @enum {string} */
                                                     operator: "equals";
-                                                    value: string | number | boolean | unknown;
+                                                    value: string | number | boolean | null;
                                                 } | {
                                                     field: string;
                                                     /** @enum {string} */
                                                     operator: "in";
-                                                    value: (string | number | boolean | unknown)[];
+                                                    value: (string | number | boolean | null)[];
                                                 } | {
                                                     field: string;
                                                     /** @enum {string} */
@@ -1374,12 +1374,12 @@ export interface paths {
                                             field: string;
                                             /** @enum {string} */
                                             operator: "equals";
-                                            value: string | number | boolean | unknown;
+                                            value: string | number | boolean | null;
                                         } | {
                                             field: string;
                                             /** @enum {string} */
                                             operator: "in";
-                                            value: (string | number | boolean | unknown)[];
+                                            value: (string | number | boolean | null)[];
                                         } | {
                                             field: string;
                                             /** @enum {string} */
@@ -1489,12 +1489,12 @@ export interface paths {
                                                 field: string;
                                                 /** @enum {string} */
                                                 operator: "equals";
-                                                value: string | number | boolean | unknown;
+                                                value: string | number | boolean | null;
                                             } | {
                                                 field: string;
                                                 /** @enum {string} */
                                                 operator: "in";
-                                                value: (string | number | boolean | unknown)[];
+                                                value: (string | number | boolean | null)[];
                                             } | {
                                                 field: string;
                                                 /** @enum {string} */
@@ -1638,12 +1638,12 @@ export interface paths {
                                                 field: string;
                                                 /** @enum {string} */
                                                 operator: "equals";
-                                                value: string | number | boolean | unknown;
+                                                value: string | number | boolean | null;
                                             } | {
                                                 field: string;
                                                 /** @enum {string} */
                                                 operator: "in";
-                                                value: (string | number | boolean | unknown)[];
+                                                value: (string | number | boolean | null)[];
                                             } | {
                                                 field: string;
                                                 /** @enum {string} */
@@ -1887,6 +1887,8 @@ export interface paths {
                                 model?: string;
                                 /** @default  */
                                 prompt: string;
+                                /** @enum {string} */
+                                operation?: "run" | "install";
                             }[];
                             broken: {
                                 path: string;
@@ -1922,6 +1924,8 @@ export interface paths {
                         model?: string;
                         /** @default  */
                         prompt?: string;
+                        /** @enum {string} */
+                        operation?: "run" | "install";
                     };
                 };
             };
@@ -1947,6 +1951,8 @@ export interface paths {
                             model?: string;
                             /** @default  */
                             prompt: string;
+                            /** @enum {string} */
+                            operation?: "run" | "install";
                         };
                     };
                 };
@@ -2234,6 +2240,8 @@ export interface paths {
                         }[];
                         /** @enum {string} */
                         format?: "apm" | "agent-plugin";
+                        skills?: string[];
+                        imported?: boolean;
                     };
                 };
             };
@@ -2321,8 +2329,348 @@ export interface paths {
                 };
             };
         };
-        put?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        content: string;
+                        files: {
+                            path: string;
+                            content: string;
+                            /** @enum {string} */
+                            encoding?: "utf8" | "base64";
+                        }[];
+                        expectedRevision: string;
+                        skills?: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated package */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApmPackageFull"];
+                    };
+                };
+                /** @description Package changed */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent-packages/acquire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        source: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description APM acquired source for catalog inspection */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            token: string;
+                            source: string;
+                            packages: {
+                                name: string;
+                                description: string;
+                                path: string;
+                                /** @enum {string} */
+                                format: "apm" | "agent-plugin";
+                                installed: boolean;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent-packages/import-acquired": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        token: string;
+                        path: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Acquired source added to the catalog */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApmPackageFull"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent-packages/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        source: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Packages at an immutable Git commit */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            source: string;
+                            repository: string;
+                            commit: string;
+                            packages: {
+                                name: string;
+                                description: string;
+                                path: string;
+                                /** @enum {string} */
+                                format: "apm" | "agent-plugin";
+                                installed: boolean;
+                            }[];
+                            issues: {
+                                path: string;
+                                error: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent-packages/import-git": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        source: string;
+                        commit: string;
+                        path: string;
+                        /** @enum {string} */
+                        format: "apm" | "agent-plugin";
+                    };
+                };
+            };
+            responses: {
+                /** @description APM acquired package saved in the catalog */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApmPackageFull"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent-packages/{name}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description APM built installation artifact */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            filename: string;
+                            content: string;
+                            format: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/agent-setups/command": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        name: string;
+                        packages: string[];
+                        /** @enum {string} */
+                        backend: "claude" | "codex" | "copilot";
+                        /**
+                         * @default apm
+                         * @enum {string}
+                         */
+                        tool?: "apm" | "skills";
+                        cwd: string;
+                        agent?: string;
+                        model?: string;
+                        /** @default  */
+                        prompt?: string;
+                        /** @enum {string} */
+                        operation?: "run" | "install";
+                    };
+                };
+            };
+            responses: {
+                /** @description Command to execute this plan on the API machine */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            command: string;
+                            shell: string;
+                            notice: string;
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -4941,6 +5289,8 @@ export interface paths {
                             model?: string;
                             /** @default  */
                             prompt?: string;
+                            /** @enum {string} */
+                            operation?: "run" | "install";
                         };
                     };
                 };
@@ -6032,6 +6382,7 @@ export interface components {
                 name: string;
                 path: string;
             }[];
+            revision?: string;
         };
         FlowMeta: {
             name: string;

@@ -11,14 +11,17 @@ import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/compo
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
 
-export default function Agents() {
+export default function Agents({ embedded = false }: { embedded?: boolean }) {
   const cache = useQueryClient();
   const agents = useQuery({
     queryKey: ["agents"],
     queryFn: () => api.agents.list(),
     refetchInterval: 60_000,
   });
-  const { selectedId, openDetail, closeDetail } = useDetailRoute("/agents", "agentId");
+  const { selectedId, openDetail, closeDetail } = useDetailRoute(
+    embedded ? "/packages/agents" : "/agents",
+    "agentId",
+  );
   const agent = useQuery({
     queryKey: ["agent", selectedId],
     queryFn: () => api.agents.get(selectedId as string),
@@ -62,23 +65,43 @@ export default function Agents() {
     return <ErrorState message={agents.error.message} onRetry={() => void agents.refetch()} />;
   return (
     <div className="space-y-5">
-      <ViewHeader
-        title="Agents"
-        meta={`${agents.data?.agents.length ?? 0} shared profiles`}
-        action={
-          <div className="flex gap-2">
-            <Button
-              data-testid="new-agent-button"
-              onClick={() => {
-                create.reset();
-                setCreating(true);
-              }}
-            >
-              New Agent
-            </Button>
+      {embedded ? (
+        <div className="flex flex-wrap justify-between gap-3">
+          <div>
+            <h2 className="font-medium">Agent definitions</h2>
+            <p className="text-sm text-outline">
+              Manage specialist instructions, models and tools. Add them to APM packages for reuse.
+            </p>
           </div>
-        }
-      />
+          <Button
+            data-testid="new-agent-button"
+            onClick={() => {
+              create.reset();
+              setCreating(true);
+            }}
+          >
+            New agent
+          </Button>
+        </div>
+      ) : (
+        <ViewHeader
+          title="Agents"
+          meta={`${agents.data?.agents.length ?? 0} shared profiles`}
+          action={
+            <div className="flex gap-2">
+              <Button
+                data-testid="new-agent-button"
+                onClick={() => {
+                  create.reset();
+                  setCreating(true);
+                }}
+              >
+                New Agent
+              </Button>
+            </div>
+          }
+        />
+      )}
       <p className="text-sm text-outline">
         Shared specialist definitions for every connected coding agent.{" "}
         <a
@@ -90,9 +113,11 @@ export default function Agents() {
           APM agent format
         </a>
       </p>
-      <a href="/packages" data-testid="agents-packages-link" className="text-primary underline">
-        Manage packages and reusable launch setups
-      </a>
+      {!embedded && (
+        <a href="/packages" data-testid="agents-packages-link" className="text-primary underline">
+          Manage packages and reusable launch setups
+        </a>
+      )}
       {(agents.data?.broken ?? []).map((issue) => (
         <p key={issue.path} role="alert" className="text-destructive">
           {issue.path}: {issue.error}

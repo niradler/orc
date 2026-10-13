@@ -1,11 +1,21 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, dirname, join } from "node:path";
 import Ajv from "ajv/dist/2020.js";
 import { parseAgent } from "./agent-service.js";
+import { apmSchemaInput } from "./apm-mcp.js";
 import { ConflictError, NotFoundError, ValidationError } from "./errors.js";
 import { parseMarkdownFrontmatter } from "./markdown-frontmatter.js";
 import { getPackagesDir } from "./package-paths.js";
-import { parsePluginManifest } from "./plugin-service.js";
+import { parsePluginManifest, validatePluginMcp } from "./plugin-service.js";
 import type { ApmManifest, PackageFormat, PackageFull, PackageMeta } from "./primitive-types.js";
 
 import amendmentSchema from "./schemas/apm/manifest-v0.1.41.schema.json";
@@ -17,7 +27,7 @@ import {
   type SkillFileInput,
   validateSkillPath,
 } from "./skill-files.js";
-import { parseFrontmatter, reloadCache } from "./skill-service.js";
+import { parseFrontmatter, readSkill, reloadCache, type SkillFull } from "./skill-service.js";
 
 export { getPackagesDir } from "./package-paths.js";
 export type {
@@ -45,7 +55,7 @@ export function parseApmManifest(content: string): ApmManifest {
   const schema = fields.$schema ?? manifestSchema.$id;
   const validate = typeof schema === "string" ? manifestValidators.get(schema) : undefined;
   if (!validate) throw new ValidationError(`Unsupported OpenAPM schema: ${String(schema)}`);
-  if (!validate(manifest))
+  if (!validate(apmSchemaInput(fields)))
     throw new ValidationError(`Invalid apm.yml: ${validator.errorsText(validate.errors)}`);
   return manifest as ApmManifest;
 }
@@ -122,6 +132,36 @@ export function listPackages(): {
           ? { manifest: parseApmManifest(content), warnings: [] }
           : parsePluginManifest(content);
       const { manifest, warnings } = parsed;
+      if (format === "apm") {
+        for (const file of listSkillFiles(path, manifestFile)) {
+          if (!/(SKILL\.md|\.agent\.md|\.instructions\.md)$/.test(file.name)) continue;
+          try {
+            const data = readSkillFile(path, file.name, false);
+            validatePackagePrimitives(
+              [{ path: file.name, bytes: Buffer.from(data.content, data.encoding) }],
+              entry.name,
+            );
+          } catch (error) {
+            warnings.push(
+              `${file.name}: ${error instanceof ValidationError ? error.message : "Invalid primitive"}`,
+            );
+          }
+        }
+      }
+      if (format === "agent-plugin") {
+        if (existsSync(join(path, "mcp.json"))) {
+          try {
+            const file = readSkillFile(path, "mcp.json", false);
+            validatePluginMcp([
+              { path: "mcp.json", content: file.content, encoding: file.encoding },
+            ]);
+          } catch (error) {
+            warnings.push(
+              `mcp.json: ${error instanceof ValidationError ? error.message : "Invalid MCP configuration"}`,
+            );
+          }
+        }
+      }
       packages.push({
         name: entry.name,
         version: manifest.version ?? "",
@@ -165,6 +205,7 @@ export function createPackage(
   content: string,
   files: SkillFileInput[],
   format: PackageFormat = "apm",
+  imported = false,
 ): PackageFull {
   validateSkillPath(name);
   if (name.includes("/")) throw new ValidationError("Package name must be a directory name");
@@ -176,12 +217,15 @@ export function createPackage(
   if (manifest.name !== name)
     throw new ValidationError(`Package directory must match ${manifestFile} name`);
   const prepared = prepareSkillFiles(files, content, manifestFile);
-  if (format === "apm") validatePackagePrimitives(prepared, name);
+  if (format === "apm" && !imported) validatePackagePrimitives(prepared, name);
+  if (format === "agent-plugin" && !imported) validatePluginMcp(files);
   // Plugins isolate invalid components. Import preserves their original files;
   // discovery/activation reports or skips invalid components independently.
   if (format === "agent-plugin" && prepared.some((file) => file.path === "apm.yml"))
     throw new ValidationError("Choose one package format; import the other manifest separately");
   const root = getPackagesDir();
+  if (existsSync(root) && lstatSync(root).isSymbolicLink())
+    throw new ValidationError("Package directory cannot be a symlink");
   const path = join(root, name);
   if (existsSync(path)) throw new ConflictError(`Package already exists: ${name}`);
   mkdirSync(root, { recursive: true });
@@ -208,6 +252,95 @@ export function createPackage(
     content,
     files: listSkillFiles(path, manifestFile),
   };
+}
+
+/** Copy selected skills, including binary resources, without changing the originals. */
+export function packageSkillFiles(names: string[], format: PackageFormat): SkillFileInput[] {
+  if (names.length > 32 || new Set(names).size !== names.length)
+    throw new ValidationError("Select up to 32 unique skills");
+  reloadCache();
+  const files: SkillFileInput[] = [];
+  const included = new Set<string>();
+  for (const name of names) {
+    const skill = readSkill(name) as SkillFull | null;
+    if (!skill) throw new NotFoundError("Skill", name);
+    const directory = dirname(skill.path);
+    const entry = readSkillFile(directory, "SKILL.md", false);
+    const { frontmatter } = parseFrontmatter(entry.content);
+    if (included.has(frontmatter.name))
+      throw new ValidationError(`Duplicate skill name: ${frontmatter.name}`);
+    included.add(frontmatter.name);
+    const prefix = `${format === "apm" ? ".apm/skills" : "skills"}/${frontmatter.name}`;
+    files.push({ path: `${prefix}/SKILL.md`, content: entry.content, encoding: entry.encoding });
+    for (const ref of skill.files) {
+      const file = readSkillFile(directory, ref.name, false);
+      files.push({ path: `${prefix}/${ref.name}`, content: file.content, encoding: file.encoding });
+    }
+  }
+  return files;
+}
+
+export function packageRevision(pkg: PackageFull): string {
+  const hash = createHash("sha256").update(pkg.content);
+  for (const file of pkg.files) {
+    const data = readSkillFile(pkg.path, file.name, false);
+    hash.update(`\0${file.name}\0${data.encoding}\0${data.content}`);
+  }
+  return hash.digest("hex");
+}
+
+/** Validate a complete replacement before publishing; preserve the previous version. */
+export function updatePackage(
+  name: string,
+  input: {
+    content: string;
+    files: SkillFileInput[];
+    expectedRevision: string;
+    skills?: string[] | undefined;
+  },
+): PackageFull {
+  const current = readPackage(name);
+  if (!current) throw new NotFoundError("Package", name);
+  if (lstatSync(getPackagesDir()).isSymbolicLink() || lstatSync(current.path).isSymbolicLink())
+    throw new ValidationError("Package directory cannot be a symlink");
+  if (packageRevision(current) !== input.expectedRevision)
+    throw new ConflictError("Package changed since it was opened. Reopen it before saving.");
+  const manifest =
+    current.format === "apm"
+      ? parseApmManifest(input.content)
+      : parsePluginManifest(input.content).manifest;
+  if (manifest.name !== name)
+    throw new ValidationError("Package name cannot change while editing; create a copy instead");
+  const files = [...input.files, ...packageSkillFiles(input.skills ?? [], current.format)];
+  const prepared = prepareSkillFiles(files, input.content, current.manifestFile);
+  if (current.format === "apm") validatePackagePrimitives(prepared, name);
+  if (current.format === "agent-plugin") validatePluginMcp(files);
+  if (current.format === "agent-plugin" && prepared.some((file) => file.path === "apm.yml"))
+    throw new ValidationError("Agent Plugins cannot contain an APM manifest");
+  const archiveRoot = join(dirname(getPackagesDir()), "package-revisions");
+  if (existsSync(archiveRoot) && lstatSync(archiveRoot).isSymbolicLink())
+    throw new ValidationError("Package revision directory cannot be a symlink");
+  mkdirSync(archiveRoot, { recursive: true });
+  const stage = join(archiveRoot, `${name}-${crypto.randomUUID()}`);
+  mkdirSync(stage);
+  writeFileSync(join(stage, current.manifestFile), input.content, { flag: "wx" });
+  for (const file of prepared) {
+    const path = join(stage, file.path);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, file.bytes, { flag: "wx" });
+  }
+  if (packageRevision(current) !== input.expectedRevision)
+    throw new ConflictError("Package changed while saving. Reopen it before saving.");
+  const backup = join(archiveRoot, `${name}-previous-${crypto.randomUUID()}`);
+  renameSync(current.path, backup);
+  try {
+    renameSync(stage, current.path);
+  } catch (error) {
+    renameSync(backup, current.path);
+    throw error;
+  }
+  reloadCache();
+  return readPackage(name) as PackageFull;
 }
 
 export function packageInstructionsForAgent(agentPath: string): string {

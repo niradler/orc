@@ -37,7 +37,6 @@ const NAV_ITEMS: {
   { id: "wiki", path: "/wiki", label: "Wiki", icon: BookOpen },
   { id: "knowledge", path: "/knowledge", label: "Knowledge", icon: BookOpen },
   { id: "skills", path: "/skills", label: "Skills", icon: Zap },
-  { id: "agents", path: "/agents", label: "Agents", icon: Brain },
   { id: "rules", path: "/rules", label: "Rules", icon: ShieldCheck },
   { id: "packages", path: "/packages", label: "Packages", icon: Package },
 ];

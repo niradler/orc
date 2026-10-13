@@ -10,7 +10,8 @@ test("should create from an editable template and save tool changes after reopen
 }) => {
   const id = tid("editable-reviewer");
   await gotoView(page, "skills");
-  await page.getByTestId("nav-agents").click();
+  await page.getByTestId("nav-packages").click();
+  await page.goto("/packages/agents");
   await page.getByTestId("new-agent-button").click();
   await page.getByTestId("agent-template").selectOption("reviewer");
   await page.getByTestId("agent-id-input").fill(id);
@@ -72,7 +73,8 @@ test("should retain drafts on a stale save and refresh the profile when editing 
     content: "---\nname: Reviewer\ndescription: Original\n---\nOriginal instructions.",
   });
   await gotoView(page, "skills");
-  await page.getByTestId("nav-agents").click();
+  await page.getByTestId("nav-packages").click();
+  await page.goto("/packages/agents");
   await page.locator(`[data-testid="agent-row"][data-agent-id="${id}"]`).click();
   await page.getByTestId("agent-edit").click();
   await page.getByTestId("agent-description-input").fill("My unsaved draft");
@@ -100,13 +102,16 @@ test("should create an APM package from editable fields and YAML", async ({ page
   await gotoView(page, "skills");
   await page.getByTestId("nav-packages").click();
   await page.getByTestId("new-agent-package-button").click();
+  await page.getByTestId("package-type-apm").click();
   await page.getByTestId("package-name-input").fill(name);
   await page.getByTestId("package-version-input").fill("1.2.3");
   await page.getByTestId("package-description-input").fill("Editable package configuration");
   await page.getByTestId("package-editor-mode").click();
   const manifest = await page.getByTestId("package-yaml-input").innerText();
   await expect(page.getByTestId("package-yaml-input")).toHaveAttribute("data-language", "yaml");
-  await page.getByTestId("package-yaml-input").fill(`${manifest}x-custom: retained\n`);
+  await page
+    .getByTestId("package-yaml-input")
+    .fill(`${manifest}x-custom: retained\ntargets: [claude, codex]\n`);
   await page.getByTestId("package-submit").click();
   await expect(
     page.locator(`[data-testid="agent-package-row"][data-package-name="${name}"]`),
@@ -130,7 +135,8 @@ test("should create an APM package from editable fields and YAML", async ({ page
 test("shared agent creation survives reopening with metadata intact", async ({ page }) => {
   const id = tid("shared-agent");
   await gotoView(page, "skills");
-  await page.getByTestId("nav-agents").click();
+  await page.getByTestId("nav-packages").click();
+  await page.goto("/packages/agents");
   await page.getByTestId("new-agent-button").click();
   await page.getByTestId("agent-id-input").fill(id);
   await page.getByTestId("agent-editor-mode").click();
@@ -188,11 +194,15 @@ test("APM folder import shares packaged agents and skills", async ({ page }) => 
   try {
     await gotoView(page, "skills");
     await page.getByTestId("nav-packages").click();
+    await page.getByTestId("package-import-button").click();
+    await page.getByTestId("package-import-folder").click();
     await page.getByTestId("agent-package-folder").setInputFiles(folder);
     await expect(
       page.locator(`[data-testid="agent-package-row"][data-package-name="${name}"]`),
     ).toBeVisible();
-    await page.getByTestId("nav-agents").click();
+    await page.keyboard.press("Escape");
+    await page.getByTestId("nav-packages").click();
+    await page.goto("/packages/agents");
     const row = page.locator(`[data-testid="agent-row"][data-agent-id="${name}/reviewer"]`);
     await expect(row).toBeVisible();
     await row.click();
@@ -243,7 +253,8 @@ test("should delete one duplicate name and recover from a failed deletion", asyn
   await apiPost(request, "/agents", { id: firstId, content });
   await apiPost(request, "/agents", { id: secondId, content });
   await gotoView(page, "skills");
-  await page.getByTestId("nav-agents").click();
+  await page.getByTestId("nav-packages").click();
+  await page.goto("/packages/agents");
   const firstRow = page.locator(`[data-testid="agent-row"][data-agent-id="${firstId}"]`);
   const secondRow = page.locator(`[data-testid="agent-row"][data-agent-id="${secondId}"]`);
   await firstRow.click();
