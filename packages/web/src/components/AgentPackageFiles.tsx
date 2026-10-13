@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import { api, type PackageFull, type SkillRefContent } from "@/api/client";
-import { CodeEditor } from "@/components/CodeEditor";
+import { PackageFileTabs } from "@/components/PackageFileTabs";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
@@ -24,16 +23,24 @@ export function AgentPackageFiles({
   busy?: boolean;
   operationError?: string;
 }) {
-  const [selectedPath, setPath] = useState<string>();
   const manifest = useQuery({
     queryKey: ["agent-package", name],
     queryFn: () => api.agentPackages.get(name) as Promise<PackageFull>,
   });
-  const path = selectedPath ?? manifest.data?.manifestFile ?? "apm.yml";
-  const file = useQuery({
+  const files = useQuery({
     enabled: Boolean(manifest.data),
-    queryKey: ["agent-package-file", name, path],
-    queryFn: () => api.agentPackages.get(name, path) as Promise<SkillRefContent>,
+    queryKey: ["agent-package-files", name],
+    queryFn: async () => {
+      const pkg = manifest.data;
+      if (!pkg) return [];
+      const supporting = await Promise.all(
+        pkg.files.map(async (ref) => {
+          const file = (await api.agentPackages.get(name, ref.name)) as SkillRefContent;
+          return { path: ref.name, content: file.content, encoding: file.encoding };
+        }),
+      );
+      return [{ path: pkg.manifestFile, content: pkg.content }, ...supporting];
+    },
   });
   return (
     <Sheet
@@ -115,54 +122,12 @@ export function AgentPackageFiles({
               </p>
             )}
           </div>
-          <select
-            aria-label="Package file"
-            className="sm:hidden mb-4 w-full min-w-0 rounded border border-surface-highest bg-surface-low p-3"
-            value={path}
-            onChange={(event) => setPath(event.target.value)}
-          >
-            {[
-              manifest.data?.manifestFile ?? "apm.yml",
-              ...(manifest.data?.files.map((file) => file.name) ?? []),
-            ].map((entry) => (
-              <option key={entry} value={entry}>
-                {entry}
-              </option>
-            ))}
-          </select>
-          <div className="hidden sm:flex flex-wrap gap-2 mb-4">
-            {[
-              manifest.data?.manifestFile ?? "apm.yml",
-              ...(manifest.data?.files.map((entry) => entry.name) ?? []),
-            ].map((entry) => (
-              <Button
-                key={entry}
-                type="button"
-                variant="outline"
-                data-testid="package-file"
-                data-file-name={entry}
-                onClick={() => setPath(entry)}
-                aria-pressed={path === entry}
-              >
-                {entry}
-              </Button>
-            ))}
-          </div>
-          {manifest.error || file.error ? (
-            <p role="alert">{(manifest.error ?? file.error)?.message}</p>
-          ) : file.isLoading ? (
-            <p>Loading...</p>
+          {manifest.error || files.error ? (
+            <p role="alert">{(manifest.error ?? files.error)?.message}</p>
+          ) : files.isLoading ? (
+            <p>Loading files…</p>
           ) : (
-            <CodeEditor
-              path={path}
-              value={file.data?.content ?? ""}
-              readOnly
-              height={450}
-              testId="package-file-content"
-            />
-          )}
-          {file.data?.encoding === "base64" && (
-            <p className="text-xs text-outline">Binary asset shown as base64 (read-only).</p>
+            <PackageFileTabs files={files.data ?? []} readOnly testId="package-file-content" />
           )}
         </SheetBody>
       </SheetContent>

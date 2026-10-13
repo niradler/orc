@@ -79,7 +79,25 @@ export function PackageImportDialog({
     acquire.isPending ||
     acquiredImport.isPending ||
     fileBusy;
-  const chosen = discover.data?.packages.find((pkg) => `${pkg.format}:${pkg.path}` === selection);
+  const candidates = discover.data?.packages ?? acquire.data?.packages;
+  const chosen = candidates?.find((pkg) => `${pkg.format}:${pkg.path}` === selection);
+  async function findPackages() {
+    setSelection("");
+    discover.reset();
+    acquire.reset();
+    importing.reset();
+    acquiredImport.reset();
+    const value = source.trim();
+    if (!value.includes("://") || /^https:\/\/github\.com\//i.test(value)) {
+      try {
+        await discover.mutateAsync(value);
+        return;
+      } catch {
+        discover.reset();
+      }
+    }
+    acquire.mutate(value);
+  }
   async function importFiles(files: SkillFileInput[]) {
     const apm = files.find((file) => file.path === "apm.yml");
     const plugin = files.find((file) => file.path === "plugin.json");
@@ -104,7 +122,7 @@ export function PackageImportDialog({
   }
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
-      <DialogContent className="w-[calc(100%_-_1rem)] max-w-xl max-h-[94dvh] overflow-auto p-4 sm:p-6">
+      <DialogContent className="min-w-0 grid-cols-[minmax(0,1fr)] w-[calc(100%_-_1rem)] max-w-xl max-h-[94dvh] overflow-x-hidden overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>Import a package</DialogTitle>
           <DialogDescription>
@@ -113,8 +131,7 @@ export function PackageImportDialog({
         </DialogHeader>
         <div role="tablist" aria-label="Import source" className="flex flex-wrap gap-2">
           {[
-            ["git", "GitHub"],
-            ["apm-source", "Other Git"],
+            ["git", "Git repository"],
             ["zip", "ZIP file"],
             ["folder", "Folder"],
           ].map(([value, label]) => (
@@ -134,103 +151,16 @@ export function PackageImportDialog({
             </Button>
           ))}
         </div>
-        {tab === "apm-source" ? (
+        {tab === "git" ? (
           <>
             <form
               className="space-y-3"
               onSubmit={(event) => {
                 event.preventDefault();
-                setSelection("");
-                acquire.mutate(source.trim());
+                void findPackages();
               }}
             >
-              <Label htmlFor="package-apm-source">Git source for APM</Label>
-              <Input
-                id="package-apm-source"
-                data-testid="package-apm-source"
-                value={source}
-                disabled={busy}
-                placeholder="https://gitlab.com/team/my-package#v1.0.0"
-                onChange={(event) => {
-                  setSource(event.target.value);
-                  acquire.reset();
-                  acquiredImport.reset();
-                  setSelection("");
-                }}
-              />
-              <p className="text-xs text-outline">
-                GitHub, GitLab, Bitbucket and Azure DevOps HTTPS sources, including private
-                repositories using credentials already configured for APM on this machine. APM
-                acquires into an isolated workspace; your projects stay unchanged.
-              </p>
-              <Button
-                type="submit"
-                data-testid="package-apm-acquire"
-                disabled={busy || !source.trim()}
-              >
-                {acquire.isPending ? "Acquiring with APM…" : "Acquire and inspect"}
-              </Button>
-            </form>
-            {acquire.data && (
-              <div className="space-y-2">
-                <p className="text-xs text-outline">
-                  Choose the package to keep. Dependencies may also appear.
-                </p>
-                <div className="max-h-[40dvh] space-y-2 overflow-auto">
-                  {acquire.data.packages.map((pkg) => (
-                    <label
-                      key={pkg.path}
-                      className="flex items-start gap-3 rounded border border-surface-highest p-3"
-                    >
-                      <input
-                        type="radio"
-                        name="apm-source-selection"
-                        className="mt-1 size-5"
-                        checked={selection === pkg.path}
-                        disabled={busy || pkg.installed}
-                        onChange={() => setSelection(pkg.path)}
-                      />
-                      <span className="min-w-0 break-words text-sm">
-                        <strong className="block">
-                          {pkg.name}
-                          {pkg.installed ? " · already in catalog" : ""}
-                        </strong>
-                        <span className="block text-xs text-outline">{pkg.description}</span>
-                        <span className="block text-xs text-outline">{pkg.format}</span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-                {!acquire.data.packages.length && (
-                  <p>
-                    No apm.yml or portable plugin.json package was acquired. For standalone skills,
-                    import into Skills first.
-                  </p>
-                )}
-              </div>
-            )}
-            <Button
-              data-testid="package-apm-import"
-              disabled={busy || !selection || !acquire.data}
-              onClick={() =>
-                acquire.data &&
-                acquiredImport.mutate({ token: acquire.data.token, path: selection })
-              }
-            >
-              Import to catalog
-            </Button>
-          </>
-        ) : tab === "git" ? (
-          <>
-            <form
-              className="space-y-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                setSelection("");
-                discover.mutate(source.trim());
-              }}
-            >
-              <Label htmlFor="package-git-source">Repository or package folder</Label>
+              <Label htmlFor="package-git-source">Repository URL</Label>
               <Input
                 id="package-git-source"
                 data-testid="package-git-source"
@@ -240,30 +170,27 @@ export function PackageImportDialog({
                 onChange={(event) => {
                   setSource(event.target.value);
                   discover.reset();
+                  acquire.reset();
                   importing.reset();
+                  acquiredImport.reset();
                   setSelection("");
                 }}
               />
               <p className="text-xs text-outline">
-                Public GitHub repositories, owner/repo, and branch/subfolder links. Discovery pins
-                the selected commit; APM acquires the package.
+                Paste a GitHub, GitLab, Bitbucket or Azure DevOps repository or package link.
               </p>
               <Button
                 type="submit"
                 data-testid="package-git-discover"
                 disabled={busy || !source.trim()}
               >
-                {discover.isPending ? "Discovering…" : "Find packages"}
+                {discover.isPending || acquire.isPending ? "Finding packages…" : "Find packages"}
               </Button>
             </form>
-            {discover.data && (
+            {candidates && (
               <div className="space-y-2">
-                <p className="text-xs text-outline">
-                  {discover.data.packages.length} packages · commit{" "}
-                  {discover.data.commit.slice(0, 8)}
-                </p>
                 <div className="max-h-[40dvh] space-y-2 overflow-auto">
-                  {discover.data.packages.map((pkg) => (
+                  {candidates.map((pkg) => (
                     <label
                       key={`${pkg.format}:${pkg.path}`}
                       className="flex items-start gap-3 rounded border border-surface-highest p-3"
@@ -284,42 +211,43 @@ export function PackageImportDialog({
                         </strong>
                         <span className="block text-xs text-outline">{pkg.description}</span>
                         <span className="block text-xs text-outline">
-                          {pkg.format === "apm" ? "APM" : "Agent Plugin"} ·{" "}
+                          {pkg.format === "apm" ? "APM" : "Plugin"} ·{" "}
                           {pkg.path || "Repository root"}
                         </span>
                       </span>
                     </label>
                   ))}
                 </div>
-                {!discover.data.packages.length && (
-                  <p>
-                    No supported package manifests found. For standalone skills, import them in
-                    Skills and add them to a new package.
-                  </p>
-                )}
-                {discover.data.issues.map((issue) => (
+                {!candidates.length && <p>No APM or Plugin packages found in this repository.</p>}
+                {discover.data?.issues.map((issue) => (
                   <p role="alert" className="text-xs text-destructive break-words" key={issue.path}>
                     {issue.path}: {issue.error}
                   </p>
                 ))}
               </div>
             )}
-            <Button
-              data-testid="package-git-import"
-              disabled={busy || !chosen || !discover.data}
-              onClick={() =>
-                chosen &&
-                discover.data &&
-                importing.mutate({
-                  source: discover.data.source,
-                  commit: discover.data.commit,
-                  path: chosen.path,
-                  format: chosen.format,
-                })
-              }
-            >
-              {importing.isPending ? "Acquiring with APM…" : "Import to catalog"}
-            </Button>
+            {candidates && (
+              <Button
+                data-testid="package-git-import"
+                disabled={busy || !chosen}
+                onClick={() => {
+                  if (!chosen) return;
+                  if (discover.data)
+                    importing.mutate({
+                      source: discover.data.source,
+                      commit: discover.data.commit,
+                      path: chosen.path,
+                      format: chosen.format,
+                    });
+                  else if (acquire.data)
+                    acquiredImport.mutate({ token: acquire.data.token, path: chosen.path });
+                }}
+              >
+                {importing.isPending || acquiredImport.isPending
+                  ? "Importing…"
+                  : "Import to catalog"}
+              </Button>
+            )}
           </>
         ) : (
           <div className="space-y-3">

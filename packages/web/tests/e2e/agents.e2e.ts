@@ -11,7 +11,7 @@ test("should create from an editable template and save tool changes after reopen
   const id = tid("editable-reviewer");
   await gotoView(page, "skills");
   await page.getByTestId("nav-packages").click();
-  await page.getByTestId("nav-agents").click();
+  await page.goto("/packages/agents");
   await page.getByTestId("new-agent-button").click();
   await page.getByTestId("agent-template").selectOption("reviewer");
   await page.getByTestId("agent-id-input").fill(id);
@@ -74,7 +74,7 @@ test("should retain drafts on a stale save and refresh the profile when editing 
   });
   await gotoView(page, "skills");
   await page.getByTestId("nav-packages").click();
-  await page.getByTestId("nav-agents").click();
+  await page.goto("/packages/agents");
   await page.locator(`[data-testid="agent-row"][data-agent-id="${id}"]`).click();
   await page.getByTestId("agent-edit").click();
   await page.getByTestId("agent-description-input").fill("My unsaved draft");
@@ -136,7 +136,7 @@ test("shared agent creation survives reopening with metadata intact", async ({ p
   const id = tid("shared-agent");
   await gotoView(page, "skills");
   await page.getByTestId("nav-packages").click();
-  await page.getByTestId("nav-agents").click();
+  await page.goto("/packages/agents");
   await page.getByTestId("new-agent-button").click();
   await page.getByTestId("agent-id-input").fill(id);
   await page.getByTestId("agent-editor-mode").click();
@@ -202,7 +202,7 @@ test("APM folder import shares packaged agents and skills", async ({ page }) => 
     ).toBeVisible();
     await page.keyboard.press("Escape");
     await page.getByTestId("nav-packages").click();
-    await page.getByTestId("nav-agents").click();
+    await page.goto("/packages/agents");
     const row = page.locator(`[data-testid="agent-row"][data-agent-id="${name}/reviewer"]`);
     await expect(row).toBeVisible();
     await row.click();
@@ -254,7 +254,7 @@ test("should delete one duplicate name and recover from a failed deletion", asyn
   await apiPost(request, "/agents", { id: secondId, content });
   await gotoView(page, "skills");
   await page.getByTestId("nav-packages").click();
-  await page.getByTestId("nav-agents").click();
+  await page.goto("/packages/agents");
   const firstRow = page.locator(`[data-testid="agent-row"][data-agent-id="${firstId}"]`);
   const secondRow = page.locator(`[data-testid="agent-row"][data-agent-id="${secondId}"]`);
   await firstRow.click();

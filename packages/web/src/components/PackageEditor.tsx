@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { stringify as stringifyYaml } from "yaml";
 import { api, type SkillFileInput } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
+import { PackageFileTabs } from "@/components/PackageFileTabs";
 import { Button } from "@/components/ui/button";
 import {
   DialogContent,
@@ -46,12 +47,11 @@ export function PackageEditor({
   const [files, setFiles] = useState<SkillFileInput[]>(initial?.files ?? []);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [skillSearch, setSkillSearch] = useState("");
-  const [tab, setTab] = useState("configuration");
+  const [tab, setTab] = useState(initial ? "files" : "configuration");
   const [advanced, setAdvanced] = useState(false);
   const [localError, setLocalError] = useState<string>();
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [newPath, setNewPath] = useState("");
-  const [selectedPath, setSelectedPath] = useState<string>();
   const [mcpDraft, setMcpDraft] = useState<string>();
   const [mcpError, setMcpError] = useState<string>();
   const skills = useQuery({ queryKey: ["package-skill-picker"], queryFn: () => api.skills.list() });
@@ -85,9 +85,11 @@ export function PackageEditor({
   }
 
   return (
-    <DialogContent className="w-[calc(100%_-_1rem)] max-w-4xl max-h-[94dvh] overflow-y-auto p-4 sm:p-6">
+    <DialogContent className="min-w-0 grid-cols-[minmax(0,1fr)] w-[calc(100%_-_1rem)] max-w-4xl max-h-[94dvh] overflow-x-hidden overflow-y-auto p-4 sm:p-6">
       <DialogHeader>
-        <DialogTitle>{initial ? `Edit ${initial.name}` : "New package"}</DialogTitle>
+        <DialogTitle className="break-words pr-8">
+          {initial ? `Edit ${initial.name}` : "New package"}
+        </DialogTitle>
         <DialogDescription>
           Save a configuration once, then use it in any project.
         </DialogDescription>
@@ -119,7 +121,7 @@ export function PackageEditor({
         </div>
       ) : (
         <form
-          className="space-y-4"
+          className="min-w-0 space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
             if (mcpError) return;
@@ -480,100 +482,77 @@ export function PackageEditor({
             )}
             {tab === "files" && (
               <>
-                <Label htmlFor="package-files">Add files from a folder</Label>
-                <Input
-                  id="package-files"
-                  data-testid="package-files-input"
-                  type="file"
-                  multiple
-                  {...{ webkitdirectory: "" }}
-                  onChange={async (event) => {
-                    const selected = event.target.files;
-                    if (!selected?.length) return;
-                    setLoadingFiles(true);
-                    try {
-                      const incoming = (await readPrimitiveFolder(selected)).filter(
-                        (file) => !["apm.yml", "plugin.json"].includes(file.path),
-                      );
-                      setFiles((current) => [
-                        ...current.filter(
-                          (file) => !incoming.some((item) => item.path === file.path),
-                        ),
-                        ...incoming,
-                      ]);
-                      setLocalError(undefined);
-                    } catch (failure) {
-                      setLocalError((failure as Error).message);
-                    } finally {
-                      setLoadingFiles(false);
-                    }
+                <details className="rounded border border-surface-highest p-3">
+                  <summary className="cursor-pointer text-sm">Add a file or folder</summary>
+                  <Label htmlFor="package-files">Add files from a folder</Label>
+                  <Input
+                    id="package-files"
+                    data-testid="package-files-input"
+                    type="file"
+                    multiple
+                    {...{ webkitdirectory: "" }}
+                    onChange={async (event) => {
+                      const selected = event.target.files;
+                      if (!selected?.length) return;
+                      setLoadingFiles(true);
+                      try {
+                        const incoming = (await readPrimitiveFolder(selected)).filter(
+                          (file) => !["apm.yml", "plugin.json"].includes(file.path),
+                        );
+                        setFiles((current) => [
+                          ...current.filter(
+                            (file) => !incoming.some((item) => item.path === file.path),
+                          ),
+                          ...incoming,
+                        ]);
+                        setLocalError(undefined);
+                      } catch (failure) {
+                        setLocalError((failure as Error).message);
+                      } finally {
+                        setLoadingFiles(false);
+                      }
+                    }}
+                  />
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      aria-label="New file path"
+                      data-testid="package-new-file-path"
+                      placeholder={
+                        format === "apm"
+                          ? ".apm/agents/reviewer.agent.md"
+                          : "skills/my-skill/SKILL.md"
+                      }
+                      value={newPath}
+                      onChange={(event) => setNewPath(event.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={!newPath || files.some((file) => file.path === newPath)}
+                      onClick={() => {
+                        setFiles((current) => [
+                          ...current,
+                          { path: newPath, content: "", encoding: "utf8" },
+                        ]);
+                        setNewPath("");
+                      }}
+                    >
+                      Add file
+                    </Button>
+                  </div>
+                </details>
+                <PackageFileTabs
+                  files={[
+                    { path: format === "apm" ? "apm.yml" : "plugin.json", content: source },
+                    ...files,
+                  ]}
+                  readOnly={busy}
+                  testId="package-file-input"
+                  onChange={(path, content) => {
+                    if (path === (format === "apm" ? "apm.yml" : "plugin.json")) setSource(content);
+                    else setFiles((current) => replacePackageFile(current, path, content));
                   }}
                 />
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Input
-                    aria-label="New file path"
-                    data-testid="package-new-file-path"
-                    placeholder={
-                      format === "apm"
-                        ? ".apm/agents/reviewer.agent.md"
-                        : "skills/my-skill/SKILL.md"
-                    }
-                    value={newPath}
-                    onChange={(event) => setNewPath(event.target.value)}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={!newPath || files.some((file) => file.path === newPath)}
-                    onClick={() => {
-                      setFiles((current) => [
-                        ...current,
-                        { path: newPath, content: "", encoding: "utf8" },
-                      ]);
-                      setSelectedPath(newPath);
-                      setNewPath("");
-                    }}
-                  >
-                    Add file
-                  </Button>
-                </div>
-                <p className="text-xs text-outline">
-                  {files.length} supporting files · {selectedSkills.length} selected skills will be
-                  copied on save.
-                </p>
-                <select
-                  aria-label="File to edit"
-                  className="w-full min-w-0 rounded border border-surface-highest bg-surface-low p-3"
-                  value={selectedPath ?? files[0]?.path ?? ""}
-                  onChange={(event) => setSelectedPath(event.target.value)}
-                >
-                  {files.map((file) => (
-                    <option key={file.path} value={file.path}>
-                      {file.path}
-                    </option>
-                  ))}
-                </select>
-                {(() => {
-                  const file = files.find((file) => file.path === (selectedPath ?? files[0]?.path));
-                  return file ? (
-                    <CodeEditor
-                      key={file.path}
-                      path={file.path}
-                      value={file.content}
-                      readOnly={busy || file.encoding === "base64"}
-                      height={300}
-                      testId="package-file-input"
-                      onChange={(content) =>
-                        setFiles((current) => replacePackageFile(current, file.path, content))
-                      }
-                      label={
-                        file.encoding === "base64"
-                          ? `Binary asset: ${file.path}`
-                          : `Edit ${file.path}`
-                      }
-                    />
-                  ) : null;
-                })()}
               </>
             )}
           </fieldset>

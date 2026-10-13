@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { type AgentSetup, api, type PackageFull } from "@/api/client";
@@ -29,10 +29,7 @@ export function PackageRunDialog({
   const [commandMode, setCommandMode] = useState<"run" | "install">("run");
   const commandBox = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const cache = useQueryClient();
   const terminals = useTerminals();
-  const packages = useQuery({ queryKey: ["agent-packages"], queryFn: api.agentPackages.list });
-  const agents = useQuery({ queryKey: ["agents"], queryFn: api.agents.list });
   const tools = useQuery({ queryKey: ["package-tools"], queryFn: api.packageTools.list });
   const components = useQuery({
     queryKey: ["setup-components", setup.packages],
@@ -57,23 +54,17 @@ export function PackageRunDialog({
     setCopied(false);
     setError(undefined);
   }
-  async function perform(operation: "save" | "run" | "install") {
+  async function perform(operation: "run" | "install") {
     setBusy(true);
     setError(undefined);
     try {
-      if (operation === "save") {
-        await api.agentSetups.create({ ...setup, operation: "run" });
-        await cache.invalidateQueries({ queryKey: ["agent-setups"] });
-        onClose();
-      } else {
-        const terminal = await terminals.create({
-          kind: setup.backend,
-          name: `${setup.name}${operation === "install" ? " · install" : ""}`,
-          setup: { ...setup, operation },
-        });
-        onClose();
-        navigate(`/terminals/${terminal.id}`);
-      }
+      const terminal = await terminals.create({
+        kind: setup.backend,
+        name: `${setup.name}${operation === "install" ? " · install" : ""}`,
+        setup: { ...setup, operation },
+      });
+      onClose();
+      navigate(`/terminals/${terminal.id}`);
     } catch (failure) {
       setError((failure as Error).message);
     } finally {
@@ -82,9 +73,9 @@ export function PackageRunDialog({
   }
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && !command.isPending && onClose()}>
-      <DialogContent className="w-[calc(100%_-_1rem)] max-w-2xl max-h-[94dvh] overflow-auto p-4 sm:p-6">
+      <DialogContent className="min-w-0 grid-cols-[minmax(0,1fr)] w-[calc(100%_-_1rem)] max-w-2xl max-h-[94dvh] overflow-x-hidden overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle>Use this configuration</DialogTitle>
+          <DialogTitle>Use package</DialogTitle>
           <DialogDescription>
             Install it for your coding agent, launch here, or copy a command for your own terminal.
           </DialogDescription>
@@ -118,15 +109,6 @@ export function PackageRunDialog({
                 ))}
               </select>
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="setup-name">Setup name</Label>
-              <Input
-                id="setup-name"
-                data-testid="setup-name"
-                value={setup.name}
-                onChange={(event) => change({ name: event.target.value })}
-              />
-            </div>
           </div>
           <div className="space-y-1">
             <Label htmlFor="setup-cwd">Project folder on this ORC machine</Label>
@@ -154,36 +136,6 @@ export function PackageRunDialog({
               </Button>
             </div>
           </div>
-          {setup.backend === "claude" && (
-            <div className="space-y-1">
-              <Label htmlFor="setup-agent">Agent profile (optional)</Label>
-              <select
-                id="setup-agent"
-                data-testid="setup-agent"
-                className="w-full rounded border border-surface-highest bg-surface-low p-3"
-                value={setup.agent ?? ""}
-                onChange={(event) => change({ agent: event.target.value || undefined })}
-              >
-                <option value="">Use package configuration</option>
-                {agents.data?.agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1">
-              <Label htmlFor="setup-model">Model (optional)</Label>
-              <Input
-                id="setup-model"
-                data-testid="setup-model"
-                value={setup.model ?? ""}
-                onChange={(event) => change({ model: event.target.value || undefined })}
-              />
-            </div>
-          </div>
           <div className="space-y-1">
             <Label htmlFor="setup-prompt">What should the agent work on?</Label>
             <Textarea
@@ -194,34 +146,6 @@ export function PackageRunDialog({
               onChange={(event) => change({ prompt: event.target.value })}
             />
           </div>
-          <details>
-            <summary className="cursor-pointer py-2 text-sm">Combine with more packages</summary>
-            <div className="space-y-2 pt-2">
-              {packages.data?.packages.map((pkg) => (
-                <label
-                  key={pkg.name}
-                  className="flex items-center gap-3 rounded border border-surface-highest p-3 text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    className="size-5"
-                    data-testid="setup-package"
-                    checked={setup.packages.includes(pkg.name)}
-                    onChange={(event) =>
-                      change({
-                        packages: event.target.checked
-                          ? [...setup.packages, pkg.name]
-                          : setup.packages.filter((name) => name !== pkg.name),
-                      })
-                    }
-                  />
-                  <span className="min-w-0 break-words">
-                    {pkg.name} · {pkg.format === "apm" ? "APM" : "Agent Plugin"}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </details>
           <div
             data-testid="setup-components"
             className="rounded-lg bg-surface-low p-3 text-sm space-y-1"
@@ -288,14 +212,6 @@ export function PackageRunDialog({
             onClick={() => void perform("run")}
           >
             {busy ? "Preparing…" : "Run in ORC terminal"}
-          </Button>
-          <Button
-            data-testid="setup-save"
-            variant="outline"
-            disabled={busy || !valid}
-            onClick={() => void perform("save")}
-          >
-            Save agent setup
           </Button>
           <Button
             data-testid="setup-command"

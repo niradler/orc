@@ -9,6 +9,7 @@ import { BREAKPOINTS } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
 import { TerminalsProvider } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
+import Agents from "@/views/Agents";
 import Dashboard from "@/views/Dashboard";
 import Jobs from "@/views/Jobs";
 import Knowledge from "@/views/Knowledge";
@@ -110,8 +111,8 @@ export default function App() {
                 <Route path="/packages" element={<Packages />} />
                 <Route path="/packages/item" element={<Packages />} />
                 <Route path="/packages/item/:packageName" element={<Packages />} />
-                <Route path="/packages/agents" element={<Packages />} />
-                <Route path="/packages/agents/:agentId" element={<Packages />} />
+                <Route path="/packages/agents" element={<Agents />} />
+                <Route path="/packages/agents/:agentId" element={<Agents />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/rules" element={<Rules />} />
                 <Route path="*" element={<Navigate to="/tasks" replace />} />
