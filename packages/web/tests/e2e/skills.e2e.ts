@@ -40,6 +40,7 @@ test.describe("Skills", () => {
     await row.click();
     for (const resource of resources) {
       await page.locator(`[data-testid="skill-file"][data-file-name="${resource.path}"]`).click();
+      if (resource.path.endsWith(".md")) await page.getByTestId("markdown-mode-edit").click();
       await expect(page.getByTestId("skill-file-content")).toHaveText(resource.content, {
         useInnerText: true,
       });

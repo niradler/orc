@@ -71,7 +71,13 @@ const TYPE_COLORS: Record<string, string> = {
 
 const IMPORTANCES = ["low", "normal", "high", "critical"] as const;
 
-export default function Memories({ projectId: savedProjectId }: { projectId: string }) {
+export default function Memories({
+  projectId: savedProjectId,
+  embedded = false,
+}: {
+  projectId: string;
+  embedded?: boolean;
+}) {
   const projectId = useProjectScope(savedProjectId);
   const [query, setQuery] = useState("");
   const [searchInput, setSearchInput] = useState("");
@@ -82,7 +88,7 @@ export default function Memories({ projectId: savedProjectId }: { projectId: str
     selectedId: editingId,
     openDetail: openEdit,
     closeDetail: closeEdit,
-  } = useDetailRoute("/memories", "memoryId");
+  } = useDetailRoute(embedded ? "/knowledge/memories" : "/memories", "memoryId");
 
   const deleteMemory = useDeleteMemory();
 
@@ -114,6 +120,7 @@ export default function Memories({ projectId: savedProjectId }: { projectId: str
   return (
     <div>
       <ViewHeader
+        level={embedded ? 2 : 1}
         title="Memories"
         meta={`${filtered.length} shown`}
         action={

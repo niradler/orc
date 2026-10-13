@@ -8,7 +8,7 @@ import {
   SessionHandoffSchema,
   SessionHandoffUploadSchema,
 } from "@orc/core/session-handoff";
-import { getHandoffService, handoffDto, requireHandoffAuth } from "../handoffs/service.js";
+import { getHandoffService, handoffDto } from "../handoffs/service.js";
 
 const app = new OpenAPIHono();
 const params = z.object({ id: z.string().regex(HANDOFF_ID_PATTERN) });
@@ -92,7 +92,6 @@ app.openapi(
     responses: { 200: response },
   }),
   async (c) => {
-    requireHandoffAuth();
     c.header("Cache-Control", "no-store");
     return c.json(handoffDto(await getHandoffService().get(c.req.valid("param").id)), 200);
   },
@@ -134,7 +133,6 @@ app.openapi(
     responses: { 200: response },
   }),
   async (c) => {
-    requireHandoffAuth();
     return c.json(handoffDto(await getHandoffService().prepare(c.req.valid("param").id)), 200);
   },
 );

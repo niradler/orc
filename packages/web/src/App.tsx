@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useState } from "react";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { ChatPanel } from "@/components/ChatPanel";
 import { MobileChatFab } from "@/components/MobileChatFab";
 import { MobileTopBar } from "@/components/MobileTopBar";
@@ -13,7 +13,6 @@ import Agents from "@/views/Agents";
 import Dashboard from "@/views/Dashboard";
 import Jobs from "@/views/Jobs";
 import Knowledge from "@/views/Knowledge";
-import Memories from "@/views/Memories";
 import Packages, { LegacyAgentsRedirect } from "@/views/PackageCatalog";
 import Projects from "@/views/Projects";
 import Rules from "@/views/Rules";
@@ -25,6 +24,15 @@ import Terminals from "@/views/Terminals";
 import Wiki from "./views/Wiki";
 
 const STORAGE_KEY = "orc_selected_project";
+
+function LegacyMemoriesRedirect() {
+  const { memoryId } = useParams();
+  const { search, hash } = useLocation();
+  const query = new URLSearchParams(search);
+  query.set("tab", "memories");
+  const path = memoryId ? `/knowledge/memories/${encodeURIComponent(memoryId)}` : "/knowledge";
+  return <Navigate replace to={{ pathname: path, search: query.toString(), hash }} />;
+}
 
 export default function App() {
   const [projectId, setProjectId] = useState<string>(
@@ -98,12 +106,17 @@ export default function App() {
                 <Route path="/jobs/:jobId" element={<Jobs projectId={projectId} />} />
                 <Route path="/sessions" element={<Sessions projectId={projectId} />} />
                 <Route path="/sessions/:sessionId" element={<Sessions projectId={projectId} />} />
-                <Route path="/memories" element={<Memories projectId={projectId} />} />
-                <Route path="/memories/:memoryId" element={<Memories projectId={projectId} />} />
+                <Route path="/memories" element={<LegacyMemoriesRedirect />} />
+                <Route path="/memories/:memoryId" element={<LegacyMemoriesRedirect />} />
                 <Route path="/projects" element={<Projects />} />
                 <Route path="/projects/:projectId" element={<Projects />} />
                 <Route path="/wiki" element={<Wiki projectId={projectId} />} />
                 <Route path="/knowledge" element={<Knowledge projectId={projectId} />} />
+                <Route path="/knowledge/memories" element={<Knowledge projectId={projectId} />} />
+                <Route
+                  path="/knowledge/memories/:memoryId"
+                  element={<Knowledge projectId={projectId} />}
+                />
                 <Route path="/skills" element={<Skills projectId={projectId} />} />
                 <Route path="/skills/:skillName" element={<Skills projectId={projectId} />} />
                 <Route path="/agents" element={<LegacyAgentsRedirect />} />

@@ -23,6 +23,12 @@ MCP uses readable `project` names, defaulting to configured activeProject. `scop
 
 Each write retains author, source session and complete immutable content in revision history. The central audit row points at the revision. `audit_list` / `GET /api/audit` expose knowledge actions and prior memory snapshots. The **Wiki** dashboard opens on **What ORC learned**, with Pages/search and Audit log alongside it. Page details show sources and revision history; reload preserves selection. All Projects/Unassigned show global lessons; select a project for its lessons with global fallback.
 
+## Knowledge dashboard and Markdown editing
+
+The **Knowledge** dashboard includes Search, Memories, and Collections. Memories retains its existing creation, editing, search, type filters, and project scope. Legacy `/memories` and `/memories/:id` links redirect to the Memories tab and its detail routes. Wiki remains a separate view for now.
+
+Markdown uses a shared Read / Edit / Split workspace with readable rendering, source search, word wrap, and expansion. Split view stacks vertically on phones. Skills include file tabs and a mobile file picker. Unsaved drafts are protected when closing or switching files, and saves check the original content or Wiki revision to reject stale overwrites. Human Knowledge files can be edited manually when their registered collection resolves to one unambiguous existing UTF-8 `.md` or `.markdown` source no larger than 2 MiB; symlink and binary sources remain read-only. Successful file saves refresh the collection index. Wiki edits retain revision history and sources, and built-in skill files remain read-only.
+
 ## Daily digest
 
 Installation seeds one enabled `orc-knowledge-digest` cron job using the existing Jobs scheduler. Its default expression is `0 3 * * *` (03:00 in the scheduler host's time zone); change it in Jobs like any other cron. Run the source daemon (`bun run --filter orc-ai dev-daemon:start`) to run the scheduler during development; an API-only process does not execute scheduled jobs.

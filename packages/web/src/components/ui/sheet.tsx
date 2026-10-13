@@ -1,6 +1,7 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import * as React from "react";
+import { collapseExpandedDocument } from "@/lib/document-display";
 import { cn } from "@/lib/utils";
 
 const Sheet = DialogPrimitive.Root;
@@ -44,9 +45,14 @@ const SheetContent = React.forwardRef<
         className,
       )}
       {...props}
+      data-document-container
+      onEscapeKeyDown={(event) => {
+        if (!collapseExpandedDocument(event)) props.onEscapeKeyDown?.(event);
+      }}
     >
       {children}
       <DialogPrimitive.Close
+        data-testid="sheet-close"
         className="absolute right-1 top-1 flex size-11 items-center justify-center text-outline hover:text-on-surface transition-colors"
         aria-label="Close panel"
       >

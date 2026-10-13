@@ -2,11 +2,12 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig } from "@orc/core/config";
+import { loadConfig, resetConfig } from "@orc/core/config";
 import type { RuleRevision } from "@orc/core/rule-types";
 import { getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
-import type { createApp } from "../server.js";
+import { z } from "zod";
+import { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 const root = mkdtempSync(join(tmpdir(), "orc-rules-api-"));
@@ -90,7 +91,7 @@ test("real API activation, dry run, history and guarded revert", async () => {
     tool: "Bash",
     input: { command: "remove anything" },
   });
-  expect((await check.json()).decision).toBe("deny");
+  expect(z.object({ decision: z.string() }).parse(await check.json()).decision).toBe("deny");
   expect(getSqlite().query("SELECT id FROM rule_decisions").all()).toHaveLength(0);
   const reverted = await req(app, "POST", "/rules/revert", {
     id: first.id,
@@ -110,18 +111,42 @@ test("real API activation, dry run, history and guarded revert", async () => {
   expect(history.history).toHaveLength(2);
   expect(history.history.filter((r: RuleRevision) => r.current)).toHaveLength(1);
 });
-test("open local APIs cannot administer enforcement policies", async () => {
-  loadConfig({ api: { host: "127.0.0.1", port: 7700, secret: "" } });
-  expect(
-    (
-      await req(app, "POST", "/rules/activate", {
-        policy,
+test("should administer and evaluate policies without a token in open mode", async () => {
+  try {
+    process.env.ORC_API_SECRET = "";
+    resetConfig();
+    const openApp = createApp();
+    const workspace = mkdtempSync(join(root, "open-"));
+    const activated = await openApp.request("/api/rules/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        policy: { ...policy, workspace },
         expected_id: null,
-        reason: "No secret",
-      })
-    ).status,
-  ).toBe(403);
-  loadConfig({ api: { host: "127.0.0.1", port: 7700, secret: "test-secret" } });
+        reason: "Open mode",
+      }),
+    });
+    expect(activated.status).toBe(201);
+    expect((await openApp.request("/api/rules")).status).toBe(200);
+    const check = await openApp.request("/api/rules/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "open-event",
+        session_id: "open-session",
+        backend: "test",
+        cwd: workspace,
+        phase: "pre_tool",
+        tool: "Bash",
+        input: { command: "remove anything" },
+      }),
+    });
+    expect(check.status).toBe(200);
+    expect(z.object({ decision: z.string() }).parse(await check.json()).decision).toBe("deny");
+  } finally {
+    process.env.ORC_API_SECRET = "test-secret";
+    resetConfig();
+  }
 });
 
 test("protected chat refuses an unverified backend before launching it", async () => {

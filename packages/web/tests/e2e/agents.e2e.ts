@@ -22,11 +22,11 @@ test("should create from an editable template and save tool changes after reopen
   await page.getByTestId("agent-tool-row").last().getByTestId("agent-tool-name").fill("WebSearch");
   await page.getByTestId("agent-tool-row").last().getByTestId("agent-tool-allowed").uncheck();
   await page.getByTestId("agent-instructions-input").fill("Use this editable reviewer template.");
-  await page.getByTestId("code-editor-preview-toggle").click();
-  await expect(page.getByTestId("code-editor-markdown-preview")).toContainText(
+  await page.getByTestId("markdown-mode-read").click();
+  await expect(page.getByTestId("markdown-preview")).toContainText(
     "Use this editable reviewer template.",
   );
-  await page.getByTestId("code-editor-preview-toggle").click();
+  await page.getByTestId("markdown-mode-edit").click();
   await page.getByTestId("agent-editor-mode").click();
   const raw = await page.getByTestId("agent-content-input").innerText();
   const custom = raw.replace(
@@ -157,7 +157,7 @@ test("shared agent creation survives reopening with metadata intact", async ({ p
   await page.screenshot({ path: "../../.claude/shared-agents-browser.png" });
   await page.getByTestId("agent-delete").click();
   await page.getByTestId("confirm-dialog-cancel").click();
-  await expect(page.getByTestId("agent-content")).toBeVisible();
+  await expect(page.getByTestId("markdown-preview")).toBeVisible();
   await page.getByTestId("agent-delete").click();
   await page.getByTestId("confirm-dialog-confirm").click();
   await expect(row).toHaveCount(0);
@@ -271,7 +271,7 @@ test("should delete one duplicate name and recover from a failed deletion", asyn
   await page.getByTestId("agent-delete").click();
   await page.getByTestId("confirm-dialog-confirm").click();
   await expect(page.getByTestId("agent-delete")).toBeEnabled();
-  await expect(page.getByTestId("agent-content")).toBeVisible();
+  await expect(page.getByTestId("markdown-preview")).toBeVisible();
   await expect(page.getByTestId("agent-delete-error")).toContainText("Profile is unavailable");
   await page.unroute(`**/api/agents/${firstId}`);
   await page.getByTestId("agent-delete").click();

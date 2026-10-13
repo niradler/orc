@@ -306,7 +306,7 @@ Key env vars: `ORC_DB_PATH`, `ORC_API_PORT` (default 7700), `ORC_API_SECRET`, `O
 
 The dashboard's **Terminals** workspace runs real PTYs (plain shell, fresh `claude`/`codex`/`cursor` agents, or a resume of a live session) on the machine hosting the API. Code lives in `packages/api/src/terminals/` (manager, spawn, launch, ws) and `packages/web/src/lib/terminal{s,-runtime}.ts*`.
 
-- **On by default**, but it only reports `ready` when `api.secret` / `ORC_API_SECRET` is set (a terminal is arbitrary code execution) and Bun >= 1.4.2 is running (`Bun.spawn` `terminal` option; ConPTY on Windows). Otherwise the UI shows why and live-session resume falls back to "Copy resume command". Turn off with `terminals.enabled: false`.
+- **On by default**, and reports `ready` when Bun >= 1.4.2 is running (`Bun.spawn` `terminal` option; ConPTY on Windows). Otherwise the UI shows why and live-session resume falls back to "Copy resume command". Turn off with `terminals.enabled: false`.
 - Config: `terminals: { enabled, max (8), shell?, scrollback_bytes (524288) }`. `ORC_API_SECRET` is passed through to the PTY env so an agent's hooks/CLI can authenticate.
 - WebSocket: mint a one-shot ticket with `POST /api/terminals/:id/ticket`, then connect to `/api/terminals/:id/ws?ticket=`. Server to client: binary frames are PTY output; text frames are control (`{"type":"replay-end"}` after the scrollback replay, `{"type":"exit","code"}`). Client to server: **binary frames are keyboard input**; text frames are control only (`resize`, `stop`) and anything else is dropped.
 

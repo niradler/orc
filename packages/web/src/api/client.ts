@@ -1,3 +1,4 @@
+import type { KnowledgeDocument } from "@orc/core/knowledge";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
 import type { RuleEventCapability } from "@orc/core/rule-events";
 
@@ -701,14 +702,12 @@ export const api = {
         limit: opts?.limit,
       }),
     getDocument: (id: string) =>
-      req<{
-        docid: string;
-        path: string;
-        collection: string;
-        title: string;
-        content: string;
-        modifiedAt: string;
-      }>("GET", `/knowledge/documents/${encodeURIComponent(id)}`),
+      req<KnowledgeDocument>("GET", `/knowledge/documents/${encodeURIComponent(id)}`),
+    editDocument: (id: string, content: string, expectedContent: string) =>
+      req<KnowledgeDocument>("PUT", `/knowledge/documents/${encodeURIComponent(id)}`, {
+        content,
+        expectedContent,
+      }),
     addCollection: (data: { name: string; path: string; pattern?: string; project_id?: string }) =>
       req<{ name: string; indexed: number }>("POST", "/knowledge/collections", data),
     removeCollection: (name: string) =>

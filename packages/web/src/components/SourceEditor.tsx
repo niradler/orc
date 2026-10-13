@@ -23,6 +23,8 @@ export function SourceEditor({
   id,
   label,
   placeholder,
+  hidePreview = false,
+  defaultWrap = false,
 }: CodeEditorProps) {
   const parent = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -34,6 +36,7 @@ export function SourceEditor({
     id,
     label,
     placeholder,
+    defaultWrap,
   });
   const changeAction = useRef(onChange);
   changeAction.current = onChange;
@@ -44,7 +47,7 @@ export function SourceEditor({
   const editable = useRef(new Compartment());
   const attributes = useRef(new Compartment());
   const wrapping = useRef(new Compartment());
-  const [wrap, setWrap] = useState(false);
+  const [wrap, setWrap] = useState(defaultWrap || isMarkdownFile(path));
   const [preview, setPreview] = useState(false);
   const [lines, setLines] = useState(value.split(/\r?\n/).length);
 
@@ -81,13 +84,16 @@ export function SourceEditor({
             },
             indentWithTab,
           ]),
-          wrapping.current.of([]),
+          wrapping.current.of(
+            original.defaultWrap || isMarkdownFile(original.path) ? EditorView.lineWrapping : [],
+          ),
           EditorView.theme({
             "&": {
               height: "100%",
               backgroundColor: "#090e1a",
-              fontSize: "12px",
+              fontSize: "14px",
             },
+            "@media (max-width: 640px)": { "&": { fontSize: "16px" } },
             ".cm-scroller": { overflow: "auto", fontFamily: "monospace" },
             ".cm-gutters": {
               backgroundColor: "#111827",
@@ -163,7 +169,7 @@ export function SourceEditor({
           {path}
           {readOnly ? " · Read-only" : ""}
         </span>
-        {isMarkdownFile(path) && (
+        {!hidePreview && isMarkdownFile(path) && (
           <button
             type="button"
             data-testid="code-editor-preview-toggle"

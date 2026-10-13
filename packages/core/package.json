@@ -31,6 +31,7 @@
     "./flow-service": "./src/flow-service.ts",
     "./flows/builtin": "./src/flows/builtin.ts",
     "./knowledge": "./src/knowledge.ts",
+    "./knowledge-files": "./src/knowledge-files.ts",
     "./tags": "./src/tags.ts",
     "./wiki": "./src/wiki.ts",
     "./validate": "./src/validate.ts",

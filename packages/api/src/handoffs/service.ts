@@ -2,14 +2,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, posix, win32 } from "node:path";
-import { configuredApiSecret, loadConfig } from "@orc/core/config";
-import {
-  ConflictError,
-  ForbiddenError,
-  NotFoundError,
-  UnauthorizedError,
-  ValidationError,
-} from "@orc/core/errors";
+import { ConflictError, NotFoundError, UnauthorizedError, ValidationError } from "@orc/core/errors";
 import {
   type ExecHost,
   execHostFor,
@@ -57,11 +50,6 @@ export function handoffDto(row: HandoffRow): SessionHandoff {
     error: row.error,
     expires_at: row.expires_at.toISOString(),
   };
-}
-
-export function requireHandoffAuth(): void {
-  if (!configuredApiSecret(loadConfig().api.secret))
-    throw new ForbiddenError("Set api.secret before importing resumable sessions");
 }
 
 const PRIVATE_WRITE_SCRIPT = `import json, os, sys
@@ -181,7 +169,6 @@ export class HandoffService {
   }
 
   async create(request: SessionHandoffRequest): Promise<{ row: HandoffRow; token: string }> {
-    requireHandoffAuth();
     const project = await getDb().query.projects.findFirst({
       where: sql`lower(${projects.name}) = lower(${request.project})`,
     });

@@ -1,13 +1,16 @@
 import type { WikiScope } from "@orc/sdk/types";
+import { useQueryClient } from "@tanstack/react-query";
 import { Download, Plus, Search } from "lucide-react";
-import { useState } from "react";
-import type { SkillFull, SkillRefContent, SkillSource } from "@/api/client";
+import { useEffect, useState } from "react";
+import { api, type SkillFull, type SkillRefContent, type SkillSource } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
 import { DetailField } from "@/components/DetailField";
+import { DocumentTabs } from "@/components/DocumentTabs";
+import { confirmDocumentClose, DocumentWorkspace } from "@/components/DocumentWorkspace";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { ImportSkillDialog } from "@/components/ImportSkillDialog";
-import { SkillFileEditor } from "@/components/SkillFileEditor";
+import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { SkillHistoryPanel } from "@/components/SkillHistoryPanel";
 import { SkillSync } from "@/components/SkillSync";
 import { Button } from "@/components/ui/button";
@@ -249,11 +252,28 @@ function SkillDetailSheet({
   const [selectedFile, setSelectedFile] = useState<string | undefined>();
   const fileQuery = useSkill(skillName, selectedFile ?? "SKILL.md", scope);
   const file = fileQuery.data as SkillRefContent | undefined;
-  const [editingFile, setEditingFile] = useState<{ path: string; content: string } | null>(null);
+  const queryClient = useQueryClient();
+  const [expanded, setExpanded] = useState(false);
+  const documentId = `skill:${scope.project_id ?? "global"}:${skillName}:${selectedFile ?? "SKILL.md"}`;
+  function selectFile(path?: string): boolean {
+    if ((path ?? "SKILL.md") === (selectedFile ?? "SKILL.md")) return true;
+    if (!confirmDocumentClose(documentId)) return false;
+    setSelectedFile(path);
+    return true;
+  }
+  const navigation = skill ? (
+    <DocumentTabs
+      files={["SKILL.md", ...(skill.files ?? []).map((entry) => entry.name)]}
+      selected={selectedFile ?? "SKILL.md"}
+      onSelect={(path) => selectFile(path === "SKILL.md" ? undefined : path)}
+      testId="skill-file"
+      entryTestId="skill-show-entry"
+    />
+  ) : null;
 
   return (
-    <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent>
+    <Sheet open={open} onOpenChange={(v) => !v && confirmDocumentClose(documentId) && onClose()}>
+      <SheetContent className="w-screen max-w-full sm:w-[1120px] sm:max-w-[96vw]">
         <SheetHeader>
           <SheetTitle>{skill?.name ?? "Skill Details"}</SheetTitle>
           {skill?.description && (
@@ -261,33 +281,12 @@ function SkillDetailSheet({
           )}
         </SheetHeader>
         <SheetBody>
-          {editingFile && skillName ? (
-            <SkillFileEditor
-              name={skillName}
-              path={editingFile.path}
-              content={editingFile.content}
-              instructionScope={skill?.mutation ? scope : undefined}
-              onClose={() => setEditingFile(null)}
-            />
-          ) : (
+          {
             <>
               {skillName && skill && (
                 <SkillHistoryPanel name={skillName} scope={scope} mutation={skill.mutation} />
               )}
               {skillName && skill && <SkillSync name={skillName} />}
-              {skill?.source === "user" && file?.encoding === "utf8" && (
-                <Button
-                  data-testid="skill-edit-file"
-                  variant="outline"
-                  size="sm"
-                  className="mb-3"
-                  onClick={() =>
-                    setEditingFile({ path: selectedFile ?? "SKILL.md", content: file.content })
-                  }
-                >
-                  Edit {selectedFile ?? "SKILL.md"}
-                </Button>
-              )}
               {error ? (
                 <ErrorState message={(error as Error).message} onRetry={() => void refetch()} />
               ) : isLoading || !skill ? (
@@ -318,27 +317,61 @@ function SkillDetailSheet({
                     <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-2">
                       {selectedFile ?? "SKILL.md"}
                     </div>
-                    {selectedFile && (
-                      <Button
-                        data-testid="skill-show-entry"
-                        variant="ghost"
-                        onClick={() => setSelectedFile(undefined)}
-                      >
-                        Show SKILL.md
-                      </Button>
-                    )}
                     <div className="border border-surface-highest rounded-sm overflow-hidden">
+                      {file?.encoding === "base64" && <div className="p-3">{navigation}</div>}
                       {fileQuery.error ? (
                         <p role="alert">{(fileQuery.error as Error).message}</p>
                       ) : fileQuery.isLoading ? (
                         <p>Loading...</p>
-                      ) : (
+                      ) : file?.encoding === "base64" ? (
                         <CodeEditor
                           path={selectedFile ?? "SKILL.md"}
                           value={file?.content ?? ""}
                           readOnly
+                          hidePreview
                           height={400}
                           testId="skill-file-content"
+                        />
+                      ) : (
+                        <DocumentWorkspace
+                          key={documentId}
+                          documentId={documentId}
+                          expanded={expanded}
+                          onExpandedChange={setExpanded}
+                          navigation={navigation}
+                          path={selectedFile ?? "SKILL.md"}
+                          content={file?.content ?? ""}
+                          testId="skill-file-content"
+                          onSave={
+                            skill.source === "user" && file?.encoding === "utf8"
+                              ? async (content, expectedContent) => {
+                                  const path = selectedFile ?? "SKILL.md";
+                                  if (skill.mutation && path === "SKILL.md") {
+                                    await api.skills.updateInstructions(skill.name, {
+                                      project_id: scope.project_id ?? null,
+                                      content,
+                                      expected_content: expectedContent,
+                                      reason: "Manual instruction edit",
+                                      author: "human",
+                                      wiki_pages: [],
+                                    });
+                                  } else
+                                    await api.skills.editFile(skill.name, {
+                                      path,
+                                      content,
+                                      expectedContent,
+                                    });
+                                  await queryClient.invalidateQueries({
+                                    queryKey: ["skill", skill.name],
+                                  });
+                                  await queryClient.invalidateQueries({ queryKey: ["skills"] });
+                                  await queryClient.invalidateQueries({
+                                    queryKey: ["skill-history", skill.name],
+                                  });
+                                  return content;
+                                }
+                              : undefined
+                          }
                         />
                       )}
                       {file?.encoding === "base64" && (
@@ -348,38 +381,10 @@ function SkillDetailSheet({
                       )}
                     </div>
                   </div>
-
-                  {skill.files?.length > 0 && (
-                    <div>
-                      <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-2">
-                        Supporting files
-                      </div>
-                      <div className="space-y-1">
-                        {skill.files.map((ref) => (
-                          <button
-                            type="button"
-                            data-testid="skill-file"
-                            data-file-name={ref.name}
-                            onClick={() => setSelectedFile(ref.name)}
-                            aria-pressed={selectedFile === ref.name}
-                            key={ref.name}
-                            className="flex w-full items-center gap-3 px-3 py-2 border border-surface-highest rounded-sm text-left hover:bg-surface-low"
-                          >
-                            <span className="font-body text-xs font-medium text-on-surface">
-                              {ref.name}
-                            </span>
-                            <code className="font-mono text-[11px] text-outline truncate">
-                              {ref.path}
-                            </code>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
             </>
-          )}
+          }
         </SheetBody>
       </SheetContent>
     </Sheet>
@@ -400,6 +405,20 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
   >([]);
   const [importError, setImportError] = useState<string>();
   const [importing, setImporting] = useState(false);
+  const dirty = Boolean(name || content || files.length);
+  useEffect(() => {
+    if (!dirty) return;
+    function warn(event: BeforeUnloadEvent): void {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+  function close(): void {
+    if (createSkill.isPending || importing) return;
+    if (!dirty || window.confirm("Discard this unsaved skill?")) onClose();
+  }
 
   async function importFolder(uploaded: FileList | null): Promise<void> {
     if (!uploaded?.length) return;
@@ -424,9 +443,15 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || !content.trim()) return;
+  const handleSubmit = () => {
+    if (
+      !name.trim() ||
+      !content.trim() ||
+      createSkill.isPending ||
+      importing ||
+      files.some((file) => !file.path.trim())
+    )
+      return;
     createSkill.mutate(
       {
         name: name.trim(),
@@ -442,14 +467,20 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="bg-surface border-surface-highest max-w-lg">
+    <Dialog open={open} onOpenChange={(v) => !v && close()}>
+      <DialogContent className="bg-surface border-surface-highest w-[calc(100%_-_1rem)] max-w-5xl max-h-[94dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-headline text-sm uppercase tracking-widest text-on-surface">
             New Skill
           </DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-3 mt-2 max-h-[75vh] overflow-y-auto">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleSubmit();
+          }}
+          className="space-y-3 mt-2"
+        >
           <Label htmlFor="skill-folder-input">Import skill folder</Label>
           <Input
             id="skill-folder-input"
@@ -476,15 +507,12 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
             <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
               SKILL.md *
             </Label>
-            <CodeEditor
+            <MarkdownEditor
               testId="skill-content-input"
               path="SKILL.md"
               value={content}
               onChange={setContent}
-              placeholder={
-                "---\nname: my-skill\ndescription: When to use this skill\n---\n\n# Instructions"
-              }
-              height={350}
+              onSave={handleSubmit}
             />
           </div>
           <div className="space-y-3">
@@ -563,7 +591,7 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
               type="button"
               variant="ghost"
               size="sm"
-              onClick={onClose}
+              onClick={close}
               className="font-label text-xs uppercase text-outline"
             >
               Cancel

@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import { homedir } from "node:os";
-import { configuredApiSecret, loadConfig, type OrcConfig } from "@orc/core/config";
+import { loadConfig, type OrcConfig } from "@orc/core/config";
 import { ConflictError, ForbiddenError, ValidationError } from "@orc/core/errors";
 import {
   type ExecHost,
@@ -33,7 +33,6 @@ export interface Availability {
 }
 
 let manager: TerminalManager | null = null;
-const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
 export function terminalsAvailability(
   config: OrcConfig,
@@ -51,21 +50,6 @@ export function terminalsAvailability(
       ready: false,
       reason: `Terminals need Bun ${MIN_BUN_VERSION} or newer (running ${bunVersion}).`,
     };
-  }
-  if (!configuredApiSecret(config.api.secret)) {
-    if (!config.terminals.allow_without_secret) {
-      return {
-        ready: false,
-        reason:
-          "Terminals start processes on this machine and need an API secret. Set api.secret in config or ORC_API_SECRET, or opt in to secretless local use with terminals.allow_without_secret.",
-      };
-    }
-    if (!LOOPBACK_HOSTS.has(config.api.host)) {
-      return {
-        ready: false,
-        reason: `terminals.allow_without_secret only works when the API is bound to loopback (api.host is ${config.api.host}). Set api.secret.`,
-      };
-    }
   }
   return { ready: true, reason: null };
 }

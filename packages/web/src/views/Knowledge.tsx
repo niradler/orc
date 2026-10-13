@@ -1,9 +1,11 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { FileText, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { CodeEditor } from "@/components/CodeEditor";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { api } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DetailField } from "@/components/DetailField";
+import { confirmDocumentClose, DocumentWorkspace } from "@/components/DocumentWorkspace";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { Button } from "@/components/ui/button";
@@ -45,25 +47,22 @@ import {
   useRemoveKnowledgeCollection,
 } from "@/hooks/useKnowledge";
 import { useProjectScope } from "@/hooks/useProjectScope";
+import Memories from "@/views/Memories";
 
 export default function Knowledge({ projectId: savedProjectId }: { projectId: string }) {
   const projectId = useProjectScope(savedProjectId);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const tab: "search" | "collections" =
-    searchParams.get("tab") === "collections" ? "collections" : "search";
-  const setTab = (v: "search" | "collections") => {
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        if (v === "search") {
-          next.delete("tab");
-        } else {
-          next.set("tab", v);
-        }
-        return next;
-      },
-      { replace: true },
-    );
+  const [searchParams] = useSearchParams();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const requestedTab = searchParams.get("tab");
+  let tab: "search" | "collections" | "memories" = "search";
+  if (requestedTab === "collections") tab = "collections";
+  if (requestedTab === "memories" || pathname.startsWith("/knowledge/memories")) tab = "memories";
+  const setTab = (value: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (value === "search") next.delete("tab");
+    else next.set("tab", value);
+    navigate({ pathname: "/knowledge", search: next.toString() }, { replace: true });
   };
   const pid = projectId === "all" ? undefined : projectId;
 
@@ -73,14 +72,13 @@ export default function Knowledge({ projectId: savedProjectId }: { projectId: st
 
   return (
     <div>
-      <ViewHeader title="Knowledge" meta={`${totalDocs} documents \u00b7 ${searchMode}`} />
+      <ViewHeader
+        title="Knowledge"
+        meta={tab === "memories" ? undefined : `${totalDocs} documents \u00b7 ${searchMode}`}
+      />
 
-      <Tabs
-        value={tab}
-        onValueChange={(v) => setTab(v as "search" | "collections")}
-        className="mb-4"
-      >
-        <TabsList className="bg-surface-highest border border-surface-highest gap-0 h-auto p-0">
+      <Tabs value={tab} onValueChange={setTab} className="mb-4">
+        <TabsList className="bg-surface-highest border border-surface-highest gap-0 h-auto max-w-full flex-wrap justify-start p-0">
           <TabsTrigger
             value="search"
             className="font-label text-[11px] uppercase tracking-widest px-4 py-2 rounded-none
@@ -88,6 +86,15 @@ export default function Knowledge({ projectId: savedProjectId }: { projectId: st
               text-outline hover:text-on-surface-variant"
           >
             Search
+          </TabsTrigger>
+          <TabsTrigger
+            data-testid="knowledge-memories-tab"
+            value="memories"
+            className="font-label text-[11px] uppercase tracking-widest px-4 py-2 rounded-none
+              data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none
+              text-outline hover:text-on-surface-variant"
+          >
+            Memories
           </TabsTrigger>
           <TabsTrigger
             data-testid="knowledge-collections-tab"
@@ -101,7 +108,9 @@ export default function Knowledge({ projectId: savedProjectId }: { projectId: st
         </TabsList>
       </Tabs>
 
-      {tab === "search" ? <SearchTab projectId={pid} /> : <CollectionsTab projectId={pid} />}
+      {tab === "search" && <SearchTab projectId={pid} />}
+      {tab === "collections" && <CollectionsTab projectId={pid} />}
+      {tab === "memories" && <Memories projectId={savedProjectId} embedded />}
     </div>
   );
 }
@@ -111,6 +120,9 @@ function SearchTab({ projectId }: { projectId?: string }) {
   const [query, setQuery] = useState("");
   const [collection, setCollection] = useState<string>("__all__");
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const [indexingWarning, setIndexingWarning] = useState<string>();
+  const documentId = `knowledge:${selectedDoc}`;
 
   const { data: collections } = useKnowledgeCollections({
     project_id: projectId,
@@ -190,9 +202,13 @@ function SearchTab({ projectId }: { projectId?: string }) {
               {(results ?? []).map((r) => (
                 <button
                   key={r.docid}
+                  data-testid="knowledge-result"
                   type="button"
                   className="w-full text-left border border-surface-highest rounded-sm p-4 hover:bg-surface-low transition-colors"
-                  onClick={() => setSelectedDoc(r.docid)}
+                  onClick={() => {
+                    setIndexingWarning(undefined);
+                    setSelectedDoc(`qmd://${r.path}`);
+                  }}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
@@ -223,8 +239,11 @@ function SearchTab({ projectId }: { projectId?: string }) {
         </div>
       )}
 
-      <Sheet open={Boolean(selectedDoc)} onOpenChange={(v) => !v && setSelectedDoc(null)}>
-        <SheetContent side="right" className="w-[540px] max-w-[90vw]">
+      <Sheet
+        open={Boolean(selectedDoc)}
+        onOpenChange={(v) => !v && confirmDocumentClose(documentId) && setSelectedDoc(null)}
+      >
+        <SheetContent side="right" className="w-screen max-w-full sm:w-[1120px] sm:max-w-[96vw]">
           <SheetHeader>
             <SheetTitle>
               {isDocLoading
@@ -264,11 +283,36 @@ function SearchTab({ projectId }: { projectId?: string }) {
                   <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-2">
                     Content
                   </div>
-                  <CodeEditor
+                  {document.readOnlyReason && (
+                    <p className="mb-3 text-sm text-outline">{document.readOnlyReason}</p>
+                  )}
+                  {indexingWarning && (
+                    <p role="status" className="mb-3 text-sm text-outline">
+                      {indexingWarning}
+                    </p>
+                  )}
+                  <DocumentWorkspace
+                    key={documentId}
+                    documentId={documentId}
                     path={document.path}
-                    value={document.content}
-                    readOnly
-                    height={400}
+                    content={document.content}
+                    onSave={
+                      document.editable && selectedDoc
+                        ? async (content, expectedContent) => {
+                            const saved = await api.knowledge.editDocument(
+                              selectedDoc,
+                              content,
+                              expectedContent,
+                            );
+                            setIndexingWarning(saved.indexingWarning);
+                            await queryClient.invalidateQueries({
+                              queryKey: ["knowledge-document", selectedDoc],
+                            });
+                            await queryClient.invalidateQueries({ queryKey: ["knowledge-search"] });
+                            return saved.content;
+                          }
+                        : undefined
+                    }
                     testId="knowledge-file-content"
                   />
                 </div>

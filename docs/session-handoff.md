@@ -21,10 +21,10 @@ All operations are available through the API. MCP exposes one convenience tool:
 
 | Operation | Endpoint | Authentication |
 | --- | --- | --- |
-| Initiate | `POST /api/session-handoffs` | ORC Bearer secret |
+| Initiate | `POST /api/session-handoffs` | Bearer token when an API secret is configured; otherwise open |
 | Upload | `PUT /api/session-handoffs/{id}/upload?token=…` | Temporary upload capability |
-| Inspect | `GET /api/session-handoffs/{id}` | ORC Bearer secret |
-| Retry preparation | `POST /api/session-handoffs/{id}/prepare` | ORC Bearer secret |
+| Inspect | `GET /api/session-handoffs/{id}` | Bearer token when an API secret is configured; otherwise open |
+| Retry preparation | `POST /api/session-handoffs/{id}/prepare` | Bearer token when an API secret is configured; otherwise open |
 | Resume | `POST /api/terminals` with `live_session_id` | Existing terminal authentication and workspace rules |
 
 Initiation accepts `project` (readable name), `agent` (`claude` or `codex`), native

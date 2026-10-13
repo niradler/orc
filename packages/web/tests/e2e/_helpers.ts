@@ -66,7 +66,13 @@ export async function gotoView(
     );
   }
   await page.goto("/");
-  await page.getByTestId(`nav-${view}`).click();
+  const navigationView = view === "memories" ? "knowledge" : view;
+  const mobileNavigation = page.getByTestId("mobile-nav-open");
+  if (await mobileNavigation.isVisible()) {
+    await mobileNavigation.click();
+    await page.getByTestId("mobile-nav-drawer").getByTestId(`nav-${navigationView}`).click();
+  } else await page.getByTestId(`nav-${navigationView}`).click();
+  if (view === "memories") await page.getByTestId("knowledge-memories-tab").click();
 }
 
 export async function apiDelete(request: APIRequestContext, path: string): Promise<void> {

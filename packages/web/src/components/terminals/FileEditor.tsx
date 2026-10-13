@@ -3,6 +3,7 @@ import { Save } from "lucide-react";
 import { type ReactElement, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
+import { isMarkdownFile } from "@/lib/editor-language";
 
 type Draft = { original: string; content: string };
 const drafts = new Map<string, Draft>();
@@ -111,15 +112,15 @@ export function FileEditor({
       );
   }
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col" data-testid="file-editor">
+  const toolbar = (
+    <>
       <div className="flex shrink-0 items-center gap-1 border-b border-surface-highest px-2 py-1">
         <button
           type="button"
           data-testid="file-save"
           disabled={!dirty || saving || readOnly}
           onClick={() => void save()}
-          className="flex items-center gap-1 rounded px-2 py-1 text-xs text-primary hover:bg-surface-highest disabled:opacity-40"
+          className="flex min-h-11 items-center gap-1 rounded px-2 py-1 text-sm text-primary hover:bg-surface-highest disabled:opacity-40"
           title="Save (Ctrl/Cmd+S)"
         >
           <Save size={14} />
@@ -127,7 +128,7 @@ export function FileEditor({
         </button>
         <span
           data-testid="file-save-status"
-          className="min-w-0 flex-1 truncate text-[10px] text-outline"
+          className="min-w-0 flex-1 truncate text-sm text-outline"
         >
           {readOnly ? "Read-only preview" : dirty ? "Unsaved changes" : "Saved"}
         </span>
@@ -145,6 +146,11 @@ export function FileEditor({
           </button>
         </div>
       )}
+    </>
+  );
+  return (
+    <div className="flex min-h-0 flex-1 flex-col" data-testid="file-editor">
+      {!isMarkdownFile(path) && toolbar}
       <div data-testid="file-preview" className="min-h-0 flex-1 overflow-hidden">
         <CodeEditor
           path={path}
@@ -154,6 +160,7 @@ export function FileEditor({
           readOnly={readOnly}
           height="100%"
           testId="file-editor-input"
+          header={isMarkdownFile(path) ? toolbar : undefined}
         />
       </div>
     </div>
