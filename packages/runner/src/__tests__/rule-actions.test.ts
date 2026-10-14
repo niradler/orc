@@ -38,11 +38,18 @@ test("actual job dispatch runs once, cancelled policies do not run, crashes reta
     rules: [
       {
         id: "job",
-        kind: "enqueue_job",
-        event: "post_tool",
-        tools: ["Write"],
-        job_id: "job",
+        kind: "event",
+        enabled: true,
         reason: "Validate",
+        scope: { agents: "all", events: ["post_tool"] },
+        filter: {
+          match: "all",
+          conditions: [
+            { predicate: { field: "tool", operator: "in", value: ["Write"] } },
+            { predicate: { field: "failed", operator: "equals", value: false } },
+          ],
+        },
+        target: { type: "job", job_id: "job" },
       },
     ],
   };
@@ -50,7 +57,7 @@ test("actual job dispatch runs once, cancelled policies do not run, crashes reta
   const event = {
     id: "one",
     session_id: "s",
-    backend: "test",
+    backend: "claude",
     cwd: root,
     phase: "post_tool",
     tool: "Write",
@@ -84,7 +91,7 @@ test("mutated job ownership and disabled jobs are rejected at dispatch; recursiv
   const event = {
     id: "ownership",
     session_id: "s",
-    backend: "test",
+    backend: "claude",
     cwd: root,
     phase: "post_tool",
     tool: "Write",

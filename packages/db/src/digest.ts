@@ -28,6 +28,30 @@ export type DigestInput = {
 };
 export class DigestStore {
   constructor(private readonly sqlite: Database) {}
+  hasChanges(projectId: string | null): boolean {
+    const key = projectId === null ? "global:" : `project:${projectId}`;
+    const state = this.sqlite
+      .query<
+        {
+          audit_cursor: number;
+          session_cursor: number;
+          token: string | null;
+          expires_at: number | null;
+        },
+        [string]
+      >(
+        "SELECT audit_cursor,session_cursor,token,expires_at FROM knowledge_digests WHERE project_key=?",
+      )
+      .get(key);
+    if (state?.token && (state.expires_at ?? 0) > Date.now() / 1000) return false;
+    return Boolean(
+      this.sqlite
+        .query(
+          "SELECT 1 FROM audit_log WHERE project_id IS ? AND rowid>? AND entity_type='memory' UNION SELECT 1 FROM sessions WHERE project_id IS ? AND rowid>? AND agent NOT IN ('orc-wiki','runner') LIMIT 1",
+        )
+        .get(projectId, state?.audit_cursor ?? 0, projectId, state?.session_cursor ?? 0),
+    );
+  }
   scopes(): (string | null)[] {
     return [
       null,

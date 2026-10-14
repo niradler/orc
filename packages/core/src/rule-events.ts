@@ -4,18 +4,21 @@ export type RuleEventCapability = {
   event: string;
   block: boolean;
   context: boolean;
+  rewrite_command: boolean;
 };
 
 function events(
   names: Record<string, string>,
   blocking: string[],
   context: string[],
+  commandRewriters: string[] = [],
 ): RuleEventCapability[] {
   return Object.entries(names).map(([native, event]) => ({
     native,
     event,
     block: blocking.includes(native),
     context: context.includes(native),
+    rewrite_command: commandRewriters.includes(native),
   }));
 }
 
@@ -76,6 +79,7 @@ export const RULE_EVENT_ADAPTERS: Record<RuleHookBackend, RuleEventCapability[]>
       "Stop",
       "SubagentStop",
     ],
+    ["PreToolUse"],
   ),
   cursor: events(
     {

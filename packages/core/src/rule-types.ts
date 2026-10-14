@@ -4,6 +4,84 @@ import { RuleFilterSchema } from "./rule-filters.js";
 
 const identity = z.string().trim().min(1).max(128);
 const base = { id: identity, reason: z.string().trim().min(1).max(1000) };
+export const ORC_RULE_ACTIONS = [
+  "load_context",
+  "record_event",
+  "snapshot_session",
+  "restore_session",
+  "sync_agent_memory",
+  "queue_knowledge_digest",
+] as const;
+export const RuleOrcActionSchema = z
+  .object({
+    type: z.literal("orc_action"),
+    action: z.enum(ORC_RULE_ACTIONS),
+    timeout_ms: z.number().int().min(100).max(2000).default(1000),
+    memory_directory: z.string().min(1).max(4096).optional(),
+    event_type: z
+      .enum([
+        "auto",
+        "file",
+        "task",
+        "rule",
+        "decision",
+        "git",
+        "env",
+        "error",
+        "plan",
+        "intent",
+        "subagent",
+      ])
+      .optional(),
+  })
+  .strict()
+  .superRefine((target, ctx) => {
+    if (target.memory_directory && target.action !== "sync_agent_memory")
+      ctx.addIssue({
+        code: "custom",
+        message: "Memory directory applies only to memory synchronization",
+      });
+    if (
+      target.memory_directory &&
+      target.memory_directory !== "auto" &&
+      !/^(?:[A-Za-z]:[\\/]|\\\\|\/|~\/)/.test(target.memory_directory)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Memory directory must be absolute, ~/ prefixed, or auto",
+      });
+    if (target.event_type && target.action !== "record_event")
+      ctx.addIssue({ code: "custom", message: "Event type applies only to event recording" });
+  });
+export const RuleCommandProcessorSchema = z
+  .object({
+    type: z.literal("rewrite_command"),
+    argv: z
+      .array(
+        z
+          .string()
+          .min(1)
+          .max(4096)
+          .refine((s) => !s.includes("\0")),
+      )
+      .min(1)
+      .max(32),
+    timeout_ms: z.number().int().min(100).max(2000),
+    rewrite_exit_codes: z.array(z.number().int().min(0).max(255)).min(1).max(16).default([0]),
+    passthrough_exit_codes: z.array(z.number().int().min(0).max(255)).max(16).default([]),
+  })
+  .strict()
+  .superRefine((target, ctx) => {
+    if (target.argv[0]?.includes("{command}"))
+      ctx.addIssue({ code: "custom", message: "Processor executable cannot contain {command}" });
+    if (target.argv.some((arg) => arg.includes("{command}") && arg !== "{command}"))
+      ctx.addIssue({ code: "custom", message: "{command} must be a complete argument" });
+    if (target.rewrite_exit_codes.some((code) => target.passthrough_exit_codes.includes(code)))
+      ctx.addIssue({
+        code: "custom",
+        message: "Rewrite and passthrough exit codes must not overlap",
+      });
+  });
 export const RuleScriptSchema = z
   .object({
     type: z.literal("script"),
@@ -49,6 +127,8 @@ export const EventRuleSchema = z
         .strict(),
       z.object({ type: z.literal("job"), job_id: identity }).strict(),
       RuleScriptSchema,
+      RuleCommandProcessorSchema,
+      RuleOrcActionSchema,
     ]),
   })
   .strict()
@@ -57,6 +137,37 @@ export const EventRuleSchema = z
       rule.scope.agents === "all" ? Object.keys(RULE_EVENT_ADAPTERS) : rule.scope.agents;
     for (const event of rule.scope.events) {
       const capabilities = agents.map((agent) => ruleEventCapability(agent, event));
+      if (rule.target.type === "orc_action") {
+        const allowed = {
+          load_context: ["session_start"],
+          record_event: ["post_tool", "post_tool_failure", "stop"],
+          snapshot_session: ["pre_compact"],
+          restore_session: ["session_start", "post_compact"],
+          sync_agent_memory: ["post_tool", "session_end"],
+          queue_knowledge_digest: ["session_end"],
+        }[rule.target.action];
+        if (capabilities.some((entry) => !entry || !allowed.includes(entry.event)))
+          ctx.addIssue({
+            code: "custom",
+            message: `Action ${rule.target.action} is unavailable for ${event}`,
+          });
+        if (
+          ["load_context", "restore_session"].includes(rule.target.action) &&
+          capabilities.some((entry) => !entry?.context)
+        )
+          ctx.addIssue({
+            code: "custom",
+            message: "Continuity context requires native context delivery",
+          });
+        if (
+          rule.target.action === "sync_agent_memory" &&
+          (rule.scope.agents === "all" || agents.some((agent) => agent !== "claude"))
+        )
+          ctx.addIssue({
+            code: "custom",
+            message: "Agent memory synchronization currently supports local Claude memory",
+          });
+      }
       if (!capabilities.some(Boolean))
         ctx.addIssue({
           code: "custom",
@@ -66,6 +177,14 @@ export const EventRuleSchema = z
         ctx.addIssue({
           code: "custom",
           message: "Native events require specific agents",
+        });
+      if (
+        rule.target.type === "rewrite_command" &&
+        (capabilities.some((entry) => !entry?.rewrite_command) || rule.scope.agents === "all")
+      )
+        ctx.addIssue({
+          code: "custom",
+          message: `Event ${event} cannot rewrite commands on every selected agent`,
         });
       if (rule.target.type === "block" && capabilities.some((entry) => entry && !entry.block))
         ctx.addIssue({
@@ -91,34 +210,7 @@ export const EventRuleSchema = z
         message: "Synchronous script timeout cannot exceed 2000ms",
       });
   });
-export const RuleSchema = z.discriminatedUnion("kind", [
-  EventRuleSchema,
-  z
-    .object({
-      ...base,
-      kind: z.literal("deny_tools"),
-      tools: z.array(identity).min(1).max(100),
-    })
-    .strict(),
-  z.object({ ...base, kind: z.literal("deny_delete") }).strict(),
-  z.object({ ...base, kind: z.literal("deny_comments") }).strict(),
-  z
-    .object({
-      ...base,
-      kind: z.literal("context"),
-      content: z.string().min(1).max(8000),
-    })
-    .strict(),
-  z
-    .object({
-      ...base,
-      kind: z.literal("enqueue_job"),
-      event: z.enum(["session_start", "post_tool", "session_end"]),
-      tools: z.array(identity).max(100),
-      job_id: identity,
-    })
-    .strict(),
-]);
+export const RuleSchema = EventRuleSchema;
 export const RulePolicySchema = z
   .object({
     workspace: z
@@ -135,13 +227,7 @@ export const RulePolicySchema = z
       ctx.addIssue({ code: "custom", message: "Rule IDs must be unique" });
     if (
       p.rules.reduce(
-        (sum, r) =>
-          sum +
-          (r.kind === "context"
-            ? r.content.length
-            : r.kind === "event" && r.target.type === "inject_context"
-              ? r.target.content.length
-              : 0),
+        (sum, r) => sum + (r.target.type === "inject_context" ? r.target.content.length : 0),
         0,
       ) > 16000
     )
@@ -149,19 +235,26 @@ export const RulePolicySchema = z
         code: "custom",
         message: "Policy context exceeds 16000 characters",
       });
-    if (
-      p.rules.reduce(
-        (sum, r) =>
-          sum +
-          (r.kind === "event" && r.target.type === "script" && r.target.mode === "sync"
-            ? r.target.timeout_ms
-            : 0),
-        0,
-      ) > 5000
-    )
+    const commandTimeout = Math.max(
+      0,
+      ...p.rules.map((rule) =>
+        rule.kind === "event" && rule.enabled && rule.target.type === "rewrite_command"
+          ? rule.target.timeout_ms
+          : 0,
+      ),
+    );
+    const scriptTimeout = p.rules.reduce(
+      (sum, rule) =>
+        sum +
+        (rule.kind === "event" && rule.target.type === "script" && rule.target.mode === "sync"
+          ? rule.target.timeout_ms
+          : 0),
+      0,
+    );
+    if (scriptTimeout * (commandTimeout ? 2 : 1) + commandTimeout > 5000)
       ctx.addIssue({
         code: "custom",
-        message: "Total synchronous script timeout exceeds 5000ms",
+        message: "Total synchronous execution and validation timeout exceeds 5000ms",
       });
   });
 export const RuleEventSchema = z
@@ -186,12 +279,18 @@ export type RulePolicy = z.infer<typeof RulePolicySchema>;
 export type RuleEvent = z.infer<typeof RuleEventSchema>;
 export type EventRule = z.infer<typeof EventRuleSchema>;
 export type RuleScript = z.infer<typeof RuleScriptSchema>;
+export type RuleCommandProcessor = z.infer<typeof RuleCommandProcessorSchema>;
+export type RuleOrcAction = z.infer<typeof RuleOrcActionSchema>;
 export type RuleDecision = {
   decision: "abstain" | "deny";
   reasons: { rule_id: string; reason: string }[];
   context: string[];
   jobs: { rule_id: string; job_id: string }[];
   scripts?: { rule_id: string; target: RuleScript }[];
+  command_processors?: { rule_id: string; target: RuleCommandProcessor }[];
+  updated_input?: Record<string, unknown>;
+  orc_actions?: { rule_id: string; revision_id?: string; target: RuleOrcAction }[];
+  action_errors?: { rule_id: string; reason: string }[];
 };
 
 export type RuleRevision = {

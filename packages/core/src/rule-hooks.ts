@@ -71,11 +71,14 @@ export function ruleHookOutput(
   );
   const denied = result.decision === "deny";
   const context = result.context.join("\n");
+  const updatedInput = denied ? undefined : result.updated_input;
+  if (updatedInput && !capability?.rewrite_command)
+    throw new Error("Agent event cannot replace command input");
   if (denied && !capability?.block)
     throw new Error("Rule denied an event without blocking support");
   if (context && !capability?.context)
     throw new Error("Rule context cannot be delivered on this event");
-  if (!denied && !context) return {};
+  if (!denied && !context && !updatedInput) return {};
   const native = capability?.native;
   if (backend === "cursor") {
     if (denied)
@@ -102,6 +105,7 @@ export function ruleHookOutput(
       hookEventName: native,
       ...(denied ? { permissionDecision: "deny", permissionDecisionReason: reason } : {}),
       ...(context ? { additionalContext: context } : {}),
+      ...(updatedInput ? { updatedInput } : {}),
     },
   };
 }

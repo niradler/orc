@@ -3,8 +3,10 @@ import type { RuleDecision, RuleEvent } from "@orc/core/rules";
 import type { SessionOpts } from "./types.js";
 
 export type SessionRuleGuard = {
-  evaluate: (event: RuleEvent) => RuleDecision;
+  evaluate: (event: RuleEvent, validation?: boolean) => RuleDecision;
+  evaluateCommand?: (event: RuleEvent) => RuleDecision;
   context: string;
+  builtinActions?: boolean;
 };
 
 export async function sessionRules(backend: string, opts: SessionOpts): Promise<SessionOpts> {
@@ -20,10 +22,9 @@ export async function sessionRules(backend: string, opts: SessionOpts): Promise<
     .filter((policy) =>
       policy.policy?.rules.some(
         (rule) =>
-          rule.kind !== "event" ||
-          (rule.enabled &&
-            (rule.scope.agents === "all" ||
-              rule.scope.agents.includes(agent as "claude" | "cursor" | "gemini" | "codex"))),
+          rule.enabled &&
+          (rule.scope.agents === "all" ||
+            rule.scope.agents.includes(agent as "claude" | "cursor" | "gemini" | "codex")),
       ),
     );
   if (backend !== "claude" && !policies.length) return opts;
@@ -34,8 +35,11 @@ export async function sessionRules(backend: string, opts: SessionOpts): Promise<
   return {
     ...opts,
     ruleGuard: {
+      builtinActions: opts.ruleBuiltinActions !== false,
       context: `ORC rules active: ${policies.map((p) => p.id).join(", ")}. Pre-tool rules apply regardless of automatic permissions.`,
-      evaluate: (event) => store.evaluate({ ...event, cwd: opts.cwd }),
+      evaluate: (event, validation) =>
+        store.evaluate({ ...event, cwd: opts.cwd }, true, validation),
+      evaluateCommand: (event) => store.evaluateCommand({ ...event, cwd: opts.cwd }),
     },
   };
 }

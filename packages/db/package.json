@@ -12,7 +12,8 @@
     "./wiki": "./src/wiki.ts",
     "./memories": "./src/memories.ts",
     "./skill-history": "./src/skill-history.ts",
-    "./digest": "./src/digest.ts"
+    "./digest": "./src/digest.ts",
+    "./agent-memory": "./src/agent-memory.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

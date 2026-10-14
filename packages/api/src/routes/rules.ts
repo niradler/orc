@@ -1,20 +1,39 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
+import { RULE_CATALOG } from "@orc/core/rule-catalog";
 import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
-import { RuleScriptSchema } from "@orc/core/rule-types";
+import {
+  EventRuleSchema,
+  RuleCommandProcessorSchema,
+  RuleOrcActionSchema,
+  RuleScriptSchema,
+} from "@orc/core/rule-types";
 import { RuleEventSchema, RulePolicySchema } from "@orc/core/rules";
 import { getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { bodyLimit } from "hono/body-limit";
+import { executeBuiltinRuleAction } from "../rule-builtins.js";
 
 const app = new OpenAPIHono();
 app.use("/rules/*", bodyLimit({ maxSize: 1_200_000 }));
 const ResultSchema = z.object({
+  orc_actions: z
+    .array(
+      z.object({
+        rule_id: z.string(),
+        revision_id: z.string().optional(),
+        target: RuleOrcActionSchema,
+      }),
+    )
+    .optional(),
   decision: z.enum(["abstain", "deny"]),
   reasons: z.array(z.object({ rule_id: z.string(), reason: z.string() })),
   context: z.array(z.string()),
   jobs: z.array(z.object({ rule_id: z.string(), job_id: z.string() })),
   scripts: z.array(z.object({ rule_id: z.string(), target: RuleScriptSchema })).optional(),
+  command_processors: z
+    .array(z.object({ rule_id: z.string(), target: RuleCommandProcessorSchema }))
+    .optional(),
 });
 const RevisionSchema = z.object({
   id: z.string(),
@@ -27,6 +46,74 @@ const RevisionSchema = z.object({
   current: z.boolean(),
 });
 const controls = (): RuleStore => new RuleStore(getSqlite());
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/rules/actions/run",
+    tags: ["Rules"],
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                event: RuleEventSchema,
+                revision_id: z.string().min(1).max(128),
+                rule_id: z.string().min(1).max(128),
+              })
+              .strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Bounded built-in action for a matching active rule",
+        content: {
+          "application/json": {
+            schema: z.object({ context: z.array(z.string().max(16000)), status: z.string() }),
+          },
+        },
+      },
+    },
+  }),
+  async (c) => {
+    const input = c.req.valid("json");
+    return c.json(
+      await executeBuiltinRuleAction(input.event, input.revision_id, input.rule_id),
+      200,
+    );
+  },
+);
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/rules/catalog",
+    tags: ["Rules"],
+    responses: {
+      200: {
+        description: "Reusable starter rules; none are activated by loading",
+        content: {
+          "application/json": {
+            schema: z.object({
+              templates: z.array(
+                z.object({
+                  id: z.string(),
+                  name: z.string(),
+                  description: z.string(),
+                  category: z.string(),
+                  configuration: z.string(),
+                  rule: EventRuleSchema,
+                }),
+              ),
+            }),
+          },
+        },
+      },
+    },
+  }),
+  (c) => c.json({ templates: [...RULE_CATALOG] }, 200),
+);
 app.openapi(
   createRoute({
     method: "get",
@@ -70,6 +157,7 @@ app.openapi(
                     event: z.string(),
                     block: z.boolean(),
                     context: z.boolean(),
+                    rewrite_command: z.boolean(),
                   }),
                 ),
               ),

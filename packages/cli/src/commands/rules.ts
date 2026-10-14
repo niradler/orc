@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { loadConfig } from "@orc/core/config";
+import { runRuleBuiltinActions } from "@orc/core/rule-builtin";
+import { copyRuleTemplate, RULE_CATALOG } from "@orc/core/rule-catalog";
 import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
 import { normalizeRuleHook, type RuleHookBackend, ruleHookOutput } from "@orc/core/rule-hooks";
 import { getSqlite } from "@orc/db/client";
@@ -18,6 +20,32 @@ export function rulesCommand(): Command {
   const command = new Command("rules").description(
     "Workspace policies, decision history and native event hooks",
   );
+  command
+    .command("catalog [template]")
+    .option("--workspace <path>", "Wrap the selected template in a workspace policy draft")
+    .description("List reusable templates or export one as JSON; does not activate rules")
+    .action((id: string | undefined, opts: { workspace?: string }) => {
+      if (!id) {
+        console.log(
+          JSON.stringify(
+            RULE_CATALOG.map(({ rule: _rule, ...metadata }) => metadata),
+            null,
+            2,
+          ),
+        );
+        return;
+      }
+      const rule = copyRuleTemplate(id);
+      console.log(
+        JSON.stringify(
+          opts.workspace
+            ? { workspace: resolve(opts.workspace), project_id: null, rules: [rule] }
+            : rule,
+          null,
+          2,
+        ),
+      );
+    });
   command
     .command("list")
     .option("--workspace <path>")
@@ -56,7 +84,10 @@ export function rulesCommand(): Command {
         }
         raw += decoder.decode();
         const normalized = normalizeRuleHook(backend as RuleHookBackend, event, JSON.parse(raw));
-        const result = new RuleStore(getSqlite()).evaluate(normalized);
+        const store = new RuleStore(getSqlite());
+        const result = await runRuleBuiltinActions(normalized, store.evaluateCommand(normalized));
+        for (const error of result.action_errors ?? [])
+          console.error(`${error.rule_id}: ${error.reason}`);
         console.log(JSON.stringify(ruleHookOutput(backend as RuleHookBackend, normalized, result)));
         if (result.decision === "deny") {
           console.error(
@@ -72,6 +103,10 @@ export function rulesCommand(): Command {
   command
     .command("install-hook <backend>")
     .requiredOption("--target <settings-file>")
+    .option(
+      "--legacy-hooks-dir <directory>",
+      "Replace only ORC continuity handlers in this explicit directory; preserve other handlers",
+    )
     .option(
       "--events <events>",
       "Comma-separated shared or native event names; defaults to all supported events",
@@ -131,8 +166,39 @@ export function rulesCommand(): Command {
           requested.includes(entry.native) ||
           requested.includes(`native:${entry.native}`),
       )) {
-        const entries = hooks[event] ?? [];
-        if (!Array.isArray(entries)) throw new Error("Hook entries must be arrays");
+        const previousEntries = hooks[event] ?? [];
+        if (!Array.isArray(previousEntries)) throw new Error("Hook entries must be arrays");
+        const legacyPaths = opts.legacyHooksDir
+          ? ["session-start.ts", "post-tool-use.ts", "pre-compact.ts"].map((file) =>
+              resolve(opts.legacyHooksDir, file).replaceAll("\\", "/").toLowerCase(),
+            )
+          : [];
+        const isLegacy = (handler: Record<string, unknown>): boolean => {
+          if (!handler || typeof handler !== "object") return false;
+          const handlerCommand = handler.command;
+          return (
+            typeof handlerCommand === "string" &&
+            legacyPaths.some((path) => {
+              const command = handlerCommand.replaceAll("\\", "/").toLowerCase();
+              const offset = command.indexOf(path);
+              return (
+                offset >= 0 &&
+                (offset === 0 || /[\s"']/.test(command[offset - 1] ?? "")) &&
+                (offset + path.length === command.length ||
+                  /[\s"']/.test(command[offset + path.length] ?? ""))
+              );
+            })
+          );
+        };
+        const entries = previousEntries.flatMap((entry: Record<string, unknown>) => {
+          if (!entry || typeof entry !== "object") throw new Error("Hook entries must be objects");
+          if (isLegacy(entry)) return [];
+          if (!Array.isArray(entry.hooks)) return [entry];
+          const handlers = entry.hooks.filter(
+            (handler: Record<string, unknown>) => !isLegacy(handler),
+          );
+          return handlers.length ? [{ ...entry, hooks: handlers }] : [];
+        });
         const hookCommand = `${prefix} --db ${quote(loadConfig().db.path)} rules hook ${backend} ${event}`;
         const existing = entries.findIndex(
           (entry: unknown) =>

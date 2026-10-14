@@ -1,15 +1,17 @@
 import type { HookCallback, SyncHookJSONOutput } from "@anthropic-ai/claude-agent-sdk";
+import { runRuleBuiltinActions } from "@orc/core/rule-builtin";
+import { processRuleCommand } from "@orc/core/rule-command";
 import { normalizeRuleHook, ruleHookOutput } from "@orc/core/rule-hooks";
 import type { SessionRuleGuard } from "./rules.js";
 import type { AgentEvent } from "./types.js";
 
-export function sessionStartRuleContext(
+export async function sessionStartRuleContext(
   guard: SessionRuleGuard,
   cwd: string,
   sessionId: string,
   eventId: string,
   source: "startup" | "resume",
-): string {
+): Promise<string> {
   const event = normalizeRuleHook("claude", "SessionStart", {
     session_id: sessionId,
     event_id: eventId,
@@ -17,9 +19,15 @@ export function sessionStartRuleContext(
     source,
     hook_event_name: "SessionStart",
   });
-  const result = guard.evaluate(event);
+  const result =
+    guard.builtinActions === false
+      ? guard.evaluate(event)
+      : await runRuleBuiltinActions(event, guard.evaluate(event));
   ruleHookOutput("claude", event, result);
-  return result.context.join("\n");
+  return [
+    ...result.context,
+    ...(result.action_errors ?? []).map((error) => `${error.rule_id}: ${error.reason}`),
+  ].join("\n");
 }
 
 export function createRulesHook(
@@ -34,7 +42,15 @@ export function createRulesHook(
         cwd,
         ...(toolUseId ? { tool_use_id: toolUseId } : {}),
       });
-      const result = guard.evaluate(event);
+      const decision = guard.evaluateCommand
+        ? guard.evaluateCommand(event)
+        : processRuleCommand(event, guard.evaluate(event), (replacement) =>
+            guard.evaluate(replacement, true),
+          );
+      const result =
+        guard.builtinActions === false ? decision : await runRuleBuiltinActions(event, decision);
+      for (const error of result.action_errors ?? [])
+        emit({ type: "system_status", data: `${error.rule_id}: ${error.reason}` });
       if (result?.decision === "deny") {
         const reason = result.reasons.map((r) => `${r.rule_id}: ${r.reason}`).join("; ");
         emit({

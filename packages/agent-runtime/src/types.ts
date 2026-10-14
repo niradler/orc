@@ -3,6 +3,7 @@ import type { SessionRuleGuard } from "./rules.js";
 export type AgentBackendName = "claude" | "acpx" | "a2a" | (string & {});
 
 export type SessionOpts = {
+  ruleBuiltinActions?: boolean;
   /** Undefined follows the currently selected host; null explicitly means local. */
   executionHost?: string | null | undefined;
   ruleGuard?: SessionRuleGuard;

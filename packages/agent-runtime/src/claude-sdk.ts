@@ -166,7 +166,7 @@ class ClaudeSDKSession implements AgentSession {
         ? createRulesHook(this.opts.ruleGuard, this.opts.cwd, (event) => this.push(event))
         : undefined;
       const startupContext = this.opts.ruleGuard
-        ? sessionStartRuleContext(
+        ? await sessionStartRuleContext(
             this.opts.ruleGuard,
             this.opts.cwd,
             this.runtimeSessionId ?? this.id,

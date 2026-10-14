@@ -1,6 +1,7 @@
 import { loadConfig } from "@orc/core/config";
 import type { KnowledgeDocument } from "@orc/core/knowledge";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
+import type { RuleTemplate } from "@orc/core/rule-catalog";
 import type { RuleEventCapability, RuleHookBackend } from "@orc/core/rule-events";
 import type { RuleDecision, RuleEvent, RulePolicy, RuleRevision } from "@orc/core/rule-types";
 import type {
@@ -148,6 +149,7 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<SessionHandoff>("POST", `/session-handoffs/${encodeURIComponent(id)}/prepare`),
     },
     rules: {
+      catalog: () => c<{ templates: RuleTemplate[] }>("GET", "/rules/catalog"),
       list: (workspace?: string) =>
         c<{
           enabled: boolean;

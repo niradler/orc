@@ -233,7 +233,20 @@ describe("POST /terminals", () => {
       {
         workspace: root,
         project_id: null,
-        rules: [{ id: "files", kind: "deny_delete", reason: "Protect fixture" }],
+        rules: [
+          {
+            id: "files",
+            kind: "event",
+            enabled: true,
+            reason: "Protect fixture",
+            scope: { agents: "all", events: ["pre_tool"] },
+            filter: {
+              match: "all",
+              conditions: [{ predicate: { field: "tool", operator: "in", value: ["Bash"] } }],
+            },
+            target: { type: "block" },
+          },
+        ],
       },
       null,
       "Protect isolated terminal fixture",
@@ -760,8 +773,15 @@ describe("worktree terminals and /git/worktrees", () => {
         rules: [
           {
             id: "files",
-            kind: "deny_delete",
+            kind: "event",
+            enabled: true,
             reason: "Protect derived workspaces",
+            scope: { agents: "all", events: ["pre_tool"] },
+            filter: {
+              match: "all",
+              conditions: [{ predicate: { field: "tool", operator: "in", value: ["Bash"] } }],
+            },
+            target: { type: "block" },
           },
         ],
       },

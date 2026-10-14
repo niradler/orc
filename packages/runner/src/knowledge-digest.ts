@@ -49,6 +49,7 @@ export async function runDigestAgent(input: DigestInput, timeoutMs = 600000): Pr
     });
     const work = async (): Promise<void> => {
       session = await openAgentSession(config.agent_loop.default_backend, {
+        ruleBuiltinActions: false,
         cwd,
         autoApprove: true,
         mcpAlwaysLoad: true,

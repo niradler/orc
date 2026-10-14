@@ -1159,6 +1159,199 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rules/actions/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        event: {
+                            id: string;
+                            session_id: string;
+                            backend: string;
+                            cwd: string;
+                            phase: string;
+                            native_event?: string;
+                            payload?: {
+                                [key: string]: unknown;
+                            };
+                            tool?: string;
+                            /** @default {} */
+                            input?: {
+                                [key: string]: unknown;
+                            };
+                            /** @default false */
+                            failed?: boolean;
+                        };
+                        revision_id: string;
+                        rule_id: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Bounded built-in action for a matching active rule */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            context: string[];
+                            status: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rules/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Reusable starter rules; none are activated by loading */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            templates: {
+                                id: string;
+                                name: string;
+                                description: string;
+                                category: string;
+                                configuration: string;
+                                rule: {
+                                    id: string;
+                                    reason: string;
+                                    /** @enum {string} */
+                                    kind: "event";
+                                    enabled: boolean;
+                                    scope: {
+                                        agents: "all" | ("claude" | "cursor" | "gemini" | "codex")[];
+                                        events: string[];
+                                    };
+                                    filter: {
+                                        /** @enum {string} */
+                                        match: "all" | "any";
+                                        conditions: {
+                                            predicate: {
+                                                field: string;
+                                                /** @enum {string} */
+                                                operator: "equals";
+                                                value: string | number | boolean | null;
+                                            } | {
+                                                field: string;
+                                                /** @enum {string} */
+                                                operator: "in";
+                                                value: (string | number | boolean | null)[];
+                                            } | {
+                                                field: string;
+                                                /** @enum {string} */
+                                                operator: "exists";
+                                            } | {
+                                                field: string;
+                                                /** @enum {string} */
+                                                operator: "contains" | "starts_with" | "ends_with";
+                                                value: string;
+                                                ignore_case?: boolean;
+                                            } | {
+                                                field: string;
+                                                /** @enum {string} */
+                                                operator: "regex";
+                                                value: string;
+                                                ignore_case?: boolean;
+                                            };
+                                            negate?: boolean;
+                                        }[];
+                                    };
+                                    target: {
+                                        /** @enum {string} */
+                                        type: "block";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "inject_context";
+                                        content: string;
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "job";
+                                        job_id: string;
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "script";
+                                        /** @enum {string} */
+                                        mode: "sync" | "background";
+                                        argv: string[];
+                                        timeout_ms: number;
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "rewrite_command";
+                                        argv: string[];
+                                        timeout_ms: number;
+                                        /**
+                                         * @default [
+                                         *       0
+                                         *     ]
+                                         */
+                                        rewrite_exit_codes: number[];
+                                        /** @default [] */
+                                        passthrough_exit_codes: number[];
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "orc_action";
+                                        /** @enum {string} */
+                                        action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory" | "queue_knowledge_digest";
+                                        /** @default 1000 */
+                                        timeout_ms: number;
+                                        memory_directory?: string;
+                                        /** @enum {string} */
+                                        event_type?: "auto" | "file" | "task" | "rule" | "decision" | "git" | "env" | "error" | "plan" | "intent" | "subagent";
+                                    };
+                                };
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rules": {
         parameters: {
             query?: never;
@@ -1192,7 +1385,7 @@ export interface paths {
                                 policy: {
                                     workspace: string;
                                     project_id: string | null;
-                                    rules: ({
+                                    rules: {
                                         id: string;
                                         reason: string;
                                         /** @enum {string} */
@@ -1254,39 +1447,31 @@ export interface paths {
                                             mode: "sync" | "background";
                                             argv: string[];
                                             timeout_ms: number;
+                                        } | {
+                                            /** @enum {string} */
+                                            type: "rewrite_command";
+                                            argv: string[];
+                                            timeout_ms: number;
+                                            /**
+                                             * @default [
+                                             *       0
+                                             *     ]
+                                             */
+                                            rewrite_exit_codes: number[];
+                                            /** @default [] */
+                                            passthrough_exit_codes: number[];
+                                        } | {
+                                            /** @enum {string} */
+                                            type: "orc_action";
+                                            /** @enum {string} */
+                                            action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory" | "queue_knowledge_digest";
+                                            /** @default 1000 */
+                                            timeout_ms: number;
+                                            memory_directory?: string;
+                                            /** @enum {string} */
+                                            event_type?: "auto" | "file" | "task" | "rule" | "decision" | "git" | "env" | "error" | "plan" | "intent" | "subagent";
                                         };
-                                    } | {
-                                        id: string;
-                                        reason: string;
-                                        /** @enum {string} */
-                                        kind: "deny_tools";
-                                        tools: string[];
-                                    } | {
-                                        id: string;
-                                        reason: string;
-                                        /** @enum {string} */
-                                        kind: "deny_delete";
-                                    } | {
-                                        id: string;
-                                        reason: string;
-                                        /** @enum {string} */
-                                        kind: "deny_comments";
-                                    } | {
-                                        id: string;
-                                        reason: string;
-                                        /** @enum {string} */
-                                        kind: "context";
-                                        content: string;
-                                    } | {
-                                        id: string;
-                                        reason: string;
-                                        /** @enum {string} */
-                                        kind: "enqueue_job";
-                                        /** @enum {string} */
-                                        event: "session_start" | "post_tool" | "session_end";
-                                        tools: string[];
-                                        job_id: string;
-                                    })[];
+                                    }[];
                                 } | null;
                                 previous_id: string | null;
                                 reason: string;
@@ -1319,6 +1504,7 @@ export interface paths {
                                     event: string;
                                     block: boolean;
                                     context: boolean;
+                                    rewrite_command: boolean;
                                 }[];
                             };
                         };
@@ -1356,7 +1542,7 @@ export interface paths {
                         policy: {
                             workspace: string;
                             project_id: string | null;
-                            rules: ({
+                            rules: {
                                 id: string;
                                 reason: string;
                                 /** @enum {string} */
@@ -1418,39 +1604,31 @@ export interface paths {
                                     mode: "sync" | "background";
                                     argv: string[];
                                     timeout_ms: number;
+                                } | {
+                                    /** @enum {string} */
+                                    type: "rewrite_command";
+                                    argv: string[];
+                                    timeout_ms: number;
+                                    /**
+                                     * @default [
+                                     *       0
+                                     *     ]
+                                     */
+                                    rewrite_exit_codes?: number[];
+                                    /** @default [] */
+                                    passthrough_exit_codes?: number[];
+                                } | {
+                                    /** @enum {string} */
+                                    type: "orc_action";
+                                    /** @enum {string} */
+                                    action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory" | "queue_knowledge_digest";
+                                    /** @default 1000 */
+                                    timeout_ms?: number;
+                                    memory_directory?: string;
+                                    /** @enum {string} */
+                                    event_type?: "auto" | "file" | "task" | "rule" | "decision" | "git" | "env" | "error" | "plan" | "intent" | "subagent";
                                 };
-                            } | {
-                                id: string;
-                                reason: string;
-                                /** @enum {string} */
-                                kind: "deny_tools";
-                                tools: string[];
-                            } | {
-                                id: string;
-                                reason: string;
-                                /** @enum {string} */
-                                kind: "deny_delete";
-                            } | {
-                                id: string;
-                                reason: string;
-                                /** @enum {string} */
-                                kind: "deny_comments";
-                            } | {
-                                id: string;
-                                reason: string;
-                                /** @enum {string} */
-                                kind: "context";
-                                content: string;
-                            } | {
-                                id: string;
-                                reason: string;
-                                /** @enum {string} */
-                                kind: "enqueue_job";
-                                /** @enum {string} */
-                                event: "session_start" | "post_tool" | "session_end";
-                                tools: string[];
-                                job_id: string;
-                            })[];
+                            }[];
                         };
                         expected_id: string | null;
                         reason: string;
@@ -1471,7 +1649,7 @@ export interface paths {
                             policy: {
                                 workspace: string;
                                 project_id: string | null;
-                                rules: ({
+                                rules: {
                                     id: string;
                                     reason: string;
                                     /** @enum {string} */
@@ -1533,39 +1711,31 @@ export interface paths {
                                         mode: "sync" | "background";
                                         argv: string[];
                                         timeout_ms: number;
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "rewrite_command";
+                                        argv: string[];
+                                        timeout_ms: number;
+                                        /**
+                                         * @default [
+                                         *       0
+                                         *     ]
+                                         */
+                                        rewrite_exit_codes: number[];
+                                        /** @default [] */
+                                        passthrough_exit_codes: number[];
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "orc_action";
+                                        /** @enum {string} */
+                                        action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory" | "queue_knowledge_digest";
+                                        /** @default 1000 */
+                                        timeout_ms: number;
+                                        memory_directory?: string;
+                                        /** @enum {string} */
+                                        event_type?: "auto" | "file" | "task" | "rule" | "decision" | "git" | "env" | "error" | "plan" | "intent" | "subagent";
                                     };
-                                } | {
-                                    id: string;
-                                    reason: string;
-                                    /** @enum {string} */
-                                    kind: "deny_tools";
-                                    tools: string[];
-                                } | {
-                                    id: string;
-                                    reason: string;
-                                    /** @enum {string} */
-                                    kind: "deny_delete";
-                                } | {
-                                    id: string;
-                                    reason: string;
-                                    /** @enum {string} */
-                                    kind: "deny_comments";
-                                } | {
-                                    id: string;
-                                    reason: string;
-                                    /** @enum {string} */
-                                    kind: "context";
-                                    content: string;
-                                } | {
-                                    id: string;
-                                    reason: string;
-                                    /** @enum {string} */
-                                    kind: "enqueue_job";
-                                    /** @enum {string} */
-                                    event: "session_start" | "post_tool" | "session_end";
-                                    tools: string[];
-                                    job_id: string;
-                                })[];
+                                }[];
                             } | null;
                             previous_id: string | null;
                             reason: string;
@@ -1620,7 +1790,7 @@ export interface paths {
                             policy: {
                                 workspace: string;
                                 project_id: string | null;
-                                rules: ({
+                                rules: {
                                     id: string;
                                     reason: string;
                                     /** @enum {string} */
@@ -1682,39 +1852,31 @@ export interface paths {
                                         mode: "sync" | "background";
                                         argv: string[];
                                         timeout_ms: number;
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "rewrite_command";
+                                        argv: string[];
+                                        timeout_ms: number;
+                                        /**
+                                         * @default [
+                                         *       0
+                                         *     ]
+                                         */
+                                        rewrite_exit_codes: number[];
+                                        /** @default [] */
+                                        passthrough_exit_codes: number[];
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "orc_action";
+                                        /** @enum {string} */
+                                        action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory" | "queue_knowledge_digest";
+                                        /** @default 1000 */
+                                        timeout_ms: number;
+                                        memory_directory?: string;
+                                        /** @enum {string} */
+                                        event_type?: "auto" | "file" | "task" | "rule" | "decision" | "git" | "env" | "error" | "plan" | "intent" | "subagent";
                                     };
-                                } | {
-                                    id: string;
-                                    reason: string;
-                                    /** @enum {string} */
-                                    kind: "deny_tools";
-                                    tools: string[];
-                                } | {
-                                    id: string;
-                                    reason: string;
-                                    /** @enum {string} */
-                                    kind: "deny_delete";
-                                } | {
-                                    id: string;
-                                    reason: string;
-                                    /** @enum {string} */
-                                    kind: "deny_comments";
-                                } | {
-                                    id: string;
-                                    reason: string;
-                                    /** @enum {string} */
-                                    kind: "context";
-                                    content: string;
-                                } | {
-                                    id: string;
-                                    reason: string;
-                                    /** @enum {string} */
-                                    kind: "enqueue_job";
-                                    /** @enum {string} */
-                                    event: "session_start" | "post_tool" | "session_end";
-                                    tools: string[];
-                                    job_id: string;
-                                })[];
+                                }[];
                             } | null;
                             previous_id: string | null;
                             reason: string;
@@ -1777,6 +1939,21 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            orc_actions?: {
+                                rule_id: string;
+                                revision_id?: string;
+                                target: {
+                                    /** @enum {string} */
+                                    type: "orc_action";
+                                    /** @enum {string} */
+                                    action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory" | "queue_knowledge_digest";
+                                    /** @default 1000 */
+                                    timeout_ms: number;
+                                    memory_directory?: string;
+                                    /** @enum {string} */
+                                    event_type?: "auto" | "file" | "task" | "rule" | "decision" | "git" | "env" | "error" | "plan" | "intent" | "subagent";
+                                };
+                            }[];
                             /** @enum {string} */
                             decision: "abstain" | "deny";
                             reasons: {
@@ -1797,6 +1974,23 @@ export interface paths {
                                     mode: "sync" | "background";
                                     argv: string[];
                                     timeout_ms: number;
+                                };
+                            }[];
+                            command_processors?: {
+                                rule_id: string;
+                                target: {
+                                    /** @enum {string} */
+                                    type: "rewrite_command";
+                                    argv: string[];
+                                    timeout_ms: number;
+                                    /**
+                                     * @default [
+                                     *       0
+                                     *     ]
+                                     */
+                                    rewrite_exit_codes: number[];
+                                    /** @default [] */
+                                    passthrough_exit_codes: number[];
                                 };
                             }[];
                         };

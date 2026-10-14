@@ -240,6 +240,7 @@ test("should execute the actual session driver with MCP tools and persist the wo
     },
     async startSession(options) {
       expect(options.toolAllowlist).toContain("mcp__orc__digest_complete");
+      expect(options.ruleBuiltinActions).toBe(false);
       return session;
     },
     async resumeSession() {

@@ -22,7 +22,20 @@ afterAll(() => {
 const policy = {
   workspace: root,
   project_id: null,
-  rules: [{ id: "guard", kind: "deny_delete", reason: "No deletion" }],
+  rules: [
+    {
+      id: "guard",
+      kind: "event",
+      enabled: true,
+      reason: "No deletion",
+      scope: { agents: "all", events: ["pre_tool"] },
+      filter: {
+        match: "all",
+        conditions: [{ predicate: { field: "tool", operator: "in", value: ["Bash"] } }],
+      },
+      target: { type: "block" },
+    },
+  ],
 };
 test("rules endpoints authenticate and reject malformed policies", async () => {
   const file = join(root, "not-a-directory.ts");
@@ -68,6 +81,26 @@ test("rules endpoints authenticate and reject malformed policies", async () => {
     ).status,
   ).toBe(400);
 });
+
+test("should preserve typed null filter values and publish generic processor contracts in OpenAPI", async () => {
+  const response = await app.request("/openapi.json", {
+    headers: { Authorization: "Bearer test-secret" },
+  });
+  expect(response.status).toBe(200);
+  const serialized = JSON.stringify(await response.json());
+  expect(serialized.includes('"enum":["rewrite_command"]')).toBe(true);
+  expect(serialized.includes('"type":"null"')).toBe(true);
+  expect(serialized.includes('"command_processors"')).toBe(true);
+});
+
+test("should expose reusable templates through authenticated read-only catalog access", async () => {
+  expect((await app.request("/api/rules/catalog")).status).toBe(401);
+  const response = await req(app, "GET", "/rules/catalog");
+  expect(response.status).toBe(200);
+  const catalog = await response.json<{ templates: { id: string }[] }>();
+  expect(catalog.templates.some((entry) => entry.id === "rtk-git")).toBe(true);
+  expect(getSqlite().query("SELECT id FROM rule_decisions").all()).toHaveLength(0);
+});
 test("real API activation, dry run, history and guarded revert", async () => {
   const response = await req(app, "POST", "/rules/activate", {
     policy,
@@ -85,7 +118,7 @@ test("real API activation, dry run, history and guarded revert", async () => {
   const check = await req(app, "POST", "/rules/check", {
     id: "event",
     session_id: "session",
-    backend: "test",
+    backend: "claude",
     cwd: root,
     phase: "pre_tool",
     tool: "Bash",
@@ -134,7 +167,7 @@ test("should administer and evaluate policies without a token in open mode", asy
       body: JSON.stringify({
         id: "open-event",
         session_id: "open-session",
-        backend: "test",
+        backend: "claude",
         cwd: workspace,
         phase: "pre_tool",
         tool: "Bash",

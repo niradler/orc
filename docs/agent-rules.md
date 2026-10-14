@@ -9,7 +9,7 @@ absolute workspace directory and its descendants.
 
 Set `rules.enabled: true` in ORC configuration, or `ORC_RULES_ENABLED=true`, and restart
 the host to enable interception for ORC-managed sessions. Rule administration over
-HTTP requires a configured `ORC_API_SECRET` and the normal authenticated API access.
+HTTP uses normal API authentication; configure `ORC_API_SECRET` to require a Bearer token.
 No policy is enabled or installed globally by upgrading ORC.
 
 Create a policy JSON file:
@@ -18,9 +18,16 @@ Create a policy JSON file:
 {
   "workspace": "C:\\Projects\\my-app",
   "project_id": null,
-  "rules": [
-    { "id": "keep-files", "kind": "deny_delete", "reason": "Prevent deletion" },
-    { "id": "no-comments", "kind": "deny_comments", "reason": "Prevent new code comments" }
+  "rules": [{
+    "id": "block-rm-rf", "kind": "event", "enabled": true,
+    "reason": "Bash command text matched rm -rf",
+    "scope": { "agents": ["claude"], "events": ["pre_tool"] },
+    "filter": { "match": "all", "conditions": [
+      { "predicate": { "field": "tool", "operator": "equals", "value": "Bash" } },
+      { "predicate": { "field": "input.command", "operator": "contains", "value": "rm -rf" } }
+    ] },
+    "target": { "type": "block" }
+  }
   ]
 }
 ```
@@ -31,7 +38,9 @@ revisions, redacted decisions and action status. `orc rules revert <current-revi
 --reason "Observed regression"` creates a new revision restoring the immediately previous
 policy; reverting the initial revision disables it. Stale updates/reverts return conflict.
 All previous versions and reasons remain stored. The dashboard's **Rules** page (`/rules`)
-provides the Scope → Filtering → Target editor, file-protection presets, history and revert.
+shows an Applied rules table with Edit and Enable/Disable actions. Add rule opens one form. Select a template to autofill it, or fill the inputs manually. Settings manages workspace/project scope, agent
+assignments, connections and policy history. The editor retains the
+Scope → Filtering → Target definition; settings changes use the same validated policy revisions.
 
 API: `GET /api/rules`, `POST /api/rules/activate`, `POST /api/rules/revert` and
 `POST /api/rules/check`. Check accepts a normalized event and performs a dry run: it
@@ -57,39 +66,115 @@ regex. Empty conditions match every event in scope.
 Targets are block, inject context, run an enabled ORC job, or run a custom script.
 Block/context require actual event capabilities. Synchronous scripts can return both
 a decision and context. Background scripts use the existing queue and cannot change
-the already completed hook decision. Existing policies and presets remain supported.
+the already completed hook decision.
 Claude Notification/Setup are side-effect listeners without context injection. TaskCompleted
 and TeammateIdle remain action listeners: native exit-code feedback differs from SDK JSON
 control, so the shared catalog conservatively excludes declarative blocking there.
 
 For a command filter, select all agents, Pre-tool, field `input.command`, Contains,
 value `rm -rf`, then Block. This matches that spelling; regex/string filtering cannot
-classify every equivalent shell program. Use the conservative file-protection preset
-when that stronger policy is needed.
+classify every equivalent shell program. Other tool names and other deletion methods are unaffected. There is no universal file-deletion preset.
 
 ## Decisions and supported rules
 
-- `deny_tools`: deny an exact list of tool names on pre-tool events.
-- `deny_delete`: permit recognized structured writes/edits and reads, and deny deletion,
-  rename, arbitrary shell execution, subagent delegation and unverified tools. This is
-  deliberately conservative: a shell-text regex cannot safely classify every script.
-  It protects file existence; ordinary replacement of a file's contents remains an edit.
-- `deny_comments`: reconstruct supported file writes/edits and compare parsed JS/TS comment
-  tokens with the current file. New or changed comment tokens are denied; existing comments
-  may remain. Strings, URLs, regular expressions, templates and JSX text are distinguished
-  from comments. Unsupported languages, patch tools, malformed/ambiguous edits or invalid
-  syntax are denied. New license/directive comments are also comments and require a policy
-  change. This does not judge whether a comment is useful or prohibit ORC task comments.
-- `context`: provide explicit context on session start. Instruction delivery is recorded
-  separately from proof that an agent followed it.
-- `enqueue_job`: on `session_start`, successful `post_tool` or `session_end`, enqueue an
-  existing enabled ordinary job belonging to the policy's project. `tools: []` matches all
-  tools; otherwise match exact tool names. Policy definitions never contain shell commands.
+### Route commands through an external processor
+
+The **Reusable rule catalog** on the Rules page provides Git/test RTK routing, a generic
+command processor, pattern blocking, session guidance and synchronous guard templates.
+Choose **Customize this rule** to load an independent draft, then change its scope, filter
+and target and save. Loading does not activate it; saved copies remain yours when the
+catalog changes. Existing IDs receive a new suffix rather than silently replacing a rule.
+The same catalog is available through `GET /api/rules/catalog`, the SDK's `rules.catalog()`
+and `orc rules catalog`. Export a policy draft with
+`orc rules catalog rtk-git --workspace C:/Projects/my-app`; review it before activation.
+
+The **Rewrite command with a processor** target uses the existing Scope → Filtering → Target
+editor. Select **Claude**, **pre tool**, and narrow conditions on `tool` / `input.command`.
+The initial qualified tool is Claude's **Bash**. Other agents/events reject this target
+until their command replacement capability is implemented and verified.
+
+```json
+{
+  "id": "compact-git-status",
+  "kind": "event",
+  "enabled": true,
+  "reason": "Route Git status through my local processor",
+  "scope": { "agents": ["claude"], "events": ["pre_tool"] },
+  "filter": {
+    "match": "all",
+    "conditions": [
+      { "predicate": { "field": "tool", "operator": "equals", "value": "Bash" } },
+      { "predicate": { "field": "input.command", "operator": "equals", "value": "git status" } }
+    ]
+  },
+  "target": {
+    "type": "rewrite_command",
+    "argv": ["rtk", "rewrite", "{command}"],
+    "timeout_ms": 1000,
+    "rewrite_exit_codes": [0, 3],
+    "passthrough_exit_codes": [1]
+  }
+}
+```
+
+RTK is an example, not an ORC dependency. Any trusted local CLI can implement this contract:
+
+1. ORC checks all original-command rules before running a processor.
+2. The processor receives the normalized event as stdin JSON. A complete `{command}`
+   argument is replaced by the original command as **one literal argument**, without shell
+   interpolation. The configured executable is never interpolated.
+3. On a configured rewrite exit code (default `[0]`), stdout must be a nonempty replacement
+   command. On a passthrough exit code (default `[]`), stdout must be empty.
+4. ORC rechecks the replacement against active blocking rules and synchronous guard scripts.
+   Validation does not reroute or enqueue another job/background script.
+5. Claude receives `updatedInput.command`, executes it with its normal permission checks,
+   and returns its stdout/stderr and exit status. ORC never auto-allows a rewritten command.
+
+A custom processor can simply parse stdin and print its chosen replacement command. It
+must plan the command rather than execute it: execution belongs to the host, preventing
+duplicate execution. The replacement program is responsible for preserving the original
+command's intended behavior and exit semantics; ORC does not certify arbitrary wrappers.
+
+Processors have a 100–2000 ms timeout and 64 KiB stdout/stderr bounds. Missing executables,
+timeouts, oversized/invalid output, unknown exit codes, ambiguous multiple matches or failed
+replacement checks deny the call. Configured passthrough is explicit; there is no automatic
+fallback after a failure. Narrow overlapping filters rather than relying on rule order.
+Synchronous guards and processing share a bounded budget, including replacement validation.
+
+Current RTK `rewrite` documents 0/3 as rewritten commands, 1 as passthrough and 2 as denial;
+use the mappings above, and ensure the returned command's executable is on the agent host's
+PATH. [RTK rewrite protocol](https://github.com/rtk-ai/rtk/blob/master/src/hooks/rewrite_cmd.rs).
+ORC does not install RTK or its hooks. Native Claude hooks use the same target through
+`orc rules hook claude PreToolUse`; their host version/trust still needs qualification.
+
+`/rules/check` only previews the selected processor; it does not execute it or produce a
+replacement. Existing revision history and enable/disable controls apply. `command_route`
+history records a redacted rewritten/passthrough/denied outcome and replacement input hash,
+not the original/replacement command or output. Configured processor arguments are policy
+data and remain visible in policy history: do not embed credentials in them.
+Processors are trusted programs, inherit the host environment and receive tool input;
+they are not sandboxed. Referenced local processor files receive the same structured-edit
+protection as rule scripts. Processor planning runs on each delivered hook, including a
+replay; it must be safe to repeat. The agent host owns actual command execution.
+
+`bun scripts/validate-command-processors.ts <rtk-executable>` runs an isolated real-agent
+probe with RTK, a custom CLI, a nonzero replacement exit and original/replacement denials.
+Evidence is retained under `.claude/tooling/command-processors/`.
+
+All rules use the same event/filter/action schema. The catalog contains explicit command
+and file-text checks, session guidance, command routing and built-in ORC actions. There
+are no special deletion-prevention or language-comment rule types.
+
+For example, the Bash rm -rf template tests tool equals Bash and input.command against
+its visible regex. It does not cover alternate flag order, Python deletion or other tools.
+The comment-marker template checks Write content and JS/TS filename text; it matches
+URLs and strings containing the same markers too. The separate comment guidance template
+injects an instruction and does not block tools. Users edit the actual conditions before saving.
 
 Multiple matching policies/rules are combined; deny wins. An abstention preserves the
 agent's normal permission checks. Every active policy protects ORC storage and recognized
 hook/policy configuration files from structured edits, including resolved symlink targets.
-File-protection rules also reject edits outside the workspace. Session identities and native tool IDs
+Session identities and native tool IDs
 deduplicate recorded events; an identity replayed with different input fails closed.
 Decision records store input hashes rather than raw tool arguments or file contents.
 
@@ -234,3 +319,14 @@ Native agent terminal launches also check the derived worktree directory before 
 a branch or worktree, then check the final directory before spawning. Reattaching a live
 session checks the existing terminal directory before changing its session association.
 Human shell terminals remain available in protected workspaces.
+# Built-in continuity and learning catalog
+
+The Rules catalog includes editable templates for loading project context, recording significant tool events, snapshotting before compaction, restoring after compaction, sharing Claude memory topics, and queuing wiki learning. Loading a template creates a draft; save it to activate it for the selected workspace. Every action remains configurable in the rule editor.
+
+These templates use `orc_action` targets: `load_context`, `record_event`, `snapshot_session`, `restore_session`, `sync_agent_memory`, and `queue_knowledge_digest`. Actions call the authenticated local API and reuse existing ORC services. Configure the same database, `ORC_API_BASE`, API secret, and `ORC_RULES_ENABLED=true` for the agent hooks and API. Dry runs select actions without executing them. Receipt history records outcomes without storing returned context or imported note bodies. Continuity failures appear as diagnostics; command guards retain their existing enforcement behavior.
+
+The three old continuity scripts under `hooks/` now forward native events to the rule dispatcher. Install the native adapter into an explicit settings file; use `orc rules install-hook claude --target <settings-file> --legacy-hooks-dir <absolute-hooks-directory>` to replace those specific old handlers while preserving other hooks and creating a backup. Live-session identity and transcript connection remain adapter plumbing. This migration does not install global settings automatically.
+
+`claude-share-memory` imports local Claude Markdown topic files into project-scoped ORC memory. Set its directory to `auto` or an explicit absolute path. Successful file writes trigger an import; session end rescans the configured directory. Updating a source topic updates the same ORC record, with source provenance. The `MEMORY.md` index is excluded. Imported notes remain attributed facts, not automatically promoted instructions. Files are bounded and symlink escapes are rejected. Explicit configuration is required for remote memory sources or Claude settings overrides that automatic directory discovery cannot see. Source deletion does not delete shared memories.
+
+`orc-wiki-learning` queues the existing enabled `orc-knowledge-digest` job after changed inputs, coalesces outstanding requests, and runs through the existing scheduler. It launches no model inside the hook. Enable this rule deliberately: the existing learning job can incur model charges and update wiki or skill instructions. The trigger checks the rule project for changed inputs; the existing global job then visits all changed project scopes, each with its own digest completion watermark, as scheduled learning does. Digest sessions suppress built-in continuity actions to prevent recursive learning triggers while retaining command guards.

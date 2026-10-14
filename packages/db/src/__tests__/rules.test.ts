@@ -14,7 +14,20 @@ const store = new RuleStore(db);
 const policy = {
   workspace: root,
   project_id: "p",
-  rules: [{ id: "deny", kind: "deny_delete", reason: "No delete" }],
+  rules: [
+    {
+      id: "deny",
+      kind: "event",
+      enabled: true,
+      reason: "No delete",
+      scope: { agents: "all", events: ["pre_tool"] },
+      filter: {
+        match: "all",
+        conditions: [{ predicate: { field: "tool", operator: "in", value: ["Bash"] } }],
+      },
+      target: { type: "block" },
+    },
+  ],
 };
 afterAll(() => {
   db.close();
@@ -31,9 +44,15 @@ describe("rule history and action evidence", () => {
         rules: [
           {
             id: "shell",
-            kind: "deny_tools",
-            tools: ["Bash"],
+            kind: "event",
+            enabled: true,
             reason: "No shell",
+            scope: { agents: "all", events: ["pre_tool"] },
+            filter: {
+              match: "all",
+              conditions: [{ predicate: { field: "tool", operator: "in", value: ["Bash"] } }],
+            },
+            target: { type: "block" },
           },
         ],
       },
@@ -46,7 +65,7 @@ describe("rule history and action evidence", () => {
     expect(() => store.revert(next.id, "Stale revert")).toThrow("reload");
     expect(store.history().filter((r) => r.current).length).toBe(1);
     const disabled = store.revert(reverted.id, "Restore previous revision");
-    expect(disabled.policy?.rules[0]?.kind).toBe("deny_tools");
+    expect(disabled.policy?.rules[0]?.kind).toBe("event");
   });
   test("project and job validation rejects missing/cross-project action", () => {
     const current = store.history().find((r) => r.current);
@@ -60,11 +79,15 @@ describe("rule history and action evidence", () => {
           rules: [
             {
               id: "job",
-              kind: "enqueue_job",
-              event: "post_tool",
-              tools: [],
-              job_id: "other",
+              kind: "event",
+              enabled: true,
               reason: "validate",
+              scope: { agents: "all", events: ["post_tool"] },
+              filter: {
+                match: "all",
+                conditions: [{ predicate: { field: "failed", operator: "equals", value: false } }],
+              },
+              target: { type: "job", job_id: "other" },
             },
           ],
         },
@@ -81,11 +104,18 @@ describe("rule history and action evidence", () => {
         rules: [
           {
             id: "job",
-            kind: "enqueue_job",
-            event: "post_tool",
-            tools: ["Write"],
-            job_id: "job",
+            kind: "event",
+            enabled: true,
             reason: "validate",
+            scope: { agents: "all", events: ["post_tool"] },
+            filter: {
+              match: "all",
+              conditions: [
+                { predicate: { field: "tool", operator: "in", value: ["Write"] } },
+                { predicate: { field: "failed", operator: "equals", value: false } },
+              ],
+            },
+            target: { type: "job", job_id: "job" },
           },
         ],
       },

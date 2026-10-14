@@ -519,6 +519,7 @@ export const toolDefinitions = [
       "Build ≤2KB XML snapshot of current session state. Call from PreCompact hook before context window compacts.",
     inputSchema: z.object({
       session_id: z.string().optional(),
+      project_id: z.string().min(1).nullable().optional(),
     }),
   },
   {
@@ -1367,12 +1368,16 @@ export async function executeTool(
     }
 
     case "session_snapshot": {
-      const { session_id } = args as { session_id?: string };
+      const { session_id, project_id } = args as {
+        session_id?: string;
+        project_id?: string | null;
+      };
       const config = loadConfig();
       const maxBytes = config.context.snapshot_max_bytes;
       const sid = session_id ?? process.env.ORC_SESSION_ID ?? "default";
 
       const activeTasks = await db.query.tasks.findMany({
+        ...(project_id !== undefined ? { where: sql`${tasks.project_id} IS ${project_id}` } : {}),
         limit: 10,
         orderBy: (t, { desc }) => [desc(t.updated_at)],
       });

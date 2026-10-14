@@ -11,10 +11,10 @@ import { createRulesHook, sessionStartRuleContext } from "../rules-hook.js";
 const root = mkdtempSync(join(tmpdir(), "orc-guard-tests-"));
 const originalEnabled = process.env.ORC_RULES_ENABLED;
 const originalDb = process.env.ORC_DB_PATH;
-test("managed startup and resume deliver context before query and fail closed on unavailable rules", () => {
+test("managed startup and resume deliver context before query and fail closed on unavailable rules", async () => {
   for (const source of ["startup", "resume"] as const) {
     expect(
-      sessionStartRuleContext(
+      await sessionStartRuleContext(
         {
           context: "",
           evaluate(event) {
@@ -35,7 +35,7 @@ test("managed startup and resume deliver context before query and fail closed on
       ),
     ).toBe("injected");
   }
-  expect(() =>
+  await expect(
     sessionStartRuleContext(
       {
         context: "",
@@ -48,7 +48,7 @@ test("managed startup and resume deliver context before query and fail closed on
       "failed",
       "startup",
     ),
-  ).toThrow("unavailable");
+  ).rejects.toThrow("unavailable");
 });
 beforeAll(() => {
   process.env.ORC_RULES_ENABLED = "true";
@@ -77,9 +77,15 @@ test("sessions created before policy activation pick it up; unsupported adapter 
       rules: [
         {
           id: "shell",
-          kind: "deny_tools",
-          tools: ["Bash"],
+          kind: "event",
+          enabled: true,
           reason: "No shell",
+          scope: { agents: "all", events: ["pre_tool"] },
+          filter: {
+            match: "all",
+            conditions: [{ predicate: { field: "tool", operator: "in", value: ["Bash"] } }],
+          },
+          target: { type: "block" },
         },
       ],
     },

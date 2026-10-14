@@ -1,5 +1,10 @@
 import { RULE_EVENT_ADAPTERS, type RuleHookBackend } from "@orc/core/rule-events";
-import { type EventRule, EventRuleSchema } from "@orc/core/rule-types";
+import {
+  type EventRule,
+  EventRuleSchema,
+  ORC_RULE_ACTIONS,
+  type RuleOrcAction,
+} from "@orc/core/rule-types";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,14 +33,16 @@ export function EventRuleEditor({
   projectId,
   pending,
   onSave,
+  isEditing = Boolean(rule),
 }: {
   rule?: EventRule;
   projectId: string | null;
   pending: boolean;
+  isEditing?: boolean;
   onSave: (rule: EventRule) => void;
 }) {
   const [id, setId] = useState(rule?.id ?? `rule-${Date.now().toString(36)}`);
-  const [reason, setReason] = useState(rule?.reason ?? "Block matched destructive command");
+  const [reason, setReason] = useState(rule?.reason ?? "");
   const [agents, setAgents] = useState<string>(
     rule?.scope.agents === "all" || !rule ? "all" : rule.scope.agents.join(","),
   );
@@ -62,9 +69,9 @@ export function EventRuleEditor({
       })) ?? [
         {
           key: crypto.randomUUID(),
-          field: "input.command",
+          field: "",
           operator: "contains",
-          value: "rm -rf",
+          value: "",
           valueType: "string",
           negate: false,
           ignoreCase: false,
@@ -85,7 +92,37 @@ export function EventRuleEditor({
   const [timeout, setTimeoutValue] = useState(
     rule?.target.type === "script" ? rule.target.timeout_ms : 1000,
   );
+  const [processorArgv, setProcessorArgv] = useState(
+    rule?.target.type === "rewrite_command"
+      ? JSON.stringify(rule.target.argv, null, 2)
+      : '["rtk", "rewrite", "{command}"]',
+  );
+  const [processorTimeout, setProcessorTimeout] = useState(
+    rule?.target.type === "rewrite_command" ? rule.target.timeout_ms : 1000,
+  );
+  const [rewriteCodes, setRewriteCodes] = useState(
+    rule?.target.type === "rewrite_command"
+      ? JSON.stringify(rule.target.rewrite_exit_codes)
+      : "[0, 3]",
+  );
+  const [passthroughCodes, setPassthroughCodes] = useState(
+    rule?.target.type === "rewrite_command"
+      ? JSON.stringify(rule.target.passthrough_exit_codes)
+      : "[1]",
+  );
   const [enabled, setEnabled] = useState(rule?.enabled ?? true);
+  const [orcAction, setOrcAction] = useState<RuleOrcAction["action"]>(
+    rule?.target.type === "orc_action" ? rule.target.action : "load_context",
+  );
+  const [orcTimeout, setOrcTimeout] = useState(
+    rule?.target.type === "orc_action" ? rule.target.timeout_ms : 1000,
+  );
+  const [memoryDirectory, setMemoryDirectory] = useState(
+    rule?.target.type === "orc_action" ? (rule.target.memory_directory ?? "auto") : "auto",
+  );
+  const [eventType, setEventType] = useState(
+    rule?.target.type === "orc_action" ? (rule.target.event_type ?? "auto") : "auto",
+  );
   const [error, setError] = useState("");
   const jobs = useJobs({ enabled: true });
   const selected =
@@ -103,7 +140,7 @@ export function EventRuleEditor({
         (agent) => RULE_EVENT_ADAPTERS[agent]?.map((entry) => `native:${entry.native}`) ?? [],
       ),
     );
-  const supports = (feature: "block" | "context"): boolean =>
+  const supports = (feature: "block" | "context" | "rewrite_command"): boolean =>
     eventNames.every((event) => {
       const entries = selected.flatMap((agent) =>
         RULE_EVENT_ADAPTERS[agent].filter(
@@ -152,7 +189,25 @@ export function EventRuleEditor({
               ? { type, content }
               : type === "job"
                 ? { type, job_id: jobId }
-                : { type, mode, argv: JSON.parse(argv), timeout_ms: timeout },
+                : type === "rewrite_command"
+                  ? {
+                      type,
+                      argv: JSON.parse(processorArgv),
+                      timeout_ms: processorTimeout,
+                      rewrite_exit_codes: JSON.parse(rewriteCodes),
+                      passthrough_exit_codes: JSON.parse(passthroughCodes),
+                    }
+                  : type === "orc_action"
+                    ? {
+                        type,
+                        action: orcAction,
+                        timeout_ms: orcTimeout,
+                        ...(orcAction === "sync_agent_memory"
+                          ? { memory_directory: memoryDirectory }
+                          : {}),
+                        ...(orcAction === "record_event" ? { event_type: eventType } : {}),
+                      }
+                    : { type, mode, argv: JSON.parse(argv), timeout_ms: timeout },
       });
       setError("");
       onSave(parsed);
@@ -406,7 +461,9 @@ export function EventRuleEditor({
         </p>
       </fieldset>
       <fieldset className="space-y-3">
-        <legend className="font-bold mb-2">3. Target</legend>
+        <legend className="font-bold mb-2" data-testid="rule-target-heading">
+          3. Target
+        </legend>
         <select
           aria-label="Target"
           data-testid="rule-target"
@@ -423,7 +480,90 @@ export function EventRuleEditor({
           </option>
           <option value="job">Run ORC job</option>
           <option value="script">Run custom script</option>
+          <option value="orc_action">Run built-in ORC action</option>
+          <option value="rewrite_command" disabled={!supports("rewrite_command")}>
+            Rewrite command with a processor
+            {!supports("rewrite_command") ? " (select Claude pre tool)" : ""}
+          </option>
         </select>
+        {type === "orc_action" && (
+          <>
+            <Label htmlFor="rule-orc-action">ORC action</Label>
+            <select
+              id="rule-orc-action"
+              data-testid="rule-orc-action"
+              className={selectClass}
+              value={orcAction}
+              onChange={(event) => setOrcAction(event.target.value as RuleOrcAction["action"])}
+            >
+              {ORC_RULE_ACTIONS.map((action) => (
+                <option key={action} value={action}>
+                  {action.split("_").join(" ")}
+                </option>
+              ))}
+            </select>
+            {orcAction === "sync_agent_memory" && (
+              <>
+                <Label htmlFor="rule-memory-directory">Claude memory directory</Label>
+                <Input
+                  id="rule-memory-directory"
+                  data-testid="rule-memory-directory"
+                  value={memoryDirectory}
+                  onChange={(event) => setMemoryDirectory(event.target.value)}
+                />
+                <p className="text-xs text-outline">
+                  Use auto or the absolute local directory. Only Markdown topic files inside that
+                  directory are shared. Session end catches writes without file-tool events.
+                </p>
+              </>
+            )}
+            {orcAction === "record_event" && (
+              <>
+                <Label htmlFor="rule-record-event-type">Recorded event type</Label>
+                <select
+                  id="rule-record-event-type"
+                  data-testid="rule-record-event-type"
+                  className={selectClass}
+                  value={eventType}
+                  onChange={(event) => setEventType(event.target.value as typeof eventType)}
+                >
+                  {[
+                    "auto",
+                    "file",
+                    "task",
+                    "rule",
+                    "decision",
+                    "git",
+                    "env",
+                    "error",
+                    "plan",
+                    "intent",
+                    "subagent",
+                  ].map((value) => (
+                    <option key={value} value={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            <Label htmlFor="rule-orc-timeout">Action timeout (milliseconds)</Label>
+            <Input
+              id="rule-orc-timeout"
+              data-testid="rule-orc-timeout"
+              type="number"
+              min={100}
+              max={2000}
+              value={orcTimeout}
+              onChange={(event) => setOrcTimeout(Number(event.target.value))}
+            />
+            <p className="text-xs text-outline">
+              Uses the existing ORC services and agent connection. Failures are visible in action
+              history. Wiki consolidation is queued through Jobs and can incur model charges; it
+              runs only when the scheduler dispatches it.
+            </p>
+          </>
+        )}
         {type === "inject_context" && (
           <textarea
             aria-label="Context to inject"
@@ -499,6 +639,55 @@ export function EventRuleEditor({
             </p>
           </>
         )}
+        {type === "rewrite_command" && (
+          <>
+            <Label htmlFor="rule-processor-argv">
+              Command processor (executable and arguments)
+            </Label>
+            <textarea
+              id="rule-processor-argv"
+              data-testid="rule-processor-argv"
+              className={`${selectClass} min-h-24 font-mono`}
+              value={processorArgv}
+              onChange={(event) => setProcessorArgv(event.target.value)}
+            />
+            <Label htmlFor="rule-processor-timeout">Timeout (milliseconds)</Label>
+            <Input
+              id="rule-processor-timeout"
+              data-testid="rule-processor-timeout"
+              type="number"
+              min={100}
+              max={2000}
+              value={processorTimeout}
+              onChange={(event) => setProcessorTimeout(Number(event.target.value))}
+            />
+            <Label htmlFor="rule-processor-rewrite-codes">
+              Exit codes returning a replacement (JSON array)
+            </Label>
+            <Input
+              id="rule-processor-rewrite-codes"
+              data-testid="rule-processor-rewrite-codes"
+              value={rewriteCodes}
+              onChange={(event) => setRewriteCodes(event.target.value)}
+            />
+            <Label htmlFor="rule-processor-passthrough-codes">
+              Exit codes keeping the original command (JSON array)
+            </Label>
+            <Input
+              id="rule-processor-passthrough-codes"
+              data-testid="rule-processor-passthrough-codes"
+              value={passthroughCodes}
+              onChange={(event) => setPassthroughCodes(event.target.value)}
+            />
+            <p className="text-xs text-outline">
+              Use any trusted local CLI. Event JSON goes to stdin; {"{command}"} as a complete
+              argument passes the original command without shell interpolation. Stdout must contain
+              the replacement command. Claude Bash executes it and returns its output, with normal
+              permission checks. RTK example: rewrite codes [0, 3], passthrough [1]. Other failures
+              block the call.
+            </p>
+          </>
+        )}
       </fieldset>
       <label className="flex gap-2 text-sm">
         <input
@@ -519,11 +708,12 @@ export function EventRuleEditor({
         disabled={
           pending ||
           (type === "block" && !supports("block")) ||
-          (type === "inject_context" && !supports("context"))
+          (type === "inject_context" && !supports("context")) ||
+          (type === "rewrite_command" && !supports("rewrite_command"))
         }
         onClick={save}
       >
-        {rule ? "Save rule changes" : "Save rule"}
+        {isEditing ? "Save rule changes" : "Save rule"}
       </Button>
     </div>
   );

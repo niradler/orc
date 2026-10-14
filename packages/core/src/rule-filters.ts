@@ -1,7 +1,14 @@
 import { RE2JS } from "re2js";
 import { z } from "zod";
 
-const scalar = z.union([z.string().max(16000), z.number().finite(), z.boolean(), z.null()]);
+const scalar = z.union([z.string().max(16000), z.number().finite(), z.boolean(), z.null()]).meta({
+  anyOf: [
+    { type: "string", maxLength: 16000 },
+    { type: "number" },
+    { type: "boolean" },
+    { type: "null" },
+  ],
+});
 const field = z
   .string()
   .min(1)

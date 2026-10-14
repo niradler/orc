@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { ConflictError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
+import { processRuleCommand } from "@orc/core/rule-command";
 import { ruleEventCapability } from "@orc/core/rule-events";
 import { matchesRuleFilter } from "@orc/core/rule-filters";
 import { runRuleScript } from "@orc/core/rule-script";
@@ -70,6 +71,64 @@ export class RuleStore {
     installRules(db);
   }
 
+  evaluateCommand(raw: unknown): RuleDecision {
+    const event = RuleEventSchema.parse(raw);
+    const original = this.evaluate(event);
+    const result = processRuleCommand(event, original, (replacement) =>
+      this.evaluate(replacement, true, true),
+    );
+    if (!original.command_processors?.length) return result;
+    const serialized = JSON.stringify(event);
+    const inputHash = createHash("sha256").update(serialized).digest("hex");
+    const redacted = {
+      decision: result.decision,
+      reasons: result.reasons,
+      context: [],
+      jobs: [],
+      command_processing: {
+        rule_ids: original.command_processors.map((processor) => processor.rule_id),
+        status:
+          result.decision === "deny"
+            ? "denied"
+            : result.updated_input
+              ? "rewritten"
+              : "passthrough",
+        command_hash: result.updated_input
+          ? createHash("sha256").update(JSON.stringify(result.updated_input)).digest("hex")
+          : null,
+      },
+    };
+    for (const active of this.active(event.cwd)) {
+      if (
+        !active.policy?.rules.some((rule) =>
+          original.command_processors?.some((processor) => processor.rule_id === rule.id),
+        )
+      )
+        continue;
+      const eventKey = createHash("sha256")
+        .update(
+          JSON.stringify([active.id, event.backend, event.session_id, event.id, "command_route"]),
+        )
+        .digest("hex");
+      this.db
+        .query(
+          "INSERT INTO rule_decisions(id,event_key,input_hash,revision_id,session_id,phase,tool,result,created_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(event_key) DO UPDATE SET result=excluded.result",
+        )
+        .run(
+          ulid(),
+          eventKey,
+          inputHash,
+          active.id,
+          event.session_id,
+          "command_route",
+          event.tool ?? null,
+          JSON.stringify(redacted),
+          Date.now(),
+        );
+    }
+    return result;
+  }
+
   history(workspace?: string): RuleRevision[] {
     return this.db
       .query<RevisionRow, [string | null, string | null]>(
@@ -118,12 +177,7 @@ export class RuleStore {
         if (project !== null && !this.db.query("SELECT id FROM projects WHERE id=?").get(project))
           throw new ValidationError("Unknown policy project");
         for (const rule of policy?.rules ?? []) {
-          const jobId =
-            rule.kind === "enqueue_job"
-              ? rule.job_id
-              : rule.kind === "event" && rule.target.type === "job"
-                ? rule.target.job_id
-                : null;
+          const jobId = rule.target.type === "job" ? rule.target.job_id : null;
           if (!jobId) continue;
           const job = this.db
             .query<{ project_id: string | null; command: string }, [string]>(
@@ -191,7 +245,7 @@ export class RuleStore {
     );
   }
 
-  evaluate(raw: unknown, record = true): RuleDecision {
+  evaluate(raw: unknown, record = true, validation = false): RuleDecision {
     const event = RuleEventSchema.parse(raw);
     const serialized = JSON.stringify(event);
     if (serialized.length > 1_100_000) throw new ValidationError("Rule event exceeds input limit");
@@ -226,10 +280,52 @@ export class RuleStore {
     );
     if (process.env.ORC_RULE_ACTION !== "1" && synchronousBudget > 5000)
       throw new ValidationError("Combined synchronous script timeout exceeds 5000ms");
+    if (!validation && process.env.ORC_RULE_ACTION !== "1") {
+      const applicable = policies
+        .flatMap((active) => active.policy?.rules ?? [])
+        .filter(
+          (rule) =>
+            rule.kind === "event" &&
+            rule.enabled &&
+            (rule.scope.agents === "all" ||
+              rule.scope.agents.some((agent) => agent === event.backend)) &&
+            rule.scope.events.some(
+              (name) => name === event.phase || name === `native:${event.native_event}`,
+            ),
+        );
+      const processors = applicable.filter(
+        (rule) =>
+          rule.kind === "event" &&
+          rule.target.type === "rewrite_command" &&
+          matchesRuleFilter(rule.filter, event),
+      );
+      if (processors.length) {
+        const validationBudget = applicable.reduce(
+          (sum, rule) =>
+            sum +
+            (rule.kind === "event" && rule.target.type === "script" && rule.target.mode === "sync"
+              ? rule.target.timeout_ms
+              : 0),
+          0,
+        );
+        const processorBudget = processors.reduce(
+          (sum, rule) =>
+            sum +
+            (rule.kind === "event" && rule.target.type === "rewrite_command"
+              ? rule.target.timeout_ms
+              : 0),
+          0,
+        );
+        if (synchronousBudget + validationBudget + processorBudget > 5000)
+          throw new ValidationError(
+            "Combined command processing and validation timeout exceeds 5000ms",
+          );
+      }
+    }
     for (const active of policies) {
       if (!active.policy) continue;
       const result = record
-        ? this.record(active, event, serialized)
+        ? this.record(active, event, serialized, validation)
         : evaluateRules(active.policy, event, [
             this.db.filename,
             `${this.db.filename}-wal`,
@@ -243,17 +339,41 @@ export class RuleStore {
         combined.scripts ??= [];
         combined.scripts.push(...result.scripts);
       }
+      if (result.command_processors?.length && !validation) {
+        combined.command_processors ??= [];
+        combined.command_processors.push(...result.command_processors);
+      }
+      if (result.orc_actions?.length && !validation) {
+        combined.orc_actions ??= [];
+        combined.orc_actions.push(
+          ...result.orc_actions.map((action) => ({ ...action, revision_id: active.id })),
+        );
+      }
     }
     if (combined.context.reduce((sum, text) => sum + text.length, 0) > 32000)
       throw new ValidationError("Combined rule context exceeds 32000 characters");
     return combined;
   }
 
-  private record(active: RuleRevision, event: RuleEvent, serialized: string): RuleDecision {
+  private record(
+    active: RuleRevision,
+    event: RuleEvent,
+    serialized: string,
+    validation: boolean,
+  ): RuleDecision {
     if (!active.policy) throw new ValidationError("Inactive policy");
     const inputHash = createHash("sha256").update(serialized).digest("hex");
     const eventKey = createHash("sha256")
-      .update(JSON.stringify([active.id, event.backend, event.session_id, event.id, event.phase]))
+      .update(
+        JSON.stringify([
+          active.id,
+          event.backend,
+          event.session_id,
+          event.id,
+          event.phase,
+          ...(validation ? ["command-validation"] : []),
+        ]),
+      )
       .digest("hex");
     const recorded = this.db
       .transaction(() => {
@@ -280,6 +400,14 @@ export class RuleStore {
         if (process.env.ORC_RULE_ACTION === "1") {
           result.jobs = [];
           result.scripts = [];
+          result.command_processors = [];
+          result.orc_actions = [];
+        }
+        if (validation) {
+          result.jobs = [];
+          result.command_processors = [];
+          result.orc_actions = [];
+          result.scripts = (result.scripts ?? []).filter((script) => script.target.mode === "sync");
         }
         const id = ulid();
         const now = Date.now();
