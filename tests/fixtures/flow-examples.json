@@ -1,0 +1,315 @@
+{
+  "orc-parallel-review": {
+    "name": "orc-parallel-review",
+    "description": "Build once, then review three ways concurrently (correctness, security, tests) and join on all three before deciding. Fan-out costs tokens; use it where a single reviewer demonstrably misses things.",
+    "entry": "build",
+    "limits": {
+      "max_node_executions": 24,
+      "execution_timeout_secs": 21600,
+      "max_parallel": 3
+    },
+    "nodes": {
+      "build": {
+        "kind": "agent",
+        "skill": "$task.skill_name",
+        "backend": "$task.agent_backend",
+        "model": "$task.agent_model",
+        "role": "worker",
+        "task_status": "doing",
+        "outcomes": [
+          "submitted",
+          "blocked"
+        ],
+        "on_error": "blocked",
+        "vars": {
+          "correctness_ok": null,
+          "security_ok": null,
+          "tests_ok": null
+        },
+        "prompt": "Complete the task, addressing every reviewer finding already in the ledger. Report `submitted` when ready for review, or `blocked` if you need a human decision."
+      },
+      "fan_out": {
+        "kind": "gate",
+        "description": "Activate every review branch at once",
+        "routing": "all"
+      },
+      "review_correctness": {
+        "kind": "agent",
+        "skill": "orc-reviewer",
+        "backend": "$task.agent_backend",
+        "role": "reviewer",
+        "task_status": "review",
+        "outcomes": [
+          "reviewed"
+        ],
+        "on_error": "reviewed",
+        "prompt": "Review for correctness only: logic errors, edge cases, error handling, contract violations. Ignore security and test coverage — other reviewers own those. Report `reviewed` and set the var `correctness_ok` to true if you found nothing blocking, false otherwise."
+      },
+      "review_security": {
+        "kind": "agent",
+        "skill": "orc-reviewer",
+        "backend": "$task.agent_backend",
+        "role": "reviewer",
+        "task_status": "review",
+        "outcomes": [
+          "reviewed"
+        ],
+        "on_error": "reviewed",
+        "prompt": "Review for security only: injection, authz gaps, secret handling, unsafe deserialisation, path traversal. Report `reviewed` and set the var `security_ok` to true if you found nothing blocking, false otherwise."
+      },
+      "review_tests": {
+        "kind": "agent",
+        "skill": "orc-reviewer",
+        "backend": "$task.agent_backend",
+        "role": "reviewer",
+        "task_status": "review",
+        "outcomes": [
+          "reviewed"
+        ],
+        "on_error": "reviewed",
+        "prompt": "Review test coverage only: does a test actually fail without this change, are the edge cases covered, does the suite pass? Report `reviewed` and set the var `tests_ok` to true if coverage is adequate, false otherwise."
+      },
+      "verdict": {
+        "kind": "gate",
+        "description": "Waits for all three reviews, then decides from their vars",
+        "join": {
+          "mode": "all",
+          "from": [
+            "review_correctness",
+            "review_security",
+            "review_tests"
+          ]
+        }
+      },
+      "done": {
+        "kind": "terminal",
+        "task_status": "done"
+      },
+      "blocked_out": {
+        "kind": "terminal",
+        "task_status": "blocked"
+      },
+      "escalated": {
+        "kind": "terminal",
+        "task_status": "paused"
+      }
+    },
+    "edges": [
+      {
+        "from": "build",
+        "to": "fan_out",
+        "when": {
+          "outcome": "submitted"
+        },
+        "label": "submitted"
+      },
+      {
+        "from": "build",
+        "to": "blocked_out",
+        "when": {
+          "outcome": "blocked"
+        },
+        "label": "blocked"
+      },
+      {
+        "from": "fan_out",
+        "to": "review_correctness"
+      },
+      {
+        "from": "fan_out",
+        "to": "review_security"
+      },
+      {
+        "from": "fan_out",
+        "to": "review_tests"
+      },
+      {
+        "from": "review_correctness",
+        "to": "verdict",
+        "when": {
+          "always": true
+        }
+      },
+      {
+        "from": "review_security",
+        "to": "verdict",
+        "when": {
+          "always": true
+        }
+      },
+      {
+        "from": "review_tests",
+        "to": "verdict",
+        "when": {
+          "always": true
+        }
+      },
+      {
+        "from": "verdict",
+        "to": "done",
+        "when": {
+          "all": [
+            {
+              "var": "correctness_ok",
+              "eq": true
+            },
+            {
+              "var": "security_ok",
+              "eq": true
+            },
+            {
+              "var": "tests_ok",
+              "eq": true
+            }
+          ]
+        },
+        "label": "all clear"
+      },
+      {
+        "from": "verdict",
+        "to": "build",
+        "when": {
+          "visits": {
+            "node": "build",
+            "lt": {
+              "var": "max_review_rounds"
+            }
+          }
+        },
+        "label": "findings, rework"
+      },
+      {
+        "from": "verdict",
+        "to": "escalated",
+        "when": {
+          "always": true
+        },
+        "label": "out of rounds"
+      }
+    ]
+  },
+  "orc-supervisor": {
+    "name": "orc-supervisor",
+    "description": "Long-horizon executor plus an independent supervisor that re-verifies from clean context each round and steers with a directive. For multi-milestone work where 'done' must mean verified.",
+    "entry": "execute",
+    "limits": {
+      "max_node_executions": 24,
+      "execution_timeout_secs": 172800,
+      "max_parallel": 1
+    },
+    "nodes": {
+      "execute": {
+        "kind": "agent",
+        "description": "Executor — keeps its own context and ledger across rounds",
+        "skill": "orc-coder",
+        "backend": "$task.agent_backend",
+        "model": "$task.agent_model",
+        "role": "worker",
+        "task_status": "doing",
+        "reset_on_revisit": false,
+        "outcomes": [
+          "milestone",
+          "complete",
+          "blocked"
+        ],
+        "on_error": "blocked",
+        "prompt": "Work the next milestone only. Keep the task comments updated as your ledger: what is done, what is verified, what is next. If a supervisor directive is in the flow vars, treat it as the highest priority. Report `milestone` when a milestone is genuinely finished and verified, `complete` when the whole task is, or `blocked` if you need a human."
+      },
+      "supervise": {
+        "kind": "agent",
+        "description": "Supervisor — clean context every round, re-verifies independently",
+        "skill": "orc-reviewer",
+        "backend": "$task.agent_backend",
+        "role": "reviewer",
+        "task_status": "review",
+        "reset_on_revisit": true,
+        "outcomes": [
+          "verified",
+          "continue",
+          "reject"
+        ],
+        "on_error": "supervise_failed",
+        "prompt": "You are auditing from outside the executor's context. Read the ledger and verify the claims yourself — do not take 'done' on trust. Report `verified` if the whole task is genuinely complete, `continue` if the milestone holds but work remains, or `reject` if a claim does not hold. With `continue` or `reject`, set a `directive` var telling the executor exactly what to do next."
+      },
+      "done": {
+        "kind": "terminal",
+        "task_status": "done"
+      },
+      "blocked_out": {
+        "kind": "terminal",
+        "task_status": "blocked"
+      },
+      "escalated": {
+        "kind": "terminal",
+        "description": "Supervision budget spent without convergence",
+        "task_status": "paused"
+      }
+    },
+    "edges": [
+      {
+        "from": "execute",
+        "to": "supervise",
+        "when": {
+          "any": [
+            {
+              "outcome": "milestone"
+            },
+            {
+              "outcome": "complete"
+            }
+          ]
+        },
+        "label": "checkpoint"
+      },
+      {
+        "from": "execute",
+        "to": "blocked_out",
+        "when": {
+          "outcome": "blocked"
+        },
+        "label": "blocked"
+      },
+      {
+        "from": "supervise",
+        "to": "done",
+        "when": {
+          "outcome": "verified"
+        },
+        "label": "verified"
+      },
+      {
+        "from": "supervise",
+        "to": "execute",
+        "when": {
+          "all": [
+            {
+              "any": [
+                {
+                  "outcome": "continue"
+                },
+                {
+                  "outcome": "reject"
+                }
+              ]
+            },
+            {
+              "visits": {
+                "node": "execute",
+                "lt": 8
+              }
+            }
+          ]
+        },
+        "label": "keep going"
+      },
+      {
+        "from": "supervise",
+        "to": "escalated",
+        "when": {
+          "always": true
+        },
+        "label": "no convergence"
+      }
+    ]
+  }
+}

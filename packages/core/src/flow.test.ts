@@ -220,6 +220,7 @@ describe("declaredOutcomes", () => {
     expect(declaredOutcomes(parsed.definition, "review").sort()).toEqual([
       "approved",
       "changes_requested",
+      "insufficient_evidence",
     ]);
   });
 

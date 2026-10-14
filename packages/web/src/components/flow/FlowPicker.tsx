@@ -42,7 +42,7 @@ export function FlowPicker({ value, onChange, testId, disabled }: FlowPickerProp
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
         <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-          Flow
+          Workflow
         </Label>
         {viewable && (
           <button
@@ -68,8 +68,15 @@ export function FlowPicker({ value, onChange, testId, disabled }: FlowPickerProp
             {defaultFlow ? `Default (${defaultFlow})` : "Default"}
           </SelectItem>
           {flows.map((flow) => (
-            <SelectItem key={flow.name} value={flow.name} className="font-label text-xs">
-              {flow.name}
+            <SelectItem
+              key={flow.name}
+              value={flow.name}
+              data-testid={`flow-option-${flow.name}`}
+              className="font-label text-xs"
+            >
+              {flow.source === "builtin" && flow.version >= 2
+                ? flow.description.split(":")[0]
+                : flow.name}
               <span className="text-outline"> · {flow.source}</span>
             </SelectItem>
           ))}

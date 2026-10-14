@@ -472,14 +472,11 @@ Definitions are validated on load - unknown edge targets, unreachable nodes, ter
 
 ### Built-in flows
 
-| Flow                    | Shape                                                                       |
-| ----------------------- | --------------------------------------------------------------------------- |
-| `orc-default`           | build → review → done, loops back while `max_review_rounds` allows          |
-| `orc-review-only`       | A single review pass, for a task a human moved straight to `review`         |
-| `orc-plan-build-verify` | planner → coder → reviewer, looping until acceptance criteria pass          |
-| `orc-fix-verify`        | bugfix → independent confirmation the fix holds and a regression test exists |
-| `orc-supervisor`        | Executor keeping its context + supervisor re-verifying from clean context   |
-| `orc-parallel-review`   | Fan-out to correctness/security/tests reviewers, join on all three          |
+| Built-in workflow | Use it for |
+| --- | --- |
+| `orc-default` | Development: understand, plan as needed, implement, verify and independently review; bounded rework. `required_review: false` explicitly skips agent review. |
+| `orc-human-review` | The same development process plus human sign-off. Agent review and human approval are always required, even if `required_review` is false. |
+| `orc-review-only` | Review existing work; approve, request changes, or pause when evidence is insufficient. |
 
 ### Custom per-task graphs
 
@@ -487,7 +484,7 @@ For work no named flow fits, attach an inline graph to the single task:
 
 ```bash
 orc flow attach <taskId> --file ./my-graph.json --start   # bespoke, this task only
-orc flow attach <taskId> --name orc-supervisor             # a named flow
+orc flow attach <taskId> --name orc-human-review             # a named flow
 orc flow validate --file ./my-graph.json                   # check before attaching
 orc flow status <taskId>                                   # active nodes + ledger
 orc flow resume <taskId> --outcome approved                # resolve a human node

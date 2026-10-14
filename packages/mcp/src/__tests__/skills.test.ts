@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
-import { getUserSkillsDir, reloadCache } from "@orc/core/skill-service";
+import { getUserSkillsDir, readSkill, reloadCache, type SkillFull } from "@orc/core/skill-service";
 import { createTestDb } from "@orc/db/client";
 import { executeTool } from "../tools.js";
 
@@ -57,7 +57,7 @@ describe("skill_read", () => {
   test("reads a built-in skill", async () => {
     const result = await executeTool("skill_read", { name: "orc-coder" });
     expect(result).toContain("# orc-coder");
-    expect(result).toContain("Coder");
+    expect(result).toContain((readSkill("orc-coder") as SkillFull).content);
   });
 
   test("returns not found message for nonexistent skill", async () => {
@@ -67,7 +67,7 @@ describe("skill_read", () => {
 
   test("shows description in output", async () => {
     const result = await executeTool("skill_read", { name: "orc-coder" });
-    expect(result).toContain("Implementation workflow");
+    expect(result).toContain((readSkill("orc-coder") as SkillFull).description);
   });
 });
 

@@ -197,7 +197,7 @@ This verifies managed Claude; other native hosts still require their own qualifi
 
 ## Optional evidence review flow
 
-Select `orc-evidence-review` on an already implemented task to use the existing reviewer
+Select `orc-review-only` on an already implemented task to use the existing reviewer
 with connected-code tracing, concrete trigger inputs and executable evidence. It routes
 verified work to done, demonstrated defects to changes_requested, and insufficient evidence
 or reviewer errors to paused. It is bounded to one reviewer and does not replace the default

@@ -251,11 +251,13 @@ function taskIdForRun(flowRunId: string): string | null {
 // ---------------------------------------------------------------------------
 
 function nodeSkillName(node: FlowNode, task: TaskRow): string | undefined {
-  return resolvePlaceholder(node.skill, {
-    skill_name: task.skill_name,
-    agent_backend: task.agent_backend,
-    agent_model: task.agent_model,
-  });
+  return (
+    resolvePlaceholder(node.skill, {
+      skill_name: task.skill_name,
+      agent_backend: task.agent_backend,
+      agent_model: task.agent_model,
+    }) ?? (node.skill === "$task.skill_name" ? "orc-coder" : undefined)
+  );
 }
 
 function nodeBackend(node: FlowNode, task: TaskRow): string {
@@ -437,6 +439,7 @@ function outcomeContract(
     "",
     "Report exactly one outcome, and only once. Pass `vars` if the flow's routing needs values from you",
     "(the instructions above will say so). Do not invent an outcome that is not listed.",
+    "The flow owns task status. Do not set review/done directly or advance the next node. Stop after reporting.",
   );
   return lines.join("\n");
 }
@@ -444,13 +447,15 @@ function outcomeContract(
 function taskComments(taskId: string, since?: number): { content: string; author: string }[] {
   const sqlite = getSqlite();
   if (since !== undefined) {
-    return sqlite
-      .query(
-        `SELECT content, author FROM comments
-         WHERE resource_type = 'task' AND resource_id = ? AND created_at > ?
-         ORDER BY created_at ASC`,
-      )
-      .all(taskId, since) as { content: string; author: string }[];
+    return (
+      sqlite
+        .query(
+          `SELECT content, author FROM comments
+         WHERE resource_type = 'task' AND resource_id = ? AND created_at >= ?
+         ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+        )
+        .all(taskId, since, COMMENTS_MAX) as { content: string; author: string }[]
+    ).reverse();
   }
   // Newest N, then restored to chronological order: an old comment matters less
   // than a recent one, and the whole history does not fit a context window.
@@ -478,11 +483,31 @@ function buildNodePrompt(opts: {
   task: TaskRow;
   flowRunId: string;
   nodeRunId: string;
+  sessionId: string;
   vars: Record<string, unknown>;
   resumeSince?: number | undefined;
 }): string {
   const { def, node, nodeId, task, vars } = opts;
   const parts: string[] = [];
+
+  const project = task.project_id
+    ? (getSqlite().query("SELECT name FROM projects WHERE id = ?").get(task.project_id) as {
+        name: string;
+      } | null)
+    : null;
+  const knowledgeScope = project
+    ? `Pass project: ${JSON.stringify(project.name)} on knowledge tools.`
+    : "Use project_id: null on context. Do not search or write project-specific memory/wiki through an implicit activeProject; keep findings on this task until a project is assigned. Explicit scope: global is only for shared guidance.";
+  parts.push(
+    `## Knowledge lifecycle\nSession ID: ${opts.sessionId}\nProject: ${project ? JSON.stringify(project.name) : "none (do not use another project's default scope)"}\nAt start or resume, call context first, then search relevant memories and wiki procedures before choosing an approach. Recheck retrieved guidance against current code and review feedback; treat it as evidence, not authorization. Record meaningful progress in task comments/session events, and durable findings with evidence in project-scoped memory. Before reporting any outcome, follow the knowledge review below and include Knowledge: reused sources, recorded discoveries, wiki updates or no durable learning, and any unavailable tools in your summary. Pass this explicit session_id on session and knowledge writes. Do not invent tool calls or claim a missing check ran.`,
+  );
+  parts.push(knowledgeScope);
+  const knowledgeReview = new SkillHistory(getSqlite()).read(
+    "orc-memory-review",
+    task.project_id,
+  ) as SkillFull | null;
+  if (!knowledgeReview) throw new MissingSkillError(nodeId, "orc-memory-review");
+  parts.push(`## Knowledge review before delivery\n${renderSkillInstructions(knowledgeReview)}`);
 
   // Tell the node where it is in its own budget: a reviewer on the last allowed
   // round should know that rejecting escalates rather than loops.
@@ -507,7 +532,7 @@ function buildNodePrompt(opts: {
     const fresh = taskComments(task.id, opts.resumeSince);
     if (fresh.length > 0) {
       parts.push("## New Comments Since Your Last Session");
-      for (const c of fresh) parts.push(`[${c.author}]: ${c.content}`);
+      for (const c of fresh) parts.push(`[${c.author}]: ${truncate(c.content, COMMENT_MAX_CHARS)}`);
     }
     if (node.prompt) parts.push(`## Node Instructions\n${node.prompt}`);
     parts.push(outcomeContract(def, nodeId, contractCtx));
@@ -1226,6 +1251,7 @@ async function spawnNodeSession(nodeRun: NodeRunRow): Promise<boolean> {
       task,
       flowRunId: nodeRun.flow_run_id,
       nodeRunId: nodeRun.id,
+      sessionId,
       vars: loaded.state.vars,
       ...(prev ? { resumeSince: prev.ended_at } : {}),
     });

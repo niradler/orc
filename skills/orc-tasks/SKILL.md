@@ -1,108 +1,39 @@
 ---
 name: orc-tasks
-description: Use when creating, updating, or managing tasks in an ORC-backed project, when submitting work for human review (HITL), when polling for approval, when transitioning task status, or when coordinating multi-agent work. Trigger on any task lifecycle operation - create, claim, review, approve, reject, block, complete. Also trigger when the user asks to break work into steps, track progress, or checkpoint work for review.
-allowed-tools: mcp__orc__task_list mcp__orc__task_get mcp__orc__task_create mcp__orc__task_update mcp__orc__task_batch_create mcp__orc__task_submit_review mcp__orc__task_check_review
+description: "Create and track ORC work with acceptance criteria; use flow outcomes for managed agents and explicit transitions for manual tasks."
 ---
 
-# ORC Task Workflow
+# Track work in ORC
 
-Tasks are the primary coordination unit between humans and agents. The HITL review gate ensures humans validate agent work before it's accepted.
+Call context first, then inspect task_list/task_get before creating or claiming work.
+The task body records acceptance criteria, constraints and expected artifacts.
+Use a readable project name on MCP operations.
 
-## Why Use ORC Tasks
+## Managed development
 
-Without tasks, agent work is invisible. ORC tasks give you a shared work queue with status tracking and human approval gates. Multiple agents can pull from the same queue without duplicating work. The agent loop automatically picks up queued tasks and spawns workers.
+Choose orc-default for development, orc-human-review when human sign-off is needed,
+or orc-review-only for existing work. Set skill_name to orc-coder or a specialized
+workflow; development defaults to orc-coder when the task has no skill.
+Use task_batch_create with dependency links only when separate work units are useful.
 
----
+The flow owns task status. Agent nodes report flow_report with the exact outcome
+listed in their prompt, then stop. Do not set review/done to move a flow, approve
+your own work, or start the next node. Use flow_status to inspect the current run.
 
-## Task Lifecycle
+Human nodes wait for the human. The dashboard gate or orc flow resume supplies the
+declared approval/rework outcome and feedback. Review rounds and retry limits bound
+rework. required_review controls agent review in orc-default; orc-human-review always
+requires both agent review and human sign-off, even when that task flag is false.
 
-```
-todo ──► doing ──► review ──► done
-           │           │
-           ▼           ▼
-        blocked    changes_requested ──► doing
-```
+## Manual tasks
 
-- `todo` - work defined, not yet started
-- `doing` - agent is actively working
-- `review` - work complete, waiting for human sign-off
-- `changes_requested` - human gave feedback, agent should resume and address it
-- `blocked` - can't proceed, needs human intervention
-- `done` - approved and complete
+Outside a managed flow, use the explicitly agreed status transitions through
+task_update. Read existing claims and review feedback before working. Human approval
+belongs to the human; do not imply every agent review is a human approval.
 
-> Internal statuses (`queued`, `paused`, `cancelled`) are managed automatically by the task loop - agents don't set these directly.
+Progress belongs in task comments/session events. Preserve the artifact, verification,
+risks, relevant knowledge and next action at each handoff. Memory/wiki are for durable
+knowledge, not a second task board. Use orc-session and orc-memory-review for continuity.
 
----
-
-## Workflow Patterns
-
-### Single task with HITL review
-
-1. `task_create` - define the work with acceptance criteria
-2. `task_update` status → `doing` - claim it
-3. Do the work, recording `session_event`s as you go
-4. `task_update` status → `review`, comment → summary of what you did
-5. Wait for human review (work on other tasks meanwhile)
-6. If `changes_requested` → read feedback via `task_get` → fix → re-submit to `review`
-
-### Agent loop (automatic orchestration)
-
-1. `task_create` with `skill_name` (e.g. `orc-coder`) and optionally `agent_backend` (e.g. `claude`)
-2. Task enters `todo` → the task loop picks it up, transitions to `queued` → `doing`
-3. Worker agent follows the assigned prompt, submits to `review` when done
-4. Human approves (`done`) or requests changes → worker resumes automatically
-5. If max review rounds exceeded → task auto-pauses
-
-### Breaking down large features
-
-Use `task_batch_create` to create multiple tasks with dependency links atomically. Each task gets a temporary ref (e.g. `T1`, `T2`) used to express `blocks`/`blocked_by`/`subtask_of` relationships.
-
-### Multi-agent coordination
-
-`claimed_by` + auto-expiring claims prevent two agents from working the same task. The task loop handles this automatically. For manual workflows, check `task_get` before claiming - if `claimed_by` is set, skip and find another task.
-
-### Assigning prompts and backends
-
-- `skill_name` - assign a workflow skill (use `skill_list` to discover available ones)
-- `agent_backend` - choose which agent type executes: `claude`, `codex`, or `cursor`
-- `required_review` - whether the task needs human review (default: true)
-- `max_review_rounds` - how many review cycles before auto-pause (default: 3)
-
----
-
-## CLI Fallbacks
-
-For operations not in MCP (delete, approve, reject, notes, links):
-
-```bash
-orc task list
-orc task add "Fix bug" --priority high --body "Description"
-orc task show <id>
-orc task done <id>            # Mark done directly
-orc task approve <id>         # Human approves
-orc task reject <id>          # Human rejects with note
-orc task note <id> "context"  # Add a note
-orc task link T1 blocks T2    # Create dependency
-orc task delete <id>          # Delete task
-```
-
----
-
-## Common Mistakes
-
-| Mistake                                              | Fix                                            |
-| ---------------------------------------------------- | ---------------------------------------------- |
-| Marking `done` without review                        | Use `review` → let human approve               |
-| Not reading feedback after `changes_requested`       | Always `task_get` to read comments             |
-| Creating tasks with no body                          | Include acceptance criteria                    |
-| Skipping `session_event` for transitions             | Without it, transitions are lost on compaction |
-| Not setting `skill_name` on tasks for the agent loop | Workers need a workflow to follow              |
-
----
-
-## Related
-
-- **orc-session** skill - session start protocol, event recording, snapshot/restore
-- **orc-knowledge** skill - when to store decisions and rules in memory
-- **orc-gateway** skill - remote task approval via Telegram/Slack
-- Built-in skills: `orc-coder`, `orc-planner`, `orc-reviewer`, `orc-bugfix` - use `skill_list` to discover, assign via `skill_name`
+CLI operations include orc task add/show/note and orc flow attach/status/resume.
+Only invoke destructive or publishing operations when authorized by the user/project.
