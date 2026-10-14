@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { stringify as stringifyYaml } from "yaml";
 import { api, type SkillFileInput } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
@@ -27,8 +27,42 @@ import {
   validatePackageDraft,
 } from "@/lib/package-draft";
 import { readPrimitiveFolder } from "@/lib/primitive-files";
+import { useViewParam } from "@/lib/view-params";
 
-type Draft = { name: string; content: string; format: PackageFormat; files: SkillFileInput[] };
+type Draft = {
+  name: string;
+  content: string;
+  format: PackageFormat;
+  files: SkillFileInput[];
+  revision?: string;
+};
+type EditorDraft = {
+  format?: PackageFormat;
+  source: string;
+  files: SkillFileInput[];
+  selectedSkills: string[];
+  mcpDraft?: string;
+  baseline?: Draft;
+};
+const packageDrafts = new Map<string, EditorDraft>();
+if (typeof window !== "undefined")
+  window.addEventListener("beforeunload", (event) => {
+    if (!packageDrafts.size) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
+export function forgetPackageDraft(name: string): void {
+  packageDrafts.delete(name);
+}
+export function getPackageDraftBase(name: string): Draft | undefined {
+  return packageDrafts.get(name)?.baseline;
+}
+export function confirmPackageDraftClose(name: string): boolean {
+  if (!packageDrafts.has(name)) return true;
+  if (!window.confirm("Discard unsaved package changes?")) return false;
+  forgetPackageDraft(name);
+  return true;
+}
 const INSTRUCTIONS = ".apm/instructions/general.instructions.md";
 
 export function PackageEditor({
@@ -42,17 +76,41 @@ export function PackageEditor({
   error?: string;
   onSave: (input: PackageInput) => void;
 }) {
-  const [format, setFormat] = useState<PackageFormat | undefined>(initial?.format);
-  const [source, setSource] = useState(initial?.content ?? packageTemplate("apm"));
-  const [files, setFiles] = useState<SkillFileInput[]>(initial?.files ?? []);
-  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [formatParam, setFormatParam] = useViewParam<string>("packageFormat", "", [
+    "",
+    "apm",
+    "agent-plugin",
+  ]);
+  const restored = useRef(packageDrafts.get(initial?.name ?? "new"));
+  const initialFormat =
+    initial?.format ?? ((formatParam || undefined) as PackageFormat | undefined);
+  // The URL is authoritative for the visible type, including rapid Back/Forward.
+  const format = initialFormat;
+  const [source, setSource] = useState(
+    restored.current?.source ?? initial?.content ?? packageTemplate(initialFormat ?? "apm"),
+  );
+  const [files, setFiles] = useState<SkillFileInput[]>(
+    restored.current?.files ?? initial?.files ?? [],
+  );
+  const [selectedSkills, setSelectedSkills] = useState<string[]>(
+    restored.current?.selectedSkills ?? [],
+  );
   const [skillSearch, setSkillSearch] = useState("");
-  const [tab, setTab] = useState(initial ? "files" : "configuration");
-  const [advanced, setAdvanced] = useState(false);
+  const [tab, setTab] = useViewParam<string>("packageTab", initial ? "files" : "configuration", [
+    "files",
+    "configuration",
+    "skills",
+  ]);
+  const [sourceMode, setSourceMode] = useViewParam<string>("packageSource", "fields", [
+    "fields",
+    "source",
+  ]);
+  const advanced = sourceMode === "source";
+  const setAdvanced = (value: boolean) => setSourceMode(value ? "source" : "fields");
   const [localError, setLocalError] = useState<string>();
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [newPath, setNewPath] = useState("");
-  const [mcpDraft, setMcpDraft] = useState<string>();
+  const [mcpDraft, setMcpDraft] = useState<string | undefined>(restored.current?.mcpDraft);
   const [mcpError, setMcpError] = useState<string>();
   const skills = useQuery({ queryKey: ["package-skill-picker"], queryFn: () => api.skills.list() });
   const agents = useQuery({ queryKey: ["agents"], queryFn: api.agents.list });
@@ -70,6 +128,24 @@ export function PackageEditor({
   const instructionText =
     instructionFile?.content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "") ?? "";
   const mcpFile = files.find((file) => file.path === "mcp.json");
+  useEffect(() => {
+    const dirty =
+      source !== (initial?.content ?? packageTemplate(format ?? "apm")) ||
+      JSON.stringify(files) !== JSON.stringify(initial?.files ?? []) ||
+      selectedSkills.length > 0 ||
+      mcpDraft !== undefined;
+    if (dirty)
+      packageDrafts.set(initial?.name ?? "new", {
+        format:
+          format ?? packageDrafts.get(initial?.name ?? "new")?.format ?? restored.current?.format,
+        source,
+        files,
+        selectedSkills,
+        mcpDraft,
+        baseline: restored.current?.baseline ?? initial,
+      });
+    else packageDrafts.delete(initial?.name ?? "new");
+  }, [source, files, selectedSkills, mcpDraft, format, initial]);
 
   function change(key: string, value: unknown) {
     try {
@@ -80,8 +156,21 @@ export function PackageEditor({
     }
   }
   function selectFormat(value: PackageFormat) {
-    setFormat(value);
+    const retained = packageDrafts.get(initial?.name ?? "new");
+    if (retained && retained.format === value) {
+      setFormatParam(value);
+      setSource(retained.source);
+      setFiles(retained.files);
+      setSelectedSkills(retained.selectedSkills);
+      setMcpDraft(retained.mcpDraft);
+      return;
+    }
+    if (retained && !confirmPackageDraftClose(initial?.name ?? "new")) return;
+    setFormatParam(value);
     setSource(packageTemplate(value));
+    setFiles([]);
+    setSelectedSkills([]);
+    setMcpDraft(undefined);
   }
 
   return (
@@ -100,7 +189,7 @@ export function PackageEditor({
             type="button"
             data-testid="package-type-apm"
             onClick={() => selectFormat("apm")}
-            className="rounded-lg border border-surface-highest p-5 text-left hover:border-primary"
+            className="rounded-lg border border-outline-variant p-5 text-left hover:bg-surface-low"
           >
             <strong className="block mb-2">APM package</strong>
             <span className="text-sm text-outline">
@@ -111,7 +200,7 @@ export function PackageEditor({
             type="button"
             data-testid="package-type-agent-plugin"
             onClick={() => selectFormat("agent-plugin")}
-            className="rounded-lg border border-surface-highest p-5 text-left hover:border-primary"
+            className="rounded-lg border border-outline-variant p-5 text-left hover:bg-surface-low"
           >
             <strong className="block mb-2">Agent Plugin</strong>
             <span className="text-sm text-outline">
@@ -150,7 +239,14 @@ export function PackageEditor({
                 type="button"
                 variant="ghost"
                 disabled={busy}
-                onClick={() => setFormat(undefined)}
+                onClick={() => {
+                  if (!confirmPackageDraftClose("new")) return;
+                  setFormatParam("");
+                  setSource(packageTemplate("apm"));
+                  setFiles([]);
+                  setSelectedSkills([]);
+                  setMcpDraft(undefined);
+                }}
               >
                 Change type
               </Button>
@@ -306,7 +402,7 @@ export function PackageEditor({
                           <select
                             id="package-agent-picker"
                             data-testid="package-agent-picker"
-                            className="w-full rounded border border-surface-highest bg-surface-low p-3"
+                            className="w-full rounded border border-control-border bg-background p-3"
                             value=""
                             onChange={async (event) => {
                               const id = event.target.value;
@@ -387,7 +483,7 @@ export function PackageEditor({
                     return (
                       <div
                         key={file.path}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded border border-surface-highest p-3"
+                        className="flex flex-wrap items-center justify-between gap-2 border-b border-outline-variant p-3"
                       >
                         <span className="min-w-0 break-words text-sm">
                           Included: {prefix.split("/").slice(-2)[0]}
@@ -437,7 +533,7 @@ export function PackageEditor({
                       return (
                         <label
                           key={skill.name}
-                          className="flex items-start gap-3 rounded border border-surface-highest p-3"
+                          className="flex items-start gap-3 border-b border-outline-variant p-3"
                           data-testid="package-skill-option"
                           data-skill-name={skill.name}
                         >
@@ -482,7 +578,7 @@ export function PackageEditor({
             )}
             {tab === "files" && (
               <>
-                <details className="rounded border border-surface-highest p-3">
+                <details className="border-t border-outline-variant p-3">
                   <summary className="cursor-pointer text-sm">Add a file or folder</summary>
                   <Label htmlFor="package-files">Add files from a folder</Label>
                   <Input

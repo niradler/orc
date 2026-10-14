@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type PackageFormat, packageFields } from "@/lib/package-draft";
 import { readPrimitiveFolder } from "@/lib/primitive-files";
+import { useViewParam } from "@/lib/view-params";
 
 function archiveFiles(bytes: Uint8Array): SkillFileInput[] {
   if (bytes.length > 16 * 1024 * 1024) throw new Error("Archive exceeds 16 MiB");
@@ -57,7 +58,7 @@ export function PackageImportDialog({
   onClose: () => void;
   onImported: (name: string) => void;
 }) {
-  const [tab, setTab] = useState("git");
+  const [tab, setTab] = useViewParam<string>("importMethod", "git", ["git", "zip", "folder"]);
   const [source, setSource] = useState("");
   const [selection, setSelection] = useState("");
   const [format, setFormat] = useState<"auto" | PackageFormat>("auto");
@@ -256,7 +257,7 @@ export function PackageImportDialog({
               id="package-import-format"
               data-testid="package-import-format"
               disabled={busy}
-              className="w-full rounded border border-surface-highest bg-surface-low p-3"
+              className="w-full rounded border border-control-border bg-surface-low p-3"
               value={format}
               onChange={(event) => setFormat(event.target.value as typeof format)}
             >

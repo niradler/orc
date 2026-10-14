@@ -39,14 +39,14 @@ function DiffSection({
       data-testid={staged ? "git-diff-staged-section" : "git-diff-working-section"}
       className="border-t border-surface-highest"
     >
-      <div className="flex justify-between p-2 text-xs text-outline">
+      <div className="flex justify-between p-2 text-xs text-on-surface-variant">
         <span>{staged ? "Staged" : "Unstaged"}</span>
         {diff.data && (
           <span>
-            <span className="text-green-400">
+            <span className="text-secondary">
               +{lines.filter((line) => line.kind === "add").length}
             </span>{" "}
-            <span className="text-red-400">
+            <span className="text-error">
               −{lines.filter((line) => line.kind === "remove").length}
             </span>
           </span>
@@ -59,15 +59,15 @@ function DiffSection({
       )}
       <div data-testid="git-diff" className="overflow-auto font-mono text-xs">
         {diff.isPending ? (
-          <p className="p-3 text-outline">Loading diff…</p>
+          <p className="p-3 text-on-surface-variant">Loading diff…</p>
         ) : !lines.length ? (
-          <p className="p-3 text-outline">No text changes in this view.</p>
+          <p className="p-3 text-on-surface-variant">No text changes in this view.</p>
         ) : (
           lines.map((line) => (
             <div
               key={line.id}
               data-testid={`git-diff-${line.kind}`}
-              className={`flex min-w-max whitespace-pre ${line.kind === "add" ? "bg-green-500/10 text-green-400" : line.kind === "remove" ? "bg-red-500/10 text-red-400" : line.kind === "hunk" ? "bg-blue-500/10 text-blue-400" : line.kind === "meta" ? "text-outline" : ""}`}
+              className={`flex min-w-max whitespace-pre ${line.kind === "add" ? "bg-secondary/10 text-secondary" : line.kind === "remove" ? "bg-error/10 text-error" : line.kind === "hunk" ? "bg-surface text-on-surface-variant" : line.kind === "meta" ? "text-on-surface-variant" : ""}`}
             >
               <span className="w-10 shrink-0 text-right pr-2 select-none opacity-60">
                 {line.old}
@@ -80,7 +80,9 @@ function DiffSection({
           ))
         )}
       </div>
-      {diff.data?.truncated && <p className="p-2 text-outline">Diff truncated at 200 KB.</p>}
+      {diff.data?.truncated && (
+        <p className="p-2 text-on-surface-variant">Diff truncated at 200 KB.</p>
+      )}
     </div>
   );
 }
@@ -105,9 +107,9 @@ export function FileDiffCard({
     <section
       data-testid="git-diff-file"
       data-path={file.path}
-      className="rounded border border-surface-highest overflow-hidden"
+      className="border-t border-outline-variant overflow-hidden"
     >
-      <div data-testid="git-status-file" className="flex items-center bg-surface-highest/50 px-2">
+      <div data-testid="git-status-file" className="flex items-center px-2">
         <input
           type="checkbox"
           aria-label={`Select ${file.path}`}
@@ -120,7 +122,7 @@ export function FileDiffCard({
           data-testid="git-diff-file-toggle"
           aria-expanded={open}
           onClick={toggle}
-          className="flex-1 min-w-0 flex items-center gap-2 text-left p-3 hover:bg-surface-highest"
+          className="flex-1 min-w-0 flex items-center gap-2 text-left p-3 hover:bg-surface"
         >
           {open ? (
             <ChevronDown size={16} className="shrink-0" />
@@ -131,7 +133,10 @@ export function FileDiffCard({
             {file.original ? `${file.original} → ` : ""}
             {file.path}
           </span>
-          <span data-testid="git-file-status" className="shrink-0 text-xs text-outline text-right">
+          <span
+            data-testid="git-file-status"
+            className="shrink-0 text-xs text-on-surface-variant text-right"
+          >
             {label}
             <br />
             {conflict

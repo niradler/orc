@@ -17,6 +17,8 @@ export type MarkdownEditorProps = {
   testId?: string;
   wikiLinks?: { slugs: string[]; select: (slug: string) => void };
   initialMode?: Mode;
+  mode?: Mode;
+  onModeChange?: (mode: Mode) => void;
   header?: ReactNode;
   height?: number | string;
   id?: string;
@@ -35,6 +37,8 @@ export function MarkdownEditor({
   testId,
   wikiLinks,
   initialMode,
+  mode: controlledMode,
+  onModeChange,
   header,
   height,
   id,
@@ -44,7 +48,14 @@ export function MarkdownEditor({
   onExpandedChange,
 }: MarkdownEditorProps) {
   const markdown = isMarkdownFile(path);
-  const [mode, setMode] = useState<Mode>(initialMode ?? (readOnly && markdown ? "read" : "edit"));
+  const [localMode, setLocalMode] = useState<Mode>(
+    initialMode ?? (readOnly && markdown ? "read" : "edit"),
+  );
+  const mode = controlledMode ?? localMode;
+  function setMode(next: Mode): void {
+    setLocalMode(next);
+    onModeChange?.(next);
+  }
   const [localExpanded, setLocalExpanded] = useState(false);
   const expanded = controlledExpanded ?? localExpanded;
   const root = useRef<HTMLElement>(null);

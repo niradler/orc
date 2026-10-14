@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { MarkdownEditor } from "@/components/MarkdownEditor";
+import { MarkdownEditor, type MarkdownEditorProps } from "@/components/MarkdownEditor";
 import { SourceCodeEditor } from "@/components/SourceCodeEditor";
 import { isMarkdownFile } from "@/lib/editor-language";
 
@@ -17,6 +17,8 @@ export type CodeEditorProps = {
   hidePreview?: boolean;
   defaultWrap?: boolean;
   header?: ReactNode;
+  mode?: MarkdownEditorProps["mode"];
+  onModeChange?: MarkdownEditorProps["onModeChange"];
 };
 
 export function CodeEditor(props: CodeEditorProps) {

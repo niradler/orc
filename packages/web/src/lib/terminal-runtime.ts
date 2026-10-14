@@ -33,11 +33,11 @@ export interface TerminalRuntime {
 }
 
 export const TERMINAL_THEME: ITheme = {
-  background: "#090e1a",
-  foreground: "#e1e5f6",
-  cursor: "#78b0ff",
-  cursorAccent: "#090e1a",
-  selectionBackground: "#2c3a5a",
+  background: "#000000",
+  foreground: "#e5e5e5",
+  cursor: "#c4c4c4",
+  cursorAccent: "#000000",
+  selectionBackground: "#343434",
   black: "#1e2537",
   red: "#ff716c",
   green: "#70fda7",

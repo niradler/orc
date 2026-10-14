@@ -15,10 +15,10 @@ type TurnBlock = Turn["blocks"][number];
 const HIGHLIGHT = "session-search";
 
 const ROLE_STYLE: Record<Turn["role"], string> = {
-  user: "border-primary/40 bg-primary/5",
-  assistant: "border-surface-highest bg-surface-low",
-  tool: "border-surface-highest/60 bg-transparent",
-  system: "border-surface-highest/40 bg-transparent opacity-70",
+  user: "border-border/65",
+  assistant: "border-border/65",
+  tool: "border-border/65 bg-transparent",
+  system: "border-border/65 bg-transparent",
 };
 
 const PREVIEW_KEYS = [
@@ -114,9 +114,9 @@ function ToolBox({
     <details
       open={open || undefined}
       data-testid="tool-box"
-      className="rounded-sm border border-surface-highest bg-surface-lowest/60"
+      className="border-l border-border bg-background"
     >
-      <summary className="flex cursor-pointer items-center gap-2 px-2 py-1.5 font-label text-[11px] uppercase tracking-widest text-outline hover:text-on-surface">
+      <summary className="flex cursor-pointer items-center gap-2 px-2 py-1.5 font-label text-xs font-medium text-outline hover:text-on-surface">
         <span className="text-secondary shrink-0">{block.name}</span>
         <span className="min-w-0 flex-1 truncate font-mono normal-case tracking-normal text-on-surface-variant">
           {inputPreview(block.input)}
@@ -125,19 +125,15 @@ function ToolBox({
           {done ? "done" : "no result"}
         </span>
       </summary>
-      <div className="space-y-2 border-t border-surface-highest px-2 py-2">
-        <div className="font-label text-[10px] uppercase tracking-widest text-outline/70">
-          input
-        </div>
-        <pre className="max-h-72 overflow-auto rounded-sm bg-surface-lowest p-2 font-mono text-[11px] text-on-surface-variant whitespace-pre-wrap break-words">
+      <div className="space-y-2 border-t border-border px-2 py-2">
+        <div className="font-label text-[10px] font-medium text-outline">input</div>
+        <pre className="max-h-72 overflow-auto rounded-lg bg-background p-2 font-mono text-xs text-on-surface-variant whitespace-pre-wrap break-words">
           {prettyInput(block.input)}
         </pre>
         {done && (
           <>
-            <div className="font-label text-[10px] uppercase tracking-widest text-outline/70">
-              result
-            </div>
-            <pre className="max-h-96 overflow-auto rounded-sm bg-surface-lowest p-2 font-mono text-[11px] text-on-surface-variant whitespace-pre-wrap break-words">
+            <div className="font-label text-[10px] font-medium text-outline">result</div>
+            <pre className="max-h-96 overflow-auto rounded-lg bg-background p-2 font-mono text-xs text-on-surface-variant whitespace-pre-wrap break-words">
               {block.result}
             </pre>
           </>
@@ -153,15 +149,15 @@ function Block({ block, matched }: { block: TurnBlock; matched: boolean }) {
   const label = block.type === "thinking" ? "thinking" : "result";
   return (
     <details open={matched || undefined}>
-      <summary className="cursor-pointer font-label text-[11px] uppercase tracking-widest text-outline hover:text-on-surface">
+      <summary className="cursor-pointer font-label text-xs font-medium text-outline hover:text-on-surface">
         {label}
       </summary>
       {block.type === "thinking" ? (
-        <div className="mt-1 opacity-80">
+        <div className="mt-1">
           <Markdown>{block.text}</Markdown>
         </div>
       ) : (
-        <pre className="mt-1 max-h-96 overflow-auto rounded-sm bg-surface-lowest p-2 font-mono text-[11px] text-on-surface-variant whitespace-pre-wrap break-words">
+        <pre className="mt-1 max-h-96 overflow-auto rounded-lg bg-background p-2 font-mono text-xs text-on-surface-variant whitespace-pre-wrap break-words">
           {block.text}
         </pre>
       )}
@@ -263,24 +259,25 @@ export function LiveSessionDetail({
               <span className="truncate max-w-full text-on-surface-variant">{session.cwd}</span>
             </div>
           )}
-          <div className="mt-3 flex items-center gap-2">
-            <div className="relative flex-1">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[150px] flex-1">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-outline" />
               <input
                 data-testid="transcript-search"
+                aria-label="Search this session"
                 value={query}
                 onChange={(e) => {
                   setQuery(e.target.value);
                   setCursor(0);
                 }}
                 placeholder="Search this session"
-                className="w-full bg-surface-low border border-surface-highest rounded-sm pl-7 pr-2 py-1 font-body text-xs text-on-surface"
+                className="w-full bg-background border border-control-border rounded-lg min-h-11 pl-7 pr-2 py-2 font-body text-xs text-on-surface"
               />
             </div>
             {search && (
               <span
                 data-testid="transcript-match-count"
-                className="font-label text-[11px] uppercase tracking-widest text-outline"
+                className="font-label text-xs font-medium text-outline"
               >
                 {matches.length === 0 ? "no matches" : `${cursor + 1} / ${matches.length}`}
               </span>
@@ -289,7 +286,7 @@ export function LiveSessionDetail({
               type="button"
               aria-label="Previous match"
               onClick={() => go(-1)}
-              className="text-outline hover:text-on-surface"
+              className="min-h-11 min-w-11 p-2 text-outline hover:text-on-surface"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -297,7 +294,7 @@ export function LiveSessionDetail({
               type="button"
               aria-label="Next match"
               onClick={() => go(1)}
-              className="text-outline hover:text-on-surface"
+              className="min-h-11 min-w-11 p-2 text-outline hover:text-on-surface"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -308,7 +305,7 @@ export function LiveSessionDetail({
                 stick.current = true;
                 refetch();
               }}
-              className="inline-flex items-center gap-1 font-label text-[11px] uppercase tracking-widest text-primary hover:text-on-surface"
+              className="min-h-11 px-2 inline-flex items-center gap-1 font-label text-xs font-medium text-primary hover:text-on-surface"
             >
               <RefreshCw className={`h-3 w-3 ${isFetching ? "animate-spin" : ""}`} />
               Refresh
@@ -367,15 +364,15 @@ export function LiveSessionDetail({
                         contentVisibility: "auto",
                         containIntrinsicSize: "auto 120px",
                       }}
-                      className={`rounded-sm border px-3 py-2 space-y-2 ${ROLE_STYLE[turn.role]} ${turn.index === target ? "ring-1 ring-primary" : ""}`}
+                      className={`border-b px-4 py-3 text-on-surface space-y-2 ${ROLE_STYLE[turn.role]} ${turn.index === target ? "ring-1 ring-primary" : ""}`}
                     >
-                      <div className="font-label text-[11px] uppercase tracking-widest text-outline">
+                      <div className="font-label text-xs font-medium text-outline">
                         {turn.role}
                         {turn.time ? ` · ${formatWhen(turn.time)}` : ""}
                       </div>
                       {turn.role === "system" ? (
                         <details open={matched || undefined}>
-                          <summary className="cursor-pointer font-label text-[11px] uppercase tracking-widest text-outline hover:text-on-surface">
+                          <summary className="cursor-pointer font-label text-xs font-medium text-outline hover:text-on-surface">
                             injected context
                           </summary>
                           <div className="mt-2 space-y-2">{blocks}</div>
@@ -397,7 +394,7 @@ export function LiveSessionDetail({
                 stick.current = true;
                 scrollToEnd();
               }}
-              className="absolute bottom-4 right-6 inline-flex items-center gap-1.5 rounded-sm border border-primary/40 bg-surface-high px-3 py-1.5 font-body text-xs text-primary shadow-lg hover:bg-surface-bright"
+              className="absolute bottom-4 right-6 inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 font-body text-xs text-primary shadow-lg hover:bg-surface-bright"
             >
               <ArrowDown className="h-3.5 w-3.5" />
               Jump to latest

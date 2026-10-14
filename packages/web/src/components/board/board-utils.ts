@@ -12,11 +12,11 @@ export const BOARD_COLUMNS: {
   label: string;
   color: string;
 }[] = [
-  { status: "todo", label: "Todo", color: "#a6abbb" },
-  { status: "doing", label: "In Progress", color: "#78b0ff" },
-  { status: "review", label: "Review", color: "#ffa851" },
-  { status: "blocked", label: "Blocked", color: "#ff716c" },
-  { status: "done", label: "Done", color: "#70fda7" },
+  { status: "todo", label: "Todo", color: "rgb(var(--muted-foreground))" },
+  { status: "doing", label: "In Progress", color: "rgb(var(--progress))" },
+  { status: "review", label: "Review", color: "rgb(var(--warning))" },
+  { status: "blocked", label: "Blocked", color: "rgb(var(--error))" },
+  { status: "done", label: "Done", color: "rgb(var(--success))" },
 ];
 
 export const VISIBLE_STATUSES: VisibleStatus[] = BOARD_COLUMNS.map((c) => c.status);
@@ -74,8 +74,8 @@ export function canTransition(_from: TaskStatus, _to: TaskStatus): boolean {
 }
 
 export const PRIORITY_COLORS: Record<string, string> = {
-  critical: "#ff716c",
-  high: "#ffa851",
-  normal: "#78b0ff",
-  low: "#707584",
+  critical: "rgb(var(--error))",
+  high: "rgb(var(--warning))",
+  normal: "rgb(var(--muted-foreground))",
+  low: "rgb(var(--muted-foreground))",
 };

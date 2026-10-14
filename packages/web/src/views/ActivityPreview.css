@@ -1,0 +1,323 @@
+.activity-preview {
+  color: rgb(var(--foreground));
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.activity-heading,
+.activity-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.activity-heading {
+  margin-bottom: 28px;
+}
+
+.activity-heading h1 {
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+
+.activity-heading p {
+  margin-top: 4px;
+  color: rgb(var(--muted-foreground));
+  font-size: 13px;
+}
+
+.activity-primary {
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: rgb(var(--primary));
+  color: rgb(var(--primary-foreground));
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.activity-primary:hover {
+  opacity: 0.9;
+}
+
+.activity-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgb(var(--border));
+}
+
+.activity-metric {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 12px;
+  margin-left: -12px;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.activity-metric:hover,
+.activity-resources button:hover,
+.activity-row:hover {
+  background: rgb(var(--surface));
+}
+
+.activity-metric-label {
+  font-size: 13px;
+  color: rgb(var(--muted-foreground));
+}
+
+.activity-metric-value {
+  font-size: 28px;
+  line-height: 1.3;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-metric-sub {
+  font-size: 12px;
+  color: rgb(var(--muted-foreground));
+}
+
+.activity-resources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin: 12px 0 32px;
+}
+
+.activity-resources button {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 36px;
+  padding: 4px 8px;
+  margin-left: -8px;
+  border-radius: 6px;
+  color: rgb(var(--muted-foreground));
+  font-size: 12px;
+  text-align: left;
+}
+
+.activity-resource-value {
+  color: rgb(var(--foreground));
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-resource-sub {
+  color: rgb(var(--muted-foreground));
+}
+
+.activity-section {
+  min-width: 0;
+  margin-bottom: 32px;
+}
+
+.activity-section-heading {
+  margin-bottom: 12px;
+}
+
+.activity-section h2 {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.activity-text-action {
+  padding: 8px 0 8px 12px;
+  color: rgb(var(--muted-foreground));
+  font-size: 13px;
+}
+
+.activity-text-action:hover,
+.activity-task-title:hover {
+  color: rgb(var(--foreground));
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.activity-task-table tr {
+  border-color: rgb(var(--border) / 0.65);
+}
+
+.activity-task-table th {
+  height: 36px;
+  color: rgb(var(--muted-foreground));
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.activity-task-table th:first-child,
+.activity-task-table td:first-child {
+  padding-left: 0;
+}
+
+.activity-task-table td {
+  padding-top: 9px;
+  padding-bottom: 9px;
+  font-size: 12px;
+}
+
+.activity-task-table tbody tr:hover {
+  background: rgb(var(--surface));
+  cursor: pointer;
+}
+
+.activity-task-title {
+  min-height: 28px;
+  color: rgb(var(--foreground));
+  font-size: 14px;
+  font-weight: 400;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.activity-status > span,
+.activity-priority > span {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  color: rgb(var(--muted-foreground));
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.activity-status > span > span {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: rgb(var(--muted-foreground));
+  opacity: 1;
+}
+
+.activity-status[data-status="doing"] > span > span,
+.activity-status[data-status="queued"] > span > span {
+  background: rgb(var(--progress));
+}
+
+.activity-status[data-status="blocked"] > span > span,
+.activity-status[data-status="changes_requested"] > span > span {
+  background: rgb(var(--error));
+}
+
+.activity-status[data-status="review"] > span > span {
+  background: rgb(var(--warning));
+}
+
+.activity-status[data-status="done"] > span > span {
+  background: rgb(var(--success));
+}
+
+.activity-priority > .text-error {
+  color: rgb(var(--error));
+}
+
+.activity-priority > .text-tertiary {
+  color: rgb(var(--warning));
+}
+
+.activity-secondary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 32px;
+}
+
+.activity-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgb(var(--border) / 0.65);
+  text-align: left;
+}
+
+.activity-row-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.activity-row-description {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: rgb(var(--muted-foreground));
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.activity-projects {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 24px;
+}
+
+.activity-muted,
+.activity-empty {
+  color: rgb(var(--muted-foreground));
+}
+
+.activity-empty {
+  padding: 24px 0;
+  font-size: 14px;
+}
+
+.activity-task-mobile {
+  padding: 12px 0;
+  border-bottom: 1px solid rgb(var(--border) / 0.65);
+}
+
+.activity-task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 4px;
+  color: rgb(var(--muted-foreground));
+  font-size: 12px;
+}
+
+@media (max-width: 639px) {
+  .activity-heading {
+    margin-bottom: 20px;
+  }
+  .activity-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px 8px;
+  }
+  .activity-metric {
+    padding: 4px 8px;
+    margin-left: -8px;
+  }
+  .activity-metric-value {
+    font-size: 24px;
+  }
+  .activity-resources {
+    gap: 0 16px;
+    margin-bottom: 24px;
+  }
+  .activity-resource-sub {
+    display: none;
+  }
+  .activity-secondary,
+  .activity-projects {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+}

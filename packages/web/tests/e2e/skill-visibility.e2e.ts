@@ -50,7 +50,9 @@ test("built-in visibility saves, reopens, and preserves user skills and named re
       "false",
     );
     await reopened.close();
-    await page.getByTestId("hide-all-builtins").click();
+    await expect(page.getByTestId("hide-all-builtins")).toHaveCount(0);
+    await expect(page.getByTestId("show-all-builtins")).toHaveCount(0);
+    await page.getByTestId("skill-visibility-orc-worker-base").click();
     await expect(page.getByTestId("skill-visibility-orc-worker-base")).toHaveAttribute(
       "aria-checked",
       "false",
@@ -60,14 +62,15 @@ test("built-in visibility saves, reopens, and preserves user skills and named re
       "/skills?scope=global",
     );
     expect(catalog.skills.some((skill) => skill.name === name)).toBe(true);
-    expect(
-      catalog.skills.filter((skill) => skill.source === "builtin" && skill.name !== "orc-coder"),
-    ).toEqual([]);
+    expect(catalog.skills.some((skill) => skill.name === "orc-worker-base")).toBe(false);
+    await page.getByTestId("skill-source-user").click();
     await expect(
       page.locator(`[data-testid="skill-row"][data-skill-name="${name}"]`),
     ).toBeVisible();
     await page.screenshot({ path: "../../output/playwright/skill-visibility.png", fullPage: true });
-    await page.getByTestId("show-all-builtins").click();
+    await page.getByTestId("skill-source-all").click();
+    await page.getByTestId("skill-visibility-orc-worker-base").click();
+    await toggle.click();
     await expect(toggle).toHaveAttribute("aria-checked", "true");
     expect(
       (await apiGet<{ hidden_builtins: string[] }>(request, "/skills/settings/visibility"))

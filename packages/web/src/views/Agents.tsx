@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { type AgentFull, api } from "@/api/client";
 import { AgentEditor } from "@/components/AgentEditor";
 import { CodeEditor } from "@/components/CodeEditor";
@@ -7,11 +8,22 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
+import { useViewParam } from "@/lib/view-params";
+import { workspaceDestination } from "@/lib/workspace-navigation";
 
 export default function Agents({ embedded = false }: { embedded?: boolean }) {
+  const location = useLocation();
+  const projectId = new URLSearchParams(location.search).get("project") ?? "all";
+  const [editorMode, setEditorMode] = useViewParam<"read" | "edit" | "split">(
+    "editorMode",
+    "read",
+    ["read", "edit", "split"],
+  );
+  const [query, setQuery] = useViewParam<string>("agentQuery", "");
   const cache = useQueryClient();
   const agents = useQuery({
     queryKey: ["agents"],
@@ -63,13 +75,18 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
   });
   if (agents.error)
     return <ErrorState message={agents.error.message} onRetry={() => void agents.refetch()} />;
+  const visible = (agents.data?.agents ?? []).filter((profile) =>
+    `${profile.name} ${profile.id} ${profile.description}`
+      .toLowerCase()
+      .includes(query.toLowerCase()),
+  );
   return (
     <div className="space-y-5">
       {embedded ? (
         <div className="flex flex-wrap justify-between gap-3">
           <div>
             <h2 className="font-medium">Agent definitions</h2>
-            <p className="text-sm text-outline">
+            <p className="text-sm text-muted-foreground">
               Manage specialist instructions, models and tools. Add them to APM packages for reuse.
             </p>
           </div>
@@ -88,7 +105,7 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
           title="Agents"
           meta={`${agents.data?.agents.length ?? 0} shared profiles`}
           action={
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 data-testid="new-agent-button"
                 onClick={() => {
@@ -96,13 +113,13 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
                   setCreating(true);
                 }}
               >
-                New Agent
+                New agent
               </Button>
             </div>
           }
         />
       )}
-      <p className="text-sm text-outline">
+      <p className="text-sm text-muted-foreground">
         Shared specialist definitions for every connected coding agent.{" "}
         <a
           className="text-primary underline"
@@ -114,36 +131,62 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
         </a>
       </p>
       {!embedded && (
-        <a href="/packages" data-testid="agents-packages-link" className="text-primary underline">
+        <Link
+          to={workspaceDestination("/packages", projectId, location.search)}
+          data-testid="agents-packages-link"
+          className="text-primary underline"
+        >
           Manage packages and reusable launch setups
-        </a>
+        </Link>
       )}
       {(agents.data?.broken ?? []).map((issue) => (
         <p key={issue.path} role="alert" className="text-destructive">
           {issue.path}: {issue.error}
         </p>
       ))}
+      <div className="flex flex-wrap gap-2">
+        <Input
+          className="min-w-[180px] max-w-lg flex-1"
+          aria-label="Find an agent"
+          placeholder="Find an agent by name or purpose…"
+          value={query}
+          onChange={(event) => setQuery(event.target.value, { replace: true })}
+        />
+        {query && (
+          <Button variant="ghost" onClick={() => setQuery("")}>
+            Clear
+          </Button>
+        )}
+      </div>
       <div className="space-y-2">
-        {agents.isLoading && <p>Loading agents...</p>}
-        {agents.data?.agents.map((profile) => (
+        {agents.isLoading && (
+          <p role="status" data-testid="page-loading">
+            Loading agents…
+          </p>
+        )}
+        {visible.map((profile) => (
           <button
             key={profile.id}
             type="button"
             data-testid="agent-row"
             data-agent-id={profile.id}
             onClick={() => openDetail(profile.id)}
-            className="w-full text-left border border-surface-highest rounded-sm p-4 hover:bg-surface-low"
+            className="w-full text-left border-b border-outline-variant p-4 hover:bg-surface-low"
           >
-            <span className="text-sm font-medium">{profile.name}</span>
-            <span className="ml-3 text-xs text-outline">
+            <span className="block break-words text-base font-medium">{profile.name}</span>
+            <span className="mt-1 block break-all text-xs text-muted-foreground">
               {profile.id} · {profile.source}
             </span>
-            <p className="text-xs text-outline mt-1">{profile.description}</p>
+            <p className="mt-2 break-words text-sm leading-relaxed text-muted-foreground">
+              {profile.description}
+            </p>
           </button>
         ))}
-        {!agents.isLoading && agents.data?.agents.length === 0 && (
-          <p className="text-sm text-outline">
-            Create an agent or import specialists from Packages.
+        {!agents.isLoading && !visible.length && (
+          <p data-testid="page-empty" className="text-sm text-muted-foreground">
+            {query
+              ? "No agents match this search. Try another name or clear the filter."
+              : "Create an agent or import specialists from Packages."}
           </p>
         )}
       </div>
@@ -185,11 +228,11 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
                     {deleteAgent.error.message}
                   </p>
                 )}
-                <p className="text-xs text-outline">
+                <p className="text-xs text-muted-foreground">
                   Use this profile in a flow agent node with <code>"agent": "{agent.data.id}"</code>{" "}
                   and choose the coding backend independently.
                 </p>
-                <p className="text-xs text-outline">
+                <p className="text-xs text-muted-foreground">
                   Model and tool restrictions depend on backend support. ORC refuses to launch when
                   it cannot honor a declared restriction. Handoffs remain declarations; flow edges
                   choose execution.
@@ -203,6 +246,8 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
                 />
                 <CodeEditor
                   path="agent.agent.md"
+                  mode={editorMode}
+                  onModeChange={setEditorMode}
                   value={agent.data.raw}
                   readOnly
                   height={400}

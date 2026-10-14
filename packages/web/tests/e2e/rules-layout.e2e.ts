@@ -44,6 +44,8 @@ test("should show only a table by default, offer both add paths, and persist pro
   await page.getByTestId("rules-settings-save").click();
   await expect(page.getByTestId("rules-message")).toContainText("Settings saved");
   await page.reload();
+  await expect(page.getByTestId("rules-settings-tab")).toHaveAttribute("aria-selected", "true");
+  await page.getByTestId("rules-applied-tab").click();
   const row = page.getByTestId("saved-event-rule");
   await expect(row).toContainText("codex");
   await row.getByTestId("event-rule-toggle").click();

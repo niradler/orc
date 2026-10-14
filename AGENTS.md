@@ -143,6 +143,8 @@ bun run --filter @orc/api dev > /tmp/orc-api-$(date +%s).log 2>&1 &
 
 ## Web Dashboard (packages/web)
 
+Read [`DESIGN.md`](DESIGN.md) before UI work. It records ORC's intended visual direction and review criteria; proposed tokens are not permission to apply a theme change. Keep the current implementation and the proposed design clearly distinguished.
+
 React SPA replacing the removed TUI. Same feature surface - Tasks, Kanban, Jobs, Memories, Projects, Sessions, Knowledge, Skills, Flows - plus Dashboard, Settings, and a streaming chat panel that spawns `acpx` via `POST /chat/stream`.
 
 - **Stack**: React 19 + Vite 6 + TypeScript + Tailwind + shadcn/ui + React Query (30s refetch) + `@dnd-kit` (kanban DnD) + Playwright (e2e)

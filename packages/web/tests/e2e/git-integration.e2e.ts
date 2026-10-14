@@ -2,8 +2,9 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
 import { API_SECRET, apiGet, apiPost, tid } from "./_helpers";
+import { test } from "./_terminal-fixture";
 
 const folder = mkdtempSync(join(tmpdir(), "orc-pw-git-"));
 const repo = join(folder, "repo");
@@ -76,8 +77,15 @@ test("slice 3 git panel status, diff, selected staging, commit, branches and tas
   const untracked = page.getByTestId("git-diff-file").filter({ hasText: "untracked.txt" });
   await expect(page.getByTestId("git-diff-file")).toHaveCount(2);
   await expect(tracked.getByTestId("git-diff")).toContainText("+panel edit");
-  await expect(tracked.getByTestId("git-diff-add")).toHaveCSS("color", "rgb(74, 222, 128)");
-  await expect(tracked.getByTestId("git-diff-remove")).toHaveCSS("color", "rgb(248, 113, 113)");
+  const colors = await page.evaluate(() => {
+    const style = getComputedStyle(document.documentElement);
+    return {
+      added: `rgb(${style.getPropertyValue("--success").trim().split(/\s+/).join(", ")})`,
+      removed: `rgb(${style.getPropertyValue("--error").trim().split(/\s+/).join(", ")})`,
+    };
+  });
+  await expect(tracked.getByTestId("git-diff-add")).toHaveCSS("color", colors.added);
+  await expect(tracked.getByTestId("git-diff-remove")).toHaveCSS("color", colors.removed);
   await expect(untracked.getByTestId("git-diff")).toContainText("+keep unstaged");
   await expect(untracked.getByTestId("git-diff")).not.toContainText("panel edit");
   await tracked.getByTestId("git-diff-file-toggle").click();
@@ -146,10 +154,8 @@ test("Git pane selects all, switches branches and worktrees, and shows the curre
     cwd: local,
   });
   await page.route("**/api/terminals/*/git/github", async (route) => {
-    const status = await apiGet<{ branch: string }>(
-      request,
-      `/terminals/${terminal.id}/git/status`,
-    );
+    const terminalId = new URL(route.request().url()).pathname.split("/")[3];
+    const status = await apiGet<{ branch: string }>(request, `/terminals/${terminalId}/git/status`);
     await route.fulfill({
       json: {
         auth: "gh",
@@ -210,7 +216,13 @@ test("Git pane selects all, switches branches and worktrees, and shows the curre
   const otherValue = await otherOption.getAttribute("value");
   if (!otherValue) throw new Error("Missing worktree option value");
   await page.getByTestId("git-worktree-select").selectOption(otherValue);
-  await expect(page).not.toHaveURL(new RegExp(`${terminal.id}$`));
+  await expect.poll(() => new URL(page.url()).pathname).not.toBe(`/terminals/${terminal.id}`);
+  await expect(page.getByTestId("workspace-pane")).toHaveCount(2);
+  await expect(
+    page
+      .locator('[data-testid="workspace-pane"][data-kind="terminal"]')
+      .getByTestId("pane-terminal"),
+  ).toHaveValue(terminal.id);
   await expect(page.getByTestId("terminal-git-panel")).toContainText("other");
   await expect(page.getByTestId("git-panel-worktree").filter({ hasText: "Current" })).toContainText(
     other,
@@ -221,6 +233,7 @@ test("Git pane selects all, switches branches and worktrees, and shows the curre
   );
   await expect(page.getByTestId("git-branch").first()).toContainText("other");
   await expect(page.getByTestId("git-branch-select")).toHaveValue("other");
+  await expect(page.getByTestId("git-current-pr")).not.toContainText("Feature PR");
 });
 
 test("slice 4 GitHub board filtering, linking, creating task and reopening saved links", async ({

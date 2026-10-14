@@ -59,7 +59,7 @@ test("portable package import, tabbed files, lossless export and edit/use flow s
   await page.getByTestId("setup-prompt").fill("Use the portable package");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("packages-setups-tab")).toHaveCount(0);
-  await expect(page.getByTestId("nav-agents")).toHaveCount(0);
+  await expect(page.getByTestId("workspace-sidebar").getByTestId("nav-agents")).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   await card.getByTestId("package-card-edit").click();
   await expect(page.getByRole("tab", { name: "plugin.json", exact: true })).toBeVisible();

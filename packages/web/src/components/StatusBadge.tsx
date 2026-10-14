@@ -4,24 +4,24 @@ import { cn } from "@/lib/utils";
 type JobStatus = "pending" | "running" | "success" | "failed" | "cancelled" | "skipped";
 
 const TASK_COLORS: Record<TaskStatus, string> = {
-  todo: "bg-surface-highest text-on-surface-variant border-outline-variant",
-  queued: "bg-primary/10 text-primary border-primary/30",
-  doing: "bg-primary/15 text-primary border-primary/40",
-  review: "bg-tertiary/15 text-tertiary border-tertiary/40",
-  changes_requested: "bg-tertiary/10 text-tertiary border-tertiary/30",
-  blocked: "bg-error/15 text-error border-error/40",
-  done: "bg-secondary/15 text-secondary border-secondary/40",
-  cancelled: "bg-surface-highest text-outline border-outline-variant",
-  paused: "bg-surface-highest text-on-surface-variant border-outline-variant",
+  todo: "bg-muted-foreground",
+  queued: "bg-progress",
+  doing: "bg-progress",
+  review: "bg-tertiary",
+  changes_requested: "bg-error",
+  blocked: "bg-error",
+  done: "bg-secondary",
+  cancelled: "bg-muted-foreground",
+  paused: "bg-muted-foreground",
 };
 
 const JOB_COLORS: Record<JobStatus, string> = {
-  pending: "bg-surface-highest text-on-surface-variant border-outline-variant",
-  running: "bg-primary/15 text-primary border-primary/40",
-  success: "bg-secondary/15 text-secondary border-secondary/40",
-  failed: "bg-error/15 text-error border-error/40",
-  cancelled: "bg-surface-highest text-outline border-outline-variant",
-  skipped: "bg-surface-highest text-outline border-outline-variant",
+  pending: "bg-muted-foreground",
+  running: "bg-progress",
+  success: "bg-secondary",
+  failed: "bg-error",
+  cancelled: "bg-muted-foreground",
+  skipped: "bg-muted-foreground",
 };
 
 interface StatusBadgeProps {
@@ -33,19 +33,18 @@ interface StatusBadgeProps {
 export function StatusBadge({ status, type = "task", className }: StatusBadgeProps) {
   const colors =
     type === "job"
-      ? (JOB_COLORS[status as JobStatus] ?? "bg-surface-highest text-on-surface-variant")
-      : (TASK_COLORS[status as TaskStatus] ?? "bg-surface-highest text-on-surface-variant");
+      ? (JOB_COLORS[status as JobStatus] ?? "bg-muted-foreground")
+      : (TASK_COLORS[status as TaskStatus] ?? "bg-muted-foreground");
 
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-label font-semibold uppercase tracking-wider border",
-        colors,
+        "inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-label font-normal text-muted-foreground",
         className,
       )}
     >
-      <span className="w-1.5 h-1.5 rounded-sm bg-current opacity-70 flex-shrink-0" />
-      {status.replace(/_/g, " ")}
+      <span className={cn("size-1.5 rounded-full shrink-0", colors)} />
+      {status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ")}
     </span>
   );
 }

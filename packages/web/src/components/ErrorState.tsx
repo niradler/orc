@@ -7,11 +7,16 @@ interface ErrorStateProps {
 
 export function ErrorState({ message, onRetry }: ErrorStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 gap-3">
-      <p className="text-error font-label text-xs uppercase tracking-widest">{message}</p>
+    <div
+      data-testid="error-state"
+      className="flex flex-col items-center justify-center gap-3 px-4 py-16"
+    >
+      <p role="alert" className="max-w-prose break-words text-center text-sm text-error">
+        {message}
+      </p>
       {onRetry && (
-        <Button variant="outline" size="sm" onClick={onRetry} className="text-xs">
-          RETRY
+        <Button data-testid="error-retry" variant="outline" size="sm" onClick={onRetry}>
+          Retry
         </Button>
       )}
     </div>

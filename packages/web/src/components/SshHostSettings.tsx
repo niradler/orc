@@ -1,5 +1,6 @@
 import { Plug, Save } from "lucide-react";
 import { useEffect, useState } from "react";
+import { ErrorState } from "@/components/ErrorState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +23,7 @@ function errorText(error: unknown): string | null {
 }
 
 export function SshHostSettings() {
-  const { data: ssh } = useSsh();
+  const { data: ssh, error: loadError, refetch } = useSsh();
   const { data: backends } = useBackends();
   const select = useSelectSshHost();
   const test = useTestSshHost();
@@ -35,7 +36,19 @@ export function SshHostSettings() {
     setPort(String(ssh.remote_port));
   }, [ssh]);
 
-  if (!ssh) return null;
+  if (loadError)
+    return (
+      <section>
+        <h2 className="mb-3 text-base font-semibold">Execution host</h2>
+        <ErrorState message={loadError.message} onRetry={() => void refetch()} />
+      </section>
+    );
+  if (!ssh)
+    return (
+      <p role="status" data-testid="page-loading" className="text-sm text-muted-foreground">
+        Loading execution host…
+      </p>
+    );
 
   const alias = choice === LOCAL ? null : choice;
   const hosts = ssh.host && !ssh.hosts.includes(ssh.host) ? [ssh.host, ...ssh.hosts] : ssh.hosts;
@@ -47,10 +60,10 @@ export function SshHostSettings() {
 
   return (
     <section data-testid="ssh-settings">
-      <h2 className="font-headline font-bold text-xs uppercase tracking-widest text-on-surface mb-1">
-        Execution Host
+      <h2 className="font-headline font-semibold text-base  text-on-surface mb-1">
+        Execution host
       </h2>
-      <p className="font-body text-xs text-outline mb-4">
+      <p className="font-body text-sm text-muted-foreground mb-4">
         Run every agent, terminal, git and file action on a host from{" "}
         <code className="text-primary">~/.ssh/config</code>. Agents there reach orc through a
         reverse tunnel on the remote port. Terminals already open keep their host.
@@ -58,56 +71,63 @@ export function SshHostSettings() {
       <Separator className="bg-surface-highest mb-4" />
       <div className="space-y-4">
         {ssh.locked && (
-          <p data-testid="ssh-locked" className="font-body text-[11px] text-tertiary">
+          <p data-testid="ssh-locked" className="font-body text-sm text-tertiary">
             Fixed by ORC_SSH_HOST in orc's environment.
           </p>
         )}
         {!ssh.supported && (
-          <p data-testid="ssh-unsupported" className="font-body text-[11px] text-error">
+          <p data-testid="ssh-unsupported" className="font-body text-sm text-error">
             {ssh.unsupported_reason}
           </p>
         )}
         <div className="space-y-2">
-          <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
+          <Label htmlFor="ssh-host" className="font-label text-sm text-muted-foreground">
             Host
           </Label>
           <Select value={choice} onValueChange={setChoice} disabled={disabled}>
             <SelectTrigger
+              id="ssh-host"
+              aria-label="Execution host"
               data-testid="ssh-host-picker"
-              className="bg-surface-highest border-surface-highest text-on-surface font-body text-sm"
+              className="bg-surface-highest border-control-border text-on-surface font-body text-sm"
             >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="bg-surface-highest border-surface-highest max-h-72">
-              <SelectItem value={LOCAL} className="font-label text-xs">
+            <SelectContent className="bg-surface-highest border-outline-variant max-h-72">
+              <SelectItem value={LOCAL} className="font-label text-sm">
                 Local (this machine)
               </SelectItem>
               {hosts.map((host) => (
-                <SelectItem key={host} value={host} className="font-label text-xs">
+                <SelectItem key={host} value={host} className="font-label text-sm">
                   {host}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           {hosts.length === 0 && (
-            <p className="font-body text-[11px] text-outline">
+            <p data-testid="page-empty" className="font-body text-sm text-muted-foreground">
               No Host entries found in ~/.ssh/config on the machine running orc.
             </p>
           )}
         </div>
         <div className="space-y-2">
-          <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-            Remote Port
+          <Label htmlFor="ssh-remote-port" className="font-label text-sm text-muted-foreground">
+            Remote port
           </Label>
           <Input
+            id="ssh-remote-port"
+            aria-invalid={Boolean(alias && !portValid)}
             data-testid="ssh-remote-port"
             value={port}
             onChange={(e) => setPort(e.target.value)}
             disabled={disabled || !alias}
             inputMode="numeric"
-            className="bg-surface-highest border-surface-highest text-on-surface font-body text-sm"
+            className="bg-surface-highest border-outline-variant text-on-surface font-body text-sm"
           />
-          <p className="font-body text-[11px] text-outline">
+          {alias && !portValid && (
+            <p className="text-sm text-error">Enter a remote port from 1 to 65535.</p>
+          )}
+          <p className="font-body text-sm text-muted-foreground">
             Change it if the host already listens on this port, e.g. its own orc.
           </p>
         </div>
@@ -121,7 +141,7 @@ export function SshHostSettings() {
                 remotePort: alias ? portNumber : null,
               })
             }
-            className="font-label text-xs uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+            className="font-label text-sm bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <Save size={12} className="mr-1.5" /> Use Host
           </Button>
@@ -130,30 +150,30 @@ export function SshHostSettings() {
             variant="ghost"
             disabled={!alias || !ssh.supported || test.isPending}
             onClick={() => alias && test.mutate(alias)}
-            className="font-label text-xs uppercase text-outline hover:text-on-surface"
+            className="font-label text-sm text-muted-foreground hover:text-on-surface"
           >
             <Plug size={12} className="mr-1.5" /> {test.isPending ? "Testing…" : "Test"}
           </Button>
         </div>
         {errorText(select.error ?? test.error) && (
-          <p data-testid="ssh-error" className="font-body text-[11px] text-error">
+          <p data-testid="ssh-error" className="font-body text-sm text-error">
             {errorText(select.error ?? test.error)}
           </p>
         )}
         {result && (
-          <div data-testid="ssh-test-result" className="font-body text-[11px] space-y-1">
+          <div data-testid="ssh-test-result" className="font-body text-sm space-y-1">
             {result.ok ? (
               <>
                 <p className="text-secondary">
                   Connected to {result.host} ({result.os}, {result.shell})
                 </p>
-                <p className="text-outline">
+                <p className="text-muted-foreground">
                   {Object.entries(result.binaries)
                     .map(([name, path]) => `${path ? "●" : "○"} ${name}`)
                     .join("  ")}
                 </p>
                 {result.binaries.claude && result.claude_logged_in === false && (
-                  <p className={result.api_key_forwarded ? "text-outline" : "text-error"}>
+                  <p className={result.api_key_forwarded ? "text-muted-foreground" : "text-error"}>
                     claude is not logged in on {result.host}.{" "}
                     {result.api_key_forwarded
                       ? "ANTHROPIC_API_KEY from orc's environment will be forwarded."
@@ -167,7 +187,7 @@ export function SshHostSettings() {
           </div>
         )}
         {ssh.host && claude && !claude.available && (
-          <p data-testid="ssh-claude-error" className="font-body text-[11px] text-error">
+          <p data-testid="ssh-claude-error" className="font-body text-sm text-error">
             claude backend: {claude.error}
           </p>
         )}

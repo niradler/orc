@@ -13,12 +13,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
+import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useLoggedSessions } from "@/hooks/useSessions";
 
 const PAGE_SIZE = 25;
-const HEAD = "font-label text-[11px] uppercase tracking-widest text-outline";
+const HEAD = "font-label text-xs font-medium text-outline";
 
 export function LoggedSessions({ projectId }: { projectId: string }) {
+  const desktop = useBreakpoint("sm");
   const [page, setPage] = useState(0);
   const {
     selectedId: selected,
@@ -48,49 +50,92 @@ export function LoggedSessions({ projectId }: { projectId: string }) {
       ) : rows.length === 0 ? (
         <EmptyState message="No ORC sessions" />
       ) : (
-        <div className="border border-surface-highest rounded-sm overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                <TableHead className={HEAD}>Agent</TableHead>
-                <TableHead className={`${HEAD} w-24`}>Version</TableHead>
-                <TableHead className={HEAD}>Summary</TableHead>
-                <TableHead className={`${HEAD} w-24`}>Project</TableHead>
-                <TableHead className={`${HEAD} w-28`}>Tokens Used</TableHead>
-                <TableHead className={`${HEAD} w-36`}>Created</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((s) => (
-                <TableRow
-                  key={s.id}
+        <div className="min-w-0 overflow-hidden">
+          {!desktop ? (
+            <div className="divide-y divide-border">
+              {rows.map((session) => (
+                <article
+                  key={session.id}
                   data-testid="session-row"
-                  data-session-id={s.id}
-                  className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
-                  onClick={() => openDetail(s.id)}
+                  data-session-id={session.id}
+                  className="py-4 space-y-3"
                 >
-                  <TableCell className="font-label text-xs text-primary">
-                    {s.agent ?? "—"}
-                  </TableCell>
-                  <TableCell className="font-label text-[11px] text-outline">
-                    {s.agent_version ?? "—"}
-                  </TableCell>
-                  <TableCell className="font-body text-xs text-on-surface-variant max-w-sm truncate">
-                    {s.summary ?? "—"}
-                  </TableCell>
-                  <TableCell className="font-label text-[11px] text-outline">
-                    {s.project_id ? s.project_id.slice(-6) : "—"}
-                  </TableCell>
-                  <TableCell className="font-label text-[11px] text-outline text-right">
-                    {s.tokens_used != null ? s.tokens_used.toLocaleString() : "—"}
-                  </TableCell>
-                  <TableCell className="font-label text-[11px] text-outline">
-                    {new Date(s.created_at).toLocaleString()}
-                  </TableCell>
-                </TableRow>
+                  <button
+                    type="button"
+                    className="min-h-11 text-sm text-left font-medium text-primary break-words"
+                    onClick={() => openDetail(session.id)}
+                  >
+                    {session.agent ?? "Session"}
+                  </button>
+                  <p className="text-sm leading-relaxed text-on-surface break-words">
+                    {session.summary ?? "No summary recorded"}
+                  </p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-outline">
+                    <span>Version {session.agent_version ?? "—"}</span>
+                    <span>{session.tokens_used?.toLocaleString() ?? "—"} tokens</span>
+                    <span>
+                      {session.project_id
+                        ? `Project ${session.project_id.slice(-6)}`
+                        : "Unassigned"}
+                    </span>
+                    <span>{new Date(session.created_at).toLocaleString()}</span>
+                  </div>
+                </article>
               ))}
-            </TableBody>
-          </Table>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="border-b border-border hover:bg-transparent">
+                  <TableHead className={HEAD}>Agent</TableHead>
+                  <TableHead className={`${HEAD} w-24`}>Version</TableHead>
+                  <TableHead className={HEAD}>Summary</TableHead>
+                  <TableHead className={`${HEAD} w-24`}>Project</TableHead>
+                  <TableHead className={`${HEAD} w-28`}>Tokens Used</TableHead>
+                  <TableHead className={`${HEAD} w-36`}>Created</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {rows.map((s) => (
+                  <TableRow
+                    key={s.id}
+                    data-testid="session-row"
+                    data-session-id={s.id}
+                    className="border-b border-border/65 hover:bg-surface-high cursor-pointer"
+                    onClick={() => openDetail(s.id)}
+                  >
+                    <TableCell className="font-label text-xs text-primary">
+                      <button
+                        type="button"
+                        className="text-left font-medium hover:underline"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openDetail(s.id);
+                        }}
+                      >
+                        {s.agent ?? "Session"}
+                      </button>
+                    </TableCell>
+                    <TableCell className="font-label text-xs text-outline">
+                      {s.agent_version ?? "—"}
+                    </TableCell>
+                    <TableCell className="font-body text-xs text-on-surface-variant max-w-sm truncate">
+                      {s.summary ?? "—"}
+                    </TableCell>
+                    <TableCell className="font-label text-xs text-outline">
+                      {s.project_id ? s.project_id.slice(-6) : "—"}
+                    </TableCell>
+                    <TableCell className="font-label text-xs text-outline text-right">
+                      {s.tokens_used != null ? s.tokens_used.toLocaleString() : "—"}
+                    </TableCell>
+                    <TableCell className="font-label text-xs text-outline">
+                      {new Date(s.created_at).toLocaleString()}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
           <Pager page={page} pageSize={PAGE_SIZE} total={total} onPage={setPage} />
         </div>
       )}

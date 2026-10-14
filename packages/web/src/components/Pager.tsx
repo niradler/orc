@@ -8,7 +8,7 @@ interface PagerProps {
 }
 
 const BUTTON =
-  "inline-flex items-center gap-1 font-label text-[11px] uppercase tracking-widest text-primary hover:text-on-surface disabled:opacity-40 disabled:hover:text-primary";
+  "inline-flex min-h-11 items-center gap-1 font-label text-xs text-primary hover:text-on-surface disabled:opacity-40 disabled:hover:text-primary";
 
 export function Pager({ page, pageSize, total, onPage }: PagerProps): React.ReactElement | null {
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -19,9 +19,9 @@ export function Pager({ page, pageSize, total, onPage }: PagerProps): React.Reac
   return (
     <div
       data-testid="pager"
-      className="flex items-center justify-between border-t border-surface-highest px-3 py-2"
+      className="flex flex-wrap gap-2 items-center justify-between border-t border-surface-highest px-3 py-2"
     >
-      <span className="font-label text-[11px] uppercase tracking-widest text-outline">
+      <span className="font-label text-xs text-outline">
         {first}–{last} of {total}
       </span>
       <div className="flex items-center gap-4">
@@ -35,7 +35,7 @@ export function Pager({ page, pageSize, total, onPage }: PagerProps): React.Reac
           <ChevronLeft className="h-3 w-3" />
           Prev
         </button>
-        <span className="font-label text-[11px] uppercase tracking-widest text-outline">
+        <span className="font-label text-xs text-outline">
           Page {page + 1} / {pageCount}
         </span>
         <button

@@ -12,7 +12,7 @@ const ACCENT_COLORS: Record<Accent, string> = {
 };
 
 const VALUE_COLORS: Record<Accent, string> = {
-  primary: "text-primary terminal-glow",
+  primary: "text-primary",
   secondary: "text-secondary",
   tertiary: "text-tertiary",
   error: "text-error",
@@ -29,24 +29,22 @@ interface StatCardProps {
 
 export function StatCard({ label, value, accent = "muted", sub, onClick }: StatCardProps) {
   const classes = cn(
-    "bg-surface-low p-4 rounded-sm border-l-2 relative overflow-hidden text-left w-full block",
+    "bg-surface p-5 rounded-xl border border-border border-l-2 relative overflow-hidden text-left w-full block",
     ACCENT_COLORS[accent],
     onClick && "cursor-pointer hover:bg-surface transition-colors",
   );
   const inner = (
     <>
       <div className="flex justify-between items-start mb-2">
-        <span className="font-label text-[11px] text-outline uppercase tracking-widest">
-          {label}
-        </span>
+        <span className="font-label text-sm text-outline">{label}</span>
       </div>
       <div
         data-testid="stat-card-value"
-        className={cn("text-2xl font-headline font-extrabold uppercase", VALUE_COLORS[accent])}
+        className={cn("text-3xl font-headline font-medium tabular-nums", VALUE_COLORS[accent])}
       >
         {value}
       </div>
-      {sub && <div className="font-label text-[11px] text-outline mt-1">{sub}</div>}
+      {sub && <div className="font-label text-xs text-outline mt-1">{sub}</div>}
     </>
   );
   if (onClick) {

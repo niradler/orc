@@ -13,7 +13,7 @@ import { useTerminals } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 
 const SEGMENT =
-  "inline-flex items-center gap-1 whitespace-nowrap px-2 py-1 font-label text-[11px] uppercase tracking-widest transition-colors";
+  "inline-flex items-center gap-1 whitespace-nowrap px-2 py-1 font-label text-xs transition-colors";
 
 export function ResumeActions({ session }: { session: LiveSession }) {
   const { openLiveSession, info, terminals } = useTerminals();
@@ -79,7 +79,7 @@ export function ResumeActions({ session }: { session: LiveSession }) {
         title={info.reason ?? command}
         className={cn(
           SEGMENT,
-          "rounded-sm border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20",
+          "rounded-lg border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20",
         )}
         onClick={(e) => {
           e.stopPropagation();
@@ -98,7 +98,7 @@ export function ResumeActions({ session }: { session: LiveSession }) {
       ref={rootRef}
       role="group"
       aria-label="Resume session"
-      className="relative inline-flex items-stretch rounded-sm border border-primary/30 bg-primary/10"
+      className="relative inline-flex items-stretch rounded-lg border border-primary/30 bg-primary/10"
     >
       <button
         type="button"
@@ -144,14 +144,14 @@ export function ResumeActions({ session }: { session: LiveSession }) {
         <div
           role="menu"
           style={{ top: menuPos.top, right: menuPos.right }}
-          className="fixed z-50 min-w-48 bg-surface border border-surface-highest rounded-sm shadow-xl p-1"
+          className="fixed z-50 min-w-48 bg-surface border border-surface-highest rounded-lg shadow-xl p-1"
         >
           <button
             type="button"
             role="menuitem"
             data-testid="copy-resume"
             title={command}
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm font-label text-[11px] uppercase tracking-widest text-on-surface-variant hover:bg-surface-highest hover:text-on-surface"
+            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg font-label text-xs text-on-surface-variant hover:bg-surface-highest hover:text-on-surface"
             onClick={(e) => {
               e.stopPropagation();
               copyCommand();
@@ -165,7 +165,7 @@ export function ResumeActions({ session }: { session: LiveSession }) {
             role="menuitem"
             data-testid="copy-terminal-link"
             title="A link that opens this session's terminal, or offers to start one"
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm font-label text-[11px] uppercase tracking-widest text-on-surface-variant hover:bg-surface-highest hover:text-on-surface"
+            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg font-label text-xs text-on-surface-variant hover:bg-surface-highest hover:text-on-surface"
             onClick={(e) => {
               e.stopPropagation();
               copyLink();

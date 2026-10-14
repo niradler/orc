@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, type Terminal } from "@/api/client";
 import { fileChangeState } from "@/lib/git-status";
 import { useTerminals } from "@/lib/terminals";
@@ -15,9 +15,10 @@ function sameCheckout(left: string, right: string | null) {
     : normalize(left) === normalize(right ?? "");
 }
 
-export function GitPanelBody({ terminal }: { terminal: Terminal }) {
+export function GitPanelBody({ terminal, paneId }: { terminal: Terminal; paneId: string }) {
   const { create } = useTerminals();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const client = useQueryClient();
   const [paths, setPaths] = useState<string[]>([]);
   const [message, setMessage] = useState("");
@@ -66,7 +67,15 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
   });
   const openShell = useMutation({
     mutationFn: (cwd: string) => create({ kind: "shell", cwd }),
-    onSuccess: (created) => navigate(`/terminals/${created.id}`),
+    onSuccess: (created) => {
+      const next = new URLSearchParams(params);
+      next.set("view", "git");
+      next.set("pane", paneId);
+      next.set("paneTerminal", created.id);
+      next.delete("file");
+      next.delete("session");
+      navigate({ pathname: `/terminals/${created.id}`, search: next.toString() });
+    },
   });
   const data = status.data;
   const worktrees =
@@ -89,17 +98,17 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
       {data?.root && (
         <div
           data-testid="git-checkout-controls"
-          className="shrink-0 p-3 space-y-2 bg-surface border-b border-surface-highest"
+          className="shrink-0 p-3 space-y-2 bg-background border-b border-outline-variant"
         >
           <div className="flex items-end gap-2">
-            <label className="flex-1 min-w-0 text-xs text-outline">
+            <label className="flex-1 min-w-0 text-xs text-on-surface-variant">
               Branch
               <select
                 data-testid="git-branch-select"
                 aria-label="Branch"
                 value={data.branch ?? ""}
                 disabled={busy}
-                className="block w-full bg-surface-highest p-2 text-on-surface"
+                className="block min-h-11 rounded-md w-full border border-control-border bg-background p-2 text-on-surface"
                 onChange={(event) => {
                   const tree = worktrees.find(
                     (tree) =>
@@ -131,7 +140,7 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
             <button
               type="button"
               data-testid="git-refresh"
-              className="p-2 text-primary"
+              className="min-h-11 rounded-md p-2 text-primary hover:bg-surface"
               onClick={() => {
                 void status.refetch();
                 void trees.refetch();
@@ -144,14 +153,14 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
               Refresh
             </button>
           </div>
-          <label className="block text-xs text-outline">
+          <label className="block text-xs text-on-surface-variant">
             Worktree
             <select
               data-testid="git-worktree-select"
               aria-label="Worktree"
               value={currentTree?.path ?? data.root}
               disabled={busy}
-              className="block w-full bg-surface-highest p-2 text-on-surface"
+              className="block min-h-11 rounded-md w-full border border-control-border bg-background p-2 text-on-surface"
               onChange={(event) => {
                 if (!sameCheckout(event.target.value, data.root))
                   openShell.mutate(event.target.value);
@@ -182,7 +191,7 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
               data-testid="git-add-worktree"
               disabled={busy}
               onClick={() => action.mutate("worktree")}
-              className="text-xs text-primary disabled:opacity-40"
+              className="min-h-11 rounded-md px-2 text-sm text-primary hover:bg-surface disabled:opacity-40"
             >
               New orc worktree
             </button>
@@ -199,7 +208,7 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
         {data && !data.root && <p>This folder is not a git repository.</p>}
         {data?.root && (
           <>
-            <div data-testid="git-current-pr" className="rounded border border-surface-highest p-2">
+            <div data-testid="git-current-pr" className="border-b border-outline-variant pb-3">
               {github.isPending ? (
                 "Checking open pull requests…"
               ) : github.error ? (
@@ -224,7 +233,7 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
                     </a>
                   ))
               ) : (
-                <span className="text-outline">
+                <span className="text-on-surface-variant">
                   {github.data?.auth === "none"
                     ? "No GitHub connection for this checkout. Authenticate with gh or configure a GitHub token."
                     : github.data?.truncated
@@ -238,8 +247,8 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
               {data.files.length === 0 && <p data-testid="git-clean">Working tree clean</p>}
               {data.files.length > 0 && (
                 <>
-                  <div className="flex items-center gap-3 text-xs">
-                    <label className="flex items-center gap-2 flex-1">
+                  <div className="flex flex-wrap items-center gap-3 text-xs">
+                    <label className="flex min-h-11 items-center gap-2 flex-1">
                       <input
                         type="checkbox"
                         data-testid="git-select-all"
@@ -265,7 +274,7 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
                       type="button"
                       data-testid="git-diff-expand-all"
                       onClick={() => setCollapsed([])}
-                      className="text-primary"
+                      className="min-h-11 rounded-md px-2 text-primary hover:bg-surface"
                     >
                       Expand all
                     </button>
@@ -273,7 +282,7 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
                       type="button"
                       data-testid="git-diff-collapse-all"
                       onClick={() => setCollapsed(data.files.map((file) => file.path))}
-                      className="text-primary"
+                      className="min-h-11 rounded-md px-2 text-primary hover:bg-surface"
                     >
                       Collapse all
                     </button>
@@ -284,7 +293,7 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
                       data-testid="git-stage"
                       disabled={!paths.length || busy}
                       onClick={() => action.mutate("stage")}
-                      className="text-primary disabled:opacity-40"
+                      className="min-h-11 rounded-md px-2 text-primary hover:bg-surface disabled:opacity-40"
                     >
                       Stage selected
                     </button>
@@ -294,7 +303,7 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
                       value={message}
                       onChange={(event) => setMessage(event.target.value)}
                       placeholder="Commit message"
-                      className="flex-1 min-w-0 bg-surface-highest p-2"
+                      className="flex-1 min-w-[120px] min-h-11 rounded-md border border-control-border bg-background p-2"
                     />
                     <button
                       type="button"
@@ -306,7 +315,7 @@ export function GitPanelBody({ terminal }: { terminal: Terminal }) {
                         !data.files.some((file) => file.index !== " " && file.index !== "?")
                       }
                       onClick={() => action.mutate("commit")}
-                      className="text-primary disabled:opacity-40"
+                      className="min-h-11 rounded-md px-2 text-primary hover:bg-surface disabled:opacity-40"
                     >
                       Commit staged
                     </button>

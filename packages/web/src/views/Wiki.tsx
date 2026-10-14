@@ -1,36 +1,42 @@
 import type { WikiScope } from "@orc/sdk/types";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { confirmDocumentClose, DocumentWorkspace } from "@/components/DocumentWorkspace";
+import { KnowledgeNotebook } from "@/components/KnowledgeNotebook";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useProjectScope } from "@/hooks/useProjectScope";
+import { workspaceDestination } from "@/lib/workspace-navigation";
 
 export default function Wiki({ projectId }: { projectId: string }) {
+  const location = useLocation();
   const selectedProject = useProjectScope(projectId);
   const scope: WikiScope =
     selectedProject === "all" || selectedProject === "unassigned"
       ? { scope: "global" }
       : { project_id: selectedProject };
-  const [params, setParams] = useSearchParams();
-  const tab = params.get("tab") ?? "changes";
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  function setParams(update: (previous: URLSearchParams) => URLSearchParams): void {
+    const next = update(new URLSearchParams(window.location.search));
+    if (next.toString() === new URLSearchParams(window.location.search).toString()) return;
+    navigate({ pathname: "/knowledge/wiki", search: next.toString(), hash: window.location.hash });
+  }
+  const requestedTab = params.get("tab");
+  const legacyHistory = requestedTab === "changes" || requestedTab === "audit";
+  const historyOpen = params.get("history") === "1" || legacyHistory;
+  const auditOpen = params.get("audit") === "1" || requestedTab === "audit";
+  const historyPage = params.get("historyPage") ?? (legacyHistory ? params.get("page") : null);
   const slug = params.get("page");
   const pageScope: WikiScope = params.get("scope") === "global" ? { scope: "global" } : scope;
-  const [input, setInput] = useState("");
-  const [query, setQuery] = useState("");
   const queryClient = useQueryClient();
   const documentId = `wiki:${pageScope.project_id ?? "global"}:${slug}`;
   const pages = useQuery({
-    queryKey: ["wiki", scope, query],
-    queryFn: () =>
-      query
-        ? api.wiki.search(query, scope).then((r) => r.results)
-        : api.wiki.list(scope).then((r) => r.pages),
+    queryKey: ["wiki", scope, "history-index"],
+    queryFn: () => api.wiki.list(scope).then((r) => r.pages),
     refetchInterval: 30000,
   });
   const changes = useQuery({
@@ -41,7 +47,7 @@ export default function Wiki({ projectId }: { projectId: string }) {
   const audit = useQuery({
     queryKey: ["knowledge-audit", scope],
     queryFn: () => api.audit.list(scope),
-    enabled: tab === "audit",
+    enabled: historyOpen,
   });
   const page = useQuery({
     queryKey: ["wiki-page", slug, pageScope],
@@ -54,10 +60,13 @@ export default function Wiki({ projectId }: { projectId: string }) {
     enabled: Boolean(slug),
   });
   function selectPage(nextSlug: string, owner: string | null): void {
+    if (nextSlug === slug && historyPage === nextSlug && owner === (pageScope.project_id ?? null))
+      return;
     if (!confirmDocumentClose(documentId)) return;
     setParams((previous) => {
       const next = new URLSearchParams(previous);
       next.set("page", nextSlug);
+      next.set("historyPage", nextSlug);
       if (owner === null) next.set("scope", "global");
       else next.delete("scope");
       return next;
@@ -68,50 +77,50 @@ export default function Wiki({ projectId }: { projectId: string }) {
     <div data-testid="wiki-view">
       <ViewHeader
         title="Wiki"
-        meta={scope.scope === "global" ? "Global lessons" : "Project lessons with global fallback"}
-      />
-      <div className="flex gap-2 mb-5">
-        {[
-          ["changes", "What ORC learned"],
-          ["pages", "Pages"],
-          ["audit", "Audit log"],
-        ].map(([value, label]) => (
+        action={
           <Button
-            key={value}
-            data-testid={`wiki-tab-${value}`}
-            variant={tab === value ? "default" : "outline"}
-            onClick={() =>
+            variant="outline"
+            data-testid="wiki-history-toggle"
+            aria-pressed={historyOpen}
+            onClick={() => {
+              if (!confirmDocumentClose(documentId)) return;
               setParams((previous) => {
                 const next = new URLSearchParams(previous);
-                next.set("tab", value);
+                next.delete("tab");
+                next.delete("historyPage");
+                if (historyOpen) next.delete("history");
+                else next.set("history", "1");
                 return next;
-              })
-            }
+              });
+            }}
           >
-            {label}
+            {historyOpen ? "Back to Wiki" : "History"}
           </Button>
-        ))}
-      </div>
+        }
+      />
       {error && <p role="alert">{(error as Error).message}</p>}
-      {tab === "changes" && (
-        <div className="space-y-2">
+      {historyOpen && (
+        <div className="space-y-2" data-testid="wiki-history-feed">
+          <h2 className="text-lg font-medium">History</h2>
+          <p className="text-sm text-muted-foreground">Recent changes to your Wiki pages.</p>
           {changes.isLoading && <p>Loading learning history...</p>}
           {changes.data?.changes.length === 0 && (
-            <p className="text-outline text-sm">No lessons recorded in this scope yet.</p>
+            <p className="text-muted-foreground text-sm">No lessons recorded in this scope yet.</p>
           )}
           {changes.data?.changes.map((change) => (
             <button
               key={`${change.project_id ?? "global"}:${change.slug}:${change.revision}`}
               type="button"
               data-testid="wiki-change"
-              className="w-full text-left border border-surface-highest rounded-sm p-4 hover:bg-surface-low"
+              className="w-full text-left border-b border-outline-variant p-4 hover:bg-surface-low"
               onClick={() => selectPage(change.slug, change.project_id)}
             >
-              <div className="font-semibold text-sm">
-                {change.title} <span className="text-outline">· revision {change.revision}</span>
+              <div className="font-medium text-sm">
+                {change.title}{" "}
+                <span className="text-muted-foreground">· revision {change.revision}</span>
               </div>
               <p className="text-xs my-2">{change.note}</p>
-              <div className="text-xs text-outline">
+              <div className="text-xs text-muted-foreground">
                 {change.author} · {new Date(change.updated_at * 1000).toLocaleString()} ·{" "}
                 {change.project_id ? "Project" : "Global"}
                 {change.session_id && ` · session ${change.session_id}`}
@@ -120,57 +129,35 @@ export default function Wiki({ projectId }: { projectId: string }) {
           ))}
         </div>
       )}
-      {tab === "pages" && (
-        <div>
-          <form
-            className="flex gap-2 mb-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setQuery(input.trim());
-            }}
-          >
-            <Input
-              data-testid="wiki-search-input"
-              aria-label="Search wiki"
-              value={input}
-              onChange={(event) => setInput(event.target.value)}
-              placeholder="Search lessons and procedures..."
-            />
-            <Button data-testid="wiki-search-submit" type="submit">
-              Search
-            </Button>
-          </form>
-          {pages.isLoading && <p>Loading pages...</p>}
-          {pages.data?.length === 0 && <p className="text-outline text-sm">No matching pages.</p>}
-          <div className="space-y-2">
-            {pages.data?.map((entry) => (
-              <button
-                type="button"
-                key={`${entry.project_id}:${entry.slug}`}
-                data-testid="wiki-page-row"
-                data-slug={entry.slug}
-                className="w-full text-left border border-surface-highest p-4 rounded-sm hover:bg-surface-low"
-                onClick={() => selectPage(entry.slug, entry.project_id)}
-              >
-                <div className="font-semibold text-sm">{entry.title}</div>
-                <p className="text-xs mt-2">{entry.summary}</p>
-                <span className="text-xs text-outline">
-                  {entry.kind} · {entry.project_id ? "Project" : "Global"}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      {tab === "audit" && (
-        <div className="space-y-2">
+      {!historyOpen && <KnowledgeNotebook key={selectedProject} projectId={selectedProject} />}
+      {historyOpen && (
+        <details
+          className="mt-6 space-y-2"
+          data-testid="wiki-technical-audit"
+          open={auditOpen}
+          onToggle={(event) => {
+            const open = event.currentTarget.open;
+            if (open === auditOpen) return;
+            setParams((previous) => {
+              const next = new URLSearchParams(previous);
+              next.delete("tab");
+              next.set("history", "1");
+              if (open) next.set("audit", "1");
+              else next.delete("audit");
+              return next;
+            });
+          }}
+        >
+          <summary className="cursor-pointer text-sm text-muted-foreground">
+            Technical audit details
+          </summary>
           {audit.isLoading && <p>Loading audit log...</p>}
           {audit.data?.entries.length === 0 && <p>No knowledge actions recorded.</p>}
           {audit.data?.entries.map((entry) => (
             <details
               key={entry.id}
               data-testid="wiki-audit-entry"
-              className="border border-surface-highest p-3 rounded-sm"
+              className="border-b border-outline-variant p-3"
             >
               <summary className="text-sm cursor-pointer">
                 {entry.action} · {entry.subject_ids.join(", ")} · {entry.actor ?? "unknown"} ·{" "}
@@ -183,16 +170,17 @@ export default function Wiki({ projectId }: { projectId: string }) {
               </pre>
             </details>
           ))}
-        </div>
+        </details>
       )}
       <Sheet
-        open={Boolean(slug)}
+        open={Boolean(historyPage) && historyOpen}
         onOpenChange={(open) => {
           if (!open && confirmDocumentClose(documentId))
             setParams((previous) => {
               const next = new URLSearchParams(previous);
-              next.delete("page");
-              next.delete("scope");
+              next.delete("historyPage");
+              next.delete("tab");
+              next.set("history", "1");
               return next;
             });
         }}
@@ -206,7 +194,7 @@ export default function Wiki({ projectId }: { projectId: string }) {
             {page.isLoading && <p>Loading page...</p>}
             {page.data && (
               <div data-testid="wiki-page-content" className="space-y-4">
-                <p className="text-xs text-outline">
+                <p className="text-xs text-muted-foreground">
                   Revision {page.data.revision} · {page.data.author} ·{" "}
                   {page.data.project_id ? "Project" : "Global"}
                 </p>
@@ -222,19 +210,24 @@ export default function Wiki({ projectId }: { projectId: string }) {
                       throw new Error(
                         "This page changed since it was opened. Reopen it before saving.",
                       );
-                    const saved = await api.wiki.write({
-                      project_id: current.project_id,
-                      slug: current.slug,
-                      kind: current.kind,
-                      title: current.title,
-                      summary: current.summary,
-                      tags: current.tags,
-                      sources: current.sources,
-                      expected_revision: current.revision,
-                      content,
-                      author: "human",
-                      note: "Manual Markdown edit",
-                    });
+                    const saved = await api.wiki
+                      .write({
+                        project_id: current.project_id,
+                        slug: current.slug,
+                        kind: current.kind,
+                        title: current.title,
+                        summary: current.summary,
+                        tags: current.tags,
+                        sources: current.sources,
+                        expected_revision: current.revision,
+                        content,
+                        author: "human",
+                        note: "Manual Markdown edit",
+                      })
+                      .catch(async (error: unknown) => {
+                        await page.refetch();
+                        throw error;
+                      });
                     await queryClient.invalidateQueries({ queryKey: ["wiki-page"] });
                     await queryClient.invalidateQueries({ queryKey: ["wiki-history"] });
                     await queryClient.invalidateQueries({ queryKey: ["wiki"] });
@@ -250,17 +243,21 @@ export default function Wiki({ projectId }: { projectId: string }) {
                   }}
                 />
                 <div>
-                  <h3 className="text-xs font-semibold">Sources</h3>
+                  <h3 className="text-xs font-medium">Sources</h3>
                   <ul className="text-xs break-all">
                     {page.data.sources.map((source) => (
                       <li key={source}>
                         {source.startsWith("memory:") ? (
-                          <a
+                          <Link
                             className="text-primary underline"
-                            href={`/memories/${encodeURIComponent(source.slice(7))}`}
+                            to={workspaceDestination(
+                              `/knowledge/memories/${encodeURIComponent(source.slice(7))}`,
+                              selectedProject,
+                              location.search,
+                            )}
                           >
                             {source}
-                          </a>
+                          </Link>
                         ) : (
                           source
                         )}
@@ -270,18 +267,18 @@ export default function Wiki({ projectId }: { projectId: string }) {
                 </div>
               </div>
             )}
-            <h3 className="text-sm font-semibold mt-6 mb-3">Revision history</h3>
+            <h3 className="text-sm font-medium mt-6 mb-3">Revision history</h3>
             {history.error && <p role="alert">{(history.error as Error).message}</p>}
             {history.data?.revisions.map((revision) => (
               <details
                 key={revision.revision}
                 data-testid="wiki-revision"
-                className="border border-surface-highest p-3 mb-2 rounded-sm"
+                className="border-b border-outline-variant p-3 mb-2"
               >
                 <summary className="text-xs cursor-pointer">
                   Revision {revision.revision} · {revision.note} · {revision.author}
                 </summary>
-                <p className="text-xs text-outline mt-2">
+                <p className="text-xs text-muted-foreground mt-2">
                   Source session: {revision.session_id ?? "unknown"}
                 </p>
                 <Markdown>{revision.content}</Markdown>

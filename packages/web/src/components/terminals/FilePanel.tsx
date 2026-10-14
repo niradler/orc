@@ -12,7 +12,8 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
-import { type KeyboardEvent, lazy, type ReactElement, Suspense, useState } from "react";
+import { type KeyboardEvent, lazy, type ReactElement, Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, type Terminal } from "@/api/client";
 import "./FilePanel.css";
 
@@ -54,14 +55,16 @@ function Directory({
   });
   return (
     <ul className={path ? "ml-3 border-l border-outline/20 pl-1" : ""}>
-      {files.isPending && <li className="px-3 py-2 text-xs text-outline">Loading files…</li>}
+      {files.isPending && (
+        <li className="px-3 py-2 text-xs text-on-surface-variant">Loading files…</li>
+      )}
       {files.error && (
         <li role="alert" className="px-3 py-2 text-xs text-error">
           {files.error.message}
         </li>
       )}
       {files.data?.entries?.length === 0 && (
-        <li className="px-3 py-2 text-xs text-outline">Empty folder</li>
+        <li className="px-3 py-2 text-xs text-on-surface-variant">Empty folder</li>
       )}
       {files.data?.entries?.map((entry) => {
         const open = expanded.has(entry.path);
@@ -77,7 +80,7 @@ function Directory({
               aria-current={!entry.directory && selected === entry.path ? "true" : undefined}
               title={entry.path}
               onClick={() => (entry.directory ? toggle(entry.path) : select(entry.path))}
-              className={`flex h-8 w-full min-w-0 items-center gap-2 rounded px-2 text-left text-[13px] focus-visible:outline focus-visible:outline-1 focus-visible:outline-primary ${selected === entry.path ? "bg-primary/15 text-primary" : "hover:bg-surface-highest"}`}
+              className={`flex min-h-11 sm:min-h-8 w-full min-w-0 items-center gap-2 rounded px-2 text-left text-[13px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${selected === entry.path ? "bg-surface-highest text-on-surface" : "hover:bg-surface"}`}
             >
               <span className="flex w-3 shrink-0 items-center">
                 {entry.directory && (
@@ -89,7 +92,7 @@ function Directory({
               </span>
               <Icon
                 size={15}
-                className={`shrink-0 ${entry.directory ? "text-primary/80" : "text-outline"}`}
+                className={`shrink-0 ${entry.directory ? "text-on-surface-variant" : "text-on-surface-variant"}`}
               />
               <span className="truncate">{entry.name}</span>
             </button>
@@ -107,17 +110,50 @@ function Directory({
         );
       })}
       {files.data?.truncated && (
-        <li className="px-3 py-2 text-xs text-outline">Showing the first 500 entries.</li>
+        <li className="px-3 py-2 text-xs text-on-surface-variant">
+          Showing the first 500 entries.
+        </li>
       )}
     </ul>
   );
 }
 
-export function FilePanel({ terminal }: { terminal: Terminal }): ReactElement {
-  const [selected, setSelected] = useState<string | null>(null);
+export function FilePanel({
+  terminal,
+  active = true,
+}: {
+  terminal: Terminal;
+  active?: boolean;
+}): ReactElement {
+  const [params, setParams] = useSearchParams();
+  const requestedFile =
+    active &&
+    params.get("view") === "files" &&
+    (params.get("paneTerminal") ?? terminal.id) === terminal.id
+      ? params.get("file")
+      : null;
+  const [selected, setSelected] = useState<string | null>(requestedFile);
   const [dirty, setDirty] = useState(false);
   const [rootOpen, setRootOpen] = useState(true);
+  const [browserOpen, setBrowserOpen] = useState(false);
   const [expanded, setExpanded] = useState(new Set<string>());
+  useEffect(() => {
+    if (!active) return;
+    if (requestedFile !== selected) {
+      setSelected(requestedFile);
+      setDirty(false);
+    }
+    if (requestedFile) {
+      const segments = requestedFile.split("/");
+      setExpanded(
+        (current) =>
+          new Set([
+            ...current,
+            ...segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1).join("/")),
+          ]),
+      );
+    }
+  }, [requestedFile, active, selected]);
   const queryClient = useQueryClient();
   const root = useQuery({
     queryKey: ["checkout-files", terminal.id, ""],
@@ -142,6 +178,15 @@ export function FilePanel({ terminal }: { terminal: Terminal }): ReactElement {
       return;
     setDirty(false);
     setSelected(path);
+    setBrowserOpen(false);
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("view", "files");
+      next.set("paneTerminal", terminal.id);
+      if (path === null) next.delete("file");
+      else next.set("file", path);
+      return next;
+    });
   }
   function navigateTree(event: KeyboardEvent<HTMLElement>): void {
     if (!(event.target instanceof HTMLButtonElement)) return;
@@ -175,9 +220,18 @@ export function FilePanel({ terminal }: { terminal: Terminal }): ReactElement {
       className="file-panel flex flex-1 min-h-0 min-w-0 flex-col overflow-hidden text-sm"
     >
       <header className="flex shrink-0 items-center gap-2 border-b border-surface-highest px-3 py-2">
-        <span className="min-w-0 flex-1 text-[10px] font-semibold uppercase tracking-widest text-outline">
-          Explorer
-        </span>
+        <span className="min-w-0 flex-1 text-xs font-medium text-on-surface-variant">Explorer</span>
+        {selected !== null && (
+          <button
+            type="button"
+            data-testid="files-browser-toggle"
+            aria-expanded={browserOpen}
+            onClick={() => setBrowserOpen(!browserOpen)}
+            className="md:hidden min-h-11 rounded-md px-2 text-sm text-primary hover:bg-surface"
+          >
+            {browserOpen ? "Show document" : "Browse files"}
+          </button>
+        )}
         <button
           type="button"
           data-testid="files-collapse"
@@ -185,7 +239,7 @@ export function FilePanel({ terminal }: { terminal: Terminal }): ReactElement {
           title="Collapse all folders"
           disabled={expanded.size === 0}
           onClick={() => setExpanded(new Set())}
-          className="rounded p-1 text-outline hover:bg-surface-highest hover:text-primary disabled:opacity-30 disabled:hover:bg-transparent"
+          className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md p-1 text-on-surface-variant hover:bg-surface hover:text-primary disabled:opacity-30 disabled:hover:bg-transparent"
         >
           <ChevronsDownUp size={14} />
         </button>
@@ -199,12 +253,16 @@ export function FilePanel({ terminal }: { terminal: Terminal }): ReactElement {
               queryKey: ["checkout-files", terminal.id],
             })
           }
-          className="rounded p-1 text-outline hover:bg-surface-highest hover:text-primary"
+          className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md p-1 text-on-surface-variant hover:bg-surface hover:text-primary"
         >
           <RefreshCw size={14} className={root.isFetching ? "animate-spin" : ""} />
         </button>
       </header>
-      <div className="file-panel-body" data-preview={selected !== null}>
+      <div
+        className="file-panel-body"
+        data-preview={selected !== null}
+        data-browser-open={browserOpen}
+      >
         <nav
           aria-label="Project files"
           data-testid="files-tree"
@@ -218,7 +276,7 @@ export function FilePanel({ terminal }: { terminal: Terminal }): ReactElement {
             title={rootPath}
             aria-expanded={rootOpen}
             onClick={() => setRootOpen((open) => !open)}
-            className="mb-1 flex h-8 w-full min-w-0 items-center gap-2 rounded px-2 text-left text-[13px] font-semibold hover:bg-surface-highest focus-visible:outline focus-visible:outline-1 focus-visible:outline-primary"
+            className="mb-1 flex min-h-11 sm:min-h-8 w-full min-w-0 items-center gap-2 rounded px-2 text-left text-[13px] font-medium hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
           >
             <ChevronRight
               size={12}
@@ -249,7 +307,7 @@ export function FilePanel({ terminal }: { terminal: Terminal }): ReactElement {
         </nav>
         {selected !== null && (
           <section aria-label="File preview" className="file-panel-preview flex flex-col">
-            <header className="flex shrink-0 items-center gap-2 bg-surface px-3 py-1.5">
+            <header className="flex shrink-0 items-center gap-2 bg-background px-3 py-1.5">
               <File size={14} className="shrink-0 text-primary" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-medium">
@@ -260,7 +318,7 @@ export function FilePanel({ terminal }: { terminal: Terminal }): ReactElement {
                     </span>
                   )}
                 </p>
-                <p title={selected} className="truncate pt-0.5 text-[10px] text-outline">
+                <p title={selected} className="truncate pt-0.5 text-xs text-on-surface-variant">
                   {selected}
                 </p>
               </div>
@@ -269,22 +327,28 @@ export function FilePanel({ terminal }: { terminal: Terminal }): ReactElement {
                 data-testid="file-preview-close"
                 aria-label="Close file preview"
                 onClick={() => selectFile(null)}
-                className="rounded p-1 text-outline hover:bg-surface-highest"
+                className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md p-1 text-on-surface-variant hover:bg-surface"
               >
                 <X size={14} />
               </button>
             </header>
-            {preview.isPending && <p className="p-3 text-xs text-outline">Loading preview…</p>}
+            {preview.isPending && (
+              <p className="p-3 text-xs text-on-surface-variant">Loading preview…</p>
+            )}
             {preview.error && (
               <p role="alert" className="p-3 text-xs text-error">
                 {preview.error.message}
               </p>
             )}
             {preview.data?.binary && (
-              <p className="p-3 text-xs text-outline">Binary file; text preview unavailable.</p>
+              <p className="p-3 text-xs text-on-surface-variant">
+                Binary file; text preview unavailable.
+              </p>
             )}
             {preview.data?.content != null && (
-              <Suspense fallback={<p className="p-3 text-xs text-outline">Loading editor…</p>}>
+              <Suspense
+                fallback={<p className="p-3 text-xs text-on-surface-variant">Loading editor…</p>}
+              >
                 <FileEditor
                   key={`${terminal.id}:${selected}`}
                   terminalId={terminal.id}
@@ -296,7 +360,9 @@ export function FilePanel({ terminal }: { terminal: Terminal }): ReactElement {
               </Suspense>
             )}
             {preview.data?.truncated && (
-              <p className="px-3 py-1 text-xs text-outline">Preview limited to 200 KB.</p>
+              <p className="px-3 py-1 text-xs text-on-surface-variant">
+                Preview limited to 200 KB.
+              </p>
             )}
           </section>
         )}

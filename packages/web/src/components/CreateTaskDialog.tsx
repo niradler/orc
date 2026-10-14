@@ -115,8 +115,8 @@ export function CreateTaskDialog({
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="bg-surface border-surface-highest max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-headline text-sm uppercase tracking-widest text-on-surface">
-            New Task
+          <DialogTitle className="font-headline text-sm font-medium text-on-surface">
+            New task
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={(event) => void handleSubmit(event)} className="space-y-4 mt-2">
@@ -134,38 +134,37 @@ export function CreateTaskDialog({
             className="space-y-4"
           >
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Title *
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Title *</Label>
               <Input
+                aria-label="Title"
                 data-testid="task-title-input"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Task title..."
-                className="bg-background border-surface-highest text-on-surface font-body text-xs"
+                className="bg-background border-control-border text-on-surface font-body text-sm"
                 autoFocus
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Body
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Body</Label>
               <Textarea
+                aria-label="Body"
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 data-testid="task-body-input"
                 placeholder="Expected result, acceptance checks and constraints..."
-                className="bg-background border-surface-highest text-on-surface font-body text-xs resize-none"
+                className="bg-background border-control-border text-on-surface font-body text-sm resize-none"
                 rows={3}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                  Status
-                </Label>
+                <Label className="font-label text-xs font-medium text-outline">Status</Label>
                 <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
-                  <SelectTrigger className="bg-background border-surface-highest text-on-surface font-label text-xs">
+                  <SelectTrigger
+                    aria-label="Status"
+                    className="bg-background border-control-border text-on-surface font-label text-xs"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-surface-highest border-surface-highest">
@@ -178,11 +177,12 @@ export function CreateTaskDialog({
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                  Priority
-                </Label>
+                <Label className="font-label text-xs font-medium text-outline">Priority</Label>
                 <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
-                  <SelectTrigger className="bg-background border-surface-highest text-on-surface font-label text-xs">
+                  <SelectTrigger
+                    aria-label="Priority"
+                    className="bg-background border-control-border text-on-surface font-label text-xs"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-surface-highest border-surface-highest">
@@ -195,29 +195,27 @@ export function CreateTaskDialog({
                 </Select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                  Due At
-                </Label>
+                <Label className="font-label text-xs font-medium text-outline">Due date</Label>
                 <Input
+                  aria-label="Due date"
                   type="datetime-local"
                   value={dueAt}
                   onChange={(e) => setDueAt(e.target.value)}
-                  className="bg-background border-surface-highest text-on-surface font-body text-xs"
+                  className="bg-background border-control-border text-on-surface font-body text-sm"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                  Project
-                </Label>
+                <Label className="font-label text-xs font-medium text-outline">Project</Label>
                 <Select
                   value={projectId || "__none__"}
                   onValueChange={(v) => setProjectId(v === "__none__" ? "" : v)}
                 >
                   <SelectTrigger
+                    aria-label="Project"
                     data-testid="new-task-project"
-                    className="bg-background border-surface-highest text-on-surface font-label text-xs"
+                    className="bg-background border-control-border text-on-surface font-label text-xs"
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -235,37 +233,38 @@ export function CreateTaskDialog({
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-xs font-medium text-outline">
                 Tags (comma-separated)
               </Label>
               <Input
+                aria-label="Tags"
                 value={tags}
                 onChange={(e) => setTags(e.target.value)}
                 placeholder="tag1, tag2"
-                className="bg-background border-surface-highest text-on-surface font-body text-xs"
+                className="bg-background border-control-border text-on-surface font-body text-sm"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                  Author
-                </Label>
+                <Label className="font-label text-xs font-medium text-outline">Author</Label>
                 <Input
+                  aria-label="Author"
                   value={author}
                   onChange={(e) => setAuthor(e.target.value)}
                   placeholder="e.g. human"
-                  className="bg-background border-surface-highest text-on-surface font-body text-xs"
+                  className="bg-background border-control-border text-on-surface font-body text-sm"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
+                <Label className="font-label text-xs font-medium text-outline">
                   Skill override (optional)
                 </Label>
                 <Input
+                  aria-label="Skill override"
                   value={skillName}
                   onChange={(e) => setSkillName(e.target.value)}
                   placeholder="Use workflow skills"
-                  className="bg-background border-surface-highest text-on-surface font-body text-xs"
+                  className="bg-background border-control-border text-on-surface font-body text-sm"
                 />
               </div>
             </div>
@@ -292,7 +291,7 @@ export function CreateTaskDialog({
               variant="ghost"
               size="sm"
               onClick={onClose}
-              className="font-label text-xs uppercase text-outline"
+              className="font-label text-xs text-outline"
             >
               Cancel
             </Button>
@@ -301,7 +300,7 @@ export function CreateTaskDialog({
               type="submit"
               size="sm"
               disabled={createTask.isPending || starting || Boolean(savedId) || !title.trim()}
-              className="font-label text-xs uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              className="font-label text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
             >
               {createTask.isPending ? "Creating..." : "Create"}
             </Button>

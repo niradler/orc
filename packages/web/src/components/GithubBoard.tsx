@@ -115,7 +115,7 @@ function GithubCard({ item, projectId }: { item: GithubItem; projectId: string |
     <article
       data-testid="github-item"
       data-url={item.url}
-      className="bg-surface-high p-3 border border-surface-highest rounded-sm space-y-2"
+      className="bg-surface-high p-3 border border-surface-highest rounded-lg space-y-2"
     >
       <a href={item.url} target="_blank" rel="noreferrer" className="text-primary">
         {item.kind === "pr" ? "PR" : "Issue"} #{item.number} · {item.repo}

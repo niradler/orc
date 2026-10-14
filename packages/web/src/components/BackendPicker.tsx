@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -25,6 +26,7 @@ interface BackendPickerProps {
  * are usable *right now* and what a missing one needs.
  */
 export function BackendPicker({ value, onChange, testId }: BackendPickerProps) {
+  const id = useId();
   const { data, isLoading } = useBackends();
   const backends = data?.backends ?? [];
   const defaultBackend = data?.default_backend;
@@ -32,13 +34,14 @@ export function BackendPicker({ value, onChange, testId }: BackendPickerProps) {
 
   return (
     <div className="space-y-1.5">
-      <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
+      <Label htmlFor={id} className="font-label text-xs text-outline">
         Agent Backend
       </Label>
       <Select value={value} onValueChange={onChange}>
         <SelectTrigger
+          id={id}
           data-testid={testId ?? "backend-picker"}
-          className="bg-background border-surface-highest text-on-surface font-label text-xs"
+          className="bg-background border-control-border text-on-surface font-label text-xs"
         >
           <SelectValue />
         </SelectTrigger>
@@ -61,7 +64,7 @@ export function BackendPicker({ value, onChange, testId }: BackendPickerProps) {
           ))}
         </SelectContent>
       </Select>
-      <p className="font-body text-[11px] text-outline" data-testid="backend-picker-hint">
+      <p className="font-body text-xs text-outline" data-testid="backend-picker-hint">
         {isLoading ? "" : hint(value, selected, defaultBackend, backends)}
       </p>
     </div>

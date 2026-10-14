@@ -1,83 +1,47 @@
-import { MessageSquare, Send, Trash2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { ComposerPrimitive, MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
+import { ArrowDown, ArrowUp, MessageSquare, Square, Trash2, X } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { Markdown } from "@/components/Markdown";
 import { useChat } from "@/hooks/useChat";
+import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { cn } from "@/lib/utils";
 
 interface ChatPanelProps {
   open: boolean;
   onToggle: () => void;
-  /** When true, panel renders expanded and without the collapsed rail - used inside a mobile sheet. */
   embedded?: boolean;
-  /** Optional close handler used when embedded (falls back to onToggle). */
   onClose?: () => void;
 }
+const iconButton =
+  "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-40";
+const textParts = { Text: ({ text }: { text: string }) => <Markdown>{text}</Markdown> };
 
 export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPanelProps) {
-  const { messages, streaming, streamText, config, setConfig, send, cancel, clear } = useChat();
-  const [input, setInput] = useState("");
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const { messages, streaming, streamingAgent, error, config, setConfig, clear } = useChat();
+  const input = useRef<HTMLTextAreaElement>(null);
+  const desktop = useBreakpoint("md");
   const panel = usePanelWidth({
     storageKey: "orc_chat_panel_width",
-    initial: 320,
-    min: 256,
+    initial: 384,
+    min: 288,
     max: 640,
     edge: "left",
   });
-
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, []);
-
-  const handleSend = () => {
-    if (!input.trim() || streaming) return;
-    send(input.trim());
-    setInput("");
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
-    }
-  };
-
-  const handleClose = onClose ?? onToggle;
-
-  const agents = ["claude", "codex", "gemini", "copilot"];
-
-  if (!open && !embedded) {
-    return (
-      <div
-        data-testid="chat-panel-collapsed"
-        className="h-full w-12 shrink-0 bg-surface border-l border-surface-highest flex flex-col items-center pt-4 gap-3"
-      >
-        <button
-          type="button"
-          data-testid="chat-open-button"
-          onClick={onToggle}
-          className="text-outline hover:text-primary transition-colors p-1.5"
-          title="Open Chat"
-        >
-          <MessageSquare size={16} />
-        </button>
-        <span className="text-[10px] font-label text-outline uppercase tracking-widest [writing-mode:vertical-lr] rotate-180">
-          Chat
-        </span>
-      </div>
-    );
-  }
-
+    if (open && (embedded ? !desktop : desktop)) input.current?.focus();
+  }, [open, embedded, desktop]);
+  const agents = Array.from(new Set(["codex", "claude", "gemini", "copilot", config.agent]));
+  if ((!open && !embedded) || (embedded ? desktop : !desktop))
+    return <div data-testid="chat-panel-collapsed" className="hidden" />;
   return (
-    <div
+    <ThreadPrimitive.Root
       data-testid="chat-panel"
       data-streaming={streaming ? "true" : "false"}
       style={embedded ? undefined : { width: panel.width, maxWidth: "50vw" }}
       className={cn(
-        "relative h-full flex flex-col min-h-0 bg-surface",
-        embedded ? "w-full" : "shrink-0 border-l border-surface-highest",
+        "relative h-full flex min-h-0 flex-col bg-background",
+        embedded ? "w-full" : "shrink-0 border-l border-outline-variant",
       )}
     >
       {!embedded && (
@@ -87,150 +51,157 @@ export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPan
           aria-orientation="vertical"
           aria-label="Resize chat panel"
           aria-valuenow={panel.width}
-          aria-valuemin={256}
+          aria-valuemin={288}
           aria-valuemax={640}
           tabIndex={0}
           data-testid="chat-panel-resize"
           title="Drag to resize, double-click to reset"
-          className="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none hover:bg-primary/30 focus-visible:bg-primary/40 focus-visible:outline-none"
+          className="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none hover:bg-surface-highest focus-visible:bg-focus"
           {...panel.handleProps}
         />
       )}
-      {/* Header */}
-      <div className="flex-shrink-0 px-4 py-3 border-b border-surface-highest">
+      <header className="shrink-0 border-b border-outline-variant px-4 py-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-primary text-sm">&#x25C8;</span>
-            <span className="font-label text-[11px] uppercase tracking-widest text-on-surface-variant">
-              Chat
-            </span>
-            <span className="font-label text-[10px] text-outline">&middot; {config.agent}</span>
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${streaming ? "bg-secondary animate-pulse" : "bg-outline"}`}
-            />
+            <MessageSquare size={18} className="text-primary" />
+            <h2 className="text-sm font-medium">Agent chat</h2>
           </div>
           <button
             type="button"
-            onClick={handleClose}
-            className="text-outline hover:text-on-surface-variant transition-colors p-1"
+            onClick={onClose ?? onToggle}
+            className={iconButton}
             aria-label="Close chat"
           >
-            <X size={14} />
+            <X size={18} />
+          </button>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-on-surface-variant">
+          <span>Agent</span>
+          <select
+            data-testid="chat-agent-select"
+            aria-label="Chat agent"
+            value={config.agent}
+            onChange={(event) => setConfig({ ...config, agent: event.target.value })}
+            className="min-w-0 flex-1 min-h-11 rounded-md border border-control-border bg-background px-2 text-base sm:text-sm text-on-surface disabled:opacity-50"
+          >
+            {agents.map((agent) => (
+              <option key={agent} value={agent}>
+                {agent}
+              </option>
+            ))}
+          </select>
+        </label>
+      </header>
+      <ThreadPrimitive.Viewport
+        data-testid="chat-messages"
+        className="relative flex-1 min-h-0 overflow-y-auto px-4 py-5"
+      >
+        {messages.length === 0 && !streaming && (
+          <div className="flex h-full flex-col justify-center gap-2">
+            <h3 className="text-lg font-medium">What are you working on?</h3>
+            <p className="max-w-xs text-sm leading-relaxed text-on-surface-variant">
+              Ask about your tasks, review agent activity, or work through a coding question.
+            </p>
+          </div>
+        )}
+        <ThreadPrimitive.Messages>
+          {({ message }) => (
+            <MessagePrimitive.Root
+              data-testid="chat-message"
+              data-role={message.role}
+              className={cn(
+                "mb-6 min-w-0 text-sm leading-relaxed",
+                message.role === "user" && "rounded-lg bg-surface px-3 py-3",
+              )}
+            >
+              <div
+                data-testid="chat-message-agent"
+                className="mb-2 text-xs font-medium text-on-surface-variant"
+              >
+                {message.role === "user"
+                  ? "You"
+                  : typeof message.metadata.custom.agent === "string"
+                    ? message.metadata.custom.agent
+                    : "Assistant"}
+              </div>
+              <div data-testid="chat-message-content" className="min-w-0 break-words">
+                <MessagePrimitive.Parts components={textParts} />
+              </div>
+            </MessagePrimitive.Root>
+          )}
+        </ThreadPrimitive.Messages>
+      </ThreadPrimitive.Viewport>
+      {streaming && (
+        <p role="status" className="shrink-0 px-4 py-2 text-xs text-on-surface-variant">
+          {streamingAgent} is responding…
+        </p>
+      )}
+      {error && (
+        <div
+          role="alert"
+          data-testid="chat-error"
+          className="shrink-0 max-h-32 overflow-auto border-t border-outline-variant px-4 py-3 text-sm text-error break-words"
+        >
+          {error}
+        </div>
+      )}
+      <div className="shrink-0 px-3 pt-2 pb-3">
+        <ThreadPrimitive.ScrollToBottom
+          aria-label="Scroll to latest response"
+          className="mx-auto mb-2 flex min-h-9 items-center gap-1 rounded-md border border-control-border bg-background px-3 text-xs text-on-surface-variant disabled:hidden"
+        >
+          <ArrowDown size={14} />
+          Latest response
+        </ThreadPrimitive.ScrollToBottom>
+        <ComposerPrimitive.Root className="rounded-lg border border-control-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus">
+          <ComposerPrimitive.Input
+            ref={input}
+            data-testid="chat-input"
+            aria-label="Message your agent"
+            placeholder="Message your agent…"
+            disabled={streaming}
+            submitMode="enter"
+            unstable_insertNewlineOnTouchEnter
+            rows={2}
+            className="w-full resize-none bg-transparent p-2 text-base sm:text-sm leading-relaxed placeholder:text-on-surface-variant focus-visible:outline-none disabled:opacity-60"
+          />
+          <div className="flex items-center justify-end sm:justify-between gap-2">
+            <span className="hidden sm:block px-2 text-xs text-on-surface-variant">
+              Shift + Enter for a new line
+            </span>
+            {streaming ? (
+              <ComposerPrimitive.Cancel
+                data-testid="chat-cancel-button"
+                aria-label="Stop response"
+                className={iconButton}
+              >
+                <Square size={17} />
+              </ComposerPrimitive.Cancel>
+            ) : (
+              <ComposerPrimitive.Send
+                data-testid="chat-send-button"
+                aria-label="Send message"
+                className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-primary text-primary-foreground disabled:opacity-40"
+              >
+                <ArrowUp size={18} />
+              </ComposerPrimitive.Send>
+            )}
+          </div>
+        </ComposerPrimitive.Root>
+        <div className="mt-2 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            data-testid="chat-clear-button"
+            onClick={clear}
+            aria-label="Clear conversation"
+            title="Clear conversation"
+            className={iconButton}
+          >
+            <Trash2 size={16} />
+            <span className="ml-2 text-xs">Clear conversation</span>
           </button>
         </div>
       </div>
-
-      {/* Messages area */}
-      <div
-        ref={scrollRef}
-        data-testid="chat-messages"
-        className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-3"
-      >
-        {messages.length === 0 && !streaming && (
-          <div className="flex items-center justify-center h-full">
-            <p className="text-outline text-[11px] font-label uppercase tracking-widest text-center leading-relaxed">
-              Ask a question about
-              <br />
-              your tasks or agents
-            </p>
-          </div>
-        )}
-
-        {messages.map((msg, i) => (
-          // biome-ignore lint/suspicious/noArrayIndexKey: append-only chat history
-          <div key={i} data-testid="chat-message" data-role={msg.role}>
-            <span
-              className={`font-label text-[10px] uppercase tracking-widest ${msg.role === "user" ? "text-primary" : "text-secondary"}`}
-            >
-              {msg.role === "user" ? "You" : config.agent}
-            </span>
-            <p
-              data-testid="chat-message-content"
-              className="text-on-surface font-mono text-xs mt-0.5 whitespace-pre-wrap leading-relaxed"
-            >
-              {msg.content}
-            </p>
-          </div>
-        ))}
-
-        {streaming && streamText && (
-          <div data-testid="chat-streaming">
-            <span className="font-label text-[10px] uppercase tracking-widest text-secondary">
-              {config.agent}
-            </span>
-            <p
-              data-testid="chat-streaming-content"
-              className="text-on-surface font-mono text-xs mt-0.5 whitespace-pre-wrap leading-relaxed"
-            >
-              {streamText}
-              <span className="animate-pulse text-primary">&#x258C;</span>
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* Separator */}
-      <div className="border-t border-surface-highest" />
-
-      {/* Input area */}
-      <div className="flex-shrink-0 px-3 py-2">
-        <div className="flex items-center gap-2">
-          <span className="text-primary font-mono text-xs">&gt;</span>
-          <input
-            data-testid="chat-input"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type a message..."
-            className="flex-1 bg-transparent text-on-surface font-mono text-xs outline-none placeholder:text-outline"
-            disabled={streaming}
-          />
-          {streaming ? (
-            <button
-              type="button"
-              data-testid="chat-cancel-button"
-              onClick={cancel}
-              className="text-error hover:text-error/80 transition-colors p-1"
-            >
-              <X size={12} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              data-testid="chat-send-button"
-              onClick={handleSend}
-              disabled={!input.trim()}
-              className="text-primary hover:text-primary/80 transition-colors p-1 disabled:text-outline"
-            >
-              <Send size={12} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Controls */}
-      <div className="flex-shrink-0 px-3 py-2 border-t border-surface-highest flex items-center justify-between">
-        <select
-          data-testid="chat-agent-select"
-          value={config.agent}
-          onChange={(e) => setConfig({ ...config, agent: e.target.value })}
-          className="bg-surface-highest text-outline font-label text-[10px] uppercase tracking-widest px-2 py-1 rounded-sm border border-surface-highest cursor-pointer"
-        >
-          {agents.map((a) => (
-            <option key={a} value={a}>
-              {a}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          onClick={clear}
-          className="text-outline hover:text-error transition-colors p-1"
-          title="Clear chat"
-        >
-          <Trash2 size={12} />
-        </button>
-      </div>
-    </div>
+    </ThreadPrimitive.Root>
   );
 }

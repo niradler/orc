@@ -26,44 +26,40 @@ export function KanbanColumn({
     data: { type: "column", status },
   });
 
-  let borderClass = "border-surface-highest";
+  let borderClass = "border-transparent";
   if (isValidDrop === true && isOver) {
-    borderClass = "border-primary/60 bg-primary/5";
+    borderClass = "border-outline bg-surface-high";
   } else if (isValidDrop === true) {
-    borderClass = "border-primary/30";
+    borderClass = "border-border";
   } else if (isValidDrop === false) {
-    borderClass = "border-error/20 border-dashed opacity-50";
+    borderClass = "border-error border-dashed";
   }
 
   return (
     <div
       className={`
-        flex flex-col min-w-[280px] max-w-[280px] h-full
-        bg-surface-low/50 border rounded-sm
+        flex flex-col w-full md:min-w-[260px] md:max-w-[300px] md:flex-1
+        bg-background border rounded-lg
         transition-all duration-200
         ${borderClass}
       `}
     >
-      <div className="flex-shrink-0 px-3 py-2.5 border-b border-surface-highest">
+      <div className="flex-shrink-0 px-3 py-2.5 border-b border-border">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div
-              className="w-2 h-2 rounded-full flex-shrink-0"
+              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
               style={{ backgroundColor: color }}
             />
-            <span className="font-label text-[11px] uppercase tracking-widest text-on-surface-variant">
-              {label}
-            </span>
+            <span className="font-label text-sm font-medium text-on-surface-variant">{label}</span>
           </div>
           <span
             className="text-[11px] font-label px-1.5 py-0.5 rounded-sm
-              bg-surface-highest text-outline"
+              text-outline"
           >
             {tasks.length}
           </span>
         </div>
-
-        <div className="h-0.5 mt-2 rounded-full opacity-40" style={{ backgroundColor: color }} />
       </div>
 
       <div
@@ -77,7 +73,7 @@ export function KanbanColumn({
         ))}
 
         {tasks.length === 0 && (
-          <div className="flex items-center justify-center h-16 text-outline text-[11px] font-label uppercase tracking-widest">
+          <div className="flex items-center justify-center h-16 text-outline text-sm font-label">
             Empty
           </div>
         )}

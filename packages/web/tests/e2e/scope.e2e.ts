@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { apiDelete, apiPatch, apiPost, gotoView, tid } from "./_helpers";
+import { apiDelete, apiPatch, apiPost, gotoView, selectProject, tid } from "./_helpers";
 
 interface Project {
   id: string;
@@ -52,7 +52,7 @@ test.describe("Sidebar project scope", () => {
       ).toBeVisible();
 
       // Scope to the project
-      await page.getByTestId("sidebar-project-select").selectOption(project.id);
+      await selectProject(page, project.id);
 
       // Scoped task still there, unscoped task no longer there
       await expect(
@@ -63,7 +63,7 @@ test.describe("Sidebar project scope", () => {
       ).toHaveCount(0);
 
       // Back to All Projects - both visible again
-      await page.getByTestId("sidebar-project-select").selectOption("all");
+      await selectProject(page, "all");
       await expect(
         page.locator(`[data-testid="task-row"][data-task-id="${unscoped.id}"]`),
       ).toBeVisible();
@@ -92,7 +92,10 @@ test.describe("Sidebar project scope", () => {
       await gotoView(page, "tasks");
       await page.getByTestId("tasks-view-table").click();
 
-      await expect(page.getByTestId("sidebar-project-select")).toHaveValue("all");
+      await expect(page.getByTestId("sidebar-project-select")).toHaveAttribute(
+        "data-project-id",
+        "all",
+      );
       await expect(
         page.locator(`[data-testid="task-row"][data-task-id="${task.id}"]`),
       ).toBeVisible();
@@ -113,7 +116,8 @@ test.describe("Sidebar project scope", () => {
       await gotoView(page, "tasks");
       const select = page.getByTestId("sidebar-project-select");
       await expect(select).toBeVisible();
-      await expect(select.locator(`option[value="${project.id}"]`)).toHaveCount(0);
+      await select.click();
+      await expect(page.getByTestId(`project-option-${project.id}`)).toHaveCount(0);
     } finally {
       await apiDelete(request, `/projects/${project.id}`);
     }

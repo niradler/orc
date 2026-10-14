@@ -44,6 +44,7 @@ import {
   useSkillVisibility,
 } from "@/hooks/useSkills";
 import { readPrimitiveFolder } from "@/lib/primitive-files";
+import { useViewParam } from "@/lib/view-params";
 
 type SourceFilter = "all" | "builtin" | "user";
 
@@ -54,17 +55,22 @@ const SOURCE_FILTERS: Array<{ value: SourceFilter; label: string }> = [
 ];
 
 const SOURCE_COLORS: Record<SkillSource, string> = {
-  builtin: "bg-primary/15 text-primary border-primary/30",
-  user: "bg-tertiary/15 text-tertiary border-tertiary/30",
+  builtin: "text-muted-foreground",
+  user: "text-muted-foreground",
 };
 
 export default function Skills({ projectId }: { projectId: string }) {
   const project = useProjectScope(projectId);
   const scope: WikiScope =
     project === "all" || project === "unassigned" ? { scope: "global" } : { project_id: project };
-  const [searchInput, setSearchInput] = useState("");
-  const [query, setQuery] = useState("");
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
+  const [query, setQuery] = useViewParam<string>("skillQuery", "");
+  const [searchInput, setSearchInput] = useState(query);
+  const [sourceFilter, setSourceFilter] = useViewParam<SourceFilter>("source", "all", [
+    "all",
+    "builtin",
+    "user",
+  ]);
+  useEffect(() => setSearchInput(query), [query]);
   const {
     selectedId: selectedSkill,
     openDetail: openSkillDetail,
@@ -74,7 +80,6 @@ export default function Skills({ projectId }: { projectId: string }) {
   const [importingRepository, setImportingRepository] = useState(false);
   const visibility = useSkillVisibility();
   const setVisibility = useSetSkillVisibility();
-  const builtins = useSkills({ ...scope, source: "builtin", include_hidden: true });
 
   const {
     data: library,
@@ -97,7 +102,7 @@ export default function Skills({ projectId }: { projectId: string }) {
         title="Skills"
         meta={`${(skills ?? []).length} skills`}
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               data-testid="import-skill-button"
               size="sm"
@@ -110,15 +115,15 @@ export default function Skills({ projectId }: { projectId: string }) {
               data-testid="new-skill-button"
               size="sm"
               onClick={() => setCreating(true)}
-              className="font-label text-xs uppercase tracking-widest bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
+              className="font-label text-sm  "
             >
-              <Plus size={12} className="mr-1" /> New Skill
+              <Plus size={12} className="mr-1" /> New skill
             </Button>
           </div>
         }
       />
 
-      <p className="text-xs text-outline mb-3">
+      <p className="text-xs text-muted-foreground mb-3">
         Skill folders follow the{" "}
         <a
           className="text-primary underline"
@@ -130,35 +135,13 @@ export default function Skills({ projectId }: { projectId: string }) {
         </a>
         .
       </p>
-      <div className="mb-4 flex items-center gap-3">
-        <p className="text-xs text-outline flex-1">
-          Built-in visibility applies to agent discovery across this installation. Hidden skills
-          remain readable by name and available to flows. Authored overrides stay visible.
-        </p>
-        <Button
-          data-testid="hide-all-builtins"
-          size="sm"
-          variant="outline"
-          disabled={setVisibility.isPending || !builtins.data || !visibility.data}
-          onClick={() =>
-            setVisibility.mutate((builtins.data?.skills ?? []).map((skill) => skill.name))
-          }
-        >
-          Hide all built-ins
-        </Button>
-        <Button
-          data-testid="show-all-builtins"
-          size="sm"
-          variant="outline"
-          disabled={setVisibility.isPending || !visibility.data}
-          onClick={() => setVisibility.mutate([])}
-        >
-          Show all built-ins
-        </Button>
-      </div>
-      {(visibility.error || builtins.error || setVisibility.error) && (
+      <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
+        Built-in visibility applies to agent discovery across this installation. Hidden skills
+        remain readable by name and available to flows. Authored overrides stay visible.
+      </p>
+      {(visibility.error || setVisibility.error) && (
         <p role="alert" className="text-destructive text-xs mb-2">
-          {(visibility.error || builtins.error || setVisibility.error)?.message}
+          {(visibility.error || setVisibility.error)?.message}
         </p>
       )}
       {library?.broken?.map((issue) => (
@@ -168,17 +151,19 @@ export default function Skills({ projectId }: { projectId: string }) {
       ))}
 
       {/* Source filter pills */}
-      <div className="flex items-center gap-4 mb-4">
-        <div className="flex gap-1.5">
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="flex shrink-0 flex-wrap gap-1.5">
           {SOURCE_FILTERS.map((f) => (
             <button
               key={f.value}
               type="button"
               onClick={() => setSourceFilter(f.value)}
-              className={`font-label text-[11px] uppercase tracking-widest px-3 py-1.5 border transition-colors ${
+              data-testid={`skill-source-${f.value}`}
+              aria-pressed={sourceFilter === f.value}
+              className={`font-label text-sm  px-3 py-1.5 border transition-colors ${
                 sourceFilter === f.value
-                  ? "bg-primary/15 text-primary border-primary/30"
-                  : "bg-surface-highest border-surface-highest text-outline hover:text-on-surface-variant"
+                  ? "bg-surface-highest text-on-surface border-transparent"
+                  : "bg-transparent border-transparent text-muted-foreground hover:bg-surface-low hover:text-on-surface"
               }`}
             >
               {f.label}
@@ -187,20 +172,25 @@ export default function Skills({ projectId }: { projectId: string }) {
         </div>
 
         {/* Search */}
-        <div className="relative flex-1">
-          <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" />
+        <div className="relative min-w-[160px] flex-1">
+          <Search
+            size={12}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
           <Input
+            aria-label="Search skills"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && setQuery(searchInput)}
+            onKeyDown={(e) => e.key === "Enter" && setQuery(e.currentTarget.value)}
             placeholder="Search skills..."
-            className="pl-8 bg-surface-highest border-surface-highest text-on-surface font-body text-xs placeholder:text-outline"
+            className="pl-8 bg-background text-on-surface font-body text-sm placeholder:text-muted-foreground"
           />
         </div>
         <Button
+          variant="outline"
           size="sm"
           onClick={() => setQuery(searchInput)}
-          className="font-label text-xs uppercase bg-primary/10 text-primary border border-primary/30"
+          className="font-label text-sm "
         >
           Search
         </Button>
@@ -216,20 +206,18 @@ export default function Skills({ projectId }: { projectId: string }) {
       ) : (skills ?? []).length === 0 ? (
         <EmptyState message={query ? "No skills match your search" : "No skills found"} />
       ) : (
-        <div className="border border-surface-highest rounded-sm overflow-hidden">
+        <div className="overflow-hidden">
           <Table>
             <TableHeader>
-              <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
-                  Name
-                </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
+              <TableRow className="border-b border-outline-variant hover:bg-transparent">
+                <TableHead className="font-label text-sm  text-muted-foreground">Name</TableHead>
+                <TableHead className="font-label text-sm  text-muted-foreground">
                   Description
                 </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
+                <TableHead className="font-label text-sm  text-muted-foreground w-24">
                   Source
                 </TableHead>
-                <TableHead className="text-xs text-outline">Agent discovery</TableHead>
+                <TableHead className="text-xs text-muted-foreground">Agent discovery</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -238,21 +226,28 @@ export default function Skills({ projectId }: { projectId: string }) {
                   key={skill.name}
                   data-testid="skill-row"
                   data-skill-name={skill.name}
-                  className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
+                  className="border-b border-outline-variant/50 hover:bg-surface-low cursor-pointer"
                   onClick={() => openSkillDetail(skill.name)}
                 >
-                  <TableCell className="font-body text-xs font-medium text-on-surface">
-                    {skill.name}
-                    {skill.mutation && (
-                      <span className="ml-2 text-primary text-[10px]">Mutated</span>
-                    )}
+                  <TableCell className="font-body text-sm font-medium text-on-surface">
+                    <button
+                      type="button"
+                      className="min-h-11 text-left hover:text-primary"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openSkillDetail(skill.name);
+                      }}
+                    >
+                      {skill.name}
+                    </button>
+                    {skill.mutation && <span className="ml-2 text-primary text-xs">Mutated</span>}
                   </TableCell>
-                  <TableCell className="font-body text-xs text-outline max-w-md truncate">
+                  <TableCell className="font-body text-sm text-muted-foreground max-w-md truncate">
                     {skill.description || "\u2014"}
                   </TableCell>
                   <TableCell>
                     <span
-                      className={`inline-flex px-2 py-0.5 font-label text-[11px] uppercase tracking-wider border ${SOURCE_COLORS[skill.source]}`}
+                      className={`inline-flex py-0.5 font-label text-sm ${SOURCE_COLORS[skill.source]}`}
                     >
                       {skill.source}
                     </span>
@@ -277,7 +272,7 @@ export default function Skills({ projectId }: { projectId: string }) {
                         {skill.discovery_hidden ? "Hidden — show" : "Visible — hide"}
                       </button>
                     ) : (
-                      <span className="text-xs text-outline">
+                      <span className="text-xs text-muted-foreground">
                         {skill.mutation ? "Visible (override)" : "Visible"}
                       </span>
                     )}
@@ -316,7 +311,7 @@ function SkillDetailSheet({
 }) {
   const { data, isLoading, error, refetch } = useSkill(skillName, undefined, scope);
   const skill = data as SkillFull | undefined;
-  const [selectedFile, setSelectedFile] = useState<string | undefined>();
+  const [selectedFile, setSelectedFile] = useViewParam<string>("skillFile", "SKILL.md");
   const fileQuery = useSkill(skillName, selectedFile ?? "SKILL.md", scope);
   const file = fileQuery.data as SkillRefContent | undefined;
   const queryClient = useQueryClient();
@@ -325,7 +320,7 @@ function SkillDetailSheet({
   function selectFile(path?: string): boolean {
     if ((path ?? "SKILL.md") === (selectedFile ?? "SKILL.md")) return true;
     if (!confirmDocumentClose(documentId)) return false;
-    setSelectedFile(path);
+    setSelectedFile(path ?? "SKILL.md");
     return true;
   }
   const navigation = skill ? (
@@ -344,7 +339,7 @@ function SkillDetailSheet({
         <SheetHeader>
           <SheetTitle>{skill?.name ?? "Skill Details"}</SheetTitle>
           {skill?.description && (
-            <p className="font-body text-xs text-outline mt-1">{skill.description}</p>
+            <p className="font-body text-sm text-muted-foreground mt-1">{skill.description}</p>
           )}
         </SheetHeader>
         <SheetBody>
@@ -365,26 +360,26 @@ function SkillDetailSheet({
                 </div>
               ) : (
                 <div className="space-y-6">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <DetailField label="Source">
                       <span
-                        className={`inline-flex px-2 py-0.5 font-label text-[11px] uppercase tracking-wider border ${SOURCE_COLORS[skill.source]}`}
+                        className={`inline-flex py-0.5 font-label text-sm ${SOURCE_COLORS[skill.source]}`}
                       >
                         {skill.source}
                       </span>
                     </DetailField>
                     <DetailField label="Path">
-                      <code className="font-mono text-[11px] text-outline break-all">
+                      <code className="font-mono text-sm text-muted-foreground break-all">
                         {skill.path}
                       </code>
                     </DetailField>
                   </div>
 
                   <div>
-                    <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-2">
+                    <div className="font-label text-sm  text-muted-foreground mb-2">
                       {selectedFile ?? "SKILL.md"}
                     </div>
-                    <div className="border border-surface-highest rounded-sm overflow-hidden">
+                    <div className="overflow-hidden">
                       {file?.encoding === "base64" && <div className="p-3">{navigation}</div>}
                       {fileQuery.error ? (
                         <p role="alert">{(fileQuery.error as Error).message}</p>
@@ -442,7 +437,7 @@ function SkillDetailSheet({
                         />
                       )}
                       {file?.encoding === "base64" && (
-                        <p className="p-4 text-xs text-outline">
+                        <p className="p-4 text-xs text-muted-foreground">
                           Binary asset shown as base64 (read-only).
                         </p>
                       )}
@@ -535,11 +530,9 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && close()}>
-      <DialogContent className="bg-surface border-surface-highest w-[calc(100%_-_1rem)] max-w-5xl max-h-[94dvh] overflow-y-auto">
+      <DialogContent className="bg-surface border-outline-variant w-[calc(100%_-_1rem)] max-w-5xl max-h-[94dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-headline text-sm uppercase tracking-widest text-on-surface">
-            New Skill
-          </DialogTitle>
+          <DialogTitle className="font-headline text-base  text-on-surface">New skill</DialogTitle>
         </DialogHeader>
         <form
           onSubmit={(event) => {
@@ -558,22 +551,19 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
             onChange={(event) => void importFolder(event.target.files)}
           />
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Name *
-            </Label>
+            <Label className="font-label text-sm  text-muted-foreground">Name *</Label>
             <Input
+              aria-label="Name"
               data-testid="skill-name-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="my-skill"
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
+              className="bg-background text-on-surface font-body text-sm"
               autoFocus
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              SKILL.md *
-            </Label>
+            <Label className="font-label text-sm  text-muted-foreground">SKILL.md *</Label>
             <MarkdownEditor
               testId="skill-content-input"
               path="SKILL.md"
@@ -605,7 +595,7 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
               <div
                 key={file.id}
                 data-testid="skill-supporting-file"
-                className="space-y-2 border border-surface-highest p-3"
+                className="space-y-2 border border-outline-variant p-3"
               >
                 <Input
                   data-testid="skill-file-path-input"
@@ -636,7 +626,7 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
                   }
                 />
                 {file.encoding === "base64" && (
-                  <p className="text-xs text-outline">Binary asset (base64)</p>
+                  <p className="text-xs text-muted-foreground">Binary asset (base64)</p>
                 )}
                 <Button
                   type="button"
@@ -659,7 +649,7 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
               variant="ghost"
               size="sm"
               onClick={close}
-              className="font-label text-xs uppercase text-outline"
+              className="font-label text-sm text-muted-foreground"
             >
               Cancel
             </Button>
@@ -674,7 +664,7 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
                 !content.trim() ||
                 files.some((file) => !file.path.trim())
               }
-              className="font-label text-xs uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              className="font-label text-sm "
             >
               {createSkill.isPending ? "Creating..." : "Create"}
             </Button>

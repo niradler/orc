@@ -34,7 +34,13 @@ interface NewTerminalMenuProps {
 
 type Removal = { worktree: Worktree; step: "confirm" | "dirty" };
 
-const storage = typeof window === "undefined" ? undefined : window.localStorage;
+const storage = (() => {
+  try {
+    return typeof window === "undefined" ? undefined : window.localStorage;
+  } catch {
+    return undefined;
+  }
+})();
 
 function useDebounced(value: string, ms: number): string {
   const [debounced, setDebounced] = useState(value);
@@ -73,16 +79,23 @@ export function NewTerminalMenu({
   useEffect(() => {
     // The confirm dialog is portalled outside the menu; clicks in it must not close the menu.
     if (!open || removal) return;
+    rootRef.current?.querySelector<HTMLInputElement>("input[data-testid='terminal-cwd']")?.focus();
     const onPointerDown = (event: MouseEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) onOpenChange(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onOpenChange(false);
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onOpenChange(false);
+        rootRef.current
+          ?.querySelector<HTMLButtonElement>("button[data-testid='terminal-new']")
+          ?.focus();
+      }
     };
-    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("pointerdown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
     return () => {
-      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [open, onOpenChange, removal]);
@@ -167,26 +180,28 @@ export function NewTerminalMenu({
       <button
         type="button"
         data-testid="terminal-new"
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => onOpenChange(!open)}
-        className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-sm bg-primary/15 border border-primary/30 text-primary font-label text-xs uppercase tracking-widest hover:bg-primary/25 transition-colors"
+        className="w-full inline-flex items-center justify-center gap-2 min-h-11 px-3 py-2 rounded-md bg-primary border border-primary text-primary-foreground font-label text-xs hover:bg-primary/90 transition-colors"
       >
         <Plus size={14} />
         New terminal
       </button>
       {open && (
         <div
-          role="menu"
-          className="absolute left-0 top-full mt-1 z-30 w-[22rem] max-w-[calc(100vw-2rem)] bg-surface border border-surface-highest rounded-sm shadow-xl p-2 space-y-2"
+          role="dialog"
+          aria-label="New terminal"
+          data-testid="terminal-launch-menu"
+          className="absolute right-0 md:left-0 md:right-auto top-full mt-1 z-30 w-[22rem] max-w-[calc(100vw-2rem)] bg-surface-high border border-outline-variant rounded-lg shadow-xl p-3 space-y-3 max-h-[70dvh] overflow-y-auto"
         >
           <label className="block">
-            <span className="font-label text-[10px] uppercase tracking-widest text-outline">
+            <span className="font-label text-xs text-on-surface-variant">
               Working directory
               {host && (
                 <span
                   data-testid="terminal-host"
-                  className="ml-1 px-1 rounded-sm bg-primary/15 text-primary normal-case tracking-normal"
+                  className="ml-1 px-1 rounded-md bg-surface-highest text-on-surface normal-case tracking-normal"
                 >
                   on {host}
                 </span>
@@ -200,7 +215,7 @@ export function NewTerminalMenu({
                 onChange={(e) => chooseFolder(e.target.value)}
                 placeholder="~ (home folder)"
                 spellCheck={false}
-                className="min-w-0 flex-1 bg-surface-low border border-surface-highest rounded-sm px-2 py-1 font-body text-xs text-on-surface placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-primary/40"
+                className="min-w-0 flex-1 bg-background border border-control-border rounded-md min-h-11 px-2 py-1 font-body text-base sm:text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-focus"
               />
               <button
                 type="button"
@@ -208,7 +223,7 @@ export function NewTerminalMenu({
                 disabled={busy}
                 onClick={() => void browse()}
                 title="Choose a folder"
-                className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-sm border border-surface-highest font-label text-[10px] uppercase tracking-widest text-on-surface-variant hover:bg-surface-highest hover:text-on-surface disabled:opacity-50"
+                className="shrink-0 inline-flex items-center gap-1 min-h-11 px-2 py-1 rounded-md border border-control-border font-label text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-50"
               >
                 <FolderOpen size={12} />
                 {browsing ? "Choosing" : "Browse"}
@@ -247,11 +262,10 @@ export function NewTerminalMenu({
                 <button
                   key={kind}
                   type="button"
-                  role="menuitem"
                   data-testid={`terminal-launch-${kind}`}
                   disabled={busy}
                   onClick={() => void launch(kind)}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-sm font-label text-xs uppercase tracking-widest text-on-surface-variant hover:bg-surface-highest hover:text-on-surface disabled:opacity-50"
+                  className="w-full flex items-center gap-2 min-h-11 px-2 py-1.5 rounded-md font-label text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-50"
                 >
                   <Icon size={14} />
                   {label}
@@ -259,44 +273,44 @@ export function NewTerminalMenu({
               );
             })}
             {launchers.length === 0 && (
-              <p className="px-2 py-1 font-body text-xs text-outline">No launchers available</p>
+              <p className="min-h-11 px-2 py-1 font-body text-base sm:text-sm text-on-surface-variant">
+                No launchers available
+              </p>
             )}
           </div>
           {rows.length > 0 && (
             <div data-testid="terminal-worktrees" className="border-t border-surface-highest pt-2">
-              <p className="px-1 pb-1 font-label text-[10px] uppercase tracking-widest text-outline">
-                Checkouts
-              </p>
+              <p className="px-1 pb-1 font-label text-xs text-on-surface-variant">Checkouts</p>
               <ul className="max-h-56 overflow-y-auto space-y-0.5">
                 {rows.map((row) => (
                   <li
                     key={row.path}
                     data-testid="terminal-worktree-row"
-                    className="group flex items-center gap-2 px-1 py-1 rounded-sm hover:bg-surface-low"
+                    className="group flex items-center gap-2 px-1 py-1 rounded-md hover:bg-surface"
                   >
                     <div className="min-w-0 flex-1" title={row.path}>
                       <div className="flex items-center gap-1 font-body text-xs text-on-surface">
-                        <GitBranch size={11} className="shrink-0 text-outline" />
+                        <GitBranch size={11} className="shrink-0 text-on-surface-variant" />
                         <span className="truncate">
                           {row.branch ?? (row.head ? row.head.slice(0, 8) : "detached")}
                         </span>
                         {row.main && (
-                          <span className="shrink-0 px-1 rounded-sm bg-primary/15 text-primary font-label text-[9px] uppercase tracking-widest">
+                          <span className="shrink-0 px-1 rounded-md bg-surface-highest text-on-surface font-label text-xs">
                             main
                           </span>
                         )}
                         {row.dirty && (
-                          <span className="shrink-0 px-1 rounded-sm bg-tertiary/15 text-tertiary font-label text-[9px] uppercase tracking-widest">
+                          <span className="shrink-0 px-1 rounded-md text-tertiary font-label text-xs">
                             dirty
                           </span>
                         )}
                         {row.prunable && (
-                          <span className="shrink-0 px-1 rounded-sm bg-error/15 text-error font-label text-[9px] uppercase tracking-widest">
+                          <span className="shrink-0 px-1 rounded-md text-error font-label text-xs">
                             missing
                           </span>
                         )}
                       </div>
-                      <div className="truncate font-body text-[10px] text-outline">
+                      <div className="truncate font-body text-xs text-on-surface-variant">
                         {cwdTail(row.path)}
                       </div>
                     </div>
@@ -312,7 +326,7 @@ export function NewTerminalMenu({
                             onClick={() => openCheckout(kind, row)}
                             title={`Open ${label} here`}
                             aria-label={`Open ${label} in ${row.path}`}
-                            className="shrink-0 p-1 rounded-sm text-outline hover:bg-surface-highest hover:text-on-surface disabled:opacity-50"
+                            className="shrink-0 min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center p-1 rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-50"
                           >
                             <Icon size={12} />
                           </button>
@@ -326,7 +340,7 @@ export function NewTerminalMenu({
                         onClick={() => setRemoval({ worktree: row, step: "confirm" })}
                         title="Remove worktree"
                         aria-label={`Remove worktree ${row.path}`}
-                        className="shrink-0 p-1 rounded-sm text-outline hover:bg-error/15 hover:text-error disabled:opacity-50"
+                        className="shrink-0 min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center p-1 rounded-md text-on-surface-variant hover:bg-error/15 hover:text-error disabled:opacity-50"
                       >
                         <Trash2 size={12} />
                       </button>

@@ -1,8 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Save } from "lucide-react";
 import { type ReactElement, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
+import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { isMarkdownFile } from "@/lib/editor-language";
 
 type Draft = { original: string; content: string };
@@ -28,6 +30,9 @@ export function FileEditor({
   readOnly: boolean;
   onDirty: (dirty: boolean) => void;
 }): ReactElement {
+  const [params, setParams] = useSearchParams();
+  const requestedMode = params.get("editorMode");
+  const mode = requestedMode === "read" || requestedMode === "split" ? requestedMode : "edit";
   const draftKey = `${terminalId}:${path}`;
   const initial = useRef(drafts.get(draftKey) ?? { original: content, content });
   const original = useRef(initial.current.original);
@@ -128,7 +133,7 @@ export function FileEditor({
         </button>
         <span
           data-testid="file-save-status"
-          className="min-w-0 flex-1 truncate text-sm text-outline"
+          className="min-w-0 flex-1 truncate text-sm text-on-surface-variant"
         >
           {readOnly ? "Read-only preview" : dirty ? "Unsaved changes" : "Saved"}
         </span>
@@ -152,16 +157,36 @@ export function FileEditor({
     <div className="flex min-h-0 flex-1 flex-col" data-testid="file-editor">
       {!isMarkdownFile(path) && toolbar}
       <div data-testid="file-preview" className="min-h-0 flex-1 overflow-hidden">
-        <CodeEditor
-          path={path}
-          value={text}
-          onChange={change}
-          onSave={() => saveAction.current()}
-          readOnly={readOnly}
-          height="100%"
-          testId="file-editor-input"
-          header={isMarkdownFile(path) ? toolbar : undefined}
-        />
+        {isMarkdownFile(path) ? (
+          <MarkdownEditor
+            path={path}
+            value={text}
+            onChange={change}
+            onSave={() => saveAction.current()}
+            readOnly={readOnly}
+            height="100%"
+            testId="file-editor-input"
+            header={toolbar}
+            mode={mode}
+            onModeChange={(nextMode) =>
+              setParams((current) => {
+                const next = new URLSearchParams(current);
+                next.set("editorMode", nextMode);
+                return next;
+              })
+            }
+          />
+        ) : (
+          <CodeEditor
+            path={path}
+            value={text}
+            onChange={change}
+            onSave={() => saveAction.current()}
+            readOnly={readOnly}
+            height="100%"
+            testId="file-editor-input"
+          />
+        )}
       </div>
     </div>
   );

@@ -35,7 +35,7 @@ const SheetContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed z-50 flex flex-col bg-surface border-l border-surface-highest shadow-lg",
+        "fixed z-50 flex flex-col bg-surface-high border-l border-surface-highest shadow-lg",
         "inset-y-0 h-full w-[480px] max-w-[90vw]",
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         side === "right"
@@ -76,7 +76,10 @@ function SheetTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingEle
   return (
     <DialogPrimitive.Title asChild>
       <h3
-        className={cn("font-headline text-sm uppercase tracking-widest text-on-surface", className)}
+        className={cn(
+          "font-headline text-lg font-medium tracking-tight text-on-surface",
+          className,
+        )}
         {...props}
       />
     </DialogPrimitive.Title>

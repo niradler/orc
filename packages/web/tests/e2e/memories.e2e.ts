@@ -13,11 +13,7 @@ test.describe("Memories CRUD", () => {
     const marker = tid("pw-mem");
     const body = `PW_MEMORY_CONTENT ${marker} - auto-cleaned by this test`;
     await gotoView(page, "memories");
-    await expect(page.getByTestId("view-title")).toHaveText(/knowledge/i);
-    await expect(page.getByTestId("knowledge-memories-tab")).toHaveAttribute(
-      "data-state",
-      "active",
-    );
+    await expect(page.getByTestId("nav-memories")).toHaveAttribute("aria-current", "page");
 
     await page.getByTestId("new-memory-button").click();
     await page.getByTestId("memory-content-input").fill(body);
@@ -129,7 +125,7 @@ test.describe("Memories CRUD", () => {
       await gotoView(page, "memories");
 
       // Click the "Fact" filter pill
-      await page.getByRole("button", { name: /^fact/i }).click();
+      await page.getByTestId("memory-type-filter-fact").click();
 
       await expect(
         page.locator(`[data-testid="memory-row"][data-memory-id="${factMem.id}"]`),
