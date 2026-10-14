@@ -181,7 +181,9 @@ Or with [docker-compose.yml](docker-compose.yml):
 docker compose up -d
 ```
 
-The container defaults to the `claude` backend (direct Anthropic API via SDK — no host CLI needed). To delegate to an agent running on the host instead, set `ORC_AGENT_LOOP_DEFAULT_BACKEND=agentapi` and run [coder/agentapi](https://github.com/coder/agentapi) on the host:
+The source Docker image includes Node, ACPX, Claude Code and Codex CLI, with versions pinned in the Dockerfile. Its default backend is `claude` through the Anthropic SDK. Tool installation alone does not supply authentication: provide `ANTHROPIC_API_KEY` for Claude, `OPENAI_API_KEY` or a container-local Codex login for `codex-cli`, and the credentials required by whichever agent ACPX launches. Mount your repository and use its **container path** as the project folder. Agent configuration/session files can persist in the Compose `orc-home` volume. Existing ORC policies still apply; native Codex rule interception is not certified by CLI/tool availability. These source changes do not update an already published image.
+
+To delegate to an agent running on the host instead, set `ORC_AGENT_LOOP_DEFAULT_BACKEND=agentapi` and run [coder/agentapi](https://github.com/coder/agentapi) on the host:
 
 ```bash
 agentapi server --allowed-hosts '*' -- \

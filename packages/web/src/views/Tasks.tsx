@@ -1,27 +1,18 @@
 import { LayoutGrid, List, MessageSquare, Plus, Search, Trash2 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { CreateTaskInput, Task, TaskPriority, TaskStatus } from "@/api/client";
-import { BackendPicker, USE_DEFAULT_BACKEND } from "@/components/BackendPicker";
+import type { Task, TaskPriority, TaskStatus } from "@/api/client";
 import { KanbanBoard } from "@/components/board/KanbanBoard";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
-import { FlowPicker, USE_DEFAULT_FLOW } from "@/components/flow/FlowPicker";
 import { GithubBoard } from "@/components/GithubBoard";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TaskDetailSheet } from "@/components/TaskDetailSheet";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -39,12 +30,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
 import { useProjectScope } from "@/hooks/useProjectScope";
-import { useProjects } from "@/hooks/useProjects";
-import { useCreateTask, useDeleteTask, useTasks, useUpdateTask } from "@/hooks/useTasks";
+import { useDeleteTask, useTasks, useUpdateTask } from "@/hooks/useTasks";
+
+const PRIORITIES: TaskPriority[] = ["low", "normal", "high", "critical"];
 
 const STATUS_TABS: Array<{ value: TaskStatus | "all"; label: string }> = [
   { value: "all", label: "All" },
@@ -59,8 +50,6 @@ const STATUS_TABS: Array<{ value: TaskStatus | "all"; label: string }> = [
 // (queued, changes_requested, paused, cancelled) are still respected by the
 // backend but are not surfaced as direct picks here.
 const ALL_STATUSES: TaskStatus[] = ["todo", "doing", "review", "blocked", "done"];
-
-const PRIORITIES: TaskPriority[] = ["low", "normal", "high", "critical"];
 
 const STATUS_VALUES = new Set<string>([
   "all",
@@ -496,6 +485,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
         <CreateTaskDialog
           open={creating}
           onClose={() => setCreating(false)}
+          onCreated={openDetail}
           defaultProjectId={
             projectId !== "all" && projectId !== "unassigned" ? projectId : undefined
           }
@@ -521,240 +511,5 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
         }}
       />
     </div>
-  );
-}
-
-function CreateTaskDialog({
-  open,
-  onClose,
-  defaultProjectId,
-}: {
-  open: boolean;
-  onClose: () => void;
-  defaultProjectId?: string;
-}) {
-  const { data: projects } = useProjects();
-  const createTask = useCreateTask();
-
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
-  const [priority, setPriority] = useState<TaskPriority>("normal");
-  const [status, setStatus] = useState<TaskStatus>("todo");
-  const [dueAt, setDueAt] = useState("");
-  const [tags, setTags] = useState("");
-  const [projectId, setProjectId] = useState(defaultProjectId ?? "");
-  const [author, setAuthor] = useState("");
-  const [skillName, setSkillName] = useState("");
-  const [agentBackend, setAgentBackend] = useState(USE_DEFAULT_BACKEND);
-  const [flowName, setFlowName] = useState(USE_DEFAULT_FLOW);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) return;
-    const parsedTags = tags
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean);
-    const input: CreateTaskInput = {
-      title: title.trim(),
-      body: body.trim() || undefined,
-      priority,
-      status: status as CreateTaskInput["status"],
-      due_at: dueAt ? new Date(dueAt).toISOString() : undefined,
-      tags: parsedTags.length > 0 ? parsedTags : undefined,
-      project_id: projectId || undefined,
-      author: author.trim() || undefined,
-      skill_name: skillName.trim() || undefined,
-      ...(agentBackend === USE_DEFAULT_BACKEND ? {} : { agent_backend: agentBackend }),
-      // Omitted, not null: no flow_name means "run the configured default".
-      ...(flowName === USE_DEFAULT_FLOW ? {} : { flow_name: flowName }),
-    };
-    createTask.mutate(input, {
-      onSuccess: () => {
-        setTitle("");
-        setBody("");
-        setPriority("normal");
-        setStatus("todo");
-        setDueAt("");
-        setTags("");
-        setAuthor("");
-        setSkillName("");
-        setAgentBackend(USE_DEFAULT_BACKEND);
-        setFlowName(USE_DEFAULT_FLOW);
-        onClose();
-      },
-    });
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="bg-surface border-surface-highest max-w-lg max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="font-headline text-sm uppercase tracking-widest text-on-surface">
-            New Task
-          </DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Title *
-            </Label>
-            <Input
-              data-testid="task-title-input"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Task title..."
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
-              autoFocus
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Body
-            </Label>
-            <Textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="Optional description..."
-              className="bg-background border-surface-highest text-on-surface font-body text-xs resize-none"
-              rows={3}
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Status
-              </Label>
-              <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
-                <SelectTrigger className="bg-background border-surface-highest text-on-surface font-label text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-surface-highest border-surface-highest">
-                  {ALL_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s} className="font-label text-xs">
-                      {s.replace(/_/g, " ")}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Priority
-              </Label>
-              <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
-                <SelectTrigger className="bg-background border-surface-highest text-on-surface font-label text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-surface-highest border-surface-highest">
-                  {PRIORITIES.map((p) => (
-                    <SelectItem key={p} value={p} className="font-label text-xs">
-                      {p}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Due At
-              </Label>
-              <Input
-                type="datetime-local"
-                value={dueAt}
-                onChange={(e) => setDueAt(e.target.value)}
-                className="bg-background border-surface-highest text-on-surface font-body text-xs"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Project
-              </Label>
-              <Select
-                value={projectId || "__none__"}
-                onValueChange={(v) => setProjectId(v === "__none__" ? "" : v)}
-              >
-                <SelectTrigger className="bg-background border-surface-highest text-on-surface font-label text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-surface-highest border-surface-highest">
-                  <SelectItem value="__none__" className="font-label text-xs">
-                    None
-                  </SelectItem>
-                  {projects?.map((p) => (
-                    <SelectItem key={p.id} value={p.id} className="font-label text-xs">
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Tags (comma-separated)
-            </Label>
-            <Input
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              placeholder="tag1, tag2"
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Author
-              </Label>
-              <Input
-                value={author}
-                onChange={(e) => setAuthor(e.target.value)}
-                placeholder="e.g. human"
-                className="bg-background border-surface-highest text-on-surface font-body text-xs"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Skill Name
-              </Label>
-              <Input
-                value={skillName}
-                onChange={(e) => setSkillName(e.target.value)}
-                placeholder="e.g. code-review"
-                className="bg-background border-surface-highest text-on-surface font-body text-xs"
-              />
-            </div>
-          </div>
-          <BackendPicker
-            value={agentBackend}
-            onChange={setAgentBackend}
-            testId="new-task-backend"
-          />
-          <FlowPicker value={flowName} onChange={setFlowName} testId="new-task-flow" />
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onClose}
-              className="font-label text-xs uppercase text-outline"
-            >
-              Cancel
-            </Button>
-            <Button
-              data-testid="task-submit"
-              type="submit"
-              size="sm"
-              disabled={createTask.isPending || !title.trim()}
-              className="font-label text-xs uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
-            >
-              {createTask.isPending ? "Creating..." : "Create"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

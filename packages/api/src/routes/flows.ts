@@ -399,8 +399,9 @@ app.openapi(attachRoute, async (c) => {
     );
   }
 
-  const { startFlowForTask } = await import("@orc/runner/flow-runner");
+  const { startFlowForTask, drainPendingNodes } = await import("@orc/runner/flow-runner");
   const result = await startFlowForTask(id);
+  if (result.ok) await drainPendingNodes();
   return c.json({
     attached,
     started: result.ok,
@@ -412,7 +413,7 @@ app.openapi(attachRoute, async (c) => {
 app.openapi(resumeRoute, async (c) => {
   const { id } = c.req.valid("param");
   const { outcome, summary, vars, author } = c.req.valid("json");
-  const { resumeHumanNode } = await import("@orc/runner/flow-runner");
+  const { resumeHumanNode, drainPendingNodes } = await import("@orc/runner/flow-runner");
   const result = await resumeHumanNode({
     taskId: id,
     outcome,
@@ -421,6 +422,7 @@ app.openapi(resumeRoute, async (c) => {
     ...(author !== undefined ? { author } : {}),
   });
   if (!result.ok) throw new ValidationError(result.error);
+  await drainPendingNodes();
   return c.json({ ok: true, next_nodes: result.nextNodes });
 });
 

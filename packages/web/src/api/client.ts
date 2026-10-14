@@ -372,6 +372,11 @@ export const api = {
       ),
     get: (id: string) => req<Task>("GET", `/tasks/${id}`),
     create: (data: CreateTaskInput) => req<Task>("POST", "/tasks", data),
+    startFlow: (id: string, name: string) =>
+      req<{ started: boolean; error: string | null }>("POST", `/tasks/${id}/flow`, {
+        name,
+        start: true,
+      }),
     update: (id: string, data: UpdateTaskInput) => req<Task>("PATCH", `/tasks/${id}`, data),
     delete: (id: string) => req<null>("DELETE", `/tasks/${id}`),
     addComment: (id: string, content: string, author = "human") =>
