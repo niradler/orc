@@ -1,5 +1,5 @@
 # ── Stage 1: Build ────────────────────────────────────────────────────────────
-FROM oven/bun:1-alpine AS builder
+FROM oven/bun:1.4.2-slim AS builder
 WORKDIR /app
 
 # Copy manifests first so dependency install is cached when only source changes
@@ -18,7 +18,7 @@ COPY packages/task-service/package.json   packages/task-service/
 COPY packages/web/package.json            packages/web/
 
 # qmd's tree-sitter packages compile native addons (node-gyp) during install
-RUN apk add --no-cache python3 build-base
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++
 
 RUN bun install --frozen-lockfile
 
@@ -30,7 +30,14 @@ RUN bun run --filter @orc/web build && \
     cd packages/cli && bun run build:copy-web
 
 # ── Stage 2: Runtime ──────────────────────────────────────────────────────────
-FROM oven/bun:1-alpine AS runner
+FROM node:22-bookworm-slim AS agent-tools
+ARG ACPX_VERSION=0.12.1
+ARG CODEX_VERSION=0.159.2
+ARG CLAUDE_CODE_VERSION=2.1.299
+RUN npm install --prefix /opt/orc-tools --omit=dev \
+    acpx@${ACPX_VERSION} @openai/codex@${CODEX_VERSION} @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+
+FROM oven/bun:1.4.2-slim AS runner
 WORKDIR /app
 
 # The Bun base image provides the unprivileged `bun` user (UID 1000), which
@@ -38,7 +45,11 @@ WORKDIR /app
 # to the host user.
 
 # Minimal runtime OS packages — tini for correct signal forwarding + PID 1
-RUN apk add --no-cache tini curl git openssh-client ripgrep
+RUN apt-get update && apt-get install -y --no-install-recommends tini curl git openssh-client ripgrep ca-certificates libstdc++6
+COPY --from=agent-tools /usr/local/bin/node /usr/local/bin/node
+COPY --from=agent-tools /opt/orc-tools /opt/orc-tools
+ENV PATH="/opt/orc-tools/node_modules/.bin:${PATH}"
+RUN node --version && acpx --version && codex --version && claude --version
 
 # Copy only the runtime artifacts from the builder
 COPY --from=builder --chown=bun:bun /app/node_modules   ./node_modules
@@ -56,7 +67,7 @@ RUN chmod 755 /usr/local/bin/orc-entrypoint
 ENV ORC_HOME=/data
 ENV NODE_ENV=production
 ENV ORC_API_HOST=0.0.0.0
-# Default backend: claude (Anthropic SDK, direct API — no CLI tooling required).
+# Default backend: claude (Anthropic SDK). Local CLI launchers are also included.
 # Override with ORC_AGENT_LOOP_DEFAULT_BACKEND=acpx if running a host-side
 # agent bridge. Disable the task loop entirely with ORC_AGENT_LOOP_ENABLED=false
 # and run the runner on the host instead.

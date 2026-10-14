@@ -3,7 +3,28 @@
 > **Status:** Implemented
 > **Packages:** `@orc/core` (schema + engine + service), `@orc/runner` (flow runner), `@orc/api`, `@orc/mcp`, `@orc/cli`
 
-## Why
+## From a new project to a completed task
+
+In **Projects**, create a project and choose its folder on the ORC machine. Leave
+**Create the first task after saving** selected to open the existing task dialog
+with that project already chosen. Existing projects offer **Create task in this project**.
+
+Describe the expected artifact, acceptance checks and constraints. Pick a ready
+backend and preview the workflow with **View flow**. Built-in workflows include
+their implementation/review skills; the skill field is an optional override.
+**Create** saves for later. **Create and start** saves and starts the selected
+workflow through the existing bounded runner. If launch fails after saving,
+**Retry start** reuses that task. Progress, evidence and review appear in task detail.
+Explicit starts continue through queued reviewers and human-requested rework even
+when automatic task polling is disabled; active agents retain the flow timeout rail.
+
+Development with human sign-off waits for approval after independent review.
+Request changes with concrete feedback to route back to the worker, or approve
+to complete. A completed task does not merge code or deploy it. Task, workflow
+and knowledge history remain available after reopening. Backend preflight is a
+current readiness check; it does not establish native hook enforcement parity.
+
+## Why flows
 
 ORC's task loop used to hardcode one shape: a worker runs the task's skill, a reviewer checks it, feedback loops back to the worker, and `max_review_rounds` pauses the task if it cycles too long. Every task got that shape whether it fitted or not, and the only way to change it was to patch `task-loop.ts`.
 

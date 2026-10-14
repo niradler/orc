@@ -392,6 +392,7 @@ export type {
 } from "@orc/core/primitive-types";
 
 export type SkillMeta = {
+  discovery_hidden?: boolean;
   mutation?: { id: string; project_id: string | null; updated_at: number; author: string };
   name: string;
   description: string;

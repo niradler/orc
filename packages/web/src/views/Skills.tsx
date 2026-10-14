@@ -36,7 +36,13 @@ import {
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
 import { useProjectScope } from "@/hooks/useProjectScope";
-import { useCreateSkill, useSkill, useSkills } from "@/hooks/useSkills";
+import {
+  useCreateSkill,
+  useSetSkillVisibility,
+  useSkill,
+  useSkills,
+  useSkillVisibility,
+} from "@/hooks/useSkills";
 import { readPrimitiveFolder } from "@/lib/primitive-files";
 
 type SourceFilter = "all" | "builtin" | "user";
@@ -66,6 +72,9 @@ export default function Skills({ projectId }: { projectId: string }) {
   } = useDetailRoute("/skills", "skillName");
   const [creating, setCreating] = useState(false);
   const [importingRepository, setImportingRepository] = useState(false);
+  const visibility = useSkillVisibility();
+  const setVisibility = useSetSkillVisibility();
+  const builtins = useSkills({ ...scope, source: "builtin", include_hidden: true });
 
   const {
     data: library,
@@ -76,6 +85,7 @@ export default function Skills({ projectId }: { projectId: string }) {
     ...scope,
     q: query || undefined,
     source: sourceFilter === "all" ? undefined : sourceFilter,
+    include_hidden: true,
   });
   const skills = library?.skills;
 
@@ -120,6 +130,37 @@ export default function Skills({ projectId }: { projectId: string }) {
         </a>
         .
       </p>
+      <div className="mb-4 flex items-center gap-3">
+        <p className="text-xs text-outline flex-1">
+          Built-in visibility applies to agent discovery across this installation. Hidden skills
+          remain readable by name and available to flows. Authored overrides stay visible.
+        </p>
+        <Button
+          data-testid="hide-all-builtins"
+          size="sm"
+          variant="outline"
+          disabled={setVisibility.isPending || !builtins.data || !visibility.data}
+          onClick={() =>
+            setVisibility.mutate((builtins.data?.skills ?? []).map((skill) => skill.name))
+          }
+        >
+          Hide all built-ins
+        </Button>
+        <Button
+          data-testid="show-all-builtins"
+          size="sm"
+          variant="outline"
+          disabled={setVisibility.isPending || !visibility.data}
+          onClick={() => setVisibility.mutate([])}
+        >
+          Show all built-ins
+        </Button>
+      </div>
+      {(visibility.error || builtins.error || setVisibility.error) && (
+        <p role="alert" className="text-destructive text-xs mb-2">
+          {(visibility.error || builtins.error || setVisibility.error)?.message}
+        </p>
+      )}
       {library?.broken?.map((issue) => (
         <p key={issue.path} role="alert" className="text-destructive text-xs mb-2">
           {issue.path}: {issue.error}
@@ -188,6 +229,7 @@ export default function Skills({ projectId }: { projectId: string }) {
                 <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
                   Source
                 </TableHead>
+                <TableHead className="text-xs text-outline">Agent discovery</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -214,6 +256,31 @@ export default function Skills({ projectId }: { projectId: string }) {
                     >
                       {skill.source}
                     </span>
+                  </TableCell>
+                  <TableCell onClick={(event) => event.stopPropagation()}>
+                    {skill.source === "builtin" && !skill.mutation ? (
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-label={`${skill.name} visible to agents`}
+                        aria-checked={!skill.discovery_hidden}
+                        data-testid={`skill-visibility-${skill.name}`}
+                        disabled={!visibility.data || setVisibility.isPending}
+                        className="text-xs text-primary disabled:opacity-50"
+                        onClick={() => {
+                          const hidden = new Set(visibility.data?.hidden_builtins ?? []);
+                          if (hidden.has(skill.name)) hidden.delete(skill.name);
+                          else hidden.add(skill.name);
+                          setVisibility.mutate([...hidden]);
+                        }}
+                      >
+                        {skill.discovery_hidden ? "Hidden — show" : "Visible — hide"}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-outline">
+                        {skill.mutation ? "Visible (override)" : "Visible"}
+                      </span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

@@ -8,11 +8,14 @@ import type {
   TaskStatus,
   UpdateProjectInput,
 } from "@/api/client";
+import { api } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { DetailField } from "@/components/DetailField";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { StatusBadge } from "@/components/StatusBadge";
+import { TaskDetailSheet } from "@/components/TaskDetailSheet";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -70,6 +73,8 @@ export default function Projects() {
   const { data: projects, isLoading, error, refetch } = useProjects();
   const [filter, setFilter] = useState<ProjectStatus | "all">("all");
   const [creating, setCreating] = useState(false);
+  const [firstTaskProject, setFirstTaskProject] = useState<string | null>(null);
+  const [createdTask, setCreatedTask] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Project | null>(null);
   const {
     selectedId: editingId,
@@ -231,7 +236,28 @@ export default function Projects() {
         </div>
       )}
 
-      {creating && <CreateProjectDialog open={creating} onClose={() => setCreating(false)} />}
+      {creating && (
+        <CreateProjectDialog
+          open={creating}
+          onClose={() => setCreating(false)}
+          onFirstTask={setFirstTaskProject}
+        />
+      )}
+      {firstTaskProject && (
+        <CreateTaskDialog
+          open
+          defaultProjectId={firstTaskProject}
+          onClose={() => setFirstTaskProject(null)}
+          onCreated={setCreatedTask}
+        />
+      )}
+      <TaskDetailSheet
+        taskId={createdTask}
+        open={Boolean(createdTask)}
+        onOpenChange={(open) => {
+          if (!open) setCreatedTask(null);
+        }}
+      />
 
       {editing && (
         <EditProjectDialog
@@ -239,6 +265,10 @@ export default function Projects() {
           open={Boolean(editing)}
           project={editing}
           onClose={closeEdit}
+          onFirstTask={(id) => {
+            closeEdit();
+            setFirstTaskProject(id);
+          }}
         />
       )}
 
@@ -262,7 +292,15 @@ export default function Projects() {
   );
 }
 
-function CreateProjectDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function CreateProjectDialog({
+  open,
+  onClose,
+  onFirstTask,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onFirstTask: (id: string) => void;
+}) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<ProjectStatus>("active");
@@ -270,6 +308,8 @@ function CreateProjectDialog({ open, onClose }: { open: boolean; onClose: () => 
   const [scope, setScope] = useState("");
   const [maxWorkers, setMaxWorkers] = useState("");
   const createProject = useCreateProject();
+  const [firstTask, setFirstTask] = useState(true);
+  const [folderError, setFolderError] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -288,8 +328,9 @@ function CreateProjectDialog({ open, onClose }: { open: boolean; onClose: () => 
       max_workers: maxWorkers ? Number(maxWorkers) : undefined,
     };
     createProject.mutate(input, {
-      onSuccess: () => {
+      onSuccess: (project) => {
         onClose();
+        if (firstTask) onFirstTask(project.id);
       },
     });
   };
@@ -373,15 +414,52 @@ function CreateProjectDialog({ open, onClose }: { open: boolean; onClose: () => 
           </div>
           <div className="space-y-1.5">
             <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Scope
+              Project folder on the ORC machine
             </Label>
             <Input
+              data-testid="project-folder-input"
               value={scope}
               onChange={(e) => setScope(e.target.value)}
-              placeholder="Optional scope..."
+              placeholder="Absolute project folder (required to run tasks)"
               className="bg-background border-surface-highest text-on-surface font-body text-xs"
             />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid="project-pick-folder"
+              onClick={async () => {
+                try {
+                  const result = await api.terminals.pickFolder(scope || undefined);
+                  if (result.path) setScope(result.path);
+                  setFolderError("");
+                } catch (error) {
+                  setFolderError(error instanceof Error ? error.message : String(error));
+                }
+              }}
+            >
+              Choose folder
+            </Button>
+            {folderError && (
+              <p role="alert" className="text-xs text-destructive">
+                {folderError}
+              </p>
+            )}
           </div>
+          <label className="flex gap-2 text-xs text-outline">
+            <input
+              type="checkbox"
+              data-testid="project-first-task"
+              checked={firstTask}
+              onChange={(event) => setFirstTask(event.target.checked)}
+            />
+            Create the first task after saving
+          </label>
+          {createProject.error && (
+            <p role="alert" className="text-xs text-destructive">
+              {createProject.error.message}
+            </p>
+          )}
           <DialogFooter>
             <Button
               type="button"
@@ -412,10 +490,12 @@ function EditProjectDialog({
   open,
   project,
   onClose,
+  onFirstTask,
 }: {
   open: boolean;
   project: Project;
   onClose: () => void;
+  onFirstTask: (id: string) => void;
 }) {
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description ?? "");
@@ -463,6 +543,15 @@ function EditProjectDialog({
         </DialogHeader>
 
         {summary && <ProjectSummaryBar summary={summary} />}
+        <Button
+          type="button"
+          data-testid="project-create-task"
+          variant="outline"
+          size="sm"
+          onClick={() => onFirstTask(project.id)}
+        >
+          Create task in this project
+        </Button>
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           <div className="space-y-1.5">

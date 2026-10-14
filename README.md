@@ -181,7 +181,9 @@ Or with [docker-compose.yml](docker-compose.yml):
 docker compose up -d
 ```
 
-The container defaults to the `claude` backend (direct Anthropic API via SDK — no host CLI needed). To delegate to an agent running on the host instead, set `ORC_AGENT_LOOP_DEFAULT_BACKEND=agentapi` and run [coder/agentapi](https://github.com/coder/agentapi) on the host:
+The source Docker image includes Node, ACPX, Claude Code and Codex CLI, with versions pinned in the Dockerfile. Its default backend is `claude` through the Anthropic SDK. Tool installation alone does not supply authentication: provide `ANTHROPIC_API_KEY` for Claude, `OPENAI_API_KEY` or a container-local Codex login for `codex-cli`, and the credentials required by whichever agent ACPX launches. Mount your repository and use its **container path** as the project folder. Agent configuration/session files can persist in the Compose `orc-home` volume. Existing ORC policies still apply; native Codex rule interception is not certified by CLI/tool availability. These source changes do not update an already published image.
+
+To delegate to an agent running on the host instead, set `ORC_AGENT_LOOP_DEFAULT_BACKEND=agentapi` and run [coder/agentapi](https://github.com/coder/agentapi) on the host:
 
 ```bash
 agentapi server --allowed-hosts '*' -- \
@@ -564,6 +566,21 @@ npx skills add niradler/orc --all -g
 ### Built-in skill templates
 
 Skill templates live in `skills/*/SKILL.md` (built-in) and `~/.orc/skills/` (user-defined). Agents discover them via `skill_list` and load with `skill_read`.
+
+On the **Skills** page, each built-in has an **Agent discovery** toggle, plus
+**Hide all built-ins** and **Show all built-ins** controls. Visibility applies
+across the installation and defaults to visible. Hidden built-ins stay on the
+Skills page for management and remain readable by name, including supporting
+files; existing task flows continue to use them. User/imported skills and authored
+global/project instruction overrides remain discoverable.
+
+The policy is saved under `skills.hidden_builtins` in `~/.orc/config.json` and
+read afresh for discovery, including by existing MCP processes. `GET /api/skills`
+omits hidden built-ins; `include_hidden=true` returns the management catalog with
+`discovery_hidden` metadata. `GET /api/skills/settings/visibility` reads the policy and
+`PUT /api/skills/settings/visibility` replaces its `hidden_builtins` array using the usual
+API authentication. This installation-wide preference ignores project config.
+New built-ins default to visible until hidden explicitly.
 
 | Skill              | Type     | Purpose                                                                     |
 | ------------------ | -------- | --------------------------------------------------------------------------- |

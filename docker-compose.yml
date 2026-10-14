@@ -7,6 +7,7 @@ services:
     environment:
       # Anthropic API key (required only for the "claude" backend; not needed for "agentapi")
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       # Shared secret for API bearer auth. The container binds 0.0.0.0, so set
       # this to a strong value (e.g. `openssl rand -hex 32`) before exposing the
       # mapped port beyond localhost — every endpoint, including job execution,
@@ -23,7 +24,7 @@ services:
       #              Start it on the host first:
       #                agentapi server --allowed-hosts '*' -- claude --allowedTools all
       #
-      # "claude"   → calls the Anthropic API directly via SDK (no host CLI needed).
+      # Local claude/codex-cli/acpx tools are included; provide credentials and a project mount.
       #
       # ── MCP for the host agent ─────────────────────────────────────────────
       # ORC exposes MCP over Streamable HTTP at http://localhost:7700/mcp so the
@@ -38,7 +39,7 @@ services:
       #            --mcp-config '{"mcpServers":{"orc":{"type":"http","url":"http://localhost:7700/mcp"}}}'
       #
       - ORC_API_HOST=0.0.0.0
-      - ORC_AGENT_LOOP_DEFAULT_BACKEND=${ORC_AGENT_LOOP_DEFAULT_BACKEND:-agentapi}
+      - ORC_AGENT_LOOP_DEFAULT_BACKEND=${ORC_AGENT_LOOP_DEFAULT_BACKEND:-claude}
       - AGENTAPI_URL=${AGENTAPI_URL:-http://host.docker.internal:3284}
       # Run agents, terminals and git on an SSH host from the mounted ~/.ssh/config.
       # Passed through only when set in your shell; the reverse tunnel needs ORC_API_SECRET.

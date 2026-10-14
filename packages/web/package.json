@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun --env-file ../../.env vite",
-    "build": "bun --env-file ../../.env run tsc -b && bun --env-file ../../.env vite build",
+    "build": "bun x tsc --build && bun --env-file ../../.env vite build",
     "preview": "bun --env-file ../../.env vite preview",
     "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json",
     "test": "bun test tests/unit && bun run scripts/run-e2e.ts",

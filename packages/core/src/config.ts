@@ -59,6 +59,9 @@ export const TtsConfigSchema = z.object({
 });
 
 export const OrcConfigSchema = z.object({
+  skills: z
+    .object({ hidden_builtins: z.array(z.string().min(1).max(64)).max(512).default([]) })
+    .default({ hidden_builtins: [] }),
   github: z.object({ token: z.string().optional() }).default({}),
   db: z
     .object({
@@ -411,6 +414,12 @@ export function resetConfig(): void {
 
 export function globalConfigPath(): string {
   return join(homedir(), ".orc", "config.json");
+}
+
+export function hiddenBuiltinSkills(): string[] {
+  const path = globalConfigPath();
+  const raw = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
+  return OrcConfigSchema.shape.skills.parse(raw.skills).hidden_builtins;
 }
 
 export function updateGlobalConfig(mutate: (raw: Record<string, unknown>) => void): OrcConfig {

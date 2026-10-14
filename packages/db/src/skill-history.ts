@@ -2,6 +2,8 @@ import type { Database } from "bun:sqlite";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import {
+  type ListSkillsOpts,
+  listSkills,
   parseFrontmatter,
   readSkill,
   type SkillFull,
@@ -49,6 +51,23 @@ function key(projectId: string | null): string {
 
 export class SkillHistory {
   constructor(private readonly sqlite: Database) {}
+  list(
+    projectId: string | null,
+    opts?: ListSkillsOpts,
+  ): Array<SkillMeta & { mutation?: SkillMutation }> {
+    let skills = listSkills({ ...opts, q: undefined, include_hidden: true }).map((skill) =>
+      this.metadata(skill, projectId),
+    );
+    if (opts?.q) {
+      const query = opts.q.toLowerCase();
+      skills = skills.filter(
+        (skill) =>
+          skill.name.toLowerCase().includes(query) ||
+          skill.description.toLowerCase().includes(query),
+      );
+    }
+    return opts?.include_hidden ? skills : skills.filter((skill) => !skill.discovery_hidden);
+  }
   private current(name: string, projectId: string | null): SkillChange | null {
     const read = this.sqlite.query<SkillChange, [string, string]>(
       `SELECT c.* FROM skill_instructions i JOIN skill_changes c ON c.id=i.change_id WHERE i.project_key=? AND i.skill_name=?`,
@@ -63,6 +82,7 @@ export class SkillHistory {
     const { frontmatter } = parseFrontmatter(change.raw);
     return {
       ...skill,
+      discovery_hidden: false,
       description: frontmatter.description,
       mutation: {
         id: change.id,

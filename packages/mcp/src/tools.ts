@@ -13,7 +13,6 @@ import {
 import { SessionHandoffInputSchema, SessionHandoffUploadSchema } from "@orc/core/session-handoff";
 import {
   createSkill as createSkillFs,
-  listSkills,
   type SkillFileInput,
   type SkillFull,
   type SkillRefContent,
@@ -273,7 +272,7 @@ export const toolDefinitions = [
   },
   {
     name: "task_get",
-    description: "Fetch full details of specific tasks by IDs (body, comments, full history).",
+    description: "Fetch current task details by IDs (title, status, progress and body).",
     inputSchema: z.object({
       ids: z.array(z.string()).min(1).max(10),
     }),
@@ -335,6 +334,13 @@ export const toolDefinitions = [
       body: z.string().optional(),
       priority: z.enum(["low", "normal", "high", "critical"]).optional(),
       comment: z.string().optional().describe("Add a comment to the task"),
+      progress: z
+        .number()
+        .int()
+        .min(0)
+        .max(100)
+        .optional()
+        .describe("Observed task progress, from 0 to 100"),
       agent_backend: AgentBackendSchema.optional().describe(
         "Agent backend for task execution (e.g. claude, acpx, a2a, gemini)",
       ),
@@ -554,11 +560,13 @@ export const toolDefinitions = [
     name: "skill_list",
     description:
       "List installed skills (built-in + user). Returns name and description for each. " +
-      "Supports keyword search and filtering by source.",
+      "Hidden built-ins are omitted; named reads and authored overrides remain available. Supports keyword search and filtering by source.",
     inputSchema: z.object({
       q: z.string().optional().describe("Keyword search on name and description"),
       source: z.enum(["builtin", "user"]).optional().describe("Filter by source"),
       reload: z.boolean().optional().describe("Force cache rebuild"),
+      project: projectParam,
+      scope: z.literal("global").optional(),
     }),
   },
   {
@@ -1066,7 +1074,10 @@ export async function executeTool(
         : rows.filter((t) => !["done", "cancelled"].includes(t.status));
       if (filtered.length === 0) return "No active tasks.";
       return filtered
-        .map((t) => `[${t.id}] ${t.status.padEnd(18)} ${t.priority.padEnd(8)} ${t.title}`)
+        .map(
+          (t) =>
+            `[${t.id}] ${t.status.padEnd(18)} ${t.priority.padEnd(8)} ${t.progress}% ${t.title}`,
+        )
         .join("\n");
     }
 
@@ -1077,7 +1088,10 @@ export async function executeTool(
       );
       return rows
         .filter(Boolean)
-        .map((t) => `[${t?.id}] ${t?.status} - ${t?.title}\n${t?.body ?? ""}`)
+        .map(
+          (t) =>
+            `[${t?.id}] ${t?.status} - ${t?.title}\nProgress: ${t?.progress}%\n${t?.body ?? ""}`,
+        )
         .join("\n\n");
     }
 
@@ -1135,15 +1149,17 @@ export async function executeTool(
     }
 
     case "task_update": {
-      const { id, status, body, priority, comment, agent_backend, agent_model } = args as {
-        id: string;
-        status?: string;
-        body?: string;
-        priority?: string;
-        comment?: string;
-        agent_backend?: string;
-        agent_model?: string;
-      };
+      const { id, status, body, priority, comment, progress, agent_backend, agent_model } =
+        args as {
+          id: string;
+          status?: string;
+          body?: string;
+          priority?: string;
+          comment?: string;
+          progress?: number;
+          agent_backend?: string;
+          agent_model?: string;
+        };
       if (status) {
         const result = await updateTaskStatus({
           taskId: id,
@@ -1157,6 +1173,7 @@ export async function executeTool(
       }
       if (
         body !== undefined ||
+        progress !== undefined ||
         priority ||
         agent_backend !== undefined ||
         agent_model !== undefined
@@ -1165,6 +1182,7 @@ export async function executeTool(
           .update(tasks)
           .set({
             ...(body !== undefined ? { body } : {}),
+            ...(progress !== undefined ? { progress } : {}),
             ...(priority ? { priority: priority as "low" } : {}),
             ...(agent_backend !== undefined ? { agent_backend } : {}),
             ...(agent_model !== undefined ? { agent_model } : {}),
@@ -1798,12 +1816,18 @@ export async function executeTool(
     }
 
     case "skill_list": {
-      const { q, source, reload } = args as {
+      const { q, source, reload, project, scope } = args as {
         q?: string;
         source?: "builtin" | "user";
         reload?: boolean;
+        project?: string;
+        scope?: "global";
       };
-      const skills = listSkills({ q, source, reload });
+      const skills = new SkillHistory(getSqlite(db)).list(resolveWikiScope({ project, scope }), {
+        q,
+        source,
+        reload,
+      });
       const issues = [
         ...skillValidationIssues().map((issue) => `Invalid skill: ${issue.path}: ${issue.error}`),
         ...skillWarnings().map((w) => `Skill warning: ${w.path}: ${w.message}`),
