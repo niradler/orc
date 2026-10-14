@@ -16,8 +16,9 @@ import {
   startFlowForTask,
 } from "../flow-runner.js";
 
-type CapturedSession = { prompt: string; resumed: boolean; finish: () => void };
+type CapturedSession = { prompt: string; resumed: boolean; finish: () => void; id: string };
 const received: CapturedSession[] = [];
+const permissions: (boolean | undefined)[] = [];
 const backendName = "sdlc-process-contract";
 const environment = { ...process.env };
 
@@ -29,7 +30,7 @@ function session(resumed: boolean, id = ulid()): AgentSession {
   return {
     id,
     send: async (prompt) => {
-      received.push({ prompt, resumed, finish });
+      received.push({ prompt, resumed, finish, id });
     },
     respondPermission: () => {},
     events: async function* () {
@@ -51,14 +52,18 @@ beforeAll(() => {
   createTestDb();
   registerBackend(backendName, () => ({
     name: backendName,
-    startSession: async () => session(false),
+    startSession: async (opts) => {
+      permissions.push(opts.autoApprove);
+      return session(false);
+    },
     resumeSession: async (id) => session(true, id),
     preflight: async () => ({ ok: true }),
     stop: async () => {},
   }));
 });
 
-afterAll(() => {
+afterAll(async () => {
+  await drainPendingNodes();
   closeDb();
   for (const key of ["ORC_DB_PATH", "ORC_AGENT_LOOP_ENABLED", "ORC_AGENT_LOOP_MAX_WORKERS"]) {
     if (environment[key] === undefined) delete process.env[key];
@@ -75,10 +80,12 @@ async function waitFor(check: () => boolean): Promise<void> {
   }
 }
 
-async function launch(): Promise<CapturedSession> {
-  const count = received.length;
-  expect(await drainPendingNodes()).toHaveLength(1);
+let consumed = 0;
+async function launch(dispatch = true): Promise<CapturedSession> {
+  const count = consumed;
+  if (dispatch) await drainPendingNodes();
   await waitFor(() => received.length > count);
+  consumed++;
   return received[count] as CapturedSession;
 }
 
@@ -94,16 +101,108 @@ async function finish(taskId: string, nodeId: string, outcome: string, active: C
   active.finish();
   await waitFor(() => {
     const row = getSqlite()
-      .query("SELECT count(*) AS count FROM gateway_sessions WHERE status = 'running'")
-      .get() as { count: number };
-    return row.count === 0;
+      .query("SELECT status FROM gateway_sessions WHERE runtime_session_id=?")
+      .get(active.id) as { status: string } | null;
+    return row?.status === "stopped";
   });
   await waitFor(
-    () => !getLatestFlowRunForTask(taskId)?.nodes.some((node) => node.status === "running"),
+    () =>
+      !getLatestFlowRunForTask(taskId)?.nodes.some(
+        (node) => node.node_id === nodeId && node.status === "running",
+      ),
   );
 }
 
 describe("shared SDLC delivery process", () => {
+  test("should serialize simultaneous dispatches without exceeding shared worker capacity", async () => {
+    const taskIds = [ulid(), ulid()];
+    for (const id of taskIds)
+      await getDb().insert(tasks).values({
+        id,
+        title: "Concurrent explicit start",
+        agent_backend: backendName,
+        flow_name: "orc-default",
+        required_review: false,
+      });
+    const runs = await Promise.all(taskIds.map((id) => startFlowForTask(id)));
+    const drained = await Promise.all([drainPendingNodes(), drainPendingNodes()]);
+    expect(drained.flat()).toHaveLength(1);
+    expect(
+      getSqlite()
+        .query("SELECT count(*) AS count FROM gateway_sessions WHERE status='running'")
+        .get(),
+    ).toEqual({ count: 1 });
+    const worker = await launch(false);
+    const running = getSqlite()
+      .query("SELECT task_id FROM gateway_sessions WHERE status='running'")
+      .get() as { task_id: string };
+    for (let index = 0; index < runs.length; index++) {
+      const run = runs[index];
+      if (taskIds[index] !== running.task_id && run?.ok)
+        await cancelFlowRun(run.flowRunId, "Queued fixture no longer needed");
+    }
+    await finish(running.task_id, "build", "submitted", worker);
+  });
+  test("should halt a hung explicitly started node without automatic task polling", async () => {
+    const taskId = ulid();
+    await getDb()
+      .insert(tasks)
+      .values({
+        id: taskId,
+        title: "Bound explicit execution",
+        agent_backend: backendName,
+        flow_override: {
+          name: "bounded-explicit",
+          entry: "build",
+          limits: { execution_timeout_secs: 1 },
+          nodes: {
+            build: {
+              kind: "agent",
+              prompt: "Wait for fixture completion",
+              outcomes: ["submitted"],
+            },
+            done: { kind: "terminal", task_status: "done" },
+          },
+          edges: [{ from: "build", to: "done", when: { outcome: "submitted" } }],
+        },
+      });
+    const started = await startFlowForTask(taskId);
+    if (!started.ok) throw new Error(started.error);
+    await launch();
+    const deadline = Date.now() + 10000;
+    while (getLatestFlowRunForTask(taskId)?.status === "running") {
+      if (Date.now() > deadline) throw new Error("Explicit node did not respect flow timeout");
+      await Bun.sleep(50);
+    }
+    expect(getLatestFlowRunForTask(taskId)?.status).toBe("halted");
+    expect(getSqlite().query("SELECT status FROM tasks WHERE id=?").get(taskId)).toEqual({
+      status: "paused",
+    });
+  }, 15000);
+  test("should preserve disabled worker auto-approval in runtime options and session state", async () => {
+    process.env.ORC_AGENT_LOOP_AUTO_APPROVE = "false";
+    resetConfig();
+    const taskId = ulid();
+    await getDb().insert(tasks).values({
+      id: taskId,
+      title: "Restricted worker",
+      agent_backend: backendName,
+      flow_name: "orc-default",
+      required_review: false,
+    });
+    const started = await startFlowForTask(taskId);
+    if (!started.ok) throw new Error(started.error);
+    const worker = await launch();
+    expect(permissions.at(-1)).toBe(false);
+    expect(
+      getSqlite().query("SELECT auto_approve FROM gateway_sessions WHERE task_id=?").get(taskId),
+    ).toEqual({ auto_approve: 0 });
+    await finish(taskId, "build", "submitted", worker);
+    if (environment.ORC_AGENT_LOOP_AUTO_APPROVE === undefined)
+      delete process.env.ORC_AGENT_LOOP_AUTO_APPROVE;
+    else process.env.ORC_AGENT_LOOP_AUTO_APPROVE = environment.ORC_AGENT_LOOP_AUTO_APPROVE;
+    resetConfig();
+  });
   test("fresh workers, reviewers and resumed workers get scoped current knowledge; human feedback and approval route correctly", async () => {
     const projectId = ulid();
     const taskId = ulid();
@@ -142,12 +241,13 @@ describe("shared SDLC delivery process", () => {
         .query("SELECT gateway_session_id FROM flow_node_runs WHERE task_id=? AND node_id='build'")
         .get(taskId) as { gateway_session_id: string };
       expect(worker.prompt).toContain(`Session ID: ${workerSession.gateway_session_id}`);
+      expect(worker.prompt).toContain("context first, then memory_search and wiki_search");
       expect(worker.prompt).toContain(
         "Project delivery procedure: inspect shared-component storage.",
       );
       await finish(taskId, "build", "submitted", worker);
 
-      const reviewer = await launch();
+      const reviewer = await launch(false);
       expect(reviewer.prompt).toContain("## Workflow: orc-reviewer");
       expect(reviewer.prompt).not.toContain("# Work within an ORC flow");
       expect(reviewer.prompt).toContain(
@@ -195,7 +295,7 @@ describe("shared SDLC delivery process", () => {
       );
       expect(rework.prompt).toContain(`Project: ${JSON.stringify(projectName)}`);
       await finish(taskId, "build", "submitted", rework);
-      const finalReview = await launch();
+      const finalReview = await launch(false);
       await finish(taskId, "review", "approved", finalReview);
       expect(await resumeHumanNode({ taskId, outcome: "approved", author: "human" })).toMatchObject(
         { ok: true },

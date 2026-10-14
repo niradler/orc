@@ -1,8 +1,16 @@
-import { type ExecHost, hostBinary, hostSpawn, resolveExecHost } from "@orc/core/exec-host";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import {
+  type ExecHost,
+  hostBinary,
+  hostExec,
+  hostSpawn,
+  resolveExecHost,
+} from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
-import { createLogger } from "@orc/core/logger";
 import { sessionExecHost } from "./execution-host.js";
 import { endStdin, readLines, writeToStdin } from "./io.js";
+import { buildOrcMcpServer } from "./orc-mcp.js";
 import { registerBackend } from "./registry.js";
 import type {
   AgentBackend,
@@ -13,9 +21,27 @@ import type {
   SessionOpts,
 } from "./types.js";
 
-const _logger = createLogger("agent-runtime:codex");
-
 const GRACE_TIMEOUT_MS = 8_000;
+
+export function resolveCodexLaunch(
+  path: string,
+  which: (name: string) => string | null = Bun.which,
+): string[] {
+  if (!/\.(cmd|bat)$/i.test(path)) return [path];
+  const script = join(dirname(path), "node_modules", "@openai", "codex", "bin", "codex.js");
+  const node = which("node");
+  if (!existsSync(script) || !node)
+    throw new Error(
+      "Codex shell shim has no runnable codex.js/Node interpreter; install the native Codex executable on PATH",
+    );
+  return [node, script];
+}
+
+async function codexCommand(host: ExecHost): Promise<string[]> {
+  const executable = await hostBinary(host, "codex");
+  if (!executable) throw new Error("Codex CLI not found on PATH");
+  return host.kind === "local" ? resolveCodexLaunch(executable) : [executable];
+}
 
 function buildCodexEnv(): Record<string, string> {
   const allowed = new Set([
@@ -36,6 +62,10 @@ function buildCodexEnv(): Record<string, string> {
     "SYSTEMROOT",
     "WINDIR",
     "COMSPEC",
+    "USERPROFILE",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "CODEX_HOME",
   ]);
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
@@ -46,7 +76,7 @@ function buildCodexEnv(): Record<string, string> {
   return env;
 }
 
-type StreamState = { hasReceivedResult: boolean; lastAssistantText: string };
+type StreamState = { hasReceivedResult: boolean };
 
 export class CodexSession implements AgentSession {
   readonly id = ulid();
@@ -58,52 +88,97 @@ export class CodexSession implements AgentSession {
   private done = false;
   private readonly state: StreamState = {
     hasReceivedResult: false,
-    lastAssistantText: "",
   };
   private runtimeSessionId: string | undefined;
-  private readonly permissionResolvers = new Map<string, (result: PermissionResult) => void>();
   private stderrLines: string[] = [];
   private readonly cwd: string;
   private readonly host: ExecHost;
+  private readonly opts: SessionOpts;
+  private outputDrained: Promise<void> = Promise.resolve();
+  private errorsDrained: Promise<void> = Promise.resolve();
 
-  constructor(opts: SessionOpts, host: ExecHost = resolveExecHost()) {
+  constructor(
+    opts: SessionOpts,
+    host: ExecHost = resolveExecHost(),
+    private readonly launcher: (host: ExecHost) => Promise<string[]> = codexCommand,
+  ) {
     this.cwd = opts.cwd;
     this.host = host;
+    this.opts = opts;
     this.runtimeSessionId = opts.runtimeSessionId;
   }
 
   async start(opts: SessionOpts, prompt: string): Promise<void> {
-    const args = ["codex", "exec", "--output-format", "stream-json"];
-    if (opts.runtimeSessionId) args.push("--session", opts.runtimeSessionId);
+    const mcp = buildOrcMcpServer(this.host);
+    const env = buildCodexEnv();
+    if (mcp.headers?.Authorization) env.ORC_CODEX_MCP_TOKEN = mcp.headers.Authorization.slice(7);
+    const args = [...(await this.launcher(this.host)), "exec"];
+    if (opts.runtimeSessionId) args.push("resume", opts.runtimeSessionId);
+    args.push("--json", "--skip-git-repo-check", "-c", 'approval_policy="never"');
+    args.push(
+      "-c",
+      `sandbox_mode=${JSON.stringify(opts.autoApprove ? "workspace-write" : "read-only")}`,
+    );
+    args.push("-c", `mcp_servers.orc.url=${JSON.stringify(mcp.url)}`);
+    args.push("-c", "mcp_servers.orc.required=true");
+    if (opts.autoApprove) {
+      for (const tool of [
+        "context",
+        "memory_search",
+        "memory_get",
+        "wiki_search",
+        "wiki_get",
+        "wiki_index",
+        "wiki_history",
+        "skill_read",
+        "skill_list",
+        "knowledge_search",
+        "knowledge_get",
+        "search",
+        "audit_list",
+        "session_event",
+        "session_log",
+        "session_snapshot",
+        "session_restore",
+        "task_get",
+        "task_list",
+        "task_update",
+        "memory_store",
+        "memory_update",
+        "wiki_write",
+        "flow_report",
+        "flow_status",
+      ]) {
+        args.push("-c", `mcp_servers.orc.tools.${tool}.approval_mode="approve"`);
+      }
+    }
+    if (mcp.headers?.Authorization)
+      args.push("-c", 'mcp_servers.orc.bearer_token_env_var="ORC_CODEX_MCP_TOKEN"');
     if (opts.model) args.push("--model", opts.model);
-    args.push(prompt);
+    args.push("-");
 
     const handle = await hostSpawn(this.host, args, {
       cwd: this.cwd,
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
-      env: buildCodexEnv(),
+      env,
     });
     this.proc = handle.proc;
     this.killProc = handle.kill;
+    writeToStdin(this.proc.stdin, new TextEncoder().encode(prompt));
+    endStdin(this.proc.stdin);
 
     if (this.proc.stdout) {
-      void readLines(this.proc.stdout, (line) => {
+      this.outputDrained = readLines(this.proc.stdout, (line) => {
         try {
           this.handleLine(JSON.parse(line) as Record<string, unknown>);
         } catch {}
-      }).then(() => {
-        if (!this.state.hasReceivedResult) {
-          this.done = true;
-          this.resolveNext?.();
-          this.resolveNext = null;
-        }
       });
     }
 
     if (this.proc.stderr) {
-      void readLines(this.proc.stderr, (line) => {
+      this.errorsDrained = readLines(this.proc.stderr, (line) => {
         this.stderrLines.push(line);
         if (this.stderrLines.length > 100) this.stderrLines.shift();
       });
@@ -115,88 +190,64 @@ export class CodexSession implements AgentSession {
   private handleLine(msg: Record<string, unknown>): void {
     const type = String(msg.type ?? "");
 
-    if (type === "assistant_message" || type === "message") {
-      const content = msg.content;
-      const text =
-        typeof content === "string"
-          ? content
-          : Array.isArray(content)
-            ? (content as Array<Record<string, unknown>>).map((c) => String(c.text ?? "")).join("")
-            : "";
-      if (text) {
-        this.state.lastAssistantText = text;
-        this.push({ type: "text", data: text });
+    if (type === "thread.started") {
+      this.runtimeSessionId = String(msg.thread_id);
+      return;
+    }
+    if (type === "turn.failed" || type === "error") {
+      const error = msg.error as { message?: string } | undefined;
+      this.push({
+        type: "error",
+        data: error?.message ?? String(msg.message ?? "Codex turn failed"),
+      });
+      return;
+    }
+    if (type === "item.started" || type === "item.completed") {
+      const item = msg.item as Record<string, unknown> | undefined;
+      if (!item) return;
+      const id = String(item.id ?? ulid());
+      if (item.type === "agent_message" && type === "item.completed") {
+        this.push({ type: "text", data: String(item.text ?? "") });
+      } else if (item.type === "command_execution" || item.type === "mcp_tool_call") {
+        if (type === "item.started") {
+          this.push({
+            type: "tool_use",
+            data: {
+              id,
+              name: String(item.tool ?? item.type),
+              input: JSON.stringify(item.arguments ?? item.command),
+            },
+          });
+        } else {
+          this.push({
+            type: "tool_result",
+            data: {
+              toolUseId: id,
+              content: JSON.stringify(item.result ?? item.aggregated_output ?? item.error),
+              isError:
+                item.status === "failed" ||
+                (typeof item.exit_code === "number" && item.exit_code !== 0),
+            },
+          });
+        }
       }
       return;
     }
-
-    if (type === "tool_call" || type === "function_call") {
-      const id = String(msg.id ?? ulid());
-      this.push({
-        type: "tool_use",
-        data: {
-          id,
-          name: String(msg.name ?? ""),
-          input: JSON.stringify(msg.arguments ?? msg.input ?? {}),
-        },
-      });
-      return;
-    }
-
-    if (type === "tool_result" || type === "function_result") {
-      this.push({
-        type: "tool_result",
-        data: {
-          toolUseId: String(msg.tool_call_id ?? msg.id ?? ""),
-          content: String(msg.output ?? msg.content ?? ""),
-          isError: Boolean(msg.is_error ?? false),
-        },
-      });
-      return;
-    }
-
-    if (type === "approval_request" || type === "permission_request") {
-      const requestId = String(msg.id ?? ulid());
-      const tool = String(msg.tool ?? msg.name ?? "");
-      const command = JSON.stringify(msg.input ?? msg.command ?? {});
-      const permPromise = new Promise<PermissionResult>((resolve) => {
-        this.permissionResolvers.set(requestId, resolve);
-      });
-      this.push({
-        type: "permission_request",
-        data: { requestId, tool, command },
-      });
-      void permPromise.then((result) => {
-        if (result !== "denied") {
-          const response = JSON.stringify({
-            type: "approval_response",
-            id: requestId,
-            approved: true,
-          });
-          writeToStdin(this.proc?.stdin, new TextEncoder().encode(`${response}\n`));
-        }
-      });
-      return;
-    }
-
-    if (type === "done" || type === "completed" || type === "session_end") {
+    if (type === "turn.completed") {
       this.state.hasReceivedResult = true;
-      if (msg.session_id) this.runtimeSessionId = String(msg.session_id);
       this.push({
         type: "result",
         data: { runtimeSessionId: this.runtimeSessionId, usage: msg.usage },
       });
-      this.done = true;
-      this.resolveNext?.();
-      this.resolveNext = null;
+      return;
     }
   }
 
   private async watchExit(): Promise<void> {
     if (!this.proc) return;
     const code = await this.proc.exited;
-    if (this.state.hasReceivedResult || this.done) return;
-    if (code !== 0) {
+    await Promise.all([this.outputDrained, this.errorsDrained]);
+    if (code !== 0 && !this.state.hasReceivedResult) {
       const stderr = this.stderrLines.join("\n").trim();
       this.push({
         type: "error",
@@ -215,26 +266,15 @@ export class CodexSession implements AgentSession {
   }
 
   async send(prompt: string): Promise<void> {
-    if (!this.proc) {
-      await this.start({ cwd: this.cwd, runtimeSessionId: this.runtimeSessionId }, prompt);
-      return;
-    }
-    // Reusing a live process for a new turn: reset per-turn state so events from
-    // this turn aren't dropped by a stale `done` flag or mixed with prior output.
+    if (this.proc && this.proc.exitCode === null) throw new Error("Codex turn is still running");
     this.done = false;
     this.state.hasReceivedResult = false;
     this.eventQueue.length = 0;
-    const msg = JSON.stringify({ type: "user_message", content: prompt });
-    writeToStdin(this.proc?.stdin, new TextEncoder().encode(`${msg}\n`));
+    this.stderrLines = [];
+    await this.start({ ...this.opts, runtimeSessionId: this.runtimeSessionId }, prompt);
   }
 
-  respondPermission(requestId: string, result: PermissionResult): void {
-    const resolver = this.permissionResolvers.get(requestId);
-    if (resolver) {
-      this.permissionResolvers.delete(requestId);
-      resolver(result);
-    }
-  }
+  respondPermission(_requestId: string, _result: PermissionResult): void {}
 
   getRuntimeSessionId(): string | undefined {
     return this.runtimeSessionId;
@@ -282,7 +322,17 @@ function createCodexBackend(): AgentBackend {
     async preflight() {
       const host = resolveExecHost();
       try {
-        if (await hostBinary(host, "codex")) return { ok: true };
+        if (await hostBinary(host, "codex")) {
+          const launch = await codexCommand(host);
+          const status = await hostExec(host, [...launch, "login", "status"], { timeoutMs: 15000 });
+          return status.code === 0
+            ? { ok: true }
+            : {
+                ok: false,
+                error:
+                  "Codex CLI is installed but not authenticated; run codex login or configure OPENAI_API_KEY",
+              };
+        }
       } catch (err) {
         return {
           ok: false,

@@ -21,6 +21,8 @@ test.describe("Tasks CRUD", () => {
     await page.getByTestId("new-task-button").click();
     await page.getByTestId("task-title-input").fill(title);
     await page.getByTestId("task-submit").click();
+    await expect(page.getByTestId("task-detail-sheet")).toContainText(title);
+    await page.keyboard.press("Escape");
 
     const row = page.locator(`[data-testid="task-row"][data-task-title="${title}"]`);
     await expect(row).toBeVisible();

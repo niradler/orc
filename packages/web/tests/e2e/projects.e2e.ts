@@ -16,6 +16,7 @@ test.describe("Projects CRUD", () => {
     // Create
     await page.getByTestId("new-project-button").click();
     await page.getByTestId("project-name-input").fill(name);
+    await page.getByTestId("project-first-task").uncheck();
     await page.getByTestId("project-submit").click();
 
     // Row appears
