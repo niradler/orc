@@ -20,8 +20,8 @@ Context windows are finite. When compaction happens, everything you learned vani
 
 Returns ~200 tokens: active tasks, key memories, last session summary. Pass `project` to scope (e.g. `"orc"`), or omit for the default.
 
-- **Empty response**: Fresh ORC. Store project rules with `memory_store`, create tasks for planned work.
-- **Has `session_id`**: You're resuming after compaction. Call `session_restore` to get your previous snapshot.
+- **Empty response**: No saved context. Inspect current project instructions and the assigned task; do not invent rules or duplicate existing tasks.
+- **Resuming after compaction**: Use your supplied session ID to call `session_restore`, then refresh the task, feedback and relevant memory/wiki context.
 
 ### 2. Discover available workflows
 
@@ -58,7 +58,7 @@ At the end of a task or work block, load `orc-memory-review` with `skill_read` a
 
 **Claude Code** - hooks handle events, snapshots, and restore automatically. See `hooks/` directory and `hooks/claude-code/settings.json` for the hook configuration.
 
-**Cursor / Gemini** - no hooks, so call `session_event` manually after significant edits and decisions. Set a unique `ORC_SESSION_ID` per agent in your MCP config to isolate sessions.
+**Other clients** - hook support varies. Use explicit session tools when lifecycle events are not automatically recorded. Use the session ID supplied by ORC; native sessions need a unique ID per work unit.
 
 **Agent Loop Workers** - sessions are managed automatically by the task loop. Workers call `context()` at start and the loop handles lifecycle.
 
@@ -72,7 +72,7 @@ For operations not in MCP (delete, advanced queries):
 orc session list              # List sessions
 orc session show <id>         # Show session details
 orc mem delete <id>           # Delete a memory
-orc task done <id>            # Mark task done directly
+orc flow status <id>          # Inspect a managed task; the flow owns status
 orc project add <name>        # Create a project
 orc project update <name>     # Update project details
 orc job add <name> --command "..." # Create a job

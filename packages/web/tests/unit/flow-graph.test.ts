@@ -7,6 +7,7 @@
 // It must never be imported from `src/`: it is a Node package (fs, sqlite) and
 // the browser bundle cannot take it.
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { BUILTIN_FLOW_SOURCES } from "@orc/core/flows/builtin";
 import {
   awaitingHumanRun,
@@ -142,7 +143,11 @@ describe("routableOutcomes", () => {
   test("mirrors what orc-default's own nodes can report", () => {
     const parsed = def(BUILTIN_FLOW_SOURCES["orc-default"]);
     expect(routableOutcomes(parsed, "build")).toEqual(["submitted", "blocked"]);
-    expect(routableOutcomes(parsed, "review").sort()).toEqual(["approved", "changes_requested"]);
+    expect(routableOutcomes(parsed, "review").sort()).toEqual([
+      "approved",
+      "changes_requested",
+      "insufficient_evidence",
+    ]);
   });
 });
 
@@ -222,7 +227,16 @@ describe("layoutFlowGraph", () => {
   });
 
   test("puts fan-out branches in one layer and the join after them", () => {
-    const layout = layoutFlowGraph(def(BUILTIN_FLOW_SOURCES["orc-parallel-review"]));
+    const layout = layoutFlowGraph(
+      def(
+        JSON.parse(
+          readFileSync(
+            new URL("../../../../tests/fixtures/flow-examples.json", import.meta.url),
+            "utf8",
+          ),
+        )["orc-parallel-review"],
+      ),
+    );
     const layer = (id: string) => layout.nodes.find((n) => n.id === id)?.layer;
     const branches = ["review_correctness", "review_security", "review_tests"];
     const layers = branches.map(layer);

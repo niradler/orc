@@ -449,21 +449,18 @@ The graph itself is deterministic; only the nodes are agents. That means loops, 
 
 ```bash
 orc flow list                                    # what graphs are available
-orc flow show orc-plan-build-verify              # nodes, edges, limits
-orc task add "Fix the flaky test" --flow orc-fix-verify
+orc flow show orc-default              # nodes, edges, limits
+orc task add "Fix the flaky test" --flow orc-default --skill orc-bugfix
 orc flow status <taskId>                         # active nodes + the ledger of outcomes
 orc flow resume <taskId> --outcome approved      # resolve a human gate
 orc flow halt <taskId>                           # stop it and kill live nodes
 ```
 
-| Built-in flow           | Shape                                                                        |
-| ----------------------- | ---------------------------------------------------------------------------- |
-| `orc-default`           | build → review → done, looping back while `max_review_rounds` allows         |
-| `orc-review-only`       | A single review pass for a task you moved straight to `review`               |
-| `orc-plan-build-verify` | planner → coder → reviewer, looping until acceptance criteria pass           |
-| `orc-fix-verify`        | bugfix → independent confirmation the fix holds and a regression test exists  |
-| `orc-supervisor`        | Executor keeping its context, plus a supervisor re-verifying from a clean one |
-| `orc-parallel-review`   | Fan out to correctness / security / tests reviewers, join on all three       |
+| Built-in workflow | Use it for |
+| --- | --- |
+| `orc-default` | Development: understand, plan as needed, implement, verify and independently review; bounded rework. `required_review: false` explicitly skips agent review. |
+| `orc-human-review` | The same development process plus human sign-off. Agent review and human approval are always required, even if `required_review` is false. |
+| `orc-review-only` | Review existing work; approve, request changes, or pause when evidence is insufficient. |
 
 **Nodes** are `agent` (runs a session with a skill), `gate` (deterministic branching, fan-out, join points), `human` (waits for you), or `terminal` (ends the run and sets the task's final status). **Edges** carry declarative conditions — `outcome`, `visits`, `var`, `elapsed_secs`, composed with `all`/`any`/`not` — which are data, never evaluated code.
 

@@ -63,7 +63,8 @@ Not everything belongs in memory. Skip:
 
 - **Code patterns and conventions** derivable from reading the codebase
 - **Git history** - use `git log` / `git blame` instead
-- **Debugging solutions** - the fix is in the code, the commit message has context
+- **Code fixes alone** - use the diff/commit for the patch. Preserve surprising root
+  causes, failure conditions and verified procedures when they will help future work.
 - **Anything already in CLAUDE.md** or project docs
 - **Ephemeral task details** - use tasks for in-progress work
 

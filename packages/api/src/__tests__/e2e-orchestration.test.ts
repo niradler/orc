@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { loadConfig, resetConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
+import { readSkill, type SkillFull } from "@orc/core/skill-service";
 import { getDb } from "@orc/db/client";
 import { comments, gateway_sessions, tasks } from "@orc/db/schema";
 import { executeTool } from "@orc/mcp/tools";
@@ -93,8 +94,8 @@ describe("2. Skill Discovery", () => {
   test("agent loads full orc-coder skill content", async () => {
     const result = await executeTool("skill_read", { name: "orc-coder" });
     expect(result).toContain("# orc-coder");
-    expect(result).toContain("# Coder");
-    expect(result).toContain("Run the full test suite");
+    expect(result).toContain((readSkill(coderSkillName) as SkillFull).content);
+    expect(result).toContain((readSkill(coderSkillName) as SkillFull).path);
   });
 });
 

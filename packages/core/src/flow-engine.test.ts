@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { type FlowDefinition, parseFlowDefinition } from "./flow.js";
 import {
   advanceFlow,
@@ -19,7 +20,15 @@ function def(raw: unknown): FlowDefinition {
 }
 
 function builtin(name: string): FlowDefinition {
-  return def(BUILTIN_FLOW_SOURCES[name]);
+  return def(
+    BUILTIN_FLOW_SOURCES[name] ??
+      JSON.parse(
+        readFileSync(
+          new URL("../../../tests/fixtures/flow-examples.json", import.meta.url),
+          "utf8",
+        ),
+      )[name],
+  );
 }
 
 function spawned(actions: FlowAction[]): string[] {
@@ -55,8 +64,8 @@ function drive(
   return { state: step.state, trail };
 }
 
-describe("orc-evidence-review", () => {
-  const flow = builtin("orc-evidence-review");
+describe("orc-review-only", () => {
+  const flow = builtin("orc-review-only");
   for (const [outcome, status] of [
     ["approved", "done"],
     ["changes_requested", "changes_requested"],
@@ -73,6 +82,34 @@ describe("orc-evidence-review", () => {
     expect(drive(flow, () => ({ error: "Evaluator unavailable" })).state.task_status).toBe(
       "paused",
     );
+  });
+});
+
+describe("human-sign-off SDLC", () => {
+  const flow = builtin("orc-human-review");
+  test("human rejection is bounded even when the task opts out of agent review", () => {
+    const result = drive(
+      flow,
+      (node) => ({
+        outcome:
+          node === "build" ? "submitted" : node === "review" ? "approved" : "changes_requested",
+      }),
+      { vars: { required_review: false, max_review_rounds: 2 } },
+    );
+    expect(result.state.task_status).toBe("paused");
+    expect(result.state.visits.build).toBe(2);
+    expect(result.state.visits.review).toBe(2);
+    expect(result.state.visits.signoff).toBe(2);
+  });
+  test("missing review evidence cannot reach human approval or done", () => {
+    const result = drive(
+      flow,
+      (node) => ({ outcome: node === "build" ? "submitted" : "insufficient_evidence" }),
+      { vars: { required_review: true, max_review_rounds: 3 } },
+    );
+    expect(result.state.task_status).toBe("paused");
+    expect(result.state.visits.signoff).toBeUndefined();
+    expect(result.state.visits.done).toBeUndefined();
   });
 });
 
