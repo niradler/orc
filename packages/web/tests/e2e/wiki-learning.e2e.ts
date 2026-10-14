@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { API_BASE, AUTH_HEADERS, apiGet, apiPost, gotoView, tid } from "./_helpers";
+import { API_BASE, AUTH_HEADERS, apiGet, apiPost, gotoView, selectProject, tid } from "./_helpers";
 
 test("session review saves a lesson that normal search and reopened wiki history can reuse", async ({
   page,
@@ -44,8 +44,10 @@ test("session review saves a lesson that normal search and reopened wiki history
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await gotoView(page, "dashboard");
-  await page.getByTestId("sidebar-project-select").selectOption(project.id);
-  await page.getByTestId("nav-wiki").click();
+  await selectProject(page, project.id);
+  await page.getByTestId("nav-knowledge").click();
+  await expect(page.getByTestId("nav-wiki")).toHaveAttribute("aria-current", "page");
+  await page.getByTestId("wiki-history-toggle").click();
   await expect(page.getByTestId("wiki-change").first()).toContainText("Added reopen check");
   await page.getByTestId("wiki-change").first().click();
   await expect(page.getByTestId("wiki-page-content")).toContainText("Reopen the stored result");
@@ -56,11 +58,12 @@ test("session review saves a lesson that normal search and reopened wiki history
   await expect(page.getByTestId("wiki-revision").last()).toContainText("Both memory content");
   await page.screenshot({ path: "../../.claude/wiki-learning-browser.png", fullPage: true });
   await page.keyboard.press("Escape");
-  await page.getByTestId("wiki-tab-pages").click();
+  await page.getByTestId("wiki-history-toggle").click();
   await page.getByTestId("wiki-search-input").fill("rollback");
   await page.getByTestId("wiki-search-submit").click();
   await expect(page.getByTestId("wiki-page-row")).toContainText(entry.summary);
-  await page.getByTestId("wiki-tab-audit").click();
+  await page.getByTestId("wiki-history-toggle").click();
+  await page.getByTestId("wiki-technical-audit").locator("summary").first().click();
   await expect(page.getByTestId("wiki-audit-entry").first()).toContainText("wiki.updated");
   expect(errors).toEqual([]);
 });
@@ -128,4 +131,54 @@ test("edited skill instructions and supporting files reopen and a human can reve
   expect(
     (await apiGet<{ content: string }>(request, `/skills/${name}?ref=references/guide.md`)).content,
   ).toBe("Authored guide stays intact");
+});
+
+test("Wiki history self-links retain dirty drafts and conflict discard adopts current revision", async ({
+  page,
+  request,
+}) => {
+  const slug = tid("history-self");
+  const base = {
+    project_id: null,
+    slug,
+    title: "History self link",
+    kind: "concept",
+    summary: "Conflict recovery",
+    note: "Browser validation",
+  };
+  await apiPost(request, "/wiki", {
+    ...base,
+    content: `# Original\n[[${slug}]]`,
+    expected_revision: 0,
+  });
+  await gotoView(page, "wiki");
+  await page.goto(`/knowledge/wiki?history=1&historyPage=${slug}&page=${slug}&scope=global`);
+  await page.getByTestId("markdown-mode-split").click();
+  await page.getByTestId("wiki-editor-content").fill(`# Dirty draft\n[[${slug}]]`);
+  let dialogs = 0;
+  const rejectUnexpected = async (dialog: import("@playwright/test").Dialog) => {
+    dialogs++;
+    await dialog.dismiss();
+  };
+  page.on("dialog", rejectUnexpected);
+  await page.getByTestId(`wiki-link-${slug}`).click();
+  expect(dialogs).toBe(0);
+  await expect(page.getByTestId("document-save-status")).toHaveText("Unsaved changes");
+  page.off("dialog", rejectUnexpected);
+  await apiPost(request, "/wiki", {
+    ...base,
+    content: "# External revision",
+    expected_revision: 1,
+  });
+  await page.getByTestId("document-save").click();
+  await expect(page.getByTestId("document-workspace").getByRole("alert")).toBeVisible();
+  await expect(page.getByTestId("wiki-editor-content")).toContainText("Dirty draft");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByTestId("document-discard").click();
+  await expect(page.getByTestId("wiki-editor-content")).toContainText("External revision");
+  await page.getByTestId("wiki-editor-content").fill("# Recovered history edit");
+  await page.getByTestId("document-save").click();
+  await expect(page.getByTestId("document-save-status")).toHaveText("Saved");
+  await page.reload();
+  await expect(page.getByTestId("wiki-editor-content")).toContainText("Recovered history edit");
 });

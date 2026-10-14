@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { type AgentSetup, api, type PackageFull } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useTerminals } from "@/lib/terminals";
+import { workspaceDestination } from "@/lib/workspace-navigation";
 
 export function PackageRunDialog({
   initial,
@@ -29,6 +30,7 @@ export function PackageRunDialog({
   const [commandMode, setCommandMode] = useState<"run" | "install">("run");
   const commandBox = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const location = useLocation();
   const terminals = useTerminals();
   const tools = useQuery({ queryKey: ["package-tools"], queryFn: api.packageTools.list });
   const components = useQuery({
@@ -64,7 +66,13 @@ export function PackageRunDialog({
         setup: { ...setup, operation },
       });
       onClose();
-      navigate(`/terminals/${terminal.id}`);
+      navigate(
+        workspaceDestination(
+          `/terminals/${terminal.id}`,
+          new URLSearchParams(location.search).get("project") ?? "all",
+          location.search,
+        ),
+      );
     } catch (failure) {
       setError((failure as Error).message);
     } finally {

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { apiDelete, apiPatch, apiPost, gotoView, tid } from "./_helpers";
+import { apiDelete, apiPatch, apiPost, gotoView, selectProject, tid } from "./_helpers";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -139,7 +139,7 @@ test.describe("Autonomous Project Lifecycle Demo", () => {
 
     // Navigate to Tasks, scope to our project, switch to table view.
     await gotoView(page, "tasks");
-    await page.getByTestId("sidebar-project-select").selectOption(projectId);
+    await selectProject(page, projectId);
     await page.getByTestId("tasks-view-table").click();
     await page.reload();
 
@@ -217,7 +217,7 @@ test.describe("Autonomous Project Lifecycle Demo", () => {
     // Switch to table view and filter to "Done" tab to confirm all four tasks
     // landed in the completed state.
     await gotoView(page, "tasks");
-    await page.getByTestId("sidebar-project-select").selectOption(projectId);
+    await selectProject(page, projectId);
     await page.getByTestId("tasks-view-table").click();
 
     const doneTab = page.getByRole("tab", { name: /^done/i });

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { SkillFileInput } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
+import { isMarkdownFile } from "@/lib/editor-language";
+import { useViewParam } from "@/lib/view-params";
 
 export function PackageFileTabs({
   files,
@@ -13,7 +15,15 @@ export function PackageFileTabs({
   onChange?: (path: string, content: string) => void;
   testId: string;
 }) {
-  const [selected, setSelected] = useState(files[0]?.path);
+  const [selected, setSelected] = useViewParam<string>(
+    readOnly ? "packageFile" : "packageDraftFile",
+    files[0]?.path ?? "",
+  );
+  const [editorMode, setEditorMode] = useViewParam<"read" | "edit" | "split">(
+    "editorMode",
+    readOnly ? "read" : "edit",
+    ["read", "edit", "split"],
+  );
   const [opened, setOpened] = useState<string[]>([files[0]?.path ?? ""]);
   const active = files.some((file) => file.path === selected) ? selected : files[0]?.path;
   return (
@@ -75,6 +85,8 @@ export function PackageFileTabs({
             className="[&_[data-testid=code-editor]>div>span[title]]:hidden [&_[data-testid=markdown-editor]>div>span[title]]:hidden"
           >
             <CodeEditor
+              mode={isMarkdownFile(file.path) ? editorMode : undefined}
+              onModeChange={setEditorMode}
               path={file.path}
               value={file.content}
               onChange={onChange ? (content) => onChange(file.path, content) : undefined}

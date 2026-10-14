@@ -161,7 +161,7 @@ test("shared agent creation survives reopening with metadata intact", async ({ p
   await page.getByTestId("agent-delete").click();
   await page.getByTestId("confirm-dialog-confirm").click();
   await expect(row).toHaveCount(0);
-  await expect(page).toHaveURL(/\/agents$/);
+  expect(new URL(page.url()).pathname).toBe("/packages/agents");
   await page.reload();
   await expect(row).toHaveCount(0);
 });

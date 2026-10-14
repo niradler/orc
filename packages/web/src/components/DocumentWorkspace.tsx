@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { MarkdownEditor, type MarkdownEditorProps } from "@/components/MarkdownEditor";
 import { Button } from "@/components/ui/button";
 
@@ -42,6 +43,10 @@ export function DocumentWorkspace({
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
 }) {
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const requestedMode = params.get("editorMode");
+  const mode = requestedMode === "edit" || requestedMode === "split" ? requestedMode : "read";
   const initial = useRef(drafts.get(documentId) ?? { original: content, content });
   const [draft, setDraft] = useState(initial.current.content);
   const [original, setOriginal] = useState(initial.current.original);
@@ -98,6 +103,13 @@ export function DocumentWorkspace({
         testId={testId}
         wikiLinks={wikiLinks}
         initialMode="read"
+        mode={mode}
+        onModeChange={(nextMode) => {
+          const next = new URLSearchParams(window.location.search);
+          next.set("editorMode", nextMode);
+          if (next.toString() === new URLSearchParams(window.location.search).toString()) return;
+          navigate({ search: next.toString(), hash: window.location.hash });
+        }}
         expanded={expanded}
         onExpandedChange={onExpandedChange}
         header={
@@ -120,8 +132,9 @@ export function DocumentWorkspace({
                     disabled={!dirty || saving}
                     onClick={() => {
                       if (confirmDocumentClose(documentId)) {
-                        setDraft(original);
-                        currentDraft.current = original;
+                        setDraft(content);
+                        setOriginal(content);
+                        currentDraft.current = content;
                         setError(null);
                       }
                     }}

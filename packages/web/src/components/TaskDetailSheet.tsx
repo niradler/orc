@@ -7,6 +7,7 @@ import {
   useEffectiveBackend,
 } from "@/components/BackendPicker";
 import { DetailField } from "@/components/DetailField";
+import { ErrorState } from "@/components/ErrorState";
 import { FlowPicker, USE_DEFAULT_FLOW, useEffectiveFlow } from "@/components/flow/FlowPicker";
 import { FlowRunPanel, FlowSectionHeading } from "@/components/flow/FlowRunPanel";
 import { PriorityBadge } from "@/components/PriorityBadge";
@@ -72,7 +73,7 @@ interface TaskDetailSheetProps {
 }
 
 export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetProps) {
-  const { data: task, isLoading } = useTask(taskId);
+  const { data: task, isLoading, error, refetch } = useTask(taskId);
   const { data: comments } = useTaskComments(taskId);
   const { data: links } = useTaskLinks(taskId);
   const { data: projects } = useProjects();
@@ -169,7 +170,14 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
           </SheetHeader>
 
           <SheetBody>
-            {isLoading ? (
+            {(addComment.error || createLink.error || deleteLink.error) && (
+              <p role="alert" className="mb-4 text-sm text-error">
+                {(addComment.error ?? createLink.error ?? deleteLink.error)?.message}
+              </p>
+            )}
+            {error ? (
+              <ErrorState message={error.message} onRetry={() => refetch()} />
+            ) : isLoading ? (
               <div className="space-y-4">
                 {Array.from({ length: 6 }).map((_, i) => (
                   // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
@@ -181,18 +189,16 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                 <TaskGitLinks key={task.id} task={task} />
                 {task.body && (
                   <div className="space-y-1">
-                    <div className="font-label text-[11px] uppercase tracking-widest text-outline">
-                      Body
-                    </div>
-                    <div className="font-body text-xs text-on-surface whitespace-pre-wrap bg-surface-highest/50 p-3 rounded-sm border border-surface-highest">
+                    <div className="font-label text-xs font-medium text-outline">Body</div>
+                    <div className="font-body text-sm text-on-surface whitespace-pre-wrap break-words bg-surface-highest/50 p-3 rounded-lg border border-surface-highest">
                       {task.body}
                     </div>
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <DetailField label="ID">
-                    <span className="font-mono text-[11px]">{task.id}</span>
+                    <span className="font-mono text-xs break-all">{task.id}</span>
                   </DetailField>
                   <DetailField label="Author">{task.author}</DetailField>
                   <DetailField label="Claimed By">{task.claimed_by ?? "-"}</DetailField>
@@ -229,31 +235,27 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
 
                 {task.progress > 0 && (
                   <div className="space-y-1">
-                    <div className="font-label text-[11px] uppercase tracking-widest text-outline">
-                      Progress
-                    </div>
+                    <div className="font-label text-xs font-medium text-outline">Progress</div>
                     <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2 bg-surface-highest rounded-sm overflow-hidden">
+                      <div className="flex-1 h-2 bg-surface-highest rounded-lg overflow-hidden">
                         <div
-                          className="h-full bg-primary rounded-sm transition-all"
+                          className="h-full bg-primary rounded-lg transition-all"
                           style={{ width: `${Math.min(100, task.progress)}%` }}
                         />
                       </div>
-                      <span className="font-label text-[11px] text-outline">{task.progress}%</span>
+                      <span className="font-label text-xs text-outline">{task.progress}%</span>
                     </div>
                   </div>
                 )}
 
                 {task.tags && task.tags.length > 0 && (
                   <div className="space-y-1">
-                    <div className="font-label text-[11px] uppercase tracking-widest text-outline">
-                      Tags
-                    </div>
+                    <div className="font-label text-xs font-medium text-outline">Tags</div>
                     <div className="flex flex-wrap gap-1">
                       {task.tags.map((tag) => (
                         <span
                           key={tag}
-                          className="px-2 py-0.5 text-[11px] font-label uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 rounded-sm"
+                          className="px-2 py-0.5 text-xs font-label  bg-primary/10 text-primary border border-primary/20 rounded-lg"
                         >
                           {tag}
                         </span>
@@ -271,7 +273,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
 
                 <div className="border-t border-surface-highest pt-4 space-y-3">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 font-label text-[11px] uppercase tracking-widest text-outline">
+                    <div className="flex items-center gap-1.5 font-label text-xs font-medium text-outline">
                       <Link2 size={12} />
                       Links
                     </div>
@@ -288,15 +290,15 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                     <div className="space-y-2">
                       {Object.entries(linksByType).map(([type, typeLinks]) => (
                         <div key={type} className="space-y-1">
-                          <div className="font-label text-[10px] uppercase tracking-widest text-outline/70">
+                          <div className="font-label text-[10px] font-medium text-outline">
                             {type.replace(/_/g, " ")}
                           </div>
                           {typeLinks.map((link) => (
                             <div
                               key={link.id}
-                              className="flex items-center justify-between px-2 py-1 bg-surface-highest/50 rounded-sm"
+                              className="flex items-center justify-between px-2 py-1 bg-surface-highest/50 rounded-lg"
                             >
-                              <span className="font-mono text-[11px] text-on-surface-variant">
+                              <span className="font-mono text-xs text-on-surface-variant">
                                 {link.from_task_id === taskId
                                   ? link.to_task_id.slice(-6)
                                   : link.from_task_id.slice(-6)}
@@ -319,14 +321,14 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                       ))}
                     </div>
                   ) : (
-                    <div className="font-body text-xs text-outline">No links</div>
+                    <div className="font-body text-sm text-outline">No links</div>
                   )}
 
                   {showAddLink && (
-                    <div className="space-y-2 p-2 bg-surface-highest/30 rounded-sm border border-surface-highest">
+                    <div className="space-y-2 p-2 bg-surface-highest/30 rounded-lg border border-surface-highest">
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
-                          <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
+                          <Label className="font-label text-xs font-medium text-outline">
                             Link Type
                           </Label>
                           <Select
@@ -346,14 +348,14 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                           </Select>
                         </div>
                         <div className="space-y-1">
-                          <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
+                          <Label className="font-label text-xs font-medium text-outline">
                             Target Task ID
                           </Label>
                           <Input
                             value={linkToTaskId}
                             onChange={(e) => setLinkToTaskId(e.target.value)}
                             placeholder="Task ID..."
-                            className="bg-background border-surface-highest text-on-surface font-body text-xs h-7"
+                            className="bg-background border-surface-highest text-on-surface font-body text-sm h-7"
                           />
                         </div>
                       </div>
@@ -366,7 +368,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                             setShowAddLink(false);
                             setLinkToTaskId("");
                           }}
-                          className="font-label text-[11px] uppercase text-outline h-6 px-2"
+                          className="font-label text-xs text-outline h-6 px-2"
                         >
                           Cancel
                         </Button>
@@ -374,7 +376,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                           size="sm"
                           onClick={handleAddLink}
                           disabled={createLink.isPending || !linkToTaskId.trim()}
-                          className="font-label text-[11px] uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 h-6 px-2"
+                          className="font-label text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 h-6 px-2"
                         >
                           Add
                         </Button>
@@ -384,7 +386,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                 </div>
 
                 <div className="border-t border-surface-highest pt-4 space-y-3">
-                  <div className="flex items-center gap-1.5 font-label text-[11px] uppercase tracking-widest text-outline">
+                  <div className="flex items-center gap-1.5 font-label text-xs font-medium text-outline">
                     <MessageSquare size={12} />
                     Comments ({comments?.length ?? 0})
                   </div>
@@ -394,17 +396,15 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                       {comments.map((c) => (
                         <div
                           key={c.id}
-                          className="p-2 bg-surface-highest/50 rounded-sm border border-surface-highest space-y-1"
+                          className="p-2 bg-surface-highest/50 rounded-lg border border-surface-highest space-y-1"
                         >
                           <div className="flex items-center justify-between">
-                            <span className="font-label text-[11px] uppercase tracking-wider text-primary">
-                              {c.author}
-                            </span>
+                            <span className="font-label text-xs  text-primary">{c.author}</span>
                             <span className="font-label text-[10px] text-outline">
                               {new Date(c.created_at).toLocaleString()}
                             </span>
                           </div>
-                          <div className="font-body text-xs text-on-surface whitespace-pre-wrap">
+                          <div className="font-body text-sm text-on-surface whitespace-pre-wrap break-words">
                             {c.content}
                           </div>
                         </div>
@@ -415,16 +415,17 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                   <div className="space-y-2">
                     <div className="flex gap-2">
                       <Input
+                        aria-label="Comment author"
                         value={commentAuthor}
                         onChange={(e) => setCommentAuthor(e.target.value)}
                         placeholder="Author"
-                        className="bg-background border-surface-highest text-on-surface font-body text-xs h-7 w-24"
+                        className="bg-background border-surface-highest text-on-surface font-body text-sm h-7 w-24"
                       />
                       <Textarea
                         value={commentText}
                         onChange={(e) => setCommentText(e.target.value)}
                         placeholder="Add a comment..."
-                        className="bg-background border-surface-highest text-on-surface font-body text-xs resize-none flex-1"
+                        className="bg-background border-surface-highest text-on-surface font-body text-sm resize-none flex-1"
                         rows={2}
                       />
                     </div>
@@ -434,7 +435,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                         size="sm"
                         onClick={handleAddComment}
                         disabled={addComment.isPending || !commentText.trim()}
-                        className="font-label text-[11px] uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 h-6 px-2"
+                        className="font-label text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 h-6 px-2"
                       >
                         {addComment.isPending ? "..." : "Comment"}
                       </Button>
@@ -443,7 +444,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                 </div>
               </div>
             ) : (
-              <div className="text-outline font-label text-xs uppercase tracking-widest text-center py-8">
+              <div className="text-outline font-label text-xs font-medium text-center py-8">
                 Task not found
               </div>
             )}
@@ -454,9 +455,9 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
               <Button
                 size="sm"
                 onClick={() => setEditing(true)}
-                className="font-label text-xs uppercase tracking-widest bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
+                className="font-label text-xs font-medium bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
               >
-                Edit Task
+                Edit task
               </Button>
             </SheetFooter>
           )}
@@ -534,40 +535,39 @@ function EditTaskDialog({
         className="bg-surface border-surface-highest max-w-lg max-h-[85vh] overflow-y-auto"
       >
         <DialogHeader>
-          <DialogTitle className="font-headline text-sm uppercase tracking-widest text-on-surface">
-            Edit Task
+          <DialogTitle className="font-headline text-sm font-medium text-on-surface">
+            Edit task
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Title *
-            </Label>
+            <Label className="font-label text-xs font-medium text-outline">Title *</Label>
             <Input
+              aria-label="Title"
               data-testid="edit-task-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
+              className="bg-background border-surface-highest text-on-surface font-body text-sm"
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Body
-            </Label>
+            <Label className="font-label text-xs font-medium text-outline">Body</Label>
             <Textarea
+              aria-label="Body"
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              className="bg-background border-surface-highest text-on-surface font-body text-xs resize-none"
+              className="bg-background border-surface-highest text-on-surface font-body text-sm resize-none"
               rows={4}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Status
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Status</Label>
               <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
-                <SelectTrigger className="bg-background border-surface-highest text-on-surface font-label text-xs">
+                <SelectTrigger
+                  aria-label="Status"
+                  className="bg-background border-surface-highest text-on-surface font-label text-xs"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-surface-highest border-surface-highest">
@@ -580,11 +580,12 @@ function EditTaskDialog({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Priority
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Priority</Label>
               <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
-                <SelectTrigger className="bg-background border-surface-highest text-on-surface font-label text-xs">
+                <SelectTrigger
+                  aria-label="Priority"
+                  className="bg-background border-surface-highest text-on-surface font-label text-xs"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-surface-highest border-surface-highest">
@@ -597,29 +598,28 @@ function EditTaskDialog({
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Due At
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Due date</Label>
               <Input
                 type="datetime-local"
                 value={dueAt ? dueAt.slice(0, 16) : ""}
                 onChange={(e) =>
                   setDueAt(e.target.value ? new Date(e.target.value).toISOString() : "")
                 }
-                className="bg-background border-surface-highest text-on-surface font-body text-xs"
+                className="bg-background border-surface-highest text-on-surface font-body text-sm"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Project
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Project</Label>
               <Select
                 value={projectId || "__none__"}
                 onValueChange={(v) => setProjectId(v === "__none__" ? "" : v)}
               >
-                <SelectTrigger className="bg-background border-surface-highest text-on-surface font-label text-xs">
+                <SelectTrigger
+                  aria-label="Project"
+                  className="bg-background border-surface-highest text-on-surface font-label text-xs"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-surface-highest border-surface-highest">
@@ -636,26 +636,26 @@ function EditTaskDialog({
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-xs font-medium text-outline">
               Tags (comma-separated)
             </Label>
             <Input
+              aria-label="Tags"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
               placeholder="tag1, tag2"
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
+              className="bg-background border-surface-highest text-on-surface font-body text-sm"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Skill Name
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Skill Name</Label>
               <Input
+                aria-label="Skill override"
                 value={skillName}
                 onChange={(e) => setSkillName(e.target.value)}
                 placeholder="e.g. code-review"
-                className="bg-background border-surface-highest text-on-surface font-body text-xs"
+                className="bg-background border-surface-highest text-on-surface font-body text-sm"
               />
             </div>
             <BackendPicker
@@ -664,7 +664,7 @@ function EditTaskDialog({
               testId="edit-task-backend"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5 flex items-center gap-2 pt-4">
               <input
                 type="checkbox"
@@ -675,13 +675,13 @@ function EditTaskDialog({
               />
               <Label
                 htmlFor="edit-required-review"
-                className="font-label text-[11px] uppercase tracking-widest text-outline cursor-pointer"
+                className="font-label text-xs font-medium text-outline cursor-pointer"
               >
                 Required Review
               </Label>
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
+              <Label className="font-label text-xs font-medium text-outline">
                 Max Review Rounds
               </Label>
               <Input
@@ -689,12 +689,12 @@ function EditTaskDialog({
                 value={maxReviewRounds}
                 onChange={(e) => setMaxReviewRounds(e.target.value)}
                 min={1}
-                className="bg-background border-surface-highest text-on-surface font-body text-xs"
+                className="bg-background border-surface-highest text-on-surface font-body text-sm"
               />
             </div>
           </div>
           {task.flow_override ? (
-            <p className="font-body text-[11px] text-outline" data-testid="task-flow-override-note">
+            <p className="font-body text-sm text-outline" data-testid="task-flow-override-note">
               This task carries an inline flow definition (flow_override), which beats any named
               flow. Detach it with <code>orc flow attach</code> to use a named flow instead.
             </p>
@@ -707,7 +707,7 @@ function EditTaskDialog({
               variant="ghost"
               size="sm"
               onClick={onClose}
-              className="font-label text-xs uppercase text-outline"
+              className="font-label text-xs text-outline"
             >
               Cancel
             </Button>
@@ -716,7 +716,7 @@ function EditTaskDialog({
               type="submit"
               size="sm"
               disabled={updateTask.isPending || !title.trim()}
-              className="font-label text-xs uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              className="font-label text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
             >
               {updateTask.isPending ? "Saving..." : "Save"}
             </Button>

@@ -20,7 +20,7 @@ type Condition = {
   negate: boolean;
   ignoreCase: boolean;
 };
-const selectClass = "w-full rounded-md border border-surface-highest bg-background p-2 text-sm";
+const selectClass = "w-full rounded-md border border-outline-variant bg-background p-2 text-sm";
 const agentNames: Record<RuleHookBackend, string> = {
   claude: "Claude",
   cursor: "Cursor",
@@ -224,7 +224,7 @@ export function EventRuleEditor({
   return (
     <div
       data-testid="event-rule-editor"
-      className="space-y-5 border border-surface-highest rounded-md p-4"
+      className="space-y-5 border border-outline-variant rounded-md p-4"
     >
       <div className="grid gap-3 md:grid-cols-2">
         <div>
@@ -270,7 +270,7 @@ export function EventRuleEditor({
         </select>
         <Label>Events to listen to</Label>
         {eventNames.map((name, index) => (
-          <div key={eventKeys[index]} className="flex gap-2">
+          <div key={eventKeys[index]} className="flex flex-wrap gap-2">
             <select
               aria-label={`Event ${index + 1}`}
               data-testid="rule-event"
@@ -313,7 +313,7 @@ export function EventRuleEditor({
         >
           Add event
         </Button>
-        <div data-testid="rule-event-coverage" className="text-xs text-outline space-y-1">
+        <div data-testid="rule-event-coverage" className="text-xs text-muted-foreground space-y-1">
           {selected.map((agent) => (
             <p key={agent}>
               {agentNames[agent]}:{" "}
@@ -345,7 +345,7 @@ export function EventRuleEditor({
           <div
             data-testid="rule-condition"
             key={condition.key}
-            className="space-y-2 border border-surface-highest rounded-md p-3"
+            className="space-y-2 border border-outline-variant rounded-md p-3"
           >
             <div className="grid gap-2 md:grid-cols-3">
               <Input
@@ -455,7 +455,7 @@ export function EventRuleEditor({
         >
           Add condition
         </Button>
-        <p className="text-xs text-outline">
+        <p className="text-xs text-muted-foreground">
           No conditions matches every selected event. Regex uses RE2 syntax. Filters apply equally
           to every target.
         </p>
@@ -511,7 +511,7 @@ export function EventRuleEditor({
                   value={memoryDirectory}
                   onChange={(event) => setMemoryDirectory(event.target.value)}
                 />
-                <p className="text-xs text-outline">
+                <p className="text-xs text-muted-foreground">
                   Use auto or the absolute local directory. Only Markdown topic files inside that
                   directory are shared. Session end catches writes without file-tool events.
                 </p>
@@ -557,7 +557,7 @@ export function EventRuleEditor({
               value={orcTimeout}
               onChange={(event) => setOrcTimeout(Number(event.target.value))}
             />
-            <p className="text-xs text-outline">
+            <p className="text-xs text-muted-foreground">
               Uses the existing ORC services and agent connection. Failures are visible in action
               history. Wiki consolidation is queued through Jobs and can incur model charges; it
               runs only when the scheduler dispatches it.
@@ -596,7 +596,7 @@ export function EventRuleEditor({
                 ))}
             </select>
             {jobs.error && <p role="alert">{String(jobs.error)}</p>}
-            <p className="text-xs text-outline">
+            <p className="text-xs text-muted-foreground">
               Jobs run in the background and must belong to this policy's project.
             </p>
           </>
@@ -631,7 +631,7 @@ export function EventRuleEditor({
               value={timeout}
               onChange={(event) => setTimeoutValue(Number(event.target.value))}
             />
-            <p className="text-xs text-outline">
+            <p className="text-xs text-muted-foreground">
               Event JSON is sent to stdin. Synchronous stdout:{" "}
               {`{"decision":"abstain","context":["..."]}`} or {`{"decision":"deny","reason":"..."}`}
               . Blocking/context results require event support. Background output is recorded in
@@ -679,7 +679,7 @@ export function EventRuleEditor({
               value={passthroughCodes}
               onChange={(event) => setPassthroughCodes(event.target.value)}
             />
-            <p className="text-xs text-outline">
+            <p className="text-xs text-muted-foreground">
               Use any trusted local CLI. Event JSON goes to stdin; {"{command}"} as a complete
               argument passes the original command without shell interpolation. Stdout must contain
               the replacement command. Claude Bash executes it and returns its output, with normal
@@ -689,7 +689,7 @@ export function EventRuleEditor({
           </>
         )}
       </fieldset>
-      <label className="flex gap-2 text-sm">
+      <label className="flex flex-wrap gap-2 text-sm">
         <input
           data-testid="event-rule-enabled"
           type="checkbox"

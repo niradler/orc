@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { apiDelete, apiPost, gotoView, tid } from "./_helpers";
+import { apiDelete, apiPost, gotoView, selectProject, tid } from "./_helpers";
 
 interface Project {
   id: string;
@@ -19,14 +19,14 @@ test.describe("Dashboard", () => {
     });
     try {
       await gotoView(page, "dashboard");
-      await expect(page.getByTestId("view-title")).toHaveText(/dashboard/i);
+      await expect(page.getByTestId("view-title")).toHaveText(/activity/i);
 
       // Stat cards are present
       const todoCard = page.locator(`[data-testid="stat-card"][data-stat-label="Todo"]`);
       const projectsCard = page.locator(`[data-testid="stat-card"][data-stat-label="Projects"]`);
       const memoriesCard = page.locator(`[data-testid="stat-card"][data-stat-label="Memories"]`);
       const activeJobsCard = page.locator(
-        `[data-testid="stat-card"][data-stat-label="Active Jobs"]`,
+        `[data-testid="stat-card"][data-stat-label="Active jobs"]`,
       );
 
       await expect(todoCard).toBeVisible();
@@ -56,11 +56,11 @@ test.describe("Dashboard", () => {
     });
     try {
       await gotoView(page, "dashboard");
-      await page.getByTestId("sidebar-project-select").selectOption(project.id);
+      await selectProject(page, project.id);
       // meta shows project name when scoped to a specific project
       await expect(page.getByTestId("view-meta")).toContainText(name);
       // back to All Projects
-      await page.getByTestId("sidebar-project-select").selectOption("all");
+      await selectProject(page, "all");
     } finally {
       await apiDelete(request, `/projects/${project.id}`);
     }

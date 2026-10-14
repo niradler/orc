@@ -1,3 +1,4 @@
+import { selectProject } from "./_helpers";
 // ─── WIP ──────────────────────────────────────────────────────────────────────
 //
 // STATUS: NOT YET WORKING — workers complete but tasks stay in "doing".
@@ -207,7 +208,7 @@ test.describe("Real Agent Lifecycle Demo", () => {
 
       // Navigate to kanban, scope to our project so only demo tasks show.
       await gotoView(page, "tasks");
-      await page.getByTestId("sidebar-project-select").selectOption(projectId);
+      await selectProject(page, projectId);
       const boardBtn = page.getByTitle("Board view");
       if (await boardBtn.isVisible().catch(() => false)) await boardBtn.click();
       await page.reload();
@@ -299,7 +300,7 @@ test.describe("Real Agent Lifecycle Demo", () => {
       // ── 4. Final view: all 3 tasks in the done column ─────────────────
 
       await gotoView(page, "tasks");
-      await page.getByTestId("sidebar-project-select").selectOption(projectId);
+      await selectProject(page, projectId);
       await page.getByTestId("tasks-view-table").click();
 
       const doneTab = page.getByRole("tab", { name: /^done/i });

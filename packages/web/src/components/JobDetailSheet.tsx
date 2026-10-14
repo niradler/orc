@@ -1,7 +1,8 @@
-import { ChevronDown, ChevronRight, Play, Power } from "lucide-react";
+import { ChevronDown, ChevronRight, Pencil, Play, Power } from "lucide-react";
 import { useState } from "react";
-import type { JobRun } from "@/api/client";
+import type { Job, JobRun } from "@/api/client";
 import { DetailField } from "@/components/DetailField";
+import { ErrorState } from "@/components/ErrorState";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -20,50 +21,60 @@ interface JobDetailSheetProps {
   jobId: string | null;
   open: boolean;
   onClose: () => void;
+  onEdit?: (job: Job) => void;
 }
 
-export function JobDetailSheet({ jobId, open, onClose }: JobDetailSheetProps) {
-  const { data: job } = useJob(jobId);
-  const { data: runs, isLoading: runsLoading } = useJobRuns(jobId);
+export function JobDetailSheet({ jobId, open, onClose, onEdit }: JobDetailSheetProps) {
+  const { data: job, isLoading, error, refetch } = useJob(jobId);
+  const {
+    data: runs,
+    isLoading: runsLoading,
+    error: runsError,
+    refetch: refetchRuns,
+  } = useJobRuns(jobId);
   const triggerJob = useTriggerJob();
   const updateJob = useUpdateJob();
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent>
+      <SheetContent data-testid="job-detail-sheet">
         <SheetHeader>
-          <SheetTitle>{job?.name ?? "Job Details"}</SheetTitle>
+          <SheetTitle>{job?.name ?? "Job details"}</SheetTitle>
           {job?.description && (
             <p className="font-body text-xs text-outline mt-1">{job.description}</p>
           )}
         </SheetHeader>
         <SheetBody>
-          {!job ? (
+          {error ? (
+            <ErrorState message={error.message} onRetry={() => refetch()} />
+          ) : isLoading ? (
             <div className="space-y-3">
               {[...Array(6)].map((_, i) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
                 <Skeleton key={i} className="h-8 w-full bg-surface-highest" />
               ))}
             </div>
+          ) : !job ? (
+            <p className="text-sm text-outline">Job not found</p>
           ) : (
             <div className="space-y-6">
               {/* Metadata */}
               <div className="space-y-4">
                 <DetailField label="Command">
-                  <pre className="font-mono text-xs bg-background p-2 rounded-sm border border-surface-highest overflow-x-auto whitespace-pre-wrap break-all">
+                  <pre className="font-mono text-xs bg-background p-2 rounded-lg border border-surface-highest overflow-x-auto whitespace-pre-wrap break-all">
                     {job.command}
                   </pre>
                 </DetailField>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <DetailField label="Trigger Type">
-                    <span className="font-label text-[11px] uppercase tracking-wider px-2 py-0.5 bg-surface-highest text-on-surface-variant border border-surface-highest/50 inline-flex">
+                    <span className="font-label text-xs  px-2 py-0.5 bg-surface-highest text-on-surface-variant border border-surface-highest/50 inline-flex">
                       {job.trigger_type}
                     </span>
                   </DetailField>
                   <DetailField label="Enabled">
                     <span
-                      className={`font-label text-[11px] font-bold uppercase ${job.enabled ? "text-secondary" : "text-outline"}`}
+                      className={`font-label text-xs font-bold ${job.enabled ? "text-secondary" : "text-outline"}`}
                     >
                       {job.enabled ? "\u25CF ON" : "\u25CB OFF"}
                     </span>
@@ -74,12 +85,12 @@ export function JobDetailSheet({ jobId, open, onClose }: JobDetailSheetProps) {
                     <code className="font-mono text-xs">{job.cron_expr}</code>
                   </DetailField>
                 )}
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <DetailField label="Timeout">{job.timeout_secs}s</DetailField>
                   <DetailField label="Max Retries">{job.max_retries}</DetailField>
                   <DetailField label="Overlap">{job.overlap}</DetailField>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <DetailField label="Notify On">{job.notify_on}</DetailField>
                   <DetailField label="Run Count">{job.run_count}</DetailField>
                 </div>
@@ -92,10 +103,10 @@ export function JobDetailSheet({ jobId, open, onClose }: JobDetailSheetProps) {
 
               {/* Recent runs */}
               <div>
-                <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-3">
-                  Recent Runs
-                </div>
-                {runsLoading ? (
+                <div className="font-label text-xs font-medium text-outline mb-3">Recent runs</div>
+                {runsError ? (
+                  <ErrorState message={runsError.message} onRetry={() => refetchRuns()} />
+                ) : runsLoading ? (
                   <div className="space-y-2">
                     {[...Array(3)].map((_, i) => (
                       // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
@@ -103,7 +114,7 @@ export function JobDetailSheet({ jobId, open, onClose }: JobDetailSheetProps) {
                     ))}
                   </div>
                 ) : !runs?.length ? (
-                  <div className="font-label text-[11px] text-outline uppercase py-4 text-center">
+                  <div className="font-label text-xs text-outline py-4 text-center">
                     No runs yet
                   </div>
                 ) : (
@@ -123,14 +134,30 @@ export function JobDetailSheet({ jobId, open, onClose }: JobDetailSheetProps) {
             </div>
           )}
         </SheetBody>
-        <SheetFooter>
+        <SheetFooter className="flex-wrap">
+          {(updateJob.error || triggerJob.error) && (
+            <p role="alert" className="w-full text-sm text-error">
+              {(updateJob.error ?? triggerJob.error)?.message}
+            </p>
+          )}
+          {job && onEdit && (
+            <Button
+              data-testid="job-detail-edit"
+              size="sm"
+              variant="outline"
+              onClick={() => onEdit(job)}
+            >
+              <Pencil size={16} />
+              Edit job
+            </Button>
+          )}
           {job && (
             <Button
               size="sm"
               variant="ghost"
               disabled={updateJob.isPending}
               onClick={() => updateJob.mutate({ id: job.id, enabled: !job.enabled })}
-              className="font-label text-xs uppercase tracking-widest"
+              className="font-label text-xs font-medium"
             >
               <Power size={12} className="mr-1.5" />
               {job.enabled ? "Disable" : "Enable"}
@@ -141,10 +168,10 @@ export function JobDetailSheet({ jobId, open, onClose }: JobDetailSheetProps) {
               size="sm"
               disabled={triggerJob.isPending}
               onClick={() => triggerJob.mutate(job.id)}
-              className="font-label text-xs uppercase tracking-widest bg-secondary/10 text-secondary border border-secondary/30 hover:bg-secondary/20"
+              className="font-label text-xs font-medium bg-secondary/10 text-secondary border border-secondary/30 hover:bg-secondary/20"
             >
               <Play size={12} className="mr-1.5" />
-              {triggerJob.isPending ? "Triggering..." : "Trigger Run"}
+              {triggerJob.isPending ? "Triggering..." : "Trigger run"}
             </Button>
           )}
         </SheetFooter>
@@ -165,10 +192,11 @@ function RunItem({
   onToggle: () => void;
 }) {
   return (
-    <div className="border border-surface-highest rounded-sm overflow-hidden">
+    <div className="min-w-0 border border-surface-highest rounded-xl overflow-hidden bg-surface">
       <button
         type="button"
         onClick={onToggle}
+        aria-expanded={expanded}
         className="w-full flex items-center gap-3 px-3 py-2 hover:bg-surface-low transition-colors text-left"
       >
         {expanded ? (
@@ -177,7 +205,7 @@ function RunItem({
           <ChevronRight size={12} className="text-outline shrink-0" />
         )}
         <StatusBadge status={run.status} type="job" />
-        <span className="font-label text-[11px] text-outline flex-1">
+        <span className="font-label text-xs text-outline flex-1">
           {run.started_at ? new Date(run.started_at).toLocaleString() : "\u2014"}
           {run.ended_at && (
             <span className="ml-2">\u2192 {new Date(run.ended_at).toLocaleString()}</span>
@@ -185,7 +213,7 @@ function RunItem({
         </span>
         {run.exit_code !== null && (
           <span
-            className={`font-mono text-[11px] ${run.exit_code === 0 ? "text-secondary" : "text-error"}`}
+            className={`font-mono text-xs ${run.exit_code === 0 ? "text-secondary" : "text-error"}`}
           >
             exit {run.exit_code}
           </span>
@@ -193,7 +221,7 @@ function RunItem({
       </button>
       {run.error_msg && (
         <div className="px-3 pb-2">
-          <span className="font-body text-[11px] text-error">{run.error_msg}</span>
+          <span className="font-body text-xs text-error">{run.error_msg}</span>
         </div>
       )}
       {expanded && <RunLogViewer jobId={jobId} runId={run.id} />}
@@ -202,7 +230,9 @@ function RunItem({
 }
 
 function RunLogViewer({ jobId, runId }: { jobId: string; runId: string }) {
-  const { data: logs, isLoading } = useJobRunLogs(jobId, runId);
+  const { data: logs, isLoading, error, refetch } = useJobRunLogs(jobId, runId);
+
+  if (error) return <ErrorState message={error.message} onRetry={() => refetch()} />;
 
   if (isLoading) {
     return (
@@ -213,15 +243,13 @@ function RunLogViewer({ jobId, runId }: { jobId: string; runId: string }) {
   }
 
   if (!logs?.length) {
-    return (
-      <div className="px-3 pb-3 font-label text-[11px] text-outline uppercase">No log output</div>
-    );
+    return <div className="px-3 pb-3 font-label text-xs text-outline">No log output</div>;
   }
 
   return (
-    <div className="mx-3 mb-3 rounded-sm overflow-hidden border border-surface-highest">
+    <div className="mx-3 mb-3 rounded-lg overflow-hidden border border-surface-highest">
       <ScrollArea className="h-[240px]">
-        <pre className="font-mono text-[11px] leading-relaxed bg-background p-3">
+        <pre className="font-mono text-xs leading-relaxed bg-background p-3">
           {logs.map((log) => (
             <div
               key={log.id}

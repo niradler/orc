@@ -16,11 +16,12 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useProjects } from "@/hooks/useProjects";
+import { useViewParam } from "@/lib/view-params";
 import { EventRuleEditor } from "./EventRuleEditor";
 
 type Revision = Awaited<ReturnType<typeof api.rules.list>>["history"][number];
 type Rule = RulePolicy["rules"][number];
-const selectClass = "w-full rounded-md border border-surface-highest bg-background p-2 text-sm";
+const selectClass = "w-full rounded-md border border-outline-variant bg-background p-2 text-sm";
 const agents = ["claude", "codex", "cursor", "gemini"] as const;
 
 function workspaceKey(value: string): string {
@@ -38,10 +39,8 @@ export function RulesPanel() {
   const client = useQueryClient();
   const state = useQuery({ queryKey: ["rules"], queryFn: () => api.rules.list(), retry: false });
   const projects = useProjects();
-  const [tab, setTab] = useState("applied");
-  const [workspace, setWorkspaceState] = useState(
-    () => sessionStorage.getItem("orc_rules_workspace") ?? "",
-  );
+  const [tab, setTab] = useViewParam<string>("tab", "applied", ["applied", "settings"]);
+  const [workspace, setWorkspaceState] = useViewParam<string>("workspace", "");
   const [projectId, setProjectId] = useState("");
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState("");
@@ -54,7 +53,9 @@ export function RulesPanel() {
   const [draft, setDraft] = useState(0);
   const editorTriggerRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    if (editorOpen) document.getElementById("event-rule-id")?.focus();
+    if (!editorOpen) return;
+    const frame = requestAnimationFrame(() => document.getElementById("event-rule-id")?.focus());
+    return () => cancelAnimationFrame(frame);
   }, [editorOpen]);
   const current = state.data?.history.find(
     (row) => row.current && workspaceKey(row.workspace) === workspaceKey(workspace),
@@ -67,8 +68,8 @@ export function RulesPanel() {
         (!workspace || workspaceKey(row.workspace) === workspaceKey(workspace)),
     ) ?? [];
 
-  function selectWorkspace(value: string): void {
-    setWorkspaceState(value);
+  function selectWorkspace(value: string, replace = false): void {
+    setWorkspaceState(value, { replace });
     sessionStorage.setItem("orc_rules_workspace", value);
     if (editorOpen && !editing) {
       setEditorPolicy(
@@ -183,6 +184,7 @@ export function RulesPanel() {
     setProjectId(policy.project_id ?? "");
     setEditing(structuredClone(rule));
     setTemplateRule(undefined);
+    setDraft((value) => value + 1);
 
     setEditorOpen(true);
   }
@@ -198,7 +200,7 @@ export function RulesPanel() {
             list="rule-workspaces"
             value={workspace}
             disabled={editorOpen && Boolean(editorPolicy)}
-            onChange={(event) => selectWorkspace(event.target.value)}
+            onChange={(event) => selectWorkspace(event.target.value, true)}
             placeholder="Absolute project directory"
           />
           <datalist id="rule-workspaces">
@@ -235,12 +237,12 @@ export function RulesPanel() {
     <section data-testid="rules-panel" className="space-y-4">
       {state.error && (
         <p role="alert" data-testid="rules-error">
-          {String(state.error)}
+          <span data-testid="page-error">{String(state.error)}</span>
         </p>
       )}
       <Tabs value={tab} onValueChange={setTab}>
-        <div className="flex items-center justify-between gap-3">
-          <TabsList>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <TabsList className="h-auto max-w-full flex-wrap">
             <TabsTrigger value="applied" data-testid="rules-applied-tab">
               Applied rules
             </TabsTrigger>
@@ -253,11 +255,11 @@ export function RulesPanel() {
           </Button>
         </div>
         <TabsContent value="applied" className="space-y-4 pt-3">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <select
               data-testid="rules-workspace-filter"
               aria-label="Filter by workspace"
-              className="max-w-sm rounded-md border border-surface-highest bg-background p-2 text-sm"
+              className="max-w-sm rounded-md border border-outline-variant bg-background p-2 text-sm"
               value={current?.workspace ?? workspace}
               onChange={(event) => selectWorkspace(event.target.value)}
             >
@@ -272,11 +274,11 @@ export function RulesPanel() {
                   </option>
                 ))}
             </select>
-            <span data-testid="rules-status" className="text-xs text-outline">
+            <span data-testid="rules-status" className="text-xs text-muted-foreground">
               Enforcement {state.data?.enabled ? "on" : "off"}
             </span>
           </div>
-          <div className="overflow-x-auto rounded-md border border-surface-highest">
+          <div className="overflow-x-auto rounded-md border border-outline-variant">
             <table
               data-testid="applied-rules-table"
               className="w-full min-w-[860px] table-fixed text-left text-sm"
@@ -290,7 +292,7 @@ export function RulesPanel() {
                 <col style={{ width: "18%" }} />
                 <col style={{ width: "136px" }} />
               </colgroup>
-              <thead className="bg-surface-high text-xs text-outline">
+              <thead className="bg-surface-high text-xs text-muted-foreground">
                 <tr>
                   {[
                     "Rule",
@@ -316,7 +318,7 @@ export function RulesPanel() {
                     <tr
                       key={rule.id}
                       data-testid="saved-event-rule"
-                      className="border-t border-surface-highest"
+                      className="border-t border-outline-variant"
                     >
                       <td className="px-3 py-3 font-medium">
                         <span className="block truncate" title={rule.id}>
@@ -337,21 +339,21 @@ export function RulesPanel() {
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          className="block truncate text-xs text-outline"
+                          className="block truncate text-xs text-muted-foreground"
                           title={policy.workspace}
                         >
                           {projects.data?.find((project) => project.id === policy.project_id)
                             ?.name ?? "Unassigned"}
                         </span>
                         <span
-                          className="block truncate text-xs text-outline"
+                          className="block truncate text-xs text-muted-foreground"
                           title={policy.workspace}
                         >
                           {policy.workspace}
                         </span>
                       </td>
                       <td className="sticky right-0 bg-background px-3 py-3">
-                        <div className="flex gap-2">
+                        <div className="flex flex-wrap gap-2">
                           <Button
                             variant="outline"
                             size="sm"
@@ -376,12 +378,27 @@ export function RulesPanel() {
                 </tbody>
               ))}
             </table>
-            {state.isPending && <p className="p-8 text-sm text-outline">Loading rules…</p>}
-            {!state.isPending && !policies.some((policy) => policy.policy?.rules.length) && (
-              <div className="p-10 text-center text-sm text-outline" data-testid="rules-empty">
-                No applied rules. Add a rule from scratch or choose a template.
-              </div>
+            {state.isPending && (
+              <p
+                role="status"
+                data-testid="page-loading"
+                className="p-8 text-sm text-muted-foreground"
+              >
+                Loading rules…
+              </p>
             )}
+            {!state.isPending &&
+              !state.error &&
+              !policies.some((policy) => policy.policy?.rules.length) && (
+                <div
+                  className="p-10 text-center text-sm text-muted-foreground"
+                  data-testid="rules-empty"
+                >
+                  <span data-testid="page-empty">
+                    No applied rules. Add a rule from scratch or choose a template.
+                  </span>
+                </div>
+              )}
           </div>
         </TabsContent>
         <TabsContent value="settings" className="space-y-6 pt-4">
@@ -390,7 +407,7 @@ export function RulesPanel() {
               <div className="space-y-4">
                 <h3 className="font-medium">Applies to</h3>
                 {renderScope()}
-                <p className="text-xs text-outline">
+                <p className="text-xs text-muted-foreground">
                   Rules apply in this directory and its subdirectories.
                 </p>
               </div>
@@ -456,10 +473,10 @@ export function RulesPanel() {
               )}
               <details
                 data-testid="rule-connections"
-                className="space-y-3 border-t border-surface-highest pt-4"
+                className="space-y-3 border-t border-outline-variant pt-4"
               >
                 <summary className="cursor-pointer font-medium">Agent connections</summary>
-                <p className="text-xs text-outline">
+                <p className="text-xs text-muted-foreground">
                   Claude SDK sessions connect when rule enforcement is enabled. Native agents need
                   installed, trusted hooks and a supported host.
                 </p>
@@ -476,7 +493,7 @@ export function RulesPanel() {
               </details>
               <details
                 data-testid="rules-history"
-                className="space-y-3 border-t border-surface-highest pt-4"
+                className="space-y-3 border-t border-outline-variant pt-4"
               >
                 <summary className="cursor-pointer font-medium">Policy history</summary>
                 {state.data?.history
@@ -487,7 +504,7 @@ export function RulesPanel() {
                     <div
                       key={row.id}
                       data-testid="rule-history-entry"
-                      className="space-y-2 border-t border-surface-highest py-3 text-xs"
+                      className="space-y-2 border-t border-outline-variant py-3 text-xs"
                     >
                       <p className="break-all">
                         {row.workspace} · {row.current ? "Current" : "Historical"} ·{" "}
@@ -515,7 +532,7 @@ export function RulesPanel() {
               </details>
               <details
                 data-testid="rules-decisions"
-                className="border-t border-surface-highest pt-4"
+                className="border-t border-outline-variant pt-4"
               >
                 <summary className="cursor-pointer font-medium">Activity</summary>
                 <pre className="text-xs whitespace-pre-wrap break-all">
@@ -588,7 +605,7 @@ export function RulesPanel() {
                     <p data-testid="rule-template-description" className="text-sm">
                       {RULE_CATALOG.find((entry) => entry.id === templateId)?.description}
                     </p>
-                    <p data-testid="rule-template-limits" className="text-xs text-outline">
+                    <p data-testid="rule-template-limits" className="text-xs text-muted-foreground">
                       {RULE_CATALOG.find((entry) => entry.id === templateId)?.configuration}
                     </p>
                   </div>
@@ -600,14 +617,14 @@ export function RulesPanel() {
               renderScope()
             ) : (
               <details className="space-y-3">
-                <summary className="cursor-pointer text-xs text-outline">
+                <summary className="cursor-pointer text-xs text-muted-foreground">
                   Applies to {workspace}
                 </summary>
                 {renderScope()}
               </details>
             )}
             <EventRuleEditor
-              key={`${workspace}:${editing?.id ?? `new-${draft}`}`}
+              key={`${editing?.id ?? "new"}:${draft}`}
               rule={editing ?? templateRule}
               isEditing={Boolean(editing)}
               projectId={editorPolicy ? editorPolicy.project_id : projectId || null}

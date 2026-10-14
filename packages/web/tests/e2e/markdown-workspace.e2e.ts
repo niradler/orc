@@ -88,6 +88,8 @@ for (const viewport of [
     await page.getByTestId("sheet-close").click();
     await page.locator(`[data-testid="skill-row"][data-skill-name="${name}"]`).click();
     await page.locator('[data-testid="skill-file"][data-file-name="references/guide.md"]').click();
+    await expect(page.getByTestId("skill-file-content")).toContainText("Saved supporting Markdown");
+    await page.getByTestId("markdown-mode-read").click();
     await expect(page.getByTestId("markdown-preview")).toContainText("Saved supporting Markdown");
     const overflow = await page
       .getByRole("dialog")
@@ -122,6 +124,8 @@ test("should save Wiki revisions and retain the draft after a concurrent conflic
   await page.getByTestId("document-save").click();
   await expect(page.getByTestId("document-save-status")).toHaveText("Saved");
   await page.reload();
+  await expect(page.getByTestId("wiki-editor-content")).toContainText("Saved browser lesson");
+  await page.getByTestId("markdown-mode-read").click();
   await expect(page.getByTestId("markdown-preview")).toContainText("Saved browser lesson");
   await page.getByTestId("markdown-mode-edit").click();
   await page.getByTestId("wiki-editor-content").fill("# My unsaved draft\nKeep this on conflict.");
@@ -145,8 +149,8 @@ test("should edit the actual Knowledge source and search the newly indexed conte
   writeFileSync(file, "# Browser knowledge\n\nknowledgeeditororiginal evidence.");
   await apiPost(request, "/knowledge/collections", { name: collection, path: directory });
   await gotoView(page, "knowledge");
-  await page.getByPlaceholder("Search knowledge base...").fill("knowledgeeditororiginal");
-  await page.getByPlaceholder("Search knowledge base...").press("Enter");
+  await page.getByTestId("knowledge-search-input").fill("knowledgeeditororiginal");
+  await page.getByTestId("knowledge-search-input").press("Enter");
   await page.getByTestId("knowledge-result").first().click();
   await page.getByTestId("markdown-mode-edit").click();
   const updated = "# Browser knowledge\n\nknowledgeeditorsaved verified source content.";
@@ -155,8 +159,25 @@ test("should edit the actual Knowledge source and search the newly indexed conte
   await expect(page.getByTestId("document-save-status")).toHaveText("Saved");
   expect(readFileSync(file, "utf8")).toBe(updated);
   await page.getByTestId("sheet-close").click();
-  await page.getByPlaceholder("Search knowledge base...").fill("knowledgeeditorsaved");
-  await page.getByPlaceholder("Search knowledge base...").press("Enter");
+  await expect(page.getByTestId("sheet-close")).toBeHidden();
+  await page.getByTestId("knowledge-search-input").fill("knowledgeeditorsaved");
+  await page.getByTestId("knowledge-search-input").press("Enter");
   await page.getByTestId("knowledge-result").first().click();
+  await page.getByTestId("markdown-mode-read").click();
   await expect(page.getByTestId("markdown-preview")).toContainText("knowledgeeditorsaved");
+  await page.getByTestId("markdown-mode-edit").click();
+  await page.getByTestId("knowledge-file-content").fill("# My protected search draft");
+  writeFileSync(file, "# Latest external source");
+  await page.getByTestId("document-save").click();
+  await expect(page.getByTestId("document-workspace").getByRole("alert")).toBeVisible();
+  await expect(page.getByTestId("knowledge-file-content")).toContainText(
+    "My protected search draft",
+  );
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByTestId("document-discard").click();
+  await expect(page.getByTestId("knowledge-file-content")).toContainText("Latest external source");
+  await page.getByTestId("knowledge-file-content").fill("# Search conflict recovered");
+  await page.getByTestId("document-save").click();
+  await expect(page.getByTestId("document-save-status")).toHaveText("Saved");
+  expect(readFileSync(file, "utf8")).toBe("# Search conflict recovered");
 });

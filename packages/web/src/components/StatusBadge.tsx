@@ -39,13 +39,13 @@ export function StatusBadge({ status, type = "task", className }: StatusBadgePro
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-label font-semibold uppercase tracking-wider border",
+        "inline-flex items-center gap-1 px-2 py-0.5 text-xs font-label font-medium rounded-md border",
         colors,
         className,
       )}
     >
-      <span className="w-1.5 h-1.5 rounded-sm bg-current opacity-70 flex-shrink-0" />
-      {status.replace(/_/g, " ")}
+      <span className="w-1.5 h-1.5 rounded-lg bg-current opacity-70 flex-shrink-0" />
+      {status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ")}
     </span>
   );
 }

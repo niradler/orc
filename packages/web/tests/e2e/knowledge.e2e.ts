@@ -4,11 +4,11 @@ import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { apiDelete, apiPost, gotoView, tid } from "./_helpers";
 
-/** Navigate to the Knowledge view and switch to the Collections tab. */
+/** Navigate to Knowledgebase and open contextual collection management. */
 async function gotoCollections(page: Parameters<typeof gotoView>[0]): Promise<void> {
   await gotoView(page, "knowledge");
-  await expect(page.getByTestId("view-title")).toHaveText(/knowledge/i);
-  await page.getByTestId("knowledge-collections-tab").click();
+  await expect(page.getByTestId("section-knowledge")).toHaveAttribute("aria-current", "page");
+  await page.getByTestId("knowledge-manage-collections").click();
 }
 
 // A private empty directory, not the shared OS tmp dir: indexing that scans every entry in it,

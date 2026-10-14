@@ -5,7 +5,6 @@ import type {
   Project,
   ProjectStatus,
   ProjectSummary,
-  TaskStatus,
   UpdateProjectInput,
 } from "@/api/client";
 import { api } from "@/api/client";
@@ -14,7 +13,6 @@ import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { DetailField } from "@/components/DetailField";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
-import { StatusBadge } from "@/components/StatusBadge";
 import { TaskDetailSheet } from "@/components/TaskDetailSheet";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,7 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
@@ -53,6 +51,7 @@ import {
   useProjects,
   useUpdateProject,
 } from "@/hooks/useProjects";
+import { useViewParam } from "@/lib/view-params";
 
 const STATUS_TABS: Array<{ value: ProjectStatus | "all"; label: string }> = [
   { value: "all", label: "All" },
@@ -63,15 +62,14 @@ const STATUS_TABS: Array<{ value: ProjectStatus | "all"; label: string }> = [
 
 const PROJECT_STATUSES: ProjectStatus[] = ["active", "archived", "paused"];
 
-function projectStatusToTaskStatus(s: ProjectStatus): TaskStatus {
-  if (s === "active") return "doing";
-  if (s === "archived") return "done";
-  return "paused";
-}
-
 export default function Projects() {
   const { data: projects, isLoading, error, refetch } = useProjects();
-  const [filter, setFilter] = useState<ProjectStatus | "all">("all");
+  const [filter, setFilter] = useViewParam<ProjectStatus | "all">("status", "all", [
+    "all",
+    "active",
+    "archived",
+    "paused",
+  ]);
   const [creating, setCreating] = useState(false);
   const [firstTaskProject, setFirstTaskProject] = useState<string | null>(null);
   const [createdTask, setCreatedTask] = useState<string | null>(null);
@@ -111,10 +109,10 @@ export default function Projects() {
             data-testid="new-project-button"
             size="sm"
             onClick={() => setCreating(true)}
-            className="font-label text-xs uppercase tracking-widest bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
+            className="font-label text-sm  bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
           >
             <Plus size={12} className="mr-1" />
-            New Project
+            New project
           </Button>
         }
       />
@@ -124,118 +122,133 @@ export default function Projects() {
         onValueChange={(v) => setFilter(v as ProjectStatus | "all")}
         className="mb-4"
       >
-        <TabsList className="bg-surface-highest border border-surface-highest gap-0 h-auto p-0">
+        <TabsList className="bg-surface-highest border border-outline-variant gap-0 h-auto max-w-full flex-wrap justify-start p-0">
           {STATUS_TABS.map(({ value, label }) => (
             <TabsTrigger
               key={value}
               value={value}
-              className="font-label text-[11px] uppercase tracking-widest px-4 py-2 rounded-none
+              className="font-label text-sm  px-4 py-2 rounded-none
                 data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none
-                text-outline hover:text-on-surface-variant"
+                text-muted-foreground hover:text-on-surface"
             >
               {label}
               {value !== "all" && counts[value] != null && (
-                <span className="ml-1.5 text-[10px] bg-surface-highest px-1.5 py-0.5 rounded-sm">
+                <span className="ml-1.5 text-xs bg-surface-highest px-1.5 py-0.5 rounded-sm">
                   {counts[value]}
                 </span>
               )}
             </TabsTrigger>
           ))}
         </TabsList>
-      </Tabs>
-
-      {isLoading ? (
-        <div className="space-y-2">
-          {[...Array(3)].map((_, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
-            <Skeleton key={i} className="h-12 w-full bg-surface-highest" />
-          ))}
-        </div>
-      ) : visible.length === 0 ? (
-        <EmptyState message="No projects" />
-      ) : (
-        <div className="border border-surface-highest rounded-sm overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
-                  Name
-                </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
-                  Description
-                </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-28">
-                  Status
-                </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-36">
-                  Tags
-                </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
-                  Max Workers
-                </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
-                  Created
-                </TableHead>
-                <TableHead className="w-10" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visible.map((p) => (
-                <TableRow
-                  key={p.id}
-                  data-testid="project-row"
-                  data-project-id={p.id}
-                  data-project-name={p.name}
-                  className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
-                  onClick={() => openEdit(p.id)}
-                >
-                  <TableCell className="font-body text-xs font-semibold text-on-surface">
-                    {p.name}
-                  </TableCell>
-                  <TableCell className="font-body text-xs text-outline max-w-xs truncate">
-                    {p.description ?? "\u2014"}
-                  </TableCell>
-                  <TableCell>
-                    <StatusBadge status={projectStatusToTaskStatus(p.status)} />
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {(p.tags ?? []).map((t) => (
-                        <span
-                          key={t}
-                          className="font-label text-[10px] px-1.5 py-0.5 bg-surface-highest text-outline border border-surface-highest/50"
-                        >
-                          {t}
-                        </span>
-                      ))}
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-label text-xs text-on-surface text-center">
-                    {p.max_workers ?? "\u2014"}
-                  </TableCell>
-                  <TableCell className="font-label text-[11px] text-outline">
-                    {new Date(p.created_at).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    <button
-                      type="button"
-                      data-testid="project-delete"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleting(p);
-                      }}
-                      className="text-outline hover:text-error transition-colors p-1"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </TableCell>
-                </TableRow>
+        <TabsContent value={filter}>
+          {isLoading ? (
+            <div className="space-y-2">
+              {[...Array(3)].map((_, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
+                <Skeleton key={i} className="h-12 w-full bg-surface-highest" />
               ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
+            </div>
+          ) : visible.length === 0 ? (
+            <EmptyState message="No projects" />
+          ) : (
+            <div className="border border-outline-variant rounded-sm overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-b border-outline-variant hover:bg-transparent">
+                    <TableHead className="font-label text-sm  text-muted-foreground">
+                      Name
+                    </TableHead>
+                    <TableHead className="font-label text-sm  text-muted-foreground">
+                      Description
+                    </TableHead>
+                    <TableHead className="font-label text-sm  text-muted-foreground w-28">
+                      Status
+                    </TableHead>
+                    <TableHead className="font-label text-sm  text-muted-foreground w-36">
+                      Tags
+                    </TableHead>
+                    <TableHead className="font-label text-sm  text-muted-foreground w-24">
+                      Max Workers
+                    </TableHead>
+                    <TableHead className="font-label text-sm  text-muted-foreground w-24">
+                      Created
+                    </TableHead>
+                    <TableHead className="w-10" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visible.map((p) => (
+                    <TableRow
+                      key={p.id}
+                      data-testid="project-row"
+                      data-project-id={p.id}
+                      data-project-name={p.name}
+                      className="border-b border-outline-variant/50 hover:bg-surface-low cursor-pointer"
+                      onClick={() => openEdit(p.id)}
+                    >
+                      <TableCell className="font-body text-sm font-semibold text-on-surface">
+                        <button
+                          type="button"
+                          className="min-h-11 text-left hover:text-primary"
+                          aria-label={`Edit project: ${p.name}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openEdit(p.id);
+                          }}
+                        >
+                          {p.name}
+                        </button>
+                      </TableCell>
+                      <TableCell className="font-body text-sm text-muted-foreground max-w-xs truncate">
+                        {p.description ?? "\u2014"}
+                      </TableCell>
+                      <TableCell>
+                        <span
+                          className={`inline-flex rounded-md border px-2 py-1 text-xs font-medium capitalize ${p.status === "active" ? "border-secondary/30 bg-secondary/10 text-secondary" : p.status === "paused" ? "border-tertiary/30 bg-tertiary/10 text-tertiary" : "border-outline-variant bg-surface-high text-muted-foreground"}`}
+                        >
+                          {p.status}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {(p.tags ?? []).map((t) => (
+                            <span
+                              key={t}
+                              className="font-label text-sm px-1.5 py-0.5 bg-surface-highest text-muted-foreground border border-outline-variant/50"
+                            >
+                              {t}
+                            </span>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-label text-sm text-on-surface text-center">
+                        {p.max_workers ?? "\u2014"}
+                      </TableCell>
+                      <TableCell className="font-label text-sm text-muted-foreground">
+                        {new Date(p.created_at).toLocaleDateString()}
+                      </TableCell>
+                      <TableCell>
+                        <button
+                          type="button"
+                          data-testid="project-delete"
+                          aria-label={`Delete project: ${p.name}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleting(p);
+                          }}
+                          className="text-muted-foreground hover:text-error transition-colors p-1"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
       {creating && (
         <CreateProjectDialog
           open={creating}
@@ -275,7 +288,7 @@ export default function Projects() {
       {deleting && (
         <ConfirmDialog
           open={Boolean(deleting)}
-          title="Delete Project"
+          title="Delete project"
           description="This will delete all associated tasks, memories, and jobs. This action cannot be undone."
           confirmLabel="Delete"
           variant="destructive"
@@ -292,7 +305,7 @@ export default function Projects() {
   );
 }
 
-function CreateProjectDialog({
+export function CreateProjectDialog({
   open,
   onClose,
   onFirstTask,
@@ -337,50 +350,49 @@ function CreateProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="bg-surface border-surface-highest max-w-md">
+      <DialogContent className="bg-surface border-outline-variant max-w-md">
         <DialogHeader>
-          <DialogTitle className="font-headline text-sm uppercase tracking-widest text-on-surface">
-            New Project
+          <DialogTitle className="font-headline text-base  text-on-surface">
+            New project
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Name *
-            </Label>
+            <Label className="font-label text-sm  text-muted-foreground">Name *</Label>
             <Input
+              aria-label="Name"
               data-testid="project-name-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="project-name"
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
+              className="bg-background border-outline-variant text-on-surface font-body text-sm"
               autoFocus
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Description
-            </Label>
+            <Label className="font-label text-sm  text-muted-foreground">Description</Label>
             <Textarea
+              aria-label="Description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Short description..."
               rows={2}
-              className="bg-background border-surface-highest text-on-surface font-body text-xs resize-none"
+              className="bg-background border-outline-variant text-on-surface font-body text-sm resize-none"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Status
-              </Label>
+              <Label className="font-label text-sm  text-muted-foreground">Status</Label>
               <Select value={status} onValueChange={(v) => setStatus(v as ProjectStatus)}>
-                <SelectTrigger className="bg-background border-surface-highest text-on-surface font-label text-xs">
+                <SelectTrigger
+                  aria-label="Status"
+                  className="bg-background border-outline-variant text-on-surface font-label text-sm"
+                >
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-surface-highest border-surface-highest">
+                <SelectContent className="bg-surface-highest border-outline-variant">
                   {PROJECT_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s} className="font-label text-xs">
+                    <SelectItem key={s} value={s} className="font-label text-sm">
                       {s}
                     </SelectItem>
                   ))}
@@ -388,40 +400,41 @@ function CreateProjectDialog({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Max Workers
-              </Label>
+              <Label className="font-label text-sm  text-muted-foreground">Max Workers</Label>
               <Input
+                aria-label="Max Workers"
                 type="number"
                 min={1}
                 value={maxWorkers}
                 onChange={(e) => setMaxWorkers(e.target.value)}
                 placeholder="1"
-                className="bg-background border-surface-highest text-on-surface font-body text-xs"
+                className="bg-background border-outline-variant text-on-surface font-body text-sm"
               />
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-sm  text-muted-foreground">
               Tags (comma separated)
             </Label>
             <Input
+              aria-label="Tags (comma separated)"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
               placeholder="backend, api, v2"
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
+              className="bg-background border-outline-variant text-on-surface font-body text-sm"
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-sm  text-muted-foreground">
               Project folder on the ORC machine
             </Label>
             <Input
+              aria-label="Project folder on the ORC machine"
               data-testid="project-folder-input"
               value={scope}
               onChange={(e) => setScope(e.target.value)}
               placeholder="Absolute project folder (required to run tasks)"
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
+              className="bg-background border-outline-variant text-on-surface font-body text-sm"
             />
             <Button
               type="button"
@@ -446,7 +459,7 @@ function CreateProjectDialog({
               </p>
             )}
           </div>
-          <label className="flex gap-2 text-xs text-outline">
+          <label className="flex flex-wrap gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
               data-testid="project-first-task"
@@ -466,7 +479,7 @@ function CreateProjectDialog({
               variant="ghost"
               size="sm"
               onClick={onClose}
-              className="font-label text-xs uppercase text-outline"
+              className="font-label text-sm text-muted-foreground"
             >
               Cancel
             </Button>
@@ -475,7 +488,7 @@ function CreateProjectDialog({
               type="submit"
               size="sm"
               disabled={createProject.isPending || !name.trim()}
-              className="font-label text-xs uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              className="font-label text-sm bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
             >
               {createProject.isPending ? "Creating..." : "Create"}
             </Button>
@@ -534,10 +547,10 @@ function EditProjectDialog({
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent
         data-testid="edit-project-dialog"
-        className="bg-surface border-surface-highest max-w-lg"
+        className="bg-surface border-outline-variant max-w-lg"
       >
         <DialogHeader>
-          <DialogTitle className="font-headline text-sm uppercase tracking-widest text-on-surface">
+          <DialogTitle className="font-headline text-base  text-on-surface">
             Edit Project
           </DialogTitle>
         </DialogHeader>
@@ -555,40 +568,39 @@ function EditProjectDialog({
 
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Name *
-            </Label>
+            <Label className="font-label text-sm  text-muted-foreground">Name *</Label>
             <Input
+              aria-label="Name"
               data-testid="edit-project-name-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
+              className="bg-background border-outline-variant text-on-surface font-body text-sm"
               autoFocus
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Description
-            </Label>
+            <Label className="font-label text-sm  text-muted-foreground">Description</Label>
             <Textarea
+              aria-label="Description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
-              className="bg-background border-surface-highest text-on-surface font-body text-xs resize-none"
+              className="bg-background border-outline-variant text-on-surface font-body text-sm resize-none"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Status
-              </Label>
+              <Label className="font-label text-sm  text-muted-foreground">Status</Label>
               <Select value={status} onValueChange={(v) => setStatus(v as ProjectStatus)}>
-                <SelectTrigger className="bg-background border-surface-highest text-on-surface font-label text-xs">
+                <SelectTrigger
+                  aria-label="Status"
+                  className="bg-background border-outline-variant text-on-surface font-label text-sm"
+                >
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-surface-highest border-surface-highest">
+                <SelectContent className="bg-surface-highest border-outline-variant">
                   {PROJECT_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s} className="font-label text-xs">
+                    <SelectItem key={s} value={s} className="font-label text-sm">
                       {s}
                     </SelectItem>
                   ))}
@@ -596,37 +608,36 @@ function EditProjectDialog({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Max Workers
-              </Label>
+              <Label className="font-label text-sm  text-muted-foreground">Max Workers</Label>
               <Input
+                aria-label="Max Workers"
                 type="number"
                 min={1}
                 value={maxWorkers}
                 onChange={(e) => setMaxWorkers(e.target.value)}
                 placeholder="1"
-                className="bg-background border-surface-highest text-on-surface font-body text-xs"
+                className="bg-background border-outline-variant text-on-surface font-body text-sm"
               />
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
+            <Label className="font-label text-sm  text-muted-foreground">
               Tags (comma separated)
             </Label>
             <Input
+              aria-label="Tags (comma separated)"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
+              className="bg-background border-outline-variant text-on-surface font-body text-sm"
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Scope
-            </Label>
+            <Label className="font-label text-sm  text-muted-foreground">Scope</Label>
             <Input
+              aria-label="Scope"
               value={scope}
               onChange={(e) => setScope(e.target.value)}
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
+              className="bg-background border-outline-variant text-on-surface font-body text-sm"
             />
           </div>
           <DialogFooter>
@@ -635,7 +646,7 @@ function EditProjectDialog({
               variant="ghost"
               size="sm"
               onClick={onClose}
-              className="font-label text-xs uppercase text-outline"
+              className="font-label text-sm text-muted-foreground"
             >
               Cancel
             </Button>
@@ -644,11 +655,16 @@ function EditProjectDialog({
               type="submit"
               size="sm"
               disabled={updateProject.isPending || !name.trim()}
-              className="font-label text-xs uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              className="font-label text-sm bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
             >
               {updateProject.isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
+          {updateProject.error && (
+            <p role="alert" className="text-sm text-error">
+              {updateProject.error.message}
+            </p>
+          )}
         </form>
       </DialogContent>
     </Dialog>
@@ -657,11 +673,11 @@ function EditProjectDialog({
 
 function ProjectSummaryBar({ summary }: { summary: ProjectSummary }) {
   return (
-    <div className="grid grid-cols-3 gap-4 p-3 bg-surface-highest/50 border border-surface-highest rounded-sm mt-2">
+    <div className="grid grid-cols-3 gap-4 p-3 bg-surface-highest/50 border border-outline-variant rounded-sm mt-2">
       <DetailField label="Tasks">
-        <span className="font-label text-xs text-primary">{summary.tasks.total}</span>
+        <span className="font-label text-sm text-primary">{summary.tasks.total}</span>
         {Object.keys(summary.tasks.by_status).length > 0 && (
-          <span className="text-outline text-[11px] ml-1">
+          <span className="text-muted-foreground text-sm ml-1">
             (
             {Object.entries(summary.tasks.by_status)
               .map(([s, n]) => `${n} ${s}`)
@@ -671,10 +687,10 @@ function ProjectSummaryBar({ summary }: { summary: ProjectSummary }) {
         )}
       </DetailField>
       <DetailField label="Memories">
-        <span className="font-label text-xs text-primary">{summary.memories}</span>
+        <span className="font-label text-sm text-primary">{summary.memories}</span>
       </DetailField>
       <DetailField label="Jobs">
-        <span className="font-label text-xs text-primary">{summary.jobs}</span>
+        <span className="font-label text-sm text-primary">{summary.jobs}</span>
       </DetailField>
     </div>
   );

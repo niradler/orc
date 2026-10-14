@@ -49,13 +49,19 @@ export async function gotoView(
   page: Page,
   view:
     | "dashboard"
+    | "overview"
+    | "activity"
     | "tasks"
     | "jobs"
     | "memories"
     | "projects"
     | "sessions"
     | "knowledge"
+    | "wiki"
     | "skills"
+    | "packages"
+    | "agents"
+    | "terminals"
     | "rules"
     | "settings",
 ): Promise<void> {
@@ -65,14 +71,28 @@ export async function gotoView(
       API_SECRET,
     );
   }
-  await page.goto("/");
-  const navigationView = view === "memories" ? "knowledge" : view;
-  const mobileNavigation = page.getByTestId("mobile-nav-open");
-  if (await mobileNavigation.isVisible()) {
-    await mobileNavigation.click();
-    await page.getByTestId("mobile-nav-drawer").getByTestId(`nav-${navigationView}`).click();
-  } else await page.getByTestId(`nav-${navigationView}`).click();
-  if (view === "memories") await page.getByTestId("knowledge-memories-tab").click();
+  const path =
+    view === "memories"
+      ? "knowledge/memories"
+      : view === "knowledge"
+        ? "knowledge/base"
+        : view === "wiki"
+          ? "knowledge/wiki"
+          : view;
+  await page.goto(`/${path}`);
+}
+
+export async function selectProject(page: Page, id: string): Promise<void> {
+  const mobile = page.getByTestId("mobile-nav-open");
+  if ((await mobile.isVisible()) && !(await page.getByTestId("mobile-nav-drawer").isVisible()))
+    await mobile.click();
+  const drawer = page.getByTestId("mobile-nav-drawer");
+  const picker = (await drawer.isVisible())
+    ? drawer.getByTestId("sidebar-project-select")
+    : page.getByTestId("sidebar-project-select");
+  await picker.click();
+  await page.getByTestId(`project-option-${id}`).click();
+  if (await drawer.isVisible()) await page.keyboard.press("Escape");
 }
 
 export async function apiDelete(request: APIRequestContext, path: string): Promise<void> {

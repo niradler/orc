@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { strToU8, zipSync } from "fflate";
 import { FileBox, PackagePlus, Search, Upload } from "lucide-react";
-import { useState } from "react";
-import { Navigate, useParams, useSearchParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   type AgentSetup,
   api,
@@ -11,15 +11,21 @@ import {
   type SkillRefContent,
 } from "@/api/client";
 import { AgentPackageFiles } from "@/components/AgentPackageFiles";
-import { PackageEditor } from "@/components/PackageEditor";
+import {
+  confirmPackageDraftClose,
+  forgetPackageDraft,
+  getPackageDraftBase,
+  PackageEditor,
+} from "@/components/PackageEditor";
 import { PackageImportDialog } from "@/components/PackageImportDialog";
 import { PackageRunDialog } from "@/components/PackageRunDialog";
 import { Button } from "@/components/ui/button";
-import { Dialog } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
 import type { PackageInput } from "@/lib/package-draft";
+import { useViewParam } from "@/lib/view-params";
 
 type Editable = PackageFull & { revision: string; draftFiles: SkillFileInput[] };
 
@@ -42,12 +48,31 @@ export function LegacyAgentsRedirect() {
 export default function PackageCatalog() {
   const cache = useQueryClient();
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  const [action, setAction] = useViewParam<string>("packageAction", "", [
+    "",
+    "new",
+    "import",
+    "edit",
+  ]);
   const packages = useQuery({ queryKey: ["agent-packages"], queryFn: api.agentPackages.list });
   const tools = useQuery({ queryKey: ["package-tools"], queryFn: api.packageTools.list });
-  const { selectedId, openDetail, closeDetail } = useDetailRoute("/packages/item", "packageName");
-  const [creating, setCreating] = useState(false);
+  const { selectedId, closeDetail } = useDetailRoute("/packages/item", "packageName");
+  const creating = action === "new";
+  const setCreating = (open: boolean) => setAction(open ? "new" : "");
   const [editing, setEditing] = useState<Editable>();
-  const [importing, setImporting] = useState(false);
+  const importing = action === "import";
+  const setImporting = (open: boolean) => setAction(open ? "import" : "");
+  function openDetail(name: string) {
+    const next = new URLSearchParams(window.location.search);
+    next.delete("packageAction");
+    navigate(`/packages/item/${encodeURIComponent(name)}?${next}`);
+  }
+  function edit(name: string) {
+    const next = new URLSearchParams(window.location.search);
+    next.set("packageAction", "edit");
+    navigate(`/packages/item/${encodeURIComponent(name)}?${next}`);
+  }
   const [setup, setSetup] = useState<AgentSetup>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -78,34 +103,58 @@ export default function PackageCatalog() {
         : api.agentPackages.create(input),
     onSuccess: async (pkg) => {
       await refresh();
+      forgetPackageDraft(editing?.name ?? "new");
       setCreating(false);
       setEditing(undefined);
       setNotice(`${pkg.name} saved to your catalog.`);
       openDetail(pkg.name);
     },
   });
-  async function edit(name: string) {
+  const resetSave = save.reset;
+  useEffect(() => {
+    let active = true;
+    setEditing(undefined);
+    if (action !== "edit" || !selectedId) {
+      setBusy(false);
+      return;
+    }
     setBusy(true);
     setError(undefined);
-    save.reset();
-    try {
-      const pkg = (await api.agentPackages.get(name)) as PackageFull & { revision: string };
-      const files = await Promise.all(
-        pkg.files.map(async (ref) => {
-          const file = (await api.agentPackages.get(name, ref.name)) as SkillRefContent;
-          return { path: ref.name, content: file.content, encoding: file.encoding };
-        }),
-      );
-      if (!pkg.revision)
-        throw new Error("Package revision is missing; update the API before editing");
-      closeDetail();
-      setEditing({ ...pkg, draftFiles: files });
-    } catch (failure) {
-      setError((failure as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
+    resetSave();
+    void (async () => {
+      try {
+        const pkg = (await api.agentPackages.get(selectedId)) as PackageFull & { revision: string };
+        const files = await Promise.all(
+          pkg.files.map(async (ref) => {
+            const file = (await api.agentPackages.get(selectedId, ref.name)) as SkillRefContent;
+            return { path: ref.name, content: file.content, encoding: file.encoding };
+          }),
+        );
+        if (!pkg.revision)
+          throw new Error("Package revision is missing; update the API before editing");
+        const baseline = getPackageDraftBase(selectedId);
+        if (active)
+          setEditing(
+            baseline
+              ? {
+                  ...pkg,
+                  content: baseline.content,
+                  format: baseline.format,
+                  revision: baseline.revision ?? pkg.revision,
+                  draftFiles: baseline.files,
+                }
+              : { ...pkg, draftFiles: files },
+          );
+      } catch (failure) {
+        if (active) setError((failure as Error).message);
+      } finally {
+        if (active) setBusy(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [action, selectedId, resetSave]);
   function openRun(name: string) {
     const pkg = packages.data?.packages.find((pkg) => pkg.name === name);
     closeDetail();
@@ -194,7 +243,7 @@ export default function PackageCatalog() {
       />
       <div className="space-y-1">
         <h2 className="text-xl font-semibold tracking-tight">Your package catalog</h2>
-        <p className="max-w-2xl text-sm text-outline">
+        <p className="max-w-2xl text-sm text-muted-foreground">
           Keep the instructions, skills and tools you trust in one place. Save a package once, then
           install it for your coding agent or launch a configured terminal.
         </p>
@@ -206,12 +255,12 @@ export default function PackageCatalog() {
       )}
       {(error || packages.error) && (
         <p role="alert" data-testid="package-error" className="text-sm text-destructive">
-          {error ?? packages.error?.message}
+          <span data-testid="page-error">{error ?? packages.error?.message}</span>
         </p>
       )}
       <div className="flex flex-col gap-3 sm:flex-row">
         <div className="relative min-w-0 flex-1">
-          <Search size={16} className="absolute left-3 top-3 text-outline" />
+          <Search size={16} className="absolute left-3 top-3 text-muted-foreground" />
           <Input
             className="pl-9"
             data-testid="package-search"
@@ -229,7 +278,7 @@ export default function PackageCatalog() {
         <select
           aria-label="Filter package type"
           data-testid="package-format-filter"
-          className="rounded border border-surface-highest bg-surface-low p-2 text-sm"
+          className="rounded border border-outline-variant bg-surface-low p-2 text-sm"
           value={format}
           onChange={(event) => {
             const next = new URLSearchParams(params);
@@ -242,16 +291,20 @@ export default function PackageCatalog() {
           <option value="agent-plugin">Agent Plugins</option>
         </select>
       </div>
-      {packages.isLoading && <p>Loading your catalog…</p>}
+      {packages.isLoading && (
+        <p role="status" data-testid="page-loading">
+          Loading your catalog…
+        </p>
+      )}
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {filtered.map((pkg) => (
           <article
             key={pkg.name}
             data-testid="agent-package-row"
             data-package-name={pkg.name}
-            className="min-w-0 flex flex-col rounded-lg border border-surface-highest bg-surface-low p-4"
+            className="min-w-0 flex flex-col rounded-lg border border-outline-variant bg-surface-low p-4"
           >
-            <span className="mb-3 text-xs text-outline">
+            <span className="mb-3 text-xs text-muted-foreground">
               {pkg.format === "apm" ? "APM package" : "Agent Plugins"}
               {pkg.version ? ` · v${pkg.version}` : ""}
             </span>
@@ -263,11 +316,11 @@ export default function PackageCatalog() {
             >
               {pkg.name}
             </button>
-            <p className="mt-2 flex-1 text-sm text-outline break-words">
+            <p className="mt-2 flex-1 text-sm text-muted-foreground break-words">
               {pkg.description || "Add a description to help you choose this configuration later."}
             </p>
             {pkg.warnings.map((warning) => (
-              <p key={warning} className="mt-2 text-xs text-outline break-words">
+              <p key={warning} className="mt-2 text-xs text-muted-foreground break-words">
                 {warning}
               </p>
             ))}
@@ -286,15 +339,18 @@ export default function PackageCatalog() {
           </article>
         ))}
       </div>
-      {!packages.isLoading && !filtered.length && (
-        <div className="rounded-lg border border-dashed border-surface-highest px-4 py-10 text-center">
-          <FileBox size={32} className="mx-auto mb-3 text-outline" />
+      {!packages.isLoading && !packages.error && !filtered.length && (
+        <div
+          data-testid="page-empty"
+          className="rounded-lg border border-dashed border-outline-variant px-4 py-10 text-center"
+        >
+          <FileBox size={32} className="mx-auto mb-3 text-muted-foreground" />
           <h3 className="font-medium">
             {search || format !== "all"
               ? "No matching configurations"
               : "Build your personal agent catalog"}
           </h3>
-          <p className="mx-auto mt-2 max-w-md text-sm text-outline">
+          <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
             {search || format !== "all"
               ? "Try another search or package format."
               : "Create an APM package with your instructions and existing skills, or import an Agent Plugin from GitHub."}
@@ -318,12 +374,12 @@ export default function PackageCatalog() {
         </p>
       ))}
       {tools.data && !tools.data.apm && (
-        <p className="text-xs text-outline">
+        <p className="text-xs text-muted-foreground">
           Catalog editing is available. Installation, Git acquisition and installation exports
           require APM on this ORC machine.
         </p>
       )}
-      {selectedId && (
+      {selectedId && !action && (
         <AgentPackageFiles
           key={selectedId}
           name={selectedId}
@@ -337,15 +393,16 @@ export default function PackageCatalog() {
         />
       )}
       <Dialog
-        open={creating || Boolean(editing)}
+        open={creating || action === "edit"}
         onOpenChange={(open) => {
           if (!open && !save.isPending) {
+            if (!confirmPackageDraftClose(editing?.name ?? "new")) return;
             setCreating(false);
             setEditing(undefined);
           }
         }}
       >
-        {(creating || editing) && (
+        {creating || (action === "edit" && editing) ? (
           <PackageEditor
             initial={
               editing
@@ -354,6 +411,7 @@ export default function PackageCatalog() {
                     content: editing.content,
                     format: editing.format,
                     files: editing.draftFiles,
+                    revision: editing.revision,
                   }
                 : undefined
             }
@@ -361,7 +419,14 @@ export default function PackageCatalog() {
             error={save.error?.message}
             onSave={(input) => save.mutate(input)}
           />
-        )}
+        ) : action === "edit" ? (
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Package editor</DialogTitle>
+            </DialogHeader>
+            <p role={error ? "alert" : "status"}>{error ?? "Opening package editor…"}</p>
+          </DialogContent>
+        ) : null}
       </Dialog>
       {importing && (
         <PackageImportDialog

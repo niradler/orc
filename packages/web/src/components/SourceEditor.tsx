@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import type { CodeEditorProps } from "@/components/CodeEditor";
 import { Markdown } from "@/components/Markdown";
 import { editorLanguage, isMarkdownFile } from "@/lib/editor-language";
+import { useTheme } from "@/lib/theme";
 
 const externalChange = Annotation.define<boolean>();
 
@@ -26,6 +27,7 @@ export function SourceEditor({
   hidePreview = false,
   defaultWrap = false,
 }: CodeEditorProps) {
+  const { theme } = useTheme();
   const parent = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const initial = useRef({
@@ -37,6 +39,7 @@ export function SourceEditor({
     label,
     placeholder,
     defaultWrap,
+    theme,
   });
   const changeAction = useRef(onChange);
   changeAction.current = onChange;
@@ -44,6 +47,7 @@ export function SourceEditor({
   saveAction.current = onSave;
   const lineBreak = useRef(value.includes("\r\n") ? "\r\n" : "\n");
   const language = useRef(new Compartment());
+  const colorTheme = useRef(new Compartment());
   const editable = useRef(new Compartment());
   const attributes = useRef(new Compartment());
   const wrapping = useRef(new Compartment());
@@ -60,7 +64,7 @@ export function SourceEditor({
         doc: original.value,
         extensions: [
           basicSetup,
-          oneDark,
+          colorTheme.current.of(original.theme === "dark" ? oneDark : []),
           language.current.of(editorLanguage(original.path)),
           editable.current.of([
             EditorState.readOnly.of(original.readOnly),
@@ -90,16 +94,31 @@ export function SourceEditor({
           EditorView.theme({
             "&": {
               height: "100%",
-              backgroundColor: "#090e1a",
+              backgroundColor: "rgb(var(--background))",
+              color: "rgb(var(--foreground))",
               fontSize: "14px",
             },
             "@media (max-width: 640px)": { "&": { fontSize: "16px" } },
-            ".cm-scroller": { overflow: "auto", fontFamily: "monospace" },
-            ".cm-gutters": {
-              backgroundColor: "#111827",
-              borderRight: "1px solid #1e2537",
+            ".cm-scroller": {
+              overflow: "auto",
+              fontFamily: '"IBM Plex Mono", Consolas, monospace',
             },
-            ".cm-activeLine": { backgroundColor: "#1e253744" },
+            ".cm-gutters": {
+              backgroundColor: "rgb(var(--surface-low))",
+              color: "rgb(var(--muted-foreground))",
+              borderRight: "1px solid rgb(var(--border))",
+            },
+            ".cm-activeLine, .cm-activeLineGutter": {
+              backgroundColor: "rgb(var(--surface-highest) / 0.4)",
+            },
+            ".cm-cursor": { borderLeftColor: "rgb(var(--foreground))" },
+            ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+              backgroundColor: "rgb(var(--primary) / 0.25)",
+            },
+            ".cm-panels, .cm-tooltip": {
+              backgroundColor: "rgb(var(--surface))",
+              color: "rgb(var(--foreground))",
+            },
             ".cm-content": { padding: "12px 0" },
             ".cm-line": { padding: "0 12px" },
           }),
@@ -119,6 +138,12 @@ export function SourceEditor({
       editor.destroy();
     };
   }, []);
+
+  useEffect(() => {
+    view.current?.dispatch({
+      effects: colorTheme.current.reconfigure(theme === "dark" ? oneDark : []),
+    });
+  }, [theme]);
 
   useEffect(() => {
     view.current?.dispatch({
@@ -188,7 +213,7 @@ export function SourceEditor({
             setPreview(false);
             if (view.current) openSearchPanel(view.current);
           }}
-          className="rounded p-1 text-outline hover:bg-surface-highest"
+          className="inline-flex min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 items-center justify-center rounded p-1 text-outline hover:bg-surface-highest"
         >
           <Search size={14} />
         </button>
@@ -204,7 +229,7 @@ export function SourceEditor({
               effects: wrapping.current.reconfigure(next ? EditorView.lineWrapping : []),
             });
           }}
-          className={`rounded p-1 hover:bg-surface-highest ${wrap ? "text-primary" : "text-outline"}`}
+          className={`inline-flex min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 items-center justify-center rounded p-1 hover:bg-surface-highest ${wrap ? "text-primary" : "text-outline"}`}
         >
           <WrapText size={14} />
         </button>

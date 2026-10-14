@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
 import { apiDelete, apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers";
 
@@ -97,6 +98,39 @@ test.describe("Kanban drag & drop", () => {
           { timeout: 10_000 },
         )
         .toBe("doing");
+    } finally {
+      await apiDelete(request, `/tasks/${task.id}`);
+    }
+  });
+
+  test("board controls have separate semantics and support keyboard dragging", async ({
+    page,
+    request,
+  }) => {
+    const title = tid("pw-kanban-keyboard");
+    const task = await apiPost<Task>(request, "/tasks", {
+      title,
+      status: "todo",
+      priority: "normal",
+    });
+    try {
+      await page.reload();
+      const card = page.locator(`[data-testid="kanban-card"][data-task-id="${task.id}"]`);
+      await expect(card).toBeVisible();
+      const scan = await new AxeBuilder({ page })
+        .include('[data-testid="kanban-card"]')
+        .withRules(["nested-interactive"])
+        .analyze();
+      expect(scan.violations).toEqual([]);
+      const move = card.getByRole("button", { name: `Move task: ${title}`, exact: true });
+      await move.focus();
+      await move.press("Space");
+      for (let step = 0; step < 12; step++) await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("Space");
+      await expect
+        .poll(async () => (await apiGet<Task>(request, `/tasks/${task.id}`)).status)
+        .toBe("doing");
+      await expect(page.getByRole("dialog")).toHaveCount(0);
     } finally {
       await apiDelete(request, `/tasks/${task.id}`);
     }

@@ -16,14 +16,8 @@ export function PriorityBadge({
   className?: string;
 }) {
   return (
-    <span
-      className={cn(
-        "font-label text-xs uppercase tracking-wide",
-        PRIORITY_COLORS[priority],
-        className,
-      )}
-    >
-      {priority}
+    <span className={cn("font-label text-xs ", PRIORITY_COLORS[priority], className)}>
+      {priority.charAt(0).toUpperCase() + priority.slice(1)}
     </span>
   );
 }

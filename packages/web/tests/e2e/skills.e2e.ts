@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
-import { apiGet, gotoView, tid } from "./_helpers";
+import { apiGet, apiPost, gotoView, tid } from "./_helpers";
 
 interface SkillMeta {
   name: string;
@@ -46,6 +46,8 @@ test.describe("Skills", () => {
       });
     }
     await page.reload();
+    await expect(page.getByTestId("skill-file-content")).toHaveText(resources[1].content);
+    await page.getByTestId("skill-show-entry").click();
     await expect(page.getByTestId("skill-file-content")).toContainText(
       "Read references/deep/guide.md",
     );
@@ -145,17 +147,27 @@ Playwright test skill auto-created by e2e suite.`;
     await expect(sheet).toContainText(skill.name);
   });
 
-  test("source filter 'User' pill shows only user skills", async ({ page }) => {
+  test("source filter 'User' pill shows only user skills", async ({ page, request }) => {
+    const name = tid("filter-user");
+    await apiPost(request, "/skills", {
+      name,
+      content: `---\nname: ${name}\ndescription: User filter fixture\n---\nInstructions.`,
+    });
     await gotoView(page, "skills");
 
     // Click the "User" filter pill
-    await page.getByRole("button", { name: /^user$/i }).click();
+    await page.getByTestId("skill-source-user").click();
 
     // Every visible row must carry the "user" source badge
     const rows = page.locator('[data-testid="skill-row"]');
-    const count = await rows.count();
-    for (let i = 0; i < count; i++) {
-      await expect(rows.nth(i)).toContainText("user");
-    }
+    await expect(
+      page.locator(`[data-testid="skill-row"][data-skill-name="${name}"]`),
+    ).toBeVisible();
+    await expect
+      .poll(async () => {
+        const sources = await rows.locator("td:nth-child(3)").allTextContents();
+        return sources.length > 0 && sources.every((source) => source.trim() === "user");
+      })
+      .toBe(true);
   });
 });

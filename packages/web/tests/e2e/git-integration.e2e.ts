@@ -76,8 +76,15 @@ test("slice 3 git panel status, diff, selected staging, commit, branches and tas
   const untracked = page.getByTestId("git-diff-file").filter({ hasText: "untracked.txt" });
   await expect(page.getByTestId("git-diff-file")).toHaveCount(2);
   await expect(tracked.getByTestId("git-diff")).toContainText("+panel edit");
-  await expect(tracked.getByTestId("git-diff-add")).toHaveCSS("color", "rgb(74, 222, 128)");
-  await expect(tracked.getByTestId("git-diff-remove")).toHaveCSS("color", "rgb(248, 113, 113)");
+  const colors = await page.evaluate(() => {
+    const style = getComputedStyle(document.documentElement);
+    return {
+      added: `rgb(${style.getPropertyValue("--success").trim().split(/\s+/).join(", ")})`,
+      removed: `rgb(${style.getPropertyValue("--error").trim().split(/\s+/).join(", ")})`,
+    };
+  });
+  await expect(tracked.getByTestId("git-diff-add")).toHaveCSS("color", colors.added);
+  await expect(tracked.getByTestId("git-diff-remove")).toHaveCSS("color", colors.removed);
   await expect(untracked.getByTestId("git-diff")).toContainText("+keep unstaged");
   await expect(untracked.getByTestId("git-diff")).not.toContainText("panel edit");
   await tracked.getByTestId("git-diff-file-toggle").click();
@@ -210,7 +217,7 @@ test("Git pane selects all, switches branches and worktrees, and shows the curre
   const otherValue = await otherOption.getAttribute("value");
   if (!otherValue) throw new Error("Missing worktree option value");
   await page.getByTestId("git-worktree-select").selectOption(otherValue);
-  await expect(page).not.toHaveURL(new RegExp(`${terminal.id}$`));
+  await expect.poll(() => new URL(page.url()).pathname).not.toBe(`/terminals/${terminal.id}`);
   await expect(page.getByTestId("terminal-git-panel")).toContainText("other");
   await expect(page.getByTestId("git-panel-worktree").filter({ hasText: "Current" })).toContainText(
     other,

@@ -38,8 +38,8 @@ export function KanbanColumn({
   return (
     <div
       className={`
-        flex flex-col min-w-[280px] max-w-[280px] h-full
-        bg-surface-low/50 border rounded-sm
+        flex flex-col w-full md:min-w-[260px] md:max-w-[300px] md:flex-1
+        bg-background border rounded-lg
         transition-all duration-200
         ${borderClass}
       `}
@@ -51,9 +51,7 @@ export function KanbanColumn({
               className="w-2 h-2 rounded-full flex-shrink-0"
               style={{ backgroundColor: color }}
             />
-            <span className="font-label text-[11px] uppercase tracking-widest text-on-surface-variant">
-              {label}
-            </span>
+            <span className="font-label text-sm font-medium text-on-surface-variant">{label}</span>
           </div>
           <span
             className="text-[11px] font-label px-1.5 py-0.5 rounded-sm
@@ -62,8 +60,6 @@ export function KanbanColumn({
             {tasks.length}
           </span>
         </div>
-
-        <div className="h-0.5 mt-2 rounded-full opacity-40" style={{ backgroundColor: color }} />
       </div>
 
       <div
@@ -77,7 +73,7 @@ export function KanbanColumn({
         ))}
 
         {tasks.length === 0 && (
-          <div className="flex items-center justify-center h-16 text-outline text-[11px] font-label uppercase tracking-widest">
+          <div className="flex items-center justify-center h-16 text-outline text-sm font-label">
             Empty
           </div>
         )}

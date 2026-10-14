@@ -3,7 +3,7 @@ import { useState } from "react";
 import { api, type Worktree } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 
-export function WorktreeRegistry() {
+export function WorktreeRegistry({ compact = false }: { compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Record<string, { cwd: string; path: string }>>({});
   const [confirm, setConfirm] = useState(false);
@@ -44,17 +44,19 @@ export function WorktreeRegistry() {
     );
   }
   return (
-    <div className="p-3 border-t border-surface-highest space-y-2 text-xs">
+    <div
+      className={`${compact ? "px-2 border-b" : "p-3 border-t"} border-surface-highest space-y-2 text-xs`}
+    >
       <button
         type="button"
         data-testid="worktree-registry-toggle"
         onClick={() => setOpen(!open)}
-        className="text-primary"
+        className="min-h-11 sm:min-h-8 rounded-md text-primary"
       >
         {open ? "Hide worktrees" : "Manage worktrees"}
       </button>
       {open && (
-        <div data-testid="worktree-registry" className="space-y-2 max-h-80 overflow-auto">
+        <div data-testid="worktree-registry" className="space-y-2 max-h-[40dvh] overflow-auto">
           <button
             type="button"
             data-testid="worktree-registry-refresh"
@@ -69,12 +71,12 @@ export function WorktreeRegistry() {
           )}
           {registry.data?.repos.map((repo) => (
             <div key={repo.root} className="space-y-1">
-              <p className="break-all text-outline">{repo.root}</p>
+              <p className="break-all text-on-surface-variant">{repo.root}</p>
               {repo.worktrees.map((tree) => (
                 <label
                   key={tree.path}
                   data-testid="registry-worktree"
-                  className="flex gap-2 items-start"
+                  className="flex min-h-11 gap-2 items-start py-2"
                   title={tree.path}
                 >
                   <input
@@ -110,7 +112,7 @@ export function WorktreeRegistry() {
               {error.cwd}: {error.error}
             </p>
           ))}
-          <label className="flex gap-2">
+          <label className="flex min-h-11 gap-2 items-center">
             <input
               type="checkbox"
               data-testid="cleanup-delete-branch"
@@ -124,7 +126,7 @@ export function WorktreeRegistry() {
             data-testid="worktree-cleanup"
             disabled={!Object.keys(selected).length || cleanup.isPending}
             onClick={() => setConfirm(true)}
-            className="text-primary disabled:opacity-40"
+            className="min-h-11 sm:min-h-8 rounded-md text-primary disabled:opacity-40"
           >
             Clean selected ({Object.keys(selected).length})
           </button>

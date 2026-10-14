@@ -1,5 +1,5 @@
 import { AlertTriangle, GitBranch } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { FlowDetailSheet } from "@/components/flow/FlowDetailSheet";
 import { Label } from "@/components/ui/label";
 import {
@@ -30,6 +30,7 @@ interface FlowPickerProps {
  * here so a broken user/project flow is seen where flows are chosen.
  */
 export function FlowPicker({ value, onChange, testId, disabled }: FlowPickerProps) {
+  const id = useId();
   const { data, isLoading } = useFlows();
   const flows = data?.flows ?? [];
   const broken = data?.broken ?? [];
@@ -41,7 +42,7 @@ export function FlowPicker({ value, onChange, testId, disabled }: FlowPickerProp
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
+        <Label htmlFor={id} className="font-label text-xs text-outline">
           Workflow
         </Label>
         {viewable && (
@@ -49,7 +50,7 @@ export function FlowPicker({ value, onChange, testId, disabled }: FlowPickerProp
             type="button"
             data-testid="flow-picker-view"
             onClick={() => setViewing(true)}
-            className="inline-flex items-center gap-1 font-label text-[11px] uppercase tracking-widest text-primary hover:underline"
+            className="inline-flex items-center gap-1 font-label text-xs text-primary hover:underline"
           >
             <GitBranch size={11} />
             View flow
@@ -58,6 +59,7 @@ export function FlowPicker({ value, onChange, testId, disabled }: FlowPickerProp
       </div>
       <Select value={value} onValueChange={onChange} disabled={disabled}>
         <SelectTrigger
+          id={id}
           data-testid={testId ?? "flow-picker"}
           className="bg-background border-surface-highest text-on-surface font-label text-xs"
         >
@@ -82,7 +84,7 @@ export function FlowPicker({ value, onChange, testId, disabled }: FlowPickerProp
           ))}
         </SelectContent>
       </Select>
-      <p className="font-body text-[11px] text-outline" data-testid="flow-picker-hint">
+      <p className="font-body text-xs text-outline" data-testid="flow-picker-hint">
         {/* Nothing until the list is in: "not in the flow list" would be a lie
             about a flow we simply have not fetched yet. */}
         {isLoading ? "" : flowHint(value, flows, defaultFlow)}
@@ -108,8 +110,8 @@ function BrokenFlows({
   broken: Array<{ name: string; path: string; errors: string[] }>;
 }) {
   return (
-    <details className="border border-error/40 rounded-sm bg-error/5" data-testid="broken-flows">
-      <summary className="flex items-center gap-1.5 px-2 py-1.5 cursor-pointer font-label text-[11px] uppercase tracking-widest text-error">
+    <details className="border border-error/40 rounded-lg bg-error/5" data-testid="broken-flows">
+      <summary className="flex items-center gap-1.5 px-2 py-1.5 cursor-pointer font-label text-xs text-error">
         <AlertTriangle size={11} />
         {broken.length} invalid {broken.length === 1 ? "flow" : "flows"} not offered
       </summary>
@@ -123,13 +125,13 @@ function BrokenFlows({
           >
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-body text-xs text-on-surface">{b.name}</span>
-              <code className="font-mono text-[11px] text-outline break-all">{b.path}</code>
+              <code className="font-mono text-xs text-outline break-all">{b.path}</code>
             </div>
             <ul className="space-y-0.5">
               {b.errors.map((err) => (
                 <li
                   key={err}
-                  className="font-body text-[11px] text-error"
+                  className="font-body text-xs text-error"
                   data-testid="broken-flow-error"
                 >
                   {err}

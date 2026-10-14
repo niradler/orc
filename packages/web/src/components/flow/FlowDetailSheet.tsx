@@ -58,17 +58,17 @@ export function FlowDetailSheet({
               <div className="grid grid-cols-2 gap-4">
                 <DetailField label="Source">
                   <span
-                    className={`inline-flex px-2 py-0.5 font-label text-[11px] uppercase tracking-wider border ${SOURCE_COLORS[flow.source]}`}
+                    className={`inline-flex px-2 py-0.5 font-label text-xs tracking-wider border ${SOURCE_COLORS[flow.source]}`}
                   >
                     {flow.source}
                   </span>
                 </DetailField>
                 <DetailField label="Entry">
-                  <code className="font-mono text-[11px]">{definition.entry}</code>
+                  <code className="font-mono text-xs">{definition.entry}</code>
                 </DetailField>
                 <DetailField label="Version">{definition.version}</DetailField>
                 <DetailField label="Path">
-                  <code className="font-mono text-[11px] text-outline break-all">
+                  <code className="font-mono text-xs text-outline break-all">
                     {flow.path ?? "compiled in"}
                   </code>
                 </DetailField>
@@ -89,7 +89,7 @@ export function FlowDetailSheet({
               </div>
 
               <div className="space-y-1">
-                <div className="font-label text-[11px] uppercase tracking-widest text-outline">
+                <div className="font-label text-xs text-outline">
                   Nodes ({definition.nodes.length})
                 </div>
                 {definition.nodes.map((node) => (
@@ -97,29 +97,29 @@ export function FlowDetailSheet({
                     key={node.id}
                     data-testid="flow-detail-node"
                     data-node-id={node.id}
-                    className="p-2 border border-surface-highest rounded-sm space-y-1"
+                    className="p-2 border border-surface-highest rounded-lg space-y-1"
                   >
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-body text-xs text-on-surface">{node.id}</span>
-                      <span className="font-label text-[10px] uppercase tracking-wider text-outline">
+                      <span className="font-label text-xs tracking-wider text-outline">
                         {node.kind}
                       </span>
                       {node.skill && (
-                        <span className="font-mono text-[11px] text-primary">{node.skill}</span>
+                        <span className="font-mono text-xs text-primary">{node.skill}</span>
                       )}
                       {node.task_status && (
-                        <span className="font-label text-[10px] uppercase text-outline">
+                        <span className="font-label text-xs text-outline">
                           sets {node.task_status}
                         </span>
                       )}
                       {node.max_visits !== undefined && (
-                        <span className="font-label text-[10px] uppercase text-outline">
+                        <span className="font-label text-xs text-outline">
                           max {node.max_visits} visits
                         </span>
                       )}
                     </div>
                     {node.description && (
-                      <div className="font-body text-[11px] text-on-surface-variant">
+                      <div className="font-body text-xs text-on-surface-variant">
                         {node.description}
                       </div>
                     )}
@@ -128,7 +128,7 @@ export function FlowDetailSheet({
               </div>
 
               <div className="space-y-1">
-                <div className="font-label text-[11px] uppercase tracking-widest text-outline">
+                <div className="font-label text-xs text-outline">
                   Edges ({definition.edges.length}) — evaluated in order
                 </div>
                 {/* Keyed by position: an edge has no id, two edges may share
@@ -140,7 +140,7 @@ export function FlowDetailSheet({
                     <div
                       key={index}
                       data-testid="flow-detail-edge"
-                      className="font-mono text-[11px] text-on-surface-variant"
+                      className="font-mono text-xs text-on-surface-variant"
                     >
                       {index + 1}. {edge.from} → {edge.to}{" "}
                       <span className="text-outline">when {describeCondition(edge.when)}</span>
@@ -149,10 +149,8 @@ export function FlowDetailSheet({
               </div>
 
               <div>
-                <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-2">
-                  Definition
-                </div>
-                <div className="border border-surface-highest rounded-sm overflow-hidden">
+                <div className="font-label text-xs text-outline mb-2">Definition</div>
+                <div className="border border-surface-highest rounded-lg overflow-hidden">
                   <CodeEditor
                     path="flow.json"
                     value={JSON.stringify(flow.definition, null, 2)}

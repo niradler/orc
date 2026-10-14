@@ -14,7 +14,7 @@ export function TaskSessions({ taskId }: { taskId: string }) {
     .pop();
   return (
     <div className="border-t border-surface-highest pt-4 space-y-3" data-testid="task-sessions">
-      <div className="flex items-center gap-1.5 font-label text-[11px] uppercase tracking-widest text-outline">
+      <div className="flex items-center gap-1.5 font-label text-xs text-outline">
         <Bot size={12} />
         Agent sessions
         {sessions && sessions.length > 0 && (
@@ -40,15 +40,13 @@ export function TaskSessions({ taskId }: { taskId: string }) {
             <div
               key={s.id}
               data-testid="task-session-row"
-              className="flex items-center gap-3 px-2 py-1.5 bg-surface-highest/50 rounded-sm"
+              className="flex items-center gap-3 px-2 py-1.5 bg-surface-highest/50 rounded-lg"
             >
               <span
                 className={`h-2 w-2 shrink-0 rounded-full ${STATUS[s.status].dot}`}
                 title={STATUS[s.status].label}
               />
-              <span className="font-label text-[11px] uppercase tracking-widest text-primary w-14 shrink-0">
-                {s.agent}
-              </span>
+              <span className="font-label text-xs text-primary w-14 shrink-0">{s.agent}</span>
               <Link
                 to={`/sessions?session=${s.id}`}
                 data-testid="task-session-link"
@@ -57,10 +55,8 @@ export function TaskSessions({ taskId }: { taskId: string }) {
               >
                 {s.name ?? s.session_id}
               </Link>
-              <span className="font-label text-[11px] text-outline shrink-0">
-                {formatTokens(s)}
-              </span>
-              <span className="font-label text-[11px] text-outline shrink-0">
+              <span className="font-label text-xs text-outline shrink-0">{formatTokens(s)}</span>
+              <span className="font-label text-xs text-outline shrink-0">
                 {formatWhen(s.last_activity_at)}
               </span>
               <ResumeActions session={s} />

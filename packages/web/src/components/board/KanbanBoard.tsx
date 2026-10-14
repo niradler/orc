@@ -3,6 +3,7 @@ import {
   DndContext,
   type DragEndEvent,
   type DragStartEvent,
+  KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
@@ -28,7 +29,10 @@ export function KanbanBoard({
 }: KanbanBoardProps) {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor),
+  );
 
   const tasksByStatus = useMemo(() => {
     const map: Record<VisibleStatus, Task[]> = {
@@ -90,7 +94,7 @@ export function KanbanBoard({
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex-1 min-h-0 flex gap-3 overflow-x-auto pb-4">
+      <div className="flex-1 min-h-0 flex flex-col gap-4 pb-4 md:flex-row md:overflow-x-auto">
         {BOARD_COLUMNS.map((col) => (
           <KanbanColumn
             key={col.status}

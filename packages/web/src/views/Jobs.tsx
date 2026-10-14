@@ -1,4 +1,4 @@
-import { Play, Plus, Trash2 } from "lucide-react";
+import { Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { CreateJobInput, Job, JobTriggerType, UpdateJobInput } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -35,6 +35,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
 import { useCreateJob, useDeleteJob, useJobs, useTriggerJob, useUpdateJob } from "@/hooks/useJobs";
+import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjectScope } from "@/hooks/useProjectScope";
 import { useProjects } from "@/hooks/useProjects";
 
@@ -51,9 +52,12 @@ const OVERLAPS: Array<"skip" | "queue" | "kill"> = ["skip", "queue", "kill"];
 const NOTIFY_OPTIONS: Array<"never" | "failure" | "always"> = ["never", "failure", "always"];
 
 export default function Jobs({ projectId: savedProjectId }: { projectId: string }) {
+  const desktop = useBreakpoint("sm");
   const projectId = useProjectScope(savedProjectId);
-  const scopedProjectId = projectId === "all" ? undefined : projectId;
-  const { data: jobs, isLoading, error, refetch } = useJobs({ project_id: scopedProjectId });
+  const scopedProjectId = projectId === "all" || projectId === "unassigned" ? undefined : projectId;
+  const { data: allJobs, isLoading, error, refetch } = useJobs({ project_id: scopedProjectId });
+  const jobs =
+    projectId === "unassigned" ? allJobs?.filter((job) => job.project_id === null) : allJobs;
   const triggerJob = useTriggerJob();
   const deleteJob = useDeleteJob();
 
@@ -66,7 +70,13 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
   const [editing, setEditing] = useState<Job | null>(null);
   const [deleting, setDeleting] = useState<Job | null>(null);
 
-  if (error) return <ErrorState message={error.message} onRetry={() => refetch()} />;
+  if (error)
+    return (
+      <div>
+        <ViewHeader title="Jobs" />
+        <ErrorState message={error.message} onRetry={() => refetch()} />
+      </div>
+    );
 
   const enabledCount = (jobs ?? []).filter((j) => j.enabled).length;
 
@@ -80,15 +90,21 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
             data-testid="new-job-button"
             size="sm"
             onClick={() => setCreating(true)}
-            className="font-label text-xs uppercase tracking-widest bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
+            className="font-label text-xs font-medium bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
           >
-            <Plus size={12} className="mr-1" /> New Job
+            <Plus size={12} className="mr-1" /> New job
           </Button>
         }
       />
 
+      {(triggerJob.error || deleteJob.error) && (
+        <p role="alert" className="mb-4 text-sm text-error">
+          {(triggerJob.error ?? deleteJob.error)?.message}
+        </p>
+      )}
+
       {isLoading ? (
-        <div className="space-y-2">
+        <div role="status" aria-label="Loading jobs" className="space-y-2">
           {[...Array(3)].map((_, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
             <Skeleton key={i} className="h-12 w-full bg-surface-highest" />
@@ -96,30 +112,95 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
         </div>
       ) : (jobs ?? []).length === 0 ? (
         <EmptyState message="No jobs configured" />
+      ) : !desktop ? (
+        <div className="space-y-3">
+          {(jobs ?? []).map((job) => (
+            <article
+              key={job.id}
+              data-testid="job-row"
+              data-job-id={job.id}
+              data-job-name={job.name}
+              className="rounded-xl border border-border bg-surface p-4 space-y-3"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <button
+                  type="button"
+                  className="min-w-0 text-left font-medium text-sm text-on-surface break-words hover:text-primary"
+                  onClick={() => openJobDetail(job.id)}
+                >
+                  {job.name}
+                </button>
+                <span
+                  className={`text-xs shrink-0 ${job.enabled ? "text-secondary" : "text-outline"}`}
+                >
+                  {job.enabled ? "Enabled" : "Disabled"}
+                </span>
+              </div>
+              {job.description && (
+                <p className="text-sm text-outline break-words">{job.description}</p>
+              )}
+              <code className="block whitespace-pre-wrap break-all text-xs text-on-surface-variant">
+                {job.command}
+              </code>
+              <p className="text-xs text-outline">
+                {job.trigger_type} · {job.run_count} runs
+                {job.next_run_at ? ` · Next: ${new Date(job.next_run_at).toLocaleString()}` : ""}
+              </p>
+              <div className="flex flex-wrap gap-2 border-t border-border pt-3">
+                <Button
+                  data-testid="job-edit"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditing(job)}
+                >
+                  <Pencil />
+                  Edit
+                </Button>
+                <Button
+                  data-testid="job-trigger"
+                  variant="outline"
+                  size="sm"
+                  disabled={triggerJob.isPending}
+                  onClick={() => triggerJob.mutate(job.id)}
+                >
+                  <Play />
+                  Run
+                </Button>
+                <Button
+                  data-testid="job-delete"
+                  aria-label={`Delete ${job.name}`}
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setDeleting(job)}
+                >
+                  <Trash2 />
+                </Button>
+              </div>
+            </article>
+          ))}
+        </div>
       ) : (
-        <div className="border border-surface-highest rounded-sm overflow-hidden">
+        <div className="min-w-0 border border-surface-highest rounded-xl overflow-hidden bg-surface">
           <Table>
             <TableHeader>
               <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
-                  Name
-                </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
+                <TableHead className="font-label text-xs font-medium text-outline">Name</TableHead>
+                <TableHead className="font-label text-xs font-medium text-outline w-24">
                   Trigger
                 </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-48">
+                <TableHead className="font-label text-xs font-medium text-outline w-48">
                   Command
                 </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-16">
+                <TableHead className="font-label text-xs font-medium text-outline w-16">
                   Enabled
                 </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-36">
+                <TableHead className="font-label text-xs font-medium text-outline w-36">
                   Last Run
                 </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-16">
+                <TableHead className="font-label text-xs font-medium text-outline w-16">
                   Runs
                 </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-36">
+                <TableHead className="font-label text-xs font-medium text-outline w-36">
                   Next Run
                 </TableHead>
                 <TableHead className="w-28" />
@@ -136,37 +217,44 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                   onClick={() => openJobDetail(job.id)}
                 >
                   <TableCell>
-                    <div className="font-body text-xs font-medium text-on-surface">{job.name}</div>
+                    <button
+                      type="button"
+                      className="font-body text-sm font-medium text-on-surface text-left hover:text-primary"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openJobDetail(job.id);
+                      }}
+                    >
+                      {job.name}
+                    </button>
                     {job.description && (
-                      <div className="font-body text-[11px] text-outline mt-0.5 truncate max-w-[200px]">
+                      <div className="font-body text-sm text-outline mt-0.5 truncate max-w-[200px]">
                         {job.description}
                       </div>
                     )}
                   </TableCell>
                   <TableCell>
-                    <span className="font-label text-[11px] uppercase tracking-wider px-2 py-0.5 bg-surface-highest text-on-surface-variant border border-surface-highest/50 inline-flex">
+                    <span className="font-label text-xs  px-2 py-0.5 bg-surface-highest text-on-surface-variant border border-surface-highest/50 inline-flex">
                       {job.trigger_type}
                     </span>
                   </TableCell>
                   <TableCell>
-                    <code className="font-mono text-[11px] text-outline truncate block max-w-[180px]">
+                    <code className="font-mono text-xs text-outline truncate block max-w-[180px]">
                       {job.command}
                     </code>
                   </TableCell>
                   <TableCell>
                     <span
-                      className={`font-label text-[11px] font-bold uppercase ${job.enabled ? "text-secondary" : "text-error"}`}
+                      className={`font-label text-xs font-bold ${job.enabled ? "text-secondary" : "text-error"}`}
                     >
-                      {job.enabled ? "\u25CF" : "\u25CF"}
+                      {job.enabled ? "Enabled" : "Disabled"}
                     </span>
                   </TableCell>
-                  <TableCell className="font-label text-[11px] text-outline">
+                  <TableCell className="font-label text-xs text-outline">
                     {job.last_run_at ? new Date(job.last_run_at).toLocaleString() : "\u2014"}
                   </TableCell>
-                  <TableCell className="font-label text-[11px] text-outline">
-                    {job.run_count}
-                  </TableCell>
-                  <TableCell className="font-label text-[11px] text-outline">
+                  <TableCell className="font-label text-xs text-outline">{job.run_count}</TableCell>
+                  <TableCell className="font-label text-xs text-outline">
                     {job.next_run_at ? new Date(job.next_run_at).toLocaleString() : "\u2014"}
                   </TableCell>
                   <TableCell>
@@ -178,15 +266,25 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                         size="sm"
                         disabled={triggerJob.isPending}
                         onClick={() => triggerJob.mutate(job.id)}
-                        className="font-label text-[11px] uppercase h-7 px-3 bg-secondary/10 text-secondary border border-secondary/30 hover:bg-secondary/20"
+                        className="font-label text-sm min-h-11 px-3 bg-secondary/10 text-secondary border border-secondary/30 hover:bg-secondary/20"
                       >
                         <Play size={10} className="mr-1" /> Run
                       </Button>
                       <button
                         type="button"
+                        data-testid="job-edit"
+                        aria-label={`Edit ${job.name}`}
+                        onClick={() => setEditing(job)}
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-outline hover:text-primary hover:bg-surface-highest"
+                      >
+                        <Pencil size={16} />
+                      </button>
+                      <button
+                        type="button"
                         data-testid="job-delete"
+                        aria-label={`Delete ${job.name}`}
                         onClick={() => setDeleting(job)}
-                        className="text-outline hover:text-error transition-colors p-1"
+                        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-outline hover:text-error hover:bg-error/10"
                       >
                         <Trash2 size={12} />
                       </button>
@@ -203,6 +301,10 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
         jobId={selectedJobId}
         open={Boolean(selectedJobId)}
         onClose={closeJobDetail}
+        onEdit={(job) => {
+          closeJobDetail();
+          setEditing(job);
+        }}
       />
 
       {creating && (
@@ -265,12 +367,12 @@ function CreateJobDialog({
     if (!name.trim() || !command.trim()) return;
     const input: CreateJobInput = {
       name: name.trim(),
-      description: description.trim() || undefined,
+      description: description.trim(),
       command: command.trim(),
       trigger_type: triggerType,
       cron_expr: triggerType === "cron" ? cronExpr.trim() || undefined : undefined,
       timeout_secs: Number.parseInt(timeoutSecs, 10) || undefined,
-      max_retries: Number.parseInt(maxRetries, 10) || undefined,
+      max_retries: Number.parseInt(maxRetries, 10),
       overlap,
       notify_on: notifyOn,
       project_id: projectId || undefined,
@@ -281,42 +383,39 @@ function CreateJobDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="bg-surface border-surface-highest max-w-lg">
+      <DialogContent className="bg-surface border-surface-highest max-w-lg max-h-[85dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-headline text-sm uppercase tracking-widest text-on-surface">
-            New Job
+          <DialogTitle className="font-headline text-sm font-medium text-on-surface">
+            New job
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3 mt-2">
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Name *
-            </Label>
+            <Label className="font-label text-xs font-medium text-outline">Name *</Label>
             <Input
+              aria-label="Name"
               data-testid="job-name-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Job name..."
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
+              className="bg-background border-surface-highest text-on-surface font-body text-sm"
               autoFocus
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Description
-            </Label>
+            <Label className="font-label text-xs font-medium text-outline">Description</Label>
             <Input
+              aria-label="Description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Optional description..."
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
+              className="bg-background border-surface-highest text-on-surface font-body text-sm"
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Command *
-            </Label>
+            <Label className="font-label text-xs font-medium text-outline">Command *</Label>
             <Textarea
+              aria-label="Command"
               data-testid="job-command-input"
               value={command}
               onChange={(e) => setCommand(e.target.value)}
@@ -325,21 +424,22 @@ function CreateJobDialog({
               rows={3}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Trigger Type
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Trigger Type</Label>
               <Select
                 value={triggerType}
                 onValueChange={(v) => setTriggerType(v as JobTriggerType)}
               >
-                <SelectTrigger className="bg-background border-surface-highest text-on-surface font-body text-xs h-9">
+                <SelectTrigger
+                  aria-label="Trigger type"
+                  className="bg-background border-surface-highest text-on-surface font-body text-sm min-h-11"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-surface border-surface-highest">
                   {TRIGGER_TYPES.map((t) => (
-                    <SelectItem key={t} value={t} className="font-body text-xs">
+                    <SelectItem key={t} value={t} className="font-body text-sm">
                       {t}
                     </SelectItem>
                   ))}
@@ -348,10 +448,11 @@ function CreateJobDialog({
             </div>
             {triggerType === "cron" && (
               <div className="space-y-1.5">
-                <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
+                <Label className="font-label text-xs font-medium text-outline">
                   Cron Expression
                 </Label>
                 <Input
+                  aria-label="Cron expression"
                   value={cronExpr}
                   onChange={(e) => setCronExpr(e.target.value)}
                   placeholder="*/5 * * * *"
@@ -360,40 +461,43 @@ function CreateJobDialog({
               </div>
             )}
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Timeout (s)
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Timeout (s)</Label>
               <Input
+                aria-label="Timeout in seconds"
                 type="number"
+                min={1}
+                required
                 value={timeoutSecs}
                 onChange={(e) => setTimeoutSecs(e.target.value)}
-                className="bg-background border-surface-highest text-on-surface font-body text-xs"
+                className="bg-background border-surface-highest text-on-surface font-body text-sm"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Max Retries
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Max Retries</Label>
               <Input
+                aria-label="Maximum retries"
                 type="number"
+                min={0}
+                required
                 value={maxRetries}
                 onChange={(e) => setMaxRetries(e.target.value)}
-                className="bg-background border-surface-highest text-on-surface font-body text-xs"
+                className="bg-background border-surface-highest text-on-surface font-body text-sm"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Overlap
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Overlap</Label>
               <Select value={overlap} onValueChange={(v) => setOverlap(v as typeof overlap)}>
-                <SelectTrigger className="bg-background border-surface-highest text-on-surface font-body text-xs h-9">
+                <SelectTrigger
+                  aria-label="Overlap"
+                  className="bg-background border-surface-highest text-on-surface font-body text-sm min-h-11"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-surface border-surface-highest">
                   {OVERLAPS.map((o) => (
-                    <SelectItem key={o} value={o} className="font-body text-xs">
+                    <SelectItem key={o} value={o} className="font-body text-sm">
                       {o}
                     </SelectItem>
                   ))}
@@ -401,18 +505,19 @@ function CreateJobDialog({
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Notify On
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Notify On</Label>
               <Select value={notifyOn} onValueChange={(v) => setNotifyOn(v as typeof notifyOn)}>
-                <SelectTrigger className="bg-background border-surface-highest text-on-surface font-body text-xs h-9">
+                <SelectTrigger
+                  aria-label="Notify on"
+                  className="bg-background border-surface-highest text-on-surface font-body text-sm min-h-11"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-surface border-surface-highest">
                   {NOTIFY_OPTIONS.map((n) => (
-                    <SelectItem key={n} value={n} className="font-body text-xs">
+                    <SelectItem key={n} value={n} className="font-body text-sm">
                       {n}
                     </SelectItem>
                   ))}
@@ -420,37 +525,35 @@ function CreateJobDialog({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Working Dir
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Working Dir</Label>
               <Input
+                aria-label="Working directory"
                 value={workingDir}
                 onChange={(e) => setWorkingDir(e.target.value)}
                 placeholder="/path/to/dir"
-                className="bg-background border-surface-highest text-on-surface font-body text-xs"
+                className="bg-background border-surface-highest text-on-surface font-body text-sm"
               />
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Project
-            </Label>
+            <Label className="font-label text-xs font-medium text-outline">Project</Label>
             <Select
               value={projectId || "__none__"}
               onValueChange={(v) => setProjectId(v === "__none__" ? "" : v)}
             >
               <SelectTrigger
+                aria-label="Project"
                 data-testid="job-project-select"
-                className="bg-background border-surface-highest text-on-surface font-body text-xs h-9"
+                className="bg-background border-surface-highest text-on-surface font-body text-sm min-h-11"
               >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="bg-surface border-surface-highest">
-                <SelectItem value="__none__" className="font-body text-xs">
+                <SelectItem value="__none__" className="font-body text-sm">
                   None
                 </SelectItem>
                 {projects?.map((p) => (
-                  <SelectItem key={p.id} value={p.id} className="font-body text-xs">
+                  <SelectItem key={p.id} value={p.id} className="font-body text-sm">
                     {p.name}
                   </SelectItem>
                 ))}
@@ -463,7 +566,7 @@ function CreateJobDialog({
               variant="ghost"
               size="sm"
               onClick={onClose}
-              className="font-label text-xs uppercase text-outline"
+              className="font-label text-xs text-outline"
             >
               Cancel
             </Button>
@@ -472,11 +575,16 @@ function CreateJobDialog({
               type="submit"
               size="sm"
               disabled={createJob.isPending || !name.trim() || !command.trim()}
-              className="font-label text-xs uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              className="font-label text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
             >
               {createJob.isPending ? "Creating..." : "Create"}
             </Button>
           </DialogFooter>
+          {createJob.error && (
+            <p role="alert" className="text-sm text-error">
+              {createJob.error.message}
+            </p>
+          )}
         </form>
       </DialogContent>
     </Dialog>
@@ -502,12 +610,12 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
     const input: UpdateJobInput & { id: string } = {
       id: job.id,
       name: name.trim(),
-      description: description.trim() || undefined,
+      description: description.trim(),
       command: command.trim(),
       trigger_type: triggerType,
       cron_expr: triggerType === "cron" ? cronExpr.trim() || undefined : undefined,
       timeout_secs: Number.parseInt(timeoutSecs, 10) || undefined,
-      max_retries: Number.parseInt(maxRetries, 10) || undefined,
+      max_retries: Number.parseInt(maxRetries, 10),
       overlap,
       notify_on: notifyOn,
       enabled,
@@ -517,59 +625,57 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="bg-surface border-surface-highest max-w-lg">
+      <DialogContent className="bg-surface border-surface-highest max-w-lg max-h-[85dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-headline text-sm uppercase tracking-widest text-on-surface">
-            Edit Job
+          <DialogTitle className="font-headline text-sm font-medium text-on-surface">
+            Edit job
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3 mt-2">
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Name *
-            </Label>
+            <Label className="font-label text-xs font-medium text-outline">Name *</Label>
             <Input
+              aria-label="Name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
+              className="bg-background border-surface-highest text-on-surface font-body text-sm"
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Description
-            </Label>
+            <Label className="font-label text-xs font-medium text-outline">Description</Label>
             <Input
+              aria-label="Description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
+              className="bg-background border-surface-highest text-on-surface font-body text-sm"
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Command *
-            </Label>
+            <Label className="font-label text-xs font-medium text-outline">Command *</Label>
             <Textarea
+              aria-label="Command"
               value={command}
               onChange={(e) => setCommand(e.target.value)}
               className="bg-background border-surface-highest text-on-surface font-mono text-xs resize-none"
               rows={3}
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Trigger Type
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Trigger Type</Label>
               <Select
                 value={triggerType}
                 onValueChange={(v) => setTriggerType(v as JobTriggerType)}
               >
-                <SelectTrigger className="bg-background border-surface-highest text-on-surface font-body text-xs h-9">
+                <SelectTrigger
+                  aria-label="Trigger type"
+                  className="bg-background border-surface-highest text-on-surface font-body text-sm min-h-11"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-surface border-surface-highest">
                   {TRIGGER_TYPES.map((t) => (
-                    <SelectItem key={t} value={t} className="font-body text-xs">
+                    <SelectItem key={t} value={t} className="font-body text-sm">
                       {t}
                     </SelectItem>
                   ))}
@@ -578,10 +684,11 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
             </div>
             {triggerType === "cron" && (
               <div className="space-y-1.5">
-                <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
+                <Label className="font-label text-xs font-medium text-outline">
                   Cron Expression
                 </Label>
                 <Input
+                  aria-label="Cron expression"
                   value={cronExpr}
                   onChange={(e) => setCronExpr(e.target.value)}
                   placeholder="*/5 * * * *"
@@ -590,40 +697,43 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
               </div>
             )}
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Timeout (s)
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Timeout (s)</Label>
               <Input
+                aria-label="Timeout in seconds"
                 type="number"
+                min={1}
+                required
                 value={timeoutSecs}
                 onChange={(e) => setTimeoutSecs(e.target.value)}
-                className="bg-background border-surface-highest text-on-surface font-body text-xs"
+                className="bg-background border-surface-highest text-on-surface font-body text-sm"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Max Retries
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Max Retries</Label>
               <Input
+                aria-label="Maximum retries"
                 type="number"
+                min={0}
+                required
                 value={maxRetries}
                 onChange={(e) => setMaxRetries(e.target.value)}
-                className="bg-background border-surface-highest text-on-surface font-body text-xs"
+                className="bg-background border-surface-highest text-on-surface font-body text-sm"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Overlap
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Overlap</Label>
               <Select value={overlap} onValueChange={(v) => setOverlap(v as typeof overlap)}>
-                <SelectTrigger className="bg-background border-surface-highest text-on-surface font-body text-xs h-9">
+                <SelectTrigger
+                  aria-label="Overlap"
+                  className="bg-background border-surface-highest text-on-surface font-body text-sm min-h-11"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-surface border-surface-highest">
                   {OVERLAPS.map((o) => (
-                    <SelectItem key={o} value={o} className="font-body text-xs">
+                    <SelectItem key={o} value={o} className="font-body text-sm">
                       {o}
                     </SelectItem>
                   ))}
@@ -631,18 +741,19 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Notify On
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Notify On</Label>
               <Select value={notifyOn} onValueChange={(v) => setNotifyOn(v as typeof notifyOn)}>
-                <SelectTrigger className="bg-background border-surface-highest text-on-surface font-body text-xs h-9">
+                <SelectTrigger
+                  aria-label="Notify on"
+                  className="bg-background border-surface-highest text-on-surface font-body text-sm min-h-11"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-surface border-surface-highest">
                   {NOTIFY_OPTIONS.map((n) => (
-                    <SelectItem key={n} value={n} className="font-body text-xs">
+                    <SelectItem key={n} value={n} className="font-body text-sm">
                       {n}
                     </SelectItem>
                   ))}
@@ -650,13 +761,11 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Enabled
-              </Label>
+              <Label className="font-label text-xs font-medium text-outline">Enabled</Label>
               <button
                 type="button"
                 onClick={() => setEnabled(!enabled)}
-                className={`w-full h-9 flex items-center justify-center border font-label text-[11px] uppercase tracking-widest transition-colors ${
+                className={`w-full min-h-11 rounded-md flex items-center justify-center border font-label text-xs font-medium transition-colors ${
                   enabled
                     ? "bg-secondary/15 text-secondary border-secondary/30"
                     : "bg-surface-highest text-outline border-surface-highest"
@@ -672,19 +781,25 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
               variant="ghost"
               size="sm"
               onClick={onClose}
-              className="font-label text-xs uppercase text-outline"
+              className="font-label text-xs text-outline"
             >
               Cancel
             </Button>
             <Button
+              data-testid="job-edit-submit"
               type="submit"
               size="sm"
               disabled={updateJob.isPending || !name.trim() || !command.trim()}
-              className="font-label text-xs uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              className="font-label text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
             >
               {updateJob.isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
+          {updateJob.error && (
+            <p role="alert" className="text-sm text-error">
+              {updateJob.error.message}
+            </p>
+          )}
         </form>
       </DialogContent>
     </Dialog>

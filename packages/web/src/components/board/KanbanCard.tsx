@@ -1,6 +1,6 @@
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { MessageSquare, Trash2 } from "lucide-react";
+import { GripVertical, MessageSquare, Trash2 } from "lucide-react";
 import { useRef } from "react";
 import type { Task } from "@/api/client";
 import { mappedStatusLabel, PRIORITY_COLORS } from "./board-utils";
@@ -13,10 +13,11 @@ interface KanbanCardProps {
 }
 
 export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCardProps) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
-    id: task.id,
-    data: { type: "task", task },
-  });
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, isDragging } =
+    useDraggable({
+      id: task.id,
+      data: { type: "task", task },
+    });
 
   // Distinguish click from drag: only fire onClick if pointer barely moved.
   const downPos = useRef<{ x: number; y: number } | null>(null);
@@ -50,7 +51,7 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
   };
 
   // Spread dnd-kit listeners but override pointerDown with our chained version.
-  const dragListeners = isDragOverlay ? {} : { ...listeners, onPointerDown: handlePointerDown };
+  const dragListeners = isDragOverlay ? {} : { onPointerDown: handlePointerDown };
 
   return (
     <div
@@ -59,16 +60,14 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
       data-testid="kanban-card"
       data-task-id={task.id}
       data-task-status={task.status}
-      {...(isDragOverlay ? {} : attributes)}
       {...dragListeners}
       onPointerUp={isDragOverlay ? undefined : handlePointerUp}
       className={`
-        group relative bg-surface-high border border-surface-highest rounded-sm
+        group relative bg-surface border border-border rounded-lg
         cursor-grab active:cursor-grabbing
         hover:border-outline-variant hover:bg-surface-bright
         transition-colors duration-150
         ${isDragOverlay ? "shadow-lg shadow-primary/20 rotate-1 scale-105" : ""}
-        ${task.priority === "critical" ? "animate-pulse-subtle" : ""}
       `}
     >
       {/* Priority accent stripe */}
@@ -77,12 +76,21 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
         style={{ backgroundColor: accentColor }}
       />
 
-      <div className="pl-3 pr-2 py-2">
-        <p className="font-body text-xs text-on-surface line-clamp-2 leading-relaxed">
+      <div className="pl-4 pr-3 py-4">
+        <button
+          type="button"
+          aria-label={`Open task: ${task.title}`}
+          onClick={(event) => {
+            // Pointer clicks are handled by the card's drag/click discriminator.
+            // Native keyboard activation has no pointer event and a zero click detail.
+            if (event.detail === 0) onClick?.(task);
+          }}
+          className="w-full text-left font-body text-sm text-on-surface line-clamp-2 leading-relaxed hover:text-primary"
+        >
           {task.title}
-        </p>
+        </button>
         {(task.git_branch || task.github_issue || task.github_pr) && (
-          <p data-testid="task-git-badge" className="text-[10px] text-primary truncate">
+          <p data-testid="task-git-badge" className="text-xs text-primary truncate">
             {task.git_branch}
             {task.github_issue && ` · Issue #${task.github_issue.split("/").pop()}`}
             {task.github_pr && ` · PR #${task.github_pr.split("/").pop()}`}
@@ -92,9 +100,9 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
         <div className="flex items-center justify-between mt-2 gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             <span
-              className="flex-shrink-0 w-4 h-4 rounded-sm bg-surface-highest
+              className="flex-shrink-0 w-4 h-4 rounded-lg bg-surface-highest
                 text-[8px] font-label font-bold text-outline
-                flex items-center justify-center uppercase"
+                flex items-center justify-center"
             >
               {task.author?.[0] ?? "?"}
             </span>
@@ -102,8 +110,8 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
             {statusLabel && (
               <span
                 data-testid="kanban-card-status"
-                className="text-[10px] font-label uppercase tracking-wider text-on-surface-variant
-                  bg-surface-highest px-1.5 py-0.5 rounded-sm flex-shrink-0"
+                className="text-xs font-label text-on-surface-variant
+                  bg-surface-highest px-1.5 py-0.5 rounded-lg flex-shrink-0"
               >
                 {statusLabel}
               </span>
@@ -112,8 +120,8 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
             {task.tags?.slice(0, 2).map((tag) => (
               <span
                 key={tag}
-                className="text-[10px] font-label text-outline bg-surface-highest
-                  px-1.5 py-0.5 rounded-sm truncate max-w-[60px]"
+                className="text-xs font-label text-outline bg-surface-highest
+                  px-1.5 py-0.5 rounded-lg truncate max-w-[60px]"
               >
                 {tag}
               </span>
@@ -121,30 +129,46 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
           </div>
 
           <div className="flex items-center gap-1.5 flex-shrink-0">
+            {!isDragOverlay && (
+              <button
+                type="button"
+                ref={setActivatorNodeRef}
+                {...attributes}
+                onKeyDown={(event) => listeners?.onKeyDown?.(event)}
+                aria-label={`Move task: ${task.title}`}
+                title="Move task with Space, arrow keys, then Space to drop"
+                onPointerUp={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+                className="inline-flex min-h-11 min-w-11 md:min-h-8 md:min-w-8 items-center justify-center rounded text-outline hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+              >
+                <GripVertical size={14} />
+              </button>
+            )}
             {task.comments_count != null && task.comments_count > 0 && (
               <span
-                className="flex items-center gap-0.5 text-[10px] font-label text-outline"
+                className="flex items-center gap-0.5 text-xs font-label text-outline"
                 title={`${task.comments_count} comment${task.comments_count === 1 ? "" : "s"}`}
               >
                 <MessageSquare size={9} />
                 {task.comments_count}
               </span>
             )}
-            <span className="text-[10px] font-label text-outline">
+            <span className="text-xs font-label text-outline">
               {formatRelative(task.updated_at)}
             </span>
 
             <button
               type="button"
+              aria-label={`Delete task: ${task.title}`}
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete(task.id);
               }}
-              className="opacity-0 group-hover:opacity-100 text-outline hover:text-error
-                transition-opacity p-0.5"
+              className="opacity-100 md:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-outline hover:text-error
+                transition-opacity min-h-11 min-w-11 md:min-h-8 md:min-w-8 inline-flex items-center justify-center"
             >
-              <Trash2 size={10} />
+              <Trash2 size={14} />
             </button>
           </div>
         </div>

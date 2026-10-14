@@ -15,7 +15,7 @@ export function MobileChatFab({ onClick }: MobileChatFabProps) {
       data-testid="mobile-chat-fab"
       onClick={onClick}
       aria-label="Open chat"
-      className="md:hidden fixed bottom-4 right-4 z-40 w-12 h-12 rounded-full bg-primary text-background shadow-lg flex items-center justify-center hover:bg-primary-container transition-colors"
+      className="md:hidden fixed bottom-4 right-4 z-40 w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 transition-colors"
     >
       <MessageSquare size={20} />
     </button>

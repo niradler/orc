@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { FileText, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
-import { useState } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DetailField } from "@/components/DetailField";
@@ -35,7 +35,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ViewHeader } from "@/components/ViewHeader";
 import {
   useAddKnowledgeCollection,
@@ -47,92 +46,120 @@ import {
   useRemoveKnowledgeCollection,
 } from "@/hooks/useKnowledge";
 import { useProjectScope } from "@/hooks/useProjectScope";
+import { useViewParam } from "@/lib/view-params";
+import { workspaceDestination } from "@/lib/workspace-navigation";
 import Memories from "@/views/Memories";
 
 export default function Knowledge({ projectId: savedProjectId }: { projectId: string }) {
   const projectId = useProjectScope(savedProjectId);
   const [searchParams] = useSearchParams();
-  const { pathname } = useLocation();
+  const { pathname, hash } = useLocation();
   const navigate = useNavigate();
-  const requestedTab = searchParams.get("tab");
-  let tab: "search" | "collections" | "memories" = "search";
-  if (requestedTab === "collections") tab = "collections";
-  if (requestedTab === "memories" || pathname.startsWith("/knowledge/memories")) tab = "memories";
-  const setTab = (value: string) => {
-    const next = new URLSearchParams(searchParams);
-    if (value === "search") next.delete("tab");
-    else next.set("tab", value);
-    navigate({ pathname: "/knowledge", search: next.toString() }, { replace: true });
+  const memories = pathname.startsWith("/knowledge/memories");
+  const collections =
+    searchParams.get("view") === "collections" || searchParams.get("tab") === "collections";
+  const setCollections = (open: boolean) => {
+    if (!confirmDocumentClose(`knowledge:${searchParams.get("document")}`)) return;
+    const next = new URLSearchParams(window.location.search);
+    next.delete("tab");
+    if (open) next.set("view", "collections");
+    else next.delete("view");
+    navigate({ pathname: "/knowledge/base", search: next.toString(), hash });
   };
   const pid = projectId === "all" ? undefined : projectId;
 
-  const { data: statusData } = useKnowledgeStatus();
+  const { data: statusData, isLoading: statusLoading, error: statusError } = useKnowledgeStatus();
   const totalDocs = statusData?.totalDocuments ?? 0;
   const searchMode = statusData?.searchMode ?? "unknown";
 
+  // Preserve links created by the initial redesign without mixing Wiki pages with indexed files.
+  if (searchParams.has("page")) {
+    const next = new URLSearchParams(searchParams);
+    next.delete("tab");
+    return <Navigate replace to={{ pathname: "/knowledge/wiki", search: next.toString(), hash }} />;
+  }
+
   return (
-    <div>
-      <ViewHeader
-        title="Knowledge"
-        meta={tab === "memories" ? undefined : `${totalDocs} documents \u00b7 ${searchMode}`}
-      />
-
-      <Tabs value={tab} onValueChange={setTab} className="mb-4">
-        <TabsList className="bg-surface-highest border border-surface-highest gap-0 h-auto max-w-full flex-wrap justify-start p-0">
-          <TabsTrigger
-            value="search"
-            className="font-label text-[11px] uppercase tracking-widest px-4 py-2 rounded-none
-              data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none
-              text-outline hover:text-on-surface-variant"
-          >
-            Search
-          </TabsTrigger>
-          <TabsTrigger
-            data-testid="knowledge-memories-tab"
-            value="memories"
-            className="font-label text-[11px] uppercase tracking-widest px-4 py-2 rounded-none
-              data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none
-              text-outline hover:text-on-surface-variant"
-          >
-            Memories
-          </TabsTrigger>
-          <TabsTrigger
-            data-testid="knowledge-collections-tab"
-            value="collections"
-            className="font-label text-[11px] uppercase tracking-widest px-4 py-2 rounded-none
-              data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none
-              text-outline hover:text-on-surface-variant"
-          >
-            Collections
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      {tab === "search" && <SearchTab projectId={pid} />}
-      {tab === "collections" && <CollectionsTab projectId={pid} />}
-      {tab === "memories" && <Memories projectId={savedProjectId} embedded />}
+    <div data-testid="knowledge-base-view">
+      {memories ? (
+        <Memories projectId={savedProjectId} embedded />
+      ) : (
+        <>
+          <ViewHeader title="Knowledge base" />
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground" role="status">
+              {statusLoading
+                ? "Loading index status…"
+                : statusError
+                  ? "Index status unavailable"
+                  : `${totalDocs} indexed documents across this ORC workspace · ${searchMode}`}
+            </p>
+            {collections && (
+              <Button
+                variant="outline"
+                data-testid="knowledge-back-documents"
+                onClick={() => setCollections(false)}
+              >
+                Back to documents
+              </Button>
+            )}
+          </div>
+          {collections ? (
+            <CollectionsTab projectId={pid} />
+          ) : (
+            <DocumentsTab
+              key={projectId}
+              projectId={pid}
+              onManageCollections={() => setCollections(true)}
+            />
+          )}
+        </>
+      )}
     </div>
   );
 }
 
-function SearchTab({ projectId }: { projectId?: string }) {
-  const [searchInput, setSearchInput] = useState("");
-  const [query, setQuery] = useState("");
-  const [collection, setCollection] = useState<string>("__all__");
-  const [selectedDoc, setSelectedDoc] = useState<string | null>(null);
+function DocumentsTab({
+  projectId,
+  onManageCollections,
+}: {
+  projectId?: string;
+  onManageCollections: () => void;
+}) {
+  const location = useLocation();
+  const [query, setQuery] = useViewParam<string>("documentQuery", "");
+  const [searchInput, setSearchInput] = useState(query);
+  const [collection, setCollection] = useViewParam<string>("collection", "__all__");
+  const [documentParam, setDocumentParam] = useViewParam<string>("document", "");
+  const selectedDoc = documentParam || null;
+  const setSelectedDoc = (value: string | null) => setDocumentParam(value ?? "");
+  useEffect(() => setSearchInput(query), [query]);
   const queryClient = useQueryClient();
   const [indexingWarning, setIndexingWarning] = useState<string>();
   const documentId = `knowledge:${selectedDoc}`;
 
-  const { data: collections } = useKnowledgeCollections({
+  const {
+    data: collections,
+    isLoading: collectionsLoading,
+    error: collectionsError,
+  } = useKnowledgeCollections({
     project_id: projectId,
   });
-  const { data: results, isLoading: isSearching } = useKnowledgeSearch(query, {
+  const {
+    data: results,
+    isLoading: isSearching,
+    error: searchError,
+    refetch: retrySearch,
+  } = useKnowledgeSearch(query, {
     collection: collection === "__all__" ? undefined : collection,
     project_id: projectId,
     limit: 20,
   });
-  const { data: document, isLoading: isDocLoading } = useKnowledgeDocument(selectedDoc);
+  const {
+    data: document,
+    isLoading: isDocLoading,
+    refetch: refetchDocument,
+  } = useKnowledgeDocument(selectedDoc);
 
   const handleSearch = () => {
     setQuery(searchInput);
@@ -140,27 +167,46 @@ function SearchTab({ projectId }: { projectId?: string }) {
 
   return (
     <div>
-      <div className="flex gap-2 mb-6">
-        <div className="relative flex-1">
-          <Search size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" />
+      <p className="mb-4 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+        Search the files indexed from your collections. Your authored lessons and linked pages live
+        in{" "}
+        <Link
+          to={workspaceDestination("/knowledge/wiki", projectId ?? "all", location.search)}
+          className="text-primary underline"
+        >
+          Wiki
+        </Link>
+        .
+      </p>
+      <div className="flex flex-wrap gap-2 mb-6">
+        <div className="relative min-w-[180px] flex-1">
+          <Search
+            size={12}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
           <Input
+            data-testid="knowledge-search-input"
+            aria-label="Search indexed documents"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            placeholder="Search knowledge base..."
-            className="pl-8 bg-surface-highest border-surface-highest text-on-surface font-body text-xs"
+            onKeyDown={(e) => e.key === "Enter" && setQuery(e.currentTarget.value)}
+            placeholder="Find an indexed document…"
+            className="pl-8 bg-surface-highest border-outline-variant text-on-surface font-body text-sm"
           />
         </div>
         <Select value={collection} onValueChange={setCollection}>
-          <SelectTrigger className="w-40 bg-surface-highest border-surface-highest text-on-surface font-label text-[11px]">
+          <SelectTrigger
+            aria-label="Filter document collection"
+            className="w-40 bg-surface-highest border-outline-variant text-on-surface font-label text-sm"
+          >
             <SelectValue placeholder="All collections" />
           </SelectTrigger>
-          <SelectContent className="bg-surface-highest border-surface-highest">
-            <SelectItem value="__all__" className="font-label text-xs">
+          <SelectContent className="bg-surface-highest border-outline-variant">
+            <SelectItem value="__all__" className="font-label text-sm">
               All collections
             </SelectItem>
             {(collections ?? []).map((c) => (
-              <SelectItem key={c.name} value={c.name} className="font-label text-xs">
+              <SelectItem key={c.name} value={c.name} className="font-label text-sm">
                 {c.name}
               </SelectItem>
             ))}
@@ -169,7 +215,7 @@ function SearchTab({ projectId }: { projectId?: string }) {
         <Button
           size="sm"
           onClick={handleSearch}
-          className="font-label text-xs uppercase bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
+          className="font-label text-sm bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
         >
           Search
         </Button>
@@ -181,19 +227,82 @@ function SearchTab({ projectId }: { projectId?: string }) {
               setQuery("");
               setSearchInput("");
             }}
-            className="font-label text-xs text-outline"
+            className="font-label text-sm text-muted-foreground"
           >
             Clear
           </Button>
         )}
       </div>
 
+      {!query && (
+        <section className="space-y-3" aria-label="Indexed collections">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-base font-medium">Your document collections</h2>
+            <Button
+              variant="outline"
+              data-testid="knowledge-manage-collections"
+              onClick={onManageCollections}
+            >
+              Manage collections
+            </Button>
+          </div>
+          {collectionsLoading && (
+            <p role="status" data-testid="page-loading" className="text-sm text-muted-foreground">
+              Loading collections…
+            </p>
+          )}
+          {collectionsError && (
+            <p role="alert" data-testid="page-error" className="text-sm text-error">
+              {(collectionsError as Error).message}
+            </p>
+          )}
+          {!collectionsLoading && !collectionsError && !collections?.length && (
+            <div
+              data-testid="page-empty"
+              className="rounded-lg border border-dashed border-outline-variant p-6"
+            >
+              <h3 className="font-medium">Add files to Knowledge</h3>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Create a collection from a folder of documents. ORC indexes matching files so you
+                can find, read and edit them here.
+              </p>
+              <Button className="mt-4" onClick={onManageCollections}>
+                Add a collection
+              </Button>
+            </div>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {collections?.map((entry) => (
+              <button
+                type="button"
+                data-testid="knowledge-source-collection"
+                key={entry.name}
+                onClick={() => setCollection(entry.name)}
+                className={`min-w-0 rounded-lg border p-4 text-left ${collection === entry.name ? "border-primary bg-primary/5" : "border-outline-variant bg-surface"}`}
+              >
+                <h3 className="break-words font-medium">{entry.name}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {entry.documentCount} indexed documents
+                </p>
+                <p className="mt-2 break-all text-xs text-muted-foreground">{entry.path}</p>
+                <p className="mt-3 text-sm text-primary">Search this collection</p>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       {query && (
         <div>
-          <div className="font-label text-[10px] uppercase tracking-widest text-outline mb-3">
-            Search Results
+          <div className="font-label text-sm  text-muted-foreground mb-3">
+            Documents matching “{query}”
           </div>
-          {isSearching ? (
+          {searchError ? (
+            <ErrorState
+              message={(searchError as Error).message}
+              onRetry={() => void retrySearch()}
+            />
+          ) : isSearching ? (
             <Skeleton className="h-20 w-full bg-surface-highest" />
           ) : (results ?? []).length === 0 ? (
             <EmptyState message="No results" />
@@ -204,7 +313,7 @@ function SearchTab({ projectId }: { projectId?: string }) {
                   key={r.docid}
                   data-testid="knowledge-result"
                   type="button"
-                  className="w-full text-left border border-surface-highest rounded-sm p-4 hover:bg-surface-low transition-colors"
+                  className="w-full text-left border border-outline-variant rounded-sm p-4 hover:bg-surface-low transition-colors"
                   onClick={() => {
                     setIndexingWarning(undefined);
                     setSelectedDoc(`qmd://${r.path}`);
@@ -214,21 +323,21 @@ function SearchTab({ projectId }: { projectId?: string }) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <FileText size={12} className="text-primary flex-shrink-0" />
-                        <span className="font-body text-xs font-semibold text-on-surface truncate">
+                        <span className="font-body text-sm font-semibold text-on-surface truncate">
                           {r.title || r.path}
                         </span>
                       </div>
                       {r.path && r.title && (
-                        <div className="font-mono text-[11px] text-outline truncate mb-1">
+                        <div className="font-mono text-sm text-muted-foreground truncate mb-1">
                           {r.path}
                         </div>
                       )}
-                      <div className="font-label text-[11px] text-primary mb-2">{r.collection}</div>
-                      <div className="font-body text-[11px] text-outline line-clamp-2">
+                      <div className="font-label text-sm text-primary mb-2">{r.collection}</div>
+                      <div className="font-body text-sm text-muted-foreground line-clamp-2">
                         {r.snippet}
                       </div>
                     </div>
-                    <span className="font-label text-[11px] text-outline bg-surface-highest px-1.5 py-0.5 rounded-sm flex-shrink-0">
+                    <span className="font-label text-sm text-muted-foreground bg-surface-highest px-1.5 py-0.5 rounded-sm flex-shrink-0">
                       {r.score.toFixed(2)}
                     </span>
                   </div>
@@ -262,32 +371,30 @@ function SearchTab({ projectId }: { projectId?: string }) {
                 ))}
               </div>
             ) : !document ? (
-              <div className="font-body text-xs text-outline py-8 text-center">
+              <div className="font-body text-sm text-muted-foreground py-8 text-center">
                 Document not found
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <DetailField label="Collection">{document.collection}</DetailField>
                   <DetailField label="Path">
-                    <span className="font-mono text-[11px]">{document.path}</span>
+                    <span className="font-mono text-sm">{document.path}</span>
                   </DetailField>
                   <DetailField label="Modified">
                     {new Date(document.modifiedAt).toLocaleString()}
                   </DetailField>
                   <DetailField label="Doc ID">
-                    <span className="font-mono text-[11px]">{document.docid}</span>
+                    <span className="font-mono text-sm">{document.docid}</span>
                   </DetailField>
                 </div>
                 <div>
-                  <div className="font-label text-[11px] uppercase tracking-widest text-outline mb-2">
-                    Content
-                  </div>
+                  <div className="font-label text-sm  text-muted-foreground mb-2">Content</div>
                   {document.readOnlyReason && (
-                    <p className="mb-3 text-sm text-outline">{document.readOnlyReason}</p>
+                    <p className="mb-3 text-sm text-muted-foreground">{document.readOnlyReason}</p>
                   )}
                   {indexingWarning && (
-                    <p role="status" className="mb-3 text-sm text-outline">
+                    <p role="status" className="mb-3 text-sm text-muted-foreground">
                       {indexingWarning}
                     </p>
                   )}
@@ -299,11 +406,12 @@ function SearchTab({ projectId }: { projectId?: string }) {
                     onSave={
                       document.editable && selectedDoc
                         ? async (content, expectedContent) => {
-                            const saved = await api.knowledge.editDocument(
-                              selectedDoc,
-                              content,
-                              expectedContent,
-                            );
+                            const saved = await api.knowledge
+                              .editDocument(selectedDoc, content, expectedContent)
+                              .catch(async (error: unknown) => {
+                                await refetchDocument();
+                                throw error;
+                              });
                             setIndexingWarning(saved.indexingWarning);
                             await queryClient.invalidateQueries({
                               queryKey: ["knowledge-document", selectedDoc],
@@ -340,33 +448,43 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <div className="font-label text-[10px] uppercase tracking-widest text-outline">
-          Collections
-        </div>
-        <div className="flex gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="font-label text-sm  text-muted-foreground">Collections</div>
+        <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
             variant="ghost"
-            onClick={() => reindex.mutate(undefined)}
-            disabled={reindex.isPending}
-            className="font-label text-[11px] uppercase tracking-widest text-outline"
+            onClick={() =>
+              reindex.mutate({ collections: (collections ?? []).map((entry) => entry.name) })
+            }
+            disabled={reindex.isPending || !collections?.length}
+            className="font-label text-sm  text-muted-foreground"
           >
             <RefreshCw size={12} className={`mr-1 ${reindex.isPending ? "animate-spin" : ""}`} />
-            {reindex.isPending ? "Indexing..." : "Reindex All"}
+            {reindex.isPending ? "Indexing…" : "Reindex collections"}
           </Button>
           <Button
             data-testid="add-collection-button"
             size="sm"
             onClick={() => setCreating(true)}
-            className="font-label text-xs uppercase tracking-widest bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
+            className="font-label text-sm  bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
           >
             <Plus size={12} className="mr-1" />
-            Add Collection
+            Add collection
           </Button>
         </div>
       </div>
 
+      {(reindex.error || removeCollection.error) && (
+        <p role="alert" className="mb-3 text-sm text-error">
+          {(reindex.error || removeCollection.error)?.message}
+        </p>
+      )}
+      {reindex.isSuccess && (
+        <p role="status" className="mb-3 text-sm text-muted-foreground">
+          Indexed {reindex.data.indexed} documents; updated {reindex.data.updated}.
+        </p>
+      )}
       {isLoading ? (
         <div className="space-y-2">
           {[...Array(3)].map((_, i) => (
@@ -377,26 +495,22 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
       ) : (collections ?? []).length === 0 ? (
         <EmptyState message="No collections" />
       ) : (
-        <div className="border border-surface-highest rounded-sm overflow-hidden">
+        <div className="border border-outline-variant rounded-sm overflow-hidden">
           <Table>
             <TableHeader>
-              <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
-                  Name
-                </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline">
-                  Path
-                </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
+              <TableRow className="border-b border-outline-variant hover:bg-transparent">
+                <TableHead className="font-label text-sm  text-muted-foreground">Name</TableHead>
+                <TableHead className="font-label text-sm  text-muted-foreground">Path</TableHead>
+                <TableHead className="font-label text-sm  text-muted-foreground w-24">
                   Pattern
                 </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-20">
+                <TableHead className="font-label text-sm  text-muted-foreground w-20">
                   Docs
                 </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-36">
+                <TableHead className="font-label text-sm  text-muted-foreground w-36">
                   Last Modified
                 </TableHead>
-                <TableHead className="font-label text-[11px] uppercase tracking-widest text-outline w-24">
+                <TableHead className="font-label text-sm  text-muted-foreground w-24">
                   Project
                 </TableHead>
                 <TableHead className="w-20" />
@@ -408,22 +522,24 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
                   key={c.name}
                   data-testid="collection-row"
                   data-collection-name={c.name}
-                  className="border-b border-surface-highest/50 hover:bg-surface-low"
+                  className="border-b border-outline-variant/50 hover:bg-surface-low"
                 >
-                  <TableCell className="font-label text-xs font-semibold text-primary">
+                  <TableCell className="font-label text-sm font-semibold text-primary">
                     {c.name}
                   </TableCell>
-                  <TableCell className="font-body text-[11px] text-outline truncate max-w-xs">
+                  <TableCell className="font-body text-sm text-muted-foreground truncate max-w-xs">
                     {c.path}
                   </TableCell>
-                  <TableCell className="font-mono text-[11px] text-outline">{c.pattern}</TableCell>
-                  <TableCell className="font-label text-xs text-on-surface text-center">
+                  <TableCell className="font-mono text-sm text-muted-foreground">
+                    {c.pattern}
+                  </TableCell>
+                  <TableCell className="font-label text-sm text-on-surface text-center">
                     {c.documentCount}
                   </TableCell>
-                  <TableCell className="font-label text-[11px] text-outline">
+                  <TableCell className="font-label text-sm text-muted-foreground">
                     {c.lastModified ? new Date(c.lastModified).toLocaleDateString() : "\u2014"}
                   </TableCell>
-                  <TableCell className="font-label text-[11px] text-outline">
+                  <TableCell className="font-label text-sm text-muted-foreground">
                     {c.projectId ? c.projectId.slice(-6) : "\u2014"}
                   </TableCell>
                   <TableCell>
@@ -432,7 +548,7 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
                         type="button"
                         onClick={() => reindex.mutate({ collections: [c.name] })}
                         disabled={reindex.isPending}
-                        className="text-outline hover:text-primary transition-colors p-1"
+                        className="text-muted-foreground hover:text-primary transition-colors p-1"
                         title="Reindex"
                       >
                         <RefreshCw size={12} className={reindex.isPending ? "animate-spin" : ""} />
@@ -441,7 +557,7 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
                         type="button"
                         data-testid="collection-delete"
                         onClick={() => setDeleting(c.name)}
-                        className="text-outline hover:text-error transition-colors p-1"
+                        className="text-muted-foreground hover:text-error transition-colors p-1"
                         title="Delete"
                       >
                         <Trash2 size={12} />
@@ -466,7 +582,7 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
       {deleting && (
         <ConfirmDialog
           open={Boolean(deleting)}
-          title="Delete Collection"
+          title="Delete collection"
           description={`Remove collection "${deleting}" and all indexed documents from the knowledge base?`}
           confirmLabel="Delete"
           variant="destructive"
@@ -516,59 +632,55 @@ function AddCollectionDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="bg-surface border-surface-highest max-w-md">
+      <DialogContent className="bg-surface border-outline-variant max-w-md">
         <DialogHeader>
-          <DialogTitle className="font-headline text-sm uppercase tracking-widest text-on-surface">
-            Add Collection
+          <DialogTitle className="font-headline text-base  text-on-surface">
+            Add collection
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 mt-2">
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Name *
-            </Label>
+            <Label className="font-label text-sm  text-muted-foreground">Name *</Label>
             <Input
+              aria-label="Name"
               data-testid="collection-name-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="my-docs"
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
+              className="bg-background border-outline-variant text-on-surface font-body text-sm"
               autoFocus
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-              Path *
-            </Label>
+            <Label className="font-label text-sm  text-muted-foreground">Path *</Label>
             <Input
+              aria-label="Path"
               data-testid="collection-path-input"
               value={path}
               onChange={(e) => setPath(e.target.value)}
               placeholder="/path/to/documents"
-              className="bg-background border-surface-highest text-on-surface font-body text-xs"
+              className="bg-background border-outline-variant text-on-surface font-body text-sm"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Pattern
-              </Label>
+              <Label className="font-label text-sm  text-muted-foreground">Pattern</Label>
               <Input
+                aria-label="Pattern"
                 value={pattern}
                 onChange={(e) => setPattern(e.target.value)}
                 placeholder="**/*.md"
-                className="bg-background border-surface-highest text-on-surface font-mono text-xs"
+                className="bg-background border-outline-variant text-on-surface font-mono text-xs"
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="font-label text-[11px] uppercase tracking-widest text-outline">
-                Project ID
-              </Label>
+              <Label className="font-label text-sm  text-muted-foreground">Project ID</Label>
               <Input
+                aria-label="Project ID"
                 value={projId}
                 onChange={(e) => setProjId(e.target.value)}
                 placeholder="Optional"
-                className="bg-background border-surface-highest text-on-surface font-body text-xs"
+                className="bg-background border-outline-variant text-on-surface font-body text-sm"
               />
             </div>
           </div>
@@ -578,7 +690,7 @@ function AddCollectionDialog({
               variant="ghost"
               size="sm"
               onClick={onClose}
-              className="font-label text-xs uppercase text-outline"
+              className="font-label text-sm text-muted-foreground"
             >
               Cancel
             </Button>
@@ -587,11 +699,16 @@ function AddCollectionDialog({
               type="submit"
               size="sm"
               disabled={addCollection.isPending || !name.trim() || !path.trim()}
-              className="font-label text-xs uppercase bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              className="font-label text-sm bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
             >
               {addCollection.isPending ? "Adding..." : "Add"}
             </Button>
           </DialogFooter>
+          {addCollection.error && (
+            <p role="alert" className="text-sm text-error">
+              {addCollection.error.message}
+            </p>
+          )}
         </form>
       </DialogContent>
     </Dialog>

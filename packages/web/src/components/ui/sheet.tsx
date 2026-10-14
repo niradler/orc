@@ -76,7 +76,10 @@ function SheetTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingEle
   return (
     <DialogPrimitive.Title asChild>
       <h3
-        className={cn("font-headline text-sm uppercase tracking-widest text-on-surface", className)}
+        className={cn(
+          "font-headline text-lg font-medium tracking-tight text-on-surface",
+          className,
+        )}
         {...props}
       />
     </DialogPrimitive.Title>
