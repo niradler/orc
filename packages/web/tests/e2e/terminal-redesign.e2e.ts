@@ -2,8 +2,9 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect } from "@playwright/test";
 import { API_SECRET, apiGet, apiPost } from "./_helpers";
+import { test } from "./_terminal-fixture";
 
 for (const theme of ["dark", "light"] as const) {
   for (const width of [1440, 390, 320]) {

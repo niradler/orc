@@ -14,7 +14,7 @@ for (const width of [1440, 390]) {
       importance: "normal",
     });
     await gotoView(page, "memories");
-    await expect(page.getByTestId("section-title")).toHaveText("Memories");
+    await expect(page.getByTestId("view-title")).toHaveText("Memories");
     await expect(page.getByTestId("nav-memories")).toHaveAttribute("aria-current", "page");
     await page.reload();
     await expect(page.getByTestId("nav-memories")).toHaveAttribute("aria-current", "page");

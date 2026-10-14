@@ -115,8 +115,15 @@ test("edited skill instructions and supporting files reopen and a human can reve
   await expect(page.getByTestId("skill-file-content")).not.toContainText("Check rollback");
   await expect(page.getByTestId("skill-history-change")).toHaveCount(2);
   await page.getByTestId("markdown-mode-edit").click();
+  await expect(page.getByTestId("markdown-mode-edit")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("skill-file-content")).toBeVisible();
+  await page.getByTestId("skill-file-content").click();
   await page.getByTestId("skill-file-content").press("Control+End");
   await page.keyboard.insertText("\n\nManual refinement after review.");
+  await expect(page.getByTestId("skill-file-content")).toContainText(
+    "Manual refinement after review.",
+  );
+  await expect(page.getByTestId("document-save")).toBeEnabled();
   const saved = page.waitForResponse(
     (response) =>
       response.url().endsWith(`/skills/${name}/instructions`) &&
