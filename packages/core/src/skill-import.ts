@@ -201,7 +201,9 @@ export async function discoverRepositorySkills(source: string): Promise<SkillDis
   const paths = entryPaths(tree, origin);
   if (paths.length > 128)
     throw new ValidationError("More than 128 skills found; use a GitHub subfolder link");
-  const installed = new Set(listSkills({ reload: true }).map((entry) => entry.name));
+  const installed = new Set(
+    listSkills({ reload: true, include_hidden: true }).map((entry) => entry.name),
+  );
   const skills: SkillDiscovery["skills"] = [];
   const issues: SkillDiscovery["issues"] = [];
   for (const entry of paths) {
@@ -324,7 +326,9 @@ export async function importRepositorySkills(input: SkillImportInput): Promise<S
   );
   const bundles = [];
   let total = 0;
-  const names = new Set(listSkills({ reload: true }).map((entry) => entry.name));
+  const names = new Set(
+    listSkills({ reload: true, include_hidden: true }).map((entry) => entry.name),
+  );
   for (const path of input.paths) {
     if (path) validateSkillPath(path);
     if (!allowed.has(path))
@@ -342,7 +346,9 @@ export async function importRepositorySkills(input: SkillImportInput): Promise<S
     names.add(bundle.name);
     bundles.push({ ...bundle, path });
   }
-  const installedNow = new Set(listSkills({ reload: true }).map((skill) => skill.name));
+  const installedNow = new Set(
+    listSkills({ reload: true, include_hidden: true }).map((skill) => skill.name),
+  );
   for (const bundle of bundles) {
     if (installedNow.has(bundle.name))
       throw new ConflictError(`Skill already exists: ${bundle.name}`);

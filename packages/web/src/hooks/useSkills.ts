@@ -2,11 +2,28 @@ import type { WikiScope } from "@orc/sdk/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type CreateSkillInput } from "@/api/client";
 
-export function useSkills(params?: { q?: string; source?: "builtin" | "user" } & WikiScope) {
+export function useSkills(
+  params?: { q?: string; source?: "builtin" | "user"; include_hidden?: boolean } & WikiScope,
+) {
   return useQuery({
     queryKey: ["skills", params],
     queryFn: () => api.skills.list(params),
     refetchInterval: 60_000,
+  });
+}
+
+export function useSkillVisibility() {
+  return useQuery({ queryKey: ["skill-visibility"], queryFn: () => api.skills.visibility() });
+}
+
+export function useSetSkillVisibility() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (names: string[]) => api.skills.setVisibility(names),
+    onSuccess: (policy) => {
+      qc.setQueryData(["skill-visibility"], policy);
+      qc.invalidateQueries({ queryKey: ["skills"] });
+    },
   });
 }
 
