@@ -6,14 +6,17 @@ test("built-in visibility saves, reopens, and preserves user skills and named re
   request,
   browser,
 }) => {
-  const original = await apiGet<{ hidden_builtins: string[] }>(request, "/skills/visibility");
+  const original = await apiGet<{ hidden_builtins: string[] }>(
+    request,
+    "/skills/settings/visibility",
+  );
   const name = tid("pw-visible-user");
   await apiPost(request, "/skills", {
     name,
     content: `---\nname: ${name}\ndescription: User workflow\n---\nKeep this discoverable.`,
   });
   const save = async (hidden_builtins: string[]) => {
-    const response = await request.put(`${API_BASE}/skills/visibility`, {
+    const response = await request.put(`${API_BASE}/skills/settings/visibility`, {
       headers: AUTH_HEADERS,
       data: { hidden_builtins },
     });
@@ -67,7 +70,8 @@ test("built-in visibility saves, reopens, and preserves user skills and named re
     await page.getByTestId("show-all-builtins").click();
     await expect(toggle).toHaveAttribute("aria-checked", "true");
     expect(
-      (await apiGet<{ hidden_builtins: string[] }>(request, "/skills/visibility")).hidden_builtins,
+      (await apiGet<{ hidden_builtins: string[] }>(request, "/skills/settings/visibility"))
+        .hidden_builtins,
     ).toEqual([]);
   } finally {
     await save(original.hidden_builtins);

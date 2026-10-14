@@ -577,8 +577,8 @@ global/project instruction overrides remain discoverable.
 The policy is saved under `skills.hidden_builtins` in `~/.orc/config.json` and
 read afresh for discovery, including by existing MCP processes. `GET /api/skills`
 omits hidden built-ins; `include_hidden=true` returns the management catalog with
-`discovery_hidden` metadata. `GET /api/skills/visibility` reads the policy and
-`PUT /api/skills/visibility` replaces its `hidden_builtins` array using the usual
+`discovery_hidden` metadata. `GET /api/skills/settings/visibility` reads the policy and
+`PUT /api/skills/settings/visibility` replaces its `hidden_builtins` array using the usual
 API authentication. This installation-wide preference ignores project config.
 New built-ins default to visible until hidden explicitly.
 

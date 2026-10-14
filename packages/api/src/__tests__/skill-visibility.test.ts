@@ -18,6 +18,7 @@ import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 let app: ReturnType<typeof createApp>;
 let originalConfig: string | undefined;
 const userSkillName = `visibility-user-${process.pid}`;
+let createdVisibilitySkill = false;
 beforeAll(() => {
   originalConfig = existsSync(globalConfigPath())
     ? readFileSync(globalConfigPath(), "utf8")
@@ -29,15 +30,37 @@ afterAll(() => {
   if (originalConfig !== undefined) writeFileSync(globalConfigPath(), originalConfig);
   else if (existsSync(globalConfigPath())) unlinkSync(globalConfigPath());
   rmSync(join(getUserSkillsDir(), userSkillName), { recursive: true, force: true });
+  if (createdVisibilitySkill)
+    rmSync(join(getUserSkillsDir(), "visibility"), { recursive: true, force: true });
   reloadCache();
   teardownTestApp();
 });
 
+test("should preserve named reads for a user skill called visibility", async () => {
+  if (!readSkill("visibility")) {
+    expect(
+      (
+        await req(app, "POST", "/skills", {
+          name: "visibility",
+          content:
+            "---\nname: visibility\ndescription: Authored workflow\n---\nAuthored instructions",
+        })
+      ).status,
+    ).toBe(201);
+    createdVisibilitySkill = true;
+  }
+  expect((await (await req(app, "GET", "/skills/visibility?scope=global")).json()).name).toBe(
+    "visibility",
+  );
+});
+
 test("should default to visible and reject unauthenticated or invalid visibility writes", async () => {
-  expect((await req(app, "PUT", "/skills/visibility", { hidden_builtins: [] })).status).toBe(200);
+  expect(
+    (await req(app, "PUT", "/skills/settings/visibility", { hidden_builtins: [] })).status,
+  ).toBe(200);
   expect(
     (
-      await app.request("/api/skills/visibility", {
+      await app.request("/api/skills/settings/visibility", {
         method: "PUT",
         body: JSON.stringify({ hidden_builtins: [] }),
         headers: { "Content-Type": "application/json" },
@@ -45,10 +68,15 @@ test("should default to visible and reject unauthenticated or invalid visibility
     ).status,
   ).toBe(401);
   expect(
-    (await req(app, "PUT", "/skills/visibility", { hidden_builtins: ["missing"] })).status,
+    (await req(app, "PUT", "/skills/settings/visibility", { hidden_builtins: ["missing"] })).status,
   ).toBe(400);
   expect(
-    (await req(app, "PUT", "/skills/visibility", { hidden_builtins: [], unexpected: true })).status,
+    (
+      await req(app, "PUT", "/skills/settings/visibility", {
+        hidden_builtins: [],
+        unexpected: true,
+      })
+    ).status,
   ).toBe(400);
   expect((await req(app, "GET", "/skills?include_hidden=false")).status).toBe(200);
   expect((await req(app, "GET", "/skills?include_hidden=invalid")).status).toBe(400);
@@ -70,7 +98,7 @@ test("should persist discovery visibility without changing reads, flows, user sk
   ).toBe(201);
   expect(
     (
-      await req(app, "PUT", "/skills/visibility", {
+      await req(app, "PUT", "/skills/settings/visibility", {
         hidden_builtins: ["orc-coder", "orc-worker-base", "orc-coder"],
       })
     ).status,
@@ -123,7 +151,7 @@ test("should preserve global and project authored overrides during hide-all", as
     (skill) => skill.name,
   );
   expect(
-    (await req(app, "PUT", "/skills/visibility", { hidden_builtins: allBuiltins })).status,
+    (await req(app, "PUT", "/skills/settings/visibility", { hidden_builtins: allBuiltins })).status,
   ).toBe(200);
   const global = await executeTool("skill_list", { scope: "global" });
   expect(global).toContain("orc-coder");
@@ -152,7 +180,9 @@ test("should preserve global and project authored overrides during hide-all", as
   expect(
     await executeTool("skill_list", { project: project.name, q: "Unique authored visibility" }),
   ).toContain("orc-reviewer");
-  expect((await req(app, "PUT", "/skills/visibility", { hidden_builtins: [] })).status).toBe(200);
+  expect(
+    (await req(app, "PUT", "/skills/settings/visibility", { hidden_builtins: [] })).status,
+  ).toBe(200);
   expect(listSkills({ source: "builtin" }).length).toBe(allBuiltins.length);
 });
 
@@ -162,7 +192,7 @@ test("should retain retired hidden names during edits and fail loudly on corrupt
   });
   expect(
     (
-      await req(app, "PUT", "/skills/visibility", {
+      await req(app, "PUT", "/skills/settings/visibility", {
         hidden_builtins: ["retired-builtin", "orc-coder"],
       })
     ).status,

@@ -30,7 +30,7 @@ const VisibilitySchema = z
 app.openapi(
   createRoute({
     method: "get",
-    path: "/skills/visibility",
+    path: "/skills/settings/visibility",
     tags: ["Skills"],
     summary: "Get installation-wide built-in discovery visibility",
     responses: {
@@ -46,7 +46,7 @@ app.openapi(
 app.openapi(
   createRoute({
     method: "put",
-    path: "/skills/visibility",
+    path: "/skills/settings/visibility",
     tags: ["Skills"],
     summary: "Set installation-wide built-in discovery visibility",
     request: {

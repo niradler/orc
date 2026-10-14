@@ -523,9 +523,9 @@ export const api = {
   },
 
   skills: {
-    visibility: () => req<{ hidden_builtins: string[] }>("GET", "/skills/visibility"),
+    visibility: () => req<{ hidden_builtins: string[] }>("GET", "/skills/settings/visibility"),
     setVisibility: (hidden_builtins: string[]) =>
-      req<{ hidden_builtins: string[] }>("PUT", "/skills/visibility", { hidden_builtins }),
+      req<{ hidden_builtins: string[] }>("PUT", "/skills/settings/visibility", { hidden_builtins }),
     updateInstructions: (name: string, input: Omit<SkillUpdate, "skill_name">) =>
       req<SkillFull>("PUT", `/skills/${encodeURIComponent(name)}/instructions`, input),
     history: (name: string, scope: WikiScope = {}) =>

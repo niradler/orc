@@ -543,7 +543,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/skills/visibility": {
+    "/api/skills/settings/visibility": {
         parameters: {
             query?: never;
             header?: never;
