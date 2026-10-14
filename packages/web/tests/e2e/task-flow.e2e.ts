@@ -123,11 +123,11 @@ test.describe("Task flow run panel", () => {
 
   test("a named flow set on the task is shown as-is", async ({ page, request }) => {
     const task = await createTask(request, tid("pw-flow-named"), {
-      flow_name: "orc-fix-verify",
+      flow_name: "orc-default",
     });
     try {
       await openTask(page, task.id);
-      await expect(page.getByTestId("task-flow-name")).toHaveText("orc-fix-verify");
+      await expect(page.getByTestId("task-flow-name")).toHaveText("orc-default");
     } finally {
       await apiDelete(request, `/tasks/${task.id}`);
     }
@@ -141,7 +141,7 @@ test.describe("Task flow run panel", () => {
     const dialog = page.getByRole("dialog");
     await dialog.getByTestId("task-title-input").fill(title);
     await dialog.getByTestId("new-task-flow").click();
-    await page.getByRole("option", { name: /^orc-supervisor/ }).click();
+    await page.getByTestId("flow-option-orc-human-review").click();
     await dialog.getByTestId("task-submit").click();
 
     let created: Task | undefined;
@@ -150,12 +150,16 @@ test.describe("Task flow run panel", () => {
         .poll(
           async () => {
             const { tasks } = await apiGet<{ tasks: Task[] }>(request, "/tasks?limit=100");
-            created = tasks.find((t) => t.id && t.flow_name === "orc-supervisor");
-            return tasks.some((t) => t.flow_name === "orc-supervisor");
+            created = tasks.find((t) => t.title === title && t.flow_name === "orc-human-review");
+            return created !== undefined;
           },
           { timeout: 10_000 },
         )
         .toBe(true);
+      if (!created) throw new Error("Created task was not persisted");
+      await page.reload();
+      await openTask(page, created.id);
+      await expect(page.getByTestId("task-flow-name")).toHaveText("orc-human-review");
     } finally {
       if (created) await apiDelete(request, `/tasks/${created.id}`);
     }

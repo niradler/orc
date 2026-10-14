@@ -48,7 +48,9 @@ Each chat has a mode: `direct` (ORC commands), `agent:claude`/`agent:codex`/`age
 
 ## HITL Review
 
-When an agent sets task status to `review`, the gateway sends a notification. Use bot commands to review:
+Human review gates send notifications; agent reviewer nodes do not page the human
+for every round. For a managed flow resolve the declared human outcome through the
+dashboard gate or `orc flow resume`. The commands below apply to manual task review:
 
 ```
 /tasks            # See tasks awaiting review

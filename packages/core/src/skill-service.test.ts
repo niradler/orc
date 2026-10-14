@@ -416,7 +416,10 @@ describe("readSkill", () => {
     const skill = readSkill("orc-coder") as SkillFull;
     expect(skill).toBeTruthy();
     expect(skill.name).toBe("orc-coder");
-    expect(skill.content).toContain("Coder");
+    expect(skill.content).toBe(
+      parseFrontmatter(readFileSync(join(getBuiltinSkillsDir(), "orc-coder", "SKILL.md"), "utf8"))
+        .body,
+    );
     expect(skill.source).toBe("builtin");
     expect(Array.isArray(skill.references)).toBe(true);
   });

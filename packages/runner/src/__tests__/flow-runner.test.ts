@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { resetConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import { closeDb, createTestDb, getDb, getSqlite } from "@orc/db/client";
@@ -319,7 +320,14 @@ describe("orc-default end to end", () => {
   });
 
   test("reporting without a node id is rejected while several nodes are active", async () => {
-    const taskId = await makeTask({ flow_name: "orc-parallel-review" });
+    const taskId = await makeTask({
+      flow_override: JSON.parse(
+        readFileSync(
+          new URL("../../../../tests/fixtures/flow-examples.json", import.meta.url),
+          "utf8",
+        ),
+      )["orc-parallel-review"],
+    });
     await startFlowForTask(taskId);
     await completeNode(taskId, "submitted", { nodeId: "build" });
 
@@ -576,7 +584,14 @@ describe("queued node visibility", () => {
 
 describe("fan-out", () => {
   test("orc-parallel-review queues three reviewers and joins on all of them", async () => {
-    const taskId = await makeTask({ flow_name: "orc-parallel-review" });
+    const taskId = await makeTask({
+      flow_override: JSON.parse(
+        readFileSync(
+          new URL("../../../../tests/fixtures/flow-examples.json", import.meta.url),
+          "utf8",
+        ),
+      )["orc-parallel-review"],
+    });
     await startFlowForTask(taskId);
     await completeNode(taskId, "submitted", { nodeId: "build" });
 
@@ -688,7 +703,14 @@ describe("fan-out", () => {
   });
 
   test("branches finishing simultaneously do not clobber each other's state", async () => {
-    const taskId = await makeTask({ flow_name: "orc-parallel-review" });
+    const taskId = await makeTask({
+      flow_override: JSON.parse(
+        readFileSync(
+          new URL("../../../../tests/fixtures/flow-examples.json", import.meta.url),
+          "utf8",
+        ),
+      )["orc-parallel-review"],
+    });
     await startFlowForTask(taskId);
     await completeNode(taskId, "submitted", { nodeId: "build" });
 
@@ -726,7 +748,14 @@ describe("fan-out", () => {
   });
 
   test("one failing branch sends the work back to build", async () => {
-    const taskId = await makeTask({ flow_name: "orc-parallel-review" });
+    const taskId = await makeTask({
+      flow_override: JSON.parse(
+        readFileSync(
+          new URL("../../../../tests/fixtures/flow-examples.json", import.meta.url),
+          "utf8",
+        ),
+      )["orc-parallel-review"],
+    });
     await startFlowForTask(taskId);
     await completeNode(taskId, "submitted", { nodeId: "build" });
 
@@ -1037,7 +1066,7 @@ describe("task eligibility", () => {
   test("a task with only a flow_name is picked up by the loop", async () => {
     const taskId = await makeTask({
       skill_name: null,
-      flow_name: "orc-plan-build-verify",
+      flow_name: "orc-human-review",
     });
     const { OrcTaskProvider } = await import("../orc-task-provider.js");
     const picked = await new OrcTaskProvider().pickWorkTasks();

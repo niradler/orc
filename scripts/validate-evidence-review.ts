@@ -39,10 +39,36 @@ loadConfig({
     max_node_retries: 0,
   },
 });
+const app = createApp();
+const calls: {
+  at: number;
+  tool: string;
+  project?: string | undefined;
+  session_id?: string | undefined;
+}[] = [];
 const server = Bun.serve({
   hostname: "127.0.0.1",
   port: 7711,
-  fetch: createApp().fetch,
+  fetch: async (request) => {
+    if (request.method === "POST" && new URL(request.url).pathname.endsWith("/mcp")) {
+      const message = (await request
+        .clone()
+        .json()
+        .catch(() => null)) as {
+        method?: string;
+        params?: { name?: string; arguments?: { project?: string; session_id?: string } };
+      } | null;
+      if (message?.method === "tools/call" && message.params?.name) {
+        calls.push({
+          at: Date.now(),
+          tool: message.params.name,
+          project: message.params.arguments?.project,
+          session_id: message.params.arguments?.session_id,
+        });
+      }
+    }
+    return app.fetch(request);
+  },
   idleTimeout: 255,
 });
 async function request<T>(path: string, body?: unknown): Promise<T> {
@@ -59,6 +85,7 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
 const results: unknown[] = [];
 try {
   for (const defective of [true, false]) {
+    const callStart = calls.length;
     const scope = mkdtempSync(join(tmpdir(), "orc-evidence-review-"));
     writeFileSync(
       join(scope, "subject.ts"),
@@ -72,17 +99,17 @@ try {
       join(scope, "CLAUDE.md"),
       "Isolated review fixture. Read source and run bun verify.ts. Do not edit files or use git. All workflow interaction uses supplied ORC MCP. Report the declared flow outcome rather than changing task status.\n",
     );
-    const project = await request<{ id: string }>("/projects", {
+    const project = await request<{ id: string; name: string }>("/projects", {
       name: `evidence-review-${defective ? "defect" : "clean"}-${Date.now()}`,
       scope,
     });
     const task = await request<{ id: string }>("/tasks", {
       title: "Verify expiry boundary",
-      body: "Review subject.ts and verify.ts. Contract: null expiry remains active; expiry strictly greater than now is active; expiry equal to now or earlier is inactive. Run bun verify.ts and cite its observed result, relevant source file and concrete boundary input in flow_report summary. Do not modify the fixture. Use orc-evidence-review's declared outcomes.",
+      body: "Review subject.ts and verify.ts. Contract: null expiry remains active; expiry strictly greater than now is active; expiry equal to now or earlier is inactive. Run bun verify.ts and cite its observed result, relevant source file and concrete boundary input in flow_report summary. Do not modify the fixture. Use orc-review-only's declared outcomes and complete the knowledge lifecycle with the supplied project and session ID.",
       project_id: project.id,
       skill_name: "orc-reviewer",
       agent_backend: "claude",
-      flow_name: "orc-evidence-review",
+      flow_name: "orc-review-only",
       required_review: false,
     });
     const started = await startFlowForTask(task.id);
@@ -105,7 +132,8 @@ try {
     const sessions = getSqlite()
       .query("SELECT status,runtime_session_id,last_error FROM gateway_sessions WHERE task_id=?")
       .all(task.id);
-    results.push({ defective, scope, task, state, ledger, sessions });
+    const knowledgeCalls = calls.slice(callStart);
+    results.push({ defective, scope, task, state, ledger, sessions, knowledgeCalls });
     writeFileSync(join(directory, "report.json"), JSON.stringify({ results }, null, 2));
     const expected = defective ? "changes_requested" : "done";
     if (state.status !== expected)
@@ -115,6 +143,35 @@ try {
       !JSON.stringify(ledger).includes("subject.ts")
     )
       throw new Error("Review omitted executable/source evidence");
+    const names = knowledgeCalls.map((call) => call.tool);
+    for (const required of [
+      "context",
+      "memory_search",
+      "wiki_search",
+      "audit_list",
+      "session_log",
+      "flow_report",
+    ]) {
+      if (!names.includes(required))
+        throw new Error(`Review skipped knowledge lifecycle tool: ${required}`);
+    }
+    if (names.indexOf("context") > names.indexOf("memory_search"))
+      throw new Error("Knowledge search preceded context");
+    if (names.indexOf("flow_report") < names.indexOf("session_log"))
+      throw new Error("Flow outcome preceded knowledge review");
+    const session = getSqlite()
+      .query("SELECT id FROM gateway_sessions WHERE task_id=?")
+      .get(task.id) as { id: string };
+    if (
+      !knowledgeCalls.some(
+        (call) =>
+          call.tool === "audit_list" &&
+          call.project === project.name &&
+          call.session_id === session.id,
+      )
+    ) {
+      throw new Error("Memory audit used the wrong project or work-unit session");
+    }
     console.log(JSON.stringify({ defective, status: state.status, ledger }));
   }
   console.log(`Real defect and clean review flows passed: ${directory}`);

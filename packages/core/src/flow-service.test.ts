@@ -71,6 +71,14 @@ function withProjectFlow(name: string, definition: unknown, fn: () => void): voi
 }
 
 describe("listFlows", () => {
+  test("ships only the three versioned SDLC choices", () => {
+    expect([...BUILTIN_FLOW_NAMES].sort()).toEqual([
+      "orc-default",
+      "orc-human-review",
+      "orc-review-only",
+    ]);
+    for (const name of BUILTIN_FLOW_NAMES) expect(readFlow(name)?.version).toBe(2);
+  });
   test("returns every builtin flow, and no builtin is broken", () => {
     const flows = listFlows();
     for (const name of BUILTIN_FLOW_NAMES) {
@@ -92,14 +100,23 @@ describe("listFlows", () => {
   });
 
   test("reports counts a caller can show without loading the definition", () => {
-    const flow = listFlows().find((f) => f.name === "orc-parallel-review");
-    expect(flow?.node_count).toBe(9);
-    expect(flow?.edge_count).toBe(11);
+    const flow = listFlows().find((f) => f.name === "orc-human-review");
+    expect(flow?.node_count).toBe(7);
+    expect(flow?.edge_count).toBe(9);
     expect(flow?.entry).toBe("build");
   });
 });
 
 describe("readFlow", () => {
+  test("retired built-ins require an explicit replacement", () => {
+    const result = resolveFlowForTask({
+      flowName: "orc-supervisor",
+      defaultFlowName: "orc-default",
+    });
+    expect(result).toHaveProperty("error");
+    if ("error" in result) expect(result.error).toContain("orc-human-review");
+    expect(readFlow("orc-supervisor")).toBeNull();
+  });
   test("returns the parsed definition with defaults applied", () => {
     const flow = readFlow("orc-default");
     expect(flow?.source).toBe("builtin");
@@ -209,10 +226,10 @@ describe("resolveFlowForTask", () => {
 
   test("a named flow wins over the default", () => {
     const resolved = resolveFlowForTask({
-      flowName: "orc-fix-verify",
+      flowName: "orc-human-review",
       defaultFlowName: "orc-default",
     });
-    expect("definition" in resolved && resolved.name).toBe("orc-fix-verify");
+    expect("definition" in resolved && resolved.name).toBe("orc-human-review");
   });
 
   test("falls back to the configured default", () => {

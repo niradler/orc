@@ -275,6 +275,17 @@ export function resolveFlowForTask(opts: {
 
   const name = opts.flowName || opts.defaultFlowName;
   const flow = readFlow(name);
-  if (!flow) return { error: `Flow not found: ${name}` };
+  if (!flow) {
+    const retired = [
+      "orc-plan-build-verify",
+      "orc-fix-verify",
+      "orc-supervisor",
+      "orc-parallel-review",
+      "orc-evidence-review",
+    ].includes(name);
+    return {
+      error: `Flow not found: ${name}${retired ? ". This built-in was retired. Choose orc-default for development, orc-human-review for human sign-off, or orc-review-only for existing work; custom flows remain supported." : ""}`,
+    };
+  }
   return { definition: flow.definition, source: flow.source, name: flow.name };
 }

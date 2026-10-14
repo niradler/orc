@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import { getUserSkillsDir, reloadCache } from "@orc/core/skill-service";
+import { getUserSkillsDir, readSkill, reloadCache, type SkillFull } from "@orc/core/skill-service";
 import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -72,7 +72,7 @@ describe("GET /skills/:name", () => {
       references: unknown[];
     };
     expect(body.name).toBe("orc-coder");
-    expect(body.content).toContain("Coder");
+    expect(body.content).toBe((readSkill("orc-coder") as SkillFull).content);
     expect(Array.isArray(body.references)).toBe(true);
   });
 

@@ -76,11 +76,11 @@ test.describe("Flow picker", () => {
     await dialog.getByTestId("new-task-flow").click();
 
     await expect(page.getByRole("option", { name: /^Default \(orc-default\)/ })).toBeVisible();
-    // The fan-out flow is the one whose shape the graph has to handle; make sure
-    // the list is really the shipped set and not a single entry.
-    await expect(
-      page.getByRole("option", { name: /^orc-parallel-review · builtin/ }),
-    ).toBeVisible();
+    await expect(page.getByTestId("flow-option-orc-human-review")).toContainText(
+      "Development with human sign-off",
+    );
+    await expect(page.getByTestId("flow-option-orc-default")).toContainText("Development");
+    await expect(page.getByTestId("flow-option-orc-parallel-review")).toHaveCount(0);
   });
 
   test("a project flow shadowing a builtin says so", async ({ page }) => {
@@ -137,12 +137,17 @@ test.describe("Flow picker", () => {
   test("View flow follows the picked flow", async ({ page }) => {
     const dialog = await openNewTaskDialog(page);
     await dialog.getByTestId("new-task-flow").click();
-    await page.getByRole("option", { name: /^orc-supervisor/ }).click();
+    await page.getByTestId("flow-option-orc-human-review").click();
     await dialog.getByTestId("flow-picker-view").click();
     await expect(page.getByTestId("flow-detail").getByTestId("flow-graph")).toHaveAttribute(
       "data-flow-name",
-      "orc-supervisor",
+      "orc-human-review",
     );
+    await expect(
+      page
+        .getByTestId("flow-detail")
+        .locator('[data-testid="flow-detail-node"][data-node-id="signoff"]'),
+    ).toContainText("Human approves delivery");
   });
   test("a running named flow opens its definition from the task", async ({ page, request }) => {
     // The project override is a single human gate, so starting it spawns no agent.

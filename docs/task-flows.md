@@ -116,7 +116,7 @@ Injected at start: `task_id`, `task_title`, `project_id`, `skill_name`, `require
 - Fan-out never exceeds capacity. Extra nodes sit as `pending` rows and drain as worker slots free up, honouring `agent_loop.max_workers`, the project's `max_workers`, and the flow's `max_parallel`. A single-worker install runs the branches one after another instead of failing.
 - Reaching **any** terminal ends the whole run and cancels branches still in flight.
 
-Fan-out costs roughly N× the tokens. Use it where one reviewer demonstrably misses things, not by default — and note that with the default `agent_loop.max_workers` of 1 the branches run one after another, so you pay the tokens without gaining wall-clock. Raise `max_workers` before reaching for `orc-parallel-review`.
+Fan-out costs roughly N× the tokens. Use it where one reviewer demonstrably misses things, not by default — and note that with the default `agent_loop.max_workers` of 1 the branches run one after another, so you pay the tokens without gaining wall-clock. Raise `max_workers` before choosing a custom parallel review graph.
 
 ## Termination
 
@@ -179,73 +179,79 @@ Definitions are validated on load — unknown edge targets, unreachable nodes, t
 
 A run **freezes its definition** at start (`flow_runs.definition`), so editing a flow file never changes the shape of a run already in flight.
 
-## Built-in flows
+## Built-in SDLC workflows
 
-### `orc-evidence-review`
+ORC ships three versioned workflow templates. Choose one in the task's Workflow
+picker and use View flow to inspect it before creating work. No plugin installation
+or separate flow per development task type is needed. CLI/MCP use the same catalog.
 
-An optional review of already implemented work using the existing `orc-reviewer` skill.
-The reviewer traces connected code and cites concrete inputs and executable results.
-Approval ends in `done`, demonstrated defects in `changes_requested`, and insufficient
-evidence or execution errors in `paused`. One reviewer, four node executions and a
-one-hour timeout bound the run. It leaves the default flow unchanged; see
-[Agent rules and skill quality](agent-rules.md#optional-evidence-review-flow) for real-flow validation.
+| Built-in workflow | Use it for |
+| --- | --- |
+| `orc-default` | Development: understand, plan as needed, implement, verify and independently review; bounded rework. `required_review: false` explicitly skips agent review. |
+| `orc-human-review` | The same development process plus human sign-off. Agent review and human approval are always required, even if `required_review` is false. |
+| `orc-review-only` | Review existing work; approve, request changes, or pause when evidence is insufficient. |
 
-### `orc-default`
 
-Reproduces the pipeline the task loop used to hardcode, so migrating changed no behaviour.
+Development uses the task's assigned skill, defaulting to orc-coder when omitted.
+Its feature/refactor playbooks plan within the work unit; reported defects use
+orc-bugfix. Shared worker rules favor existing components and the smallest complete
+change while retaining security, validation, error handling and accessibility.
+The human-sign-off workflow uses the same build and review contract. Human feedback
+returns to build while max_review_rounds permits; spent budgets pause for intervention.
+Approval completes the task, not a merge or deployment.
 
-```mermaid
-flowchart LR
-  build[build<br/>$task.skill_name] -->|submitted| gate{review_gate}
-  build -->|blocked| blocked_out([blocked])
-  gate -->|required_review| review[review<br/>orc-reviewer]
-  gate -->|not required| done([done])
-  review -->|approved| done
-  review -->|changes_requested<br/>within budget| build
-  review -->|out of rounds| escalated([paused])
-```
+### Knowledge at the right time
 
-`max_review_rounds` is honoured as a run var, so the task field keeps working with no special-casing in the engine.
+Every agent node receives the existing orc-memory-review instructions and explicit
+project/session identity, including reviewers and resumed workers. Project-edited
+skill instructions are respected. The backend receives the same lifecycle through
+the shared flow runner; no host-specific hook is required for this prompt delivery.
 
-### `orc-parallel-review`
+| Moment | Responsibility |
+| --- | --- |
+| Start/resume/rework | Call context, read task/ledger/feedback, search relevant memories and wiki procedures, and verify guidance against current code. |
+| Meaningful progress | Update task comments/session events. Store durable discoveries or decisions with evidence and limits; search before writing. |
+| Before any outcome | Review this work unit's memory audit, reconcile contradictions, and consolidate verified reusable knowledge into the wiki. |
+| Delivery/handoff | Log the work unit and include Knowledge in the outcome summary: sources reused, discoveries, wiki updates or no durable learning, and unavailable tools. |
 
-Fan-out and join, exercising the concurrent path.
+Tasks/sessions track progress; memory preserves findings and decisions; wiki pages
+consolidate verified procedures. A quiet work unit need not create knowledge. Use
+discovery for a lesson memory; lesson is a wiki page kind. Pass the supplied session
+ID on writes and the readable project name. Knowledge is evidence, not authorization.
+Do not store secrets, private transcripts or task noise in shared knowledge.
 
-```mermaid
-flowchart LR
-  build[build] -->|submitted| fan{fan_out<br/>routing: all}
-  build -->|blocked| blocked_out([blocked])
-  fan --> c[review_correctness]
-  fan --> s[review_security]
-  fan --> t[review_tests]
-  c --> v{verdict<br/>join: all}
-  s --> v
-  t --> v
-  v -->|all clear| done([done])
-  v -->|findings, budget left| build
-  v -->|out of rounds| escalated([paused])
-```
+This release supplies lifecycle instructions and preserves actual tool/audit records.
+It does not enforce semantic completion of every knowledge step or establish quality
+gains. Missing tools/checks must be disclosed. Existing configured rule policies
+remain separate: this template does not activate or weaken tool restrictions, and
+host-level enforcement still depends on backend capability.
 
-Each reviewer sets its own `*_ok` var; the verdict gate routes on all three. `build` clears those vars on entry so a loopback cannot inherit last round's passes.
+### Migration and customization
 
-### The rest
+orc-default and orc-review-only are version 2; existing active runs retain the frozen
+definition they started with. User/project overrides keep their existing precedence.
+The overlapping orc-plan-build-verify, orc-fix-verify, orc-supervisor,
+orc-parallel-review and orc-evidence-review built-ins are retired. A task or default
+configuration naming one receives explicit migration guidance instead of silently
+running another graph. Select development, human sign-off or review existing work;
+use a user/project or inline flow for genuinely different routing such as fan-out.
+The engine continues to support custom planning, joins and supervision graphs.
 
-| Flow                    | Shape                                                                        |
-| ----------------------- | ---------------------------------------------------------------------------- |
-| `orc-review-only`       | One review pass, for a task a human moved straight to `review`               |
-| `orc-plan-build-verify` | planner → coder → reviewer, looping until the acceptance criteria pass. The planner can report `insufficient_context` rather than inventing requirements |
-| `orc-fix-verify`        | bugfix → independent confirmation the fix holds and a regression test exists |
-| `orc-supervisor`        | Executor keeps its session across rounds (`reset_on_revisit: false`); supervisor always gets a fresh one (`true`) so it cannot inherit the executor's blind spots |
+The engineering approach is informed by [Pstack](https://github.com/backnotprop/pstack)
+and [Ponytail](https://github.com/DietrichGebert/ponytail): targeted playbooks,
+smallest complete changes, connected-code review and reusable lessons. Comparative
+agent-quality measurements are deferred; process correctness and usability are
+validated separately.
 
 ## Authoring
 
 ```bash
 orc flow list                                     # what exists, plus anything invalid
-orc flow show orc-plan-build-verify               # nodes, edges, limits
+orc flow show orc-default               # nodes, edges, limits
 orc flow validate --file ./my-graph.json          # check before running anything
 orc flow create   --file ./my-graph.json          # save reusable, to ~/.orc/flows/
 orc flow attach <taskId> --file ./my-graph.json --start   # bespoke, this task only
-orc flow attach <taskId> --name orc-supervisor
+orc flow attach <taskId> --name orc-human-review
 orc flow status <taskId>                          # active nodes + ledger
 orc flow resume <taskId> --outcome approved       # resolve a human node
 orc flow halt   <taskId>                          # stop it, kill live nodes
