@@ -41,7 +41,7 @@ export function BackendPicker({ value, onChange, testId }: BackendPickerProps) {
         <SelectTrigger
           id={id}
           data-testid={testId ?? "backend-picker"}
-          className="bg-background border-surface-highest text-on-surface font-label text-xs"
+          className="bg-background border-control-border text-on-surface font-label text-xs"
         >
           <SelectValue />
         </SelectTrigger>

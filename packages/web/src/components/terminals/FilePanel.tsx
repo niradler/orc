@@ -80,7 +80,7 @@ function Directory({
               aria-current={!entry.directory && selected === entry.path ? "true" : undefined}
               title={entry.path}
               onClick={() => (entry.directory ? toggle(entry.path) : select(entry.path))}
-              className={`flex min-h-11 sm:min-h-8 w-full min-w-0 items-center gap-2 rounded px-2 text-left text-[13px] focus-visible:outline focus-visible:outline-1 focus-visible:outline-primary ${selected === entry.path ? "bg-primary/15 text-primary" : "hover:bg-surface-highest"}`}
+              className={`flex min-h-11 sm:min-h-8 w-full min-w-0 items-center gap-2 rounded px-2 text-left text-[13px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${selected === entry.path ? "bg-surface-highest text-on-surface" : "hover:bg-surface"}`}
             >
               <span className="flex w-3 shrink-0 items-center">
                 {entry.directory && (
@@ -92,7 +92,7 @@ function Directory({
               </span>
               <Icon
                 size={15}
-                className={`shrink-0 ${entry.directory ? "text-primary/80" : "text-on-surface-variant"}`}
+                className={`shrink-0 ${entry.directory ? "text-on-surface-variant" : "text-on-surface-variant"}`}
               />
               <span className="truncate">{entry.name}</span>
             </button>
@@ -220,16 +220,14 @@ export function FilePanel({
       className="file-panel flex flex-1 min-h-0 min-w-0 flex-col overflow-hidden text-sm"
     >
       <header className="flex shrink-0 items-center gap-2 border-b border-surface-highest px-3 py-2">
-        <span className="min-w-0 flex-1 text-xs font-semibold text-on-surface-variant">
-          Explorer
-        </span>
+        <span className="min-w-0 flex-1 text-xs font-medium text-on-surface-variant">Explorer</span>
         {selected !== null && (
           <button
             type="button"
             data-testid="files-browser-toggle"
             aria-expanded={browserOpen}
             onClick={() => setBrowserOpen(!browserOpen)}
-            className="md:hidden min-h-11 rounded-md px-2 text-sm text-primary hover:bg-surface-highest"
+            className="md:hidden min-h-11 rounded-md px-2 text-sm text-primary hover:bg-surface"
           >
             {browserOpen ? "Show document" : "Browse files"}
           </button>
@@ -241,7 +239,7 @@ export function FilePanel({
           title="Collapse all folders"
           disabled={expanded.size === 0}
           onClick={() => setExpanded(new Set())}
-          className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md p-1 text-on-surface-variant hover:bg-surface-highest hover:text-primary disabled:opacity-30 disabled:hover:bg-transparent"
+          className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md p-1 text-on-surface-variant hover:bg-surface hover:text-primary disabled:opacity-30 disabled:hover:bg-transparent"
         >
           <ChevronsDownUp size={14} />
         </button>
@@ -255,7 +253,7 @@ export function FilePanel({
               queryKey: ["checkout-files", terminal.id],
             })
           }
-          className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md p-1 text-on-surface-variant hover:bg-surface-highest hover:text-primary"
+          className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md p-1 text-on-surface-variant hover:bg-surface hover:text-primary"
         >
           <RefreshCw size={14} className={root.isFetching ? "animate-spin" : ""} />
         </button>
@@ -278,7 +276,7 @@ export function FilePanel({
             title={rootPath}
             aria-expanded={rootOpen}
             onClick={() => setRootOpen((open) => !open)}
-            className="mb-1 flex min-h-11 sm:min-h-8 w-full min-w-0 items-center gap-2 rounded px-2 text-left text-[13px] font-semibold hover:bg-surface-highest focus-visible:outline focus-visible:outline-1 focus-visible:outline-primary"
+            className="mb-1 flex min-h-11 sm:min-h-8 w-full min-w-0 items-center gap-2 rounded px-2 text-left text-[13px] font-medium hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
           >
             <ChevronRight
               size={12}
@@ -309,7 +307,7 @@ export function FilePanel({
         </nav>
         {selected !== null && (
           <section aria-label="File preview" className="file-panel-preview flex flex-col">
-            <header className="flex shrink-0 items-center gap-2 bg-surface px-3 py-1.5">
+            <header className="flex shrink-0 items-center gap-2 bg-background px-3 py-1.5">
               <File size={14} className="shrink-0 text-primary" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs font-medium">
@@ -329,7 +327,7 @@ export function FilePanel({
                 data-testid="file-preview-close"
                 aria-label="Close file preview"
                 onClick={() => selectFile(null)}
-                className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md p-1 text-on-surface-variant hover:bg-surface-highest"
+                className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md p-1 text-on-surface-variant hover:bg-surface"
               >
                 <X size={14} />
               </button>

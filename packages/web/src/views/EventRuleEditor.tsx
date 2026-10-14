@@ -20,7 +20,7 @@ type Condition = {
   negate: boolean;
   ignoreCase: boolean;
 };
-const selectClass = "w-full rounded-md border border-outline-variant bg-background p-2 text-sm";
+const selectClass = "w-full rounded-md border border-control-border bg-background p-2 text-sm";
 const agentNames: Record<RuleHookBackend, string> = {
   claude: "Claude",
   cursor: "Cursor",
@@ -222,10 +222,7 @@ export function EventRuleEditor({
       ),
     );
   return (
-    <div
-      data-testid="event-rule-editor"
-      className="space-y-5 border border-outline-variant rounded-md p-4"
-    >
+    <div data-testid="event-rule-editor" className="space-y-5 py-4">
       <div className="grid gap-3 md:grid-cols-2">
         <div>
           <Label htmlFor="event-rule-id">Rule name</Label>
@@ -247,7 +244,7 @@ export function EventRuleEditor({
         </div>
       </div>
       <fieldset className="space-y-3">
-        <legend className="font-bold mb-2">1. Scope</legend>
+        <legend className="font-medium mb-2">1. Scope</legend>
         <Label htmlFor="rule-agent">Coding agent</Label>
         <select
           id="rule-agent"
@@ -330,7 +327,7 @@ export function EventRuleEditor({
         </div>
       </fieldset>
       <fieldset className="space-y-3">
-        <legend className="font-bold mb-2">2. Filtering</legend>
+        <legend className="font-medium mb-2">2. Filtering</legend>
         <select
           aria-label="Combine conditions"
           data-testid="rule-filter-match"
@@ -345,7 +342,7 @@ export function EventRuleEditor({
           <div
             data-testid="rule-condition"
             key={condition.key}
-            className="space-y-2 border border-outline-variant rounded-md p-3"
+            className="space-y-2 border-l border-outline-variant pl-3 py-1"
           >
             <div className="grid gap-2 md:grid-cols-3">
               <Input
@@ -461,7 +458,7 @@ export function EventRuleEditor({
         </p>
       </fieldset>
       <fieldset className="space-y-3">
-        <legend className="font-bold mb-2" data-testid="rule-target-heading">
+        <legend className="font-medium mb-2" data-testid="rule-target-heading">
           3. Target
         </legend>
         <select

@@ -59,7 +59,7 @@ function WorkspaceTree(props: TreeProps) {
           aria-valuemax={80}
           tabIndex={0}
           data-testid="workspace-resize"
-          className={`${mobile ? "hidden" : ""} shrink-0 bg-surface-highest hover:bg-primary/50 focus-visible:bg-primary/50 touch-none ${horizontal ? "w-2 cursor-col-resize" : "h-2 cursor-row-resize"}`}
+          className={`${mobile ? "hidden" : ""} shrink-0 bg-border hover:bg-surface focus-visible:bg-focus touch-none ${horizontal ? "w-2 cursor-col-resize" : "h-2 cursor-row-resize"}`}
           onDoubleClick={() => ratio(50)}
           onKeyDown={(event) => {
             const decrease = horizontal ? "ArrowLeft" : "ArrowUp";
@@ -131,9 +131,9 @@ function WorkspaceTree(props: TreeProps) {
       data-active={active === node.id ? "true" : "false"}
       onPointerDownCapture={() => focus(node.id)}
       onFocusCapture={() => focus(node.id)}
-      className={`flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden border ${active === node.id ? "border-primary/50" : "border-transparent"}`}
+      className={`flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden border ${active === node.id ? "border-outline-variant" : "border-transparent"}`}
     >
-      <header className="flex shrink-0 gap-1 items-center flex-wrap p-1.5 bg-surface border-b border-surface-highest">
+      <header className="flex shrink-0 gap-1 items-center flex-wrap p-1.5 bg-background border-b border-outline-variant">
         <select
           data-testid="pane-view"
           aria-label="Pane view"
@@ -148,7 +148,7 @@ function WorkspaceTree(props: TreeProps) {
                   : node.terminalId,
             });
           }}
-          className="min-h-11 sm:min-h-8 rounded-md border border-outline-variant bg-surface-highest text-base sm:text-sm p-1.5 min-w-0"
+          className="min-h-11 sm:min-h-8 rounded-md border border-control-border bg-background text-base sm:text-sm p-1.5 min-w-0"
         >
           <option value="terminal">Terminal</option>
           <option value="git">Git</option>
@@ -159,7 +159,7 @@ function WorkspaceTree(props: TreeProps) {
           aria-label="Pane terminal or checkout"
           value={terminal?.id ?? ""}
           onChange={(event) => setPane({ terminalId: event.target.value || null })}
-          className="flex-1 min-w-0 min-h-11 sm:min-h-8 rounded-md bg-surface text-base sm:text-sm p-1.5"
+          className="flex-1 min-w-0 min-h-11 sm:min-h-8 rounded-md border border-control-border bg-background text-base sm:text-sm p-1.5"
         >
           <option value="">Choose terminal</option>
           {terminals.map((terminal) => (
@@ -179,7 +179,7 @@ function WorkspaceTree(props: TreeProps) {
           title="Split side by side"
           disabled={leaves(root).length >= 8}
           onClick={() => split("row")}
-          className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-primary hover:bg-surface-highest disabled:opacity-40"
+          className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-primary hover:bg-surface disabled:opacity-40"
         >
           <Columns2 size={16} />
         </button>
@@ -190,7 +190,7 @@ function WorkspaceTree(props: TreeProps) {
           title="Split top and bottom"
           disabled={leaves(root).length >= 8}
           onClick={() => split("column")}
-          className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-primary hover:bg-surface-highest disabled:opacity-40"
+          className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-primary hover:bg-surface disabled:opacity-40"
         >
           <Rows2 size={16} />
         </button>
@@ -201,7 +201,7 @@ function WorkspaceTree(props: TreeProps) {
             aria-label="Close pane (keep terminal running)"
             title="Close pane; terminal keeps running"
             onClick={() => close(node.id)}
-            className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-highest"
+            className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-on-surface-variant hover:bg-surface"
           >
             <X size={16} />
           </button>
@@ -216,7 +216,7 @@ function WorkspaceTree(props: TreeProps) {
       ) : node.kind === "terminal" ? (
         renderTerminal(terminal.id)
       ) : node.kind === "git" ? (
-        <GitPanelBody key={terminal.id} terminal={terminal} />
+        <GitPanelBody key={terminal.id} terminal={terminal} paneId={node.id} />
       ) : (
         <FilePanel key={terminal.id} terminal={terminal} active={active === node.id} />
       )}
@@ -314,7 +314,7 @@ export function TerminalWorkspace(props: WorkspaceProps) {
         <nav
           aria-label="Workspace panes"
           data-testid="mobile-workspace-panes"
-          className="flex shrink-0 gap-1 overflow-x-auto border-b border-outline-variant bg-surface-low p-2"
+          className="flex shrink-0 gap-1 overflow-x-auto border-b border-outline-variant bg-background p-2"
         >
           {panes.map((pane, index) => (
             <button

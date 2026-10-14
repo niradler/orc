@@ -104,7 +104,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Search agent sessions: titles, summaries and conversation text"
-          className="w-full bg-surface-low border border-surface-highest rounded-lg pl-9 pr-3 py-2 font-body text-xs text-on-surface placeholder:text-outline"
+          className="w-full bg-background border border-control-border rounded-lg pl-9 pr-3 py-2 font-body text-xs text-on-surface placeholder:text-outline"
         />
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -128,7 +128,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
           <select
             data-testid="agent-filter"
             aria-label="Agent"
-            className="bg-surface-low border border-surface-highest rounded-lg min-h-11 px-3 py-2 font-label text-xs font-medium text-on-surface"
+            className="bg-background border border-control-border rounded-lg min-h-11 px-3 py-2 font-label text-xs font-medium text-on-surface"
             value={agent}
             onChange={(e) => setParam("agent", e.target.value || null)}
           >
@@ -175,7 +175,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
       ) : visible.length === 0 ? (
         <EmptyState message={searching ? "No sessions match" : "No sessions"} />
       ) : (
-        <div className="min-w-0 border border-surface-highest rounded-xl overflow-hidden bg-surface">
+        <div className="min-w-0 overflow-hidden">
           {!desktop ? (
             <div className="divide-y divide-border">
               {visible.slice(pageStart, pageStart + PAGE_SIZE).map((session) => {
@@ -189,7 +189,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                     data-testid="live-session-row"
                     data-session-id={session.session_id}
                     data-agent={session.agent}
-                    className="p-4 space-y-3"
+                    className="py-4 space-y-3"
                   >
                     <button
                       type="button"
@@ -234,7 +234,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                       <select
                         data-testid="link-task"
                         aria-label="Link task"
-                        className="block min-h-11 w-full rounded-md border border-border bg-surface-low px-3 text-sm text-on-surface"
+                        className="block min-h-11 w-full rounded-md border border-control-border bg-background px-3 text-sm text-on-surface"
                         value={session.task?.id ?? ""}
                         disabled={link.isPending}
                         onChange={(event) =>
@@ -268,7 +268,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow className="border-b border-surface-highest hover:bg-transparent">
+                <TableRow className="border-b border-border hover:bg-transparent">
                   <TableHead className={`${HEAD} w-40`}>Status</TableHead>
                   <TableHead className={`${HEAD} w-20`}>Agent</TableHead>
                   <TableHead className={HEAD}>Session</TableHead>
@@ -292,7 +292,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                       data-testid="live-session-row"
                       data-session-id={s.session_id}
                       data-agent={s.agent}
-                      className="border-b border-surface-highest/50 cursor-pointer hover:bg-surface-low"
+                      className="border-b border-border/65 cursor-pointer hover:bg-surface-high"
                       onClick={() => setParam("session", s.id)}
                     >
                       <TableCell className="font-label text-xs text-on-surface">
@@ -360,7 +360,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                           <select
                             data-testid="link-task"
                             aria-label="Link task"
-                            className="w-full bg-surface-low border border-surface-highest rounded-lg min-h-11 px-3 py-2 font-body text-xs text-on-surface"
+                            className="w-full bg-background border border-control-border rounded-lg min-h-11 px-3 py-2 font-body text-xs text-on-surface"
                             value={s.task?.id ?? ""}
                             disabled={link.isPending}
                             onChange={(e) =>

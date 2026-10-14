@@ -1,8 +1,8 @@
 import type { LiveSession } from "@/api/client";
 
 export const STATUS: Record<LiveSession["status"], { label: string; dot: string }> = {
-  running: { label: "working", dot: "bg-tertiary animate-pulse" },
-  idle: { label: "waiting for you", dot: "bg-primary" },
+  running: { label: "working", dot: "bg-progress" },
+  idle: { label: "waiting for you", dot: "bg-tertiary" },
   stopped: { label: "ended", dot: "bg-outline" },
   error: { label: "error", dot: "bg-error" },
 };

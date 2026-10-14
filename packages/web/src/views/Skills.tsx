@@ -55,8 +55,8 @@ const SOURCE_FILTERS: Array<{ value: SourceFilter; label: string }> = [
 ];
 
 const SOURCE_COLORS: Record<SkillSource, string> = {
-  builtin: "bg-primary/15 text-primary border-primary/30",
-  user: "bg-tertiary/15 text-tertiary border-tertiary/30",
+  builtin: "text-muted-foreground",
+  user: "text-muted-foreground",
 };
 
 export default function Skills({ projectId }: { projectId: string }) {
@@ -115,7 +115,7 @@ export default function Skills({ projectId }: { projectId: string }) {
               data-testid="new-skill-button"
               size="sm"
               onClick={() => setCreating(true)}
-              className="font-label text-sm  bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
+              className="font-label text-sm  "
             >
               <Plus size={12} className="mr-1" /> New skill
             </Button>
@@ -162,8 +162,8 @@ export default function Skills({ projectId }: { projectId: string }) {
               aria-pressed={sourceFilter === f.value}
               className={`font-label text-sm  px-3 py-1.5 border transition-colors ${
                 sourceFilter === f.value
-                  ? "bg-primary/15 text-primary border-primary/30"
-                  : "bg-surface-highest border-outline-variant text-muted-foreground hover:text-on-surface"
+                  ? "bg-surface-highest text-on-surface border-transparent"
+                  : "bg-transparent border-transparent text-muted-foreground hover:bg-surface-low hover:text-on-surface"
               }`}
             >
               {f.label}
@@ -183,13 +183,14 @@ export default function Skills({ projectId }: { projectId: string }) {
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && setQuery(e.currentTarget.value)}
             placeholder="Search skills..."
-            className="pl-8 bg-surface-highest border-outline-variant text-on-surface font-body text-sm placeholder:text-muted-foreground"
+            className="pl-8 bg-background text-on-surface font-body text-sm placeholder:text-muted-foreground"
           />
         </div>
         <Button
+          variant="outline"
           size="sm"
           onClick={() => setQuery(searchInput)}
-          className="font-label text-sm bg-primary/10 text-primary border border-primary/30"
+          className="font-label text-sm "
         >
           Search
         </Button>
@@ -205,7 +206,7 @@ export default function Skills({ projectId }: { projectId: string }) {
       ) : (skills ?? []).length === 0 ? (
         <EmptyState message={query ? "No skills match your search" : "No skills found"} />
       ) : (
-        <div className="border border-outline-variant rounded-sm overflow-hidden">
+        <div className="overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow className="border-b border-outline-variant hover:bg-transparent">
@@ -246,7 +247,7 @@ export default function Skills({ projectId }: { projectId: string }) {
                   </TableCell>
                   <TableCell>
                     <span
-                      className={`inline-flex px-2 py-0.5 font-label text-sm  border ${SOURCE_COLORS[skill.source]}`}
+                      className={`inline-flex py-0.5 font-label text-sm ${SOURCE_COLORS[skill.source]}`}
                     >
                       {skill.source}
                     </span>
@@ -362,7 +363,7 @@ function SkillDetailSheet({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <DetailField label="Source">
                       <span
-                        className={`inline-flex px-2 py-0.5 font-label text-sm  border ${SOURCE_COLORS[skill.source]}`}
+                        className={`inline-flex py-0.5 font-label text-sm ${SOURCE_COLORS[skill.source]}`}
                       >
                         {skill.source}
                       </span>
@@ -378,7 +379,7 @@ function SkillDetailSheet({
                     <div className="font-label text-sm  text-muted-foreground mb-2">
                       {selectedFile ?? "SKILL.md"}
                     </div>
-                    <div className="border border-outline-variant rounded-sm overflow-hidden">
+                    <div className="overflow-hidden">
                       {file?.encoding === "base64" && <div className="p-3">{navigation}</div>}
                       {fileQuery.error ? (
                         <p role="alert">{(fileQuery.error as Error).message}</p>
@@ -557,7 +558,7 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="my-skill"
-              className="bg-background border-outline-variant text-on-surface font-body text-sm"
+              className="bg-background text-on-surface font-body text-sm"
               autoFocus
             />
           </div>
@@ -663,7 +664,7 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
                 !content.trim() ||
                 files.some((file) => !file.path.trim())
               }
-              className="font-label text-sm bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              className="font-label text-sm "
             >
               {createSkill.isPending ? "Creating..." : "Create"}
             </Button>

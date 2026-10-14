@@ -221,7 +221,7 @@ export function KnowledgeNotebook({ projectId }: { projectId: string }) {
                 data-slug={entry.slug}
                 aria-current={currentKey === noteKey(entry) ? "page" : undefined}
                 onClick={() => select(entry)}
-                className={`flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${currentKey === noteKey(entry) ? "bg-primary/10 text-primary" : "text-on-surface hover:bg-surface-high"}`}
+                className={`flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary ${currentKey === noteKey(entry) ? "bg-surface-highest text-on-surface" : "text-on-surface hover:bg-surface-low"}`}
               >
                 <FileText className="shrink-0" size={15} />
                 <span data-testid="wiki-page-row" className="min-w-0">
@@ -241,10 +241,7 @@ export function KnowledgeNotebook({ projectId }: { projectId: string }) {
     </aside>
   );
   return (
-    <section
-      data-testid="knowledge-notebook"
-      className="min-w-0 rounded-lg border border-outline-variant bg-surface-low"
-    >
+    <section data-testid="knowledge-notebook" className="min-w-0 bg-background">
       <div className="flex flex-wrap items-center gap-2 border-b border-outline-variant p-3">
         <Button
           variant="ghost"
@@ -312,7 +309,7 @@ export function KnowledgeNotebook({ projectId }: { projectId: string }) {
           {graphOpen && (
             <div
               data-testid="notebook-graph"
-              className="mb-6 rounded-lg border border-outline-variant bg-background p-4"
+              className="mb-6 border-b border-outline-variant bg-background p-4"
             >
               <h2 className="mb-2 font-medium">Connected notes</h2>
               {connections.isLoading && (
@@ -343,7 +340,7 @@ export function KnowledgeNotebook({ projectId }: { projectId: string }) {
           {!slug && (
             <div className="mx-auto flex min-h-72 max-w-lg flex-col justify-center py-12">
               <FileText size={28} className="mb-4 text-primary" />
-              <h2 className="text-xl font-semibold">Your connected Wiki</h2>
+              <h2 className="text-xl font-medium">Your connected Wiki</h2>
               <p className="mt-3 text-base leading-relaxed text-outline">
                 Keep decisions, lessons and procedures close to your project. Open a note from
                 Files, or create one and connect it with{" "}
@@ -370,7 +367,7 @@ export function KnowledgeNotebook({ projectId }: { projectId: string }) {
                 <p className="mb-2 text-sm text-outline capitalize">
                   {page.data.kind} / {page.data.project_id ? "Project" : "Global"}
                 </p>
-                <h1 className="break-words text-2xl font-semibold">{page.data.title}</h1>
+                <h1 className="break-words text-2xl font-medium">{page.data.title}</h1>
                 <p className="mt-2 text-sm leading-relaxed text-outline">{page.data.summary}</p>
               </div>
               <DocumentWorkspace
@@ -419,7 +416,7 @@ export function KnowledgeNotebook({ projectId }: { projectId: string }) {
                   return saved.content;
                 }}
               />
-              <details className="mt-5 rounded-md border border-outline-variant p-3">
+              <details className="mt-5 border-t border-outline-variant p-3">
                 <summary className="cursor-pointer text-sm">
                   Revision history · current {page.data.revision}
                 </summary>
@@ -764,7 +761,7 @@ function CreateNote({
             <Label htmlFor="note-kind">Type</Label>
             <select
               id="note-kind"
-              className="min-h-11 w-full rounded-md border border-outline-variant bg-background px-3 text-sm text-on-surface"
+              className="min-h-11 w-full rounded-md border border-control-border bg-background px-3 text-sm text-on-surface"
               value={kind}
               onChange={(event) => setKind(event.target.value as WikiPage["kind"])}
             >

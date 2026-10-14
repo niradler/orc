@@ -109,7 +109,7 @@ export default function Projects() {
             data-testid="new-project-button"
             size="sm"
             onClick={() => setCreating(true)}
-            className="font-label text-sm  bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
+            className="font-label text-sm  bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <Plus size={12} className="mr-1" />
             New project
@@ -122,18 +122,18 @@ export default function Projects() {
         onValueChange={(v) => setFilter(v as ProjectStatus | "all")}
         className="mb-4"
       >
-        <TabsList className="bg-surface-highest border border-outline-variant gap-0 h-auto max-w-full flex-wrap justify-start p-0">
+        <TabsList className="bg-transparent gap-1 h-auto max-w-full flex-wrap justify-start p-0">
           {STATUS_TABS.map(({ value, label }) => (
             <TabsTrigger
               key={value}
               value={value}
-              className="font-label text-sm  px-4 py-2 rounded-none
-                data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none
+              className="font-label text-sm  px-4 py-2 rounded-md
+                data-[state=active]:bg-surface-highest data-[state=active]:text-on-surface data-[state=active]:shadow-none
                 text-muted-foreground hover:text-on-surface"
             >
               {label}
               {value !== "all" && counts[value] != null && (
-                <span className="ml-1.5 text-xs bg-surface-highest px-1.5 py-0.5 rounded-sm">
+                <span className="ml-1.5 text-xs text-muted-foreground px-1.5 py-0.5">
                   {counts[value]}
                 </span>
               )}
@@ -151,7 +151,7 @@ export default function Projects() {
           ) : visible.length === 0 ? (
             <EmptyState message="No projects" />
           ) : (
-            <div className="border border-outline-variant rounded-sm overflow-hidden">
+            <div className="overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow className="border-b border-outline-variant hover:bg-transparent">
@@ -183,10 +183,10 @@ export default function Projects() {
                       data-testid="project-row"
                       data-project-id={p.id}
                       data-project-name={p.name}
-                      className="border-b border-outline-variant/50 hover:bg-surface-low cursor-pointer"
+                      className="border-b border-outline-variant/50 hover:bg-surface-high cursor-pointer"
                       onClick={() => openEdit(p.id)}
                     >
-                      <TableCell className="font-body text-sm font-semibold text-on-surface">
+                      <TableCell className="font-body text-sm font-medium text-on-surface">
                         <button
                           type="button"
                           className="min-h-11 text-left hover:text-primary"
@@ -203,9 +203,11 @@ export default function Projects() {
                         {p.description ?? "\u2014"}
                       </TableCell>
                       <TableCell>
-                        <span
-                          className={`inline-flex rounded-md border px-2 py-1 text-xs font-medium capitalize ${p.status === "active" ? "border-secondary/30 bg-secondary/10 text-secondary" : p.status === "paused" ? "border-tertiary/30 bg-tertiary/10 text-tertiary" : "border-outline-variant bg-surface-high text-muted-foreground"}`}
-                        >
+                        <span className="inline-flex items-center gap-2 text-xs font-normal capitalize text-muted-foreground">
+                          <span
+                            aria-hidden="true"
+                            className={`h-1.5 w-1.5 shrink-0 rounded-full ${p.status === "active" ? "bg-secondary" : p.status === "paused" ? "bg-tertiary" : "bg-outline"}`}
+                          />
                           {p.status}
                         </span>
                       </TableCell>
@@ -214,7 +216,7 @@ export default function Projects() {
                           {(p.tags ?? []).map((t) => (
                             <span
                               key={t}
-                              className="font-label text-sm px-1.5 py-0.5 bg-surface-highest text-muted-foreground border border-outline-variant/50"
+                              className="font-label text-sm px-1.5 py-0.5 text-muted-foreground"
                             >
                               {t}
                             </span>
@@ -365,7 +367,7 @@ export function CreateProjectDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="project-name"
-              className="bg-background border-outline-variant text-on-surface font-body text-sm"
+              className="bg-background border-control-border text-on-surface font-body text-sm"
               autoFocus
             />
           </div>
@@ -377,7 +379,7 @@ export function CreateProjectDialog({
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Short description..."
               rows={2}
-              className="bg-background border-outline-variant text-on-surface font-body text-sm resize-none"
+              className="bg-background border-control-border text-on-surface font-body text-sm resize-none"
             />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -386,11 +388,11 @@ export function CreateProjectDialog({
               <Select value={status} onValueChange={(v) => setStatus(v as ProjectStatus)}>
                 <SelectTrigger
                   aria-label="Status"
-                  className="bg-background border-outline-variant text-on-surface font-label text-sm"
+                  className="bg-background border-control-border text-on-surface font-label text-sm"
                 >
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-surface-highest border-outline-variant">
+                <SelectContent className="bg-surface border-outline-variant">
                   {PROJECT_STATUSES.map((s) => (
                     <SelectItem key={s} value={s} className="font-label text-sm">
                       {s}
@@ -408,7 +410,7 @@ export function CreateProjectDialog({
                 value={maxWorkers}
                 onChange={(e) => setMaxWorkers(e.target.value)}
                 placeholder="1"
-                className="bg-background border-outline-variant text-on-surface font-body text-sm"
+                className="bg-background border-control-border text-on-surface font-body text-sm"
               />
             </div>
           </div>
@@ -421,7 +423,7 @@ export function CreateProjectDialog({
               value={tags}
               onChange={(e) => setTags(e.target.value)}
               placeholder="backend, api, v2"
-              className="bg-background border-outline-variant text-on-surface font-body text-sm"
+              className="bg-background border-control-border text-on-surface font-body text-sm"
             />
           </div>
           <div className="space-y-1.5">
@@ -434,7 +436,7 @@ export function CreateProjectDialog({
               value={scope}
               onChange={(e) => setScope(e.target.value)}
               placeholder="Absolute project folder (required to run tasks)"
-              className="bg-background border-outline-variant text-on-surface font-body text-sm"
+              className="bg-background border-control-border text-on-surface font-body text-sm"
             />
             <Button
               type="button"
@@ -488,7 +490,7 @@ export function CreateProjectDialog({
               type="submit"
               size="sm"
               disabled={createProject.isPending || !name.trim()}
-              className="font-label text-sm bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              className="font-label text-sm bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {createProject.isPending ? "Creating..." : "Create"}
             </Button>
@@ -574,7 +576,7 @@ function EditProjectDialog({
               data-testid="edit-project-name-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="bg-background border-outline-variant text-on-surface font-body text-sm"
+              className="bg-background border-control-border text-on-surface font-body text-sm"
               autoFocus
             />
           </div>
@@ -585,7 +587,7 @@ function EditProjectDialog({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
-              className="bg-background border-outline-variant text-on-surface font-body text-sm resize-none"
+              className="bg-background border-control-border text-on-surface font-body text-sm resize-none"
             />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -594,11 +596,11 @@ function EditProjectDialog({
               <Select value={status} onValueChange={(v) => setStatus(v as ProjectStatus)}>
                 <SelectTrigger
                   aria-label="Status"
-                  className="bg-background border-outline-variant text-on-surface font-label text-sm"
+                  className="bg-background border-control-border text-on-surface font-label text-sm"
                 >
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-surface-highest border-outline-variant">
+                <SelectContent className="bg-surface border-outline-variant">
                   {PROJECT_STATUSES.map((s) => (
                     <SelectItem key={s} value={s} className="font-label text-sm">
                       {s}
@@ -616,7 +618,7 @@ function EditProjectDialog({
                 value={maxWorkers}
                 onChange={(e) => setMaxWorkers(e.target.value)}
                 placeholder="1"
-                className="bg-background border-outline-variant text-on-surface font-body text-sm"
+                className="bg-background border-control-border text-on-surface font-body text-sm"
               />
             </div>
           </div>
@@ -628,7 +630,7 @@ function EditProjectDialog({
               aria-label="Tags (comma separated)"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
-              className="bg-background border-outline-variant text-on-surface font-body text-sm"
+              className="bg-background border-control-border text-on-surface font-body text-sm"
             />
           </div>
           <div className="space-y-1.5">
@@ -637,7 +639,7 @@ function EditProjectDialog({
               aria-label="Scope"
               value={scope}
               onChange={(e) => setScope(e.target.value)}
-              className="bg-background border-outline-variant text-on-surface font-body text-sm"
+              className="bg-background border-control-border text-on-surface font-body text-sm"
             />
           </div>
           <DialogFooter>
@@ -655,7 +657,7 @@ function EditProjectDialog({
               type="submit"
               size="sm"
               disabled={updateProject.isPending || !name.trim()}
-              className="font-label text-sm bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              className="font-label text-sm bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {updateProject.isPending ? "Saving..." : "Save"}
             </Button>
@@ -673,7 +675,7 @@ function EditProjectDialog({
 
 function ProjectSummaryBar({ summary }: { summary: ProjectSummary }) {
   return (
-    <div className="grid grid-cols-3 gap-4 p-3 bg-surface-highest/50 border border-outline-variant rounded-sm mt-2">
+    <div className="grid grid-cols-3 gap-4 py-3 border-t border-outline-variant mt-2">
       <DetailField label="Tasks">
         <span className="font-label text-sm text-primary">{summary.tasks.total}</span>
         {Object.keys(summary.tasks.by_status).length > 0 && (

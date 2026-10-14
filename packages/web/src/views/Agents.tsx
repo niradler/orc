@@ -171,7 +171,7 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
             data-testid="agent-row"
             data-agent-id={profile.id}
             onClick={() => openDetail(profile.id)}
-            className="w-full text-left border border-outline-variant rounded-sm p-4 hover:bg-surface-low"
+            className="w-full text-left border-b border-outline-variant p-4 hover:bg-surface-low"
           >
             <span className="block break-words text-base font-medium">{profile.name}</span>
             <span className="mt-1 block break-all text-xs text-muted-foreground">

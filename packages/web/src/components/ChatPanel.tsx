@@ -14,7 +14,7 @@ interface ChatPanelProps {
   onClose?: () => void;
 }
 const iconButton =
-  "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-highest hover:text-on-surface disabled:opacity-40";
+  "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-40";
 const textParts = { Text: ({ text }: { text: string }) => <Markdown>{text}</Markdown> };
 
 export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPanelProps) {
@@ -40,7 +40,7 @@ export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPan
       data-streaming={streaming ? "true" : "false"}
       style={embedded ? undefined : { width: panel.width, maxWidth: "50vw" }}
       className={cn(
-        "relative h-full flex min-h-0 flex-col bg-surface",
+        "relative h-full flex min-h-0 flex-col bg-background",
         embedded ? "w-full" : "shrink-0 border-l border-outline-variant",
       )}
     >
@@ -56,7 +56,7 @@ export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPan
           tabIndex={0}
           data-testid="chat-panel-resize"
           title="Drag to resize, double-click to reset"
-          className="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none hover:bg-primary/30 focus-visible:bg-primary/40 focus-visible:outline-none"
+          className="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none hover:bg-surface-highest focus-visible:bg-focus"
           {...panel.handleProps}
         />
       )}
@@ -64,7 +64,7 @@ export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPan
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <MessageSquare size={18} className="text-primary" />
-            <h2 className="text-sm font-semibold">Agent chat</h2>
+            <h2 className="text-sm font-medium">Agent chat</h2>
           </div>
           <button
             type="button"
@@ -82,7 +82,7 @@ export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPan
             aria-label="Chat agent"
             value={config.agent}
             onChange={(event) => setConfig({ ...config, agent: event.target.value })}
-            className="min-w-0 flex-1 min-h-11 rounded-md bg-surface-low px-2 text-base sm:text-sm text-on-surface disabled:opacity-50"
+            className="min-w-0 flex-1 min-h-11 rounded-md border border-control-border bg-background px-2 text-base sm:text-sm text-on-surface disabled:opacity-50"
           >
             {agents.map((agent) => (
               <option key={agent} value={agent}>
@@ -111,7 +111,7 @@ export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPan
               data-role={message.role}
               className={cn(
                 "mb-6 min-w-0 text-sm leading-relaxed",
-                message.role === "user" && "rounded-xl bg-surface-low px-3 py-3",
+                message.role === "user" && "rounded-lg bg-surface px-3 py-3",
               )}
             >
               <div
@@ -140,7 +140,7 @@ export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPan
         <div
           role="alert"
           data-testid="chat-error"
-          className="shrink-0 max-h-32 overflow-auto border-t border-error/30 bg-error/10 px-4 py-3 text-sm text-error break-words"
+          className="shrink-0 max-h-32 overflow-auto border-t border-outline-variant px-4 py-3 text-sm text-error break-words"
         >
           {error}
         </div>
@@ -148,12 +148,12 @@ export function ChatPanel({ open, onToggle, embedded = false, onClose }: ChatPan
       <div className="shrink-0 px-3 pt-2 pb-3">
         <ThreadPrimitive.ScrollToBottom
           aria-label="Scroll to latest response"
-          className="mx-auto mb-2 flex min-h-9 items-center gap-1 rounded-full border border-outline-variant bg-surface px-3 text-xs text-on-surface-variant disabled:hidden"
+          className="mx-auto mb-2 flex min-h-9 items-center gap-1 rounded-md border border-control-border bg-background px-3 text-xs text-on-surface-variant disabled:hidden"
         >
           <ArrowDown size={14} />
           Latest response
         </ThreadPrimitive.ScrollToBottom>
-        <ComposerPrimitive.Root className="rounded-xl border border-outline-variant bg-background p-2 focus-within:border-primary">
+        <ComposerPrimitive.Root className="rounded-lg border border-control-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus">
           <ComposerPrimitive.Input
             ref={input}
             data-testid="chat-input"

@@ -23,6 +23,9 @@ export default {
         },
         foreground: "rgb(var(--foreground) / <alpha-value>)",
         border: "rgb(var(--border) / <alpha-value>)",
+        "control-border": "rgb(var(--control-border) / <alpha-value>)",
+        focus: "rgb(var(--focus) / <alpha-value>)",
+        progress: "rgb(var(--progress) / <alpha-value>)",
         sidebar: "rgb(var(--surface-low) / <alpha-value>)",
         muted: {
           DEFAULT: "rgb(var(--surface-highest) / <alpha-value>)",

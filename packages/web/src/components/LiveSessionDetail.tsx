@@ -15,10 +15,10 @@ type TurnBlock = Turn["blocks"][number];
 const HIGHLIGHT = "session-search";
 
 const ROLE_STYLE: Record<Turn["role"], string> = {
-  user: "border-primary/40 bg-primary/5",
-  assistant: "border-surface-highest bg-surface-low",
-  tool: "border-surface-highest/60 bg-transparent",
-  system: "border-surface-highest/40 bg-transparent opacity-70",
+  user: "border-border/65",
+  assistant: "border-border/65",
+  tool: "border-border/65 bg-transparent",
+  system: "border-border/65 bg-transparent",
 };
 
 const PREVIEW_KEYS = [
@@ -114,7 +114,7 @@ function ToolBox({
     <details
       open={open || undefined}
       data-testid="tool-box"
-      className="rounded-lg border border-surface-highest bg-surface-lowest/60"
+      className="border-l border-border bg-background"
     >
       <summary className="flex cursor-pointer items-center gap-2 px-2 py-1.5 font-label text-xs font-medium text-outline hover:text-on-surface">
         <span className="text-secondary shrink-0">{block.name}</span>
@@ -125,15 +125,15 @@ function ToolBox({
           {done ? "done" : "no result"}
         </span>
       </summary>
-      <div className="space-y-2 border-t border-surface-highest px-2 py-2">
+      <div className="space-y-2 border-t border-border px-2 py-2">
         <div className="font-label text-[10px] font-medium text-outline">input</div>
-        <pre className="max-h-72 overflow-auto rounded-lg bg-surface-lowest p-2 font-mono text-xs text-on-surface-variant whitespace-pre-wrap break-words">
+        <pre className="max-h-72 overflow-auto rounded-lg bg-background p-2 font-mono text-xs text-on-surface-variant whitespace-pre-wrap break-words">
           {prettyInput(block.input)}
         </pre>
         {done && (
           <>
             <div className="font-label text-[10px] font-medium text-outline">result</div>
-            <pre className="max-h-96 overflow-auto rounded-lg bg-surface-lowest p-2 font-mono text-xs text-on-surface-variant whitespace-pre-wrap break-words">
+            <pre className="max-h-96 overflow-auto rounded-lg bg-background p-2 font-mono text-xs text-on-surface-variant whitespace-pre-wrap break-words">
               {block.result}
             </pre>
           </>
@@ -153,11 +153,11 @@ function Block({ block, matched }: { block: TurnBlock; matched: boolean }) {
         {label}
       </summary>
       {block.type === "thinking" ? (
-        <div className="mt-1 opacity-80">
+        <div className="mt-1">
           <Markdown>{block.text}</Markdown>
         </div>
       ) : (
-        <pre className="mt-1 max-h-96 overflow-auto rounded-lg bg-surface-lowest p-2 font-mono text-xs text-on-surface-variant whitespace-pre-wrap break-words">
+        <pre className="mt-1 max-h-96 overflow-auto rounded-lg bg-background p-2 font-mono text-xs text-on-surface-variant whitespace-pre-wrap break-words">
           {block.text}
         </pre>
       )}
@@ -271,7 +271,7 @@ export function LiveSessionDetail({
                   setCursor(0);
                 }}
                 placeholder="Search this session"
-                className="w-full bg-surface-low border border-surface-highest rounded-lg min-h-11 pl-7 pr-2 py-2 font-body text-xs text-on-surface"
+                className="w-full bg-background border border-control-border rounded-lg min-h-11 pl-7 pr-2 py-2 font-body text-xs text-on-surface"
               />
             </div>
             {search && (
@@ -364,7 +364,7 @@ export function LiveSessionDetail({
                         contentVisibility: "auto",
                         containIntrinsicSize: "auto 120px",
                       }}
-                      className={`rounded-lg border px-4 py-3 text-on-surface space-y-2 ${ROLE_STYLE[turn.role]} ${turn.index === target ? "ring-1 ring-primary" : ""}`}
+                      className={`border-b px-4 py-3 text-on-surface space-y-2 ${ROLE_STYLE[turn.role]} ${turn.index === target ? "ring-1 ring-primary" : ""}`}
                     >
                       <div className="font-label text-xs font-medium text-outline">
                         {turn.role}
@@ -394,7 +394,7 @@ export function LiveSessionDetail({
                 stick.current = true;
                 scrollToEnd();
               }}
-              className="absolute bottom-4 right-6 inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-surface-high px-3 py-1.5 font-body text-xs text-primary shadow-lg hover:bg-surface-bright"
+              className="absolute bottom-4 right-6 inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 font-body text-xs text-primary shadow-lg hover:bg-surface-bright"
             >
               <ArrowDown className="h-3.5 w-3.5" />
               Jump to latest

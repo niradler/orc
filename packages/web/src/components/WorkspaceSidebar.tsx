@@ -88,7 +88,7 @@ export function WorkspaceSidebar({
                 section.id === "settings" && "mt-auto",
                 rail && "justify-center px-0",
                 active === section.id
-                  ? "bg-surface-highest text-on-surface shadow-[inset_2px_0_0_rgb(var(--primary))]"
+                  ? "bg-surface-highest text-on-surface"
                   : "text-outline hover:bg-surface hover:text-on-surface",
               )}
             >

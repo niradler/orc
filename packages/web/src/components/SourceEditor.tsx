@@ -116,9 +116,19 @@ export function SourceEditor({
               backgroundColor: "rgb(var(--primary) / 0.25)",
             },
             ".cm-panels, .cm-tooltip": {
-              backgroundColor: "rgb(var(--surface))",
+              backgroundColor: "rgb(var(--surface-high))",
               color: "rgb(var(--foreground))",
             },
+            ".cm-textfield, .cm-button": {
+              background: "rgb(var(--background))",
+              color: "rgb(var(--foreground))",
+              border: "1px solid rgb(var(--control-border))",
+            },
+            ".cm-textfield:focus-visible, .cm-button:focus-visible": {
+              outline: "2px solid rgb(var(--focus))",
+              outlineOffset: "3px",
+            },
+            ".cm-placeholder": { color: "rgb(var(--muted-foreground))" },
             ".cm-content": { padding: "12px 0" },
             ".cm-line": { padding: "0 12px" },
           }),
@@ -186,7 +196,7 @@ export function SourceEditor({
       data-testid="code-editor"
       data-file-path={path}
       data-read-only={readOnly}
-      className="flex min-h-0 flex-col overflow-hidden rounded-sm border border-surface-highest"
+      className="flex min-h-0 flex-col overflow-hidden rounded-sm border border-control-border"
       style={{ height }}
     >
       <div className="flex shrink-0 items-center gap-2 border-b border-surface-highest px-2 py-1 text-xs">

@@ -67,7 +67,7 @@ function DiffSection({
             <div
               key={line.id}
               data-testid={`git-diff-${line.kind}`}
-              className={`flex min-w-max whitespace-pre ${line.kind === "add" ? "bg-secondary/10 text-secondary" : line.kind === "remove" ? "bg-error/10 text-error" : line.kind === "hunk" ? "bg-primary/10 text-primary" : line.kind === "meta" ? "text-on-surface-variant" : ""}`}
+              className={`flex min-w-max whitespace-pre ${line.kind === "add" ? "bg-secondary/10 text-secondary" : line.kind === "remove" ? "bg-error/10 text-error" : line.kind === "hunk" ? "bg-surface text-on-surface-variant" : line.kind === "meta" ? "text-on-surface-variant" : ""}`}
             >
               <span className="w-10 shrink-0 text-right pr-2 select-none opacity-60">
                 {line.old}
@@ -107,9 +107,9 @@ export function FileDiffCard({
     <section
       data-testid="git-diff-file"
       data-path={file.path}
-      className="rounded border border-surface-highest overflow-hidden"
+      className="border-t border-outline-variant overflow-hidden"
     >
-      <div data-testid="git-status-file" className="flex items-center bg-surface-highest/50 px-2">
+      <div data-testid="git-status-file" className="flex items-center px-2">
         <input
           type="checkbox"
           aria-label={`Select ${file.path}`}
@@ -122,7 +122,7 @@ export function FileDiffCard({
           data-testid="git-diff-file-toggle"
           aria-expanded={open}
           onClick={toggle}
-          className="flex-1 min-w-0 flex items-center gap-2 text-left p-3 hover:bg-surface-highest"
+          className="flex-1 min-w-0 flex items-center gap-2 text-left p-3 hover:bg-surface"
         >
           {open ? (
             <ChevronDown size={16} className="shrink-0" />

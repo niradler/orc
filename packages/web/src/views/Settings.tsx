@@ -71,7 +71,7 @@ export default function Settings() {
 
       <div className="max-w-lg space-y-8">
         <section aria-labelledby="appearance-title">
-          <h2 id="appearance-title" className="mb-1 text-base font-semibold">
+          <h2 id="appearance-title" className="mb-1 text-base font-medium">
             Appearance
           </h2>
           <p className="mb-4 text-sm text-muted-foreground">
@@ -93,7 +93,7 @@ export default function Settings() {
         </section>
         {/* API connection */}
         <section>
-          <h2 className="font-headline font-semibold text-base  text-on-surface mb-1">
+          <h2 className="font-headline font-medium text-base  text-on-surface mb-1">
             API connection
           </h2>
           <p className="font-body text-sm text-muted-foreground mb-4">
@@ -101,7 +101,7 @@ export default function Settings() {
             <code className="text-primary">/api</code> uses the current server or the configured
             development proxy.
           </p>
-          <Separator className="bg-surface-highest mb-4" />
+          <Separator className="bg-outline-variant mb-4" />
           <div className="space-y-4">
             <div className="space-y-2">
               <Label
@@ -116,7 +116,7 @@ export default function Settings() {
                 value={apiUrl}
                 onChange={(e) => setApiUrl(e.target.value)}
                 placeholder="/api  or  http://localhost:7700"
-                className="bg-surface-highest border-outline-variant text-on-surface font-body text-sm"
+                className="bg-background text-on-surface font-body text-sm"
               />
               <p className="font-body text-sm text-muted-foreground">
                 Use <code>/api</code> (dev proxy) or a direct URL when CORS is enabled.
@@ -135,7 +135,7 @@ export default function Settings() {
                 value={apiSecret}
                 onChange={(e) => setApiSecret(e.target.value)}
                 placeholder="Leave empty if no auth required"
-                className="bg-surface-highest border-outline-variant text-on-surface font-body text-sm"
+                className="bg-background text-on-surface font-body text-sm"
               />
             </div>
           </div>
@@ -145,13 +145,13 @@ export default function Settings() {
 
         {/* Terminal */}
         <section>
-          <h2 className="font-headline font-semibold text-base  text-on-surface mb-1">Terminal</h2>
+          <h2 className="font-headline font-medium text-base  text-on-surface mb-1">Terminal</h2>
           <p className="font-body text-sm text-muted-foreground mb-4">
             Prompt and agent status icons need a Nerd Font installed on this machine. Common ones
             are tried automatically; set the exact family name if your icons show as empty boxes.
             Applies to terminals opened after saving.
           </p>
-          <Separator className="bg-surface-highest mb-4" />
+          <Separator className="bg-outline-variant mb-4" />
           <div className="space-y-2">
             <Label
               htmlFor="settings-terminal-font"
@@ -164,21 +164,17 @@ export default function Settings() {
               value={terminalFont}
               onChange={(e) => setTerminalFont(e.target.value)}
               placeholder="e.g. MesloLGS NF"
-              className="bg-surface-highest border-outline-variant text-on-surface font-body text-sm"
+              className="bg-background text-on-surface font-body text-sm"
             />
           </div>
         </section>
 
         {/* Actions */}
         <div className="flex flex-wrap gap-3 pt-2">
-          <Button
-            data-testid="settings-save"
-            onClick={handleSave}
-            className="font-label text-sm bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
-          >
+          <Button data-testid="settings-save" onClick={handleSave} className="font-label text-sm ">
             {saved ? (
               <>
-                <CheckCircle size={12} className="mr-1.5 text-secondary" /> Saved
+                <CheckCircle size={12} className="mr-1.5" /> Saved
               </>
             ) : (
               <>
@@ -207,7 +203,7 @@ export default function Settings() {
 
         {/* Info */}
         <section>
-          <Separator className="bg-surface-highest mb-4" />
+          <Separator className="bg-outline-variant mb-4" />
           <div className="font-label text-sm  text-muted-foreground mb-2">Storage</div>
           <p className="font-body text-sm text-muted-foreground">
             Settings are persisted in <code className="text-primary">localStorage</code> and survive

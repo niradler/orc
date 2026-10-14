@@ -90,7 +90,7 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
             data-testid="new-job-button"
             size="sm"
             onClick={() => setCreating(true)}
-            className="font-label text-xs font-medium bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
+            className="font-label text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <Plus size={12} className="mr-1" /> New job
           </Button>
@@ -120,7 +120,7 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
               data-testid="job-row"
               data-job-id={job.id}
               data-job-name={job.name}
-              className="rounded-xl border border-border bg-surface p-4 space-y-3"
+              className="border-b border-border/65 py-4 space-y-3"
             >
               <div className="flex items-start justify-between gap-3">
                 <button
@@ -180,10 +180,10 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
           ))}
         </div>
       ) : (
-        <div className="min-w-0 border border-surface-highest rounded-xl overflow-hidden bg-surface">
+        <div className="min-w-0 overflow-hidden">
           <Table>
             <TableHeader>
-              <TableRow className="border-b border-surface-highest hover:bg-transparent">
+              <TableRow className="border-b border-border hover:bg-transparent">
                 <TableHead className="font-label text-xs font-medium text-outline">Name</TableHead>
                 <TableHead className="font-label text-xs font-medium text-outline w-24">
                   Trigger
@@ -213,7 +213,7 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                   data-testid="job-row"
                   data-job-id={job.id}
                   data-job-name={job.name}
-                  className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
+                  className="border-b border-border/65 hover:bg-surface-high cursor-pointer"
                   onClick={() => openJobDetail(job.id)}
                 >
                   <TableCell>
@@ -234,7 +234,7 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                     )}
                   </TableCell>
                   <TableCell>
-                    <span className="font-label text-xs  px-2 py-0.5 bg-surface-highest text-on-surface-variant border border-surface-highest/50 inline-flex">
+                    <span className="font-label text-xs text-on-surface-variant inline-flex">
                       {job.trigger_type}
                     </span>
                   </TableCell>
@@ -245,7 +245,7 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                   </TableCell>
                   <TableCell>
                     <span
-                      className={`font-label text-xs font-bold ${job.enabled ? "text-secondary" : "text-error"}`}
+                      className={`font-label text-xs font-medium ${job.enabled ? "text-on-surface" : "text-outline"}`}
                     >
                       {job.enabled ? "Enabled" : "Disabled"}
                     </span>
@@ -266,7 +266,7 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                         size="sm"
                         disabled={triggerJob.isPending}
                         onClick={() => triggerJob.mutate(job.id)}
-                        className="font-label text-sm min-h-11 px-3 bg-secondary/10 text-secondary border border-secondary/30 hover:bg-secondary/20"
+                        className="font-label text-sm min-h-11 px-3 bg-transparent text-on-surface border border-border hover:bg-surface-high"
                       >
                         <Play size={10} className="mr-1" /> Run
                       </Button>
@@ -383,7 +383,7 @@ function CreateJobDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="bg-surface border-surface-highest max-w-lg max-h-[85dvh] overflow-y-auto">
+      <DialogContent className="bg-surface border-border max-w-lg max-h-[85dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-headline text-sm font-medium text-on-surface">
             New job
@@ -398,7 +398,7 @@ function CreateJobDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Job name..."
-              className="bg-background border-surface-highest text-on-surface font-body text-sm"
+              className="bg-background border-control-border text-on-surface font-body text-sm"
               autoFocus
             />
           </div>
@@ -409,7 +409,7 @@ function CreateJobDialog({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Optional description..."
-              className="bg-background border-surface-highest text-on-surface font-body text-sm"
+              className="bg-background border-control-border text-on-surface font-body text-sm"
             />
           </div>
           <div className="space-y-1.5">
@@ -420,7 +420,7 @@ function CreateJobDialog({
               value={command}
               onChange={(e) => setCommand(e.target.value)}
               placeholder="bun run build"
-              className="bg-background border-surface-highest text-on-surface font-mono text-xs resize-none"
+              className="bg-background border-control-border text-on-surface font-mono text-xs resize-none"
               rows={3}
             />
           </div>
@@ -433,11 +433,11 @@ function CreateJobDialog({
               >
                 <SelectTrigger
                   aria-label="Trigger type"
-                  className="bg-background border-surface-highest text-on-surface font-body text-sm min-h-11"
+                  className="bg-background border-control-border text-on-surface font-body text-sm min-h-11"
                 >
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-surface border-surface-highest">
+                <SelectContent className="bg-surface border-border">
                   {TRIGGER_TYPES.map((t) => (
                     <SelectItem key={t} value={t} className="font-body text-sm">
                       {t}
@@ -456,7 +456,7 @@ function CreateJobDialog({
                   value={cronExpr}
                   onChange={(e) => setCronExpr(e.target.value)}
                   placeholder="*/5 * * * *"
-                  className="bg-background border-surface-highest text-on-surface font-mono text-xs"
+                  className="bg-background border-control-border text-on-surface font-mono text-xs"
                 />
               </div>
             )}
@@ -471,7 +471,7 @@ function CreateJobDialog({
                 required
                 value={timeoutSecs}
                 onChange={(e) => setTimeoutSecs(e.target.value)}
-                className="bg-background border-surface-highest text-on-surface font-body text-sm"
+                className="bg-background border-control-border text-on-surface font-body text-sm"
               />
             </div>
             <div className="space-y-1.5">
@@ -483,7 +483,7 @@ function CreateJobDialog({
                 required
                 value={maxRetries}
                 onChange={(e) => setMaxRetries(e.target.value)}
-                className="bg-background border-surface-highest text-on-surface font-body text-sm"
+                className="bg-background border-control-border text-on-surface font-body text-sm"
               />
             </div>
             <div className="space-y-1.5">
@@ -491,11 +491,11 @@ function CreateJobDialog({
               <Select value={overlap} onValueChange={(v) => setOverlap(v as typeof overlap)}>
                 <SelectTrigger
                   aria-label="Overlap"
-                  className="bg-background border-surface-highest text-on-surface font-body text-sm min-h-11"
+                  className="bg-background border-control-border text-on-surface font-body text-sm min-h-11"
                 >
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-surface border-surface-highest">
+                <SelectContent className="bg-surface border-border">
                   {OVERLAPS.map((o) => (
                     <SelectItem key={o} value={o} className="font-body text-sm">
                       {o}
@@ -511,11 +511,11 @@ function CreateJobDialog({
               <Select value={notifyOn} onValueChange={(v) => setNotifyOn(v as typeof notifyOn)}>
                 <SelectTrigger
                   aria-label="Notify on"
-                  className="bg-background border-surface-highest text-on-surface font-body text-sm min-h-11"
+                  className="bg-background border-control-border text-on-surface font-body text-sm min-h-11"
                 >
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-surface border-surface-highest">
+                <SelectContent className="bg-surface border-border">
                   {NOTIFY_OPTIONS.map((n) => (
                     <SelectItem key={n} value={n} className="font-body text-sm">
                       {n}
@@ -531,7 +531,7 @@ function CreateJobDialog({
                 value={workingDir}
                 onChange={(e) => setWorkingDir(e.target.value)}
                 placeholder="/path/to/dir"
-                className="bg-background border-surface-highest text-on-surface font-body text-sm"
+                className="bg-background border-control-border text-on-surface font-body text-sm"
               />
             </div>
           </div>
@@ -544,11 +544,11 @@ function CreateJobDialog({
               <SelectTrigger
                 aria-label="Project"
                 data-testid="job-project-select"
-                className="bg-background border-surface-highest text-on-surface font-body text-sm min-h-11"
+                className="bg-background border-control-border text-on-surface font-body text-sm min-h-11"
               >
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent className="bg-surface border-surface-highest">
+              <SelectContent className="bg-surface border-border">
                 <SelectItem value="__none__" className="font-body text-sm">
                   None
                 </SelectItem>
@@ -575,7 +575,7 @@ function CreateJobDialog({
               type="submit"
               size="sm"
               disabled={createJob.isPending || !name.trim() || !command.trim()}
-              className="font-label text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              className="font-label text-xs bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {createJob.isPending ? "Creating..." : "Create"}
             </Button>
@@ -625,7 +625,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="bg-surface border-surface-highest max-w-lg max-h-[85dvh] overflow-y-auto">
+      <DialogContent className="bg-surface border-border max-w-lg max-h-[85dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-headline text-sm font-medium text-on-surface">
             Edit job
@@ -638,7 +638,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
               aria-label="Name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="bg-background border-surface-highest text-on-surface font-body text-sm"
+              className="bg-background border-control-border text-on-surface font-body text-sm"
             />
           </div>
           <div className="space-y-1.5">
@@ -647,7 +647,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
               aria-label="Description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="bg-background border-surface-highest text-on-surface font-body text-sm"
+              className="bg-background border-control-border text-on-surface font-body text-sm"
             />
           </div>
           <div className="space-y-1.5">
@@ -656,7 +656,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
               aria-label="Command"
               value={command}
               onChange={(e) => setCommand(e.target.value)}
-              className="bg-background border-surface-highest text-on-surface font-mono text-xs resize-none"
+              className="bg-background border-control-border text-on-surface font-mono text-xs resize-none"
               rows={3}
             />
           </div>
@@ -669,11 +669,11 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
               >
                 <SelectTrigger
                   aria-label="Trigger type"
-                  className="bg-background border-surface-highest text-on-surface font-body text-sm min-h-11"
+                  className="bg-background border-control-border text-on-surface font-body text-sm min-h-11"
                 >
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-surface border-surface-highest">
+                <SelectContent className="bg-surface border-border">
                   {TRIGGER_TYPES.map((t) => (
                     <SelectItem key={t} value={t} className="font-body text-sm">
                       {t}
@@ -692,7 +692,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
                   value={cronExpr}
                   onChange={(e) => setCronExpr(e.target.value)}
                   placeholder="*/5 * * * *"
-                  className="bg-background border-surface-highest text-on-surface font-mono text-xs"
+                  className="bg-background border-control-border text-on-surface font-mono text-xs"
                 />
               </div>
             )}
@@ -707,7 +707,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
                 required
                 value={timeoutSecs}
                 onChange={(e) => setTimeoutSecs(e.target.value)}
-                className="bg-background border-surface-highest text-on-surface font-body text-sm"
+                className="bg-background border-control-border text-on-surface font-body text-sm"
               />
             </div>
             <div className="space-y-1.5">
@@ -719,7 +719,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
                 required
                 value={maxRetries}
                 onChange={(e) => setMaxRetries(e.target.value)}
-                className="bg-background border-surface-highest text-on-surface font-body text-sm"
+                className="bg-background border-control-border text-on-surface font-body text-sm"
               />
             </div>
             <div className="space-y-1.5">
@@ -727,11 +727,11 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
               <Select value={overlap} onValueChange={(v) => setOverlap(v as typeof overlap)}>
                 <SelectTrigger
                   aria-label="Overlap"
-                  className="bg-background border-surface-highest text-on-surface font-body text-sm min-h-11"
+                  className="bg-background border-control-border text-on-surface font-body text-sm min-h-11"
                 >
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-surface border-surface-highest">
+                <SelectContent className="bg-surface border-border">
                   {OVERLAPS.map((o) => (
                     <SelectItem key={o} value={o} className="font-body text-sm">
                       {o}
@@ -747,11 +747,11 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
               <Select value={notifyOn} onValueChange={(v) => setNotifyOn(v as typeof notifyOn)}>
                 <SelectTrigger
                   aria-label="Notify on"
-                  className="bg-background border-surface-highest text-on-surface font-body text-sm min-h-11"
+                  className="bg-background border-control-border text-on-surface font-body text-sm min-h-11"
                 >
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-surface border-surface-highest">
+                <SelectContent className="bg-surface border-border">
                   {NOTIFY_OPTIONS.map((n) => (
                     <SelectItem key={n} value={n} className="font-body text-sm">
                       {n}
@@ -767,8 +767,8 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
                 onClick={() => setEnabled(!enabled)}
                 className={`w-full min-h-11 rounded-md flex items-center justify-center border font-label text-xs font-medium transition-colors ${
                   enabled
-                    ? "bg-secondary/15 text-secondary border-secondary/30"
-                    : "bg-surface-highest text-outline border-surface-highest"
+                    ? "bg-surface-highest text-on-surface border-border"
+                    : "bg-background text-outline border-border"
                 }`}
               >
                 {enabled ? "\u25CF Enabled" : "\u25CB Disabled"}
@@ -790,7 +790,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
               type="submit"
               size="sm"
               disabled={updateJob.isPending || !name.trim() || !command.trim()}
-              className="font-label text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              className="font-label text-xs bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {updateJob.isPending ? "Saving..." : "Save"}
             </Button>

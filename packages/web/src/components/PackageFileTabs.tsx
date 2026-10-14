@@ -28,11 +28,7 @@ export function PackageFileTabs({
   const active = files.some((file) => file.path === selected) ? selected : files[0]?.path;
   return (
     <div className="min-w-0 overflow-hidden rounded-lg border border-surface-highest">
-      <div
-        role="tablist"
-        aria-label="Package files"
-        className="flex overflow-x-auto bg-surface-low"
-      >
+      <div role="tablist" aria-label="Package files" className="flex overflow-x-auto bg-background">
         {files.map((file) => (
           <button
             key={file.path}
@@ -42,7 +38,7 @@ export function PackageFileTabs({
             data-testid="package-file"
             data-file-name={file.path}
             title={file.path}
-            className={`shrink-0 border-r border-surface-highest px-4 py-3 text-sm ${active === file.path ? "border-t-2 border-t-primary bg-surface text-on-surface" : "border-t-2 border-t-transparent text-outline hover:text-on-surface"}`}
+            className={`shrink-0 border-r border-surface-highest px-4 py-3 text-sm ${active === file.path ? "border-t-2 border-t-transparent bg-surface-highest text-on-surface" : "border-t-2 border-t-transparent text-muted-foreground hover:bg-surface-low hover:text-on-surface"}`}
             onClick={() => {
               setSelected(file.path);
               setOpened((current) =>

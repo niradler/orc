@@ -13,7 +13,7 @@ export const BOARD_COLUMNS: {
   color: string;
 }[] = [
   { status: "todo", label: "Todo", color: "rgb(var(--muted-foreground))" },
-  { status: "doing", label: "In Progress", color: "rgb(var(--primary))" },
+  { status: "doing", label: "In Progress", color: "rgb(var(--progress))" },
   { status: "review", label: "Review", color: "rgb(var(--warning))" },
   { status: "blocked", label: "Blocked", color: "rgb(var(--error))" },
   { status: "done", label: "Done", color: "rgb(var(--success))" },
@@ -76,6 +76,6 @@ export function canTransition(_from: TaskStatus, _to: TaskStatus): boolean {
 export const PRIORITY_COLORS: Record<string, string> = {
   critical: "rgb(var(--error))",
   high: "rgb(var(--warning))",
-  normal: "rgb(var(--primary))",
+  normal: "rgb(var(--muted-foreground))",
   low: "rgb(var(--muted-foreground))",
 };

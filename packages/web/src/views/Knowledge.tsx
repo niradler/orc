@@ -191,13 +191,13 @@ function DocumentsTab({
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && setQuery(e.currentTarget.value)}
             placeholder="Find an indexed document…"
-            className="pl-8 bg-surface-highest border-outline-variant text-on-surface font-body text-sm"
+            className="pl-8 bg-background text-on-surface font-body text-sm"
           />
         </div>
         <Select value={collection} onValueChange={setCollection}>
           <SelectTrigger
             aria-label="Filter document collection"
-            className="w-40 bg-surface-highest border-outline-variant text-on-surface font-label text-sm"
+            className="w-40 bg-background text-on-surface font-label text-sm"
           >
             <SelectValue placeholder="All collections" />
           </SelectTrigger>
@@ -212,11 +212,7 @@ function DocumentsTab({
             ))}
           </SelectContent>
         </Select>
-        <Button
-          size="sm"
-          onClick={handleSearch}
-          className="font-label text-sm bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
-        >
+        <Button size="sm" onClick={handleSearch} className="font-label text-sm ">
           Search
         </Button>
         {query && (
@@ -278,7 +274,7 @@ function DocumentsTab({
                 data-testid="knowledge-source-collection"
                 key={entry.name}
                 onClick={() => setCollection(entry.name)}
-                className={`min-w-0 rounded-lg border p-4 text-left ${collection === entry.name ? "border-primary bg-primary/5" : "border-outline-variant bg-surface"}`}
+                className={`min-w-0 border-b border-outline-variant p-4 text-left ${collection === entry.name ? "bg-surface-highest" : "hover:bg-surface-low"}`}
               >
                 <h3 className="break-words font-medium">{entry.name}</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -313,7 +309,7 @@ function DocumentsTab({
                   key={r.docid}
                   data-testid="knowledge-result"
                   type="button"
-                  className="w-full text-left border border-outline-variant rounded-sm p-4 hover:bg-surface-low transition-colors"
+                  className="w-full text-left border-b border-outline-variant p-4 hover:bg-surface-low transition-colors"
                   onClick={() => {
                     setIndexingWarning(undefined);
                     setSelectedDoc(`qmd://${r.path}`);
@@ -322,8 +318,8 @@ function DocumentsTab({
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <FileText size={12} className="text-primary flex-shrink-0" />
-                        <span className="font-body text-sm font-semibold text-on-surface truncate">
+                        <FileText size={12} className="text-muted-foreground flex-shrink-0" />
+                        <span className="font-body text-sm font-medium text-on-surface truncate">
                           {r.title || r.path}
                         </span>
                       </div>
@@ -332,12 +328,14 @@ function DocumentsTab({
                           {r.path}
                         </div>
                       )}
-                      <div className="font-label text-sm text-primary mb-2">{r.collection}</div>
+                      <div className="font-label text-sm text-muted-foreground mb-2">
+                        {r.collection}
+                      </div>
                       <div className="font-body text-sm text-muted-foreground line-clamp-2">
                         {r.snippet}
                       </div>
                     </div>
-                    <span className="font-label text-sm text-muted-foreground bg-surface-highest px-1.5 py-0.5 rounded-sm flex-shrink-0">
+                    <span className="font-label text-sm text-muted-foreground px-1.5 py-0.5 rounded-sm flex-shrink-0">
                       {r.score.toFixed(2)}
                     </span>
                   </div>
@@ -467,7 +465,7 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
             data-testid="add-collection-button"
             size="sm"
             onClick={() => setCreating(true)}
-            className="font-label text-sm  bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
+            className="font-label text-sm  "
           >
             <Plus size={12} className="mr-1" />
             Add collection
@@ -495,7 +493,7 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
       ) : (collections ?? []).length === 0 ? (
         <EmptyState message="No collections" />
       ) : (
-        <div className="border border-outline-variant rounded-sm overflow-hidden">
+        <div className="overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow className="border-b border-outline-variant hover:bg-transparent">
@@ -524,7 +522,7 @@ function CollectionsTab({ projectId }: { projectId?: string }) {
                   data-collection-name={c.name}
                   className="border-b border-outline-variant/50 hover:bg-surface-low"
                 >
-                  <TableCell className="font-label text-sm font-semibold text-primary">
+                  <TableCell className="font-label text-sm font-medium text-on-surface">
                     {c.name}
                   </TableCell>
                   <TableCell className="font-body text-sm text-muted-foreground truncate max-w-xs">
@@ -647,7 +645,7 @@ function AddCollectionDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="my-docs"
-              className="bg-background border-outline-variant text-on-surface font-body text-sm"
+              className="bg-background text-on-surface font-body text-sm"
               autoFocus
             />
           </div>
@@ -659,7 +657,7 @@ function AddCollectionDialog({
               value={path}
               onChange={(e) => setPath(e.target.value)}
               placeholder="/path/to/documents"
-              className="bg-background border-outline-variant text-on-surface font-body text-sm"
+              className="bg-background text-on-surface font-body text-sm"
             />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -670,7 +668,7 @@ function AddCollectionDialog({
                 value={pattern}
                 onChange={(e) => setPattern(e.target.value)}
                 placeholder="**/*.md"
-                className="bg-background border-outline-variant text-on-surface font-mono text-xs"
+                className="bg-background text-on-surface font-mono text-xs"
               />
             </div>
             <div className="space-y-1.5">
@@ -680,7 +678,7 @@ function AddCollectionDialog({
                 value={projId}
                 onChange={(e) => setProjId(e.target.value)}
                 placeholder="Optional"
-                className="bg-background border-outline-variant text-on-surface font-body text-sm"
+                className="bg-background text-on-surface font-body text-sm"
               />
             </div>
           </div>
@@ -699,7 +697,7 @@ function AddCollectionDialog({
               type="submit"
               size="sm"
               disabled={addCollection.isPending || !name.trim() || !path.trim()}
-              className="font-label text-sm bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              className="font-label text-sm "
             >
               {addCollection.isPending ? "Adding..." : "Add"}
             </Button>

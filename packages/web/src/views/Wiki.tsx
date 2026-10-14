@@ -101,7 +101,7 @@ export default function Wiki({ projectId }: { projectId: string }) {
       {error && <p role="alert">{(error as Error).message}</p>}
       {historyOpen && (
         <div className="space-y-2" data-testid="wiki-history-feed">
-          <h2 className="text-lg font-semibold">History</h2>
+          <h2 className="text-lg font-medium">History</h2>
           <p className="text-sm text-muted-foreground">Recent changes to your Wiki pages.</p>
           {changes.isLoading && <p>Loading learning history...</p>}
           {changes.data?.changes.length === 0 && (
@@ -112,10 +112,10 @@ export default function Wiki({ projectId }: { projectId: string }) {
               key={`${change.project_id ?? "global"}:${change.slug}:${change.revision}`}
               type="button"
               data-testid="wiki-change"
-              className="w-full text-left border border-outline-variant rounded-sm p-4 hover:bg-surface-low"
+              className="w-full text-left border-b border-outline-variant p-4 hover:bg-surface-low"
               onClick={() => selectPage(change.slug, change.project_id)}
             >
-              <div className="font-semibold text-sm">
+              <div className="font-medium text-sm">
                 {change.title}{" "}
                 <span className="text-muted-foreground">· revision {change.revision}</span>
               </div>
@@ -157,7 +157,7 @@ export default function Wiki({ projectId }: { projectId: string }) {
             <details
               key={entry.id}
               data-testid="wiki-audit-entry"
-              className="border border-outline-variant p-3 rounded-sm"
+              className="border-b border-outline-variant p-3"
             >
               <summary className="text-sm cursor-pointer">
                 {entry.action} · {entry.subject_ids.join(", ")} · {entry.actor ?? "unknown"} ·{" "}
@@ -243,7 +243,7 @@ export default function Wiki({ projectId }: { projectId: string }) {
                   }}
                 />
                 <div>
-                  <h3 className="text-xs font-semibold">Sources</h3>
+                  <h3 className="text-xs font-medium">Sources</h3>
                   <ul className="text-xs break-all">
                     {page.data.sources.map((source) => (
                       <li key={source}>
@@ -267,13 +267,13 @@ export default function Wiki({ projectId }: { projectId: string }) {
                 </div>
               </div>
             )}
-            <h3 className="text-sm font-semibold mt-6 mb-3">Revision history</h3>
+            <h3 className="text-sm font-medium mt-6 mb-3">Revision history</h3>
             {history.error && <p role="alert">{(history.error as Error).message}</p>}
             {history.data?.revisions.map((revision) => (
               <details
                 key={revision.revision}
                 data-testid="wiki-revision"
-                className="border border-outline-variant p-3 mb-2 rounded-sm"
+                className="border-b border-outline-variant p-3 mb-2"
               >
                 <summary className="text-xs cursor-pointer">
                   Revision {revision.revision} · {revision.note} · {revision.author}

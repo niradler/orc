@@ -1,7 +1,7 @@
+import "./ActivityPreview.css";
 import { useNavigate } from "react-router-dom";
 import { ErrorState } from "@/components/ErrorState";
 import { PriorityBadge } from "@/components/PriorityBadge";
-import { StatCard } from "@/components/StatCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -12,7 +12,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ViewHeader } from "@/components/ViewHeader";
 import { useJobs } from "@/hooks/useJobs";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useMemories } from "@/hooks/useMemories";
@@ -90,12 +89,73 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
         ? "Unassigned"
         : (projects?.find((p) => p.id === projectId)?.name ?? "");
 
+  const taskMetrics = [
+    {
+      label: "Doing",
+      value: displayedCount(tasksQuery, byStatus.doing ?? 0),
+      sub: "in progress",
+      path: "/tasks?view=table&status=doing",
+    },
+    {
+      label: "Review",
+      value: displayedCount(tasksQuery, byStatus.review ?? 0),
+      sub: "awaiting review",
+      path: "/tasks?view=table&status=review",
+    },
+    {
+      label: "Blocked",
+      value: displayedCount(tasksQuery, byStatus.blocked ?? 0),
+      sub: "needs attention",
+      path: "/tasks?view=table&status=blocked",
+    },
+    {
+      label: "Todo",
+      value: displayedCount(tasksQuery, (byStatus.todo ?? 0) + (byStatus.queued ?? 0)),
+      sub: "pending",
+      path: "/tasks?view=board",
+    },
+    {
+      label: "Done",
+      value: displayedCount(tasksQuery, byStatus.done ?? 0),
+      sub: "completed",
+      path: "/tasks?view=table&status=done",
+    },
+  ];
+  const resourceMetrics = [
+    {
+      label: "Active jobs",
+      value: displayedCount(jobsQuery, activeJobs.length),
+      sub: `of ${scopedJobs.length} total`,
+      path: "/jobs",
+    },
+    {
+      label: "Memories",
+      value: displayedCount(memoriesQuery, scopedMemories.length),
+      sub: "in this scope",
+      path: "/knowledge/memories",
+    },
+    {
+      label: "Projects",
+      value: (projects ?? []).filter((project) => project.status === "active").length,
+      sub: "active across workspace",
+      path: "/projects",
+    },
+  ];
+
   return (
-    <div>
-      <ViewHeader title="Activity" meta={scopeLabel !== "All Projects" ? scopeLabel : undefined} />
+    <div data-activity-preview data-testid="activity-preview" className="activity-preview">
+      <div className="activity-heading">
+        <div>
+          <h1 data-testid="view-title">Activity</h1>
+          <p data-testid="view-meta">{scopeLabel || "All projects"}</p>
+        </div>
+        <button type="button" className="activity-primary" onClick={() => navigate("/tasks")}>
+          View tasks
+        </button>
+      </div>
 
       {[tasksQuery, jobsQuery, memoriesQuery, sessionsQuery].some((query) => query.isLoading) && (
-        <p role="status" className="mb-4 text-sm text-outline">
+        <p role="status" className="activity-muted mb-4">
           Loading activity…
         </p>
       )}
@@ -113,286 +173,228 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
             onRetry={() => query.refetch()}
           />
         ))}
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-        <StatCard
-          label="Doing"
-          value={displayedCount(tasksQuery, byStatus.doing ?? 0)}
-          accent="primary"
-          sub="in progress"
-          onClick={() => navigate("/tasks?view=table&status=doing")}
-        />
-        <StatCard
-          label="Review"
-          value={displayedCount(tasksQuery, byStatus.review ?? 0)}
-          accent="tertiary"
-          sub="awaiting review"
-          onClick={() => navigate("/tasks?view=table&status=review")}
-        />
-        <StatCard
-          label="Blocked"
-          value={displayedCount(tasksQuery, byStatus.blocked ?? 0)}
-          accent="error"
-          sub="needs attention"
-          onClick={() => navigate("/tasks?view=table&status=blocked")}
-        />
-        {/* queued counts as pending, not in progress: a queued task is waiting for
-            a worker slot and no agent has started on it. The kanban board maps it
-            into Todo for the same reason (see board-utils.toVisibleStatus). */}
-        <StatCard
-          label="Todo"
-          value={displayedCount(tasksQuery, (byStatus.todo ?? 0) + (byStatus.queued ?? 0))}
-          accent="muted"
-          sub="pending"
-          onClick={() => navigate("/tasks?view=board")}
-        />
-      </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-        <StatCard
-          label="Done"
-          value={displayedCount(tasksQuery, byStatus.done ?? 0)}
-          accent="secondary"
-          sub="completed"
-          onClick={() => navigate("/tasks?view=table&status=done")}
-        />
-        <StatCard
-          label="Active jobs"
-          value={displayedCount(jobsQuery, activeJobs.length)}
-          accent="primary"
-          sub={`of ${scopedJobs.length} total`}
-          onClick={() => navigate("/jobs")}
-        />
-        <StatCard
-          label="Memories"
-          value={displayedCount(memoriesQuery, scopedMemories.length)}
-          accent="muted"
-          onClick={() => navigate("/knowledge/memories")}
-        />
-        <StatCard
-          label="Projects"
-          value={(projects ?? []).filter((p) => p.status === "active").length}
-          accent="muted"
-          sub="active across workspace"
-          onClick={() => navigate("/projects")}
-        />
-      </div>
-
-      {/* Recent tasks */}
-      <div className="mb-8">
-        <div className="flex justify-between items-center px-1 mb-3">
-          <h2 className="font-headline font-semibold text-base text-on-surface">Recent tasks</h2>
+      <section className="activity-metrics" aria-label="Task summary">
+        {taskMetrics.map((metric) => (
           <button
+            key={metric.label}
             type="button"
-            onClick={() => navigate("/tasks")}
-            className="font-label text-xs text-primary hover:underline font-medium"
+            data-testid="stat-card"
+            data-stat-label={metric.label}
+            className="activity-metric"
+            onClick={() => navigate(metric.path)}
           >
+            <span className="activity-metric-label">{metric.label}</span>
+            <span data-testid="stat-card-value" className="activity-metric-value">
+              {metric.value}
+            </span>
+            <span className="activity-metric-sub">{metric.sub}</span>
+          </button>
+        ))}
+      </section>
+      <section className="activity-resources" aria-label="Workspace summary">
+        {resourceMetrics.map((metric) => (
+          <button
+            key={metric.label}
+            type="button"
+            data-testid="stat-card"
+            data-stat-label={metric.label}
+            onClick={() => navigate(metric.path)}
+          >
+            <span>{metric.label}</span>
+            <span data-testid="stat-card-value" className="activity-resource-value">
+              {metric.value}
+            </span>
+            <span className="activity-resource-sub">{metric.sub}</span>
+          </button>
+        ))}
+      </section>
+
+      <section className="activity-section">
+        <div className="activity-section-heading">
+          <h2>Recent tasks</h2>
+          <button type="button" className="activity-text-action" onClick={() => navigate("/tasks")}>
             View all
           </button>
         </div>
         {tasksLoading ? (
           <div className="space-y-2">
-            {[...Array(4)].map((_, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
-              <Skeleton key={i} className="h-10 w-full bg-surface-highest" />
+            {[0, 1, 2, 3].map((key) => (
+              <Skeleton key={key} className="h-10 w-full" />
             ))}
           </div>
         ) : recent.length === 0 ? (
-          <div className="text-center py-8 font-body text-xs text-outline">No tasks</div>
+          <p className="activity-empty">No tasks</p>
         ) : !desktop ? (
-          <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface">
+          <div className="activity-task-list">
             {recent.map((task) => (
-              <article key={task.id} className="p-4 space-y-3">
+              <article key={task.id} className="activity-task-mobile">
                 <button
                   type="button"
-                  className="min-h-11 text-sm text-left font-medium text-on-surface break-words hover:text-primary"
+                  className="activity-task-title"
                   onClick={() => navigate(`/tasks/${task.id}`)}
                 >
                   {task.title}
                 </button>
-                <div className="flex flex-wrap items-center gap-3">
-                  <StatusBadge status={task.status} />
-                  <PriorityBadge priority={task.priority} />
-                  <span className="text-xs text-outline">
-                    Updated {new Date(task.updated_at).toLocaleDateString()}
+                <div className="activity-task-meta">
+                  <span className="activity-status" data-status={task.status}>
+                    <StatusBadge status={task.status} />
                   </span>
+                  <span className="activity-priority">
+                    <PriorityBadge priority={task.priority} />
+                  </span>
+                  <span>{new Date(task.updated_at).toLocaleDateString()}</span>
                 </div>
               </article>
             ))}
           </div>
         ) : (
-          <div className="min-w-0 border border-surface-highest rounded-xl overflow-hidden bg-surface">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-b border-surface-highest hover:bg-transparent">
-                  <TableHead className="font-label text-xs font-medium text-outline">
-                    Title
-                  </TableHead>
-                  <TableHead className="font-label text-xs font-medium text-outline w-32">
-                    Status
-                  </TableHead>
-                  <TableHead className="font-label text-xs font-medium text-outline w-24">
-                    Priority
-                  </TableHead>
-                  <TableHead className="font-label text-xs font-medium text-outline w-28">
-                    Updated
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recent.map((task) => (
-                  <TableRow
-                    key={task.id}
-                    className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
-                    onClick={() => navigate(`/tasks/${task.id}`)}
-                  >
-                    <TableCell className="font-body text-xs text-on-surface truncate max-w-xs">
-                      <button
-                        type="button"
-                        className="text-left font-medium hover:text-primary"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          navigate(`/tasks/${task.id}`);
-                        }}
-                      >
-                        {task.title}
-                      </button>
-                    </TableCell>
-                    <TableCell>
+          <Table className="activity-task-table">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Task</TableHead>
+                <TableHead className="w-36">Status</TableHead>
+                <TableHead className="w-28">Priority</TableHead>
+                <TableHead className="w-28">Updated</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {recent.map((task) => (
+                <TableRow key={task.id} onClick={() => navigate(`/tasks/${task.id}`)}>
+                  <TableCell>
+                    <button
+                      type="button"
+                      className="activity-task-title"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        navigate(`/tasks/${task.id}`);
+                      }}
+                    >
+                      {task.title}
+                    </button>
+                  </TableCell>
+                  <TableCell>
+                    <span className="activity-status" data-status={task.status}>
                       <StatusBadge status={task.status} />
-                    </TableCell>
-                    <TableCell>
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <span className="activity-priority">
                       <PriorityBadge priority={task.priority} />
-                    </TableCell>
-                    <TableCell className="font-label text-xs text-outline">
-                      {new Date(task.updated_at).toLocaleDateString()}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                    </span>
+                  </TableCell>
+                  <TableCell className="activity-muted">
+                    {new Date(task.updated_at).toLocaleDateString()}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
         )}
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Active jobs */}
+      <div className="activity-secondary">
         {activeJobs.length > 0 && (
-          <div>
-            <div className="flex justify-between items-center px-1 mb-3">
-              <h2 className="font-headline font-semibold text-base text-on-surface">Active jobs</h2>
+          <section className="activity-section">
+            <div className="activity-section-heading">
+              <h2>Active jobs</h2>
               <button
                 type="button"
+                className="activity-text-action"
                 onClick={() => navigate("/jobs")}
-                className="font-label text-xs text-primary hover:underline font-medium"
               >
                 View all
               </button>
             </div>
-            <div className="space-y-2">
+            <div className="activity-row-list">
               {activeJobs.slice(0, 5).map((job) => (
                 <button
                   key={job.id}
                   type="button"
-                  className="w-full text-left bg-surface p-3 rounded-lg border border-surface-highest hover:bg-surface-low transition-colors cursor-pointer"
+                  className="activity-row"
                   onClick={() => navigate(`/jobs/${job.id}`)}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="font-label text-xs font-semibold text-on-surface">
-                      {job.name}
-                    </div>
-                    <span className="font-label text-xs text-outline">{job.trigger_type}</span>
-                  </div>
+                  <span className="activity-row-heading">
+                    <span>{job.name}</span>
+                    <span className="activity-muted">{job.trigger_type}</span>
+                  </span>
                   {job.last_run_at && (
-                    <div className="font-body text-xs text-outline mt-1">
-                      Last run: {new Date(job.last_run_at).toLocaleString()}
-                    </div>
+                    <span className="activity-row-description">
+                      Last run {new Date(job.last_run_at).toLocaleString()}
+                    </span>
                   )}
                 </button>
               ))}
             </div>
-          </div>
+          </section>
         )}
-
-        {/* Recent sessions */}
         {sessions.length > 0 && (
-          <div>
-            <div className="flex justify-between items-center px-1 mb-3">
-              <h2 className="font-headline font-semibold text-base text-on-surface">
-                Recent sessions
-              </h2>
+          <section className="activity-section">
+            <div className="activity-section-heading">
+              <h2>Recent sessions</h2>
               <button
                 type="button"
+                className="activity-text-action"
                 onClick={() => navigate("/sessions")}
-                className="font-label text-xs text-primary hover:underline font-medium"
               >
                 View all
               </button>
             </div>
-            <div className="space-y-2">
+            <div className="activity-row-list">
               {sessions.slice(0, 5).map((session) => (
                 <button
                   key={session.id}
                   type="button"
-                  className="w-full text-left bg-surface p-3 rounded-lg border border-surface-highest hover:bg-surface-low transition-colors cursor-pointer"
+                  className="activity-row"
                   onClick={() => navigate(`/sessions/${session.id}?tab=orc`)}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="font-label text-xs font-semibold text-on-surface">
-                      {session.agent ?? "unknown"}
-                    </div>
-                    <span className="font-label text-xs text-outline">
+                  <span className="activity-row-heading">
+                    <span>{session.agent ?? "unknown"}</span>
+                    <span className="activity-muted">
                       {new Date(session.created_at).toLocaleString()}
                     </span>
-                  </div>
+                  </span>
                   {session.summary && (
-                    <div className="font-body text-xs text-outline mt-1 truncate">
-                      {session.summary}
-                    </div>
+                    <span className="activity-row-description">{session.summary}</span>
                   )}
                 </button>
               ))}
             </div>
-          </div>
+          </section>
         )}
       </div>
 
-      {/* Projects Grid */}
       {projectId === "all" && (projects ?? []).length > 0 && (
-        <div className="mt-8">
-          <div className="flex justify-between items-center px-1 mb-3">
-            <h2 className="font-headline font-semibold text-base text-on-surface">Projects</h2>
+        <section className="activity-section">
+          <div className="activity-section-heading">
+            <h2>Projects</h2>
             <button
               type="button"
+              className="activity-text-action"
               onClick={() => navigate("/projects")}
-              className="font-label text-xs text-primary hover:underline font-medium"
             >
               View all
             </button>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div className="activity-projects">
             {(projects ?? [])
-              .filter((p) => p.status === "active")
+              .filter((project) => project.status === "active")
               .slice(0, 6)
-              .map((p) => (
+              .map((project) => (
                 <button
-                  key={p.id}
+                  key={project.id}
                   type="button"
-                  className="text-left bg-surface p-4 rounded-lg border border-surface-highest hover:bg-surface-low transition-colors cursor-pointer"
-                  onClick={() => navigate(`/projects/${p.id}`)}
+                  className="activity-row"
+                  onClick={() => navigate(`/projects/${project.id}`)}
                 >
-                  <div className="font-label text-xs font-semibold text-on-surface truncate">
-                    {p.name}
-                  </div>
-                  {p.description && (
-                    <div className="font-body text-xs text-outline mt-1 truncate">
-                      {p.description}
-                    </div>
+                  <span className="activity-row-heading">{project.name}</span>
+                  {project.description && (
+                    <span className="activity-row-description">{project.description}</span>
                   )}
                 </button>
               ))}
           </div>
-        </div>
+        </section>
       )}
     </div>
   );

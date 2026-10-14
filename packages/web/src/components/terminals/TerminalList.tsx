@@ -30,9 +30,7 @@ export function TerminalList({ terminals, activeId, onClose }: TerminalListProps
             data-active={active}
             className={cn(
               "flex items-center gap-2 px-3 py-2 transition-colors",
-              active
-                ? "bg-surface-highest border-r-2 border-primary"
-                : "hover:bg-surface-highest/50",
+              active ? "bg-surface-highest" : "hover:bg-surface",
             )}
           >
             <span
@@ -49,7 +47,7 @@ export function TerminalList({ terminals, activeId, onClose }: TerminalListProps
               <div
                 className={cn(
                   "truncate font-body text-xs",
-                  active ? "text-primary font-semibold" : "text-on-surface",
+                  active ? "text-on-surface font-medium" : "text-on-surface",
                 )}
               >
                 {terminal.name}

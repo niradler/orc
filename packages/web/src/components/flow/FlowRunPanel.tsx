@@ -158,7 +158,7 @@ function FlowRunBody({
 
       {run.halt_reason && (
         <div
-          className="p-2 rounded-lg border border-error/30 bg-error/5 space-y-0.5"
+          className="p-2 rounded-lg border border-border bg-transparent space-y-0.5"
           data-testid="flow-halt-reason"
           data-halt-reason={run.halt_reason}
         >
@@ -287,7 +287,7 @@ function HumanGateForm({
 
   return (
     <div
-      className="p-3 rounded-lg border border-tertiary/40 bg-tertiary/5 space-y-3"
+      className="p-3 rounded-lg border border-border bg-transparent space-y-3"
       data-testid="flow-gate-form"
       data-gate-node={nodeRun.node_id}
     >
@@ -308,7 +308,7 @@ function HumanGateForm({
             <SelectTrigger
               aria-label="Outcome"
               data-testid="flow-gate-outcome"
-              className="bg-background border-surface-highest text-on-surface font-label text-sm min-h-11 sm:min-h-9"
+              className="bg-background border-control-border text-on-surface font-label text-sm min-h-11 sm:min-h-9"
             >
               <SelectValue placeholder="Pick an outcome" />
             </SelectTrigger>
@@ -328,7 +328,7 @@ function HumanGateForm({
               value={outcome}
               onChange={(e) => setOutcome(e.target.value)}
               placeholder="e.g. approved"
-              className="bg-background border-surface-highest text-on-surface font-body text-sm min-h-11 sm:min-h-9"
+              className="bg-background border-control-border text-on-surface font-body text-sm min-h-11 sm:min-h-9"
             />
             <p className="font-body text-sm text-outline">
               This node routes everything through a catch-all edge, so any outcome continues the
@@ -348,7 +348,7 @@ function HumanGateForm({
           value={comment}
           onChange={(e) => setComment(e.target.value)}
           placeholder="Why this outcome…"
-          className="bg-background border-surface-highest text-on-surface font-body text-sm resize-none"
+          className="bg-background border-control-border text-on-surface font-body text-sm resize-none"
           rows={2}
         />
       </div>
@@ -375,7 +375,7 @@ function HumanGateForm({
               { onSuccess: () => setComment("") },
             )
           }
-          className="font-label text-sm bg-tertiary/15 text-tertiary border border-tertiary/30 hover:bg-tertiary/25 min-h-11 sm:min-h-9 px-3"
+          className="font-label text-sm bg-primary text-primary-foreground hover:bg-primary/90 min-h-11 sm:min-h-9 px-3"
         >
           {resume.isPending ? "Resuming…" : "Resume flow"}
         </Button>

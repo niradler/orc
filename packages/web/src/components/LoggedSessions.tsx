@@ -50,7 +50,7 @@ export function LoggedSessions({ projectId }: { projectId: string }) {
       ) : rows.length === 0 ? (
         <EmptyState message="No ORC sessions" />
       ) : (
-        <div className="min-w-0 border border-surface-highest rounded-xl overflow-hidden bg-surface">
+        <div className="min-w-0 overflow-hidden">
           {!desktop ? (
             <div className="divide-y divide-border">
               {rows.map((session) => (
@@ -58,7 +58,7 @@ export function LoggedSessions({ projectId }: { projectId: string }) {
                   key={session.id}
                   data-testid="session-row"
                   data-session-id={session.id}
-                  className="p-4 space-y-3"
+                  className="py-4 space-y-3"
                 >
                   <button
                     type="button"
@@ -86,7 +86,7 @@ export function LoggedSessions({ projectId }: { projectId: string }) {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow className="border-b border-surface-highest hover:bg-transparent">
+                <TableRow className="border-b border-border hover:bg-transparent">
                   <TableHead className={HEAD}>Agent</TableHead>
                   <TableHead className={`${HEAD} w-24`}>Version</TableHead>
                   <TableHead className={HEAD}>Summary</TableHead>
@@ -101,7 +101,7 @@ export function LoggedSessions({ projectId }: { projectId: string }) {
                     key={s.id}
                     data-testid="session-row"
                     data-session-id={s.id}
-                    className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
+                    className="border-b border-border/65 hover:bg-surface-high cursor-pointer"
                     onClick={() => openDetail(s.id)}
                   >
                     <TableCell className="font-label text-xs text-primary">

@@ -26,13 +26,13 @@ export function KanbanColumn({
     data: { type: "column", status },
   });
 
-  let borderClass = "border-surface-highest";
+  let borderClass = "border-transparent";
   if (isValidDrop === true && isOver) {
-    borderClass = "border-primary/60 bg-primary/5";
+    borderClass = "border-outline bg-surface-high";
   } else if (isValidDrop === true) {
-    borderClass = "border-primary/30";
+    borderClass = "border-border";
   } else if (isValidDrop === false) {
-    borderClass = "border-error/20 border-dashed opacity-50";
+    borderClass = "border-error border-dashed";
   }
 
   return (
@@ -44,18 +44,18 @@ export function KanbanColumn({
         ${borderClass}
       `}
     >
-      <div className="flex-shrink-0 px-3 py-2.5 border-b border-surface-highest">
+      <div className="flex-shrink-0 px-3 py-2.5 border-b border-border">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div
-              className="w-2 h-2 rounded-full flex-shrink-0"
+              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
               style={{ backgroundColor: color }}
             />
             <span className="font-label text-sm font-medium text-on-surface-variant">{label}</span>
           </div>
           <span
             className="text-[11px] font-label px-1.5 py-0.5 rounded-sm
-              bg-surface-highest text-outline"
+              text-outline"
           >
             {tasks.length}
           </span>

@@ -56,18 +56,18 @@ const TYPE_TABS: Array<{ value: MemoryType | "all"; label: string }> = [
 ];
 
 const IMPORTANCE_COLORS: Record<string, string> = {
-  critical: "bg-error/15 text-error border-error/30",
-  high: "bg-tertiary/15 text-tertiary border-tertiary/30",
-  normal: "bg-surface-highest text-on-surface border-outline-variant/50",
-  low: "bg-surface-highest text-muted-foreground border-outline-variant/50",
+  critical: "text-error",
+  high: "text-tertiary",
+  normal: "text-muted-foreground",
+  low: "text-muted-foreground",
 };
 
 const TYPE_COLORS: Record<string, string> = {
-  rule: "bg-primary/15 text-primary border-primary/30",
-  decision: "bg-tertiary/15 text-tertiary border-tertiary/30",
-  discovery: "bg-secondary/15 text-secondary border-secondary/30",
-  event: "bg-surface-highest text-on-surface border-outline-variant/50",
-  fact: "bg-surface-highest text-muted-foreground border-outline-variant/50",
+  rule: "text-muted-foreground",
+  decision: "text-muted-foreground",
+  discovery: "text-muted-foreground",
+  event: "text-muted-foreground",
+  fact: "text-muted-foreground",
 };
 
 const IMPORTANCES = ["low", "normal", "high", "critical"] as const;
@@ -133,7 +133,7 @@ export default function Memories({
             data-testid="new-memory-button"
             size="sm"
             onClick={() => setCreating(true)}
-            className="font-label text-sm  bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
+            className="font-label text-sm  "
           >
             <Plus size={12} className="mr-1" /> New memory
           </Button>
@@ -151,12 +151,12 @@ export default function Memories({
             aria-pressed={typeFilter === tab.value}
             className={`font-label text-sm  px-3 py-1.5 border transition-colors ${
               typeFilter === tab.value
-                ? "bg-primary/15 text-primary border-primary/30"
-                : "bg-surface-highest border-outline-variant text-muted-foreground hover:text-on-surface"
+                ? "bg-surface-highest text-on-surface border-transparent"
+                : "bg-transparent border-transparent text-muted-foreground hover:bg-surface-low hover:text-on-surface"
             }`}
           >
             {tab.label}
-            <span className="ml-1.5 opacity-70">{typeCounts[tab.value] ?? 0}</span>
+            <span className="ml-1.5 text-muted-foreground">{typeCounts[tab.value] ?? 0}</span>
           </button>
         ))}
       </div>
@@ -174,13 +174,14 @@ export default function Memories({
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && setQuery(e.currentTarget.value)}
             placeholder="Search memories..."
-            className="pl-8 bg-surface-highest border-outline-variant text-on-surface font-body text-sm placeholder:text-muted-foreground"
+            className="pl-8 bg-background text-on-surface font-body text-sm placeholder:text-muted-foreground"
           />
         </div>
         <Button
+          variant="outline"
           size="sm"
           onClick={() => setQuery(searchInput)}
-          className="font-label text-sm bg-primary/10 text-primary border border-primary/30"
+          className="font-label text-sm "
         >
           Search
         </Button>
@@ -211,7 +212,7 @@ export default function Memories({
       ) : filtered.length === 0 ? (
         <EmptyState message={isSearching ? "No results" : "No memories"} />
       ) : (
-        <div className="border border-outline-variant rounded-sm overflow-hidden">
+        <div className="overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow className="border-b border-outline-variant hover:bg-transparent">
@@ -257,14 +258,14 @@ export default function Memories({
                   </TableCell>
                   <TableCell>
                     <span
-                      className={`inline-flex px-2 py-0.5 font-label text-sm  border ${TYPE_COLORS[mem.type] ?? ""}`}
+                      className={`inline-flex py-0.5 font-label text-sm ${TYPE_COLORS[mem.type] ?? ""}`}
                     >
                       {mem.type}
                     </span>
                   </TableCell>
                   <TableCell>
                     <span
-                      className={`inline-flex px-2 py-0.5 font-label text-sm  border ${IMPORTANCE_COLORS[mem.importance] ?? ""}`}
+                      className={`inline-flex py-0.5 font-label text-sm ${IMPORTANCE_COLORS[mem.importance] ?? ""}`}
                     >
                       {mem.importance}
                     </span>
@@ -277,7 +278,7 @@ export default function Memories({
                       {(mem.tags ?? []).map((t) => (
                         <span
                           key={t}
-                          className="font-label text-sm px-1.5 py-0.5 bg-surface-highest text-muted-foreground border border-outline-variant/50"
+                          className="font-label text-sm px-1.5 py-0.5 text-muted-foreground"
                         >
                           {t}
                         </span>
@@ -400,7 +401,7 @@ function CreateMemoryDialog({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Optional title..."
-              className="bg-background border-outline-variant text-on-surface font-body text-sm"
+              className="bg-background text-on-surface font-body text-sm"
             />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -409,7 +410,7 @@ function CreateMemoryDialog({
               <Select value={type} onValueChange={(v) => setType(v as MemoryType)}>
                 <SelectTrigger
                   aria-label="Type"
-                  className="bg-background border-outline-variant text-on-surface font-body text-sm h-9"
+                  className="bg-background text-on-surface font-body text-sm h-9"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -430,7 +431,7 @@ function CreateMemoryDialog({
               >
                 <SelectTrigger
                   aria-label="Importance"
-                  className="bg-background border-outline-variant text-on-surface font-body text-sm h-9"
+                  className="bg-background text-on-surface font-body text-sm h-9"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -452,7 +453,7 @@ function CreateMemoryDialog({
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="Memory content..."
-              className="bg-background border-outline-variant text-on-surface font-body text-sm resize-none"
+              className="bg-background text-on-surface font-body text-sm resize-none"
               rows={4}
               autoFocus
             />
@@ -465,7 +466,7 @@ function CreateMemoryDialog({
                 value={source}
                 onChange={(e) => setSource(e.target.value)}
                 placeholder="e.g. claude-code"
-                className="bg-background border-outline-variant text-on-surface font-body text-sm"
+                className="bg-background text-on-surface font-body text-sm"
               />
             </div>
             <div className="space-y-1.5">
@@ -475,7 +476,7 @@ function CreateMemoryDialog({
                 value={scope}
                 onChange={(e) => setScope(e.target.value)}
                 placeholder="e.g. project:orc"
-                className="bg-background border-outline-variant text-on-surface font-body text-sm"
+                className="bg-background text-on-surface font-body text-sm"
               />
             </div>
           </div>
@@ -489,7 +490,7 @@ function CreateMemoryDialog({
                 value={tags}
                 onChange={(e) => setTags(e.target.value)}
                 placeholder="tag1, tag2, ..."
-                className="bg-background border-outline-variant text-on-surface font-body text-sm"
+                className="bg-background text-on-surface font-body text-sm"
               />
             </div>
             <div className="space-y-1.5">
@@ -499,7 +500,7 @@ function CreateMemoryDialog({
                 type="datetime-local"
                 value={expiresAt}
                 onChange={(e) => setExpiresAt(e.target.value)}
-                className="bg-background border-outline-variant text-on-surface font-body text-sm"
+                className="bg-background text-on-surface font-body text-sm"
               />
             </div>
           </div>
@@ -512,7 +513,7 @@ function CreateMemoryDialog({
               <SelectTrigger
                 aria-label="Project"
                 data-testid="memory-project-select"
-                className="bg-background border-outline-variant text-on-surface font-body text-sm h-9"
+                className="bg-background text-on-surface font-body text-sm h-9"
               >
                 <SelectValue />
               </SelectTrigger>
@@ -543,7 +544,7 @@ function CreateMemoryDialog({
               type="submit"
               size="sm"
               disabled={createMemory.isPending || !content.trim()}
-              className="font-label text-sm bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              className="font-label text-sm "
             >
               {createMemory.isPending ? "Saving..." : "Save"}
             </Button>
@@ -616,7 +617,7 @@ function EditMemoryDialog({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Optional title..."
-              className="bg-background border-outline-variant text-on-surface font-body text-sm"
+              className="bg-background text-on-surface font-body text-sm"
             />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -625,7 +626,7 @@ function EditMemoryDialog({
               <Select value={type} onValueChange={(v) => setType(v as MemoryType)}>
                 <SelectTrigger
                   aria-label="Type"
-                  className="bg-background border-outline-variant text-on-surface font-body text-sm h-9"
+                  className="bg-background text-on-surface font-body text-sm h-9"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -646,7 +647,7 @@ function EditMemoryDialog({
               >
                 <SelectTrigger
                   aria-label="Importance"
-                  className="bg-background border-outline-variant text-on-surface font-body text-sm h-9"
+                  className="bg-background text-on-surface font-body text-sm h-9"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -668,7 +669,7 @@ function EditMemoryDialog({
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="Memory content..."
-              className="bg-background border-outline-variant text-on-surface font-body text-sm resize-none"
+              className="bg-background text-on-surface font-body text-sm resize-none"
               rows={4}
             />
           </div>
@@ -680,7 +681,7 @@ function EditMemoryDialog({
                 value={source}
                 onChange={(e) => setSource(e.target.value)}
                 placeholder="e.g. claude-code"
-                className="bg-background border-outline-variant text-on-surface font-body text-sm"
+                className="bg-background text-on-surface font-body text-sm"
               />
             </div>
             <div className="space-y-1.5">
@@ -690,7 +691,7 @@ function EditMemoryDialog({
                 value={scope}
                 onChange={(e) => setScope(e.target.value)}
                 placeholder="e.g. project:orc"
-                className="bg-background border-outline-variant text-on-surface font-body text-sm"
+                className="bg-background text-on-surface font-body text-sm"
               />
             </div>
           </div>
@@ -703,7 +704,7 @@ function EditMemoryDialog({
               value={tags}
               onChange={(e) => setTags(e.target.value)}
               placeholder="tag1, tag2, ..."
-              className="bg-background border-outline-variant text-on-surface font-body text-sm"
+              className="bg-background text-on-surface font-body text-sm"
             />
           </div>
           <DialogFooter>
@@ -721,7 +722,7 @@ function EditMemoryDialog({
               type="submit"
               size="sm"
               disabled={updateMemory.isPending || !content.trim()}
-              className="font-label text-sm bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              className="font-label text-sm "
             >
               {updateMemory.isPending ? "Saving..." : "Save"}
             </Button>

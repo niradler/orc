@@ -89,7 +89,7 @@ export function SshHostSettings() {
               id="ssh-host"
               aria-label="Execution host"
               data-testid="ssh-host-picker"
-              className="bg-surface-highest border-outline-variant text-on-surface font-body text-sm"
+              className="bg-surface-highest border-control-border text-on-surface font-body text-sm"
             >
               <SelectValue />
             </SelectTrigger>
@@ -141,7 +141,7 @@ export function SshHostSettings() {
                 remotePort: alias ? portNumber : null,
               })
             }
-            className="font-label text-sm bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+            className="font-label text-sm bg-primary text-primary-foreground hover:bg-primary/90"
           >
             <Save size={12} className="mr-1.5" /> Use Host
           </Button>

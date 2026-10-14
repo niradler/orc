@@ -21,7 +21,7 @@ export function RemoteFolderBrowser({ initial, onPick, onClose }: RemoteFolderBr
   return (
     <div
       data-testid="remote-folder-browser"
-      className="border border-surface-highest rounded-md bg-surface-low p-1 space-y-1"
+      className="border border-outline-variant rounded-md bg-background p-1 space-y-1"
     >
       <div className="flex items-center gap-1 px-1">
         <button
@@ -31,7 +31,7 @@ export function RemoteFolderBrowser({ initial, onPick, onClose }: RemoteFolderBr
           onClick={() => data?.parent && setPath(data.parent)}
           aria-label="Parent folder"
           title="Parent folder"
-          className="shrink-0 min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center p-1 rounded-md text-on-surface-variant hover:bg-surface-highest hover:text-on-surface disabled:opacity-40"
+          className="shrink-0 min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center p-1 rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-40"
         >
           <ArrowUp size={12} />
         </button>
@@ -55,7 +55,7 @@ export function RemoteFolderBrowser({ initial, onPick, onClose }: RemoteFolderBr
               type="button"
               data-testid="remote-folder-entry"
               onClick={() => setPath(join(name))}
-              className="w-full min-h-11 flex items-center gap-1.5 px-1 py-0.5 rounded-md font-body text-xs text-on-surface-variant hover:bg-surface-highest hover:text-on-surface"
+              className="w-full min-h-11 flex items-center gap-1.5 px-1 py-0.5 rounded-md font-body text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface"
             >
               <Folder size={11} className="shrink-0 text-on-surface-variant" />
               <span className="truncate">{name}</span>
@@ -79,7 +79,7 @@ export function RemoteFolderBrowser({ initial, onPick, onClose }: RemoteFolderBr
           data-testid="remote-folder-pick"
           disabled={!data}
           onClick={() => data && onPick(data.path)}
-          className="min-h-11 px-2 py-0.5 rounded-md bg-primary/15 border border-primary/30 text-primary font-label text-xs hover:bg-primary/25 disabled:opacity-50"
+          className="min-h-11 px-2 py-0.5 rounded-md bg-transparent border border-control-border text-on-surface font-label text-xs hover:bg-surface disabled:opacity-50"
         >
           Use folder
         </button>

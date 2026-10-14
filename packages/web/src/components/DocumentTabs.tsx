@@ -47,7 +47,7 @@ export function DocumentTabs({
               tabs?.[next]?.focus();
             }}
             onClick={() => onSelect(path)}
-            className={`flex min-h-11 shrink-0 items-center gap-2 rounded px-3 text-sm ${path === selected ? "bg-primary/15 text-primary" : "text-outline hover:bg-surface-highest hover:text-on-surface"}`}
+            className={`flex min-h-11 shrink-0 items-center gap-2 rounded px-3 text-sm ${path === selected ? "bg-surface-highest text-on-surface" : "text-muted-foreground hover:bg-surface-low hover:text-on-surface"}`}
           >
             <FileText size={14} aria-hidden="true" />
             <span className="max-w-[180px] truncate">{path.split("/").pop()}</span>
@@ -61,7 +61,7 @@ export function DocumentTabs({
           data-testid="document-file-picker"
           value={selected}
           onChange={(event) => onSelect(event.target.value)}
-          className="min-h-11 min-w-0 flex-1 rounded border border-surface-highest bg-surface px-2 text-on-surface"
+          className="min-h-11 min-w-0 flex-1 rounded border border-control-border bg-surface px-2 text-on-surface"
         >
           {files.map((path) => (
             <option key={path} value={path}>

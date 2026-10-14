@@ -84,12 +84,8 @@ export function PackageEditor({
   const restored = useRef(packageDrafts.get(initial?.name ?? "new"));
   const initialFormat =
     initial?.format ?? ((formatParam || undefined) as PackageFormat | undefined);
-  const [format, setFormat] = useState<PackageFormat | undefined>(
-    restored.current?.format ?? initialFormat,
-  );
-  useEffect(() => {
-    if (!initial?.format) setFormat((formatParam || undefined) as PackageFormat | undefined);
-  }, [formatParam, initial?.format]);
+  // The URL is authoritative for the visible type, including rapid Back/Forward.
+  const format = initialFormat;
   const [source, setSource] = useState(
     restored.current?.source ?? initial?.content ?? packageTemplate(initialFormat ?? "apm"),
   );
@@ -162,7 +158,6 @@ export function PackageEditor({
   function selectFormat(value: PackageFormat) {
     const retained = packageDrafts.get(initial?.name ?? "new");
     if (retained && retained.format === value) {
-      setFormat(value);
       setFormatParam(value);
       setSource(retained.source);
       setFiles(retained.files);
@@ -171,7 +166,6 @@ export function PackageEditor({
       return;
     }
     if (retained && !confirmPackageDraftClose(initial?.name ?? "new")) return;
-    setFormat(value);
     setFormatParam(value);
     setSource(packageTemplate(value));
     setFiles([]);
@@ -195,7 +189,7 @@ export function PackageEditor({
             type="button"
             data-testid="package-type-apm"
             onClick={() => selectFormat("apm")}
-            className="rounded-lg border border-surface-highest p-5 text-left hover:border-primary"
+            className="rounded-lg border border-outline-variant p-5 text-left hover:bg-surface-low"
           >
             <strong className="block mb-2">APM package</strong>
             <span className="text-sm text-outline">
@@ -206,7 +200,7 @@ export function PackageEditor({
             type="button"
             data-testid="package-type-agent-plugin"
             onClick={() => selectFormat("agent-plugin")}
-            className="rounded-lg border border-surface-highest p-5 text-left hover:border-primary"
+            className="rounded-lg border border-outline-variant p-5 text-left hover:bg-surface-low"
           >
             <strong className="block mb-2">Agent Plugin</strong>
             <span className="text-sm text-outline">
@@ -247,7 +241,6 @@ export function PackageEditor({
                 disabled={busy}
                 onClick={() => {
                   if (!confirmPackageDraftClose("new")) return;
-                  setFormat(undefined);
                   setFormatParam("");
                   setSource(packageTemplate("apm"));
                   setFiles([]);
@@ -409,7 +402,7 @@ export function PackageEditor({
                           <select
                             id="package-agent-picker"
                             data-testid="package-agent-picker"
-                            className="w-full rounded border border-surface-highest bg-surface-low p-3"
+                            className="w-full rounded border border-control-border bg-background p-3"
                             value=""
                             onChange={async (event) => {
                               const id = event.target.value;
@@ -490,7 +483,7 @@ export function PackageEditor({
                     return (
                       <div
                         key={file.path}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded border border-surface-highest p-3"
+                        className="flex flex-wrap items-center justify-between gap-2 border-b border-outline-variant p-3"
                       >
                         <span className="min-w-0 break-words text-sm">
                           Included: {prefix.split("/").slice(-2)[0]}
@@ -540,7 +533,7 @@ export function PackageEditor({
                       return (
                         <label
                           key={skill.name}
-                          className="flex items-start gap-3 rounded border border-surface-highest p-3"
+                          className="flex items-start gap-3 border-b border-outline-variant p-3"
                           data-testid="package-skill-option"
                           data-skill-name={skill.name}
                         >
@@ -585,7 +578,7 @@ export function PackageEditor({
             )}
             {tab === "files" && (
               <>
-                <details className="rounded border border-surface-highest p-3">
+                <details className="border-t border-outline-variant p-3">
                   <summary className="cursor-pointer text-sm">Add a file or folder</summary>
                   <Label htmlFor="package-files">Add files from a folder</Label>
                   <Input

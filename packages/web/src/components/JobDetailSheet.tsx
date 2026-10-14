@@ -168,7 +168,7 @@ export function JobDetailSheet({ jobId, open, onClose, onEdit }: JobDetailSheetP
               size="sm"
               disabled={triggerJob.isPending}
               onClick={() => triggerJob.mutate(job.id)}
-              className="font-label text-xs font-medium bg-secondary/10 text-secondary border border-secondary/30 hover:bg-secondary/20"
+              className="font-label text-xs font-medium bg-transparent text-on-surface border border-control-border hover:bg-surface"
             >
               <Play size={12} className="mr-1.5" />
               {triggerJob.isPending ? "Triggering..." : "Trigger run"}
@@ -192,12 +192,12 @@ function RunItem({
   onToggle: () => void;
 }) {
   return (
-    <div className="min-w-0 border border-surface-highest rounded-xl overflow-hidden bg-surface">
+    <div className="min-w-0 border-y border-border overflow-hidden bg-background">
       <button
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        className="w-full flex items-center gap-3 px-3 py-2 hover:bg-surface-low transition-colors text-left"
+        className="w-full flex items-center gap-3 px-3 py-2 hover:bg-surface transition-colors text-left"
       >
         {expanded ? (
           <ChevronDown size={12} className="text-outline shrink-0" />

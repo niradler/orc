@@ -70,12 +70,12 @@ export function TerminalTaskLink({ terminal }: { terminal: Terminal }) {
             ref={menu}
             style={position}
             data-testid="terminal-task-link-menu"
-            className="fixed z-50 w-72 max-w-[calc(100vw-2rem)] max-h-[calc(100vh-16px)] overflow-auto bg-surface border border-surface-highest shadow-xl rounded p-3 space-y-3 text-sm"
+            className="fixed z-50 w-72 max-w-[calc(100vw-2rem)] max-h-[calc(100vh-16px)] overflow-auto bg-surface-high border border-outline-variant shadow-xl rounded p-3 space-y-3 text-sm"
           >
             <div className="flex justify-between items-center">
               <strong>Link this terminal checkout</strong>
               <button
-                className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-md hover:bg-surface-highest"
+                className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-md hover:bg-surface"
                 type="button"
                 aria-label="Close task linking"
                 onClick={() => setOpen(false)}
@@ -88,7 +88,7 @@ export function TerminalTaskLink({ terminal }: { terminal: Terminal }) {
               aria-label="Task to link"
               value={taskId}
               onChange={(event) => setTaskId(event.target.value)}
-              className="w-full min-h-11 rounded-md bg-surface-highest p-2"
+              className="w-full min-h-11 rounded-md border border-control-border bg-background p-2"
             >
               <option value="">Choose task</option>
               {tasks.data?.map((task) => (

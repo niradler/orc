@@ -141,7 +141,7 @@ export function CreateTaskDialog({
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Task title..."
-                className="bg-background border-surface-highest text-on-surface font-body text-sm"
+                className="bg-background border-control-border text-on-surface font-body text-sm"
                 autoFocus
               />
             </div>
@@ -153,7 +153,7 @@ export function CreateTaskDialog({
                 onChange={(e) => setBody(e.target.value)}
                 data-testid="task-body-input"
                 placeholder="Expected result, acceptance checks and constraints..."
-                className="bg-background border-surface-highest text-on-surface font-body text-sm resize-none"
+                className="bg-background border-control-border text-on-surface font-body text-sm resize-none"
                 rows={3}
               />
             </div>
@@ -163,7 +163,7 @@ export function CreateTaskDialog({
                 <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
                   <SelectTrigger
                     aria-label="Status"
-                    className="bg-background border-surface-highest text-on-surface font-label text-xs"
+                    className="bg-background border-control-border text-on-surface font-label text-xs"
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -181,7 +181,7 @@ export function CreateTaskDialog({
                 <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
                   <SelectTrigger
                     aria-label="Priority"
-                    className="bg-background border-surface-highest text-on-surface font-label text-xs"
+                    className="bg-background border-control-border text-on-surface font-label text-xs"
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -203,7 +203,7 @@ export function CreateTaskDialog({
                   type="datetime-local"
                   value={dueAt}
                   onChange={(e) => setDueAt(e.target.value)}
-                  className="bg-background border-surface-highest text-on-surface font-body text-sm"
+                  className="bg-background border-control-border text-on-surface font-body text-sm"
                 />
               </div>
               <div className="space-y-1.5">
@@ -215,7 +215,7 @@ export function CreateTaskDialog({
                   <SelectTrigger
                     aria-label="Project"
                     data-testid="new-task-project"
-                    className="bg-background border-surface-highest text-on-surface font-label text-xs"
+                    className="bg-background border-control-border text-on-surface font-label text-xs"
                   >
                     <SelectValue />
                   </SelectTrigger>
@@ -241,7 +241,7 @@ export function CreateTaskDialog({
                 value={tags}
                 onChange={(e) => setTags(e.target.value)}
                 placeholder="tag1, tag2"
-                className="bg-background border-surface-highest text-on-surface font-body text-sm"
+                className="bg-background border-control-border text-on-surface font-body text-sm"
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -252,7 +252,7 @@ export function CreateTaskDialog({
                   value={author}
                   onChange={(e) => setAuthor(e.target.value)}
                   placeholder="e.g. human"
-                  className="bg-background border-surface-highest text-on-surface font-body text-sm"
+                  className="bg-background border-control-border text-on-surface font-body text-sm"
                 />
               </div>
               <div className="space-y-1.5">
@@ -264,7 +264,7 @@ export function CreateTaskDialog({
                   value={skillName}
                   onChange={(e) => setSkillName(e.target.value)}
                   placeholder="Use workflow skills"
-                  className="bg-background border-surface-highest text-on-surface font-body text-sm"
+                  className="bg-background border-control-border text-on-surface font-body text-sm"
                 />
               </div>
             </div>

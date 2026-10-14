@@ -198,7 +198,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
         meta={`${filteredByProject.length} total`}
         action={
           <div className="flex items-center gap-2">
-            <div className="flex border border-surface-highest rounded-lg overflow-hidden">
+            <div className="flex rounded-md overflow-hidden">
               <button
                 type="button"
                 data-testid="tasks-view-board"
@@ -208,7 +208,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
                 onClick={() => setViewMode("board")}
                 className={`p-3 transition-colors ${
                   viewMode === "board"
-                    ? "bg-primary/15 text-primary"
+                    ? "bg-surface-highest text-on-surface"
                     : "text-outline hover:text-on-surface-variant"
                 }`}
               >
@@ -223,7 +223,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
                 onClick={() => setViewMode("table")}
                 className={`p-3 transition-colors ${
                   viewMode === "table"
-                    ? "bg-primary/15 text-primary"
+                    ? "bg-surface-highest text-on-surface"
                     : "text-outline hover:text-on-surface-variant"
                 }`}
               >
@@ -234,7 +234,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
               data-testid="new-task-button"
               size="sm"
               onClick={() => setCreating(true)}
-              className="font-label text-xs bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
+              className="font-label text-xs bg-primary text-primary-foreground hover:bg-primary/90"
             >
               <Plus size={14} className="mr-1" />
               New task
@@ -257,7 +257,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search tasks..."
-            className="bg-surface border-surface-highest text-on-surface font-body text-xs pl-8 min-h-11"
+            className="bg-background border-control-border text-on-surface font-body text-xs pl-8 min-h-11"
           />
         </div>
         <Select
@@ -266,11 +266,11 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
         >
           <SelectTrigger
             aria-label="Filter by priority"
-            className="bg-surface border-surface-highest text-on-surface font-label text-xs w-36 min-h-11"
+            className="bg-background border-control-border text-on-surface font-label text-xs w-36 min-h-11"
           >
             <SelectValue placeholder="Priority" />
           </SelectTrigger>
-          <SelectContent className="bg-surface-highest border-surface-highest">
+          <SelectContent className="bg-surface border-border">
             <SelectItem value="all" className="font-label text-xs">
               All Priorities
             </SelectItem>
@@ -314,17 +314,15 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
                 key={value}
                 value={value}
                 className="font-label text-sm px-4 py-2 rounded-md
-                    data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none
+                    data-[state=active]:bg-surface-highest data-[state=active]:text-on-surface data-[state=active]:shadow-none
                     text-outline hover:text-on-surface-variant"
               >
                 {label}
                 {value !== "all" && counts[value] != null && (
-                  <span className="ml-1.5 text-xs bg-surface-highest px-1.5 py-0.5 rounded-lg">
-                    {counts[value]}
-                  </span>
+                  <span className="ml-1.5 text-xs text-outline px-1.5 py-0.5">{counts[value]}</span>
                 )}
                 {value === "all" && (
-                  <span className="ml-1.5 text-xs bg-surface-highest px-1.5 py-0.5 rounded-lg">
+                  <span className="ml-1.5 text-xs text-outline px-1.5 py-0.5">
                     {filteredByProject.length}
                   </span>
                 )}
@@ -342,10 +340,10 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
             ) : visible.length === 0 ? (
               <EmptyState message="No tasks" />
             ) : (
-              <div className="border border-surface-highest rounded-lg overflow-hidden">
+              <div className="overflow-hidden">
                 <Table>
                   <TableHeader>
-                    <TableRow className="border-b border-surface-highest hover:bg-transparent">
+                    <TableRow className="border-b border-border hover:bg-transparent">
                       <TableHead className="font-label text-xs text-outline w-16">ID</TableHead>
                       <TableHead className="font-label text-xs text-outline">Title</TableHead>
                       <TableHead className="font-label text-xs text-outline w-40">Status</TableHead>
@@ -371,7 +369,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
                         data-testid="task-row"
                         data-task-id={task.id}
                         data-task-title={task.title}
-                        className="border-b border-surface-highest/50 hover:bg-surface-low cursor-pointer"
+                        className="border-b border-border/65 hover:bg-surface-high cursor-pointer"
                         onClick={() => openDetail(task.id)}
                       >
                         <TableCell className="font-label text-xs text-outline">
@@ -414,7 +412,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
                                   <StatusBadge status={task.status} />
                                 </SelectValue>
                               </SelectTrigger>
-                              <SelectContent className="bg-surface-highest border-surface-highest">
+                              <SelectContent className="bg-surface border-border">
                                 {ALL_STATUSES.map((s) => (
                                   <SelectItem key={s} value={s} className="font-label text-xs">
                                     {s.replace(/_/g, " ")}
@@ -433,7 +431,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
                               task.tags.slice(0, 2).map((tag) => (
                                 <span
                                   key={tag}
-                                  className="px-1.5 py-0.5 text-xs font-label bg-primary/10 text-primary border border-primary/20 rounded-lg"
+                                  className="px-1.5 py-0.5 text-xs font-label text-outline"
                                 >
                                   {tag}
                                 </span>
@@ -456,7 +454,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
                               {task.comments_count}
                             </span>
                           ) : (
-                            <span className="text-outline/50">-</span>
+                            <span className="text-outline">-</span>
                           )}
                         </TableCell>
                         <TableCell

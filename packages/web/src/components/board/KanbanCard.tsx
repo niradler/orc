@@ -3,7 +3,8 @@ import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, MessageSquare, Trash2 } from "lucide-react";
 import { useRef } from "react";
 import type { Task } from "@/api/client";
-import { mappedStatusLabel, PRIORITY_COLORS } from "./board-utils";
+import { PriorityBadge } from "@/components/PriorityBadge";
+import { mappedStatusLabel } from "./board-utils";
 
 interface KanbanCardProps {
   task: Task;
@@ -27,7 +28,6 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
     opacity: isDragging ? 0.3 : 1,
   };
 
-  const accentColor = PRIORITY_COLORS[task.priority] ?? PRIORITY_COLORS.normal;
   // `queued` sits in Todo and `paused` in Blocked - say so on the card rather
   // than letting the column silently rename the task's real status.
   const statusLabel = mappedStatusLabel(task.status);
@@ -63,19 +63,13 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
       {...dragListeners}
       onPointerUp={isDragOverlay ? undefined : handlePointerUp}
       className={`
-        group relative bg-surface border border-border rounded-lg
+        group relative bg-background border-b border-border/65 rounded-md
         cursor-grab active:cursor-grabbing
-        hover:border-outline-variant hover:bg-surface-bright
+        hover:bg-surface-high
         transition-colors duration-150
-        ${isDragOverlay ? "shadow-lg shadow-primary/20 rotate-1 scale-105" : ""}
+        ${isDragOverlay ? "bg-surface shadow-lg" : ""}
       `}
     >
-      {/* Priority accent stripe */}
-      <div
-        className="absolute left-0 top-0 bottom-0 w-1 rounded-l-sm"
-        style={{ backgroundColor: accentColor }}
-      />
-
       <div className="pl-4 pr-3 py-4">
         <button
           type="button"
@@ -98,7 +92,8 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
         )}
 
         <div className="flex items-center justify-between mt-2 gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+            <PriorityBadge priority={task.priority} />
             <span
               className="flex-shrink-0 w-4 h-4 rounded-lg bg-surface-highest
                 text-[8px] font-label font-bold text-outline
@@ -111,7 +106,7 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
               <span
                 data-testid="kanban-card-status"
                 className="text-xs font-label text-on-surface-variant
-                  bg-surface-highest px-1.5 py-0.5 rounded-lg flex-shrink-0"
+                  px-1.5 py-0.5 rounded flex-shrink-0"
               >
                 {statusLabel}
               </span>
@@ -120,7 +115,7 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
             {task.tags?.slice(0, 2).map((tag) => (
               <span
                 key={tag}
-                className="text-xs font-label text-outline bg-surface-highest
+                className="text-xs font-label text-outline
                   px-1.5 py-0.5 rounded-lg truncate max-w-[60px]"
               >
                 {tag}

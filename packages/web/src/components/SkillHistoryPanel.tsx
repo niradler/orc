@@ -46,7 +46,7 @@ export function SkillHistoryPanel({
           {new Date(mutation.updated_at * 1000).toLocaleString()} · {mutation.author}
         </p>
       )}
-      <h3 className="text-sm font-semibold">Instruction history</h3>
+      <h3 className="text-sm font-medium">Instruction history</h3>
       <Input
         data-testid="skill-revert-reason"
         aria-label="Reason for reverting instructions"
@@ -60,7 +60,7 @@ export function SkillHistoryPanel({
         <details
           key={change.id}
           data-testid="skill-history-change"
-          className="border border-surface-highest p-3 rounded-sm"
+          className="border-b border-outline-variant p-3"
         >
           <summary className="text-xs cursor-pointer">
             {change.action} · {change.reason} · {change.author}

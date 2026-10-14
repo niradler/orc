@@ -257,7 +257,7 @@ export function PackageImportDialog({
               id="package-import-format"
               data-testid="package-import-format"
               disabled={busy}
-              className="w-full rounded border border-surface-highest bg-surface-low p-3"
+              className="w-full rounded border border-control-border bg-surface-low p-3"
               value={format}
               onChange={(event) => setFormat(event.target.value as typeof format)}
             >

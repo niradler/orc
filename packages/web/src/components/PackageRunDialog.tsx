@@ -95,7 +95,7 @@ export function PackageRunDialog({
               <select
                 id="setup-backend"
                 data-testid="setup-backend"
-                className="w-full rounded border border-surface-highest bg-surface-low p-3"
+                className="w-full rounded border border-control-border bg-surface-low p-3"
                 value={setup.backend}
                 onChange={(event) =>
                   change({ backend: event.target.value as AgentSetup["backend"], agent: undefined })
@@ -234,7 +234,7 @@ export function PackageRunDialog({
           <Label htmlFor="command-mode">Command for your terminal</Label>
           <select
             id="command-mode"
-            className="w-full rounded border border-surface-highest bg-surface-low p-3 text-sm"
+            className="w-full rounded border border-control-border bg-surface-low p-3 text-sm"
             disabled={busy || command.isPending}
             value={commandMode}
             onChange={(event) => {

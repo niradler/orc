@@ -48,7 +48,7 @@ function TerminalViewport({ terminalId }: { terminalId: string }) {
     <div
       ref={ref}
       data-testid="terminal-viewport"
-      className="relative flex-1 min-h-0 min-w-0 bg-[#090e1a]"
+      className="relative flex-1 min-h-0 min-w-0 bg-black"
     >
       {engineError && (
         <p
@@ -324,10 +324,10 @@ export default function Terminals() {
         <aside
           data-testid="terminal-sidebar"
           style={{ width: sidebar.width }}
-          className="relative shrink-0 flex flex-col min-h-0 border-r border-outline-variant bg-surface-low"
+          className="relative shrink-0 flex flex-col min-h-0 border-r border-outline-variant bg-background"
         >
           <div className="shrink-0 p-3">
-            <h2 className="mb-3 text-sm font-semibold text-on-surface">Workspace terminals</h2>
+            <h2 className="mb-3 text-sm font-medium text-on-surface">Workspace terminals</h2>
             {newMenu}
           </div>
           <TerminalList
@@ -347,7 +347,7 @@ export default function Terminals() {
             tabIndex={0}
             data-testid="terminal-sidebar-resize"
             title="Drag to resize, double-click to reset"
-            className="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none hover:bg-primary/30 focus-visible:bg-primary/40 focus-visible:outline-none"
+            className="absolute inset-y-0 -right-1 z-20 w-2 cursor-col-resize touch-none hover:bg-surface-highest focus-visible:bg-focus"
             {...sidebar.handleProps}
           />
         </aside>
@@ -371,7 +371,7 @@ export default function Terminals() {
                   });
                 }}
                 disabled={terminals.length === 0}
-                className="flex-1 min-w-0 bg-surface-highest/50 border border-surface-highest text-on-surface font-label text-base sm:text-sm min-h-11 px-2 py-2 rounded-md"
+                className="flex-1 min-w-0 bg-background border border-control-border text-on-surface font-label text-base sm:text-sm min-h-11 px-2 py-2 rounded-md"
               >
                 {terminals.length === 0 && <option value="">No terminals</option>}
                 {terminals.map((t) => (
@@ -388,7 +388,7 @@ export default function Terminals() {
 
         {selected ? (
           <>
-            <header className="shrink-0 flex flex-wrap items-center gap-3 px-3 py-3 border-b border-outline-variant bg-surface min-w-0">
+            <header className="shrink-0 flex flex-wrap items-center gap-3 px-3 py-3 border-b border-outline-variant bg-background min-w-0">
               <span
                 className={cn(
                   "h-2 w-2 shrink-0 rounded-full",

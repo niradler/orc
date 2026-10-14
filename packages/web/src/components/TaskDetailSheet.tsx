@@ -190,7 +190,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                 {task.body && (
                   <div className="space-y-1">
                     <div className="font-label text-xs font-medium text-outline">Body</div>
-                    <div className="font-body text-sm text-on-surface whitespace-pre-wrap break-words bg-surface-highest/50 p-3 rounded-lg border border-surface-highest">
+                    <div className="font-body text-sm text-on-surface whitespace-pre-wrap break-words bg-transparent p-3 rounded-lg border border-border">
                       {task.body}
                     </div>
                   </div>
@@ -335,7 +335,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                             value={linkType}
                             onValueChange={(v) => setLinkType(v as TaskLinkType)}
                           >
-                            <SelectTrigger className="bg-background border-surface-highest text-on-surface font-label text-xs h-7">
+                            <SelectTrigger className="bg-background border-control-border text-on-surface font-label text-xs h-7">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent className="bg-surface-highest border-surface-highest">
@@ -355,7 +355,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                             value={linkToTaskId}
                             onChange={(e) => setLinkToTaskId(e.target.value)}
                             placeholder="Task ID..."
-                            className="bg-background border-surface-highest text-on-surface font-body text-sm h-7"
+                            className="bg-background border-control-border text-on-surface font-body text-sm h-7"
                           />
                         </div>
                       </div>
@@ -376,7 +376,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                           size="sm"
                           onClick={handleAddLink}
                           disabled={createLink.isPending || !linkToTaskId.trim()}
-                          className="font-label text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 h-6 px-2"
+                          className="font-label text-xs bg-primary text-primary-foreground hover:bg-primary/90 h-6 px-2"
                         >
                           Add
                         </Button>
@@ -394,10 +394,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                   {comments && comments.length > 0 && (
                     <div className="space-y-2">
                       {comments.map((c) => (
-                        <div
-                          key={c.id}
-                          className="p-2 bg-surface-highest/50 rounded-lg border border-surface-highest space-y-1"
-                        >
+                        <div key={c.id} className="py-2 border-b border-border space-y-1">
                           <div className="flex items-center justify-between">
                             <span className="font-label text-xs  text-primary">{c.author}</span>
                             <span className="font-label text-[10px] text-outline">
@@ -419,13 +416,13 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                         value={commentAuthor}
                         onChange={(e) => setCommentAuthor(e.target.value)}
                         placeholder="Author"
-                        className="bg-background border-surface-highest text-on-surface font-body text-sm h-7 w-24"
+                        className="bg-background border-control-border text-on-surface font-body text-sm h-7 w-24"
                       />
                       <Textarea
                         value={commentText}
                         onChange={(e) => setCommentText(e.target.value)}
                         placeholder="Add a comment..."
-                        className="bg-background border-surface-highest text-on-surface font-body text-sm resize-none flex-1"
+                        className="bg-background border-control-border text-on-surface font-body text-sm resize-none flex-1"
                         rows={2}
                       />
                     </div>
@@ -435,7 +432,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                         size="sm"
                         onClick={handleAddComment}
                         disabled={addComment.isPending || !commentText.trim()}
-                        className="font-label text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25 h-6 px-2"
+                        className="font-label text-xs bg-primary text-primary-foreground hover:bg-primary/90 h-6 px-2"
                       >
                         {addComment.isPending ? "..." : "Comment"}
                       </Button>
@@ -455,7 +452,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
               <Button
                 size="sm"
                 onClick={() => setEditing(true)}
-                className="font-label text-xs font-medium bg-primary/10 text-primary border border-primary/30 hover:bg-primary/20"
+                className="font-label text-xs font-medium bg-transparent text-on-surface border border-control-border hover:bg-surface"
               >
                 Edit task
               </Button>
@@ -532,7 +529,7 @@ function EditTaskDialog({
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent
         data-testid="edit-task-dialog"
-        className="bg-surface border-surface-highest max-w-lg max-h-[85vh] overflow-y-auto"
+        className="bg-surface-high border-border max-w-lg max-h-[85vh] overflow-y-auto"
       >
         <DialogHeader>
           <DialogTitle className="font-headline text-sm font-medium text-on-surface">
@@ -547,7 +544,7 @@ function EditTaskDialog({
               data-testid="edit-task-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="bg-background border-surface-highest text-on-surface font-body text-sm"
+              className="bg-background border-control-border text-on-surface font-body text-sm"
             />
           </div>
           <div className="space-y-1.5">
@@ -556,7 +553,7 @@ function EditTaskDialog({
               aria-label="Body"
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              className="bg-background border-surface-highest text-on-surface font-body text-sm resize-none"
+              className="bg-background border-control-border text-on-surface font-body text-sm resize-none"
               rows={4}
             />
           </div>
@@ -566,7 +563,7 @@ function EditTaskDialog({
               <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
                 <SelectTrigger
                   aria-label="Status"
-                  className="bg-background border-surface-highest text-on-surface font-label text-xs"
+                  className="bg-background border-control-border text-on-surface font-label text-xs"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -584,7 +581,7 @@ function EditTaskDialog({
               <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
                 <SelectTrigger
                   aria-label="Priority"
-                  className="bg-background border-surface-highest text-on-surface font-label text-xs"
+                  className="bg-background border-control-border text-on-surface font-label text-xs"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -607,7 +604,7 @@ function EditTaskDialog({
                 onChange={(e) =>
                   setDueAt(e.target.value ? new Date(e.target.value).toISOString() : "")
                 }
-                className="bg-background border-surface-highest text-on-surface font-body text-sm"
+                className="bg-background border-control-border text-on-surface font-body text-sm"
               />
             </div>
             <div className="space-y-1.5">
@@ -618,7 +615,7 @@ function EditTaskDialog({
               >
                 <SelectTrigger
                   aria-label="Project"
-                  className="bg-background border-surface-highest text-on-surface font-label text-xs"
+                  className="bg-background border-control-border text-on-surface font-label text-xs"
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -644,7 +641,7 @@ function EditTaskDialog({
               value={tags}
               onChange={(e) => setTags(e.target.value)}
               placeholder="tag1, tag2"
-              className="bg-background border-surface-highest text-on-surface font-body text-sm"
+              className="bg-background border-control-border text-on-surface font-body text-sm"
             />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -655,7 +652,7 @@ function EditTaskDialog({
                 value={skillName}
                 onChange={(e) => setSkillName(e.target.value)}
                 placeholder="e.g. code-review"
-                className="bg-background border-surface-highest text-on-surface font-body text-sm"
+                className="bg-background border-control-border text-on-surface font-body text-sm"
               />
             </div>
             <BackendPicker
@@ -689,7 +686,7 @@ function EditTaskDialog({
                 value={maxReviewRounds}
                 onChange={(e) => setMaxReviewRounds(e.target.value)}
                 min={1}
-                className="bg-background border-surface-highest text-on-surface font-body text-sm"
+                className="bg-background border-control-border text-on-surface font-body text-sm"
               />
             </div>
           </div>
@@ -716,7 +713,7 @@ function EditTaskDialog({
               type="submit"
               size="sm"
               disabled={updateTask.isPending || !title.trim()}
-              className="font-label text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25"
+              className="font-label text-xs bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {updateTask.isPending ? "Saving..." : "Save"}
             </Button>

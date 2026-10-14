@@ -21,7 +21,7 @@ import { EventRuleEditor } from "./EventRuleEditor";
 
 type Revision = Awaited<ReturnType<typeof api.rules.list>>["history"][number];
 type Rule = RulePolicy["rules"][number];
-const selectClass = "w-full rounded-md border border-outline-variant bg-background p-2 text-sm";
+const selectClass = "w-full rounded-md border border-control-border bg-background p-2 text-sm";
 const agents = ["claude", "codex", "cursor", "gemini"] as const;
 
 function workspaceKey(value: string): string {
@@ -255,11 +255,11 @@ export function RulesPanel() {
           </Button>
         </div>
         <TabsContent value="applied" className="space-y-4 pt-3">
-          <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-4">
             <select
               data-testid="rules-workspace-filter"
               aria-label="Filter by workspace"
-              className="max-w-sm rounded-md border border-outline-variant bg-background p-2 text-sm"
+              className="w-full min-w-0 max-w-full rounded-md border border-control-border bg-background p-2 text-sm sm:max-w-sm"
               value={current?.workspace ?? workspace}
               onChange={(event) => selectWorkspace(event.target.value)}
             >
@@ -278,7 +278,7 @@ export function RulesPanel() {
               Enforcement {state.data?.enabled ? "on" : "off"}
             </span>
           </div>
-          <div className="overflow-x-auto rounded-md border border-outline-variant">
+          <div className="overflow-x-auto">
             <table
               data-testid="applied-rules-table"
               className="w-full min-w-[860px] table-fixed text-left text-sm"
@@ -292,7 +292,7 @@ export function RulesPanel() {
                 <col style={{ width: "18%" }} />
                 <col style={{ width: "136px" }} />
               </colgroup>
-              <thead className="bg-surface-high text-xs text-muted-foreground">
+              <thead className="text-xs text-muted-foreground">
                 <tr>
                   {[
                     "Rule",
@@ -305,7 +305,7 @@ export function RulesPanel() {
                   ].map((heading, index) => (
                     <th
                       key={heading}
-                      className={`px-3 py-3 font-medium ${index === 6 ? "sticky right-0 bg-surface-high" : ""}`}
+                      className={`px-3 py-3 font-medium ${index === 6 ? "sticky right-0 bg-background" : ""}`}
                     >
                       {heading}
                     </th>

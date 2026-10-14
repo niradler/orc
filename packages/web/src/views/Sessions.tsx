@@ -9,7 +9,7 @@ import { useProjectScope } from "@/hooks/useProjectScope";
 type SessionsTab = "agent" | "orc";
 
 const TAB_TRIGGER = `font-label text-xs font-medium px-4 py-3 rounded-md
-  data-[state=active]:bg-primary/15 data-[state=active]:text-primary data-[state=active]:shadow-none
+  data-[state=active]:bg-surface-highest data-[state=active]:text-on-surface data-[state=active]:shadow-none
   text-outline hover:text-on-surface-variant`;
 
 export default function Sessions({ projectId: savedProjectId }: { projectId: string }) {
@@ -46,7 +46,7 @@ export default function Sessions({ projectId: savedProjectId }: { projectId: str
       <ViewHeader title="Sessions" />
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as SessionsTab)} className="mb-4">
-        <TabsList className="bg-surface-highest border border-surface-highest gap-1 h-auto p-1 flex-wrap">
+        <TabsList className="bg-transparent gap-1 h-auto p-0 flex-wrap">
           <TabsTrigger data-testid="sessions-agent-tab" value="agent" className={TAB_TRIGGER}>
             Agent sessions
           </TabsTrigger>

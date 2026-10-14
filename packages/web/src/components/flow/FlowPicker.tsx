@@ -61,7 +61,7 @@ export function FlowPicker({ value, onChange, testId, disabled }: FlowPickerProp
         <SelectTrigger
           id={id}
           data-testid={testId ?? "flow-picker"}
-          className="bg-background border-surface-highest text-on-surface font-label text-xs"
+          className="bg-background border-control-border text-on-surface font-label text-xs"
         >
           <SelectValue />
         </SelectTrigger>

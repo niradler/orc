@@ -242,7 +242,6 @@ export default function PackageCatalog() {
         }
       />
       <div className="space-y-1">
-        <h2 className="text-xl font-semibold tracking-tight">Your package catalog</h2>
         <p className="max-w-2xl text-sm text-muted-foreground">
           Keep the instructions, skills and tools you trust in one place. Save a package once, then
           install it for your coding agent or launch a configured terminal.
@@ -278,7 +277,7 @@ export default function PackageCatalog() {
         <select
           aria-label="Filter package type"
           data-testid="package-format-filter"
-          className="rounded border border-outline-variant bg-surface-low p-2 text-sm"
+          className="rounded border border-control-border bg-background p-2 text-sm"
           value={format}
           onChange={(event) => {
             const next = new URLSearchParams(params);
@@ -302,7 +301,7 @@ export default function PackageCatalog() {
             key={pkg.name}
             data-testid="agent-package-row"
             data-package-name={pkg.name}
-            className="min-w-0 flex flex-col rounded-lg border border-outline-variant bg-surface-low p-4"
+            className="min-w-0 flex flex-col border-b border-outline-variant p-4"
           >
             <span className="mb-3 text-xs text-muted-foreground">
               {pkg.format === "apm" ? "APM package" : "Agent Plugins"}
@@ -312,7 +311,7 @@ export default function PackageCatalog() {
               type="button"
               data-testid="package-inspect"
               onClick={() => openDetail(pkg.name)}
-              className="text-left font-semibold break-words hover:text-primary"
+              className="text-left font-medium break-words hover:text-primary"
             >
               {pkg.name}
             </button>
@@ -325,7 +324,12 @@ export default function PackageCatalog() {
               </p>
             ))}
             <div className="mt-5 grid grid-cols-2 gap-2">
-              <Button data-testid="package-run" disabled={busy} onClick={() => openRun(pkg.name)}>
+              <Button
+                variant="outline"
+                data-testid="package-run"
+                disabled={busy}
+                onClick={() => openRun(pkg.name)}
+              >
                 Use package
               </Button>
               <Button
