@@ -305,6 +305,9 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     skills: {
+      visibility: () => c<{ hidden_builtins: string[] }>("GET", "/skills/visibility"),
+      setVisibility: (hidden_builtins: string[]) =>
+        c<{ hidden_builtins: string[] }>("PUT", "/skills/visibility", { hidden_builtins }),
       updateInstructions: (name: string, input: Omit<SkillUpdate, "skill_name">) =>
         c<SkillFull>("PUT", `/skills/${encodeURIComponent(name)}/instructions`, input),
       history: (name: string, scope: WikiScope = {}) =>
@@ -336,6 +339,7 @@ export function createOrcClient(options?: OrcClientOptions) {
       list: (params?: {
         q?: string;
         source?: SkillSource;
+        include_hidden?: boolean;
         reload?: boolean;
         project_id?: string;
         scope?: "global";

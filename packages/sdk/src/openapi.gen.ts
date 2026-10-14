@@ -543,6 +543,79 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get installation-wide built-in discovery visibility */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Visibility policy */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            hidden_builtins: string[];
+                        };
+                    };
+                };
+            };
+        };
+        /** Set installation-wide built-in discovery visibility */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        hidden_builtins: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Saved visibility policy */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            hidden_builtins: string[];
+                        };
+                    };
+                };
+                /** @description Only built-in skills can be hidden */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/skills/{name}/instructions": {
         parameters: {
             query?: never;
@@ -1028,6 +1101,7 @@ export interface paths {
                     source?: "builtin" | "user";
                     /** @description Force cache rebuild */
                     reload?: boolean | null;
+                    include_hidden?: "true" | "false";
                 };
                 header?: never;
                 path?: never;
@@ -1210,12 +1284,12 @@ export interface paths {
                                                     field: string;
                                                     /** @enum {string} */
                                                     operator: "equals";
-                                                    value: string | number | boolean | null;
+                                                    value: string | number | boolean | unknown;
                                                 } | {
                                                     field: string;
                                                     /** @enum {string} */
                                                     operator: "in";
-                                                    value: (string | number | boolean | null)[];
+                                                    value: (string | number | boolean | unknown)[];
                                                 } | {
                                                     field: string;
                                                     /** @enum {string} */
@@ -1374,12 +1448,12 @@ export interface paths {
                                             field: string;
                                             /** @enum {string} */
                                             operator: "equals";
-                                            value: string | number | boolean | null;
+                                            value: string | number | boolean | unknown;
                                         } | {
                                             field: string;
                                             /** @enum {string} */
                                             operator: "in";
-                                            value: (string | number | boolean | null)[];
+                                            value: (string | number | boolean | unknown)[];
                                         } | {
                                             field: string;
                                             /** @enum {string} */
@@ -1489,12 +1563,12 @@ export interface paths {
                                                 field: string;
                                                 /** @enum {string} */
                                                 operator: "equals";
-                                                value: string | number | boolean | null;
+                                                value: string | number | boolean | unknown;
                                             } | {
                                                 field: string;
                                                 /** @enum {string} */
                                                 operator: "in";
-                                                value: (string | number | boolean | null)[];
+                                                value: (string | number | boolean | unknown)[];
                                             } | {
                                                 field: string;
                                                 /** @enum {string} */
@@ -1638,12 +1712,12 @@ export interface paths {
                                                 field: string;
                                                 /** @enum {string} */
                                                 operator: "equals";
-                                                value: string | number | boolean | null;
+                                                value: string | number | boolean | unknown;
                                             } | {
                                                 field: string;
                                                 /** @enum {string} */
                                                 operator: "in";
-                                                value: (string | number | boolean | null)[];
+                                                value: (string | number | boolean | unknown)[];
                                             } | {
                                                 field: string;
                                                 /** @enum {string} */
@@ -6367,6 +6441,7 @@ export interface components {
                 updated_at: number;
                 author: string;
             };
+            discovery_hidden?: boolean;
         };
         SkillChange: {
             id: string;

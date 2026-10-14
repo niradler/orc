@@ -523,6 +523,9 @@ export const api = {
   },
 
   skills: {
+    visibility: () => req<{ hidden_builtins: string[] }>("GET", "/skills/visibility"),
+    setVisibility: (hidden_builtins: string[]) =>
+      req<{ hidden_builtins: string[] }>("PUT", "/skills/visibility", { hidden_builtins }),
     updateInstructions: (name: string, input: Omit<SkillUpdate, "skill_name">) =>
       req<SkillFull>("PUT", `/skills/${encodeURIComponent(name)}/instructions`, input),
     history: (name: string, scope: WikiScope = {}) =>
@@ -554,6 +557,7 @@ export const api = {
     list: (params?: {
       q?: string;
       source?: "builtin" | "user";
+      include_hidden?: boolean;
       reload?: boolean;
       project_id?: string;
       scope?: "global";

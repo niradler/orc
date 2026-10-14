@@ -1,4 +1,5 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { hiddenBuiltinSkills, updateGlobalConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { editSkillFile } from "@orc/core/skill-edit";
 import {
@@ -22,6 +23,61 @@ import { SkillHistory } from "@orc/db/skill-history";
 import { resolveWikiProject } from "./wiki.js";
 
 const app = new OpenAPIHono();
+
+const VisibilitySchema = z
+  .object({ hidden_builtins: z.array(z.string().min(1).max(64)).max(512) })
+  .strict();
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/skills/visibility",
+    tags: ["Skills"],
+    summary: "Get installation-wide built-in discovery visibility",
+    responses: {
+      200: {
+        description: "Visibility policy",
+        content: { "application/json": { schema: VisibilitySchema } },
+      },
+    },
+  }),
+  (c) => c.json({ hidden_builtins: hiddenBuiltinSkills() }),
+);
+
+app.openapi(
+  createRoute({
+    method: "put",
+    path: "/skills/visibility",
+    tags: ["Skills"],
+    summary: "Set installation-wide built-in discovery visibility",
+    request: {
+      body: { required: true, content: { "application/json": { schema: VisibilitySchema } } },
+    },
+    responses: {
+      200: {
+        description: "Saved visibility policy",
+        content: { "application/json": { schema: VisibilitySchema } },
+      },
+      400: { description: "Only built-in skills can be hidden" },
+    },
+  }),
+  (c) => {
+    const { hidden_builtins } = c.req.valid("json");
+    const builtins = new Set(
+      listSkills({ source: "builtin", include_hidden: true }).map((skill) => skill.name),
+    );
+    for (const name of hiddenBuiltinSkills()) builtins.add(name);
+    if (hidden_builtins.some((name) => !builtins.has(name)))
+      throw new ValidationError("Only installed built-in skills can be hidden");
+    const names = [...new Set(hidden_builtins)].sort();
+    updateGlobalConfig((raw) => {
+      raw.skills = {
+        ...(raw.skills as Record<string, unknown> | undefined),
+        hidden_builtins: names,
+      };
+    });
+    return c.json({ hidden_builtins: names });
+  },
+);
 
 const OriginSchema = z.object({
   repository: z.string(),
@@ -76,6 +132,7 @@ const SkillMetaSchema = z
     path: z.string(),
     metadata: z.record(z.string(), z.unknown()),
     mutation: SkillMutationSchema.optional(),
+    discovery_hidden: z.boolean().optional(),
   })
   .openapi("SkillMeta");
 
@@ -131,6 +188,10 @@ const listRoute = createRoute({
       q: z.string().optional().openapi({ description: "Keyword search on name and description" }),
       source: z.enum(["builtin", "user"]).optional(),
       reload: z.coerce.boolean().optional().openapi({ description: "Force cache rebuild" }),
+      include_hidden: z
+        .enum(["true", "false"])
+        .transform((value) => value === "true")
+        .optional(),
     }),
   },
   responses: {
@@ -465,16 +526,15 @@ app.openapi(
 );
 
 app.openapi(listRoute, (c) => {
-  const { q, source, reload } = c.req.valid("query");
-  const skills = listSkills({
+  const { q, source, reload, include_hidden } = c.req.valid("query");
+  const skills = new SkillHistory(getSqlite()).list(resolveWikiProject(c.req.valid("query")), {
     q,
     source: source as SkillSource | undefined,
     reload,
+    include_hidden,
   });
   return c.json({
-    skills: skills.map((skill) =>
-      new SkillHistory(getSqlite()).metadata(skill, resolveWikiProject(c.req.valid("query"))),
-    ),
+    skills,
     broken: skillValidationIssues(),
     warnings: skillWarnings(),
   });

@@ -13,7 +13,6 @@ import {
 import { SessionHandoffInputSchema, SessionHandoffUploadSchema } from "@orc/core/session-handoff";
 import {
   createSkill as createSkillFs,
-  listSkills,
   type SkillFileInput,
   type SkillFull,
   type SkillRefContent,
@@ -560,11 +559,13 @@ export const toolDefinitions = [
     name: "skill_list",
     description:
       "List installed skills (built-in + user). Returns name and description for each. " +
-      "Supports keyword search and filtering by source.",
+      "Hidden built-ins are omitted; named reads and authored overrides remain available. Supports keyword search and filtering by source.",
     inputSchema: z.object({
       q: z.string().optional().describe("Keyword search on name and description"),
       source: z.enum(["builtin", "user"]).optional().describe("Filter by source"),
       reload: z.boolean().optional().describe("Force cache rebuild"),
+      project: projectParam,
+      scope: z.literal("global").optional(),
     }),
   },
   {
@@ -1810,12 +1811,18 @@ export async function executeTool(
     }
 
     case "skill_list": {
-      const { q, source, reload } = args as {
+      const { q, source, reload, project, scope } = args as {
         q?: string;
         source?: "builtin" | "user";
         reload?: boolean;
+        project?: string;
+        scope?: "global";
       };
-      const skills = listSkills({ q, source, reload });
+      const skills = new SkillHistory(getSqlite(db)).list(resolveWikiScope({ project, scope }), {
+        q,
+        source,
+        reload,
+      });
       const issues = [
         ...skillValidationIssues().map((issue) => `Invalid skill: ${issue.path}: ${issue.error}`),
         ...skillWarnings().map((w) => `Skill warning: ${w.path}: ${w.message}`),
