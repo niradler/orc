@@ -224,6 +224,8 @@ export default function App() {
             {/* Main content - the only element that owns vertical scroll for page content. */}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <WorkspaceHeader
+                onShowChat={() => setChatVisible(true)}
+                onProjectChange={setProjectId}
                 navButtonRef={navButtonRef}
                 chatButtonRef={chatButtonRef}
                 projectId={projectId}

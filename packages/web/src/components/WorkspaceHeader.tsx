@@ -1,6 +1,7 @@
 import { Menu, MessageSquare } from "lucide-react";
 import type { Ref } from "react";
 import { NavLink, useLocation } from "react-router-dom";
+import { CommandPalette } from "@/components/CommandPalette";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useProjects } from "@/hooks/useProjects";
@@ -11,12 +12,16 @@ export function WorkspaceHeader({
   projectId,
   onOpenNav,
   onOpenChat,
+  onProjectChange,
+  onShowChat,
   navButtonRef,
   chatButtonRef,
 }: {
   projectId: string;
   onOpenNav: () => void;
   onOpenChat: () => void;
+  onProjectChange: (id: string) => void;
+  onShowChat: () => void;
   navButtonRef?: Ref<HTMLButtonElement>;
   chatButtonRef?: Ref<HTMLButtonElement>;
 }) {
@@ -49,6 +54,11 @@ export function WorkspaceHeader({
           <span className="mx-2">/</span>
           {workspacePage(pathname)?.label ?? "Projects"}
         </div>
+        <CommandPalette
+          projectId={projectId}
+          onProjectChange={onProjectChange}
+          onOpenChat={onShowChat}
+        />
         <AnimatedThemeToggler
           data-testid="theme-toggle"
           aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
