@@ -129,11 +129,12 @@ try {
       "SELECT id,content FROM memories WHERE project_id=?",
     )
     .all(project.id);
+  const capturedMemory = captured[0];
   assert(
-    captured.length === 1 && captured[0]?.content.includes(token),
+    captured.length === 1 && capturedMemory !== undefined && capturedMemory.content.includes(token),
     "Write hook did not share the memory",
   );
-  const id = captured[0].id;
+  const id = capturedMemory.id;
   writeFileSync(
     topic,
     `${readFileSync(topic, "utf8")}\nUpdate: keep a single shared record for this file.`,
