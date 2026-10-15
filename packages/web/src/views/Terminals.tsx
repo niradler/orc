@@ -148,6 +148,13 @@ export default function Terminals() {
   });
 
   const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => {
+    if (params.get("new") !== "1") return;
+    setMenuOpen(true);
+    const next = new URLSearchParams(params);
+    next.delete("new");
+    navigate({ search: next.toString() }, { replace: true });
+  }, [params, navigate]);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [closing, setClosing] = useState<Terminal | null>(null);

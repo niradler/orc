@@ -268,6 +268,15 @@ export class ApiError extends Error {
   }
 }
 
+export type GlobalSearchHit = {
+  kind: "task" | "project" | "job" | "memory" | "session" | "wiki";
+  id: string;
+  title: string;
+  detail: string;
+  project_id: string | null;
+  project_name: string | null;
+};
+
 export function terminalSocketUrl(
   id: string,
   ticket: string,
@@ -325,6 +334,8 @@ async function req<T>(
 // ---- API client ----
 
 export const api = {
+  search: (q: string, project_id?: string) =>
+    req<{ results: GlobalSearchHit[] }>("GET", "/search", undefined, { q, project_id }),
   rules: {
     list: () =>
       req<{
