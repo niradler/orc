@@ -89,16 +89,28 @@ describe("setLinuxAutostart", () => {
 
 describe.skipIf(!win)("ensureOnWindowsUserPath", () => {
   const userPath = () =>
-    spawnSync(
-      "powershell",
-      ["-NoProfile", "-Command", "[Environment]::GetEnvironmentVariable('Path','User')"],
-      { encoding: "utf-8" },
-    ).stdout.trim();
+    Buffer.from(
+      spawnSync(
+        "powershell",
+        [
+          "-NoProfile",
+          "-Command",
+          "[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes([Environment]::GetEnvironmentVariable('Path','User')))",
+        ],
+        { encoding: "utf-8", timeout: 10000, windowsHide: true },
+      ).stdout.trim(),
+      "base64",
+    ).toString("utf16le");
 
   test("adds the directory to the user PATH once and can be undone", () => {
-    const dir = join(tmpdir(), `orc-path-${process.pid}`);
+    const dir = join(tmpdir(), `orc-path-quoted'-שלום-${process.pid}`);
+    const original = userPath();
     try {
+      const started = Date.now();
       expect(ensureOnWindowsUserPath(dir)).toBe(true);
+      expect(Date.now() - started).toBeLessThan(10000);
+      const prefix = original.replace(/;+$/, "");
+      expect(userPath()).toBe(prefix ? `${prefix};${dir}` : dir);
       expect(userPath().split(";")).toContain(dir);
       expect(ensureOnWindowsUserPath(dir)).toBe(false);
     } finally {
@@ -106,12 +118,17 @@ describe.skipIf(!win)("ensureOnWindowsUserPath", () => {
         .split(";")
         .filter((entry) => entry !== dir)
         .join(";");
-      spawnSync("powershell", [
-        "-NoProfile",
-        "-Command",
-        `[Environment]::SetEnvironmentVariable('Path','${cleaned.replaceAll("'", "''")}','User')`,
-      ]);
+      const result = spawnSync(
+        "powershell",
+        [
+          "-NoProfile",
+          "-Command",
+          `[Environment]::SetEnvironmentVariable('Path','${cleaned.replaceAll("'", "''")}','User')`,
+        ],
+        { timeout: 20000, windowsHide: true },
+      );
+      expect(result.status).toBe(0);
     }
-    // Each user-scope write broadcasts WM_SETTINGCHANGE synchronously (~2.5s on a busy desktop).
+    // Cleanup retains .NET's full notification; registration itself must be fast.
   }, 30_000);
 });

@@ -97,15 +97,34 @@ export function ensureOnPath(opts: {
 
 export function ensureOnWindowsUserPath(binDir: string): boolean {
   const script = [
+    "$ErrorActionPreference = 'Stop'",
     `$dir = '${binDir.replaceAll("'", "''")}'`,
-    "$path = [string][Environment]::GetEnvironmentVariable('Path', 'User')",
+    "$key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')",
+    "$path = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)",
     "if (($path -split ';') -contains $dir) { exit 3 }",
+    "$kind = if ($key.GetValueNames() -contains 'Path') { $key.GetValueKind('Path') } else { [Microsoft.Win32.RegistryValueKind]::ExpandString }",
     "$updated = if ($path) { $path.TrimEnd(';') + ';' + $dir } else { $dir }",
-    "[Environment]::SetEnvironmentVariable('Path', $updated, 'User')",
-  ].join("; ");
+    "$key.SetValue('Path', $updated, $kind)",
+    "$key.Close()",
+    // .NET's user-environment setter waits for each broadcast recipient, which can
+    // stall desktop startup on a busy desktop. Persist first, then notify with
+    // a short per-window deadline; unresponsive windows must not block setup.
+    `Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class OrcEnvironmentNotification {
+  [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  public static extern IntPtr SendMessageTimeoutW(IntPtr window, uint message,
+    UIntPtr wParam, string lParam, uint flags, uint timeout, out UIntPtr result);
+}
+'@`,
+    "$result = [UIntPtr]::Zero",
+    "[void][OrcEnvironmentNotification]::SendMessageTimeoutW([IntPtr]0xffff, 0x001a, [UIntPtr]::Zero, 'Environment', 0x22, 100, [ref]$result)",
+  ].join("\n");
   const result = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
     stdio: "ignore",
     windowsHide: true,
+    timeout: 15000,
   });
   return result.status === 0;
 }
