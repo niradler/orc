@@ -89,19 +89,19 @@ for (const theme of ["dark", "light"] as const) {
       await page.getByTestId("sheet-close").click();
       await page.goto("/sessions");
       await selectProject(page, "all");
-      await page.getByTestId("sessions-orc-tab").click();
-      await expect(page).toHaveURL(/tab=orc/);
+      await page.getByTestId("nav-audit").click();
+      await expect(page).toHaveURL(/\/audit/);
       await page.goBack();
-      await expect(page.getByTestId("sessions-agent-tab")).toHaveAttribute("data-state", "active");
+      await expect(page.getByTestId("nav-sessions")).toHaveAttribute("aria-current", "page");
       await page.goForward();
-      await expect(page.getByTestId("sessions-orc-tab")).toHaveAttribute("data-state", "active");
+      await expect(page.getByTestId("nav-audit")).toHaveAttribute("aria-current", "page");
       await page.reload();
       await expect(page.getByTestId("logged-sessions")).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath("sessions.png"), fullPage: true });
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      await page.getByTestId("sessions-agent-tab").click();
+      await page.getByTestId("nav-sessions").click();
       await page.route("**/api/sessions/live?*", (route) =>
         route.fulfill({
           status: 503,
@@ -115,18 +115,18 @@ for (const theme of ["dark", "light"] as const) {
   }
 }
 
-test("an ORC session copied detail URL reopens without a tab query", async ({ page, request }) => {
+test("an Audit detail URL reopens directly", async ({ page, request }) => {
   const agent = tid("direct-session");
   const { result } = await apiPost<{ result: string }>(request, "/mcp/tool", {
     name: "session_log",
     args: { agent, summary: "Direct session detail" },
   });
   await gotoView(page, "sessions");
-  await page.goto(`/sessions/${result.replace("Session logged: ", "").trim()}`);
-  await expect(page.getByTestId("sessions-orc-tab")).toHaveAttribute("data-state", "active");
+  await page.goto(`/audit/${result.replace("Session logged: ", "").trim()}`);
+  await expect(page.getByTestId("nav-audit")).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("dialog")).toContainText(agent);
   await page.getByTestId("sheet-close").click();
-  await page.getByTestId("sessions-agent-tab").click();
+  await page.getByTestId("nav-sessions").click();
   await expect(page.getByTestId("live-sessions")).toBeVisible();
 });
 
@@ -192,7 +192,7 @@ for (const view of ["tasks", "jobs", "sessions", "dashboard"] as const) {
         ? "No tasks"
         : view === "jobs"
           ? "No jobs configured"
-          : "No sessions";
+          : "No active agent sessions. Enable Show ended to browse previous conversations.";
     await expect(page.getByText(emptyText, { exact: true }).first()).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`${view}-empty.png`), fullPage: true });
     failing = true;

@@ -125,7 +125,14 @@ test.describe("Kanban drag & drop", () => {
       const move = card.getByRole("button", { name: `Move task: ${title}`, exact: true });
       await move.focus();
       await move.press("Space");
-      for (let step = 0; step < 12; step++) await page.keyboard.press("ArrowRight");
+      const target = page.locator('[data-testid="kanban-column"][data-column-status="doing"]');
+      // Fixed pixel-count key presses can overshoot as the board scrolls. Drop only
+      // once the actual target column is active, as a keyboard user would.
+      for (let step = 0; step < 24; step++) {
+        await page.keyboard.press("ArrowRight");
+        if ((await target.getAttribute("data-drop-target")) === "true") break;
+      }
+      await expect(target).toHaveAttribute("data-drop-target", "true");
       await page.keyboard.press("Space");
       await expect
         .poll(async () => (await apiGet<Task>(request, `/tasks/${task.id}`)).status)

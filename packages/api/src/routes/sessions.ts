@@ -4,7 +4,7 @@ import { NotFoundError } from "@orc/core/errors";
 import { execHostFor, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { getDb } from "@orc/db/client";
 import { gateway_sessions, session_handoffs, sessions, tasks } from "@orc/db/schema";
-import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { LIVE_CHAT_ID, syncNow } from "../session-watcher.js";
 import { searchSessions } from "../sessions/search.js";
 import { bodyLinkIndex, sessionIdsOfTask } from "../sessions/tasklinks.js";
@@ -244,6 +244,7 @@ const listRoute = createRoute({
       agent: z.string().optional(),
       job_run_id: z.string().optional(),
       project_id: z.string().optional(),
+      order: z.enum(["asc", "desc"]).optional().default("desc"),
       limit: z.coerce.number().int().min(1).max(100).optional().default(20),
       offset: z.coerce.number().int().min(0).optional().default(0),
     }),
@@ -449,7 +450,7 @@ app.openapi(liveLinkRoute, async (c) => {
 
 app.openapi(listRoute, async (c) => {
   const db = getDb();
-  const { agent, job_run_id, project_id, limit, offset } = c.req.valid("query");
+  const { agent, job_run_id, project_id, limit, offset, order } = c.req.valid("query");
 
   const conditions = [];
   if (agent) conditions.push(eq(sessions.agent, agent));
@@ -461,7 +462,10 @@ app.openapi(listRoute, async (c) => {
   const rows = await db.query.sessions.findMany({
     limit,
     offset,
-    orderBy: [desc(sessions.created_at)],
+    orderBy:
+      order === "asc"
+        ? [asc(sessions.created_at), asc(sessions.id)]
+        : [desc(sessions.created_at), desc(sessions.id)],
     where,
   });
   const [counted] = await db.select({ total: sql<number>`count(*)` }).from(sessions).where(where);

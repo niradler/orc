@@ -35,6 +35,33 @@ const live = (over = {}) => ({
 });
 
 describe("resume launch", () => {
+  test("Windows resume normalizes extended drive cwd before validating and launching", async () => {
+    const cwd = "C:\\Projects\\orc";
+    const launch = await buildLaunch(
+      { live: live({ cwd: `\\\\?\\${cwd}` }) },
+      deps({ platform: "win32", isDirectory: (path) => path === cwd }),
+    );
+    expect(launch.cwd).toBe(cwd);
+  });
+
+  test.skipIf(process.platform !== "win32")(
+    "Windows command shims retain the normalized cwd",
+    async () => {
+      const cwd = process.cwd();
+      const launch = await buildLaunch(
+        { live: live({ cwd: `\\\\?\\${cwd}` }) },
+        deps({ platform: "win32", isDirectory: () => true }),
+      );
+      const result = Bun.spawnSync(["cmd.exe", "/d", "/c", "cd"], {
+        ...(launch.cwd ? { cwd: launch.cwd } : {}),
+        timeout: 10000,
+      });
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout.toString().trim().toLowerCase()).toBe(cwd.toLowerCase());
+      expect(result.stderr.toString()).toBe("");
+    },
+  );
+
   test("claude resumes with --resume and the session cwd", async () => {
     const l = await buildLaunch({ live: live() }, deps());
     expect(l).toEqual({

@@ -1,9 +1,9 @@
 import { ArrowDown, ChevronLeft, ChevronRight, RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import type { LiveSession, TranscriptPage } from "@/api/client";
 import { Markdown } from "@/components/Markdown";
 import { ResumeActions } from "@/components/ResumeActions";
+import { SessionTaskLink } from "@/components/SessionTaskLink";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveSessions, useTranscript } from "@/hooks/useSessions";
@@ -246,15 +246,7 @@ export function LiveSessionDetail({
                 <span className="text-on-surface-variant">active </span>
                 {formatWhen(session.last_activity_at)}
               </span>
-              {session.task && (
-                <Link
-                  to={`/tasks/${session.task.id}`}
-                  data-testid="detail-open-task"
-                  className="text-primary hover:text-on-surface"
-                >
-                  task: {session.task.title}
-                </Link>
-              )}
+              <SessionTaskLink session={session} linkTestId="detail-open-task" />
               <ResumeActions session={session} />
               <span className="truncate max-w-full text-on-surface-variant">{session.cwd}</span>
             </div>
@@ -343,8 +335,19 @@ export function LiveSessionDetail({
                 data-testid="transcript-unavailable"
                 className="font-body text-xs text-outline py-12 text-center"
               >
-                The conversation isn&apos;t available for this session. Cursor IDE chats keep it
-                inside Cursor, and some sessions have no transcript file left on disk.
+                {error
+                  ? `Could not load the conversation: ${error.message}`
+                  : "No conversation was recorded for this session."}
+                <p className="mt-2">
+                  Resume actions remain available when the native agent session exists.
+                </p>
+                <button
+                  type="button"
+                  className="mt-3 min-h-11 text-primary hover:underline"
+                  onClick={() => refetch()}
+                >
+                  Retry conversation
+                </button>
               </div>
             ) : (
               <div ref={turnsRef} className="space-y-3">

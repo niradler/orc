@@ -55,9 +55,17 @@ test("registered agents share idle visibility, transcripts, task links and termi
     );
     await expect(row).toBeVisible();
     await expect(row.getByTestId("live-status")).toHaveText("waiting for you");
-    await row.getByTestId("link-task").selectOption(task.id);
+    await row.getByTestId("link-task").click();
+    const picker = page.getByTestId("session-task-dialog");
+    await picker.locator(`[data-testid="session-task-option"][data-task-id="${task.id}"]`).click();
+    await expect(picker).toBeHidden();
     await expect(row.getByTestId("open-task")).toBeVisible();
     if (backend !== "cursor") await expect(row.getByTestId("open-terminal-resume")).toBeVisible();
+    if (backend !== "cursor") {
+      await row.getByTestId("resume-actions-menu").click();
+      await expect(page.getByTestId("copy-resume")).toBeVisible();
+      await page.keyboard.press("Escape");
+    }
     await row.click();
     await expect(page.getByTestId("live-session-detail")).toBeVisible();
     await expect(page.getByTestId("transcript-turn")).toContainText(`Hello from ${backend}`);

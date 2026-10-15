@@ -10,7 +10,12 @@ export function useSessions(params?: { agent?: string; limit?: number }) {
   });
 }
 
-export function useLoggedSessions(params: { project_id?: string; limit: number; offset: number }) {
+export function useLoggedSessions(params: {
+  project_id?: string;
+  limit: number;
+  offset: number;
+  order?: "asc" | "desc";
+}) {
   return useQuery({
     queryKey: ["sessions", "logged", params],
     queryFn: () => api.sessions.list(params),
@@ -40,7 +45,7 @@ export function useSyncSessions() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.sessions.sync(),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions", "live"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
   });
 }
 
@@ -49,7 +54,7 @@ export function useLinkSessionTask() {
   return useMutation({
     mutationFn: ({ id, taskId }: { id: string; taskId: string | null }) =>
       api.sessions.linkTask(id, taskId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions", "live"] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
   });
 }
 
@@ -59,6 +64,7 @@ export function useSessionSearch(q: string, agent: string) {
     queryFn: () => api.sessions.search({ q, ...(agent ? { agent } : {}), limit: 200 }),
     enabled: q.trim().length >= 2,
     staleTime: 30_000,
+    refetchInterval: 3_000,
   });
 }
 

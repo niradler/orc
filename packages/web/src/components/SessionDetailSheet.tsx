@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { SessionEvent } from "@/api/client";
 import { DetailField } from "@/components/DetailField";
 import { ErrorState } from "@/components/ErrorState";
+import { Markdown } from "@/components/Markdown";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -46,6 +47,10 @@ export function SessionDetailSheet({ sessionId, open, onClose }: SessionDetailSh
           </SheetTitle>
         </SheetHeader>
         <SheetBody>
+          <p className="mb-4 text-sm text-outline">
+            This audit record contains summaries and events. Open Sessions to read native agent
+            conversations or resume them.
+          </p>
           {error ? (
             <ErrorState message={error.message} onRetry={() => refetch()} />
           ) : isLoading ? (
@@ -61,7 +66,7 @@ export function SessionDetailSheet({ sessionId, open, onClose }: SessionDetailSh
             <div className="space-y-6">
               {detail.summary && (
                 <div className="font-body text-xs text-on-surface leading-relaxed">
-                  {detail.summary}
+                  <Markdown>{detail.summary}</Markdown>
                 </div>
               )}
 
@@ -76,9 +81,6 @@ export function SessionDetailSheet({ sessionId, open, onClose }: SessionDetailSh
                 </DetailField>
                 <DetailField label="Created">
                   {new Date(detail.created_at).toLocaleString()}
-                </DetailField>
-                <DetailField label="Updated">
-                  {new Date(detail.updated_at).toLocaleString()}
                 </DetailField>
               </div>
 

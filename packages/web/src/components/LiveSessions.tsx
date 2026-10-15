@@ -1,6 +1,6 @@
 import { RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import type { LiveSession } from "@/api/client";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
@@ -8,6 +8,7 @@ import { Highlight } from "@/components/Highlight";
 import { LiveSessionDetail } from "@/components/LiveSessionDetail";
 import { Pager } from "@/components/Pager";
 import { ResumeActions } from "@/components/ResumeActions";
+import { SessionTaskLink } from "@/components/SessionTaskLink";
 import {
   Table,
   TableBody,
@@ -18,13 +19,7 @@ import {
 } from "@/components/ui/table";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
-import {
-  useLinkSessionTask,
-  useLiveSessions,
-  useSessionSearch,
-  useSyncSessions,
-} from "@/hooks/useSessions";
-import { useTasks } from "@/hooks/useTasks";
+import { useLiveSessions, useSessionSearch, useSyncSessions } from "@/hooks/useSessions";
 import { formatTokens, formatWhen, STATUS } from "@/lib/live-sessions";
 
 const AGENTS = ["claude", "codex", "cursor", "cursor-agent", "gemini"];
@@ -39,9 +34,12 @@ export function LiveSessions({ projectId }: { projectId: string }) {
   const agent = params.get("agent") ?? "";
   const showEnded = params.get("ended") === "1";
   const query = params.get("q") ?? "";
+  const order = params.get("order") === "asc" ? "asc" : "desc";
   const openId = params.get("session");
   const [draft, setDraft] = useState(query);
-  const [page, setPage] = useState(0);
+  const [pagination, setPagination] = useState({ order, page: 0 });
+  const page = pagination.order === order ? pagination.page : 0;
+  const setPage = useCallback((page: number) => setPagination({ order, page }), [order]);
 
   const setParam = useCallback(
     (key: string, value: string | null) => {
@@ -56,7 +54,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
         { replace: key === "q" },
       );
     },
-    [setParams],
+    [setParams, setPage],
   );
 
   useEffect(() => setDraft(query), [query]);
@@ -69,26 +67,35 @@ export function LiveSessions({ projectId }: { projectId: string }) {
   const searching = query.trim().length >= 2;
   const list = useLiveSessions(!showEnded);
   const search = useSessionSearch(searching ? query.trim() : "", agent);
-  const { data: tasks } = useTasks();
   const { data: projects } = useProjects();
-  const link = useLinkSessionTask();
   const sync = useSyncSessions();
 
   const projectName = new Map((projects ?? []).map((p) => [p.id, p.name]));
-  const openTasks = (tasks ?? []).filter((t) => t.status !== "done" && t.status !== "cancelled");
 
   const source: Row[] = searching ? (search.data?.hits ?? []) : (list.data ?? []);
   const agents = [...new Set([...AGENTS, ...source.map((session) => session.agent)])];
   const isLoading = searching ? search.isLoading : list.isLoading;
   const result = searching ? search : list;
-  const byAgent = source.filter((s) => !agent || s.agent === agent);
-  const visible = byAgent.filter((s) =>
-    projectId === "all"
-      ? true
-      : projectId === "unassigned"
-        ? s.project_id === null
-        : s.project_id === projectId,
+  const byAgent = source.filter(
+    (s) =>
+      (!agent || s.agent === agent) &&
+      (showEnded || s.status !== "stopped" || s.handoff?.status === "ready"),
   );
+  const visible = byAgent
+    .filter((s) =>
+      projectId === "all"
+        ? true
+        : projectId === "unassigned"
+          ? s.project_id === null
+          : s.project_id === projectId,
+    )
+    .sort((a, b) => {
+      const compared =
+        new Date(a.last_activity_at ?? a.created_at).getTime() -
+        new Date(b.last_activity_at ?? b.created_at).getTime();
+      const result = compared || a.id.localeCompare(b.id);
+      return order === "asc" ? result : -result;
+    });
   const pageStart =
     Math.min(page, Math.max(0, Math.ceil(visible.length / PAGE_SIZE) - 1)) * PAGE_SIZE;
   const scopeName =
@@ -96,6 +103,10 @@ export function LiveSessions({ projectId }: { projectId: string }) {
 
   return (
     <section className="mb-8" data-testid="live-sessions">
+      <p className="mb-4 text-sm text-outline">
+        Discovered from your coding agents. Working sessions update automatically; waiting sessions
+        remain available to resume.
+      </p>
       <div className="mb-3 relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-outline" />
         <input
@@ -126,6 +137,16 @@ export function LiveSessions({ projectId }: { projectId: string }) {
         </h2>
         <div className="flex flex-wrap items-center gap-3">
           <select
+            aria-label="Sort sessions by date"
+            data-testid="session-date-sort"
+            value={order}
+            onChange={(event) => setParam("order", event.target.value === "asc" ? "asc" : null)}
+            className="min-h-11 rounded-md border border-control-border bg-background px-3 text-sm text-on-surface"
+          >
+            <option value="desc">Last active: newest first</option>
+            <option value="asc">Last active: oldest first</option>
+          </select>
+          <select
             data-testid="agent-filter"
             aria-label="Agent"
             className="bg-background border border-control-border rounded-lg min-h-11 px-3 py-2 font-label text-xs font-medium text-on-surface"
@@ -139,16 +160,17 @@ export function LiveSessions({ projectId }: { projectId: string }) {
               </option>
             ))}
           </select>
-          {!searching && (
+          {
             <label className="flex items-center gap-2 font-label text-xs font-medium text-outline cursor-pointer">
               <input
                 type="checkbox"
+                data-testid="show-ended"
                 checked={showEnded}
                 onChange={(e) => setParam("ended", e.target.checked ? "1" : null)}
               />
               Show ended
             </label>
-          )}
+          }
           <button
             type="button"
             data-testid="sync-sessions"
@@ -161,9 +183,9 @@ export function LiveSessions({ projectId }: { projectId: string }) {
           </button>
         </div>
       </div>
-      {(sync.error || link.error) && (
+      {sync.error && (
         <p role="alert" className="mb-3 text-sm text-error">
-          {(sync.error ?? link.error)?.message}
+          {sync.error.message}
         </p>
       )}
       {result.error ? (
@@ -173,16 +195,18 @@ export function LiveSessions({ projectId }: { projectId: string }) {
           Loading sessions…
         </p>
       ) : visible.length === 0 ? (
-        <EmptyState message={searching ? "No sessions match" : "No sessions"} />
+        <EmptyState
+          message={
+            searching
+              ? "No sessions match"
+              : "No active agent sessions. Enable Show ended to browse previous conversations."
+          }
+        />
       ) : (
         <div className="min-w-0 overflow-hidden">
           {!desktop ? (
             <div className="divide-y divide-border">
               {visible.slice(pageStart, pageStart + PAGE_SIZE).map((session) => {
-                const choices =
-                  session.task && !openTasks.some((task) => task.id === session.task?.id)
-                    ? [session.task, ...openTasks]
-                    : openTasks;
                 return (
                   <article
                     key={session.id}
@@ -229,38 +253,8 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                       {(session.project_id && projectName.get(session.project_id)) || "Unassigned"}
                       {session.cwd ? ` · ${session.cwd}` : ""}
                     </p>
-                    <label className="block text-xs text-outline space-y-1">
-                      <span>Linked task</span>
-                      <select
-                        data-testid="link-task"
-                        aria-label="Link task"
-                        className="block min-h-11 w-full rounded-md border border-control-border bg-background px-3 text-sm text-on-surface"
-                        value={session.task?.id ?? ""}
-                        disabled={link.isPending}
-                        onChange={(event) =>
-                          link.mutate({ id: session.id, taskId: event.target.value || null })
-                        }
-                      >
-                        <option value="">No task</option>
-                        {choices.map((task) => (
-                          <option key={task.id} value={task.id}>
-                            {task.title}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <ResumeActions session={session} />
-                      {session.task && (
-                        <Link
-                          className="min-h-11 inline-flex items-center text-sm text-primary"
-                          data-testid="open-task"
-                          to={`/tasks/${session.task.id}`}
-                        >
-                          Open task
-                        </Link>
-                      )}
-                    </div>
+                    <SessionTaskLink session={session} />
+                    <ResumeActions session={session} />
                   </article>
                 );
               })}
@@ -282,10 +276,6 @@ export function LiveSessions({ projectId }: { projectId: string }) {
               <TableBody>
                 {visible.slice(pageStart, pageStart + PAGE_SIZE).map((s) => {
                   const st = STATUS[s.status];
-                  const choices =
-                    s.task && !openTasks.some((t) => t.id === s.task?.id)
-                      ? [{ id: s.task.id, title: s.task.title }, ...openTasks]
-                      : openTasks;
                   return (
                     <TableRow
                       key={s.id}
@@ -293,7 +283,13 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                       data-session-id={s.session_id}
                       data-agent={s.agent}
                       className="border-b border-border/65 cursor-pointer hover:bg-surface-high"
-                      onClick={() => setParam("session", s.id)}
+                      onClick={(event) => {
+                        if (
+                          (event.target as HTMLElement).closest("button, a, input, [role='dialog']")
+                        )
+                          return;
+                        setParam("session", s.id);
+                      }}
                     >
                       <TableCell className="font-label text-xs text-on-surface">
                         <span className="inline-flex items-center gap-2" data-testid="live-status">
@@ -355,39 +351,8 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                       <TableCell className="font-body text-xs text-on-surface-variant">
                         {formatWhen(s.last_activity_at)}
                       </TableCell>
-                      <TableCell onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center gap-2">
-                          <select
-                            data-testid="link-task"
-                            aria-label="Link task"
-                            className="w-full bg-background border border-control-border rounded-lg min-h-11 px-3 py-2 font-body text-xs text-on-surface"
-                            value={s.task?.id ?? ""}
-                            disabled={link.isPending}
-                            onChange={(e) =>
-                              link.mutate({
-                                id: s.id,
-                                taskId: e.target.value || null,
-                              })
-                            }
-                          >
-                            <option value="">No task</option>
-                            {choices.map((t) => (
-                              <option key={t.id} value={t.id}>
-                                {t.title}
-                              </option>
-                            ))}
-                          </select>
-                          {s.task && (
-                            <Link
-                              to={`/tasks/${s.task.id}`}
-                              data-testid="open-task"
-                              title={`Open task: ${s.task.title}`}
-                              className="shrink-0 font-label text-xs font-medium text-primary hover:text-on-surface"
-                            >
-                              Open
-                            </Link>
-                          )}
-                        </div>
+                      <TableCell>
+                        <SessionTaskLink session={s} />
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="inline-flex items-center gap-3">

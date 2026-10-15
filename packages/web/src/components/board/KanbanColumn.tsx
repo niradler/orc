@@ -66,6 +66,7 @@ export function KanbanColumn({
         ref={setNodeRef}
         data-testid="kanban-column"
         data-column-status={status}
+        data-drop-target={isOver}
         className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[100px]"
       >
         {tasks.map((task) => (

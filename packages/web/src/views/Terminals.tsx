@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-r
 import type { CreateTerminalInput, Terminal } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
+import { ResumeActions } from "@/components/ResumeActions";
 import { NewTerminalMenu } from "@/components/terminals/NewTerminalMenu";
 import { TerminalList } from "@/components/terminals/TerminalList";
 import { TerminalWorkspace } from "@/components/terminals/TerminalWorkspace";
@@ -97,22 +98,12 @@ function SessionLinks({ liveSessionId }: { liveSessionId: string }) {
 // Shown for a shared session link when no terminal is running that session.
 function NoSessionTerminal({ liveSessionId }: { liveSessionId: string }) {
   const [params] = useSearchParams();
-  const { openLiveSession } = useTerminals();
-  const { data: sessions, isLoading } = useLiveSessions(false);
+  const { data: sessions, isLoading, error: loadError, refetch } = useLiveSessions(false);
   const session = sessions?.find((s) => s.id === liveSessionId);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   if (isLoading) return <Skeleton className="h-24 w-full max-w-md" />;
 
-  const open = () => {
-    if (!session) return;
-    setPending(true);
-    setError(null);
-    openLiveSession(session)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setPending(false));
-  };
+  if (loadError) return <ErrorState message={loadError.message} onRetry={() => refetch()} />;
 
   return (
     <div data-testid="no-session-terminal" className="max-w-md space-y-3 text-center">
@@ -124,24 +115,8 @@ function NoSessionTerminal({ liveSessionId }: { liveSessionId: string }) {
           {session.name ?? session.summary ?? session.id}
         </p>
       )}
-      {error && (
-        <p role="alert" className="font-body text-xs text-error">
-          {error}
-        </p>
-      )}
       <div className="flex items-center justify-center gap-3">
-        {session && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={pending}
-            onClick={open}
-            className="font-label text-sm"
-          >
-            {pending ? "Opening" : "Open in terminal"}
-          </Button>
-        )}
+        {session && <ResumeActions session={session} />}
         <Link
           to={workspaceDestination("/terminals", params.get("project") ?? "all", params.toString())}
           className={LINK_CLASS}
