@@ -1,8 +1,9 @@
+import * as Popover from "@radix-ui/react-popover";
 import { Check, ChevronDown, Copy, Link2, SquareTerminal } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import type { LiveSession } from "@/api/client";
-import { resumeCommand } from "@/lib/live-sessions";
+import { resumeCommand, resumeUnavailableReason, scopedSessionPath } from "@/lib/live-sessions";
 import {
   absoluteUrl,
   runningTerminalForSession,
@@ -10,171 +11,141 @@ import {
   terminalPath,
 } from "@/lib/terminal-links";
 import { useTerminals } from "@/lib/terminals";
-import { cn } from "@/lib/utils";
 
-const SEGMENT =
-  "inline-flex items-center gap-1 whitespace-nowrap px-2 py-1 font-label text-xs transition-colors";
+const ACTION =
+  "inline-flex min-h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-border px-2 py-1 text-xs text-primary hover:bg-surface-highest disabled:opacity-50";
 
 export function ResumeActions({ session }: { session: LiveSession }) {
   const { openLiveSession, info, terminals } = useTerminals();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState<"command" | "link" | null>(null);
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const command = resumeCommand(session);
-  const menuOpen = menuPos !== null;
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const close = () => setMenuPos(null);
-    const onPointerDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) close();
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
-    };
-  }, [menuOpen]);
-
-  if (!command) return null;
-
   const existing = runningTerminalForSession(terminals, session.id);
+  const scope = params.get("project") ?? session.project_id;
+  useEffect(() => {
+    if (!copied) return;
+    const timeout = setTimeout(() => setCopied(null), 2000);
+    return () => clearTimeout(timeout);
+  }, [copied]);
 
-  const open = () => {
-    if (existing) return navigate(terminalPath(existing.id));
-    setPending(true);
+  async function open(): Promise<void> {
     setError(null);
-    openLiveSession(session)
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Failed"))
-      .finally(() => setPending(false));
-  };
-
-  const copy = (kind: "command" | "link", text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(kind);
-      setTimeout(() => setCopied(null), 1500);
-    });
-    setMenuPos(null);
-  };
-  const copyCommand = () => copy("command", command);
-  const copyLink = () => copy("link", absoluteUrl(sessionTerminalPath(session.id)));
-
-  // Without terminals (no API secret, disabled, old Bun) the only useful action is the command.
-  if (info && !info.ready) {
-    return (
-      <button
-        type="button"
-        data-testid="copy-resume"
-        title={info.reason ?? command}
-        className={cn(
-          SEGMENT,
-          "rounded-lg border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20",
-        )}
-        onClick={(e) => {
-          e.stopPropagation();
-          copyCommand();
-        }}
-      >
-        {copied === "command" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-        {copied === "command" ? "Copied" : "Copy resume command"}
-      </button>
-    );
+    if (existing) {
+      navigate(scopedSessionPath(terminalPath(existing.id), scope));
+      return;
+    }
+    setPending(true);
+    try {
+      await openLiveSession(session);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Could not open terminal");
+    } finally {
+      setPending(false);
+    }
   }
 
+  async function copy(text: string, label: string): Promise<void> {
+    setMenuOpen(false);
+    setError(null);
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(label);
+    } catch {
+      setError("Clipboard access failed. Allow clipboard access and try again.");
+    }
+  }
+
+  if (!command && !existing)
+    return (
+      <span data-testid="resume-unavailable" className="block max-w-64 text-xs text-outline">
+        {resumeUnavailableReason(session)}
+      </span>
+    );
+
   return (
-    // biome-ignore lint/a11y/useSemanticElements: a fieldset would add form-control chrome to a button group
-    <div
-      ref={rootRef}
-      role="group"
-      aria-label="Resume session"
-      className="relative inline-flex items-stretch rounded-lg border border-primary/30 bg-primary/10"
-    >
-      <button
-        type="button"
-        data-testid="open-terminal-resume"
-        disabled={pending}
-        title={
-          error ?? (existing ? "This session is open in a terminal" : "Resume in an ORC terminal")
-        }
-        className={cn(
-          SEGMENT,
-          "rounded-l-sm disabled:opacity-50",
-          error ? "text-error" : "text-primary hover:bg-primary/20",
-        )}
-        onClick={(e) => {
-          e.stopPropagation();
-          open();
-        }}
-      >
-        <SquareTerminal className="h-3 w-3" />
-        {error ? "Failed" : pending ? "Opening" : existing ? "Go to terminal" : "Open in terminal"}
-      </button>
-      <button
-        type="button"
-        data-testid="resume-menu"
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        aria-label="More resume options"
-        className={cn(SEGMENT, "px-1 border-l border-primary/30 text-primary hover:bg-primary/20")}
-        onClick={(e) => {
-          e.stopPropagation();
-          if (menuOpen) return setMenuPos(null);
-          const rect = e.currentTarget.parentElement?.getBoundingClientRect();
-          if (rect)
-            setMenuPos({
-              top: rect.bottom + 4,
-              right: window.innerWidth - rect.right,
-            });
-        }}
-      >
-        <ChevronDown className="h-3 w-3" />
-      </button>
-      {menuPos && (
-        <div
-          role="menu"
-          style={{ top: menuPos.top, right: menuPos.right }}
-          className="fixed z-50 min-w-48 bg-surface border border-surface-highest rounded-lg shadow-xl p-1"
+    <div className="max-w-72 space-y-1 text-left">
+      <fieldset aria-label="Resume session" className="inline-flex">
+        <button
+          type="button"
+          data-testid="open-terminal-resume"
+          disabled={pending || (!existing && !info?.ready)}
+          onClick={() => void open()}
+          className={`${ACTION} rounded-r-none`}
         >
-          <button
-            type="button"
-            role="menuitem"
-            data-testid="copy-resume"
-            title={command}
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg font-label text-xs text-on-surface-variant hover:bg-surface-highest hover:text-on-surface"
-            onClick={(e) => {
-              e.stopPropagation();
-              copyCommand();
-            }}
-          >
-            {copied === "command" ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-            Copy resume command
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            data-testid="copy-terminal-link"
-            title="A link that opens this session's terminal, or offers to start one"
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg font-label text-xs text-on-surface-variant hover:bg-surface-highest hover:text-on-surface"
-            onClick={(e) => {
-              e.stopPropagation();
-              copyLink();
-            }}
-          >
-            {copied === "link" ? <Check className="h-3 w-3" /> : <Link2 className="h-3 w-3" />}
-            Copy terminal link
-          </button>
-        </div>
+          <SquareTerminal size={13} />
+          {pending ? "Resuming…" : "Resume"}
+        </button>
+        {command && (
+          <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
+            <Popover.Trigger asChild>
+              <button
+                type="button"
+                data-testid="resume-actions-menu"
+                aria-label="More session actions"
+                className={`${ACTION} rounded-l-none border-l-0 px-2`}
+              >
+                <ChevronDown size={13} />
+              </button>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content
+                align="end"
+                sideOffset={4}
+                collisionPadding={8}
+                aria-label="Session actions"
+                data-testid="resume-actions-dropdown"
+                className="z-50 w-56 rounded-md border border-border bg-surface-high p-1 shadow-lg"
+              >
+                <button
+                  type="button"
+                  data-testid="copy-resume"
+                  className={`${ACTION} w-full justify-start border-0`}
+                  title={command}
+                  onClick={() => void copy(command, "Resume command copied")}
+                >
+                  {copied === "Resume command copied" ? <Check size={13} /> : <Copy size={13} />}
+                  Copy resume command
+                </button>
+                <button
+                  type="button"
+                  data-testid="copy-terminal-link"
+                  className={`${ACTION} w-full justify-start border-0`}
+                  aria-label="Copy terminal link"
+                  title="Copy terminal link"
+                  onClick={() =>
+                    void copy(
+                      absoluteUrl(scopedSessionPath(sessionTerminalPath(session.id), scope)),
+                      "Terminal link copied",
+                    )
+                  }
+                >
+                  <Link2 size={13} />
+                  Copy terminal link
+                </button>
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
+        )}
+      </fieldset>
+      {info && !info.ready && !existing && (
+        <p className="text-xs text-outline">
+          {info.reason ??
+            "Integrated terminals unavailable. Use the copied command in your own terminal."}
+        </p>
+      )}
+      {copied && (
+        <p role="status" data-testid="resume-feedback" className="text-xs text-outline">
+          {copied}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="text-xs text-error break-words">
+          {error}
+        </p>
       )}
     </div>
   );

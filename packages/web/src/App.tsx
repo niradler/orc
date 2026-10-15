@@ -35,6 +35,7 @@ const Projects = lazy(() => import("@/views/Projects"));
 const Rules = lazy(() => import("@/views/Rules"));
 
 const Sessions = lazy(() => import("@/views/Sessions"));
+const Audit = lazy(() => import("@/views/Audit"));
 
 const Settings = lazy(() => import("@/views/Settings"));
 
@@ -261,10 +262,8 @@ export default function App() {
                       <Route path="/jobs" element={<Jobs projectId={projectId} />} />
                       <Route path="/jobs/:jobId" element={<Jobs projectId={projectId} />} />
                       <Route path="/sessions" element={<Sessions projectId={projectId} />} />
-                      <Route
-                        path="/sessions/:sessionId"
-                        element={<Sessions projectId={projectId} />}
-                      />
+                      <Route path="/audit" element={<Audit projectId={projectId} />} />
+                      <Route path="/audit/:sessionId" element={<Audit projectId={projectId} />} />
                       <Route path="/memories" element={<LegacyMemoriesRedirect />} />
                       <Route path="/memories/:memoryId" element={<LegacyMemoriesRedirect />} />
                       <Route path="/projects" element={<Projects />} />

@@ -2,6 +2,7 @@ import "./ActivityPreview.css";
 import { useNavigate } from "react-router-dom";
 import { ErrorState } from "@/components/ErrorState";
 import { PriorityBadge } from "@/components/PriorityBadge";
+import { ResumeActions } from "@/components/ResumeActions";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -17,8 +18,9 @@ import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useMemories } from "@/hooks/useMemories";
 import { useProjectScope } from "@/hooks/useProjectScope";
 import { useProjects } from "@/hooks/useProjects";
-import { useLoggedSessions } from "@/hooks/useSessions";
+import { useLiveSessions } from "@/hooks/useSessions";
 import { useTasks } from "@/hooks/useTasks";
+import { formatWhen, STATUS } from "@/lib/live-sessions";
 
 interface DashboardProps {
   projectId: string;
@@ -50,12 +52,12 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
   const memoriesQuery = useMemories(scopeParams);
   const { data: memories } = memoriesQuery;
   const { data: projects } = useProjects();
-  const sessionsQuery = useLoggedSessions({
-    ...(projectId === "all" ? {} : { project_id: projectId }),
-    limit: 5,
-    offset: 0,
-  });
-  const sessions = sessionsQuery.data?.sessions ?? [];
+  const sessionsQuery = useLiveSessions(true);
+  const sessions = (sessionsQuery.data ?? []).filter(
+    (session) =>
+      projectId === "all" ||
+      (projectId === "unassigned" ? session.project_id === null : session.project_id === projectId),
+  );
   const scopedJobs =
     projectId === "unassigned"
       ? (jobs ?? []).filter((job) => job.project_id === null)
@@ -331,7 +333,7 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
         {sessions.length > 0 && (
           <section className="activity-section">
             <div className="activity-section-heading">
-              <h2>Recent sessions</h2>
+              <h2>Agent sessions</h2>
               <button
                 type="button"
                 className="activity-text-action"
@@ -342,22 +344,26 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
             </div>
             <div className="activity-row-list">
               {sessions.slice(0, 5).map((session) => (
-                <button
-                  key={session.id}
-                  type="button"
-                  className="activity-row"
-                  onClick={() => navigate(`/sessions/${session.id}?tab=orc`)}
-                >
-                  <span className="activity-row-heading">
-                    <span>{session.agent ?? "unknown"}</span>
-                    <span className="activity-muted">
-                      {new Date(session.created_at).toLocaleString()}
+                <div key={session.id} className="activity-row">
+                  <button
+                    type="button"
+                    className="w-full text-left"
+                    data-testid="activity-session-link"
+                    data-session-id={session.id}
+                    onClick={() => navigate(`/sessions?session=${encodeURIComponent(session.id)}`)}
+                  >
+                    <span className="activity-row-heading">
+                      <span>{session.name ?? session.agent}</span>
+                      <span className="activity-muted">{formatWhen(session.last_activity_at)}</span>
                     </span>
-                  </span>
-                  {session.summary && (
-                    <span className="activity-row-description">{session.summary}</span>
-                  )}
-                </button>
+                    <span className="activity-row-description inline-flex items-center gap-2">
+                      <span className={`size-1.5 rounded-full ${STATUS[session.status].dot}`} />
+                      {session.agent} · {STATUS[session.status].label}
+                      {session.task ? ` · ${session.task.title}` : ""}
+                    </span>
+                  </button>
+                  <ResumeActions session={session} />
+                </div>
               ))}
             </div>
           </section>

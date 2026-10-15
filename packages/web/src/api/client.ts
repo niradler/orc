@@ -486,6 +486,7 @@ export const api = {
       agent?: string;
       job_run_id?: string;
       project_id?: string;
+      order?: "asc" | "desc";
       limit?: number;
       offset?: number;
     }) =>

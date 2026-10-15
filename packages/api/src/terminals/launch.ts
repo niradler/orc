@@ -94,6 +94,9 @@ async function checkedCwd(
   deps: LaunchDeps,
 ): Promise<string | undefined> {
   if (!cwd) return undefined;
+  // Native histories use extended drive paths; Windows CLI .cmd shims treat these as UNC
+  // and silently fall back to C:\Windows. Preserve real UNC and non-Windows paths.
+  if (deps.platform === "win32" && /^\\\\\?\\[A-Za-z]:\\/.test(cwd)) cwd = cwd.slice(4);
   if (!(await deps.isDirectory(cwd))) throw new ValidationError(`cwd is not a directory: ${cwd}`);
   return cwd;
 }

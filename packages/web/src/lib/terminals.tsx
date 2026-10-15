@@ -151,7 +151,9 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
         kind: session.agent === "codex" ? "codex" : "claude",
         live_session_id: session.id,
       });
-      navigate(`/terminals/${terminal.id}`);
+      const scope =
+        new URLSearchParams(window.location.search).get("project") ?? session.project_id;
+      navigate(`/terminals/${terminal.id}${scope ? `?project=${encodeURIComponent(scope)}` : ""}`);
       return terminal;
     },
     [create, navigate],

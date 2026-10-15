@@ -15,22 +15,23 @@ import {
 import { useDetailRoute } from "@/hooks/useDetailRoute";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useLoggedSessions } from "@/hooks/useSessions";
+import { useViewParam } from "@/lib/view-params";
 
 const PAGE_SIZE = 25;
 const HEAD = "font-label text-xs font-medium text-outline";
 
 export function LoggedSessions({ projectId }: { projectId: string }) {
   const desktop = useBreakpoint("sm");
-  const [page, setPage] = useState(0);
-  const {
-    selectedId: selected,
-    openDetail,
-    closeDetail,
-  } = useDetailRoute("/sessions", "sessionId");
+  const [order, setOrder] = useViewParam<"asc" | "desc">("order", "desc", ["asc", "desc"]);
+  const [pagination, setPagination] = useState({ order, page: 0 });
+  const page = pagination.order === order ? pagination.page : 0;
+  const setPage = (page: number) => setPagination({ order, page });
+  const { selectedId: selected, openDetail, closeDetail } = useDetailRoute("/audit", "sessionId");
   const { data, isLoading, error, refetch } = useLoggedSessions({
     ...(projectId === "all" ? {} : { project_id: projectId }),
     limit: PAGE_SIZE,
     offset: page * PAGE_SIZE,
+    order,
   });
 
   if (error) return <ErrorState message={(error as Error).message} onRetry={() => refetch()} />;
@@ -40,6 +41,21 @@ export function LoggedSessions({ projectId }: { projectId: string }) {
 
   return (
     <section data-testid="logged-sessions">
+      <div className="mb-4 flex justify-end">
+        <select
+          aria-label="Sort audit by date"
+          data-testid="audit-date-sort"
+          value={order}
+          onChange={(event) => {
+            setPage(0);
+            setOrder(event.target.value as "asc" | "desc");
+          }}
+          className="min-h-11 rounded-md border border-control-border bg-background px-3 text-sm text-on-surface"
+        >
+          <option value="desc">Created: newest first</option>
+          <option value="asc">Created: oldest first</option>
+        </select>
+      </div>
       {isLoading ? (
         <div className="space-y-2">
           {[...Array(5)].map((_, i) => (
@@ -48,7 +64,7 @@ export function LoggedSessions({ projectId }: { projectId: string }) {
           ))}
         </div>
       ) : rows.length === 0 ? (
-        <EmptyState message="No ORC sessions" />
+        <EmptyState message="No audit records" />
       ) : (
         <div className="min-w-0 overflow-hidden">
           {!desktop ? (
