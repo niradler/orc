@@ -29,7 +29,6 @@ import {
   unmountRuntime,
 } from "@/lib/terminal-runtime";
 
-const POLL_INTERVAL_MS = 3000;
 const MAX_EXITED_RETRIES = 2;
 
 interface TerminalsContextValue {
@@ -61,9 +60,6 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
   const query = useQuery({
     queryKey: ["terminals"],
     queryFn: () => api.terminals.list(),
-    // Nothing changes while terminals are unavailable until the API restarts, which a refetch
-    // on window focus picks up.
-    refetchInterval: (current) => (current.state.data?.ready === false ? false : POLL_INTERVAL_MS),
     retry: false,
   });
   const info = query.data;

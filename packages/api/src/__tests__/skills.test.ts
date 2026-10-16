@@ -89,6 +89,51 @@ describe("GET /skills/:name", () => {
   });
 });
 
+describe("skill read counts", () => {
+  type Listed = {
+    skills: {
+      name: string;
+      read_count: number;
+      ref_read_count: number;
+      reads_by_source: Record<string, number>;
+    }[];
+  };
+
+  test("should attribute reads to the X-Orc-Source caller", async () => {
+    await req(app, "GET", "/skills/orc-tasks", undefined, { "X-Orc-Source": "cli" });
+    await req(app, "GET", "/skills/orc-tasks", undefined, { "X-Orc-Source": "ui" });
+    await req(app, "GET", "/skills/orc-tasks", undefined, { "X-Orc-Source": "something-else" });
+    await req(app, "GET", "/skills/orc-tasks");
+    await req(app, "GET", "/skills/does-not-exist-xyz", undefined, { "X-Orc-Source": "cli" });
+    const res = await req(app, "GET", "/skills?q=orc-tasks");
+    const skill = ((await res.json()) as Listed).skills.find((s) => s.name === "orc-tasks");
+    expect(skill?.reads_by_source).toEqual({ mcp: 0, cli: 1, api: 2, ui: 1 });
+    expect(skill?.read_count).toBe(3);
+  });
+});
+
+describe("local agent skills", () => {
+  test("should list agents with per-skill import status", async () => {
+    const res = await req(app, "GET", "/skills/local-agents");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { agents: { id: string; skills: { status: string }[] }[] };
+    expect(Array.isArray(body.agents)).toBe(true);
+  });
+
+  test("should skip unknown skills and reject empty selections", async () => {
+    const res = await req(app, "POST", "/skills/local-agents/import", {
+      skills: [{ agent: "no-such-agent", name: "nothing" }],
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as unknown).toEqual({
+      imported: [],
+      skipped: [{ agent: "no-such-agent", name: "nothing", reason: "Skill not found" }],
+    });
+    const empty = await req(app, "POST", "/skills/local-agents/import", { skills: [] });
+    expect(empty.status).toBe(400);
+  });
+});
+
 // ─── POST /skills ────────────────────────────────────────────────────────────
 
 describe("POST /skills", () => {

@@ -53,7 +53,6 @@ export function KnowledgeNotebook({ projectId }: { projectId: string }) {
   const index = useQuery({
     queryKey: ["wiki", scope, "notebook"],
     queryFn: () => api.wiki.list(scope).then((response) => response.pages),
-    refetchInterval: 30000,
   });
   const page = useQuery({
     queryKey: ["wiki-page", slug, pageScope],

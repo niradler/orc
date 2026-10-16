@@ -8,7 +8,6 @@ export function useSkills(
   return useQuery({
     queryKey: ["skills", params],
     queryFn: () => api.skills.list(params),
-    refetchInterval: 60_000,
   });
 }
 

@@ -38,7 +38,11 @@ test("multiplexer splits terminal, Git and file panes, resizes and restores them
   });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.addInitScript((secret) => localStorage.setItem("orc_api_secret", secret), API_SECRET);
+  await page.addInitScript(
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+    API_SECRET,
+  );
   await page.goto(`/terminals/${first.id}`);
   await expect(page.getByTestId("terminal-viewport")).toHaveCount(1);
   await page.getByTestId("pane-split-horizontal").click();
@@ -172,7 +176,11 @@ test("should edit, save and reopen text files while preserving drafts and reject
     kind: "shell",
     cwd: repo,
   });
-  await page.addInitScript((secret) => localStorage.setItem("orc_api_secret", secret), API_SECRET);
+  await page.addInitScript(
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+    API_SECRET,
+  );
   await page.goto(`/terminals/${terminal.id}`);
   await page.getByTestId("pane-view").selectOption("files");
   await page

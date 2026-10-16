@@ -334,6 +334,24 @@ describe("MCP context tool", () => {
   });
 });
 
+describe("MCP skill tools", () => {
+  test("should count skill_read and list most-read skills first", async () => {
+    await executeTool("skill_read", { name: "orc-reviewer", scope: "global" });
+    await executeTool("skill_read", { name: "orc-reviewer", scope: "global", ref: "SKILL.md" });
+    const listing = await executeTool("skill_list", { scope: "global", limit: 1 });
+    expect(listing.split("\n")[0]).toContain("orc-reviewer");
+    expect(listing).toContain("(2 reads)");
+    expect(listing).toMatch(/Showing 1 of \d+; use q to search or raise limit\./);
+  });
+
+  test("should not count a read of a missing skill", async () => {
+    expect(await executeTool("skill_read", { name: "missing-skill-xyz" })).toContain(
+      "Skill not found",
+    );
+    expect(await executeTool("skill_list", { q: "missing-skill-xyz" })).toBe("No skills found.");
+  });
+});
+
 // ── Session log ───────────────────────────────────────────────────────────────
 
 describe("MCP session_log tool", () => {

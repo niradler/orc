@@ -7,6 +7,7 @@ import {
   getSkillImportOrigin,
   importRepositorySkills,
 } from "@orc/core/skill-import";
+import { importLocalAgentSkills, listLocalAgentSkills } from "@orc/core/skill-local-import";
 import {
   createSkill,
   listSkills,
@@ -19,10 +20,17 @@ import {
 import { syncImportedSkill } from "@orc/core/skill-sync";
 import { SkillUpdateSchema, WikiScopeSchema } from "@orc/core/wiki";
 import { getSqlite } from "@orc/db/client";
-import { SkillHistory } from "@orc/db/skill-history";
+import { SkillHistory, type SkillReadSource } from "@orc/db/skill-history";
 import { resolveWikiProject } from "./wiki.js";
 
 const app = new OpenAPIHono();
+
+const ORC_SOURCE_HEADER = "X-Orc-Source";
+
+/** Attributes a skill read to the calling client; unknown callers count as plain API reads. */
+function readSource(client: string | undefined): SkillReadSource {
+  return client === "cli" || client === "ui" ? client : "api";
+}
 
 const VisibilitySchema = z
   .object({ hidden_builtins: z.array(z.string().min(1).max(64)).max(512) })
@@ -143,6 +151,27 @@ const SkillRefSchema = z
   })
   .openapi("SkillRef");
 
+const SkillListItemSchema = SkillMetaSchema.extend({
+  read_count: z
+    .number()
+    .int()
+    .openapi({ description: "Agent reads (mcp + cli + api) of the skill entry point" }),
+  reads_by_source: z
+    .object({
+      mcp: z.number().int(),
+      cli: z.number().int(),
+      api: z.number().int(),
+      ui: z.number().int(),
+    })
+    .openapi({ description: "Entry-point reads per source; ui is not counted in read_count" }),
+  ref_read_count: z.number().int().openapi({ description: "Reads of supporting files" }),
+  last_read_at: z.number().int().nullable(),
+  activity_at: z
+    .number()
+    .int()
+    .openapi({ description: "Last read, else last update, else file creation (epoch seconds)" }),
+}).openapi("SkillListItem");
+
 const SkillFullSchema = SkillMetaSchema.extend({
   content: z.string(),
   references: z.array(SkillRefSchema),
@@ -185,8 +214,13 @@ const listRoute = createRoute({
   request: {
     query: z.object({
       ...WikiScopeSchema.shape,
-      q: z.string().optional().openapi({ description: "Keyword search on name and description" }),
+      q: z.string().optional().openapi({ description: "Full-text search on name and description" }),
       source: z.enum(["builtin", "user"]).optional(),
+      sort: z.enum(["reads", "recent"]).optional().openapi({
+        description:
+          "reads (default): most read first; recent: last read, updated or created first",
+      }),
+      limit: z.coerce.number().int().min(1).max(500).optional(),
       reload: z.coerce.boolean().optional().openapi({ description: "Force cache rebuild" }),
       include_hidden: z
         .enum(["true", "false"])
@@ -200,7 +234,8 @@ const listRoute = createRoute({
       content: {
         "application/json": {
           schema: z.object({
-            skills: z.array(SkillMetaSchema),
+            skills: z.array(SkillListItemSchema),
+            total: z.number().int(),
             broken: z.array(z.object({ path: z.string(), error: z.string() })),
             warnings: z.array(z.object({ path: z.string(), message: z.string() })),
           }),
@@ -357,6 +392,85 @@ app.openapi(
       ),
     );
   },
+);
+
+const LocalSkillSchema = z
+  .object({
+    agent: z.string(),
+    name: z.string(),
+    description: z.string(),
+    path: z.string(),
+    content_hash: z.string(),
+    status: z.enum(["new", "installed", "conflict", "changed", "invalid"]),
+    also_in: z.array(z.string()),
+    extra_fields: z.array(z.string()),
+    error: z.string().optional(),
+  })
+  .openapi("LocalSkill");
+const LocalSkillItemSchema = z.object({ agent: z.string().max(64), name: z.string().max(64) });
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/skills/local-agents",
+    tags: ["Skills"],
+    summary: "List skills installed for local coding agents (~/.claude, ~/.codex, ...)",
+    responses: {
+      200: {
+        description: "Agents with their skills and import status",
+        content: {
+          "application/json": {
+            schema: z.object({
+              agents: z.array(
+                z.object({
+                  id: z.string(),
+                  label: z.string(),
+                  dir: z.string(),
+                  skills: z.array(LocalSkillSchema),
+                }),
+              ),
+            }),
+          },
+        },
+      },
+    },
+  }),
+  (c) => c.json({ agents: listLocalAgentSkills() }),
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/skills/local-agents/import",
+    tags: ["Skills"],
+    summary: "Copy selected local agent skills into ORC",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({ skills: z.array(LocalSkillItemSchema).min(1).max(200) }).strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Imported skills and the ones skipped with a reason",
+        content: {
+          "application/json": {
+            schema: z.object({
+              imported: z.array(
+                z.object({ name: z.string(), description: z.string(), path: z.string() }),
+              ),
+              skipped: z.array(LocalSkillItemSchema.extend({ reason: z.string() })),
+            }),
+          },
+        },
+      },
+      400: { description: "Invalid selection" },
+    },
+  }),
+  (c) => c.json(importLocalAgentSkills(c.req.valid("json").skills)),
 );
 
 app.openapi(
@@ -526,15 +640,17 @@ app.openapi(
 );
 
 app.openapi(listRoute, (c) => {
-  const { q, source, reload, include_hidden } = c.req.valid("query");
+  const { q, source, sort, limit, reload, include_hidden } = c.req.valid("query");
   const skills = new SkillHistory(getSqlite()).list(resolveWikiProject(c.req.valid("query")), {
     q,
     source: source as SkillSource | undefined,
+    sort,
     reload,
     include_hidden,
   });
   return c.json({
-    skills,
+    skills: limit === undefined ? skills : skills.slice(0, limit),
+    total: skills.length,
     broken: skillValidationIssues(),
     warnings: skillWarnings(),
   });
@@ -543,12 +659,11 @@ app.openapi(listRoute, (c) => {
 app.openapi(readRoute, (c) => {
   const { name } = c.req.valid("param");
   const { ref } = c.req.valid("query");
-  const result = new SkillHistory(getSqlite()).read(
-    name,
-    resolveWikiProject(c.req.valid("query")),
-    ref,
-  );
+  const projectId = resolveWikiProject(c.req.valid("query"));
+  const history = new SkillHistory(getSqlite());
+  const result = history.read(name, projectId, ref);
   if (!result) throw new NotFoundError("Skill", name);
+  history.recordRead(name, projectId, readSource(c.req.header(ORC_SOURCE_HEADER)), ref);
   return c.json(result as SkillFull | SkillRefContent);
 });
 

@@ -28,7 +28,6 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
   const agents = useQuery({
     queryKey: ["agents"],
     queryFn: () => api.agents.list(),
-    refetchInterval: 60_000,
   });
   const { selectedId, openDetail, closeDetail } = useDetailRoute(
     embedded ? "/packages/agents" : "/agents",

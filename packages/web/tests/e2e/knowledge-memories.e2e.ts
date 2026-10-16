@@ -31,7 +31,8 @@ for (const width of [1440, 390]) {
     await page.getByTestId("nav-memories").click();
     await expect(row).toBeVisible();
     await page.addInitScript(
-      (secret) => localStorage.setItem("orc_api_secret", secret),
+      (secret) =>
+        localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
       API_SECRET,
     );
     await page.goto(`/memories/${memory.id}?origin=wiki`);

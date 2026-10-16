@@ -13,7 +13,6 @@ export function WorktreeRegistry({ compact = false }: { compact?: boolean }) {
     queryKey: ["worktrees", "registry"],
     queryFn: () => api.git.registry(),
     enabled: open,
-    refetchInterval: 15_000,
   });
   const cleanup = useMutation({
     mutationFn: () =>

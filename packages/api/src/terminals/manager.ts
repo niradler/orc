@@ -1,3 +1,4 @@
+import { changes } from "@orc/core/changes";
 import { ConflictError, NotFoundError } from "@orc/core/errors";
 import { trackHostProcess } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
@@ -118,7 +119,10 @@ export class TerminalManager {
           Math.floor(input.createdAt.getTime() / 1000)
       ) {
         validate?.({ ...info });
-        info.live_session_id = input.id;
+        if (info.live_session_id !== input.id) {
+          info.live_session_id = input.id;
+          changes.publish("terminals");
+        }
         return { ...info };
       }
     }
@@ -169,6 +173,7 @@ export class TerminalManager {
     entry.info.pid = entry.pty.pid;
     if (input.launch.host) trackHostProcess(input.launch.host, entry.pty.exited);
     this.entries.set(id, entry);
+    changes.publish("terminals");
     entry.pty.exited.then((code) => this.onExit(entry, code));
     return { ...entry.info };
   }
@@ -205,6 +210,7 @@ export class TerminalManager {
     if (entry.info.status === "running") entry.pty.kill();
     this.closeSinks(entry);
     this.entries.delete(id);
+    changes.publish("terminals");
     for (const [token, t] of this.tickets) if (t.terminalId === id) this.tickets.delete(token);
   }
 
@@ -233,6 +239,7 @@ export class TerminalManager {
       this.closeSinks(entry);
     }
     this.entries.clear();
+    changes.publish("terminals");
     this.tickets.clear();
   }
 
@@ -260,6 +267,7 @@ export class TerminalManager {
     if (entry.info.status === "exited") return;
     entry.info.status = "exited";
     entry.info.exit_code = code;
+    changes.publish("terminals");
     for (const sink of entry.sinks) sink.exit(code);
   }
 

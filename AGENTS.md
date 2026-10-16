@@ -147,7 +147,7 @@ Read [`DESIGN.md`](DESIGN.md) before UI work. It records ORC's intended visual d
 
 React SPA replacing the removed TUI. Same feature surface - Tasks, Kanban, Jobs, Memories, Projects, Sessions, Knowledge, Skills, Flows - plus Dashboard, Settings, and a streaming chat panel that spawns `acpx` via `POST /chat/stream`.
 
-- **Stack**: React 19 + Vite 6 + TypeScript + Tailwind + shadcn/ui + React Query (30s refetch) + `@dnd-kit` (kanban DnD) + Playwright (e2e)
+- **Stack**: React 19 + Vite 6 + TypeScript + Tailwind + shadcn/ui + React Query (shared SSE change notifications) + `@dnd-kit` (kanban DnD) + Playwright (e2e)
 - **API client**: `packages/web/src/api/client.ts` - calls `${getApiUrl()}/<route>`, default `getApiUrl()` is `/api`. Override via `localStorage.orc_api_url` / `orc_api_secret`.
 - **Hooks**: `packages/web/src/hooks/` - one React Query wrapper per resource (`useTasks`, `useJobs`, `useMemories`, `useProjects`, `useSessions`, `useKnowledge`, `useSkills`, `useFlows`, `useBackends`, `useChat`, `useHealth`)
 - **Flows**: the flow run panel in the task sheet and the `/flows` browser read `GET /tasks/{id}/flow` and `GET /flows`. The graph is drawn by hand (`src/lib/flow-graph.ts` - a pure, unit-tested layered layout, no graph library) so loopbacks are visible as edges that go backwards. See [docs/task-flows.md](docs/task-flows.md#in-the-web-dashboard).

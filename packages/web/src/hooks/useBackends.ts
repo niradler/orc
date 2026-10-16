@@ -10,6 +10,5 @@ export function useBackends() {
   return useQuery({
     queryKey: ["backends"],
     queryFn: () => api.backends.list(),
-    refetchInterval: 60_000,
   });
 }

@@ -30,7 +30,6 @@ function DiffSection({
     queryKey: ["git", terminalId, "diff", staged, path],
     queryFn: () => api.git.diff(terminalId, staged, path),
     enabled: visible,
-    refetchInterval: 5_000,
   });
   const lines = diff.data?.diff ? diffLines(diff.data.diff) : [];
   return (

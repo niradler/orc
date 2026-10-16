@@ -27,7 +27,7 @@ export function WorkspaceHeader({
 }) {
   const { pathname, search } = useLocation();
   const { data: projects } = useProjects({ status: "active" });
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, error: themeError } = useTheme();
   const section = workspaceSection(pathname);
   const name =
     projectId === "all"
@@ -37,6 +37,11 @@ export function WorkspaceHeader({
         : (projects?.find((p) => p.id === projectId)?.name ?? "Project");
   return (
     <div className="shrink-0 border-b border-border bg-background">
+      {themeError && (
+        <p role="alert" className="px-6 py-2 text-sm text-error">
+          {themeError}
+        </p>
+      )}
       <header className="flex min-h-14 items-center gap-2 px-3 md:px-6">
         <Button
           data-testid="mobile-nav-open"

@@ -183,7 +183,6 @@ export function LiveSessionDetail({
   const { data, isLoading, isFetching, error, refetch, dataUpdatedAt } = useTranscript(
     sessionId,
     search,
-    live,
   );
 
   const bodyRef = useRef<HTMLDivElement>(null);

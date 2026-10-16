@@ -33,7 +33,7 @@ export function SshHostSettings() {
   useEffect(() => {
     if (!ssh) return;
     setChoice(ssh.host ?? LOCAL);
-    setPort(String(ssh.remote_port));
+    setPort(ssh.remote_port === null ? "" : String(ssh.remote_port));
   }, [ssh]);
 
   if (loadError)
@@ -53,7 +53,8 @@ export function SshHostSettings() {
   const alias = choice === LOCAL ? null : choice;
   const hosts = ssh.host && !ssh.hosts.includes(ssh.host) ? [ssh.host, ...ssh.hosts] : ssh.hosts;
   const portNumber = Number(port);
-  const portValid = Number.isInteger(portNumber) && portNumber >= 1 && portNumber <= 65535;
+  const portValid =
+    port.trim() === "" || (Number.isInteger(portNumber) && portNumber >= 1 && portNumber <= 65535);
   const disabled = ssh.locked || !ssh.supported;
   const claude = backends?.backends.find((backend) => backend.name === "claude");
   const result = test.data;
@@ -112,13 +113,14 @@ export function SshHostSettings() {
         </div>
         <div className="space-y-2">
           <Label htmlFor="ssh-remote-port" className="font-label text-sm text-muted-foreground">
-            Remote port
+            Tunnel port override
           </Label>
           <Input
             id="ssh-remote-port"
             aria-invalid={Boolean(alias && !portValid)}
             data-testid="ssh-remote-port"
             value={port}
+            placeholder="Automatic"
             onChange={(e) => setPort(e.target.value)}
             disabled={disabled || !alias}
             inputMode="numeric"
@@ -128,7 +130,7 @@ export function SshHostSettings() {
             <p className="text-sm text-error">Enter a remote port from 1 to 65535.</p>
           )}
           <p className="font-body text-sm text-muted-foreground">
-            Change it if the host already listens on this port, e.g. its own orc.
+            Leave empty to let SSH choose an available port automatically.
           </p>
         </div>
         <div className="flex gap-3">
@@ -138,7 +140,7 @@ export function SshHostSettings() {
             onClick={() =>
               select.mutate({
                 host: alias,
-                remotePort: alias ? portNumber : null,
+                remotePort: alias && port.trim() ? portNumber : null,
               })
             }
             className="font-label text-sm bg-primary text-primary-foreground hover:bg-primary/90"

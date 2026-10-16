@@ -4,6 +4,7 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./changes": "./src/changes.ts",
     ".": "./src/index.ts",
     "./config": "./src/config.ts",
     "./exec-host": "./src/exec-host.ts",
@@ -18,6 +19,7 @@
     "./skill-files": "./src/skill-files.ts",
     "./skill-import": "./src/skill-import.ts",
     "./skill-import-types": "./src/skill-import-types.ts",
+    "./skill-local-import": "./src/skill-local-import.ts",
     "./skill-edit": "./src/skill-edit.ts",
     "./skill-sync": "./src/skill-sync.ts",
     "./agent-service": "./src/agent-service.ts",

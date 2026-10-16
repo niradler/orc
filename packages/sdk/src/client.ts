@@ -35,6 +35,9 @@ import type {
   SessionHandoffUpload,
 } from "@orc/core/session-handoff";
 import type {
+  LocalSkillAgentListing,
+  LocalSkillImportItem,
+  LocalSkillImportResult,
   SkillDiscovery,
   SkillImportInput,
   SkillImportOrigin,
@@ -402,6 +405,9 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<{ skills: SkillFull[] }>("POST", "/skills/import", input),
       origin: (name: string) =>
         c<SkillImportOrigin | null>("GET", `/skills/${encodeURIComponent(name)}/origin`),
+      localAgents: () => c<{ agents: LocalSkillAgentListing[] }>("GET", "/skills/local-agents"),
+      importLocal: (skills: LocalSkillImportItem[]) =>
+        c<LocalSkillImportResult>("POST", "/skills/local-agents/import", { skills }),
       sync: (name: string, input: SkillSyncInput = {}) =>
         c<SkillSyncResult>("POST", `/skills/${encodeURIComponent(name)}/sync`, input),
       editFile: (name: string, input: { path: string; content: string; expectedContent: string }) =>

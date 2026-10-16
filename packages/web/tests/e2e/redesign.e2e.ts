@@ -104,7 +104,11 @@ test("notebook links and graph use real notes and edits reopen after theme chang
 test("Codex chat streams and keeps history while switching between desktop and mobile", async ({
   page,
 }) => {
-  await page.addInitScript((secret) => localStorage.setItem("orc_api_secret", secret), API_SECRET);
+  await page.addInitScript(
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+    API_SECRET,
+  );
   await page.goto("/tasks");
   await page.getByTestId("chat-open-button").click();
   await expect(page.getByTestId("chat-agent-select")).toHaveValue("codex");

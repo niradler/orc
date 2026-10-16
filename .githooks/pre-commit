@@ -1,0 +1,5 @@
+#!/bin/sh
+# Local CI gates (GitHub Actions PR workflows are manual-only). Bypass once: git commit --no-verify
+# Clear the git env so tests that create throwaway repos cannot touch this one.
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX GIT_OBJECT_DIRECTORY GIT_COMMON_DIR
+exec bun scripts/ci-local.ts

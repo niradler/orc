@@ -31,7 +31,11 @@ test("slice 1 terminal menu, real shell and slice 2 worktree cleanup", async ({
   request,
 }) => {
   await apiPost(request, "/projects", { name: tid("git-e2e"), scope: repo });
-  await page.addInitScript((secret) => localStorage.setItem("orc_api_secret", secret), API_SECRET);
+  await page.addInitScript(
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+    API_SECRET,
+  );
   await page.goto("/terminals");
   await page.getByTestId("terminal-new").click();
   await page.getByTestId("terminal-cwd").fill(repo);
@@ -64,7 +68,11 @@ test("slice 3 git panel status, diff, selected staging, commit, branches and tas
   });
   writeFileSync(join(repo, "file.txt"), "panel edit\n");
   writeFileSync(join(repo, "untracked.txt"), "keep unstaged\n");
-  await page.addInitScript((secret) => localStorage.setItem("orc_api_secret", secret), API_SECRET);
+  await page.addInitScript(
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+    API_SECRET,
+  );
   await page.goto(`/terminals/${terminal.id}`);
   await page.getByTestId("pane-split-horizontal").click();
   await expect(page.getByTestId("terminal-git-toggle")).toHaveCount(0);
@@ -181,7 +189,11 @@ test("Git pane selects all, switches branches and worktrees, and shows the curre
       },
     });
   });
-  await page.addInitScript((secret) => localStorage.setItem("orc_api_secret", secret), API_SECRET);
+  await page.addInitScript(
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+    API_SECRET,
+  );
   await page.goto(`/terminals/${terminal.id}`);
   await page.getByTestId("pane-split-horizontal").click();
   await expect(page.getByTestId("terminal-git-toggle")).toHaveCount(0);
@@ -290,7 +302,11 @@ test("slice 4 GitHub board filtering, linking, creating task and reopening saved
       },
     });
   });
-  await page.addInitScript((secret) => localStorage.setItem("orc_api_secret", secret), API_SECRET);
+  await page.addInitScript(
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+    API_SECRET,
+  );
   await page.goto("/tasks");
   await page.getByTestId("github-board-toggle").click();
   await expect(page.getByTestId("github-item")).toHaveCount(2);

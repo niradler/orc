@@ -23,11 +23,19 @@ import type {
 } from "@orc/core/kb";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
 import type { RuleEventCapability } from "@orc/core/rule-events";
+import {
+  API_ACCESS_CHANGED,
+  readApiSecret,
+  type WorkspacePreferences,
+} from "../lib/api-credentials";
 
 export type { PackageDiscovery } from "@orc/core/primitive-types";
 
 import type {
   AuditEntry,
+  LocalSkillAgentListing,
+  LocalSkillImportItem,
+  LocalSkillImportResult,
   SkillChange,
   SkillDiscovery,
   SkillImportInput,
@@ -44,7 +52,13 @@ import type {
   WikiWrite,
 } from "@orc/sdk/types";
 
-export type { SkillDiscovery, SkillImportInput, SkillImportOrigin } from "@orc/sdk/types";
+export type {
+  LocalSkill,
+  LocalSkillAgentListing,
+  SkillDiscovery,
+  SkillImportInput,
+  SkillImportOrigin,
+} from "@orc/sdk/types";
 
 import type { RulePolicy, RuleRevision } from "@orc/core/rule-types";
 
@@ -158,7 +172,7 @@ import type {
 
 export const getApiUrl = (): string => localStorage.getItem("orc_api_url") ?? "/api";
 
-export const getApiSecret = (): string => localStorage.getItem("orc_api_secret") ?? "";
+export const getApiSecret = (): string => readApiSecret(getApiUrl());
 
 export type TerminalKind = "shell" | "claude" | "codex" | "cursor" | "gemini" | "copilot";
 export type AgentSetup = {
@@ -204,7 +218,7 @@ export type HostDirectoryListing = {
 
 export type SshState = {
   host: string | null;
-  remote_port: number;
+  remote_port: number | null;
   hosts: string[];
   locked: boolean;
   supported: boolean;
@@ -348,6 +362,7 @@ async function req<T>(
     headers,
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
+  if (res.status === 401) window.dispatchEvent(new Event(API_ACCESS_CHANGED));
   if (res.status === 204) return null as T;
   // "Not there yet" is a normal state for some resources (a task that has never
   // run a flow), so callers can ask for null instead of a thrown error and skip
@@ -365,6 +380,11 @@ async function req<T>(
 // ---- API client ----
 
 export const api = {
+  settings: {
+    get: () => req<WorkspacePreferences>("GET", "/settings"),
+    save: (preferences: WorkspacePreferences) =>
+      req<WorkspacePreferences>("PATCH", "/settings", preferences),
+  },
   search: (q: string, project_id?: string) =>
     req<{ results: GlobalSearchHit[] }>("GET", "/search", undefined, { q, project_id }),
   rules: {
@@ -593,6 +613,9 @@ export const api = {
       req<{ skills: SkillFull[] }>("POST", "/skills/import", input),
     origin: (name: string) =>
       req<SkillImportOrigin | null>("GET", `/skills/${encodeURIComponent(name)}/origin`),
+    localAgents: () => req<{ agents: LocalSkillAgentListing[] }>("GET", "/skills/local-agents"),
+    importLocal: (skills: LocalSkillImportItem[]) =>
+      req<LocalSkillImportResult>("POST", "/skills/local-agents/import", { skills }),
     sync: (name: string, input: SkillSyncInput = {}) =>
       req<SkillSyncResult>("POST", `/skills/${encodeURIComponent(name)}/sync`, input),
     editFile: (name: string, input: { path: string; content: string; expectedContent: string }) =>

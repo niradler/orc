@@ -5,7 +5,6 @@ export function useSessions(params?: { agent?: string; limit?: number }) {
   return useQuery({
     queryKey: ["sessions", params],
     queryFn: () => api.sessions.list({ ...params, limit: params?.limit ?? 50 }),
-    refetchInterval: 30_000,
     select: (data) => data.sessions,
   });
 }
@@ -19,7 +18,6 @@ export function useLoggedSessions(params: {
   return useQuery({
     queryKey: ["sessions", "logged", params],
     queryFn: () => api.sessions.list(params),
-    refetchInterval: 30_000,
     placeholderData: keepPreviousData,
   });
 }
@@ -36,7 +34,6 @@ export function useLiveSessions(active: boolean) {
   return useQuery({
     queryKey: ["sessions", "live", active],
     queryFn: () => api.sessions.live({ active, limit: 5000 }),
-    refetchInterval: 3_000,
     select: (data) => data.sessions,
   });
 }
@@ -64,13 +61,12 @@ export function useSessionSearch(q: string, agent: string) {
     queryFn: () => api.sessions.search({ q, ...(agent ? { agent } : {}), limit: 200 }),
     enabled: q.trim().length >= 2,
     staleTime: 30_000,
-    refetchInterval: 3_000,
   });
 }
 
 const TRANSCRIPT_PAGE = 500;
 
-export function useTranscript(id: string | null, q: string, live: boolean) {
+export function useTranscript(id: string | null, q: string) {
   return useQuery({
     queryKey: ["sessions", "transcript", id, q],
     queryFn: async (): Promise<TranscriptPage> => {
@@ -93,7 +89,6 @@ export function useTranscript(id: string | null, q: string, live: boolean) {
     enabled: Boolean(id),
     staleTime: 0,
     refetchOnMount: "always",
-    refetchInterval: live ? 5_000 : false,
     retry: false,
   });
 }
@@ -108,7 +103,6 @@ export function useTaskSessions(taskId: string | null) {
         limit: 100,
       }),
     enabled: Boolean(taskId),
-    refetchInterval: 10_000,
     select: (data) => data.sessions,
   });
 }

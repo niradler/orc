@@ -37,12 +37,10 @@ export default function Wiki({ projectId }: { projectId: string }) {
   const pages = useQuery({
     queryKey: ["wiki", scope, "history-index"],
     queryFn: () => api.wiki.list(scope).then((r) => r.pages),
-    refetchInterval: 30000,
   });
   const changes = useQuery({
     queryKey: ["wiki-changes", scope],
     queryFn: () => api.wiki.changes(scope),
-    refetchInterval: 30000,
   });
   const audit = useQuery({
     queryKey: ["knowledge-audit", scope],

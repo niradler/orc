@@ -9,10 +9,14 @@ for (const theme of ["dark", "light"])
       request,
     }, testInfo) => {
       await page.setViewportSize({ width, height: 900 });
+      await page.request.patch("/api/settings", {
+        headers: { Authorization: `Bearer ${API_SECRET}` },
+        data: { theme },
+      });
       await page.addInitScript(
         ({ theme, secret }) => {
           localStorage.setItem("orc_theme", theme);
-          localStorage.setItem("orc_api_secret", secret);
+          localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
         },
         { theme, secret: API_SECRET },
       );

@@ -5,7 +5,6 @@ export function useSsh() {
   return useQuery({
     queryKey: ["ssh"],
     queryFn: () => api.ssh.get(),
-    refetchInterval: 60_000,
   });
 }
 

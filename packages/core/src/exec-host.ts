@@ -18,6 +18,7 @@ export interface SshExecHost {
   kind: "ssh";
   alias: string;
   remotePort: number;
+  automaticPort?: boolean;
   apiTarget: string;
   secret: string | undefined;
   connectTimeoutSecs: number;
@@ -133,6 +134,7 @@ const verifiedMasters = new Map<string, number>();
 const probes = new Map<string, { at: number; probe: Promise<HostProbe> }>();
 const liveProcesses = new Map<string, number>();
 const retiring = new Set<string>();
+const allocatedPorts = new Map<string, number>();
 
 export function resolveExecHost(config: OrcConfig = loadConfig()): ExecHost {
   return execHostFor(config.ssh.host ?? null, config);
@@ -143,11 +145,13 @@ export function execHostFor(alias: string | null, config: OrcConfig = loadConfig
   if (!ALIAS_PATTERN.test(alias)) throw new ValidationError(`Invalid SSH host alias: ${alias}`);
   const bind = config.api.host;
   const target = ["0.0.0.0", "::", "", "localhost"].includes(bind) ? "127.0.0.1" : bind;
+  const apiTarget = `${target.includes(":") ? `[${target}]` : target}:${config.api.port}`;
   return {
     kind: "ssh",
     alias,
-    remotePort: config.ssh.remote_port ?? config.api.port,
-    apiTarget: `${target.includes(":") ? `[${target}]` : target}:${config.api.port}`,
+    automaticPort: config.ssh.remote_port === undefined,
+    remotePort: config.ssh.remote_port ?? allocatedPorts.get(`${alias}|${apiTarget}`) ?? 0,
+    apiTarget,
     secret: configuredApiSecret(config.api.secret),
     connectTimeoutSecs: config.ssh.connect_timeout_secs,
   };
@@ -162,6 +166,8 @@ export function hostPlatform(host: ExecHost): NodeJS.Platform {
 }
 
 export function orcUrlOnHost(host: SshExecHost): string {
+  if (!host.remotePort)
+    throw new SshError("SSH tunnel must be connected before configuring the agent callback");
   return `http://127.0.0.1:${host.remotePort}`;
 }
 
@@ -297,7 +303,7 @@ export function describeSshFailure(alias: string, log: string): string {
   if (/permission denied/i.test(text))
     return `${alias} rejected the login. orc cannot answer password prompts, so configure a key (IdentityFile in ~/.ssh/config or ssh-agent).`;
   if (/remote port forwarding failed/i.test(text))
-    return `${alias} refused the reverse tunnel: its port is already in use. Set ssh.remote_port to a free port.`;
+    return `${alias} refused the reverse tunnel: its port is already in use. Clear the tunnel port override to choose an available port automatically.`;
   if (/could not resolve hostname/i.test(text))
     return `${alias} does not resolve. Check the HostName in ~/.ssh/config.`;
   if (/bad owner or permissions/i.test(text))
@@ -310,16 +316,24 @@ export function describeSshFailure(alias: string, log: string): string {
 
 async function startMaster(host: SshExecHost): Promise<void> {
   mkdirSync(sshDir(), { recursive: true, mode: 0o700 });
-  const forward = `${host.remotePort}:${host.apiTarget}`;
+  const forward = `${host.automaticPort ? "auto" : host.remotePort}:${host.apiTarget}`;
   const stateFile = join(sshDir(), `${host.alias}.forward`);
   const current = existsSync(stateFile) ? readFileSync(stateFile, "utf8") : "";
   // In colocated Docker installs the API is already reachable on the SSH
   // host, so no persistent connection or reverse tunnel is needed. Keeping a
   // direct-mode ControlMaster would only consume a process and leave ordinary
   // PTYs dependent on its socket.
-  if (current === "direct" && (await remoteApiReachable(host))) return;
+  if (!host.automaticPort && current === "direct" && (await remoteApiReachable(host))) return;
   if (await controlCommand(host.alias, "check")) {
     if (current === forward) return;
+    if (host.automaticPort && current.startsWith(`${forward}|`)) {
+      const port = Number(current.slice(forward.length + 1));
+      if (Number.isInteger(port) && port > 0 && port <= 65535) {
+        allocatedPorts.set(`${host.alias}|${host.apiTarget}`, port);
+        host.remotePort = port;
+        return;
+      }
+    }
     await controlCommand(host.alias, "exit");
   }
   const log = join(sshDir(), `${host.alias}.log`);
@@ -334,8 +348,7 @@ async function startMaster(host: SshExecHost): Promise<void> {
       "ExitOnForwardFailure=yes",
       "-f",
       "-N",
-      "-R",
-      forward,
+      ...(host.automaticPort ? [] : ["-R", `${host.remotePort}:${host.apiTarget}`]),
       host.alias,
     ],
     {
@@ -350,11 +363,47 @@ async function startMaster(host: SshExecHost): Promise<void> {
     // A colocated Docker deployment can already expose ORC on the SSH host's
     // loopback port. In that case a reverse forward cannot bind the port, but
     // agents can still reach the authenticated API directly from the host.
-    if (/remote port forwarding failed/i.test(failure) && (await remoteApiReachable(host))) {
+    if (
+      !host.automaticPort &&
+      /remote port forwarding failed/i.test(failure) &&
+      (await remoteApiReachable(host))
+    ) {
       writeFileSync(stateFile, "direct", { mode: 0o600 });
       return;
     }
     throw new SshError(describeSshFailure(host.alias, failure));
+  }
+  if (host.automaticPort) {
+    const allocation = await collect(
+      Bun.spawn(
+        [
+          sshBinary(),
+          ...masterOptions(host),
+          "-O",
+          "forward",
+          "-R",
+          `127.0.0.1:0:${host.apiTarget}`,
+          host.alias,
+        ],
+        {
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+          timeout: (host.connectTimeoutSecs + 5) * 1000,
+        },
+      ),
+    );
+    const port = Number(allocation.stdout.trim());
+    if (allocation.code !== 0 || !Number.isInteger(port) || port < 1 || port > 65535) {
+      await controlCommand(host.alias, "exit");
+      throw new SshError(
+        "SSH could not allocate an available callback port. Check that remote forwarding is allowed.",
+      );
+    }
+    allocatedPorts.set(`${host.alias}|${host.apiTarget}`, port);
+    host.remotePort = port;
+    writeFileSync(stateFile, `${forward}|${port}`, { mode: 0o600 });
+    return;
   }
   writeFileSync(stateFile, forward, { mode: 0o600 });
 }
@@ -402,6 +451,8 @@ export async function ensureSshMaster(host: SshExecHost): Promise<void> {
     pendingMasters.set(host.alias, pending);
   }
   await pending;
+  if (host.automaticPort)
+    host.remotePort = allocatedPorts.get(`${host.alias}|${host.apiTarget}`) ?? 0;
   verifiedMasters.set(key, Date.now());
 }
 

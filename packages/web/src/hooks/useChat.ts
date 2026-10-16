@@ -16,6 +16,7 @@ import {
   useState,
 } from "react";
 import { getApiSecret, getApiUrl } from "@/api/client";
+import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
 import {
   CHAT_CONFIG_KEY,
   type ChatConfig,
@@ -136,6 +137,7 @@ function useChatController() {
           }),
           signal: controller.signal,
         });
+        if (response.status === 401) window.dispatchEvent(new Event(API_ACCESS_CHANGED));
         if (!response.ok) {
           const body: unknown = await response.json().catch(() => null);
           const message =

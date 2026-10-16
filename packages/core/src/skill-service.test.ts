@@ -252,6 +252,35 @@ describe("scanSkills", () => {
   });
 });
 
+// ─── fields outside the spec ────────────────────────────────────────────────
+
+describe("skills with top-level fields outside the spec", () => {
+  const name = `extra-fields-${process.pid}`;
+  const content = `---
+name: ${name}
+description: Hinted
+argument-hint: <file>
+version: 1.0
+---
+Body`;
+
+  afterAll(() => {
+    rmSync(join(getUserSkillsDir(), name), { recursive: true, force: true });
+    reloadCache();
+  });
+
+  test("should create and load them without a warning, keeping the fields in metadata", () => {
+    createSkill(name, content);
+    const broken: { path: string; error: string }[] = [];
+    const warnings: { path: string; message: string }[] = [];
+    const skill = scanSkills(broken, warnings).find((x) => x.name === name);
+    expect(skill?.metadata).toEqual({ "argument-hint": "<file>", version: 1 });
+    const file = join(getUserSkillsDir(), name, "SKILL.md");
+    expect(broken.some((b) => b.path === file)).toBe(false);
+    expect(warnings.some((w) => w.path === file)).toBe(false);
+  });
+});
+
 // ─── legacy skills (strict on write, lenient on read) ───────────────────────
 
 describe("legacy skills installed before frontmatter validation", () => {
@@ -262,30 +291,6 @@ describe("legacy skills installed before frontmatter validation", () => {
       content: "---\nname: LEGACY_YAML\ndescription: Use when: debugging\n---\nBody yaml",
       name: "LEGACY_YAML",
       description: "Use when: debugging",
-    },
-    {
-      dir: `${prefix}-version`,
-      content: `---
-name: ${prefix}-version
-description: Versioned
-version: 1.0
----
-Body version`,
-      name: `${prefix}-version`,
-      description: "Versioned",
-      metadata: { version: "1.0" },
-    },
-    {
-      dir: `${prefix}-hint`,
-      content: `---
-name: ${prefix}-hint
-description: Hinted
-argument-hint: <file>
----
-Body hint`,
-      name: `${prefix}-hint`,
-      description: "Hinted",
-      metadata: { "argument-hint": "<file>" },
     },
     {
       dir: `${prefix}-upper`,
@@ -316,7 +321,6 @@ Body hint`,
       const skill = scanSkills(broken, warnings).find((x) => x.name === c.name);
       expect(skill?.description).toBe(c.description);
       expect(skill?.source).toBe("user");
-      if (c.metadata) expect(skill?.metadata).toEqual(c.metadata);
       const file = join(getUserSkillsDir(), c.dir, "SKILL.md");
       expect(broken.some((b) => b.path === file)).toBe(false);
       expect(warnings.some((w) => w.path === file && w.message.length > 0)).toBe(true);
