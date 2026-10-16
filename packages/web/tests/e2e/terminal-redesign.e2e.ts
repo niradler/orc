@@ -65,6 +65,12 @@ for (const theme of ["dark", "light"] as const) {
       await files
         .getByTestId("file-editor-input")
         .fill("# Shared guide\nSaved from redesign validation.\n");
+      if (width < 768)
+        // Switching mobile panes remounts the editor; make it do so before the post-save refetch.
+        await page.route(/\/files\?.*guide\.md/, async (route) => {
+          if (route.request().method() === "GET") await new Promise((r) => setTimeout(r, 1500));
+          return route.continue();
+        });
       await files.getByTestId("file-save").click();
       await expect(files.getByTestId("file-save-status")).toHaveText("Saved");
       expect(readFileSync(join(repo, "nested", "guide.md"), "utf8")).toContain(
