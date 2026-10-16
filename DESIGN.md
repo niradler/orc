@@ -427,6 +427,14 @@ Activity uses #000000 throughout its shell, #141414 hover, #242424 selection, #E
 
 ## Approved implementation reference: Activity
 
+### Brand assets
+
+Keep the existing diamond mark. Application icons and browser favicons use a flat
+`#E5E5E5` mark on a `#000000` tile, with transparent space outside the tile. Avoid
+colored gradients and glow. Desktop SVG/PNG and web favicon must depict the same
+mark. In-app wordmarks inherit the theme's neutral foreground. Reserve accent
+colors for meaningful status; the logo does not need a separate brand accent.
+
 Nir approved extending the black Activity direction to the whole application on
 2026-10-15. Activity is the implemented reference, not a license to rename features
 or restructure navigation. Preserve routes, shareable tabs, project scope, all
