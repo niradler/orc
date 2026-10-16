@@ -5,7 +5,6 @@ export function useKnowledgeCollections(params?: { project_id?: string }) {
   return useQuery({
     queryKey: ["knowledge-collections", params],
     queryFn: () => api.knowledge.collections(params),
-    refetchInterval: 60_000,
     select: (data) => data.collections,
   });
 }
@@ -34,7 +33,6 @@ export function useKnowledgeStatus() {
   return useQuery({
     queryKey: ["knowledge-status"],
     queryFn: () => api.knowledge.status(),
-    refetchInterval: 60_000,
   });
 }
 

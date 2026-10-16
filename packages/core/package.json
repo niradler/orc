@@ -4,6 +4,7 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./changes": "./src/changes.ts",
     ".": "./src/index.ts",
     "./config": "./src/config.ts",
     "./exec-host": "./src/exec-host.ts",

@@ -1,5 +1,6 @@
 import { type ExecHost, hostIsDirectory, hostPlatform, resolveExecHost } from "@orc/core/exec-host";
 import { getDb } from "@orc/db/client";
+import { observeCheckout } from "../realtime/sources.js";
 import { getTerminalManager } from "../terminals/service.js";
 import { gitRunner } from "../terminals/session-dir.js";
 import {
@@ -78,6 +79,7 @@ export async function knownWorktrees(projectId?: string): Promise<{
       continue;
     }
     try {
+      observeCheckout(host, cwd);
       const listing = await trackedWorktrees(cwd, deps);
       const canonical = listing.worktrees.find((tree) => tree.main)?.path ?? listing.root;
       if (canonical && !repos.some((repo) => samePath(repo.root ?? "", canonical, deps.platform)))

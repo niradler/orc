@@ -5,7 +5,6 @@ export function useMemories(params?: { scope?: string; project_id?: string }) {
   return useQuery({
     queryKey: ["memories", params],
     queryFn: () => api.memories.list({ ...params, limit: 100 }),
-    refetchInterval: 60_000,
     select: (data) => data.memories,
   });
 }

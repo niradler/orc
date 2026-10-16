@@ -150,7 +150,6 @@ describe("claude adapter: live registry", () => {
     const stop = startSessionWatcher({
       adapters: [claude()],
       registryDir: registry,
-      tickMs: 3_600_000,
     });
     await Bun.sleep(300);
     writeEntry(process.pid, "watched-session", "busy");

@@ -5,7 +5,6 @@ export function useProjects(params?: { status?: string }) {
   return useQuery({
     queryKey: ["projects", params],
     queryFn: () => api.projects.list(params),
-    refetchInterval: 60_000,
     select: (data) => data.projects,
   });
 }

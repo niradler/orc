@@ -26,7 +26,6 @@ export function GitPanelBody({ terminal, paneId }: { terminal: Terminal; paneId:
   const status = useQuery({
     queryKey: ["git", terminal.id, "status"],
     queryFn: () => api.git.status(terminal.id),
-    refetchInterval: 5_000,
   });
   const github = useQuery({
     queryKey: ["git", terminal.id, "github", status.data?.branch],
@@ -46,7 +45,6 @@ export function GitPanelBody({ terminal, paneId }: { terminal: Terminal; paneId:
     queryKey: ["worktrees", terminal.id],
     queryFn: () => api.git.terminalWorktrees(terminal.id),
     enabled: !!status.data?.root,
-    refetchInterval: 10_000,
   });
   const action = useMutation({
     mutationFn: async (kind: "stage" | "commit" | "worktree") => {

@@ -5,13 +5,17 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { ApiAccessGate } from "./components/ApiAccessGate";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ResourceEvents } from "./components/ResourceEvents";
 import "./index.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      staleTime: 10_000,
+      staleTime: Number.POSITIVE_INFINITY,
+      refetchOnMount: "always",
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
     },
   },
 });
@@ -25,6 +29,7 @@ createRoot(root).render(
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
           <ApiAccessGate>
+            <ResourceEvents />
             <App />
           </ApiAccessGate>
         </BrowserRouter>

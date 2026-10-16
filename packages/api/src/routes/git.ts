@@ -4,6 +4,7 @@ import { ValidationError } from "@orc/core/errors";
 import { hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
 import { knownWorktrees, worktreeDeps } from "../git/registry.js";
 import { listWorktrees, removeWorktree, samePath, trackedWorktrees } from "../git/worktrees.js";
+import { observeCheckout } from "../realtime/sources.js";
 import { requireTerminals } from "../terminals/service.js";
 
 const app = new OpenAPIHono();
@@ -80,6 +81,7 @@ async function checkedFolder(cwd: string): Promise<string> {
 app.openapi(listRoute, async (c) => {
   requireTerminals(loadConfig());
   const cwd = await checkedFolder(c.req.valid("query").cwd);
+  observeCheckout(resolveExecHost(), cwd);
   return c.json(await listWorktrees(cwd, worktreeDeps()), 200);
 });
 

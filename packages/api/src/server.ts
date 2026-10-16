@@ -1,5 +1,6 @@
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { type ChangeResource, changes } from "@orc/core/changes";
 import { configuredApiSecret, loadConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
@@ -8,6 +9,7 @@ import { bearerAuth } from "./middleware/auth.js";
 import { auditRouter } from "./routes/audit.js";
 import { backendsRouter } from "./routes/backends.js";
 import { chatRouter } from "./routes/chat.js";
+import { eventsRouter } from "./routes/events.js";
 import { flowsRouter } from "./routes/flows.js";
 import { gatewayRouter } from "./routes/gateway.js";
 import { gitRouter } from "./routes/git.js";
@@ -54,6 +56,25 @@ export function createApp() {
   const auth = bearerAuth(configuredApiSecret(config.api.secret));
   for (const path of ["/api/*", "/openapi.json", "/docs"]) app.use(path, auth);
 
+  const fileResources: Record<string, ChangeResource[]> = {
+    skills: ["skills"],
+    agents: ["agents"],
+    flows: ["flows"],
+    packages: ["packages", "skills", "agents"],
+    settings: ["settings"],
+    ssh: ["ssh", "backends", "terminals", "sessions", "git"],
+    git: ["git", "files"],
+  };
+  app.use("/api/*", async (c, next) => {
+    await next();
+    if (!["POST", "PUT", "PATCH", "DELETE"].includes(c.req.method) || c.res.status >= 400) return;
+    const resource = c.req.path.split("/")[2] ?? "";
+    const topics = fileResources[resource];
+    if (topics) changes.publish(...topics);
+    if (resource === "terminals" && /\/(git|files|worktrees)(\/|$)/.test(c.req.path))
+      changes.publish("git", "files");
+  });
+
   app.onError((err, c) => {
     const orcErr = err instanceof OrcError ? err : null;
     if (orcErr) {
@@ -67,6 +88,7 @@ export function createApp() {
   });
 
   app.route("/api", backendsRouter);
+  app.route("/api", eventsRouter);
   app.route("/api", sshRouter);
   app.route("/api", chatRouter);
   app.route("/api", healthRouter);
