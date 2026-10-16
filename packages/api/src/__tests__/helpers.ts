@@ -34,6 +34,7 @@ export async function req(
   method: string,
   path: string,
   body?: unknown,
+  headers?: Record<string, string>,
 ): Promise<AnyJsonResponse> {
   const fullPath = path.startsWith("/api") ? path : `/api${path}`;
   const res = await app.request(fullPath, {
@@ -41,6 +42,7 @@ export async function req(
     headers: {
       "Content-Type": "application/json",
       Authorization: AUTH,
+      ...headers,
     },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });

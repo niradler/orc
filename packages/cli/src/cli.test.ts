@@ -34,7 +34,7 @@ beforeAll(() => {
   process.env.ORC_API_SECRET = SECRET;
   resetConfig();
   const app = createApp();
-  server = Bun.serve({ fetch: app.fetch, port: 0 });
+  server = Bun.serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" });
   port = server.port ?? 0;
 });
 

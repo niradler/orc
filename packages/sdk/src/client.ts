@@ -10,6 +10,9 @@ import type {
   SessionHandoffUpload,
 } from "@orc/core/session-handoff";
 import type {
+  LocalSkillAgentListing,
+  LocalSkillImportItem,
+  LocalSkillImportResult,
   SkillDiscovery,
   SkillImportInput,
   SkillImportOrigin,
@@ -77,11 +80,14 @@ import type {
 export type OrcClientOptions = {
   baseUrl?: string;
   secret?: string;
+  /** Sent as X-Orc-Client so the API can attribute usage (e.g. skill reads) to the caller. */
+  client?: string;
 };
 
 async function call<T>(
   baseUrl: string,
   secret: string | undefined,
+  client: string | undefined,
   method: string,
   path: string,
   body?: unknown,
@@ -101,6 +107,7 @@ async function call<T>(
     "Content-Type": "application/json",
   };
   if (secret) headers.Authorization = `Bearer ${secret}`;
+  if (client) headers["X-Orc-Client"] = client;
 
   try {
     const res = await fetch(url, {
@@ -138,7 +145,7 @@ export function createOrcClient(options?: OrcClientOptions) {
     path: string,
     body?: unknown,
     query?: Record<string, string | number | boolean | undefined>,
-  ) => call<T>(baseUrl, secret, method, `/api${path}`, body, query);
+  ) => call<T>(baseUrl, secret, options?.client, method, `/api${path}`, body, query);
 
   return {
     handoffs: {
@@ -334,6 +341,9 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<{ skills: SkillFull[] }>("POST", "/skills/import", input),
       origin: (name: string) =>
         c<SkillImportOrigin | null>("GET", `/skills/${encodeURIComponent(name)}/origin`),
+      localAgents: () => c<{ agents: LocalSkillAgentListing[] }>("GET", "/skills/local-agents"),
+      importLocal: (skills: LocalSkillImportItem[]) =>
+        c<LocalSkillImportResult>("POST", "/skills/local-agents/import", { skills }),
       sync: (name: string, input: SkillSyncInput = {}) =>
         c<SkillSyncResult>("POST", `/skills/${encodeURIComponent(name)}/sync`, input),
       editFile: (name: string, input: { path: string; content: string; expectedContent: string }) =>

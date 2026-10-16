@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { statSync } from "node:fs";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import {
@@ -12,6 +13,7 @@ import {
 } from "@orc/core/skill-service";
 import { type SkillUpdate, SkillUpdateSchema } from "@orc/core/wiki";
 import { AuditLog } from "./audit.js";
+import { rankSkillMatches } from "./skill-search.js";
 import { WikiStore } from "./wiki.js";
 
 export function installSkillHistory(sqlite: Database): void {
@@ -24,6 +26,11 @@ export function installSkillHistory(sqlite: Database): void {
   CREATE TABLE IF NOT EXISTS skill_instructions (
     project_key TEXT NOT NULL, skill_name TEXT NOT NULL, change_id TEXT NOT NULL REFERENCES skill_changes(id),
     PRIMARY KEY(project_key, skill_name)
+  );
+  CREATE TABLE IF NOT EXISTS skill_usage (
+    project_key TEXT NOT NULL, skill_name TEXT NOT NULL, ref TEXT NOT NULL DEFAULT '',
+    source TEXT NOT NULL, read_count INTEGER NOT NULL DEFAULT 0, last_read_at INTEGER NOT NULL,
+    PRIMARY KEY(project_key, skill_name, ref, source)
   );`);
 }
 export type SkillChange = {
@@ -45,28 +52,121 @@ export type SkillMutation = {
   author: string;
 };
 export type EffectiveSkill = SkillFull & { mutation?: SkillMutation };
+export type SkillListSort = "reads" | "recent";
+export type SkillListOptions = ListSkillsOpts & { sort?: SkillListSort | undefined };
+/** Where a skill read came from; `ui` is a person browsing the web app, the rest are agents. */
+export type SkillReadSource = "mcp" | "cli" | "api" | "ui";
+export type SkillReadsBySource = Record<SkillReadSource, number>;
+export type SkillUsage = {
+  /** Agent reads of the main SKILL.md (mcp + cli + api); drives the "reads" sort. */
+  read_count: number;
+  /** Main SKILL.md reads per source, including ui. */
+  reads_by_source: SkillReadsBySource;
+  /** Supporting-file reads from any source. */
+  ref_read_count: number;
+  /** Latest agent read of the main SKILL.md. */
+  last_read_at: number | null;
+};
+type SkillUsageRow = {
+  skill_name: string;
+  source: SkillReadSource;
+  main_reads: number;
+  ref_reads: number;
+  last_main_read_at: number | null;
+};
+export type SkillListItem = SkillMeta &
+  SkillUsage & {
+    mutation?: SkillMutation;
+    activity_at: number;
+  };
 function key(projectId: string | null): string {
   return projectId === null ? "global:" : `project:${projectId}`;
+}
+function fileCreatedAt(path: string): number {
+  const stat = statSync(path, { throwIfNoEntry: false });
+  if (!stat) return 0;
+  const created = stat.birthtimeMs > 0 ? stat.birthtimeMs : stat.mtimeMs;
+  return Math.floor(created / 1000);
+}
+function emptyUsage(): SkillUsage {
+  return {
+    read_count: 0,
+    reads_by_source: { mcp: 0, cli: 0, api: 0, ui: 0 },
+    ref_read_count: 0,
+    last_read_at: null,
+  };
+}
+function compareByReads(left: SkillListItem, right: SkillListItem): number {
+  return (
+    right.read_count - left.read_count ||
+    right.activity_at - left.activity_at ||
+    left.name.localeCompare(right.name)
+  );
+}
+function compareByRecent(left: SkillListItem, right: SkillListItem): number {
+  return (
+    right.activity_at - left.activity_at ||
+    right.read_count - left.read_count ||
+    left.name.localeCompare(right.name)
+  );
 }
 
 export class SkillHistory {
   constructor(private readonly sqlite: Database) {}
-  list(
-    projectId: string | null,
-    opts?: ListSkillsOpts,
-  ): Array<SkillMeta & { mutation?: SkillMutation }> {
+  list(projectId: string | null, opts?: SkillListOptions): SkillListItem[] {
+    const usage = this.usage(projectId);
     let skills = listSkills({ ...opts, q: undefined, include_hidden: true }).map((skill) =>
-      this.metadata(skill, projectId),
+      this.withUsage(this.metadata(skill, projectId), usage),
     );
-    if (opts?.q) {
-      const query = opts.q.toLowerCase();
-      skills = skills.filter(
-        (skill) =>
-          skill.name.toLowerCase().includes(query) ||
-          skill.description.toLowerCase().includes(query),
+    if (!opts?.include_hidden) skills = skills.filter((skill) => !skill.discovery_hidden);
+    const compare = opts?.sort === "recent" ? compareByRecent : compareByReads;
+    if (!opts?.q) return skills.sort(compare);
+    const ranks = rankSkillMatches(skills, opts.q);
+    return skills
+      .filter((skill) => ranks.has(skill.name))
+      .sort(
+        (left, right) =>
+          (ranks.get(left.name) ?? 0) - (ranks.get(right.name) ?? 0) || compare(left, right),
       );
+  }
+  recordRead(name: string, projectId: string | null, source: SkillReadSource, ref?: string): void {
+    const file = ref === undefined || ref === "SKILL.md" ? "" : ref;
+    this.sqlite
+      .query(
+        "INSERT INTO skill_usage(project_key,skill_name,ref,source,read_count,last_read_at) VALUES(?,?,?,?,1,unixepoch()) ON CONFLICT(project_key,skill_name,ref,source) DO UPDATE SET read_count=read_count+1, last_read_at=excluded.last_read_at",
+      )
+      .run(key(projectId), name, file, source);
+  }
+  private usage(projectId: string | null): Map<string, SkillUsage> {
+    const scoped = projectId === null ? "" : "WHERE project_key=?";
+    const rows = this.sqlite
+      .query<SkillUsageRow, string[]>(
+        `SELECT skill_name, source, SUM(CASE WHEN ref='' THEN read_count ELSE 0 END) AS main_reads, SUM(CASE WHEN ref<>'' THEN read_count ELSE 0 END) AS ref_reads, MAX(CASE WHEN ref='' THEN last_read_at END) AS last_main_read_at FROM skill_usage ${scoped} GROUP BY skill_name, source`,
+      )
+      .all(...(projectId === null ? [] : [key(projectId)]));
+    const usage = new Map<string, SkillUsage>();
+    for (const row of rows) {
+      const stats = usage.get(row.skill_name) ?? emptyUsage();
+      stats.reads_by_source[row.source] += row.main_reads;
+      stats.ref_read_count += row.ref_reads;
+      if (row.source !== "ui") {
+        stats.read_count += row.main_reads;
+        if (row.last_main_read_at !== null) {
+          stats.last_read_at = Math.max(stats.last_read_at ?? 0, row.last_main_read_at);
+        }
+      }
+      usage.set(row.skill_name, stats);
     }
-    return opts?.include_hidden ? skills : skills.filter((skill) => !skill.discovery_hidden);
+    return usage;
+  }
+  private withUsage(
+    skill: SkillMeta & { mutation?: SkillMutation },
+    usage: Map<string, SkillUsage>,
+  ): SkillListItem {
+    const stats = usage.get(skill.name) ?? emptyUsage();
+    const activityAt =
+      stats.last_read_at ?? skill.mutation?.updated_at ?? fileCreatedAt(skill.path);
+    return { ...skill, ...stats, activity_at: activityAt };
   }
   private current(name: string, projectId: string | null): SkillChange | null {
     const read = this.sqlite.query<SkillChange, [string, string]>(

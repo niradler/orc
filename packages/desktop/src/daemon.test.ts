@@ -12,7 +12,7 @@ afterAll(() => {
 });
 
 function freePort(): number {
-  const probe = Bun.serve({ port: 0, fetch: () => new Response("") });
+  const probe = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response("") });
   const port = probe.port as number;
   probe.stop(true);
   return port;
@@ -29,6 +29,7 @@ describe("ensureDaemon", () => {
   test("attaches to a healthy daemon without spawning", async () => {
     const server = Bun.serve({
       port: 0,
+      hostname: "127.0.0.1",
       fetch: () => Response.json({ status: "ok" }),
     });
     servers.push(server);
@@ -46,7 +47,7 @@ describe("ensureDaemon", () => {
       const port = freePort();
       const bin = fakeBin(
         "serve",
-        `Bun.serve({ port: Number(process.argv[3]), fetch: () => Response.json({ status: "ok", secret: process.env.ORC_API_SECRET ?? null }) });
+        `Bun.serve({ port: Number(process.argv[3]), hostname: "127.0.0.1", fetch: () => Response.json({ status: "ok", secret: process.env.ORC_API_SECRET ?? null }) });
 await new Promise(() => {});`,
       );
       const daemon = await ensureDaemon({
