@@ -102,6 +102,11 @@ export function validateSkillName(name: string): void {
   validateSkillPath(name);
 }
 
+/**
+ * Validates the spec fields (name, description, license, compatibility, metadata, allowed-tools).
+ * Other top-level fields, such as agent-specific `model` or `argument-hint`, are kept as-is in
+ * metadata and listed in `extra_fields`.
+ */
 export function parseFrontmatter(content: string): {
   frontmatter: {
     name: string;
@@ -109,14 +114,10 @@ export function parseFrontmatter(content: string): {
     metadata: Record<string, unknown>;
   };
   body: string;
+  extra_fields: string[];
 } {
   const { fields: fm, body } = parseMarkdownFrontmatter(content);
-  for (const key of Object.keys(fm)) {
-    if (!HEADER_FIELDS.has(key))
-      throw new ValidationError(
-        `Unexpected SKILL.md field: ${key}. Put custom fields under metadata.`,
-      );
-  }
+  const extraFields = Object.keys(fm).filter((key) => !HEADER_FIELDS.has(key));
   if (typeof fm.name !== "string")
     throw new ValidationError("SKILL.md name is required and must be a string");
   validateSkillName(fm.name);
@@ -162,6 +163,7 @@ export function parseFrontmatter(content: string): {
       metadata,
     },
     body,
+    extra_fields: extraFields,
   };
 }
 
@@ -194,6 +196,7 @@ function parseLegacyFrontmatter(content: string): ParsedSkill {
   return {
     frontmatter: { name: fm.name, description: fm.description, metadata },
     body: (match[2] ?? "").trim(),
+    extra_fields: [],
   };
 }
 

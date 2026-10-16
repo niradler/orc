@@ -881,6 +881,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/local-agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List skills installed for local coding agents (~/.claude, ~/.codex, ...) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Agents with their skills and import status */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            agents: {
+                                id: string;
+                                label: string;
+                                dir: string;
+                                skills: components["schemas"]["LocalSkill"][];
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/skills/local-agents/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Copy selected local agent skills into ORC */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        skills: {
+                            agent: string;
+                            name: string;
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Imported skills and the ones skipped with a reason */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            imported: {
+                                name: string;
+                                description: string;
+                                path: string;
+                            }[];
+                            skipped: {
+                                agent: string;
+                                name: string;
+                                reason: string;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Invalid selection */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/skills/discover": {
         parameters: {
             query?: never;
@@ -1204,9 +1310,12 @@ export interface paths {
                 query?: {
                     project_id?: string;
                     scope?: "global";
-                    /** @description Keyword search on name and description */
+                    /** @description Full-text search on name and description */
                     q?: string;
                     source?: "builtin" | "user";
+                    /** @description reads (default): most read first; recent: last read, updated or created first */
+                    sort?: "reads" | "recent";
+                    limit?: number;
                     /** @description Force cache rebuild */
                     reload?: boolean | null;
                     include_hidden?: "true" | "false";
@@ -1224,7 +1333,8 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            skills: components["schemas"]["SkillMeta"][];
+                            skills: components["schemas"]["SkillListItem"][];
+                            total: number;
                             broken: {
                                 path: string;
                                 error: string;
@@ -6807,6 +6917,34 @@ export interface components {
             session_id: string | null;
             action: string;
             created_at: number;
+        };
+        LocalSkill: {
+            agent: string;
+            name: string;
+            description: string;
+            path: string;
+            content_hash: string;
+            /** @enum {string} */
+            status: "new" | "installed" | "conflict" | "changed" | "invalid";
+            also_in: string[];
+            extra_fields: string[];
+            error?: string;
+        };
+        SkillListItem: components["schemas"]["SkillMeta"] & {
+            /** @description Agent reads (mcp + cli + api) of the skill entry point */
+            read_count: number;
+            /** @description Entry-point reads per source; ui is not counted in read_count */
+            reads_by_source: {
+                mcp: number;
+                cli: number;
+                api: number;
+                ui: number;
+            };
+            /** @description Reads of supporting files */
+            ref_read_count: number;
+            last_read_at: number | null;
+            /** @description Last read, else last update, else file creation (epoch seconds) */
+            activity_at: number;
         };
         SkillRefContent: {
             name: string;

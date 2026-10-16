@@ -11,6 +11,9 @@ export type { PackageDiscovery } from "@orc/core/primitive-types";
 
 import type {
   AuditEntry,
+  LocalSkillAgentListing,
+  LocalSkillImportItem,
+  LocalSkillImportResult,
   SkillChange,
   SkillDiscovery,
   SkillImportInput,
@@ -27,7 +30,13 @@ import type {
   WikiWrite,
 } from "@orc/sdk/types";
 
-export type { SkillDiscovery, SkillImportInput, SkillImportOrigin } from "@orc/sdk/types";
+export type {
+  LocalSkill,
+  LocalSkillAgentListing,
+  SkillDiscovery,
+  SkillImportInput,
+  SkillImportOrigin,
+} from "@orc/sdk/types";
 
 import type { RulePolicy, RuleRevision } from "@orc/core/rule-types";
 
@@ -317,6 +326,7 @@ async function req<T>(
   };
   const secret = getApiSecret();
   if (secret) headers.Authorization = `Bearer ${secret}`;
+  headers["X-Orc-Client"] = "ui";
   const res = await fetch(url, {
     method,
     headers,
@@ -573,6 +583,9 @@ export const api = {
       req<{ skills: SkillFull[] }>("POST", "/skills/import", input),
     origin: (name: string) =>
       req<SkillImportOrigin | null>("GET", `/skills/${encodeURIComponent(name)}/origin`),
+    localAgents: () => req<{ agents: LocalSkillAgentListing[] }>("GET", "/skills/local-agents"),
+    importLocal: (skills: LocalSkillImportItem[]) =>
+      req<LocalSkillImportResult>("POST", "/skills/local-agents/import", { skills }),
     sync: (name: string, input: SkillSyncInput = {}) =>
       req<SkillSyncResult>("POST", `/skills/${encodeURIComponent(name)}/sync`, input),
     editFile: (name: string, input: { path: string; content: string; expectedContent: string }) =>

@@ -34,7 +34,7 @@ import {
   type StoreMemoryResult,
 } from "@orc/db/memories";
 import { job_runs, jobs, memories, projects, sessions, tasks } from "@orc/db/schema";
-import { SkillHistory } from "@orc/db/skill-history";
+import { SkillHistory, type SkillListSort } from "@orc/db/skill-history";
 import { WikiStore } from "@orc/db/wiki";
 import { executeJob } from "@orc/runner/executor";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
@@ -45,6 +45,7 @@ import { getKnowledgeEngine } from "./knowledge.js";
 import { getLayer3, searchLayer1 } from "./search.js";
 
 const logger = createLogger("mcp:tools");
+const SKILL_LIST_LIMIT = 30;
 
 const projectParam = z
   .string()
@@ -559,11 +560,23 @@ export const toolDefinitions = [
   {
     name: "skill_list",
     description:
-      "List installed skills (built-in + user). Returns name and description for each. " +
-      "Hidden built-ins are omitted; named reads and authored overrides remain available. Supports keyword search and filtering by source.",
+      "List installed skills (built-in + user) with name, description and read count. " +
+      "Defaults to the 30 most-read skills; use q for full-text search across all skills. " +
+      "Hidden built-ins are omitted; named reads and authored overrides remain available.",
     inputSchema: z.object({
-      q: z.string().optional().describe("Keyword search on name and description"),
+      q: z.string().optional().describe("Full-text search on name and description"),
       source: z.enum(["builtin", "user"]).optional().describe("Filter by source"),
+      sort: z
+        .enum(["reads", "recent"])
+        .optional()
+        .describe("reads (default): most read first; recent: last read, updated or created first"),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(500)
+        .optional()
+        .describe(`Max skills to return (default ${SKILL_LIST_LIMIT})`),
       reload: z.boolean().optional().describe("Force cache rebuild"),
       project: projectParam,
       scope: z.literal("global").optional(),
@@ -1816,18 +1829,22 @@ export async function executeTool(
     }
 
     case "skill_list": {
-      const { q, source, reload, project, scope } = args as {
+      const { q, source, sort, limit, reload, project, scope } = args as {
         q?: string;
         source?: "builtin" | "user";
+        sort?: SkillListSort;
+        limit?: number;
         reload?: boolean;
         project?: string;
         scope?: "global";
       };
-      const skills = new SkillHistory(getSqlite(db)).list(resolveWikiScope({ project, scope }), {
+      const matched = new SkillHistory(getSqlite(db)).list(resolveWikiScope({ project, scope }), {
         q,
         source,
+        sort,
         reload,
       });
+      const skills = matched.slice(0, limit ?? SKILL_LIST_LIMIT);
       const issues = [
         ...skillValidationIssues().map((issue) => `Invalid skill: ${issue.path}: ${issue.error}`),
         ...skillWarnings().map((w) => `Skill warning: ${w.path}: ${w.message}`),
@@ -1835,11 +1852,16 @@ export async function executeTool(
       const result = skills
         .map((s) => {
           const src = s.source === "user" ? " [user]" : "";
+          const reads = ` (${s.read_count} ${s.read_count === 1 ? "read" : "reads"})`;
           const desc = s.description ? ` - ${s.description.slice(0, 80)}` : "";
-          return `${s.name.padEnd(28)}${src}${desc}`;
+          return `${s.name.padEnd(28)}${src}${reads}${desc}`;
         })
         .join("\n");
-      return [result || "No skills found.", ...issues].join("\n");
+      const more =
+        matched.length > skills.length
+          ? [`Showing ${skills.length} of ${matched.length}; use q to search or raise limit.`]
+          : [];
+      return [result || "No skills found.", ...more, ...issues].join("\n");
     }
 
     case "skill_read": {
@@ -1849,12 +1871,11 @@ export async function executeTool(
         project,
         scope,
       } = args as { name: string; ref?: string; project?: string; scope?: "global" };
-      const result = new SkillHistory(getSqlite(db)).read(
-        sName,
-        resolveWikiScope({ project, scope }),
-        ref,
-      );
+      const skillHistory = new SkillHistory(getSqlite(db));
+      const skillScope = resolveWikiScope({ project, scope });
+      const result = skillHistory.read(sName, skillScope, ref);
       if (!result) return `Skill not found: ${sName}`;
+      skillHistory.recordRead(sName, skillScope, "mcp", ref);
       if (ref) {
         const rc = result as SkillRefContent;
         const encoding = rc.encoding === "base64" ? "\nEncoding: base64" : "";
