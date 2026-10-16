@@ -59,6 +59,12 @@ export const TtsConfigSchema = z.object({
 });
 
 export const OrcConfigSchema = z.object({
+  preferences: z
+    .object({
+      theme: z.enum(["dark", "light"]).optional(),
+      terminal_font: z.string().max(200).optional(),
+    })
+    .default({}),
   skills: z
     .object({ hidden_builtins: z.array(z.string().min(1).max(64)).max(512).default([]) })
     .default({ hidden_builtins: [] }),

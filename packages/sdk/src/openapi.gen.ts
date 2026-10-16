@@ -47,6 +47,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Shared resource-change event stream; fetch snapshots on ready and after reconnect */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description SSE ready/change events; comments are transport keepalives */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/event-stream": string;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ssh": {
         parameters: {
             query?: never;
@@ -199,6 +235,78 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read workspace preferences */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Persistent workspace preferences; credentials are never returned */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {string} */
+                            theme?: "dark" | "light";
+                            terminal_font?: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Persist workspace preferences in the global config file */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        theme?: "dark" | "light";
+                        terminal_font?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Persistent workspace preferences; credentials are never returned */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {string} */
+                            theme?: "dark" | "light";
+                            terminal_font?: string;
+                        };
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/api/mcp/tool": {
@@ -6685,7 +6793,7 @@ export interface components {
             /** @description Selected Host alias; null runs locally */
             host: string | null;
             /** @description Port the reverse tunnel opens on the host so agents there reach orc */
-            remote_port: number;
+            remote_port: number | null;
             /** @description Host aliases from ~/.ssh/config */
             hosts: string[];
             /** @description ORC_SSH_HOST is set, so the selection is fixed */

@@ -18,7 +18,7 @@ const app = new OpenAPIHono();
 const SshStateSchema = z
   .object({
     host: z.string().nullable().openapi({ description: "Selected Host alias; null runs locally" }),
-    remote_port: z.number().int().openapi({
+    remote_port: z.number().int().nullable().openapi({
       description: "Port the reverse tunnel opens on the host so agents there reach orc",
     }),
     hosts: z.array(z.string()).openapi({ description: "Host aliases from ~/.ssh/config" }),
@@ -74,7 +74,7 @@ function sshState() {
   } catch {}
   return {
     host: config.ssh.host ?? null,
-    remote_port: config.ssh.remote_port ?? config.api.port,
+    remote_port: config.ssh.remote_port ?? null,
     hosts,
     locked: process.env.ORC_SSH_HOST !== undefined,
     ...platformSupport(),

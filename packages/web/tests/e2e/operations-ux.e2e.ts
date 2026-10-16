@@ -5,9 +5,13 @@ for (const theme of ["dark", "light"] as const) {
   for (const width of [1440, 390]) {
     test(`operations workflows ${theme} ${width}`, async ({ page, request }, testInfo) => {
       await page.setViewportSize({ width, height: 900 });
+      await page.request.patch("/api/settings", {
+        headers: { Authorization: `Bearer ${API_SECRET}` },
+        data: { theme },
+      });
       await page.addInitScript(
         ({ secret, theme }) => {
-          localStorage.setItem("orc_api_secret", secret);
+          localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
           localStorage.setItem("orc_theme", theme);
         },
         { secret: API_SECRET, theme },

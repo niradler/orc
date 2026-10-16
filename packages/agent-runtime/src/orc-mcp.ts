@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { configuredApiSecret, loadConfig } from "@orc/core/config";
 import {
   type ExecHost,
+  ensureSshMaster,
   orcUrlOnHost,
   remoteTempPath,
   removeHostFile,
@@ -89,6 +90,7 @@ export type OrcMcpConfigFile = { path: string; cleanup: () => void };
 export async function writeOrcMcpConfigFile(
   host: ExecHost = resolveExecHost(),
 ): Promise<OrcMcpConfigFile> {
+  if (host.kind === "ssh") await ensureSshMaster(host);
   const content = JSON.stringify({ mcpServers: buildOrcMcpServers(host) });
   if (host.kind === "ssh") {
     const path = remoteTempPath(".mcp.json");

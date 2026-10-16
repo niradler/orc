@@ -45,8 +45,7 @@ test.describe("Tasks CRUD", () => {
         status: "doing",
       });
       await gotoView(page, "tasks");
-      const tableBtn = page.getByTitle("Table view");
-      if (await tableBtn.isVisible().catch(() => false)) await tableBtn.click();
+      await page.getByTestId("tasks-view-table").click();
 
       const row = page.locator(`[data-testid="task-row"][data-task-id="${created.id}"]`);
       await expect(row).toBeVisible();

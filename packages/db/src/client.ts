@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { installAudit } from "./audit.js";
+import { installChangeTracking, stopChangeTracking } from "./changes.js";
 import { installDigest } from "./digest.js";
 import { installRules } from "./rules.js";
 import * as schema from "./schema.js";
@@ -536,6 +537,8 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   installDigest(sqlite);
   installRules(sqlite);
 
+  installChangeTracking(sqlite, path);
+
   return drizzle(sqlite, { schema });
 }
 
@@ -565,6 +568,7 @@ export function closeDb(): void {
   if (_db) {
     try {
       const sqlite = getSqlite(_db);
+      stopChangeTracking(sqlite);
       // Final checkpoint so the -wal file is folded back into the DB and doesn't
       // linger after shutdown, then release the handle.
       try {

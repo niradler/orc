@@ -7,7 +7,8 @@ const ask = (marker: string) =>
 test.describe("Chat panel - end-to-end SSE round-trip", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(
-      (secret) => localStorage.setItem("orc_api_secret", secret),
+      (secret) =>
+        localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
       API_SECRET,
     );
     await page.goto("/");

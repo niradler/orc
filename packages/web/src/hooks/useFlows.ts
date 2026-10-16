@@ -5,7 +5,6 @@ export function useFlows(params?: { q?: string; source?: FlowSource }) {
   return useQuery({
     queryKey: ["flows", params],
     queryFn: () => api.flows.list(params),
-    refetchInterval: 60_000,
   });
 }
 
@@ -22,8 +21,6 @@ export function useTaskFlow(taskId: string | null) {
     queryKey: ["task-flow", taskId],
     queryFn: () => api.tasks.flow(taskId as string),
     enabled: Boolean(taskId),
-    // A live run changes underneath us; a finished one does not.
-    refetchInterval: (query) => (query.state.data?.status === "running" ? 5_000 : 30_000),
   });
 }
 

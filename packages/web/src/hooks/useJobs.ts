@@ -5,7 +5,6 @@ export function useJobs(params?: { project_id?: string; enabled?: boolean }) {
   return useQuery({
     queryKey: ["jobs", params],
     queryFn: () => api.jobs.list(params),
-    refetchInterval: 15_000,
     select: (data) => data.jobs,
   });
 }
@@ -57,7 +56,6 @@ export function useJobRuns(jobId: string | null) {
   return useQuery({
     queryKey: ["job-runs", jobId],
     queryFn: () => api.jobs.runs(jobId as string),
-    refetchInterval: 5_000,
     select: (data) => data.runs,
     enabled: Boolean(jobId),
   });

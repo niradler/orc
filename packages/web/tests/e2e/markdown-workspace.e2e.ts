@@ -115,7 +115,8 @@ test("should save Wiki revisions and retain the draft after a concurrent conflic
   };
   await apiPost(request, "/wiki", original);
   await page.addInitScript(
-    (secret) => localStorage.setItem("orc_api_secret", secret),
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
     AUTH_HEADERS.Authorization?.slice(7) ?? "",
   );
   await page.goto(`/wiki?tab=pages&page=${slug}&scope=global`);

@@ -127,7 +127,6 @@ describe("lifecycle parity", () => {
       adapters: [],
       registryDir: null,
       liveRegistryDir: registry,
-      tickMs: 100,
     });
     try {
       writeRegistration(

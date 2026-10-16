@@ -27,7 +27,7 @@ afterAll(() => {
 
 describe("skill_list", () => {
   test("lists all built-in skills", async () => {
-    const result = await executeTool("skill_list", {});
+    const result = await executeTool("skill_list", { limit: 200 });
     expect(result).toContain("orc-coder");
     expect(result).toContain("orc-worker-base");
     expect(result).toContain("orc-reviewer");

@@ -8,6 +8,7 @@ import { checkoutGithubFeed } from "../git/github.js";
 import { commitStaged, gitDiff, gitStatus, stageFiles, switchBranch } from "../git/panel.js";
 import { worktreeDeps } from "../git/registry.js";
 import { trackedWorktrees } from "../git/worktrees.js";
+import { observeCheckout } from "../realtime/sources.js";
 import {
   launchDeps,
   requireTerminals,
@@ -23,6 +24,7 @@ function folder(id: string): { host: ExecHost; cwd: string } {
   requireTerminals(loadConfig());
   const { host, cwd } = terminalHost(id);
   if (!cwd) throw new ValidationError("Terminal has no working directory");
+  observeCheckout(host, cwd);
   return { host, cwd };
 }
 const FileSchema = z.object({

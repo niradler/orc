@@ -67,7 +67,8 @@ export async function gotoView(
 ): Promise<void> {
   if (API_SECRET) {
     await page.addInitScript(
-      (secret: string) => localStorage.setItem("orc_api_secret", secret),
+      (secret: string) =>
+        localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
       API_SECRET,
     );
   }

@@ -10,7 +10,6 @@ export function useTasks(params?: { status?: string; project_id?: string }) {
   return useQuery({
     queryKey: ["tasks", params],
     queryFn: () => api.tasks.list({ ...params, limit: 100 }),
-    refetchInterval: 30_000,
     select: (data) => data.tasks,
   });
 }

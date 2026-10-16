@@ -6,6 +6,7 @@
  * The store is lazily initialized on first use and auto-creates the DB.
  */
 
+import { changes } from "@orc/core/changes";
 import { loadConfig } from "@orc/core/config";
 import { NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
 import type {
@@ -228,6 +229,7 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
         "The source file was saved, but the search index could not be updated. Reindex this collection to refresh search results.";
     }
     const saved = (await this.get(`qmd://${document.path}`)) ?? { ...document, content };
+    changes.publish("knowledge");
     return { ...saved, ...(indexingWarning ? { indexingWarning } : {}) };
   }
 
@@ -298,16 +300,18 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
           updated_at: now,
         },
       });
+    changes.publish("knowledge");
   }
 
   async removeCollection(name: string): Promise<boolean> {
     const store = await this.getStore();
-    const removed = store.removeCollection(name);
+    const removed = await store.removeCollection(name);
 
     // Clean up orc.db mapping
     const db = getDb();
     await db.delete(knowledge_collections).where(eq(knowledge_collections.name, name));
 
+    if (removed) changes.publish("knowledge");
     return removed;
   }
 
@@ -339,6 +343,8 @@ export class QmdKnowledgeEngine implements KnowledgeEngine {
       }
     }
 
+    if (result.indexed > 0 || result.updated > 0 || result.removed > 0)
+      changes.publish("knowledge");
     return {
       indexed: result.indexed,
       updated: result.updated,
