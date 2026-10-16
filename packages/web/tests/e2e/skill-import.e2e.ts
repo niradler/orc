@@ -33,9 +33,15 @@ test("imports a real GitHub skill, edits it, reopens it and preserves edits on s
   await row.click();
   await expect(page.getByTestId("skill-sync")).toBeVisible();
   await page.getByTestId("markdown-mode-edit").click();
+  // The source editor stays mounted (hidden) in read mode; keys sent before edit mode renders are lost.
+  await expect(page.getByTestId("markdown-mode-edit")).toHaveAttribute("aria-pressed", "true");
   const editor = page.getByTestId("skill-file-content");
+  await expect(editor).toBeVisible();
+  await editor.click();
   await editor.press("Control+End");
   await page.keyboard.insertText("\n\nLocal customization: consult ORC's skill library first.\n");
+  await expect(editor).toContainText("Local customization:");
+  await expect(page.getByTestId("document-save")).toBeEnabled();
   const saved = page.waitForResponse(
     (response) =>
       response.url().endsWith("/skills/find-skills/file") && response.request().method() === "PUT",
