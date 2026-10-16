@@ -46,5 +46,22 @@ export function writeRegistration(input: LiveRegistration, dir: string = LIVE_RE
   const name = `${record.backend}-${record.externalId}.json`;
   const temp = join(dir, `${name}.${process.pid}.${crypto.randomUUID()}.tmp`);
   writeFileSync(temp, JSON.stringify(record), { mode: 0o600 });
-  renameSync(temp, join(dir, name));
+  const deadline = Date.now() + 1000;
+  for (;;) {
+    try {
+      renameSync(temp, join(dir, name));
+      return;
+    } catch (error) {
+      // A Windows reader (or antivirus scanner) can briefly deny replacement.
+      // Keep the old complete record visible and retry the same atomic rename.
+      const code = (error as NodeJS.ErrnoException).code;
+      if (
+        process.platform !== "win32" ||
+        (code !== "EPERM" && code !== "EACCES" && code !== "EBUSY") ||
+        Date.now() >= deadline
+      )
+        throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    }
+  }
 }
