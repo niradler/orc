@@ -112,6 +112,14 @@ export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
                           <span className="block text-xs text-outline">
                             {skill.error ?? skill.description}
                           </span>
+                          {skill.extra_fields.length > 0 && (
+                            <span
+                              className="block text-xs text-outline"
+                              data-testid="local-skill-extra-fields"
+                            >
+                              Extra fields: {skill.extra_fields.join(", ")}
+                            </span>
+                          )}
                           {skill.also_in.length > 0 && (
                             <span className="block text-xs text-outline">
                               Also in {skill.also_in.join(", ")}

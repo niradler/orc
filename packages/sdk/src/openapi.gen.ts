@@ -6819,6 +6819,7 @@ export interface components {
             /** @enum {string} */
             status: "new" | "installed" | "conflict" | "changed" | "invalid";
             also_in: string[];
+            extra_fields: string[];
             error?: string;
         };
         SkillListItem: components["schemas"]["SkillMeta"] & {

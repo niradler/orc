@@ -139,13 +139,14 @@ function scanAgent(agent: LocalSkillAgent): ScannedSkill[] {
       const files = readBundle(skillDir);
       const entryFile = files.get("SKILL.md");
       if (!entryFile) throw new ValidationError("SKILL.md cannot be a symlink");
-      const { frontmatter } = parseFrontmatter(entryFile.toString("utf8"));
+      const { frontmatter, extra_fields } = parseFrontmatter(entryFile.toString("utf8"));
       skills.push({
         agent: agent.id,
         name: frontmatter.name,
         description: frontmatter.description,
         path: skillDir,
         content_hash: hashSkillBundle(files),
+        extra_fields,
         files,
       });
     } catch (error) {
@@ -155,6 +156,7 @@ function scanAgent(agent: LocalSkillAgent): ScannedSkill[] {
         description: "",
         path: skillDir,
         content_hash: "",
+        extra_fields: [],
         error: (error as Error).message,
       });
     }

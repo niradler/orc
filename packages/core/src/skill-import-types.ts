@@ -42,6 +42,8 @@ export type LocalSkill = {
   status: LocalSkillStatus;
   /** Other agents exposing the same content (often symlinks to one folder). */
   also_in: string[];
+  /** Top-level frontmatter fields outside the skill spec (e.g. model); kept in metadata. */
+  extra_fields: string[];
   error?: string | undefined;
 };
 export type LocalSkillAgentListing = LocalSkillAgent & { skills: LocalSkill[] };

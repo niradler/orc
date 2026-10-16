@@ -68,6 +68,8 @@ export function skillCommand() {
             const shared = skill.also_in.length ? ` (also in ${skill.also_in.join(", ")})` : "";
             const detail = skill.error ?? skill.description;
             console.log(`  [${skill.status}] ${skill.name}${shared} - ${detail}`);
+            if (skill.extra_fields.length)
+              console.log(`      extra fields: ${skill.extra_fields.join(", ")}`);
           }
         }
         return;

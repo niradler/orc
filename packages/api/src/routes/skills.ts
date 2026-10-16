@@ -403,6 +403,7 @@ const LocalSkillSchema = z
     content_hash: z.string(),
     status: z.enum(["new", "installed", "conflict", "changed", "invalid"]),
     also_in: z.array(z.string()),
+    extra_fields: z.array(z.string()),
     error: z.string().optional(),
   })
   .openapi("LocalSkill");

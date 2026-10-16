@@ -36,6 +36,13 @@ describe("Agent Skills specification", () => {
       },
     });
   });
+  test("should keep fields outside the spec in metadata and list them", () => {
+    const parsed = parseFrontmatter(
+      "---\nname: good\ndescription: x\nmodel: claude\nlicense: MIT\n---\nBody",
+    );
+    expect(parsed.extra_fields).toEqual(["model"]);
+    expect(parsed.frontmatter.metadata).toEqual({ model: "claude", license: "MIT" });
+  });
   test("should reject invalid required fields, names, lengths and optional field shapes", () => {
     const invalid = [
       "description: missing name",
@@ -50,7 +57,6 @@ describe("Agent Skills specification", () => {
       "name: good\ndescription: '  '",
       "name: good\ndescription: x\nallowed-tools: [Read]",
       "name: good\ndescription: x\nmetadata:\n  version: 1",
-      "name: good\ndescription: x\nmodel: claude",
       `name: good\ndescription: x\ncompatibility: ${"x".repeat(501)}`,
       "name: [bad]\ndescription: x",
       "name: good\ndescription: x\nmetadata: [bad]",

@@ -1,5 +1,13 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,12 +15,21 @@ import {
   type LocalSkillAgent,
   listLocalAgentSkills,
 } from "./skill-local-import.js";
-import { getUserSkillsDir, reloadCache } from "./skill-service.js";
+import { getUserSkillsDir, readSkill, reloadCache } from "./skill-service.js";
 
 const prefix = `local-import-${process.pid}`;
 const fresh = `${prefix}-fresh`;
 const shared = `${prefix}-shared`;
 const edited = `${prefix}-edited`;
+const extra = `${prefix}-extra`;
+const extraSkill = `---
+name: ${extra}
+description: Extra fields test
+model: opus
+argument-hint: "[file]"
+---
+Body
+`;
 let root: string;
 let agents: LocalSkillAgent[];
 let claudeDir: string;
@@ -55,13 +72,15 @@ beforeAll(() => {
   writeSkill(codexDir, shared, "Shared body");
   symlinkSync(join(codexDir, shared), join(claudeDir, shared), "junction");
   writeSkill(codexDir, "orc-coder", "Not the builtin");
+  mkdirSync(join(claudeDir, extra));
+  writeFileSync(join(claudeDir, extra, "SKILL.md"), extraSkill);
   mkdirSync(join(codexDir, "broken"));
   writeFileSync(join(codexDir, "broken", "SKILL.md"), "no frontmatter");
   mkdirSync(join(codexDir, "workspace-without-skill"));
 });
 
 afterAll(() => {
-  for (const name of [fresh, shared, edited]) {
+  for (const name of [fresh, shared, edited, extra]) {
     rmSync(join(getUserSkillsDir(), name), { recursive: true, force: true });
     rmSync(join(homedir(), ".orc", "skill-local-imports", `${name}.json`), { force: true });
   }
@@ -119,6 +138,20 @@ describe("local agent skill import", () => {
     expect(find("claude", edited).status).toBe("changed");
     writeFileSync(join(getUserSkillsDir(), edited, "notes.md"), "local note");
     expect(find("claude", edited).status).toBe("conflict");
+  });
+
+  test("should import a skill with fields outside the spec byte-identically and list them", () => {
+    const listed = find("claude", extra);
+    expect(listed.status).toBe("new");
+    expect(listed.extra_fields).toEqual(["model", "argument-hint"]);
+    expect(find("claude", fresh).extra_fields).toEqual([]);
+    const result = importLocalAgentSkills([{ agent: "claude", name: extra }], agents);
+    expect(result.imported.map((skill) => skill.name)).toEqual([extra]);
+    expect(readFileSync(join(getUserSkillsDir(), extra, "SKILL.md"), "utf8")).toBe(extraSkill);
+    expect(readSkill(extra)).toMatchObject({
+      metadata: { model: "opus", "argument-hint": "[file]" },
+    });
+    expect(find("claude", extra).status).toBe("installed");
   });
 
   test("should skip unknown skills without failing the batch", () => {
