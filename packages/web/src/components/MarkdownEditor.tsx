@@ -5,6 +5,7 @@ import { SourceCodeEditor } from "@/components/SourceCodeEditor";
 import { Button } from "@/components/ui/button";
 import { splitMarkdownFrontmatter } from "@/lib/document-display";
 import { isMarkdownFile } from "@/lib/editor-language";
+import type { WikiLinks } from "@/lib/wiki-links";
 
 type Mode = "read" | "edit" | "split";
 
@@ -15,7 +16,7 @@ export type MarkdownEditorProps = {
   onSave?: () => void;
   readOnly?: boolean;
   testId?: string;
-  wikiLinks?: { slugs: string[]; select: (slug: string) => void };
+  wikiLinks?: WikiLinks;
   initialMode?: Mode;
   mode?: Mode;
   onModeChange?: (mode: Mode) => void;

@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit",
     "build:web": "cd ../web && bun run build",
     "build:copy-web": "bun run copy-web.ts",
-    "build": "bun run build:web && bun build src/index.ts --outdir dist --target bun --minify --external '@tobilu/qmd' --external 'node-llama-cpp' --external '@node-llama-cpp/*' --external '@anthropic-ai/claude-agent-sdk' && bun run build:copy-web && bun run copy-skills.ts",
+    "build": "bun run build:web && bun build src/index.ts --outdir dist --target bun --minify --external '@anthropic-ai/claude-agent-sdk' --external sqlite-vec && bun run build:copy-web && bun run copy-skills.ts",
     "build:bin": "bun run build.ts",
     "validate:package": "bun run scripts/validate-package.ts",
     "prepublishOnly": "cp ../../README.md . && bun run build && bun run validate:package",
@@ -33,6 +33,7 @@
     "@orc/api": "workspace:*",
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
+    "@orc/knowledge": "workspace:*",
     "@orc/gateway": "workspace:*",
     "@orc/mcp": "workspace:*",
     "@orc/runner": "workspace:*",
@@ -42,7 +43,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.220",
-    "@tobilu/qmd": "^2.5.3",
+    "sqlite-vec": "0.1.9",
     "zod": "^4.4.3"
   },
   "peerDependencies": {

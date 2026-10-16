@@ -7,6 +7,7 @@
   "exclude": [
     "src/bin-entry.ts",
     "src/_web-manifest.generated.ts",
-    "src/_skills-manifest.generated.ts"
+    "src/_skills-manifest.generated.ts",
+    "src/_vec0.generated.ts"
   ]
 }

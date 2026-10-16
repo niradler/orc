@@ -4,6 +4,7 @@ import { configuredApiSecret, loadConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
 import { ORC_VERSION } from "@orc/core/version";
+import { ZodError, z } from "zod";
 import { bearerAuth } from "./middleware/auth.js";
 import { auditRouter } from "./routes/audit.js";
 import { backendsRouter } from "./routes/backends.js";
@@ -55,6 +56,9 @@ export function createApp() {
 
   app.onError((err, c) => {
     const orcErr = err instanceof OrcError ? err : null;
+    // Service-level schema checks (beyond route validation) are client errors, not crashes.
+    if (err instanceof ZodError)
+      return c.json({ error: z.prettifyError(err), code: "VALIDATION_ERROR" }, 400);
     if (orcErr) {
       return c.json(
         { error: orcErr.message, code: orcErr.code },

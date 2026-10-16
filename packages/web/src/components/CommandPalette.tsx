@@ -95,7 +95,15 @@ export function CommandPalette({
   const documents = useQuery({
     queryKey: ["palette-documents", debounced, scope],
     queryFn: () =>
-      api.knowledge.search(debounced, { project_id: scope, limit: 6, mode: "lexical" }),
+      api.kb.search(
+        {
+          query: debounced,
+          scope: !scope ? "all" : scope === "unassigned" ? "global" : "default",
+          limit: 6,
+          mode: "lexical",
+        },
+        scope && scope !== "unassigned" ? scope : undefined,
+      ),
     enabled: searching && (filter === "All" || filter === "Knowledge"),
     retry: false,
     staleTime: 15_000,
@@ -209,14 +217,18 @@ export function CommandPalette({
           go(searchHitPath(hit), hit.project_id ?? (hit.kind === "wiki" ? "all" : "unassigned")),
       });
     }
-    for (const doc of documents.data?.results ?? []) {
+    for (const doc of documents.data?.hits ?? []) {
       if (filter !== "All" && filter !== "Knowledge") continue;
       entries.push({
-        id: `doc-${doc.docid}`,
+        id: `doc-${doc.document_id}`,
         title: doc.title || doc.path,
-        detail: `${doc.collection} · ${doc.snippet}`,
+        detail: `${doc.kb_name} · ${(doc.passages[0]?.snippet ?? doc.path).replace(/[«»]/g, "")}`,
         group: "Knowledge",
-        run: () => go(`/knowledge/base?document=${encodeURIComponent(doc.docid)}`, scope ?? "all"),
+        run: () =>
+          go(
+            `/knowledge/base?kb=${encodeURIComponent(doc.kb_id)}&document=${encodeURIComponent(doc.document_id)}`,
+            scope ?? "all",
+          ),
       });
     }
   }

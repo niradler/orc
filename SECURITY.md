@@ -12,8 +12,15 @@ ORC is a local-first orchestration tool. By design it can execute arbitrary work
 - **Jobs run arbitrary shell commands.** Creating or triggering a job (`sh -c <command>`) is equivalent
   to running commands as the user that started ORC. Jobs inherit the server process environment, so they
   can read any secret available to it (API keys, tokens).
-- **MCP tools and the REST API expose the full surface.** `job_run`, `skill_create`, `knowledge_collection_add`,
+- **MCP tools and the REST API expose the full surface.** `job_run`, `skill_create`, `kb_write`,
   memory and task writes are all reachable by any authenticated client — and by *any* client if no secret is set.
+- **There is one principal.** Knowledge base edit rules are by call source (`editable_by`: ui, cli, api, mcp).
+  The source is fixed for MCP tool calls, and MCP cannot change knowledge base or knowledge settings. Over REST
+  the `X-Orc-Source` header is chosen by the caller, so anything holding the API secret can act as any source
+  and as the owner. Actor names and session IDs are attribution, not authentication.
+- **Stored secrets.** An embedding API key saved from Settings is encrypted (AES-256-GCM) with a per-machine key
+  in `~/.orc/secret.key` and never returned by the API. Anyone who can read both files can decrypt it; protect
+  `~/.orc` like any credential store. Keys set through environment variables are not stored.
 
 ### Hardening checklist
 

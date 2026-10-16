@@ -158,7 +158,7 @@ Know the cost of your actions:
 
 ## Related
 
-- **orc-knowledge** skill - indexing and searching document collections (markdown, code docs)
+- **orc-knowledge** skill - searching knowledge bases of human reference documents with citations
 - **orc-session** skill - session start protocol, recording events
 - **orc-tasks** skill - task lifecycle and HITL review
 - Built-in prompts: `orc-requirements` (skill) gathers requirements and stores in task body, `orc-report` (skill) builds status summaries from memories and tasks

@@ -17,7 +17,7 @@ describe("createOrcClient", () => {
     expect(typeof client.tags.list).toBe("function");
     expect(typeof client.health.check).toBe("function");
     expect(typeof client.gateway.status).toBe("function");
-    expect(typeof client.knowledge.search).toBe("function");
+    expect(typeof client.kb.search).toBe("function");
   });
 
   test("returns network error when the API is unreachable", async () => {

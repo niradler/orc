@@ -1,5 +1,6 @@
 import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
+import { closeKnowledgeService, startKnowledgeMaintenance } from "@orc/knowledge";
 import { createApp } from "./server.js";
 import { startSessionWatcher } from "./session-watcher.js";
 import { shutdownTerminals } from "./terminals/service.js";
@@ -34,6 +35,8 @@ const server = Bun.serve<TerminalSocketData>({
 });
 
 const stopSessionWatcher = startSessionWatcher();
+// Recover interrupted knowledge jobs and start folder rescans; failures must not stop the API.
+startKnowledgeMaintenance().catch((err) => logger.error("Knowledge service failed to start", err));
 
 logger.info(`API server running on http://${config.api.host}:${config.api.port}`);
 logger.info(`OpenAPI spec: http://${config.api.host}:${config.api.port}/openapi.json`);
@@ -46,6 +49,11 @@ async function shutdown(signal: string, exitCode = 0) {
   logger.info(`Received ${signal}, shutting down…`);
   stopSessionWatcher();
   shutdownTerminals();
+  try {
+    await closeKnowledgeService();
+  } catch (err) {
+    logger.error("Error stopping knowledge service", err);
+  }
   try {
     // true = drop in-flight connections immediately so the port is released fast
     await server.stop(true);

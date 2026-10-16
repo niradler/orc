@@ -1,4 +1,26 @@
-import type { KnowledgeDocument } from "@orc/core/knowledge";
+import type {
+  KbCreate,
+  KbDoclingState,
+  KbDocument,
+  KbDocumentCreate,
+  KbDocumentListing,
+  KbDocumentUpdate,
+  KbDocumentWithContent,
+  KbMaintenanceQueue,
+  KbParserInfo,
+  KbRevision,
+  KbScope,
+  KbSearchRequest,
+  KbSearchResult,
+  KbSettings,
+  KbSettingsPatch,
+  KbSource,
+  KbSourceScan,
+  KbStatus,
+  KbUpdate,
+  KbUsageStats,
+  KnowledgeBase,
+} from "@orc/core/kb";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
 import type { RuleEventCapability } from "@orc/core/rule-events";
 
@@ -291,6 +313,16 @@ export function terminalSocketUrl(
   return `${scheme}//${location.host}${prefix}${path}`;
 }
 
+const enc = encodeURIComponent;
+
+/** Auth plus the read source, so knowledge usage stats attribute browser reads to the UI. */
+function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "X-Orc-Source": "ui" };
+  const secret = getApiSecret();
+  if (secret) headers.Authorization = `Bearer ${secret}`;
+  return headers;
+}
+
 async function req<T>(
   method: string,
   path: string,
@@ -309,9 +341,8 @@ async function req<T>(
   }
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...authHeaders(),
   };
-  const secret = getApiSecret();
-  if (secret) headers.Authorization = `Bearer ${secret}`;
   const res = await fetch(url, {
     method,
     headers,
@@ -680,79 +711,104 @@ export const api = {
       req<{ entries: AuditEntry[] }>("GET", "/audit", undefined, scope),
   },
 
-  knowledge: {
-    collections: (params?: { project_id?: string }) =>
-      req<{
-        collections: {
-          name: string;
-          path: string;
-          pattern: string;
-          documentCount: number;
-          lastModified: string | null;
-          projectId: string | null;
-        }[];
-      }>(
+  kb: {
+    list: (opts: { scope?: KbScope; project_id?: string } = {}) =>
+      req<{ knowledge_bases: KnowledgeBase[] }>("GET", "/kb/bases", undefined, opts),
+    get: (id: string) => req<KnowledgeBase>("GET", `/kb/bases/${enc(id)}`),
+    create: (input: KbCreate) => req<KnowledgeBase>("POST", "/kb/bases", input),
+    update: (id: string, input: KbUpdate) =>
+      req<KnowledgeBase>("PATCH", `/kb/bases/${enc(id)}`, input),
+    remove: (id: string) => req<null>("DELETE", `/kb/bases/${enc(id)}`),
+    usage: (id: string) => req<KbUsageStats>("GET", `/kb/bases/${enc(id)}/usage`),
+    maintenance: (id: string) => req<KbMaintenanceQueue>("GET", `/kb/bases/${enc(id)}/maintenance`),
+    documents: (kbId: string, filter: { folder?: string; label?: string } = {}) =>
+      req<KbDocumentListing>("GET", `/kb/bases/${enc(kbId)}/documents`, undefined, filter),
+    createDocument: (kbId: string, input: KbDocumentCreate) =>
+      req<KbDocument>("POST", `/kb/bases/${enc(kbId)}/documents`, input),
+    /** XHR rather than fetch so the UI can show per-file upload progress. */
+    upload: (
+      kbId: string,
+      input: { file: File; path?: string; document_id?: string; expected_revision?: number },
+      onProgress?: (fraction: number) => void,
+    ) => {
+      const form = new FormData();
+      form.set("file", input.file, input.file.name);
+      if (input.path) form.set("path", input.path);
+      if (input.document_id) form.set("document_id", input.document_id);
+      if (input.expected_revision !== undefined)
+        form.set("expected_revision", String(input.expected_revision));
+      return new Promise<KbDocument>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${getApiUrl()}/kb/bases/${enc(kbId)}/upload`);
+        for (const [k, v] of Object.entries(authHeaders())) xhr.setRequestHeader(k, v);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) onProgress?.(e.loaded / e.total);
+        };
+        xhr.onerror = () => reject(new ApiError("Upload failed: network error", 0, null));
+        xhr.onload = () => {
+          let json: unknown = null;
+          try {
+            json = JSON.parse(xhr.responseText);
+          } catch {
+            // Non-JSON bodies only come from proxies; the status carries the failure.
+          }
+          if (xhr.status >= 200 && xhr.status < 300) return resolve(json as KbDocument);
+          const e = (json ?? {}) as { error?: unknown; code?: unknown };
+          reject(
+            new ApiError(
+              typeof e.error === "string" ? e.error : `HTTP ${xhr.status}`,
+              xhr.status,
+              typeof e.code === "string" ? e.code : null,
+            ),
+          );
+        };
+        xhr.send(form);
+      });
+    },
+    document: (id: string, opts: { heading?: string } = {}) =>
+      req<KbDocumentWithContent>("GET", `/kb/documents/${enc(id)}`, undefined, opts),
+    updateDocument: (id: string, input: KbDocumentUpdate) =>
+      req<KbDocument>("PATCH", `/kb/documents/${enc(id)}`, input),
+    removeDocument: (id: string) => req<null>("DELETE", `/kb/documents/${enc(id)}`),
+    revisions: (id: string) =>
+      req<{ revisions: KbRevision[] }>("GET", `/kb/documents/${enc(id)}/revisions`),
+    revision: (id: string, revision: number) =>
+      req<KbRevision & { content: string | null }>(
         "GET",
-        "/knowledge/collections",
-        undefined,
-        params as Record<string, string | number | boolean | undefined>,
+        `/kb/documents/${enc(id)}/revisions/${revision}`,
       ),
-    search: (
-      q: string,
-      opts?: {
-        collection?: string;
-        project_id?: string;
-        mode?: string;
-        limit?: number;
-      },
-    ) =>
-      req<{
-        results: {
-          docid: string;
-          path: string;
-          collection: string;
-          title: string;
-          snippet: string;
-          score: number;
-        }[];
-      }>("GET", "/knowledge/search", undefined, {
-        q,
-        collection: opts?.collection,
-        project_id: opts?.project_id,
-        mode: opts?.mode,
-        limit: opts?.limit,
-      }),
-    getDocument: (id: string) =>
-      req<KnowledgeDocument>("GET", `/knowledge/documents/${encodeURIComponent(id)}`),
-    editDocument: (id: string, content: string, expectedContent: string) =>
-      req<KnowledgeDocument>("PUT", `/knowledge/documents/${encodeURIComponent(id)}`, {
-        content,
-        expectedContent,
-      }),
-    addCollection: (data: { name: string; path: string; pattern?: string; project_id?: string }) =>
-      req<{ name: string; indexed: number }>("POST", "/knowledge/collections", data),
-    removeCollection: (name: string) =>
-      req<null>("DELETE", `/knowledge/collections/${encodeURIComponent(name)}`),
-    update: (opts?: { collections?: string[] }) =>
-      req<{ indexed: number; updated: number; removed: number }>(
+    /** The original upload as a Blob (the endpoint needs the Authorization header). */
+    original: async (id: string) => {
+      const res = await fetch(`${getApiUrl()}/kb/documents/${enc(id)}/original`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new ApiError(`HTTP ${res.status}`, res.status, null);
+      return res.blob();
+    },
+    reparse: (id: string) => req<KbDocument>("POST", `/kb/documents/${enc(id)}/reparse`),
+    documentUsage: (id: string) => req<KbUsageStats>("GET", `/kb/documents/${enc(id)}/usage`),
+    citation: (handle: string) => req<KbDocumentWithContent>("GET", `/kb/citations/${enc(handle)}`),
+    search: (input: KbSearchRequest, project_id?: string) =>
+      req<KbSearchResult>("POST", "/kb/search", input, { project_id }),
+    sources: (kbId: string) =>
+      req<{ sources: (KbSource & { document_count: number })[] }>(
+        "GET",
+        `/kb/bases/${enc(kbId)}/sources`,
+      ),
+    addSource: (kbId: string, input: { root_path: string; pattern?: string }) =>
+      req<{ source: KbSource; scan: KbSourceScan }>(
         "POST",
-        "/knowledge/update",
-        opts ?? {},
+        `/kb/bases/${enc(kbId)}/sources`,
+        input,
       ),
-    status: () =>
-      req<{
-        collections: {
-          name: string;
-          path: string;
-          pattern: string;
-          documentCount: number;
-          lastModified: string | null;
-          projectId: string | null;
-        }[];
-        totalDocuments: number;
-        dbPath: string;
-        searchMode: string;
-      }>("GET", "/knowledge/status"),
+    scanSource: (id: string) => req<KbSourceScan>("POST", `/kb/sources/${enc(id)}/scan`),
+    removeSource: (id: string) => req<null>("DELETE", `/kb/sources/${enc(id)}`),
+    status: () => req<KbStatus>("GET", "/kb/status"),
+    settings: () => req<KbSettings>("GET", "/kb/settings"),
+    updateSettings: (patch: KbSettingsPatch) => req<KbSettings>("PATCH", "/kb/settings", patch),
+    parsers: () => req<{ parsers: KbParserInfo[]; docling: KbDoclingState }>("GET", "/kb/parsers"),
+    installDocling: () => req<KbDoclingState>("POST", "/kb/parsers/docling/install"),
+    uninstallDocling: () => req<null>("DELETE", "/kb/parsers/docling"),
   },
 
   tags: {

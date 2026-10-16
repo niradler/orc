@@ -1,8 +1,8 @@
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
-import { AUTH_HEADERS, apiPost, gotoView, tid } from "./_helpers";
+import { AUTH_HEADERS, apiDelete, apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers";
 
 for (const viewport of [
   { width: 1440, height: 900 },
@@ -139,45 +139,65 @@ test("should save Wiki revisions and retain the draft after a concurrent conflic
   await expect(page.getByTestId("wiki-editor-content")).toContainText("My unsaved draft");
 });
 
-test("should edit the actual Knowledge source and search the newly indexed content after reopening", async ({
+test("should edit a copy of a registered folder file without writing it and keep the draft on a conflicting save", async ({
   page,
   request,
 }) => {
   const directory = mkdtempSync(join(tmpdir(), "orc-md-browser-"));
-  const collection = tid("md-collection");
   const file = join(directory, "Read Me.md");
-  writeFileSync(file, "# Browser knowledge\n\nknowledgeeditororiginal evidence.");
-  await apiPost(request, "/knowledge/collections", { name: collection, path: directory });
-  await gotoView(page, "knowledge");
-  await page.getByTestId("knowledge-search-input").fill("knowledgeeditororiginal");
-  await page.getByTestId("knowledge-search-input").press("Enter");
-  await page.getByTestId("knowledge-result").first().click();
-  await page.getByTestId("markdown-mode-edit").click();
-  const updated = "# Browser knowledge\n\nknowledgeeditorsaved verified source content.";
-  await page.getByTestId("knowledge-file-content").fill(updated);
-  await page.getByTestId("document-save").click();
-  await expect(page.getByTestId("document-save-status")).toHaveText("Saved");
-  expect(readFileSync(file, "utf8")).toBe(updated);
-  await page.getByTestId("sheet-close").click();
-  await expect(page.getByTestId("sheet-close")).toBeHidden();
-  await page.getByTestId("knowledge-search-input").fill("knowledgeeditorsaved");
-  await page.getByTestId("knowledge-search-input").press("Enter");
-  await page.getByTestId("knowledge-result").first().click();
-  await page.getByTestId("markdown-mode-read").click();
-  await expect(page.getByTestId("markdown-preview")).toContainText("knowledgeeditorsaved");
-  await page.getByTestId("markdown-mode-edit").click();
-  await page.getByTestId("knowledge-file-content").fill("# My protected search draft");
-  writeFileSync(file, "# Latest external source");
-  await page.getByTestId("document-save").click();
-  await expect(page.getByTestId("document-workspace").getByRole("alert")).toBeVisible();
-  await expect(page.getByTestId("knowledge-file-content")).toContainText(
-    "My protected search draft",
-  );
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByTestId("document-discard").click();
-  await expect(page.getByTestId("knowledge-file-content")).toContainText("Latest external source");
-  await page.getByTestId("knowledge-file-content").fill("# Search conflict recovered");
-  await page.getByTestId("document-save").click();
-  await expect(page.getByTestId("document-save-status")).toHaveText("Saved");
-  expect(readFileSync(file, "utf8")).toBe("# Search conflict recovered");
+  const original = "# Browser knowledge\n\nknowledgeeditororiginal evidence.";
+  writeFileSync(file, original);
+  const kb = await apiPost<{ id: string; name: string }>(request, "/kb/bases", {
+    name: tid("md-kb"),
+    project_id: null,
+  });
+  try {
+    await apiPost(request, `/kb/bases/${kb.id}/sources`, { root_path: directory });
+    await gotoView(page, "knowledge");
+    await page.locator(`[data-testid="kb-row"][data-kb-name="${kb.name}"]`).click();
+    await page.getByTestId("kb-search-input").fill("knowledgeeditororiginal");
+    await page.getByTestId("kb-search-input").press("Enter");
+    await page.getByTestId("kb-search-passage").first().click();
+    await page.getByTestId("markdown-mode-edit").click();
+    const updated = "# Browser knowledge\n\nknowledgeeditorsaved verified source content.";
+    await page.getByTestId("kb-document-content").fill(updated);
+    await page.getByTestId("document-save").click();
+    await expect(page.getByTestId("document-save-status")).toHaveText("Saved");
+    // The copy changed; the folder file did not.
+    expect(readFileSync(file, "utf8")).toBe(original);
+    await page.getByTestId("kb-search-input").fill("knowledgeeditorsaved");
+    await page.getByTestId("kb-search-input").press("Enter");
+    await expect(page.getByTestId("kb-search-result").first()).toContainText("Browser knowledge");
+    await page.getByTestId("kb-search-passage").first().click();
+    await page.getByTestId("markdown-mode-read").click();
+    await expect(page.getByTestId("markdown-preview")).toContainText("knowledgeeditorsaved");
+    await page.getByTestId("markdown-mode-edit").click();
+    await page.getByTestId("kb-document-content").fill("# My protected search draft");
+    // Another writer saves first.
+    const { documents } = await apiGet<{ documents: { id: string; revision: number }[] }>(
+      request,
+      `/kb/bases/${kb.id}/documents`,
+    );
+    const doc = documents[0];
+    if (!doc) throw new Error("folder copy missing");
+    await apiPatch(request, `/kb/documents/${doc.id}`, {
+      expected_revision: doc.revision,
+      content: "# Latest concurrent edit",
+    });
+    await page.getByTestId("document-save").click();
+    await expect(page.getByTestId("document-workspace").getByRole("alert")).toBeVisible();
+    await expect(page.getByTestId("kb-document-content")).toContainText(
+      "My protected search draft",
+    );
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByTestId("document-discard").click();
+    await expect(page.getByTestId("kb-document-content")).toContainText("Latest concurrent edit");
+    await page.getByTestId("kb-document-content").fill("# Search conflict recovered");
+    await page.getByTestId("document-save").click();
+    await expect(page.getByTestId("document-save-status")).toHaveText("Saved");
+    expect(readFileSync(file, "utf8")).toBe(original);
+  } finally {
+    await apiDelete(request, `/kb/bases/${kb.id}`);
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

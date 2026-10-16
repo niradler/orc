@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
+import { decryptSecret } from "./secrets.js";
 
 const ChannelDefaultModeSchema = z
   .enum(["direct", "multi"])
@@ -149,14 +150,42 @@ export const OrcConfigSchema = z.object({
 
   knowledge: z
     .object({
-      db_path: z.string().default("~/.orc/knowledge.db"),
+      /** Managed KB storage (originals, projections, artifacts, index.db). Empty = beside orc.db. */
+      root: z.string().default(""),
       default_limit: z.number().int().min(1).max(50).default(10),
-      search_mode: z.enum(["hybrid", "lexical"]).default("lexical"),
+      /** "auto" = built-in basic parser, Docling for PDF/images once installed and enabled. */
+      parser: z.string().min(1).default("auto"),
+      parser_timeout_secs: z.number().int().min(5).max(3600).default(300),
+      parser_concurrency: z.number().int().min(1).max(8).default(2),
+      docling_enabled: z.boolean().default(true),
+      max_upload_bytes: z
+        .number()
+        .int()
+        .min(1024)
+        .default(100 * 1024 * 1024),
+      usage_retention_days: z.number().int().min(1).max(3650).default(180),
+      embedding: z
+        .object({
+          provider: z.enum(["none", "ollama", "openai"]).default("none"),
+          base_url: z.string().optional(),
+          model: z.string().optional(),
+          dimensions: z.number().int().min(8).max(8192).optional(),
+          api_key: z.string().optional(),
+          batch_size: z.number().int().min(1).max(512).default(32),
+          timeout_secs: z.number().int().min(1).max(600).default(60),
+        })
+        .default({ provider: "none", batch_size: 32, timeout_secs: 60 }),
     })
     .default({
-      db_path: "~/.orc/knowledge.db",
+      root: "",
       default_limit: 10,
-      search_mode: "lexical",
+      parser: "auto",
+      parser_timeout_secs: 300,
+      parser_concurrency: 2,
+      docling_enabled: true,
+      max_upload_bytes: 100 * 1024 * 1024,
+      usage_retention_days: 180,
+      embedding: { provider: "none", batch_size: 32, timeout_secs: 60 },
     }),
 
   rules: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
@@ -306,9 +335,18 @@ function fromEnv(): Record<string, unknown> {
   if (Object.keys(context).length) env.context = context;
 
   const knowledge: Record<string, unknown> = {};
-  if (process.env.ORC_KNOWLEDGE_DB_PATH) knowledge.db_path = process.env.ORC_KNOWLEDGE_DB_PATH;
-  if (process.env.ORC_KNOWLEDGE_SEARCH_MODE)
-    knowledge.search_mode = process.env.ORC_KNOWLEDGE_SEARCH_MODE;
+  if (process.env.ORC_KNOWLEDGE_ROOT) knowledge.root = process.env.ORC_KNOWLEDGE_ROOT;
+  if (process.env.ORC_KNOWLEDGE_PARSER) knowledge.parser = process.env.ORC_KNOWLEDGE_PARSER;
+  const embedding: Record<string, unknown> = {};
+  if (process.env.ORC_KNOWLEDGE_EMBEDDING_PROVIDER)
+    embedding.provider = process.env.ORC_KNOWLEDGE_EMBEDDING_PROVIDER;
+  if (process.env.ORC_KNOWLEDGE_EMBEDDING_URL)
+    embedding.base_url = process.env.ORC_KNOWLEDGE_EMBEDDING_URL;
+  if (process.env.ORC_KNOWLEDGE_EMBEDDING_MODEL)
+    embedding.model = process.env.ORC_KNOWLEDGE_EMBEDDING_MODEL;
+  if (process.env.ORC_KNOWLEDGE_EMBEDDING_API_KEY)
+    embedding.api_key = process.env.ORC_KNOWLEDGE_EMBEDDING_API_KEY;
+  if (Object.keys(embedding).length) knowledge.embedding = embedding;
   if (Object.keys(knowledge).length) env.knowledge = knowledge;
 
   const agent_loop: Record<string, unknown> = {};
@@ -403,7 +441,23 @@ export function loadConfig(overrides?: Partial<OrcConfig>): OrcConfig {
   }
 
   parsed.data.db.path = resolvePath(parsed.data.db.path);
-  parsed.data.knowledge.db_path = resolvePath(parsed.data.knowledge.db_path);
+  parsed.data.knowledge.root = parsed.data.knowledge.root
+    ? resolvePath(parsed.data.knowledge.root)
+    : parsed.data.db.path === ":memory:"
+      ? ""
+      : join(dirname(parsed.data.db.path), "knowledge");
+  const embedding = parsed.data.knowledge.embedding;
+  if (embedding.api_key) {
+    try {
+      embedding.api_key = decryptSecret(embedding.api_key);
+    } catch (err) {
+      // A config copied without its secret.key: keep ORC running, the key must be set again.
+      console.warn(
+        `[orc] knowledge.embedding.api_key cannot be decrypted (${(err as Error).message}); set it again in Knowledge settings`,
+      );
+      delete embedding.api_key;
+    }
+  }
   _config = parsed.data;
   return _config;
 }

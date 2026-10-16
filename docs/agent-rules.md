@@ -307,7 +307,7 @@ Repository installs use pinned patched releases of MCP SDK, simple-git, ip-addre
 js-yaml. `patches/braces@3.0.3.patch` bounds pattern parsing and AST traversal because
 [the braces advisory](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) has no patched
 release. `bun install --frozen-lockfile` applies that patch; CI tests malicious patterns,
-actual runner/QMD dependency resolution, protected Git configuration and ordinary cloning.
+actual runner dependency resolution, protected Git configuration and ordinary cloning.
 Run `bun test scripts/dependency-security.test.ts` to verify it.
 
 The package version remains 3.0.3, so raw `bun audit` still reports that advisory. The

@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -9,10 +9,6 @@ afterAll(() => rmSync(root, { recursive: true, force: true }));
 const repo = resolve(import.meta.dir, "..");
 const runnerRequire = createRequire(join(repo, "packages/runner/package.json"));
 const chokidarRequire = createRequire(runnerRequire.resolve("chokidar"));
-const qmdEntry = Bun.resolveSync("@tobilu/qmd", join(repo, "packages/cli"));
-const qmdRequire = createRequire(qmdEntry);
-const llamaRequire = createRequire(Bun.resolveSync("node-llama-cpp", dirname(qmdEntry)));
-const gitRequire = createRequire(llamaRequire.resolve("simple-git"));
 
 function version(entry: string): string {
   let directory = dirname(entry);
@@ -34,10 +30,7 @@ type Braces = {
   expand: (input: unknown) => string[];
   stringify: (input: unknown) => string;
 };
-for (const [name, resolver] of [
-  ["runner watcher", chokidarRequire],
-  ["QMD globbing", createRequire(qmdRequire.resolve("fast-glob"))],
-] as const) {
+for (const [name, resolver] of [["runner watcher", chokidarRequire]] as const) {
   const braces = resolver("braces") as Braces;
   test(`${name}: hostile nesting is a bounded validation error, ordinary patterns still work`, () => {
     for (const method of [braces.parse, braces.compile, braces.expand, braces.stringify]) {
@@ -67,64 +60,6 @@ for (const [name, resolver] of [
     }
   });
 }
-
-test("QMD resolves the patched Git/parser versions and refuses executable configuration", async () => {
-  expect(version(llamaRequire.resolve("simple-git"))).toBe("4.0.2");
-  expect(version(gitRequire.resolve("@simple-git/argv-parser"))).toBe("2.0.1");
-  type Git = {
-    raw: (args: string[]) => Promise<string>;
-    init: () => Promise<unknown>;
-    clone: (source: string, target: string) => Promise<unknown>;
-    status: () => Promise<{ current: string | null }>;
-    env: (env: Record<string, string>) => Git;
-  };
-  const { simpleGit } = llamaRequire("simple-git") as {
-    simpleGit: (
-      options?: string | { baseDir?: string; config?: string[]; timeout?: { block: number } },
-    ) => Git;
-  };
-  const marker = join(root, "unexpected-execution");
-  const git = simpleGit({ baseDir: root, timeout: { block: 10000 } });
-  await git.init();
-  const evil = simpleGit({
-    baseDir: root,
-    config: [`trailer.audit.cmd=echo executed > ${marker}`],
-    timeout: { block: 10000 },
-  });
-  await expect(
-    Promise.resolve(evil.raw(["interpret-trailers", "--trailer", "audit:value"])),
-  ).rejects.toThrow("not permitted");
-  await expect(
-    Promise.resolve(
-      simpleGit({ baseDir: root, config: [`include.path=${join(root, "untrusted-config")}`] }).raw([
-        "status",
-      ]),
-    ),
-  ).rejects.toThrow("not permitted");
-  const parser = gitRequire("@simple-git/argv-parser") as {
-    vulnerabilityCheck: (args: string[], env: Record<string, string>) => unknown[];
-  };
-  expect(
-    parser.vulnerabilityCheck(["commit", "--amend"], { VISUAL: "untrusted-editor", TERM: "xterm" })
-      .length,
-  ).toBeGreaterThan(0);
-  expect(existsSync(marker)).toBe(false);
-  writeFileSync(join(root, "readme.txt"), "Safe clone fixture");
-  await git.raw(["add", "readme.txt"]);
-  await git.raw([
-    "-c",
-    "user.name=ORC validation",
-    "-c",
-    "user.email=validation@example.invalid",
-    "commit",
-    "-m",
-    "fixture",
-  ]);
-  const clone = join(root, "clone");
-  await git.clone(root, clone);
-  expect(readFileSync(join(clone, "readme.txt"), "utf8")).toBe("Safe clone fixture");
-  expect((await simpleGit(clone).status()).current).not.toBeNull();
-}, 30000);
 
 test("API IP parsing and YAML use patched dependency versions", () => {
   const apiRequire = createRequire(join(repo, "packages/api/package.json"));
