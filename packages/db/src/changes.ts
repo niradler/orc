@@ -26,6 +26,7 @@ const TABLE_RESOURCES: Record<string, ChangeResource> = {
   wiki_revisions: "wiki",
   audit_log: "audit",
   skill_changes: "skills",
+  skill_usage: "skill-usage",
   skill_instructions: "skills",
   knowledge_collections: "knowledge",
   rule_heads: "rules",

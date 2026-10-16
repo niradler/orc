@@ -7,6 +7,21 @@ import { changes, type ResourceChange } from "@orc/core/changes";
 import { installChangeTracking, stopChangeTracking } from "../changes.js";
 
 describe("database change notifications", () => {
+  test("should identify skill counter updates separately from skill content changes", async () => {
+    const sqlite = new Database(":memory:");
+    sqlite.exec("CREATE TABLE skill_usage(skill_name TEXT, read_count INTEGER)");
+    installChangeTracking(sqlite, ":memory:");
+    const events: ResourceChange[] = [];
+    const unsubscribe = changes.subscribe((event) => events.push(event));
+    try {
+      sqlite.query("INSERT INTO skill_usage VALUES ('example', 1)").run();
+      await Bun.sleep(50);
+      expect(events).toEqual([{ resources: ["skill-usage"] }]);
+    } finally {
+      unsubscribe();
+      sqlite.close();
+    }
+  });
   test("should notify committed changes, ignore reads, no-op updates and rollbacks", async () => {
     const sqlite = new Database(":memory:");
     sqlite.exec("CREATE TABLE tasks(id TEXT PRIMARY KEY, title TEXT, updated_at INTEGER)");

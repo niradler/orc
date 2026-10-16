@@ -8,6 +8,15 @@ import {
 } from "../../src/lib/resource-events";
 
 describe("resource events", () => {
+  test("should refresh read counters without re-reading skill content", async () => {
+    const client = new QueryClient();
+    client.setQueryData(["skills"], []);
+    client.setQueryData(["skill", "example"], { content: "Instructions" });
+    await invalidateResources(client, ["skill-usage"]);
+    expect(client.getQueryState(["skills"])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(["skill", "example"])?.isInvalidated).toBe(false);
+    client.clear();
+  });
   test("should retain a change that arrives while an older snapshot is in flight", async () => {
     const client = new QueryClient({
       defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY } },

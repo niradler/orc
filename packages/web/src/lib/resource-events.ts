@@ -63,6 +63,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
     "package-skill-picker",
     "setup-components",
   ],
+  "skill-usage": ["skills", "package-skill-picker"],
   agents: ["agents", "agent", "agent-packages", "setup-components"],
   flows: ["flows", "flow"],
   rules: ["rules"],

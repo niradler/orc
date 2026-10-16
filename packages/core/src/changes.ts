@@ -7,6 +7,7 @@ export const CHANGE_RESOURCES = [
   "wiki",
   "knowledge",
   "skills",
+  "skill-usage",
   "agents",
   "flows",
   "rules",
