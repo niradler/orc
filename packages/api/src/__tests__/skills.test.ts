@@ -99,12 +99,12 @@ describe("skill read counts", () => {
     }[];
   };
 
-  test("should attribute reads to the X-Orc-Client caller", async () => {
-    await req(app, "GET", "/skills/orc-tasks", undefined, { "X-Orc-Client": "cli" });
-    await req(app, "GET", "/skills/orc-tasks", undefined, { "X-Orc-Client": "ui" });
-    await req(app, "GET", "/skills/orc-tasks", undefined, { "X-Orc-Client": "something-else" });
+  test("should attribute reads to the X-Orc-Source caller", async () => {
+    await req(app, "GET", "/skills/orc-tasks", undefined, { "X-Orc-Source": "cli" });
+    await req(app, "GET", "/skills/orc-tasks", undefined, { "X-Orc-Source": "ui" });
+    await req(app, "GET", "/skills/orc-tasks", undefined, { "X-Orc-Source": "something-else" });
     await req(app, "GET", "/skills/orc-tasks");
-    await req(app, "GET", "/skills/does-not-exist-xyz", undefined, { "X-Orc-Client": "cli" });
+    await req(app, "GET", "/skills/does-not-exist-xyz", undefined, { "X-Orc-Source": "cli" });
     const res = await req(app, "GET", "/skills?q=orc-tasks");
     const skill = ((await res.json()) as Listed).skills.find((s) => s.name === "orc-tasks");
     expect(skill?.reads_by_source).toEqual({ mcp: 0, cli: 1, api: 2, ui: 1 });

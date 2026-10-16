@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { changes, type ResourceChange } from "@orc/core/changes";
 import { installChangeTracking, stopChangeTracking } from "../changes.js";
+import { installKnowledgeBases } from "../kb.js";
 
 describe("database change notifications", () => {
   test("should identify skill counter updates separately from skill content changes", async () => {
@@ -17,6 +18,32 @@ describe("database change notifications", () => {
       sqlite.query("INSERT INTO skill_usage VALUES ('example', 1)").run();
       await Bun.sleep(50);
       expect(events).toEqual([{ resources: ["skill-usage"] }]);
+    } finally {
+      unsubscribe();
+      sqlite.close();
+    }
+  });
+  test("should notify knowledge base writes but not the usage recorded by reads", async () => {
+    const sqlite = new Database(":memory:");
+    installKnowledgeBases(sqlite);
+    installChangeTracking(sqlite, ":memory:");
+    const events: ResourceChange[] = [];
+    const unsubscribe = changes.subscribe((event) => events.push(event));
+    try {
+      sqlite
+        .query(
+          "INSERT INTO kb_usage_totals (document_id, kb_id, source, kind, count, last_at) VALUES ('d', 'kb1', 'ui', 'fetch', 1, 1)",
+        )
+        .run();
+      await Bun.sleep(50);
+      expect(events).toEqual([]);
+      sqlite
+        .query(
+          "INSERT INTO knowledge_bases (id, name, created_at, updated_at) VALUES ('kb1', 'Runbooks', 1, 1)",
+        )
+        .run();
+      await Bun.sleep(50);
+      expect(events).toEqual([{ resources: ["knowledge"] }]);
     } finally {
       unsubscribe();
       sqlite.close();

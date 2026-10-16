@@ -19,7 +19,7 @@ export function skillCommand() {
     .option("--list", "List skills without installing")
     .option("-s, --skill <names...>", "Import skills by name (all available skills if omitted)")
     .action(async (source: string, options: { list?: boolean; skill?: string[] }) => {
-      const client = createOrcClient({ client: "cli" });
+      const client = createOrcClient({ source: "cli" });
       const discovery = await client.skills.discover(source);
       if (discovery.error || !discovery.data) throw new Error(JSON.stringify(discovery.error));
       for (const issue of discovery.data.issues) console.error(`${issue.path}: ${issue.error}`);
@@ -55,7 +55,7 @@ export function skillCommand() {
     .option("-s, --skill <names...>", "Import these skills from <agent>")
     .option("--all", "Import every new skill from <agent>")
     .action(async (agent: string | undefined, options: { skill?: string[]; all?: boolean }) => {
-      const client = createOrcClient({ client: "cli" });
+      const client = createOrcClient({ source: "cli" });
       const listing = await client.skills.localAgents();
       if (listing.error || !listing.data) throw new Error(JSON.stringify(listing.error));
       const agents = listing.data.agents.filter((entry) => !agent || entry.id === agent);
@@ -96,7 +96,7 @@ export function skillCommand() {
     .description("Read audited instruction history")
     .option("--project-id <id>", "Project scope; omitted means global")
     .action(async (name: string, options: { projectId?: string }) => {
-      const result = await createOrcClient({ client: "cli" }).skills.history(
+      const result = await createOrcClient({ source: "cli" }).skills.history(
         name,
         options.projectId ? { project_id: options.projectId } : { scope: "global" },
       );
@@ -117,7 +117,7 @@ export function skillCommand() {
         changeId: string,
         options: { projectId?: string; expectedChangeId: string; reason: string },
       ) => {
-        const result = await createOrcClient({ client: "cli" }).skills.revert(name, {
+        const result = await createOrcClient({ source: "cli" }).skills.revert(name, {
           project_id: options.projectId ?? null,
           change_id: changeId,
           expected_change_id: options.expectedChangeId,
@@ -132,7 +132,7 @@ export function skillCommand() {
     .command("sync <name>")
     .description("Pull GitHub updates while preserving local edits")
     .action(async (name: string) => {
-      const result = await createOrcClient({ client: "cli" }).skills.sync(name);
+      const result = await createOrcClient({ source: "cli" }).skills.sync(name);
       if (result.error || !result.data) throw new Error(JSON.stringify(result.error));
       if (isJson()) return jsonOut(result.data);
       if (!result.data.applied)
@@ -145,7 +145,7 @@ export function skillCommand() {
     .command("export <name> <directory>")
     .description("Export the original SKILL.md and every supporting file")
     .action(async (name: string, directory: string) => {
-      const client = createOrcClient({ client: "cli" });
+      const client = createOrcClient({ source: "cli" });
       const result = await client.skills.read(name);
       if (result.error || !result.data) throw new Error(JSON.stringify(result.error));
       const skill = result.data as SkillFull;
@@ -191,7 +191,7 @@ export function skillCommand() {
     .option("--source <source>", "Filter by source (builtin|user)")
     .option("--reload", "Force cache rebuild")
     .action(async (opts) => {
-      const client = createOrcClient({ client: "cli" });
+      const client = createOrcClient({ source: "cli" });
       const { data, error } = await client.skills.list({
         q: opts.query,
         source: opts.source,
@@ -218,7 +218,7 @@ export function skillCommand() {
     .option("--project-id <id>", "Project instruction scope; omitted means global")
     .option("--ref <path>", "Read a skill-relative file path (bare filenames read references/)")
     .action(async (name: string, opts) => {
-      const client = createOrcClient({ client: "cli" });
+      const client = createOrcClient({ source: "cli" });
       const { data, error } = await client.skills.read(name, opts.ref, opts.projectId);
       if (error) return console.error("Error:", error);
       if (!data) return console.error("Skill not found.");
@@ -275,7 +275,7 @@ export function skillCommand() {
         );
       }
 
-      const client = createOrcClient({ client: "cli" });
+      const client = createOrcClient({ source: "cli" });
       const files = opts.directory
         ? listSkillFiles(opts.directory).map((file) => ({
             path: file.name,

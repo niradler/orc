@@ -1,18 +1,10 @@
 import type { Database } from "bun:sqlite";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import { NotFoundError } from "@orc/core/errors";
+import { ConflictError, NotFoundError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import { getDb } from "@orc/db/client";
-import {
-  bridge_chats,
-  comments,
-  jobs,
-  knowledge_collections,
-  memories,
-  projects,
-  sessions,
-  tasks,
-} from "@orc/db/schema";
+import { detachLegacyKnowledgeCollections, projectKbCount } from "@orc/db/kb";
+import { bridge_chats, comments, jobs, memories, projects, sessions, tasks } from "@orc/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 
 const app = new OpenAPIHono();
@@ -144,6 +136,7 @@ const deleteRoute = createRoute({
   request: { params: z.object({ id: z.string() }) },
   responses: {
     204: { description: "Deleted" },
+    409: { description: "Project still owns knowledge bases" },
   },
 });
 
@@ -362,16 +355,20 @@ app.openapi(deleteRoute, async (c) => {
     where: eq(projects.id, id),
   });
   if (!existing) throw new NotFoundError("Project", id);
+  // Knowledge bases are scoped deliberately; deleting the project must not silently re-scope them.
+  const sqlite = (db as unknown as { $client: Database }).$client;
+  const kbs = projectKbCount(sqlite, id);
+  if (kbs > 0)
+    throw new ConflictError(
+      `Project has ${kbs} knowledge base${kbs === 1 ? "" : "s"}; delete them first`,
+    );
   await db.transaction(async (tx) => {
     await tx.update(tasks).set({ project_id: null }).where(eq(tasks.project_id, id));
     await tx.update(memories).set({ project_id: null }).where(eq(memories.project_id, id));
     await tx.update(jobs).set({ project_id: null }).where(eq(jobs.project_id, id));
     await tx.update(sessions).set({ project_id: null }).where(eq(sessions.project_id, id));
     await tx.update(bridge_chats).set({ project_id: null }).where(eq(bridge_chats.project_id, id));
-    await tx
-      .update(knowledge_collections)
-      .set({ project_id: null })
-      .where(eq(knowledge_collections.project_id, id));
+    detachLegacyKnowledgeCollections(sqlite, id);
     await tx.delete(projects).where(eq(projects.id, id));
   });
   return new Response(null, { status: 204 });

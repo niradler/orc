@@ -28,7 +28,7 @@ services:
       #
       # ── MCP for the host agent ─────────────────────────────────────────────
       # ORC exposes MCP over Streamable HTTP at http://localhost:7700/mcp so the
-      # host agent can call task_update, memory_*, knowledge_*, etc.
+      # host agent can call task_update, memory_*, kb_*, etc.
       #
       # Pass the server explicitly to the host claude process — agentapi does
       # not auto-load project/local .mcp.json entries for its claude subprocess,

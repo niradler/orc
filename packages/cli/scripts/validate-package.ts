@@ -52,13 +52,28 @@ function resolveSdkBinary(req: NodeRequire): string | null {
   }
 }
 
+// sqlite-vec's getLoadablePath() finds vec0 in its platform package next to its own location.
+function resolveVec0(req: NodeRequire): string | null {
+  const os = process.platform === "win32" ? "windows" : process.platform;
+  const ext = os === "windows" ? "dll" : os === "darwin" ? "dylib" : "so";
+  try {
+    return req.resolve(`sqlite-vec-${os}-${process.arch}/vec0.${ext}`);
+  } catch {
+    return null;
+  }
+}
+
 // Deps that are intentionally external (not bundled) and therefore must be
 // resolvable from the installed package's node_modules. `binary`, when set,
 // resolves a runtime executable the dep loads relative to its own location.
 const EXTERNAL_RUNTIME_DEPS: Array<{
   pkg: string;
   binary?: (req: NodeRequire) => string | null;
-}> = [{ pkg: "@anthropic-ai/claude-agent-sdk", binary: resolveSdkBinary }, { pkg: "zod" }];
+}> = [
+  { pkg: "@anthropic-ai/claude-agent-sdk", binary: resolveSdkBinary },
+  { pkg: "sqlite-vec", binary: resolveVec0 },
+  { pkg: "zod" },
+];
 
 const failures: string[] = [];
 const fail = (msg: string) => {
@@ -156,11 +171,9 @@ if (tarball && failures.length === 0) {
       if (binary) {
         const binPath = binary(requireFromInstalled);
         if (binPath && existsSync(binPath)) {
-          ok(`${pkg} CLI binary resolves (${binPath.split(/[\\/]/).slice(-2).join("/")})`);
+          ok(`${pkg} native binary resolves (${binPath.split(/[\\/]/).slice(-2).join("/")})`);
         } else {
-          fail(
-            `${pkg} CLI binary does NOT resolve — runtime will throw "Native CLI binary not found"`,
-          );
+          fail(`${pkg} native binary does NOT resolve from the installed package`);
         }
       }
     }

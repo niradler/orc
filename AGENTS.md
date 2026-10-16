@@ -580,4 +580,4 @@ Skills live in `skills/*/SKILL.md` (built-in, shipped with ORC) and `~/.orc/skil
 
 ## Knowledge learning
 
-Read [docs/knowledge-loop.md](docs/knowledge-loop.md) when modifying memory, wiki, digest or instruction-history code. Reuse lessons through normal `search` / `wiki_search` / `knowledge_search` and `skill_read`; do not add wiki content/index to startup context or inject wiki summaries into runner prompts. At work-unit completion use `orc-memory-review`. Skill edits activate without an evaluation gate, retain history/audit and have manual revert.
+Read [docs/knowledge-loop.md](docs/knowledge-loop.md) when modifying memory, wiki, digest or instruction-history code. Reuse lessons through normal `search` / `wiki_search` / `kb_search` and `skill_read`; do not add wiki content/index to startup context or inject wiki summaries into runner prompts. At work-unit completion use `orc-memory-review`. Skill edits activate without an evaluation gate, retain history/audit and have manual revert.

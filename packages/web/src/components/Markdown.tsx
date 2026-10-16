@@ -1,4 +1,5 @@
 import { lazy, memo, Suspense } from "react";
+import type { WikiLinks } from "@/lib/wiki-links";
 
 const Renderer = lazy(() =>
   import("@/components/MarkdownRenderer").then((module) => ({ default: module.MarkdownRenderer })),
@@ -6,7 +7,7 @@ const Renderer = lazy(() =>
 
 export const Markdown = memo(function Markdown(props: {
   children: string;
-  wikiLinks?: { slugs: string[]; select: (slug: string) => void };
+  wikiLinks?: WikiLinks;
   readable?: boolean;
 }) {
   return (

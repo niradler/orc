@@ -5,24 +5,21 @@
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./tools": "./src/tools.ts",
-    "./knowledge": "./src/knowledge.ts"
+    "./tools": "./src/tools.ts"
   },
   "scripts": {
     "dev": "bun --env-file ../../.env --watch src/index.ts",
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
-    "build": "bun build src/index.ts --outdir dist --target bun --external 'node-llama-cpp' --external '@node-llama-cpp/*'",
+    "build": "bun build src/index.ts --outdir dist --target bun",
     "test": "bun test",
     "clean": "rm -rf dist"
-  },
-  "optionalDependencies": {
-    "@tobilu/qmd": "^2.5.3"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
+    "@orc/knowledge": "workspace:*",
     "@orc/runner": "workspace:*",
     "@orc/task-service": "workspace:*",
     "drizzle-orm": "^0.45.2",

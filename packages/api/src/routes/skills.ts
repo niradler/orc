@@ -25,7 +25,7 @@ import { resolveWikiProject } from "./wiki.js";
 
 const app = new OpenAPIHono();
 
-const ORC_CLIENT_HEADER = "X-Orc-Client";
+const ORC_SOURCE_HEADER = "X-Orc-Source";
 
 /** Attributes a skill read to the calling client; unknown callers count as plain API reads. */
 function readSource(client: string | undefined): SkillReadSource {
@@ -663,7 +663,7 @@ app.openapi(readRoute, (c) => {
   const history = new SkillHistory(getSqlite());
   const result = history.read(name, projectId, ref);
   if (!result) throw new NotFoundError("Skill", name);
-  history.recordRead(name, projectId, readSource(c.req.header(ORC_CLIENT_HEADER)), ref);
+  history.recordRead(name, projectId, readSource(c.req.header(ORC_SOURCE_HEADER)), ref);
   return c.json(result as SkillFull | SkillRefContent);
 });
 

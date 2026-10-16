@@ -11,14 +11,12 @@ COPY packages/cli/package.json            packages/cli/
 COPY packages/core/package.json           packages/core/
 COPY packages/db/package.json             packages/db/
 COPY packages/gateway/package.json        packages/gateway/
+COPY packages/knowledge/package.json      packages/knowledge/
 COPY packages/mcp/package.json            packages/mcp/
 COPY packages/runner/package.json         packages/runner/
 COPY packages/sdk/package.json            packages/sdk/
 COPY packages/task-service/package.json   packages/task-service/
 COPY packages/web/package.json            packages/web/
-
-# qmd's tree-sitter packages compile native addons (node-gyp) during install
-RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++
 
 RUN bun install --frozen-lockfile
 

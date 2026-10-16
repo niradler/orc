@@ -110,7 +110,10 @@ function LegacyKnowledgeRedirect() {
     query.has("collection")
   ) {
     path = "/knowledge/base";
-    if (tab === "collections") query.set("view", "collections");
+    const legacyQuery = query.get("documentQuery");
+    query.delete("documentQuery");
+    query.delete("collection");
+    if (legacyQuery) query.set("q", legacyQuery);
   }
   query.delete("tab");
   return <Navigate replace to={{ pathname: path, search: query.toString(), hash }} />;

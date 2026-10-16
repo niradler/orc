@@ -27,8 +27,7 @@ for (const width of [1440, 390]) {
     await page.getByTestId("edit-memory-submit").click();
     await expect(row).toContainText(`${marker} updated`);
     await page.getByTestId("section-knowledge").click();
-    await page.getByTestId("knowledge-manage-collections").click();
-    await expect(page.getByTestId("knowledge-back-documents")).toBeVisible();
+    await expect(page.getByTestId("kb-search-input")).toBeVisible();
     await page.getByTestId("nav-memories").click();
     await expect(row).toBeVisible();
     await page.addInitScript(

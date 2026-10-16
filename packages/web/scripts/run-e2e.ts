@@ -72,8 +72,6 @@ async function run(cmd: string[], env: Record<string, string>, timeoutMs: number
 const pwApiPort = process.env.PW_API_PORT ?? String(await freePort());
 await assertPortFree(Number(pwApiPort));
 const pwDbPath = process.env.PW_DB_PATH ?? join(tmpdir(), `orc-pw-${process.pid}.db`);
-const pwKnowledgeDbPath =
-  process.env.PW_KNOWLEDGE_DB_PATH ?? join(tmpdir(), `orc-pw-knowledge-${process.pid}.db`);
 const pwHome = mkdtempSync(join(tmpdir(), "orc-pw-home-"));
 // Isolate ORC state without hiding the browser installed before this process starts.
 const browserCache =
@@ -97,7 +95,8 @@ const env = {
   PW_DB_PATH: pwDbPath,
   ORC_API_PORT: pwApiPort,
   ORC_DB_PATH: pwDbPath,
-  ORC_KNOWLEDGE_DB_PATH: pwKnowledgeDbPath,
+  // Knowledge files default next to the DB (the shared OS tmp dir); keep them per run.
+  ORC_KNOWLEDGE_ROOT: join(pwHome, "knowledge"),
   ORC_API_SECRET: "orc-playwright-isolated-secret",
   ORC_E2E_CHAT_MOCK: "1",
   ORC_TERMINALS_ENABLED: "1",
@@ -157,11 +156,6 @@ try {
   }
   try {
     unlinkSync(pwDbPath);
-  } catch {
-    /* already gone */
-  }
-  try {
-    unlinkSync(pwKnowledgeDbPath);
   } catch {
     /* already gone */
   }

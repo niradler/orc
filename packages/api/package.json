@@ -11,7 +11,7 @@
     "dev": "bun --env-file ../../.env --hot src/index.ts",
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
-    "build": "bun build src/index.ts --outdir dist --target bun --external 'node-llama-cpp' --external '@node-llama-cpp/*'",
+    "build": "bun build src/index.ts --outdir dist --target bun",
     "test": "bun test",
     "clean": "rm -rf dist"
   },
@@ -22,6 +22,7 @@
     "@orc/agent-runtime": "workspace:*",
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
+    "@orc/knowledge": "workspace:*",
     "@orc/gateway": "workspace:*",
     "@orc/mcp": "workspace:*",
     "@orc/runner": "workspace:*",

@@ -1,0 +1,27 @@
+{
+  "name": "@orc/knowledge",
+  "version": "0.1.35",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./worker": "./src/parsers/worker.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@orc/core": "workspace:*",
+    "@orc/db": "workspace:*",
+    "fflate": "0.8.3",
+    "mammoth": "1.13.0",
+    "sqlite-vec": "0.1.9",
+    "turndown": "7.2.4",
+    "unpdf": "1.9.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  },
+  "devDependencies": {
+    "@types/turndown": "5.0.6"
+  }
+}

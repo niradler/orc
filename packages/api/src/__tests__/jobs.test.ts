@@ -238,6 +238,16 @@ describe("Jobs CRUD", () => {
       expect(res.status).toBe(202);
       const body = await res.json();
       expect(body.run_id).toBeTruthy();
+      // The run continues in the background; let it finish before teardown closes the database.
+      const status = () =>
+        getDb()
+          .select({ status: job_runs.status })
+          .from(job_runs)
+          .where(eq(job_runs.id, body.run_id))
+          .get()?.status;
+      for (let i = 0; i < 100 && ["pending", "running"].includes(status() ?? "pending"); i++)
+        await Bun.sleep(100);
+      expect(status()).toBe("success");
     });
 
     test("returns 404 for non-existent job", async () => {
