@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img">
+  <title>orc</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1a2142"/>
+      <stop offset="1" stop-color="#0a0d19"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#84aef8" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#84aef8" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="gem" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#b5cffc"/>
+      <stop offset="1" stop-color="#6c97ee"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <circle cx="512" cy="512" r="330" fill="url(#glow)"/>
+  <path d="M512 232 L792 512 L512 792 L232 512 Z" fill="none" stroke="url(#gem)" stroke-width="44" stroke-linejoin="round"/>
+  <path d="M512 394 L630 512 L512 630 L394 512 Z" fill="url(#gem)"/>
+</svg>
