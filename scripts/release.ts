@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -9,6 +10,7 @@ import {
 } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { publishDockerRelease } from "./release-docker.js";
 import {
   BINARIES,
   bumpPatch,
@@ -20,7 +22,21 @@ import {
   sha256,
   TARGETS,
 } from "./release-lib.js";
-import { installDesktop } from "./update-desktop.js";
+import { publishReleaseNotes } from "./release-notes.js";
+import {
+  DOCKER_PLATFORMS,
+  npmArtifact,
+  publishedDockerImages,
+  publishNpmArtifact,
+  RELEASE_STAGES,
+  releaseIsComplete,
+  type ReleaseState as State,
+  smokeDockerImage,
+  verifyDockerPublication,
+  verifyGitHubPublication,
+  waitForNpmPublication,
+} from "./release-verification.js";
+import { installDesktop, verifyInstalledDesktop } from "./update-desktop.js";
 
 const ROOT = resolve(import.meta.dir, "..");
 const CLI = join(ROOT, "packages/cli");
@@ -32,19 +48,12 @@ const { values } = parseArgs({
     yes: { type: "boolean" },
     resume: { type: "boolean" },
     check: { type: "boolean" },
+    verify: { type: "boolean" },
     "ci-matrix": { type: "boolean" },
     help: { type: "boolean" },
   },
 });
 
-type State = {
-  version: string;
-  target: string;
-  commit?: string;
-  runId?: number;
-  completed: string[];
-  hashes?: Record<string, string>;
-};
 type Manifest = { version: string; [key: string]: unknown };
 function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
@@ -72,15 +81,54 @@ function validate(): void {
   command("bun", ["x", "biome", "check", "./packages", "./scripts"]);
   command("bun", ["run", "typecheck"]);
   command("bun", ["x", "tsc", "-p", "scripts/tsconfig.json"]);
-  command("bun", ["test", "scripts/release.test.ts"]);
+  command("bun", ["test", "scripts/release.test.ts", "scripts/release-verification.test.ts"]);
   command("bun", ["run", "test"]);
+}
+
+async function verifyRelease(state: State, runtime: boolean): Promise<void> {
+  for (const stage of RELEASE_STAGES)
+    if (!state.completed.includes(stage)) throw new Error(`Release stage is incomplete: ${stage}`);
+  const artifact =
+    state.npm ??
+    npmArtifact(join(ROOT, ".orc", `release-${state.version}`, `orc-ai-${state.version}.tgz`));
+  await verifyGitHubPublication(state);
+  await waitForNpmPublication(state.version, artifact);
+  const digest = verifyDockerPublication(
+    state.version,
+    state.docker_digest ? { digest: state.docker_digest } : {},
+  );
+  if (
+    runtime ||
+    !DOCKER_PLATFORMS.every((platform) => state.docker_runtime_verified?.includes(platform))
+  ) {
+    if (!state.commit) throw new Error("Missing release revision");
+    const images = publishedDockerImages(digest);
+    for (const platform of DOCKER_PLATFORMS)
+      smokeDockerImage({
+        version: state.version,
+        platform,
+        image: images[platform],
+        pull: true,
+        revision: state.docker_revision ?? state.commit,
+      });
+  }
+  await verifyInstalledDesktop(state.version);
+  console.log(
+    "Verified GitHub, npm, Docker version/latest, both image platforms, and the installed desktop/daemon.",
+  );
 }
 
 async function main(): Promise<void> {
   if (values.help) {
     console.log(
-      "bun run release [--yes | --check | --resume --yes]\nDefault: print plan. --check: run all checks without bump/publish.\n--yes: test, bump patch, build, tag, release, npm, Docker, update desktop.\n--resume --yes: continue the same version after a failure. Only the tag is pushed; no branch push.",
+      "bun run release [--yes | --check | --verify | --resume --yes]\nDefault: print plan. --check: run all checks without bump/publish.\n--verify: verify the checkpointed public release and installed desktop; no publication or installation.\n--yes: test, bump patch, build, tag, release, npm, Docker runtime checks, update desktop, verify.\n--resume --yes: continue the same version after a failure. Only the tag is pushed; no branch push.",
     );
+    return;
+  }
+  if (values.verify) {
+    if (values.yes || values.resume || values.check || values["ci-matrix"])
+      throw new Error("--verify cannot be combined with publication or --check");
+    await verifyRelease(readJson<State>(STATE), true);
     return;
   }
   if (values["ci-matrix"]) {
@@ -113,7 +161,7 @@ async function main(): Promise<void> {
         .map((t) => t.id)
         .join(
           ", ",
-        )}) → checksummed GitHub release → npm → Docker linux/amd64,linux/arm64 → install/relaunch desktop.\nRun bun run release --yes when ready. No branch is pushed.`,
+        )}) → checksummed GitHub release → verified npm archive → Docker candidate/published runtime checks → install/relaunch desktop → final verification and notes.\nRun bun run release --yes when ready. No branch is pushed.`,
     );
     return;
   }
@@ -130,7 +178,7 @@ async function main(): Promise<void> {
   } else {
     if (existsSync(STATE)) {
       const previous = readJson<State>(STATE);
-      if (!previous.completed.includes("install"))
+      if (!releaseIsComplete(previous))
         throw new Error(`Unfinished v${previous.version}; use --resume --yes.`);
     }
     for (const file of manifests())
@@ -150,11 +198,12 @@ async function main(): Promise<void> {
     if (command("git", ["tag", "--list", `v${version}`], ROOT, true))
       throw new Error(`Tag v${version} already exists.`);
     validate();
-    state = { version, target, completed: ["checks"] };
+    state = { version, target, completed: ["checks"], verification_required: true };
     mkdirSync(join(ROOT, ".orc"), { recursive: true });
     writeJson(STATE, state);
   }
   const save = (): void => writeJson(STATE, state);
+  state.verification_required = true;
   async function step(name: string, action: () => void | Promise<void>): Promise<void> {
     await completeStep(
       state.completed,
@@ -189,6 +238,7 @@ async function main(): Promise<void> {
   await step("build", () => {
     command("bun", ["run", "build"]);
     command("bun", ["run", "build:bin"], CLI);
+    copyFileSync(join(ROOT, "README.md"), join(CLI, "README.md"));
     command("bun", ["run", "validate:package"], CLI);
     command(
       "bun",
@@ -310,58 +360,46 @@ async function main(): Promise<void> {
       command("gh", ["release", "upload", tag, ...files, checksums, "--clobber"]);
     command("gh", ["release", "edit", tag, "--draft=false", "--latest"]);
   });
-  await step("npm", () => {
-    const versions = JSON.parse(
-      command("npm", ["view", "orc-ai", "versions", "--json"], ROOT, true),
-    ) as string[];
-    if (!versions.includes(version)) command("npm", ["publish"], CLI);
-    if (command("npm", ["view", `orc-ai@${version}`, "version"], ROOT, true) !== version)
-      throw new Error("npm version verification failed");
+  await step("npm", async () => {
+    if (!state.npm) {
+      const packed = JSON.parse(
+        run("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", artifacts], {
+          cwd: CLI,
+          capture: true,
+          timeout: 60_000,
+          quiet: true,
+        }),
+      ) as { filename?: string }[];
+      const name = `orc-ai-${version}.tgz`;
+      if (packed.length !== 1 || packed[0]?.filename !== name)
+        throw new Error("Unexpected npm release archive");
+      state.npm = npmArtifact(join(artifacts, name));
+      save();
+    }
+    await publishNpmArtifact(version, state.npm, save);
   });
-  await step("docker", () => {
-    const builders = command("docker", ["buildx", "ls", "--format", "{{.Name}}"], ROOT, true).split(
-      /\r?\n/,
-    );
-    if (!builders.includes("orc-multiarch"))
-      command("docker", [
-        "buildx",
-        "create",
-        "--name",
-        "orc-multiarch",
-        "--driver",
-        "docker-container",
-      ]);
-    command("docker", [
-      "buildx",
-      "build",
-      "--builder",
-      "orc-multiarch",
-      "--platform",
-      "linux/amd64,linux/arm64",
-      "--push",
-      "-t",
-      `niradler/orc:${version}`,
-      "-t",
-      "niradler/orc:latest",
-      ".",
-    ]);
-    command("docker", ["buildx", "imagetools", "inspect", `niradler/orc:${version}`]);
-  });
+  await step("docker", () => publishDockerRelease(ROOT, state, save));
   await step("install", () =>
     installDesktop({
       version,
       installer: join(DESKTOP, "release", installerName(version, target)),
     }),
   );
+  await verifyRelease(state, false);
+  publishReleaseNotes(ROOT, state);
+  if (!state.completed.includes("verify")) state.completed.push("verify");
+  save();
   console.log(
-    `\nReleased and installed ${tag}: https://github.com/niradler/orc/releases/tag/${tag}`,
+    `\nReleased, installed and verified ${tag}: https://github.com/niradler/orc/releases/tag/${tag}`,
   );
 }
 
 await main().catch((error: unknown) => {
   console.error(error instanceof Error ? error.message : String(error));
   console.error(
-    "After correcting the failure, use bun run release --resume --yes if release-state.json was created.",
+    values.verify
+      ? "Correct the verification issue and rerun bun run release --verify. No publication or installation was requested."
+      : "After correcting the failure, use bun run release --resume --yes if release-state.json was created.",
   );
   process.exitCode = 1;
 });

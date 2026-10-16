@@ -61,7 +61,8 @@ COPY --from=builder --chown=bun:bun /app/package.json    ./
 RUN mkdir -p /data && chown bun:bun /data
 
 COPY docker-entrypoint.sh /usr/local/bin/orc-entrypoint
-RUN chmod 755 /usr/local/bin/orc-entrypoint
+RUN chmod 755 /usr/local/bin/orc-entrypoint && \
+    TINI_SUBREAPER=1 /usr/local/bin/orc-entrypoint true
 
 # ── Environment defaults ───────────────────────────────────────────────────────
 ENV ORC_HOME=/data

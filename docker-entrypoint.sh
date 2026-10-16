@@ -23,4 +23,4 @@ if [ -n "${ORC_SSH_SOURCE:-}" ] && [ -d "$ORC_SSH_SOURCE" ]; then
   find "$ssh_dir" -type f -name '*.pub' -exec chmod 644 {} \;
 fi
 
-exec /sbin/tini -- "$@"
+exec tini -- "$@"

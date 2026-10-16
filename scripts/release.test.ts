@@ -28,6 +28,18 @@ describe("release safety", () => {
       /^\d+\.\d+\.\d+$/,
     );
   });
+  test("should reject combining verification with publication before touching release state", () => {
+    const manifest = resolve(import.meta.dir, "../package.json");
+    const before = readFileSync(manifest, "utf8");
+    expect(() =>
+      run(process.execPath, [resolve(import.meta.dir, "release.ts"), "--verify", "--yes"], {
+        capture: true,
+        quiet: true,
+        timeout: 10_000,
+      }),
+    ).toThrow("cannot be combined");
+    expect(readFileSync(manifest, "utf8")).toBe(before);
+  });
   test("should resume after a failed publish without repeating completed stages", async () => {
     const completed: string[] = [];
     let releases = 0;

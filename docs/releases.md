@@ -8,6 +8,7 @@ Buildx installed and authenticated. Docker must be running and able to push to
 ```sh
 bun run release                 # show the next patch release plan; no changes
 bun run release --check         # lint, typecheck, release tests and full test suite
+bun run release --verify        # verify the existing release; no publish/install
 bun run release --yes           # execute the release, then update this desktop
 bun run release --resume --yes  # continue a failed release without another bump
 ```
@@ -24,6 +25,19 @@ Linux x64 and Linux ARM64. The local command waits for those jobs, downloads the
 installers, and publishes nine assets plus SHA256 checksums to GitHub Releases.
 Only then does it publish npm and the `linux/amd64,linux/arm64` Docker image,
 tagged with the release version and `latest`.
+
+npm publication uses a prepared archive whose checksums are checkpointed before
+submission. The command waits for both public metadata and downloadable archive
+bytes to match that archive. An accepted or uncertain submission is verified on
+resume rather than submitted again. A definite authentication rejection allows a
+retry after npm configuration is corrected.
+
+Docker candidates for both architectures must start successfully before either
+public tag is pushed. Checks cover API version, rejected unauthenticated requests,
+accepted authenticated requests, dashboard HTML and a served asset. After the
+push, fresh pulls by each architecture's immutable digest repeat those checks and verify the image's
+source revision. A resume after publication repeats validation without another
+build/push. Stopped validation containers are retained as evidence.
 
 The final step quits the installed desktop app, installs the exact new host
 installer, relaunches it hidden, and verifies the installed CLI and running
@@ -44,8 +58,21 @@ are not repeated. If an Actions build fails, fix its root cause and rerun the
 failed jobs before resuming. Preserve downloaded artifacts until the release
 finishes. A release may be public on GitHub while npm/Docker is still pending;
 the command does not report success until all stages and local updating pass.
+Installation alone does not mark an unfinished release complete.
 
-Credentials come from each tool's normal local configuration and environment.
+Final verification checks the remote source tag, every GitHub asset digest and
+the published checksum file, npm archive checksums, and the GitHub/npm/Docker
+latest pointers. Docker must contain both architectures, and the installed
+desktop, CLI and daemon must report the release version. A managed verification
+summary is added to the release notes while preserving the authored notes.
+
+`--verify` repeats public-artifact, image runtime and installed-version checks
+for the checkpointed release. It does not publish, bump versions, install or
+change the checkpoint. Keep the prepared npm archive with the checkpoint.
+
+Credentials come from each tool's normal local configuration and environment;
+npm uses its standard user configuration (normally `~/.npmrc`). The release
+command does not fetch, copy or store credentials.
 Do not put credentials or one-time passwords in command arguments. Refresh npm
 login locally if authentication expires. macOS currently uses the project's
 ad-hoc signing configuration; this flow does not add Apple notarization or
