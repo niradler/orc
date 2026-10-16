@@ -6647,7 +6647,7 @@ export interface components {
             /** @description Selected Host alias; null runs locally */
             host: string | null;
             /** @description Port the reverse tunnel opens on the host so agents there reach orc */
-            remote_port: number;
+            remote_port: number | null;
             /** @description Host aliases from ~/.ssh/config */
             hosts: string[];
             /** @description ORC_SSH_HOST is set, so the selection is fixed */

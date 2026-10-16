@@ -187,7 +187,7 @@ export type HostDirectoryListing = {
 
 export type SshState = {
   host: string | null;
-  remote_port: number;
+  remote_port: number | null;
   hosts: string[];
   locked: boolean;
   supported: boolean;

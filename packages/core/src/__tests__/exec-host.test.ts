@@ -89,6 +89,10 @@ describe("remoteCommand", () => {
 });
 
 describe("forwardedEnv", () => {
+  test("should request an available SSH port when no override is configured", () => {
+    const automatic = execHostFor("box", loadConfig({ ssh: { connect_timeout_secs: 10 } }));
+    expect(automatic.kind === "ssh" && automatic.remotePort).toBe(0);
+  });
   test("forwards only allowlisted keys and points the agent at the tunnel", () => {
     const env = forwardedEnv(
       host,
@@ -126,7 +130,7 @@ describe("execHostFor", () => {
     expect(resolved).toMatchObject({
       kind: "ssh",
       apiTarget: "127.0.0.1:7701",
-      remotePort: 7701,
+      remotePort: 0,
     });
   });
 
