@@ -1,16 +1,7 @@
 name: Desktop
 
+# PR runs disabled (no Actions credit). Run manually from the Actions tab if needed.
 on:
-  pull_request:
-    branches:
-      - master
-    paths:
-      - "packages/desktop/**"
-      - "packages/cli/**"
-      - "packages/api/src/terminals/**"
-      - ".github/workflows/desktop.yml"
-      - "package.json"
-      - "bun.lock"
   workflow_dispatch:
 
 permissions:

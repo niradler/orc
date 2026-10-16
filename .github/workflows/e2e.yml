@@ -1,7 +1,8 @@
 name: E2E
 
+# PR runs disabled (no Actions credit); the same gates run locally via
+# .githooks/pre-commit -> scripts/ci-local.ts. Run manually from the Actions tab if needed.
 on:
-  pull_request:
   workflow_dispatch:
 
 permissions:
