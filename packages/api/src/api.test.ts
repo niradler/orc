@@ -146,36 +146,34 @@ describe("Tasks", () => {
 });
 
 describe("Memories", () => {
-  let memId: string;
+  let projectId: string;
 
-  test("POST /memories stores a memory", async () => {
+  test("POST /memories stores a memory in a project", async () => {
+    const project = (await (await req("POST", "/projects", { name: "api-memories" })).json()) as {
+      id: string;
+    };
+    projectId = project.id;
     const res = await req("POST", "/memories", {
+      project_id: projectId,
+      name: "ulid-ids",
+      description: "ID convention",
       content: "Always use ULIDs for IDs in this project",
-      tags: ["convention", "ids"],
-      importance: "high",
     });
     expect(res.status).toBe(201);
-    const body = (await res.json()) as { id: string; content: string };
+    const body = (await res.json()) as { name: string; content: string };
+    expect(body.name).toBe("ulid-ids");
     expect(body.content).toContain("ULIDs");
-    memId = body.id;
   });
 
-  test("GET /memories lists memories", async () => {
-    const res = await req("GET", "/memories");
+  test("GET /memories searches name and description", async () => {
+    const res = await req("GET", `/memories?project_id=${projectId}&q=convention`);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { memories: unknown[] };
-    expect(body.memories.length).toBeGreaterThan(0);
+    const body = (await res.json()) as { memories: { name: string }[] };
+    expect(body.memories.map((m) => m.name)).toEqual(["ulid-ids"]);
   });
 
-  test("GET /memories/search finds by keyword", async () => {
-    const res = await req("GET", "/memories/search?q=ULID");
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { results: { id: string }[] };
-    expect(body.results.some((r) => r.id === memId)).toBe(true);
-  });
-
-  test("DELETE /memories/:id removes memory", async () => {
-    const res = await req("DELETE", `/memories/${memId}`);
+  test("DELETE /memories/:name removes memory", async () => {
+    const res = await req("DELETE", `/memories/ulid-ids?project_id=${projectId}`);
     expect(res.status).toBe(204);
   });
 });

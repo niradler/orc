@@ -1,5 +1,6 @@
 import { Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import type {
   CreateProjectInput,
   Project,
@@ -51,6 +52,7 @@ import {
   useProjects,
   useUpdateProject,
 } from "@/hooks/useProjects";
+import { MEMORIES_PATH } from "@/lib/memory-routes";
 import { useViewParam } from "@/lib/view-params";
 
 const STATUS_TABS: Array<{ value: ProjectStatus | "all"; label: string }> = [
@@ -291,7 +293,7 @@ export default function Projects() {
         <ConfirmDialog
           open={Boolean(deleting)}
           title="Delete project"
-          description="This will delete all associated tasks, memories, and jobs. This action cannot be undone."
+          description="This deletes the project and its memories. Its tasks, jobs and sessions are kept without a project. This action cannot be undone."
           confirmLabel="Delete"
           variant="destructive"
           isPending={deleteProject.isPending}
@@ -689,7 +691,13 @@ function ProjectSummaryBar({ summary }: { summary: ProjectSummary }) {
         )}
       </DetailField>
       <DetailField label="Memories">
-        <span className="font-label text-sm text-primary">{summary.memories}</span>
+        <Link
+          data-testid="project-memories-link"
+          to={`${MEMORIES_PATH}?project=${encodeURIComponent(summary.project.id)}`}
+          className="font-label text-sm text-primary underline"
+        >
+          {summary.memories}
+        </Link>
       </DetailField>
       <DetailField label="Jobs">
         <span className="font-label text-sm text-primary">{summary.jobs}</span>

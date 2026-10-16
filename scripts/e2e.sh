@@ -223,38 +223,38 @@ assert_contains "batch create returns refs" '"a"' "$BATCH"
 # ── 8. Memory CRUD ─────────────────────────────────────────────────────────
 section "8. Memory CRUD"
 
-$ORC mem add "E2E test memory" --type rule --importance high -p e2e-proj -t "test" 2>&1
+$ORC mem add e2e-test-memory -d "E2E memory description" -c "E2E test memory" --priority 50 -p e2e-proj 2>&1
 MEM_LIST=$($ORC mem list -p e2e-proj 2>&1)
-assert_contains "mem add + list" "E2E test memory" "$MEM_LIST"
+assert_contains "mem add + list" "e2e-test-memory" "$MEM_LIST"
 
-# mem show (was broken with limit: 200)
-MEM_JSON=$($ORC --json mem list -p e2e-proj 2>&1)
-MEM_ID=$(echo "$MEM_JSON" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
-MEM_SHOW=$($ORC mem show "$MEM_ID" 2>&1)
-assert_contains "mem show works (limit fix)" "E2E test memory" "$MEM_SHOW"
+MEM_SHOW=$($ORC mem show e2e-test-memory -p e2e-proj 2>&1)
+assert_contains "mem show" "E2E test memory" "$MEM_SHOW"
 
-# mem search
-MEM_SEARCH=$($ORC mem search "E2E test" 2>&1)
-assert_contains "mem search" "E2E test" "$MEM_SEARCH"
+MEM_SEARCH=$($ORC mem list -q "E2E memory" -p e2e-proj 2>&1)
+assert_contains "mem list -q" "e2e-test-memory" "$MEM_SEARCH"
 
-# mem edit
-$ORC mem edit "$MEM_ID" --content "Updated E2E memory" 2>&1
-MEM_SHOW2=$($ORC mem show "$MEM_ID" 2>&1)
-assert_contains "mem edit works (limit fix)" "Updated E2E memory" "$MEM_SHOW2"
+$ORC mem edit e2e-test-memory --content "Updated E2E memory" -r "e2e edit" -p e2e-proj 2>&1
+MEM_SHOW2=$($ORC mem show e2e-test-memory -p e2e-proj 2>&1)
+assert_contains "mem edit" "Updated E2E memory" "$MEM_SHOW2"
 
-# mem delete
-$ORC mem delete "$MEM_ID" 2>&1
-MEM_AFTER_DEL=$($ORC mem show "$MEM_ID" 2>&1 || true)
-assert_contains "mem delete works (limit fix)" "not found" "$MEM_AFTER_DEL"
+MEM_HISTORY=$($ORC mem history e2e-test-memory -p e2e-proj 2>&1)
+assert_contains "mem history" "e2e edit" "$MEM_HISTORY"
+
+$ORC mem delete e2e-test-memory -p e2e-proj 2>&1
+MEM_AFTER_DEL=$($ORC mem show e2e-test-memory -p e2e-proj 2>&1 || true)
+assert_contains "mem delete" "not found" "$MEM_AFTER_DEL"
 
 # Memory API
 curl -s -X POST -H "$AUTH_HEADER" -H "Content-Type: application/json" \
-  -d "{\"content\":\"API memory\",\"type\":\"fact\",\"project_id\":\"$PROJ_ID\"}" "$API/memories" >/dev/null
+  -d "{\"name\":\"api-memory\",\"description\":\"API memory description\",\"content\":\"API memory\",\"project_id\":\"$PROJ_ID\"}" "$API/memories" >/dev/null
 API_MEMS=$(curl -s -H "$AUTH_HEADER" "$API/memories?project_id=$PROJ_ID")
-assert_contains "POST/GET /memories API" "API memory" "$API_MEMS"
+assert_contains "POST/GET /memories API" "api-memory" "$API_MEMS"
 
-API_SEARCH=$(curl -s -H "$AUTH_HEADER" "$API/memories/search?q=API+memory")
-assert_contains "GET /memories/search" "API memory" "$API_SEARCH"
+API_SEARCH=$(curl -s -H "$AUTH_HEADER" "$API/memories?project_id=$PROJ_ID&q=api")
+assert_contains "GET /memories?q=" "api-memory" "$API_SEARCH"
+
+API_READ=$(curl -s -H "$AUTH_HEADER" "$API/memories/api-memory?project_id=$PROJ_ID")
+assert_contains "GET /memories/{name}" "API memory" "$API_READ"
 
 # ── 9. Job CRUD ─────────────────────────────────────────────────────────────
 section "9. Job CRUD"
@@ -328,13 +328,17 @@ MCP_TASK_LIST=$(curl -s -X POST -H "$AUTH_HEADER" -H "Content-Type: application/
   -d '{"name":"task_list","args":{}}' "$API/mcp/tool")
 assert_contains "MCP task_list tool" '"result"' "$MCP_TASK_LIST"
 
-MCP_MEM_STORE=$(curl -s -X POST -H "$AUTH_HEADER" -H "Content-Type: application/json" \
-  -d '{"name":"memory_store","args":{"content":"MCP mem","type":"fact"}}' "$API/mcp/tool")
-assert_contains "MCP memory_store tool" "Stored" "$MCP_MEM_STORE"
+MCP_MEM_CREATE=$(curl -s -X POST -H "$AUTH_HEADER" -H "Content-Type: application/json" \
+  -d '{"name":"memory_create","args":{"name":"mcp-mem","description":"MCP memory description","content":"MCP mem","project":"e2e-proj"}}' "$API/mcp/tool")
+assert_contains "MCP memory_create tool" "Created memory mcp-mem" "$MCP_MEM_CREATE"
 
-MCP_MEM_SEARCH=$(curl -s -X POST -H "$AUTH_HEADER" -H "Content-Type: application/json" \
-  -d '{"name":"memory_search","args":{"query":"MCP mem"}}' "$API/mcp/tool")
-assert_contains "MCP memory_search tool" '"result"' "$MCP_MEM_SEARCH"
+MCP_MEM_LIST=$(curl -s -X POST -H "$AUTH_HEADER" -H "Content-Type: application/json" \
+  -d '{"name":"memory_list","args":{"q":"mcp","project":"e2e-proj"}}' "$API/mcp/tool")
+assert_contains "MCP memory_list tool" "mcp-mem" "$MCP_MEM_LIST"
+
+MCP_MEM_READ=$(curl -s -X POST -H "$AUTH_HEADER" -H "Content-Type: application/json" \
+  -d '{"name":"memory_read","args":{"name":"mcp-mem","project":"e2e-proj"}}' "$API/mcp/tool")
+assert_contains "MCP memory_read tool" "MCP mem" "$MCP_MEM_READ"
 
 MCP_SEARCH=$(curl -s -X POST -H "$AUTH_HEADER" -H "Content-Type: application/json" \
   -d '{"name":"search","args":{"query":"E2E"}}' "$API/mcp/tool")
@@ -393,7 +397,7 @@ assert_contains "json task list" '"tasks"' "$JSON_TASKS"
 JSON_PROJS=$($ORC --json project list 2>&1)
 assert_contains "json project list" '"projects"' "$JSON_PROJS"
 
-JSON_MEMS=$($ORC --json mem list 2>&1)
+JSON_MEMS=$($ORC --json mem list -p e2e-proj 2>&1)
 assert_contains "json mem list" '"memories"' "$JSON_MEMS"
 
 JSON_JOBS=$($ORC --json job list 2>&1)

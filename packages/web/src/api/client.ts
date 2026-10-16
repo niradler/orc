@@ -53,7 +53,6 @@ export type {
   BrokenFlow,
   Comment,
   CreateJobInput,
-  CreateMemoryInput,
   CreateProjectInput,
   CreateSkillInput,
   CreateTaskInput,
@@ -71,8 +70,6 @@ export type {
   JobTriggerType,
   LiveSession,
   LiveSessionHit,
-  Memory,
-  MemoryType,
   PackageFull,
   PackageMeta,
   Project,
@@ -98,7 +95,6 @@ export type {
   TranscriptPage,
   TranscriptTurn,
   UpdateJobInput,
-  UpdateMemoryInput,
   UpdateProjectInput,
   UpdateTaskInput,
 } from "@orc/sdk/types";
@@ -111,7 +107,6 @@ import type {
   BrokenFlow,
   Comment,
   CreateJobInput,
-  CreateMemoryInput,
   CreateProjectInput,
   CreateSkillInput,
   CreateTaskInput,
@@ -125,7 +120,6 @@ import type {
   JobRun,
   JobRunLog,
   LiveSession,
-  Memory,
   PackageFull,
   PackageMeta,
   Project,
@@ -143,7 +137,6 @@ import type {
   TaskLink,
   TranscriptPage,
   UpdateJobInput,
-  UpdateMemoryInput,
   UpdateProjectInput,
   UpdateTaskInput,
 } from "@orc/sdk/types";
@@ -281,6 +274,83 @@ export class ApiError extends Error {
     this.name = "ApiError";
   }
 }
+
+// ---- Memories: short per-project facts; identity is (project_id, name) ----
+
+export const MEMORY_DESCRIPTION_MAX = 300;
+export const MEMORY_CONTENT_MAX = 800;
+export const MEMORY_PRIORITY_MAX = 100;
+/** Memory writes from the dashboard are made by a person, not an agent. */
+const UI_AUTHOR = "human";
+
+export type MemorySort = "reads" | "recent" | "priority";
+export type MemoryReadSource = "mcp" | "cli" | "api" | "ui";
+
+export type Memory = {
+  project_id: string;
+  name: string;
+  description: string;
+  content: string;
+  /** 0-100, higher loads first in context; null = not scored. */
+  priority: number | null;
+  author: string;
+  session_id: string | null;
+  created_at: number;
+  updated_at: number;
+};
+
+export type MemoryListItem = Omit<Memory, "content"> & {
+  key: string;
+  read_count: number;
+  reads_by_source: Record<MemoryReadSource, number>;
+  last_read_at: number | null;
+  activity_at: number;
+};
+
+export type MemorySnapshot = Pick<Memory, "description" | "content" | "priority">;
+
+export type MemoryChange = {
+  id: string;
+  project_id: string;
+  memory_name: string;
+  action: "memory.created" | "memory.updated" | "memory.deleted" | "memory.reverted";
+  previous: MemorySnapshot | null;
+  current: MemorySnapshot | null;
+  reason: string | null;
+  author: string;
+  session_id: string | null;
+  created_at: number;
+};
+
+export type MemoryListParams = {
+  project_id?: string;
+  q?: string;
+  sort?: MemorySort;
+  limit?: number;
+};
+
+export type CreateMemoryInput = {
+  project_id: string;
+  name: string;
+  description: string;
+  content: string;
+  priority?: number | null;
+};
+
+export type UpdateMemoryInput = {
+  project_id: string;
+  description?: string;
+  content?: string;
+  priority?: number | null;
+  reason?: string;
+};
+
+export type RevertMemoryInput = {
+  project_id: string;
+  change_id: string;
+  expected_change_id: string;
+  reason: string;
+};
 
 export type GlobalSearchHit = {
   kind: "task" | "project" | "job" | "memory" | "session" | "wiki";
@@ -445,23 +515,33 @@ export const api = {
   },
 
   memories: {
-    list: (params?: { scope?: string; project_id?: string; limit?: number }) =>
-      req<{ memories: Memory[] }>(
-        "GET",
-        "/memories",
-        undefined,
-        params as Record<string, string | number | boolean | undefined>,
-      ),
-    search: (q: string, opts?: { scope?: string; project_id?: string; limit?: number }) =>
-      req<{ results: Memory[] }>("GET", "/memories/search", undefined, {
-        q,
-        scope: opts?.scope,
-        project_id: opts?.project_id,
-        limit: opts?.limit,
+    list: (params: MemoryListParams) =>
+      req<{ memories: MemoryListItem[]; total: number }>("GET", "/memories", undefined, params),
+    get: (projectId: string, name: string) =>
+      req<Memory>("GET", `/memories/${encodeURIComponent(name)}`, undefined, {
+        project_id: projectId,
       }),
-    create: (data: CreateMemoryInput) => req<Memory>("POST", "/memories", data),
-    update: (id: string, data: UpdateMemoryInput) => req<Memory>("PATCH", `/memories/${id}`, data),
-    delete: (id: string) => req<null>("DELETE", `/memories/${id}`),
+    create: (data: CreateMemoryInput) =>
+      req<Memory>("POST", "/memories", { ...data, author: UI_AUTHOR }),
+    update: (name: string, data: UpdateMemoryInput) =>
+      req<Memory>("PATCH", `/memories/${encodeURIComponent(name)}`, {
+        ...data,
+        author: UI_AUTHOR,
+      }),
+    delete: (projectId: string, name: string) =>
+      req<null>("DELETE", `/memories/${encodeURIComponent(name)}`, undefined, {
+        project_id: projectId,
+        author: UI_AUTHOR,
+      }),
+    history: (projectId: string, name: string) =>
+      req<{ changes: MemoryChange[] }>(
+        "GET",
+        `/memories/${encodeURIComponent(name)}/history`,
+        undefined,
+        { project_id: projectId },
+      ),
+    revert: (name: string, input: RevertMemoryInput) =>
+      req<{ memory: Memory | null }>("POST", `/memories/${encodeURIComponent(name)}/revert`, input),
   },
 
   jobs: {

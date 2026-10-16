@@ -607,14 +607,14 @@ describe("9. New Status Transitions", () => {
 
 describe("10. Context Tool", () => {
   test("agent stores a project decision in memory", async () => {
-    const result = await executeTool("memory_store", {
+    const result = await executeTool("memory_create", {
+      name: "interval-decision",
+      description: "Chosen stretch intervals",
       content: "Stretch intervals: 25 min work, 5 min break (Pomodoro-inspired)",
-      title: "Interval decision",
+      priority: 80,
       project: "stretch-reminder",
-      type: "decision",
-      importance: "high",
     });
-    expect(result).toContain("Stored:");
+    expect(result).toBe("Created memory interval-decision");
   });
 
   test("context shows project tasks and memory", async () => {
@@ -623,7 +623,7 @@ describe("10. Context Tool", () => {
     });
     expect(result).toContain("stretch-reminder");
     expect(result).toContain("Active Tasks");
-    expect(result).toContain("Key Memory");
+    expect(result).toContain("## Memories\n  interval-decision [p80] - Chosen stretch intervals");
   });
 
   test("context shows active worker count", async () => {

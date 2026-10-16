@@ -15,6 +15,7 @@ import { WorkspaceSidebar as Sidebar } from "@/components/WorkspaceSidebar";
 import { ChatProvider } from "@/hooks/useChat";
 import { BREAKPOINTS } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
+import { MEMORIES_PATH } from "@/lib/memory-routes";
 import { TerminalsProvider } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 
@@ -73,14 +74,10 @@ function DefaultWorkspaceRedirect() {
 const STORAGE_KEY = "orc_selected_project";
 
 function LegacyMemoriesRedirect() {
-  const { memoryId } = useParams();
   const { search, hash } = useLocation();
   const query = new URLSearchParams(search);
   query.delete("tab");
-  const path = memoryId
-    ? `/knowledge/memories/${encodeURIComponent(memoryId)}`
-    : "/knowledge/memories";
-  return <Navigate replace to={{ pathname: path, search: query.toString(), hash }} />;
+  return <Navigate replace to={{ pathname: MEMORIES_PATH, search: query.toString(), hash }} />;
 }
 
 function LegacyKnowledgeRedirect() {
@@ -267,7 +264,6 @@ export default function App() {
                       <Route path="/audit" element={<Audit projectId={projectId} />} />
                       <Route path="/audit/:sessionId" element={<Audit projectId={projectId} />} />
                       <Route path="/memories" element={<LegacyMemoriesRedirect />} />
-                      <Route path="/memories/:memoryId" element={<LegacyMemoriesRedirect />} />
                       <Route path="/projects" element={<Projects />} />
                       <Route path="/projects/:projectId" element={<Projects />} />
                       <Route path="/wiki" element={<LegacyKnowledgeRedirect />} />
@@ -279,7 +275,7 @@ export default function App() {
                         element={<Knowledge projectId={projectId} />}
                       />
                       <Route
-                        path="/knowledge/memories/:memoryId"
+                        path="/knowledge/memories/:memoryProject/:memoryName"
                         element={<Knowledge projectId={projectId} />}
                       />
                       <Route path="/skills" element={<Skills projectId={projectId} />} />

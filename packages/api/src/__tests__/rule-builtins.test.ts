@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { copyRuleTemplate } from "@orc/core/rule-catalog";
 import { getSqlite } from "@orc/db/client";
 import { DIGEST_JOB_NAME } from "@orc/db/digest";
+import { MemoryStore } from "@orc/db/memories";
 import { RuleStore } from "@orc/db/rules";
 import { executeTool } from "@orc/mcp/tools";
 import type { createApp } from "../server.js";
@@ -122,53 +123,94 @@ test("should record once, create one scoped snapshot, restore it and keep fetche
   expect(JSON.stringify(new RuleStore(getSqlite()).decisions())).not.toContain(scoped.title);
 });
 
+const nativeMemory = (name: string, description: string, body: string) =>
+  `---\nname: ${name}\ndescription: ${description}\ntype: feedback\n---\n\n${body}\n`;
+
 test("should import native topic memory once, update the same record and expose it through shared MCP search", async () => {
-  const topic = join(source, "feedback-testing.md");
+  const topic = join(source, "feedback_testing.md");
   writeFileSync(join(source, "MEMORY.md"), "Native index links only");
-  writeFileSync(topic, "crossagentneedle validate saved artifacts by reopening them.");
+  writeFileSync(
+    topic,
+    nativeMemory(
+      "feedback_testing",
+      "crossagentneedle reopen saved artifacts",
+      "Validate saved artifacts by reopening them.",
+    ),
+  );
   const written = event("memory-write", "post_tool", { file_path: topic });
   expect((await run("claude-share-memory", written)).status).toBe(200);
   expect((await run("claude-share-memory", written)).status).toBe(200);
-  let notes = getSqlite()
-    .query<{ id: string; content: string; source: string }, []>(
-      "SELECT id,content,source FROM memories",
-    )
-    .all();
-  expect(notes).toHaveLength(1);
-  const id = notes[0]?.id;
-  expect(notes[0]?.source).toContain("claude:auto-memory:");
+  const rows = () =>
+    getSqlite()
+      .query<{ project_id: string; name: string; content: string; author: string }, []>(
+        "SELECT project_id,name,content,author FROM memories",
+      )
+      .all();
+  expect(rows()).toEqual([
+    {
+      project_id: projectId,
+      name: "feedback-testing",
+      content: "Validate saved artifacts by reopening them.",
+      author: "claude-memory-sync",
+    },
+  ]);
   writeFileSync(
     topic,
-    "crossagentneedle validate saved artifacts by reopening and measuring them.",
+    nativeMemory(
+      "feedback_testing",
+      "crossagentneedle reopen saved artifacts",
+      "Validate saved artifacts by reopening and measuring them.",
+    ),
   );
   expect(
     (await run("claude-share-memory", event("memory-update", "post_tool", { file_path: topic })))
       .status,
   ).toBe(200);
-  notes = getSqlite()
-    .query<{ id: string; content: string; source: string }, []>(
-      "SELECT id,content,source FROM memories",
-    )
-    .all();
-  expect(notes).toHaveLength(1);
-  expect(notes[0]?.id).toBe(id);
-  const result = await executeTool("memory_search", {
+  expect(rows().map((row) => [row.name, row.content])).toEqual([
+    ["feedback-testing", "Validate saved artifacts by reopening and measuring them."],
+  ]);
+  const history = new MemoryStore(getSqlite()).history(projectId, "feedback-testing");
+  expect(history.map((change) => [change.action, change.session_id])).toEqual([
+    ["memory.updated", "native-session"],
+    ["memory.created", "native-session"],
+  ]);
+  const result = await executeTool("search", {
     query: "crossagentneedle",
+    resources: ["memories"],
     project: "builtin-project",
     limit: 10,
   });
-  expect(result).toContain(id ?? "missing");
-  const history = JSON.stringify(new RuleStore(getSqlite()).decisions());
-  expect(history).not.toContain("crossagentneedle");
+  expect(result).toContain(`[memory] ${projectId}/feedback-testing`);
+  expect(JSON.stringify(new RuleStore(getSqlite()).decisions())).not.toContain("crossagentneedle");
+});
+
+test("should skip a native memory without a description and say why", async () => {
+  const topic = join(source, "no_description.md");
+  writeFileSync(topic, "---\nname: no_description\n---\n\nBody only.\n");
+  const response = await run(
+    "claude-share-memory",
+    event("memory-no-description", "post_tool", { file_path: topic }),
+  );
+  expect(response.status).toBe(200);
+  const body = await response.json<{ context: string[] }>();
+  expect(body.context.join("\n")).toContain("Frontmatter description is required");
+  expect(getSqlite().query("SELECT 1 FROM memories WHERE name='no-description'").get()).toBeNull();
 });
 
 test("should rescan at session end, queue one existing digest and coalesce repeated requests", async () => {
   writeFileSync(
     join(source, "project-notes.md"),
-    "sessionendneedle retained from a non-tool memory write.",
+    nativeMemory(
+      "project_notes",
+      "Project notes",
+      "sessionendneedle retained from a non-tool write.",
+    ),
   );
   expect((await run("claude-share-memory", event("session-end-sync", "session_end"))).status).toBe(
     200,
+  );
+  expect(new MemoryStore(getSqlite()).get(projectId, "project-notes").content).toContain(
+    "sessionendneedle",
   );
   const queued = await run("orc-wiki-learning", event("session-end-digest", "session_end"));
   expect(queued.status).toBe(200);

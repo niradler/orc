@@ -24,6 +24,7 @@ import {
   type SkillRefContent,
   scanSkills,
   skillWarnings,
+  validateAuthoredSkillDescription,
 } from "./skill-service.js";
 
 // ─── parseFrontmatter ────────────────────────────────────────────────────────
@@ -552,5 +553,26 @@ describe("directory helpers", () => {
   test("getUserSkillsDir returns a path under home", () => {
     expect(getUserSkillsDir()).toContain(".orc");
     expect(getUserSkillsDir()).toContain("skills");
+  });
+});
+
+describe("validateAuthoredSkillDescription", () => {
+  const skill = (description: string) =>
+    ["---", "name: demo", `description: ${description}`, "---", "", "Body"].join("\n");
+
+  test("accepts descriptions up to 300 characters", () => {
+    expect(() => validateAuthoredSkillDescription(skill("a".repeat(300)))).not.toThrow();
+  });
+
+  test("rejects longer descriptions on authored skills", () => {
+    expect(() => validateAuthoredSkillDescription(skill("a".repeat(301)))).toThrow(
+      "skills written in ORC keep it to 300",
+    );
+  });
+
+  test("allows an unchanged long description when editing", () => {
+    const long = skill("a".repeat(500));
+    expect(() => validateAuthoredSkillDescription(`${long}\nMore`, long)).not.toThrow();
+    expect(() => validateAuthoredSkillDescription(skill("b".repeat(500)), long)).toThrow();
   });
 });

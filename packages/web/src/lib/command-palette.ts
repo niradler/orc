@@ -1,4 +1,5 @@
 import type { GlobalSearchHit } from "@/api/client";
+import { MEMORIES_PATH, memoryPath } from "./memory-routes";
 
 /** Never interpret a result title or ID as a URL. */
 export function searchHitPath(hit: GlobalSearchHit): string {
@@ -11,7 +12,10 @@ export function searchHitPath(hit: GlobalSearchHit): string {
     case "job":
       return `/jobs/${id}`;
     case "memory":
-      return `/knowledge/memories/${id}`;
+      // Memory hits are keyed by name, unique only within their project.
+      return hit.project_id
+        ? memoryPath(hit.project_id, hit.id)
+        : `${MEMORIES_PATH}?memoryQuery=${id}`;
     case "session":
       return `/audit/${id}`;
     case "wiki":

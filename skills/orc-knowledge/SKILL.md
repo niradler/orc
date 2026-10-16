@@ -1,22 +1,22 @@
 ---
 name: orc-knowledge
-description: Use when searching indexed document collections, retrieving documentation or markdown files, managing knowledge collections (add/remove directories), or re-indexing after file changes. Trigger on "search the docs", "find in knowledge base", "index this directory", "what does the docs say about X", or when you need to look up reference material from project documentation.
+description: Use when searching indexed document collections, retrieving docs or markdown files, adding/removing collections, or re-indexing after file changes. Trigger on "search the docs", "find in knowledge base", "index this directory", or looking up project reference material.
 allowed-tools: mcp__orc__knowledge_search mcp__orc__knowledge_get mcp__orc__knowledge_collections mcp__orc__knowledge_collection_add mcp__orc__knowledge_collection_remove mcp__orc__knowledge_update
 ---
 
 # ORC Knowledge Workflow
 
-ORC's knowledge layer indexes directories of documents (markdown, code docs) and makes them searchable via BM25 full-text search or hybrid BM25+vector search. It is distinct from ORC memory - knowledge is for external reference material, memory is for decisions and discoveries made during work.
+ORC's knowledge layer indexes directories of documents (markdown, code docs) and makes them searchable via BM25 full-text search or hybrid BM25+vector search. It is distinct from ORC memory - knowledge is for external reference material, memory holds short project facts (ports, conventions, gotchas, decisions) recorded during work.
 
 ## Knowledge vs Memory
 
 | Knowledge                                         | Memory                                          |
 | ------------------------------------------------- | ----------------------------------------------- |
-| External reference documents (docs, wikis, specs) | Decisions and discoveries from working sessions |
+| External reference documents (docs, wikis, specs) | Short project facts from working sessions       |
 | Indexed from filesystem directories               | Written by agents during work                   |
-| Read-only (index reflects filesystem)             | Read-write (agents store and update)            |
-| Searched by content similarity                    | Searched by keyword/concept                     |
-| `knowledge_search` / `knowledge_get`              | `memory_search` / `memory_get`                  |
+| Read-only (index reflects filesystem)             | Read-write (agents create and update)           |
+| Searched by content similarity                    | Listed by name, description and priority        |
+| `knowledge_search` / `knowledge_get`              | `memory_list` / `memory_read`                   |
 
 Use knowledge when you need to look something up in reference material.
 Use memory when you need to recall what was decided or discovered.
@@ -135,13 +135,13 @@ orc kb status
 | Calling `knowledge_get` without searching first | Always search first, then fetch by docid                            |
 | Using relative paths when adding collections    | `path` must be absolute                                             |
 | Expecting stale results after file changes      | Run `knowledge_update` after filesystem changes                     |
-| Storing agent decisions in knowledge            | Use `memory_store` for decisions - knowledge is read-only reference |
+| Storing agent decisions in knowledge            | Use `memory_create` for decisions - knowledge is read-only reference |
 | Searching with full sentences                   | Use keywords; BM25 matches terms, not intent                        |
 
 ---
 
 ## Related
 
-- **orc-memory** skill - storing and retrieving decisions, rules, and discoveries made during work
+- **orc-memory** skill - short project facts: ports, conventions, gotchas, decisions
 - **orc-session** skill - session start protocol
 - **orc-tasks** skill - task lifecycle and HITL review

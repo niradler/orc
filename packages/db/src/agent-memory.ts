@@ -1,9 +1,10 @@
 import type { Database } from "bun:sqlite";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { ValidationError } from "@orc/core/errors";
+import { parseMarkdownFrontmatter } from "@orc/core/markdown-frontmatter";
 import type { RuleEvent } from "@orc/core/rule-types";
 import { withinWorkspace } from "@orc/core/rules";
 import { MemoryStore } from "./memories.js";
@@ -41,22 +42,42 @@ export function claudeMemoryDirectory(cwd: string, configured = "auto"): string 
   return join(configDirectory, "projects", project, "memory");
 }
 
+export type MemorySyncResult = {
+  /** Memories created or changed. */
+  updated: number;
+  /** Files that could not become a memory, with the reason. */
+  skipped: { file: string; reason: string }[];
+};
+
+/** Claude names memories freely (`feedback_testing`); ORC names follow the skill name rules. */
+function memoryName(name: string): string {
+  return name
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64)
+    .replace(/-+$/, "");
+}
+
+/** Upserts Claude auto-memory files (frontmatter name + description, body) into project memories. */
 export function syncClaudeMemory(
   db: Database,
   event: RuleEvent,
   projectId: string | null,
   directory: string,
-): number {
+): MemorySyncResult {
   if (event.backend !== "claude")
     throw new Error("Claude memory synchronization requires local Claude");
-  if (!existsSync(directory)) return 0;
+  const result: MemorySyncResult = { updated: 0, skipped: [] };
+  if (!existsSync(directory)) return result;
   const root = realpathSync(directory);
   if (!statSync(root).isDirectory()) throw new Error("Memory source must be a directory");
   let files: string[] = [];
   if (event.phase === "post_tool") {
-    if (event.failed) return 0;
+    if (event.failed) return result;
     const path = event.input.file_path ?? event.input.path;
-    if (typeof path !== "string") return 0;
+    if (typeof path !== "string") return result;
     files = [resolve(event.cwd, path)];
   } else {
     let visited = 0;
@@ -72,11 +93,7 @@ export function syncClaudeMemory(
     };
     walk(root);
   }
-  db.exec(
-    "CREATE TABLE IF NOT EXISTS agent_memory_sources(source_key TEXT PRIMARY KEY,source_path TEXT NOT NULL,project_id TEXT,memory_id TEXT NOT NULL,content_hash TEXT NOT NULL,updated_at INTEGER NOT NULL)",
-  );
   const memories = new MemoryStore(db);
-  let updated = 0;
   let bytes = 0;
   for (const file of files) {
     if (
@@ -93,53 +110,31 @@ export function syncClaudeMemory(
       throw new Error("Memory file must be a bounded regular Markdown file");
     bytes += stat.size;
     if (bytes > 1048576) throw new Error("Memory synchronization exceeds byte budget");
-    const content = readFileSync(actual, "utf8").trim();
-    if (!content) continue;
-    const hash = createHash("sha256").update(content).digest("hex");
-    const key = createHash("sha256")
-      .update(JSON.stringify([projectId, actual]))
-      .digest("hex");
-    db.transaction(() => {
-      const prior = db
-        .query<{ memory_id: string; content_hash: string }, [string]>(
-          "SELECT memory_id,content_hash FROM agent_memory_sources WHERE source_key=?",
+    if (projectId === null)
+      throw new Error("Claude memory synchronization requires a project; memories are per project");
+    try {
+      const { fields, body } = parseMarkdownFrontmatter(readFileSync(actual, "utf8"));
+      const name = memoryName(
+        typeof fields.name === "string" ? fields.name : basename(actual, ".md"),
+      );
+      if (typeof fields.description !== "string")
+        throw new ValidationError("Frontmatter description is required");
+      const memory = { description: fields.description.trim(), content: body };
+      const writer = { author: "claude-memory-sync", session_id: event.session_id };
+      const existing = db
+        .query<{ description: string; content: string }, [string, string]>(
+          "SELECT description,content FROM memories WHERE project_id=? AND name=?",
         )
-        .get(key);
-      const existing = prior
-        ? db
-            .query("SELECT id FROM memories WHERE id=? AND project_id IS ?")
-            .get(prior.memory_id, projectId)
-        : null;
-      if (existing && prior?.content_hash === hash) return;
-      const fields = {
-        content,
-        title: basename(actual, ".md"),
-        type: "fact" as const,
-        source: `claude:auto-memory:${actual}`,
-        tags: ["agent-memory", "agent:claude"],
-        scope: `agent-memory:${key}`,
-      };
-      let id: string;
-      if (existing && prior) {
-        memories.update(prior.memory_id, fields, {
-          actor: "claude-memory-sync",
-          session_id: event.session_id,
-        });
-        id = prior.memory_id;
-      } else {
-        const result = memories.store({
-          ...fields,
-          project_id: projectId,
-          actor: "claude-memory-sync",
-          session_id: event.session_id,
-        });
-        id = result.status === "skipped" ? result.existing_id : result.id;
-      }
-      db.query(
-        "INSERT INTO agent_memory_sources(source_key,source_path,project_id,memory_id,content_hash,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(source_key) DO UPDATE SET memory_id=excluded.memory_id,content_hash=excluded.content_hash,updated_at=excluded.updated_at",
-      ).run(key, actual, projectId, id, hash, Date.now());
-      updated++;
-    })();
+        .get(projectId, name);
+      if (existing?.description === memory.description && existing.content === memory.content)
+        continue;
+      if (existing) memories.update(projectId, name, memory, writer);
+      else memories.create({ ...memory, ...writer, project_id: projectId, name });
+      result.updated++;
+    } catch (error) {
+      if (!(error instanceof ValidationError)) throw error;
+      result.skipped.push({ file: actual, reason: error.message });
+    }
   }
-  return updated;
+  return result;
 }

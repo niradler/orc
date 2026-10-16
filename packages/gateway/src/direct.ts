@@ -2,16 +2,18 @@ import { shortId, ulid } from "@orc/core/ids";
 import type { GatewayMode } from "@orc/core/types";
 import {
   apiApproveTask,
+  apiCreateMemory,
   apiCreateTask,
   apiFindJobByName,
   apiFindProjectById,
   apiFindProjectByName,
   apiFindTask,
+  apiGetMemory,
   apiListActiveTasks,
   apiListJobs,
+  apiListMemories,
   apiListProjects,
   apiRejectTask,
-  apiSearchMemories,
   apiTriggerJob,
 } from "./api.js";
 import {
@@ -60,6 +62,25 @@ function taskStatusEmoji(s: string): string {
   return "📋";
 }
 
+function priorityTag(priority: number | null): string {
+  return priority === null ? "" : ` [p${priority}]`;
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** Parses `<name> <description> | <content>` from `/mem add`. */
+export function parseMemAdd(
+  args: string,
+): { name: string; description: string; content: string } | null {
+  const match = /^(\S+)\s+([^|]+)\|([\s\S]+)$/.exec(args.trim());
+  if (!match) return null;
+  const [, name = "", description = "", content = ""] = match;
+  if (!description.trim() || !content.trim()) return null;
+  return { name, description: description.trim(), content: content.trim() };
+}
+
 function helpText(mode: GatewayMode, projectName?: string): string {
   const projectLine = projectName ? `\n📁 Project: <b>${projectName}</b>` : "";
   const base = [
@@ -88,7 +109,9 @@ function helpText(mode: GatewayMode, projectName?: string): string {
     "/run &lt;name&gt; - trigger a job",
     "",
     "<b>Memory</b>",
-    "/mem &lt;query&gt; - search memories (scoped to project if set)",
+    "/mem [list] [query] - list the active project's memories, most read first",
+    "/mem show &lt;name&gt; - read a memory",
+    "/mem add &lt;name&gt; &lt;description&gt; | &lt;content&gt; - store a memory",
     "",
     "<b>Agents</b>",
     "/agent &lt;name&gt; - switch active agent (claude, codex, gemini, copilot, a2a, ...)",
@@ -293,14 +316,47 @@ export async function handleDirectCommand(input: {
   }
 
   if (command === "/mem") {
-    if (!argText) return { text: "Usage: /mem <query>" };
-    const rows = await apiSearchMemories(argText, input.currentProjectId).catch(() => []);
-    if (rows.length === 0) return { text: "No matching memories." };
-    const lines = ["<b>Memories</b>", ""];
-    for (const row of rows) {
-      const title = row.title ?? row.content.slice(0, 40);
-      lines.push(`• [${shortId(row.id)}] <b>${title}</b>`);
-      lines.push(`  ${row.content.slice(0, 120)}${row.content.length > 120 ? "…" : ""}`);
+    // Re-read the raw text so `/mem add` keeps the content's line breaks.
+    const memArgs = text.slice(command.length).trim();
+    const sub = parts[1] ?? "";
+    const subArgs = memArgs.slice(sub.length).trim();
+    if (!input.currentProjectId)
+      return { text: "Memories belong to a project. Set one first: /project <name>" };
+    const projectId = input.currentProjectId;
+
+    if (sub === "show") {
+      if (!subArgs) return { text: "Usage: /mem show <name>" };
+      const mem = await apiGetMemory(projectId, subArgs);
+      if (!mem) return { text: `Memory not found: ${subArgs}` };
+      return {
+        html: [
+          `<b>${escapeHtml(mem.name)}</b>${priorityTag(mem.priority)}`,
+          `<i>${escapeHtml(mem.description)}</i>`,
+          "",
+          escapeHtml(mem.content),
+        ].join("\n"),
+      };
+    }
+
+    if (sub === "add") {
+      const parsed = parseMemAdd(subArgs);
+      if (!parsed) return { text: "Usage: /mem add <name> <description> | <content>" };
+      try {
+        const mem = await apiCreateMemory(projectId, parsed);
+        return { text: `Stored memory ${mem.name}` };
+      } catch (err) {
+        return { text: `Could not store memory: ${err instanceof Error ? err.message : err}` };
+      }
+    }
+
+    const query = sub === "list" ? subArgs : memArgs;
+    const { memories, total } = await apiListMemories(projectId, query || undefined);
+    if (memories.length === 0) return { text: "No memories found." };
+    const lines = [`<b>Memories</b> (${memories.length} of ${total})`, ""];
+    for (const m of memories) {
+      lines.push(
+        `• <code>${escapeHtml(m.name)}</code>${priorityTag(m.priority)} - ${escapeHtml(m.description)}`,
+      );
     }
     return { html: lines.join("\n") };
   }

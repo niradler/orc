@@ -26,4 +26,18 @@ describe("command palette", () => {
     );
     expect(searchHitPath({ ...hit, kind: "session" })).toBe("/audit/a%2Fb%3Fc");
   });
+  test("links memory hits to the memory in its project, keyed by name", () => {
+    const hit: GlobalSearchHit = {
+      kind: "memory",
+      id: "api-port",
+      title: "api-port",
+      detail: "",
+      project_id: "p/1",
+      project_name: "orc",
+    };
+    expect(searchHitPath(hit)).toBe("/knowledge/memories/p%2F1/api-port");
+    expect(searchHitPath({ ...hit, project_id: null })).toBe(
+      "/knowledge/memories?memoryQuery=api-port",
+    );
+  });
 });

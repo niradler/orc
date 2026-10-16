@@ -4,10 +4,19 @@ import { API_SECRET, apiPost, gotoView, selectProject, tid } from "./_helpers";
 test("themes persist, grouped navigation works, and the mobile project shortcut opens one dialog", async ({
   page,
 }) => {
+  // Theme is a server setting shared by every spec; start from the default.
+  await page.request.patch("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+    data: { theme: "dark" },
+  });
   await gotoView(page, "tasks");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(page.getByTestId("workspace-sidebar").locator("nav > button")).toHaveCount(6);
+  const saved = page.waitForResponse(
+    (res) => res.url().includes("/api/settings") && res.request().method() !== "GET",
+  );
   await page.getByTestId("theme-toggle").click();
+  await saved;
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.getByTestId("nav-activity").click();

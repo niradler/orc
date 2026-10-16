@@ -7,7 +7,6 @@ const app = new OpenAPIHono();
 const RESOURCE_TABLES: Record<string, string> = {
   task: "tasks",
   project: "projects",
-  memory: "memories",
 };
 
 const listTagsRoute = createRoute({
@@ -17,7 +16,7 @@ const listTagsRoute = createRoute({
   summary: "List unique tags across resources",
   request: {
     query: z.object({
-      resource_type: z.enum(["task", "project", "memory"]).optional(),
+      resource_type: z.enum(["task", "project"]).optional(),
     }),
   },
   responses: {

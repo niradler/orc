@@ -1,3 +1,4 @@
+import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { createAgent, discoverAgents, readAgent } from "@orc/core/agent-service";
 import { loadConfig } from "@orc/core/config";
@@ -27,13 +28,13 @@ import { AuditLog } from "@orc/db/audit";
 import { getDb, getSqlite } from "@orc/db/client";
 import { DigestStore } from "@orc/db/digest";
 import {
-  type MemoryImportance,
+  MEMORY_DESCRIPTION_MAX,
+  MEMORY_PRIORITY_MAX,
+  type MemoryListItem,
+  type MemoryListSort,
   MemoryStore,
-  type MemoryType,
-  SIMILAR_MEMORY_HINT,
-  type StoreMemoryResult,
 } from "@orc/db/memories";
-import { job_runs, jobs, memories, projects, sessions, tasks } from "@orc/db/schema";
+import { job_runs, jobs, projects, sessions, tasks } from "@orc/db/schema";
 import { SkillHistory, type SkillListSort } from "@orc/db/skill-history";
 import { WikiStore } from "@orc/db/wiki";
 import { executeJob } from "@orc/runner/executor";
@@ -42,15 +43,24 @@ import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getKnowledgeEngine } from "./knowledge.js";
-import { getLayer3, searchLayer1 } from "./search.js";
 
 const logger = createLogger("mcp:tools");
 const SKILL_LIST_LIMIT = 30;
+const MEMORY_LIST_LIMIT = 30;
 
 const projectParam = z
   .string()
   .optional()
   .describe("Project name (e.g. 'orc'). Defaults to activeProject from config if not set.");
+const memoryNameParam = z.string().min(1).max(64).describe("Memory name, e.g. 'api-port'");
+const memoryPriorityParam = z
+  .number()
+  .int()
+  .min(0)
+  .max(MEMORY_PRIORITY_MAX)
+  .nullable()
+  .optional()
+  .describe("0-100: how important and broadly relevant; higher loads first in context");
 const scopedProjectParams = z.object({
   project: projectParam,
   project_id: z
@@ -143,7 +153,7 @@ export const toolDefinitions = [
   {
     name: "wiki_write",
     description:
-      "Compile a verified procedure, lesson or decision into a wiki page. Cite memory:<id> sources, include a change note, and use expected_revision (0 for new). Stale revisions conflict; read and reconcile before retrying. scope: global explicitly writes a shared page.",
+      "Compile a verified procedure, lesson or decision into a wiki page. Cite memory:<name> sources, include a change note, and use expected_revision (0 for new). Stale revisions conflict; read and reconcile before retrying. scope: global explicitly writes a shared page.",
     inputSchema: wikiWriteParams,
   },
   {
@@ -165,99 +175,92 @@ export const toolDefinitions = [
     inputSchema: SessionHandoffInputSchema,
   },
   {
-    name: "memory_search",
+    name: "memory_list",
     description:
-      "Search memories (3-layer BM25: porter → trigram → fallback). Returns compact index: IDs + snippets. " +
-      "Filter by type (fact|decision|event|rule|discovery) or scope. Use memory_get for full content.",
+      "List this project's memories (name, description, priority, reads). Defaults to the 30 most read; " +
+      "q searches name and description. Read one with memory_read. Memories are short project facts; " +
+      "procedures and long guidance are skills.",
     inputSchema: z.object({
-      query: z.string().describe("Search query - keywords, phrases, or natural language"),
-      scope: z.string().optional().describe("Scope filter (e.g. domain area)"),
-      type: z
-        .enum(["fact", "decision", "event", "rule", "discovery"])
+      q: z.string().optional().describe("Search name and description"),
+      sort: z
+        .enum(["reads", "recent", "priority"])
         .optional()
-        .describe("Filter by memory type"),
+        .describe(
+          "reads (default): most read; recent: last read or updated; priority: highest first",
+        ),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(500)
+        .optional()
+        .describe(`Max memories to return (default ${MEMORY_LIST_LIMIT})`),
       project: projectParam,
-      limit: z.number().int().min(1).max(20).optional().default(10),
     }),
   },
   {
-    name: "memory_get",
-    description:
-      "Fetch full content of specific memories by IDs. Always batch multiple IDs in one call. " +
-      "~10x more token-expensive than memory_search - only call after filtering by ID.",
-    inputSchema: z.object({
-      ids: z.array(z.string()).min(1).max(20).describe("Memory IDs to fetch"),
-    }),
+    name: "memory_read",
+    description: "Read a memory by name. Counts a read, which ranks the memory higher in lists.",
+    inputSchema: z.object({ name: memoryNameParam, project: projectParam }),
   },
   {
-    name: "memory_store",
+    name: "memory_create",
     description:
-      "Store a fact, decision, or context entry. Use type to classify: " +
-      "'decision' for choices made, 'rule' for conventions/constraints, 'discovery' for findings, " +
-      "'event' for things that happened, 'fact' for general knowledge. " +
-      "Near-identical memories are skipped automatically. If the result lists similar memories, " +
-      "re-store with merge_into to replace them with one combined memory, or supersedes to retire " +
-      "ones yours contradicts. Replaced memories are removed and kept in the audit log.",
+      "Save a short project fact worth knowing next session: a name (lowercase-hyphenated, unique in " +
+      "the project), a description (≤300 chars) saying when it matters, and content (≤800 chars by default). " +
+      "Longer guidance or a procedure belongs in a skill (skill_create). Check memory_list first and " +
+      "memory_update an existing memory instead of creating a near-duplicate.",
     inputSchema: z.object({
-      session_id: z
+      name: memoryNameParam,
+      description: z
         .string()
         .min(1)
-        .max(200)
-        .optional()
-        .describe("Work-unit session ID for end-of-session review"),
-      content: z.string().min(1).max(2_000_000).describe("Content to remember"),
-      title: z
-        .string()
-        .optional()
-        .describe("Short label (≤60 chars) - what it is and when to use it"),
-      type: z.enum(["fact", "decision", "event", "rule", "discovery"]).optional().default("fact"),
-      scope: z.string().optional().describe("Scope (e.g. domain area)"),
-      tags: z.array(z.string()).optional(),
-      importance: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
-      source: z
-        .string()
-        .optional()
-        .describe("Source reference (auto-detected from agent env if omitted)"),
-      merge_into: z
-        .array(z.string())
-        .min(1)
-        .max(20)
-        .optional()
-        .describe("Memory IDs this one replaces (pass the combined text); they are removed"),
-      supersedes: z
-        .array(z.string())
-        .max(20)
-        .optional()
-        .describe("Memory IDs this one contradicts; they are removed"),
+        .max(MEMORY_DESCRIPTION_MAX)
+        .describe("When this memory matters"),
+      content: z.string().min(1).describe("The fact itself"),
+      priority: memoryPriorityParam,
       project: projectParam,
     }),
   },
   {
     name: "memory_update",
     description:
-      "Update an existing memory by ID. Only provided fields are changed; others remain untouched. " +
-      "Prefer this over delete+recreate to preserve history (created_at, access_count). " +
-      "Pass supersedes to retire memories this one contradicts.",
+      "Update a memory's description, content or priority. Only the fields you pass change; " +
+      "priority null clears the score. The previous state stays in memory_history.",
     inputSchema: z.object({
-      session_id: z
-        .string()
-        .min(1)
-        .max(200)
-        .optional()
-        .describe("Work-unit session ID for end-of-session review"),
-      id: z.string().describe("Memory ID to update"),
-      content: z.string().min(1).max(2_000_000).optional().describe("New content"),
-      title: z.string().optional().describe("New title - what it is and when to use it"),
-      type: z.enum(["fact", "decision", "event", "rule", "discovery"]).optional(),
-      scope: z.string().optional().describe("New scope"),
-      tags: z.array(z.string()).optional(),
-      importance: z.enum(["low", "normal", "high", "critical"]).optional(),
-      source: z.string().optional().describe("New source reference"),
-      supersedes: z
-        .array(z.string())
-        .max(20)
-        .optional()
-        .describe("Memory IDs this one contradicts; they are removed"),
+      name: memoryNameParam,
+      description: z.string().min(1).max(MEMORY_DESCRIPTION_MAX).optional(),
+      content: z.string().min(1).optional(),
+      priority: memoryPriorityParam,
+      reason: z.string().max(2000).optional().describe("Why it changed"),
+      project: projectParam,
+    }),
+  },
+  {
+    name: "memory_delete",
+    description: "Delete a memory that is wrong or no longer useful. memory_revert can restore it.",
+    inputSchema: z.object({
+      name: memoryNameParam,
+      reason: z.string().max(2000).optional(),
+      project: projectParam,
+    }),
+  },
+  {
+    name: "memory_history",
+    description: "Changes to a memory, newest first, with the state before and after each change.",
+    inputSchema: z.object({ name: memoryNameParam, project: projectParam }),
+  },
+  {
+    name: "memory_revert",
+    description:
+      "Restore the state from before a change (reverting a creation deletes the memory). " +
+      "expected_change_id must be the latest change from memory_history.",
+    inputSchema: z.object({
+      name: memoryNameParam,
+      change_id: z.string().min(1),
+      expected_change_id: z.string().min(1),
+      reason: z.string().trim().min(1).max(2000),
+      project: projectParam,
     }),
   },
   {
@@ -492,9 +495,9 @@ export const toolDefinitions = [
   {
     name: "context",
     description:
-      "Compact context index - active tasks + important memories. ~200 tokens. Call at session start. " +
+      "Compact context index - active tasks + the project's memories by priority. Call at session start. " +
       "Pass project name or explicit project_id (null selects unassigned) to scope, or omit to use activeProject from config. " +
-      "Use task_get or memory_get to drill into specific items.",
+      "Use task_get or memory_read to drill into specific items.",
     inputSchema: scopedProjectParams,
   },
   {
@@ -760,40 +763,53 @@ export const toolDefinitions = [
 
 export type ToolName = (typeof toolDefinitions)[number]["name"];
 
-function formatStoreResult(
-  stored: StoreMemoryResult,
-  title: string | undefined,
-  type: string,
-  projectName: string | undefined,
-): string {
-  const label = title ? ` "${title}"` : "";
-  const project = projectName ? ` (${projectName})` : "";
-  const lines: string[] = [];
-  if (stored.status === "added") lines.push(`Stored: ${stored.id}${label} [${type}]${project}`);
-  if (stored.status === "merged") {
-    lines.push(
-      `Merged into: ${stored.id}${label}${project}`,
-      `Replaced: ${stored.merged.join(", ")}`,
-    );
-  }
-  if (stored.status === "skipped") {
-    lines.push(`Skipped: near-identical to existing memory ${stored.existing_id}${project}`);
-  }
-  if (stored.superseded.length > 0) {
-    lines.push(`Superseded: ${stored.superseded.join(", ")}`);
-  }
-  if (stored.status !== "merged" && stored.similar.length > 0) {
-    lines.push("", SIMILAR_MEMORY_HINT);
-    for (const memory of stored.similar) {
-      const name = memory.title ? `"${memory.title}" ` : "";
-      lines.push(
-        `- [${memory.id}] ${name}(${Math.round(memory.similarity * 100)}%) ${memory.snippet}`,
-      );
-    }
-  }
-  return lines.join("\n");
+export type ToolOptions = {
+  publicApiBaseUrl?: string;
+  /**
+   * Native session id of the calling agent. Stdio MCP runs inside the agent's process tree and
+   * reads it from the environment; HTTP MCP cannot see it, so it stays unset there.
+   */
+  agentSessionId?: string | null;
+};
+
+/** The agent session that launched this process, when the agent exposes it. */
+export function agentSessionFromEnv(env: NodeJS.ProcessEnv = process.env): string | null {
+  return env.ORC_SESSION_ID || env.CLAUDE_CODE_SESSION_ID || null;
 }
 
+function memoryWriter(options: ToolOptions): { author: string; session_id: string | null } {
+  return {
+    author: [process.env.ORC_AGENT, process.env.CLAUDE_MODEL].filter(Boolean).join("/") || "agent",
+    session_id: options.agentSessionId ?? null,
+  };
+}
+
+/** Memories belong to a project; there is no global memory. */
+function memoryProject(project: string | undefined): string {
+  const resolved = resolveProjectId(project);
+  if (!resolved)
+    throw new ValidationError(
+      "Memories belong to a project: pass project or set activeProject in ORC config",
+    );
+  return resolved.id;
+}
+
+/** Drops memories a wiki page in the same scope already cites as memory:<name>. */
+function unabsorbedMemories(sqlite: Database, items: MemoryListItem[]): MemoryListItem[] {
+  const cited = sqlite.query<{ found: number }, [string, string, string]>(
+    `SELECT 1 AS found FROM wiki_pages p, json_each(p.sources) source
+     WHERE source.value = 'memory:' || ? AND (p.project_id IS ? OR (p.project_id IS NULL
+       AND NOT EXISTS (SELECT 1 FROM wiki_pages shadow WHERE shadow.project_id IS ? AND shadow.slug=p.slug)))
+     LIMIT 1`,
+  );
+  return items.filter((m) => !cited.get(m.name, m.project_id, m.project_id));
+}
+
+function formatMemoryLine(memory: MemoryListItem): string {
+  const priority = memory.priority === null ? "" : ` [p${memory.priority}]`;
+  const reads = ` (${memory.read_count} ${memory.read_count === 1 ? "read" : "reads"})`;
+  return `${memory.name.padEnd(28)}${priority}${reads} - ${memory.description}`;
+}
 function resolveProjectId(projectName?: string): { id: string; name: string } | null {
   const name = projectName || loadConfig().activeProject;
   if (!name) return null;
@@ -826,7 +842,7 @@ function resolveScopedProject(input: z.infer<typeof scopedProjectParams>): strin
 export async function executeTool(
   name: ToolName,
   args: unknown,
-  options: { publicApiBaseUrl?: string } = {},
+  options: ToolOptions = {},
 ): Promise<string> {
   if (name === "session_handoff") {
     const input = SessionHandoffInputSchema.parse(args);
@@ -947,120 +963,107 @@ export async function executeTool(
         }),
       });
     }
-    case "memory_search": {
-      const { query, scope, type, limit, project } = args as {
-        query: string;
-        scope?: string;
-        type?: "fact" | "decision" | "event" | "rule" | "discovery";
+    case "memory_list": {
+      const { q, sort, limit, project } = args as {
+        q?: string;
+        sort?: MemoryListSort;
         limit?: number;
         project?: string;
       };
-      const resolved = resolveProjectId(project);
-      const results = searchLayer1(query, scope, limit, type, resolved?.id);
-      if (results.length === 0) return "No memories found.";
-      const lines = [`Found ${results.length} results:`];
-      for (const m of results) {
-        const typeLabel = m.type !== "fact" ? ` [${m.type}]` : "";
-        const titleLabel = m.title ? ` "${m.title}"` : "";
-        lines.push(
-          `[${m.rank}] ${m.id}${typeLabel}${titleLabel}  ${m.snippet}  scope:${m.scope ?? "-"}  ${m.age}  (${m.matchLayer})`,
-        );
-      }
-      lines.push("\nUse memory_timeline(id) for context, memory_get([ids]) for full content.");
-      return lines.join("\n");
+      const projectId = memoryProject(project);
+      const matched = new MemoryStore(getSqlite(db)).list(projectId, { q, sort });
+      const shown = matched.slice(0, limit ?? MEMORY_LIST_LIMIT);
+      const more =
+        matched.length > shown.length
+          ? [`Showing ${shown.length} of ${matched.length}; use q to search or raise limit.`]
+          : [];
+      return [shown.map(formatMemoryLine).join("\n") || "No memories found.", ...more].join("\n");
     }
 
-    case "memory_get": {
-      const { ids } = args as { ids: string[] };
-      const results = getLayer3(ids);
-      if (results.length === 0) return "No memories found.";
-      return results
-        .map((m) => {
-          const header = m.title
-            ? `[${m.id}] [${m.type}] "${m.title}" (${m.importance})`
-            : `[${m.id}] [${m.type}] (${m.importance})`;
-          const meta = `${m.source ? `\nsource: ${m.source}` : ""}\ntags: ${JSON.stringify(m.tags ?? [])}`;
-          return `${header}${meta}\n${m.content}`;
-        })
-        .join("\n\n---\n\n");
+    case "memory_read": {
+      const { name: memoryName, project } = args as { name: string; project?: string };
+      const memory = new MemoryStore(getSqlite(db)).read(memoryProject(project), memoryName, "mcp");
+      const priority = memory.priority === null ? "" : ` (priority ${memory.priority})`;
+      return `# ${memory.name}${priority}\n${memory.description}\n\n${memory.content}`;
     }
 
-    case "memory_store": {
-      const {
-        session_id,
-        content,
-        title,
-        type,
-        scope,
-        tags,
-        importance,
-        source,
-        merge_into,
-        supersedes,
-        project,
-      } = args as {
-        session_id?: string;
+    case "memory_create": {
+      const input = args as {
+        name: string;
+        description: string;
         content: string;
-        title?: string;
-        type?: MemoryType;
-        scope?: string;
-        tags?: string[];
-        importance?: MemoryImportance;
-        source?: string;
-        merge_into?: string[];
-        supersedes?: string[];
+        priority?: number | null;
         project?: string;
       };
-      const resolved = resolveProjectId(project);
-      const autoSource =
-        [process.env.ORC_AGENT, process.env.CLAUDE_MODEL].filter(Boolean).join("/") || "unknown";
-      const sessionId = session_id ?? process.env.ORC_SESSION_ID;
-      const resolvedSource = source ?? (sessionId ? `${autoSource}@${sessionId}` : autoSource);
-      const stored = new MemoryStore(getSqlite(db)).store({
-        content,
-        title,
-        type,
-        scope,
-        tags,
-        importance,
-        source: resolvedSource,
-        project_id: resolved?.id ?? null,
-        merge_into,
-        supersedes,
-        actor: autoSource,
-        session_id: sessionId,
+      const memory = new MemoryStore(getSqlite(db)).create({
+        ...input,
+        project_id: memoryProject(input.project),
+        ...memoryWriter(options),
       });
-      return formatStoreResult(stored, title, type ?? "fact", resolved?.name);
+      return `Created memory ${memory.name}`;
     }
 
     case "memory_update": {
-      const { session_id, id, content, title, type, scope, tags, importance, source, supersedes } =
-        args as {
-          session_id?: string;
-          id: string;
-          supersedes?: string[];
-          content?: string;
-          title?: string;
-          type?: MemoryType;
-          scope?: string;
-          tags?: string[];
-          importance?: MemoryImportance;
-          source?: string;
-        };
-      const store = new MemoryStore(getSqlite(db));
-      const actor = {
-        actor: [process.env.ORC_AGENT, process.env.CLAUDE_MODEL].filter(Boolean).join("/") || null,
-        session_id: session_id ?? process.env.ORC_SESSION_ID ?? null,
+      const {
+        name: memoryName,
+        project,
+        reason,
+        ...fields
+      } = args as {
+        name: string;
+        description?: string;
+        content?: string;
+        priority?: number | null;
+        reason?: string;
+        project?: string;
       };
-      const superseded = store.update(
-        id,
-        { content, title, type, scope, tags, importance, source },
-        actor,
-        supersedes,
+      new MemoryStore(getSqlite(db)).update(memoryProject(project), memoryName, fields, {
+        ...memoryWriter(options),
+        reason,
+      });
+      return `Updated memory ${memoryName}`;
+    }
+
+    case "memory_delete": {
+      const {
+        name: memoryName,
+        project,
+        reason,
+      } = args as {
+        name: string;
+        reason?: string;
+        project?: string;
+      };
+      new MemoryStore(getSqlite(db)).remove(memoryProject(project), memoryName, {
+        ...memoryWriter(options),
+        reason,
+      });
+      return `Deleted memory ${memoryName}; memory_revert can restore it`;
+    }
+
+    case "memory_history": {
+      const { name: memoryName, project } = args as { name: string; project?: string };
+      return JSON.stringify({
+        changes: new MemoryStore(getSqlite(db)).history(memoryProject(project), memoryName),
+      });
+    }
+
+    case "memory_revert": {
+      const input = args as {
+        name: string;
+        change_id: string;
+        expected_change_id: string;
+        reason: string;
+        project?: string;
+      };
+      const memory = new MemoryStore(getSqlite(db)).revert(
+        memoryProject(input.project),
+        input.name,
+        input.change_id,
+        input.expected_change_id,
+        { ...memoryWriter(options), reason: input.reason },
       );
-      const updated = await db.query.memories.findFirst({ where: eq(memories.id, id) });
-      const supersededNote = superseded.length > 0 ? `; superseded ${superseded.join(", ")}` : "";
-      return `Updated: ${id} [${updated?.type ?? type}]${supersededNote}`;
+      return memory ? `Reverted memory ${memory.name}` : `Reverted: memory ${input.name} removed`;
     }
 
     case "task_list": {
@@ -1278,27 +1281,9 @@ export async function executeTool(
       });
       const filtered = activeTasks.filter((t) => !["done", "cancelled"].includes(t.status));
 
-      const memConditions = [];
-      if (scoped) memConditions.push(sql`${memories.project_id} IS ${scopeId}`);
-      memConditions.push(
-        sql`(${memories.expires_at} IS NULL OR ${memories.expires_at} > unixepoch())`,
-      );
-      const recentMems = await db.query.memories.findMany({
-        where: and(...memConditions),
-        limit: memLimit,
-        orderBy: [
-          sql`(
-            CASE ${memories.importance} WHEN 'critical' THEN 4 WHEN 'high' THEN 3
-              WHEN 'normal' THEN 2 ELSE 1 END * 2
-            + CASE ${memories.type} WHEN 'rule' THEN 3 WHEN 'decision' THEN 3
-              WHEN 'discovery' THEN 2 ELSE 1 END
-            + max(0, 1.0 - (unixepoch() - ${memories.created_at}) / 2592000.0) * 2
-            + min(coalesce(${memories.access_count}, 0) / 5.0, 2)
-          ) DESC`,
-          desc(memories.created_at),
-          desc(memories.id),
-        ],
-      });
+      const projectMemories = scopeId
+        ? new MemoryStore(getSqlite(db)).context(scopeId, memLimit)
+        : [];
 
       const lastSession = await db.query.sessions.findFirst({
         where: scoped ? sql`${sessions.project_id} IS ${scopeId}` : undefined,
@@ -1318,14 +1303,11 @@ export async function executeTool(
         lines.push(`  [${t.id}] ${t.status.padEnd(10)} ${t.title}`);
       }
 
-      lines.push("\n## Key Memory");
-      if (recentMems.length === 0) lines.push("  (none)");
-      for (const m of recentMems) {
-        const typeLabel = m.type !== "fact" ? ` [${m.type}]` : "";
-        const label = m.title ? ` "${m.title}"` : "";
-        lines.push(
-          `  [${m.id}]${typeLabel}${label} ${m.content.slice(0, 60)} (${timeAgo(m.created_at)})`,
-        );
+      lines.push("\n## Memories");
+      if (projectMemories.length === 0) lines.push("  (none)");
+      for (const m of projectMemories) {
+        const priority = m.priority === null ? "" : ` [p${m.priority}]`;
+        lines.push(`  ${m.name}${priority} - ${m.description}`);
       }
 
       if (lastSession?.summary) {
@@ -1344,7 +1326,7 @@ export async function executeTool(
         lines.push(`\n## Agent Loop: ${activeCount.count} active worker(s)`);
       }
 
-      lines.push("\nUse task_get([ids]) or memory_get([ids]) for full content.");
+      lines.push("\nUse task_get([ids]) or memory_read(name) for full content.");
       return lines.join("\n");
     }
 
@@ -1478,21 +1460,22 @@ export async function executeTool(
 
       const files = new Set<string>();
       const taskIds = new Set<string>();
-      const memoryIds = new Set<string>();
 
       for (const e of events) {
         try {
           const d = JSON.parse(e.data) as Record<string, string>;
           if (e.type === "file" && d.path) files.add(d.path);
           if (e.type === "task" && d.id) taskIds.add(d.id);
-          if (e.type === "memory" && d.id) memoryIds.add(d.id);
         } catch {}
       }
 
       const parts = [summary];
       if (files.size > 0) parts.push(`Files: ${[...files].join(", ")}`);
       if (taskIds.size > 0) parts.push(`Tasks: ${[...taskIds].join(", ")}`);
-      if (memoryIds.size > 0) parts.push(`Memories: ${[...memoryIds].join(", ")}`);
+      const memoryNames = [
+        ...new Set(new MemoryStore(sqlite).sessionChanges(sid).map((c) => c.memory_name)),
+      ];
+      if (memoryNames.length > 0) parts.push(`Memories: ${memoryNames.join(", ")}`);
 
       const richSummary = parts.join("\n");
       const id = ulid();
@@ -1648,20 +1631,14 @@ export async function executeTool(
           );
       }
       if (!resources || resources.includes("memories")) {
-        const memResults = searchLayer1(
-          query,
-          undefined,
-          Math.ceil(lim / 2),
-          undefined,
-          resolved?.id,
-          true,
-        );
+        const memResults = unabsorbedMemories(
+          getSqlite(db),
+          new MemoryStore(getSqlite(db)).list(resolved?.id ?? null, { q: query }),
+        ).slice(0, Math.ceil(lim / 2));
         knowledgeHits += memResults.length;
         if (memResults.length > 0) {
           parts.push("## Memories");
-          for (const m of memResults) {
-            parts.push(`  [memory] ${m.id} [${m.type}] ${m.snippet} (${m.age})`);
-          }
+          for (const m of memResults) parts.push(`  [memory] ${m.key} ${m.description}`);
         }
       }
 
@@ -1896,7 +1873,7 @@ export async function executeTool(
         files,
       } = args as { name: string; content: string; files?: SkillFileInput[] };
       try {
-        const skill = createSkillFs(cName, cContent, files);
+        const skill = createSkillFs(cName, cContent, files, { authored: true });
         return `Created skill: ${skill.name} at ${skill.path}`;
       } catch (err) {
         return `Error: ${err instanceof Error ? err.message : String(err)}`;
@@ -2191,13 +2168,4 @@ function buildSnapshot(tasks: TaskRow[], events: EventRow[], maxBytes: number): 
 
 function escapeXml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function timeAgo(date: Date): string {
-  const ms = Date.now() - date.getTime();
-  const mins = Math.floor(ms / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
 }

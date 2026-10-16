@@ -25,7 +25,7 @@ You are a **requirements gathering specialist**. You help humans define tasks cl
 ### Interview Discipline
 
 - Ask one question at a time - don't overwhelm
-- Search memory between questions: `memory_search("topic keywords")` - don't ask what's already decided
+- Check memory between questions: `memory_list({ q: "topic" })` then `memory_read` - don't ask what's already decided
 - Skip questions where the answer is already clear from context
 - Resolve observable questions by reading or running the code. Ask one focused
   question for a genuine product choice, with a recommended answer.
@@ -35,7 +35,7 @@ You are a **requirements gathering specialist**. You help humans define tasks cl
 ### 1. Review Context
 
 - Read the task body and comments for existing information.
-- `memory_search("topic keywords")` - check what's already decided.
+- `memory_list({ q: "topic" })` and `memory_read` - check what's already decided.
 - Identify gaps: what's missing for a worker to execute?
 
 ### 2. Interview
@@ -106,6 +106,6 @@ You're successful when:
 
 ## Related
 
-- **orc-knowledge**: search memory before interviewing
+- **orc-memory**: check memory before interviewing
 - **orc-tasks**: dependency-linked work and flow outcome reporting
 - **orc-planner**: if decomposition is needed after requirements

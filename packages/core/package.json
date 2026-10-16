@@ -16,6 +16,7 @@
     "./errors": "./src/errors.ts",
     "./version": "./src/version.ts",
     "./skill-service": "./src/skill-service.ts",
+    "./markdown-frontmatter": "./src/markdown-frontmatter.ts",
     "./skill-files": "./src/skill-files.ts",
     "./skill-import": "./src/skill-import.ts",
     "./skill-import-types": "./src/skill-import-types.ts",

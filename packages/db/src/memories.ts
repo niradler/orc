@@ -1,392 +1,421 @@
 import type { Database } from "bun:sqlite";
+import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
-import { normalizeTags } from "@orc/core/tags";
-import { type AuditActor, AuditLog } from "./audit.js";
+import { validateSkillName } from "@orc/core/skill-service";
+import { AuditLog } from "./audit.js";
+import {
+  addReads,
+  compareByReads,
+  compareByRecent,
+  emptyReadUsage,
+  type ListSort,
+  type RankedItem,
+  type ReadSource,
+  type ReadUsage,
+  rankItems,
+} from "./read-usage.js";
 
-export const MEMORY_TYPES = ["fact", "decision", "event", "rule", "discovery"] as const;
-export type MemoryType = (typeof MEMORY_TYPES)[number];
-export const MEMORY_IMPORTANCE = ["low", "normal", "high", "critical"] as const;
-export type MemoryImportance = (typeof MEMORY_IMPORTANCE)[number];
+// A memory is a skill-shaped DB row: a name (unique per project), a short description that
+// lists and search use, and short content that memory_read returns. Long guidance is a skill.
 
-export type MemoryFields = {
-  content?: string | undefined;
-  title?: string | undefined;
-  type?: MemoryType | undefined;
-  source?: string | undefined;
-  scope?: string | undefined;
-  tags?: string[] | undefined;
-  importance?: MemoryImportance | undefined;
-};
+export const MEMORY_DESCRIPTION_MAX = 300;
+export const MEMORY_PRIORITY_MAX = 100;
 
-export type StoreMemoryInput = MemoryFields &
-  AuditActor & {
-    content: string;
-    project_id?: string | null | undefined;
-    expires_at?: Date | undefined;
-    merge_into?: string[] | undefined;
-    supersedes?: string[] | undefined;
-  };
-
-export type SimilarMemory = {
-  id: string;
-  title: string | null;
-  type: MemoryType;
-  snippet: string;
-  similarity: number;
-};
-
-export type StoreMemoryResult =
-  | { status: "added"; id: string; similar: SimilarMemory[]; superseded: string[] }
-  | { status: "merged"; id: string; merged: string[]; superseded: string[] }
-  | { status: "skipped"; existing_id: string; similar: SimilarMemory[]; superseded: string[] };
-
-export const SIMILAR_MEMORY_HINT =
-  "Similar memories exist. If one says the same thing, re-store with merge_into; if one is now wrong, supersede it.";
-
-export const MEMORY_REMOVAL_ACTIONS = ["memory.merged", "memory.superseded", "memory.deleted"];
-
-type MemoryRow = {
-  id: string;
-  title: string | null;
-  type: MemoryType;
+export type Memory = {
+  project_id: string;
+  name: string;
+  description: string;
   content: string;
-  source: string | null;
-  tags: string | null;
-  scope: string | null;
-  project_id: string | null;
-  importance: MemoryImportance;
-  expires_at: number | null;
+  /** 0-100, higher is read first; null when nobody scored it yet. */
+  priority: number | null;
+  author: string;
+  /** Native session id of the agent that last created or edited the memory. */
+  session_id: string | null;
   created_at: number;
   updated_at: number;
 };
+export type MemoryListItem = Omit<Memory, "content"> &
+  ReadUsage &
+  RankedItem & {
+    /** project_id + name; unique across projects. */
+    key: string;
+  };
+export type MemoryListSort = ListSort | "priority";
+export type MemoryListOptions = { q?: string | undefined; sort?: MemoryListSort | undefined };
+export type MemoryWriter = {
+  author?: string | null | undefined;
+  session_id?: string | null | undefined;
+  reason?: string | undefined;
+};
+export type CreateMemoryInput = MemoryWriter & {
+  project_id: string;
+  name: string;
+  description: string;
+  content: string;
+  priority?: number | null | undefined;
+};
+export type UpdateMemoryFields = {
+  description?: string | undefined;
+  content?: string | undefined;
+  priority?: number | null | undefined;
+};
+export type MemorySnapshot = { description: string; content: string; priority: number | null };
+export type MemoryChangeAction =
+  | "memory.created"
+  | "memory.updated"
+  | "memory.deleted"
+  | "memory.reverted";
+export type MemoryChange = {
+  id: string;
+  project_id: string;
+  memory_name: string;
+  action: MemoryChangeAction;
+  /** State before the change; null when the change created the memory. */
+  previous: MemorySnapshot | null;
+  /** State after the change; null when the change deleted the memory. */
+  current: MemorySnapshot | null;
+  reason: string | null;
+  author: string;
+  session_id: string | null;
+  created_at: number;
+};
+type MemoryChangeRow = Omit<MemoryChange, "previous" | "current"> & {
+  previous: string | null;
+  current: string | null;
+};
 
-type MemoryOwner = { project_id: string | null; scope: string | null };
-
-// Near-identical notes are dropped without asking the agent; anything less similar is
-// stored and reported back so the agent can merge or supersede with real judgement.
-const SKIP_SIMILARITY = 0.9;
-// Short notes differ by one meaningful token ("port 7711" vs "port 7700"), so they never auto-skip.
-const MIN_SKIP_TOKENS = 5;
-const CANDIDATE_LIMIT = 5;
-const REPORTED_SIMILAR = 3;
-const MAX_QUERY_TERMS = 32;
-const SNIPPET_LENGTH = 150;
-
-function tokenize(text: string): Set<string> {
-  return new Set(
-    text
-      .normalize("NFKC")
-      .toLowerCase()
-      .match(/[\p{L}\p{N}_]+/gu) ?? [],
-  );
-}
-
-export function jaccardSimilarity(left: string, right: string): number {
-  const leftTokens = tokenize(left);
-  const rightTokens = tokenize(right);
-  if (leftTokens.size === 0 && rightTokens.size === 0) return 1;
-  let shared = 0;
-  for (const token of leftTokens) if (rightTokens.has(token)) shared++;
-  return shared / (leftTokens.size + rightTokens.size - shared);
-}
-
-function canAutoSkip(left: string, right: string): boolean {
-  if (tokenize(left).size < MIN_SKIP_TOKENS || tokenize(right).size < MIN_SKIP_TOKENS) {
-    return false;
+export function installMemories(sqlite: Database): void {
+  // The first memories table (typed/scoped notes with FTS and auto-dedup) was replaced outright;
+  // its rows are dropped, not converted. Only that old shape has a `type` column.
+  const columns = sqlite.query<{ name: string }, []>("PRAGMA table_info(memories)").all();
+  if (columns.some((column) => column.name === "type")) {
+    sqlite.exec(`
+      DROP TRIGGER IF EXISTS memories_ai;
+      DROP TRIGGER IF EXISTS memories_ad;
+      DROP TRIGGER IF EXISTS memories_au;
+      DROP TABLE IF EXISTS memories_fts;
+      DROP TABLE IF EXISTS memories_fts_trigram;
+      DROP TABLE IF EXISTS agent_memory_sources;
+      DROP TABLE memories;
+    `);
   }
-  return jaccardSimilarity(left, right) >= SKIP_SIMILARITY;
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS memories (
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      content TEXT NOT NULL,
+      priority INTEGER CHECK (priority BETWEEN 0 AND 100),
+      author TEXT NOT NULL,
+      session_id TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      PRIMARY KEY (project_id, name)
+    );
+    CREATE TABLE IF NOT EXISTS memory_changes (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL, memory_name TEXT NOT NULL, action TEXT NOT NULL,
+      previous TEXT, current TEXT, reason TEXT, author TEXT NOT NULL, session_id TEXT,
+      created_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS memory_changes_name_idx ON memory_changes(project_id, memory_name, created_at DESC);
+    CREATE INDEX IF NOT EXISTS memory_changes_session_idx ON memory_changes(session_id);
+    CREATE TABLE IF NOT EXISTS memory_usage (
+      project_id TEXT NOT NULL, memory_name TEXT NOT NULL, source TEXT NOT NULL,
+      read_count INTEGER NOT NULL DEFAULT 0, last_read_at INTEGER NOT NULL,
+      PRIMARY KEY (project_id, memory_name, source)
+    );
+  `);
 }
 
-function buildMatchExpression(text: string): string {
-  return [...tokenize(text)]
-    .slice(0, MAX_QUERY_TERMS)
-    .map((term) => `"${term}"`)
-    .join(" OR ");
+function chars(text: string): number {
+  return [...text].length;
 }
 
-function snippet(content: string): string {
-  const flat = content.replace(/\s+/g, " ").trim();
-  if (flat.length <= SNIPPET_LENGTH) return flat;
-  return `${flat.slice(0, SNIPPET_LENGTH)}…`;
+function validateName(name: string): void {
+  try {
+    validateSkillName(name);
+  } catch {
+    throw new ValidationError(
+      "Invalid memory name: use 1-64 lowercase letters or numbers separated by single hyphens",
+    );
+  }
 }
 
-function describeOwner(owner: MemoryOwner): string {
-  return `project ${owner.project_id ?? "(global)"}, scope ${owner.scope ?? "(none)"}`;
+function validateDescription(description: string): void {
+  if (!description.trim()) throw new ValidationError("Memory description cannot be empty");
+  if (chars(description) > MEMORY_DESCRIPTION_MAX)
+    throw new ValidationError(
+      `Memory description is ${chars(description)} characters; the limit is ${MEMORY_DESCRIPTION_MAX}`,
+    );
 }
 
-function parseTags(row: MemoryRow): string[] {
-  return row.tags ? (JSON.parse(row.tags) as string[]) : [];
+function validatePriority(priority: number | null | undefined): void {
+  if (priority === null || priority === undefined) return;
+  if (!Number.isInteger(priority) || priority < 0 || priority > MEMORY_PRIORITY_MAX)
+    throw new ValidationError(
+      `Memory priority must be an integer from 0 to ${MEMORY_PRIORITY_MAX}`,
+    );
 }
 
-function highestImportance(values: MemoryImportance[]): MemoryImportance {
-  return values.reduce(
-    (best, value) =>
-      MEMORY_IMPORTANCE.indexOf(value) > MEMORY_IMPORTANCE.indexOf(best) ? value : best,
-    "low" as MemoryImportance,
+function snapshotOf(memory: Memory): MemorySnapshot {
+  return { description: memory.description, content: memory.content, priority: memory.priority };
+}
+
+function parseChange(row: MemoryChangeRow): MemoryChange {
+  return {
+    ...row,
+    previous: row.previous ? (JSON.parse(row.previous) as MemorySnapshot) : null,
+    current: row.current ? (JSON.parse(row.current) as MemorySnapshot) : null,
+  };
+}
+
+/** Higher priority first; unscored memories after every scored one. */
+function compareByPriority(left: MemoryListItem, right: MemoryListItem): number {
+  return (
+    (right.priority ?? -1) - (left.priority ?? -1) ||
+    right.read_count - left.read_count ||
+    right.activity_at - left.activity_at ||
+    left.name.localeCompare(right.name)
   );
 }
 
-function unique(ids: string[]): string[] {
-  return [...new Set(ids)];
-}
+const COMPARE: Record<MemoryListSort, (left: MemoryListItem, right: MemoryListItem) => number> = {
+  reads: compareByReads,
+  recent: compareByRecent,
+  priority: compareByPriority,
+};
 
-function actorOf(actor: AuditActor): AuditActor {
-  return { actor: actor.actor ?? null, session_id: actor.session_id ?? null };
-}
-
-// Every change goes through here so it is written to the audit log in the same transaction.
-// Merge and supersede remove the old rows; their full content lives on in the audit snapshot.
+// Every write goes through here so the row, its history entry and the audit entry change together.
 export class MemoryStore {
-  private readonly audit: AuditLog;
+  private readonly maxContentChars: number;
 
-  constructor(private readonly sqlite: Database) {
-    this.audit = new AuditLog(sqlite);
+  constructor(
+    private readonly sqlite: Database,
+    opts: { maxContentChars?: number } = {},
+  ) {
+    this.maxContentChars = opts.maxContentChars ?? loadConfig().memory.max_content_chars;
   }
 
-  store(input: StoreMemoryInput): StoreMemoryResult {
-    if (!input.content.trim()) throw new ValidationError("Memory content cannot be empty");
-    return this.sqlite.transaction((): StoreMemoryResult => {
-      if (input.merge_into?.length) return this.mergeInto(input.merge_into, input);
+  /** Memories of one project, or of every project when projectId is null. */
+  list(projectId: string | null, opts: MemoryListOptions = {}): MemoryListItem[] {
+    const scoped = projectId === null ? "" : "WHERE project_id=?";
+    const params = projectId === null ? [] : [projectId];
+    const rows = this.sqlite
+      .query<Omit<Memory, "content">, string[]>(
+        `SELECT project_id,name,description,priority,author,session_id,created_at,updated_at FROM memories ${scoped}`,
+      )
+      .all(...params);
+    const usage = new Map<string, ReadUsage>();
+    for (const row of this.sqlite
+      .query<
+        {
+          project_id: string;
+          memory_name: string;
+          source: ReadSource;
+          read_count: number;
+          last_read_at: number;
+        },
+        string[]
+      >(`SELECT project_id,memory_name,source,read_count,last_read_at FROM memory_usage ${scoped}`)
+      .all(...params)) {
+      const id = `${row.project_id}/${row.memory_name}`;
+      const stats = usage.get(id) ?? emptyReadUsage();
+      addReads(stats, row.source, row.read_count, row.last_read_at);
+      usage.set(id, stats);
+    }
+    const items = rows.map((row): MemoryListItem => {
+      const key = `${row.project_id}/${row.name}`;
+      const stats = usage.get(key) ?? emptyReadUsage();
+      return { ...row, ...stats, key, activity_at: stats.last_read_at ?? row.updated_at };
+    });
+    return rankItems(items, COMPARE[opts.sort ?? "reads"], opts.q);
+  }
 
-      const owner: MemoryOwner = {
-        project_id: input.project_id ?? null,
-        scope: input.scope ?? null,
-      };
-      const type = input.type ?? "fact";
-      const candidates = this.findCandidates(input.content, owner.project_id);
-      const duplicate = candidates.find(
-        (row) =>
-          row.type === type && row.scope === owner.scope && canAutoSkip(input.content, row.content),
-      );
-      if (duplicate) {
-        const superseded = this.supersedeWithin(duplicate, input.supersedes ?? [], input);
-        return {
-          status: "skipped",
-          existing_id: duplicate.id,
-          similar: this.toSimilar(input.content, candidates)
-            .filter((memory) => memory.id !== duplicate.id && !superseded.includes(memory.id))
-            .slice(0, REPORTED_SIMILAR),
-          superseded,
-        };
-      }
+  /** What a session starts with: the top memories by priority, then reads. Not counted as reads. */
+  context(projectId: string, limit: number): MemoryListItem[] {
+    return this.list(projectId, { sort: "priority" }).slice(0, limit);
+  }
 
-      const created = this.insert(input, owner, {
-        type,
-        title: input.title ?? null,
-        tags: normalizeTags(input.tags ?? []),
-        importance: input.importance ?? "normal",
-      });
-      this.audit.record({
-        ...actorOf(input),
-        action: "memory.created",
-        subject_ids: [created.id],
-        project_id: owner.project_id,
-        note: created.title,
-      });
-      const superseded = this.supersedeWithin(created, input.supersedes ?? [], input);
-      return {
-        status: "added",
-        id: created.id,
-        similar: this.toSimilar(input.content, candidates)
-          .filter((memory) => !superseded.includes(memory.id))
-          .slice(0, REPORTED_SIMILAR),
-        superseded,
-      };
+  get(projectId: string, name: string): Memory {
+    const memory = this.find(projectId, name);
+    if (!memory) throw new NotFoundError("Memory", name);
+    return memory;
+  }
+
+  /** Returns the memory and counts the read for its source. */
+  read(projectId: string, name: string, source: ReadSource): Memory {
+    const memory = this.get(projectId, name);
+    this.sqlite
+      .query(
+        "INSERT INTO memory_usage(project_id,memory_name,source,read_count,last_read_at) VALUES(?,?,?,1,unixepoch()) ON CONFLICT(project_id,memory_name,source) DO UPDATE SET read_count=read_count+1, last_read_at=excluded.last_read_at",
+      )
+      .run(projectId, name, source);
+    return memory;
+  }
+
+  create(input: CreateMemoryInput): Memory {
+    validateName(input.name);
+    const snapshot: MemorySnapshot = {
+      description: input.description,
+      content: input.content,
+      priority: input.priority ?? null,
+    };
+    this.validate(snapshot);
+    return this.sqlite.transaction((): Memory => {
+      if (!this.sqlite.query("SELECT 1 FROM projects WHERE id=?").get(input.project_id))
+        throw new NotFoundError("Project", input.project_id);
+      if (this.find(input.project_id, input.name))
+        throw new ConflictError(
+          `Memory ${input.name} already exists in this project; update it instead`,
+        );
+      this.write(input.project_id, input.name, null, snapshot, "memory.created", input);
+      return this.get(input.project_id, input.name);
     })();
-  }
-
-  supersede(replacementId: string, ids: string[], actor: AuditActor = {}): string[] {
-    return this.sqlite.transaction((): string[] =>
-      this.supersedeWithin(this.require(replacementId), ids, actor),
-    )();
   }
 
   update(
-    id: string,
-    fields: MemoryFields,
-    actor: AuditActor = {},
-    supersedes: string[] = [],
-  ): string[] {
-    return this.sqlite.transaction((): string[] => {
-      const before = this.require(id);
+    projectId: string,
+    name: string,
+    fields: UpdateMemoryFields,
+    writer: MemoryWriter = {},
+  ): Memory {
+    return this.sqlite.transaction((): Memory => {
+      const before = this.get(projectId, name);
+      const next: MemorySnapshot = {
+        description: fields.description ?? before.description,
+        content: fields.content ?? before.content,
+        priority: fields.priority === undefined ? before.priority : fields.priority,
+      };
+      this.validate(next);
+      this.write(projectId, name, before, next, "memory.updated", writer);
+      return this.get(projectId, name);
+    })();
+  }
+
+  remove(projectId: string, name: string, writer: MemoryWriter = {}): void {
+    this.sqlite.transaction((): void => {
+      const before = this.get(projectId, name);
+      this.write(projectId, name, before, null, "memory.deleted", writer);
+    })();
+  }
+
+  history(projectId: string, name: string): MemoryChange[] {
+    return this.sqlite
+      .query<MemoryChangeRow, [string, string]>(
+        "SELECT * FROM memory_changes WHERE project_id=? AND memory_name=? ORDER BY created_at DESC, rowid DESC",
+      )
+      .all(projectId, name)
+      .map(parseChange);
+  }
+
+  /** Changes written by one agent session, newest first. */
+  sessionChanges(sessionId: string): MemoryChange[] {
+    return this.sqlite
+      .query<MemoryChangeRow, [string]>(
+        "SELECT * FROM memory_changes WHERE session_id=? ORDER BY created_at DESC, rowid DESC",
+      )
+      .all(sessionId)
+      .map(parseChange);
+  }
+
+  /**
+   * Restores the state from before `changeId`: reverting a creation deletes the memory, reverting a
+   * deletion brings it back. `expectedChangeId` must still be the latest change.
+   */
+  revert(
+    projectId: string,
+    name: string,
+    changeId: string,
+    expectedChangeId: string,
+    writer: MemoryWriter & { reason: string },
+  ): Memory | null {
+    return this.sqlite.transaction((): Memory | null => {
+      const [latest] = this.history(projectId, name);
+      if (!latest || latest.id !== expectedChangeId)
+        throw new ConflictError("Memory changed since review; reload its history");
+      const target = this.history(projectId, name).find((change) => change.id === changeId);
+      if (!target) throw new NotFoundError("Memory change", changeId);
+      const before = this.find(projectId, name);
+      if (target.previous) this.validate(target.previous);
+      this.write(projectId, name, before, target.previous, "memory.reverted", writer);
+      return this.find(projectId, name);
+    })();
+  }
+
+  /** Drops a project's memories with their history and reads (the project is being deleted). */
+  removeProject(projectId: string): void {
+    for (const table of ["memories", "memory_changes", "memory_usage"])
+      this.sqlite.query(`DELETE FROM ${table} WHERE project_id=?`).run(projectId);
+  }
+
+  private validate(snapshot: MemorySnapshot): void {
+    validateDescription(snapshot.description);
+    if (!snapshot.content.trim()) throw new ValidationError("Memory content cannot be empty");
+    const length = chars(snapshot.content);
+    if (length > this.maxContentChars)
+      throw new ValidationError(
+        `Memory content is ${length} characters; the limit is ${this.maxContentChars}. ` +
+          "Longer guidance belongs in a skill: make it a skill (skill_create) and keep at most a short memory pointing to it.",
+      );
+    validatePriority(snapshot.priority);
+  }
+
+  private find(projectId: string, name: string): Memory | null {
+    return this.sqlite
+      .query<Memory, [string, string]>("SELECT * FROM memories WHERE project_id=? AND name=?")
+      .get(projectId, name);
+  }
+
+  private write(
+    projectId: string,
+    name: string,
+    before: Memory | null,
+    next: MemorySnapshot | null,
+    action: MemoryChangeAction,
+    writer: MemoryWriter,
+  ): void {
+    const author = writer.author || "agent";
+    const sessionId = writer.session_id ?? null;
+    if (next && before) {
       this.sqlite
         .query(
-          `UPDATE memories SET content = ?, title = ?, type = ?, source = ?, scope = ?, tags = ?,
-             importance = ?, updated_at = unixepoch() WHERE id = ?`,
+          "UPDATE memories SET description=?,content=?,priority=?,author=?,session_id=?,updated_at=unixepoch() WHERE project_id=? AND name=?",
         )
-        .run(
-          fields.content ?? before.content,
-          fields.title ?? before.title,
-          fields.type ?? before.type,
-          fields.source ?? before.source,
-          fields.scope ?? before.scope,
-          fields.tags ? JSON.stringify(normalizeTags(fields.tags)) : before.tags,
-          fields.importance ?? before.importance,
-          id,
-        );
-      this.audit.record({
-        ...actorOf(actor),
-        action: "memory.updated",
-        subject_ids: [id],
-        project_id: before.project_id,
-        snapshot: [before],
-      });
-      return this.supersedeWithin(this.require(id), supersedes, actor);
-    })();
-  }
-
-  remove(id: string, actor: AuditActor = {}): void {
-    this.sqlite.transaction((): void => {
-      const before = this.require(id);
-      this.deleteRows([id]);
-      this.audit.record({
-        ...actorOf(actor),
-        action: "memory.deleted",
-        subject_ids: [id],
-        project_id: before.project_id,
-        snapshot: [before],
-      });
-    })();
-  }
-
-  findSimilar(content: string, projectId: string | null): SimilarMemory[] {
-    return this.toSimilar(content, this.findCandidates(content, projectId));
-  }
-
-  private mergeInto(ids: string[], input: StoreMemoryInput): StoreMemoryResult {
-    const targets = unique(ids).map((id) => this.require(id));
-    const first = targets[0] as MemoryRow;
-    const owner: MemoryOwner = {
-      project_id: input.project_id ?? null,
-      scope: input.scope ?? first.scope,
-    };
-    for (const target of targets) this.assertSameOwner(target, owner);
-
-    const created = this.insert(input, owner, {
-      type: input.type ?? first.type,
-      title: input.title ?? first.title,
-      tags: normalizeTags([...targets.flatMap(parseTags), ...(input.tags ?? [])]),
-      importance: highestImportance([
-        ...targets.map((target) => target.importance),
-        input.importance ?? "normal",
-      ]),
-    });
-    const merged = targets.map((target) => target.id);
-    this.deleteRows(merged);
-    this.audit.record({
-      ...actorOf(input),
-      action: "memory.merged",
-      subject_ids: merged,
-      result_ids: [created.id],
-      project_id: owner.project_id,
-      note: created.title,
-      snapshot: targets,
-    });
-    const superseded = this.supersedeWithin(created, input.supersedes ?? [], input);
-    return { status: "merged", id: created.id, merged, superseded };
-  }
-
-  private supersedeWithin(replacement: MemoryRow, ids: string[], actor: AuditActor): string[] {
-    const targets = unique(ids).map((id) => {
-      if (id === replacement.id) throw new ValidationError("A memory cannot supersede itself");
-      const target = this.require(id);
-      this.assertSameOwner(target, replacement);
-      return target;
-    });
-    if (targets.length === 0) return [];
-    const superseded = targets.map((target) => target.id);
-    this.deleteRows(superseded);
-    this.audit.record({
-      ...actorOf(actor),
-      action: "memory.superseded",
-      subject_ids: superseded,
-      result_ids: [replacement.id],
-      project_id: replacement.project_id,
-      snapshot: targets,
-    });
-    return superseded;
-  }
-
-  private insert(
-    input: StoreMemoryInput,
-    owner: MemoryOwner,
-    resolved: {
-      type: MemoryType;
-      title: string | null;
-      tags: string[];
-      importance: MemoryImportance;
-    },
-  ): MemoryRow {
+        .run(next.description, next.content, next.priority, author, sessionId, projectId, name);
+    } else if (next) {
+      this.sqlite
+        .query(
+          "INSERT INTO memories(project_id,name,description,content,priority,author,session_id) VALUES(?,?,?,?,?,?,?)",
+        )
+        .run(projectId, name, next.description, next.content, next.priority, author, sessionId);
+    } else {
+      this.sqlite.query("DELETE FROM memories WHERE project_id=? AND name=?").run(projectId, name);
+    }
     const id = ulid();
-    const expiresAt = input.expires_at ? Math.floor(input.expires_at.getTime() / 1000) : null;
     this.sqlite
       .query(
-        `INSERT INTO memories(id, title, type, content, source, scope, project_id, tags, importance, expires_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch())`,
+        "INSERT INTO memory_changes(id,project_id,memory_name,action,previous,current,reason,author,session_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,unixepoch())",
       )
       .run(
         id,
-        resolved.title,
-        resolved.type,
-        input.content,
-        input.source ?? null,
-        owner.scope,
-        owner.project_id,
-        resolved.tags.length > 0 ? JSON.stringify(resolved.tags) : null,
-        resolved.importance,
-        expiresAt,
+        projectId,
+        name,
+        action,
+        before ? JSON.stringify(snapshotOf(before)) : null,
+        next ? JSON.stringify(next) : null,
+        writer.reason ?? null,
+        author,
+        sessionId,
       );
-    return this.require(id);
-  }
-
-  private deleteRows(ids: string[]): void {
-    const remove = this.sqlite.query("DELETE FROM memories WHERE id = ?");
-    for (const id of ids) remove.run(id);
-  }
-
-  private findCandidates(content: string, projectId: string | null): MemoryRow[] {
-    const expression = buildMatchExpression(content);
-    if (!expression) return [];
-    return this.sqlite
-      .query<MemoryRow, [string, string | null, number]>(
-        `SELECT m.* FROM memories_fts f JOIN memories m ON m.id = f.id
-         WHERE memories_fts MATCH ? AND m.project_id IS ?
-           AND (m.expires_at IS NULL OR m.expires_at > unixepoch())
-         ORDER BY bm25(memories_fts, 0, 1.0, 3.0, 1.5, 0) LIMIT ?`,
-      )
-      .all(expression, projectId, CANDIDATE_LIMIT);
-  }
-
-  private toSimilar(content: string, rows: MemoryRow[]): SimilarMemory[] {
-    return rows
-      .map((row) => ({
-        id: row.id,
-        title: row.title,
-        type: row.type,
-        snippet: snippet(row.content),
-        similarity: jaccardSimilarity(content, row.content),
-      }))
-      .sort((left, right) => right.similarity - left.similarity);
-  }
-
-  private assertSameOwner(target: MemoryRow, owner: MemoryOwner): void {
-    if (target.project_id === owner.project_id && target.scope === owner.scope) return;
-    throw new ValidationError(
-      `Memory ${target.id} belongs to ${describeOwner(target)}, not ${describeOwner(owner)}`,
-    );
-  }
-
-  // A removed id resolves to a conflict that names its replacement, so stale citations self-correct.
-  private require(id: string): MemoryRow {
-    const row = this.sqlite
-      .query<MemoryRow, [string]>("SELECT * FROM memories WHERE id = ?")
-      .get(id);
-    if (row) return row;
-    const removal = this.audit.findLatest(id, MEMORY_REMOVAL_ACTIONS);
-    if (!removal) throw new NotFoundError("Memory", id);
-    const replacement =
-      removal.result_ids.length > 0 ? `; use ${removal.result_ids.join(", ")}` : "";
-    throw new ConflictError(`Memory ${id} was removed (${removal.action})${replacement}`);
+    new AuditLog(this.sqlite).record({
+      action,
+      project_id: projectId,
+      actor: author,
+      session_id: sessionId,
+      subject_ids: [name],
+      result_ids: [id],
+      note: writer.reason ?? null,
+    });
   }
 }

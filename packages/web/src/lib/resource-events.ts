@@ -38,7 +38,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
   sessions: ["sessions", "session", "palette-live-sessions", "project-summary", "health"],
   jobs: ["jobs", "job", "job-runs", "job-run-logs", "project-summary", "health", "palette-search"],
   projects: ["projects", "project", "project-summary", "health", "palette-search"],
-  memories: ["memories", "memories-search", "project-summary", "health", "palette-search"],
+  memories: ["memories", "memory", "memory-history", "project-summary", "health", "palette-search"],
   wiki: [
     "wiki",
     "wiki-page",
@@ -64,6 +64,8 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
     "setup-components",
   ],
   "skill-usage": ["skills", "package-skill-picker"],
+  // Only lists rank by reads; refreshing an open memory would count another read.
+  "memory-usage": ["memories"],
   agents: ["agents", "agent", "agent-packages", "setup-components"],
   flows: ["flows", "flow"],
   rules: ["rules"],

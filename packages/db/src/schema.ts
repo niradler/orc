@@ -115,29 +115,7 @@ export const task_links = sqliteTable(
   ],
 );
 
-export const memories = sqliteTable("memories", {
-  id: text("id").primaryKey(),
-  project_id: text("project_id").references(() => projects.id),
-  title: text("title"),
-  type: text("type", {
-    enum: ["fact", "decision", "event", "rule", "discovery"],
-  })
-    .default("fact")
-    .notNull(),
-  content: text("content").notNull(),
-  source: text("source"),
-  scope: text("scope"),
-  tags: text("tags", { mode: "json" }).$type<string[]>(),
-  importance: text("importance", {
-    enum: ["low", "normal", "high", "critical"],
-  })
-    .default("normal")
-    .notNull(),
-  expires_at: integer("expires_at", { mode: "timestamp" }),
-  access_count: integer("access_count").notNull().default(0),
-  last_accessed_at: integer("last_accessed_at", { mode: "timestamp" }),
-  ...timestamps,
-});
+// memories, memory_changes and memory_usage are raw SQL owned by MemoryStore (memories.ts).
 
 export const jobs = sqliteTable(
   "jobs",
@@ -471,9 +449,6 @@ export type NewTask = typeof tasks.$inferInsert;
 export type Comment = typeof comments.$inferSelect;
 export type TaskLink = typeof task_links.$inferSelect;
 export type NewTaskLink = typeof task_links.$inferInsert;
-export type Memory = typeof memories.$inferSelect;
-export type NewMemory = typeof memories.$inferInsert;
-export type MemoryType = "fact" | "decision" | "event" | "rule" | "discovery";
 export type Job = typeof jobs.$inferSelect;
 export type NewJob = typeof jobs.$inferInsert;
 export type JobRun = typeof job_runs.$inferSelect;

@@ -41,8 +41,9 @@ and a knowledge base. You have access to ORC MCP tools to interact with all of t
 
 - **Tasks**: create, update, and move tasks through the review flow (todo → doing → review → done). \
   Always update task status as you work and when you finish.
-- **Memories / KB**: search and store facts, decisions, and discoveries so they persist across sessions. \
-  Call \`memory_search\` before starting work on anything non-trivial.
+- **Memories**: short project facts worth knowing next session (ports, conventions, gotchas, decisions). \
+  \`context\` lists the top memories by priority; \`memory_list\` / \`memory_read\` find and read more, \
+  and \`memory_create\` / \`memory_update\` record them. Procedures and long guidance belong in skills.
 - **Jobs**: list and trigger scheduled or one-shot jobs via \`job_list\` / \`job_run\`.
 - **Projects**: scope your work with \`project_list\`.
 - **Skills**: call \`skill_list\` to discover available workflows, then \`skill_read <name>\` to load \
@@ -52,7 +53,7 @@ and a knowledge base. You have access to ORC MCP tools to interact with all of t
 Call \`context({})\` at the start of every session for a compact overview of active tasks and key memories.
 
 If ORC MCP tools are not available, fall back to the \`orc\` CLI: \
-\`orc task list\`, \`orc task create\`, \`orc mem search\`, \`orc job run\`, etc. \
+\`orc task list\`, \`orc task create\`, \`orc mem list\`,\`orc job run\`, etc. \
 Run \`orc --help\` to discover available commands.`;
 
 const SDK_ENV_PASSTHROUGH = /^CLAUDE_(CODE_ENTRYPOINT|AGENT_SDK_VERSION)$/;

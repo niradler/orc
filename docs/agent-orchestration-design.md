@@ -151,7 +151,7 @@ Shipped with ORC, loaded from `skills/` directory:
 | Name                     | Description                                                                                                                                                          |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `orc-main-base`          | Base skill for main agent. ORC awareness, advise using ORC for state management, discover/load skills, create tasks for the loop. Injected into main agent sessions. |
-| `orc-worker-base`        | Base skill for all worker sessions. ORC awareness, MCP tool usage, update status, post comments, store memories. Injected into every worker.                         |
+| `orc-worker-base`        | Base skill for all worker sessions. ORC awareness, MCP tool usage, update status, post comments, save memories. Injected into every worker.                         |
 | `requirements-gathering` | Loaded on-demand by main agent. Interview human: clarifying questions, DOD, constraints, scope.                                                                      |
 | `planner`                | Deep-dive a task. Create implementation plan. Break into subtasks with clear descriptions.                                                                           |
 | `coder`                  | Implement a plan. Write code, tests. Update task status and post comments as you go.                                                                                 |

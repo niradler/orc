@@ -102,6 +102,21 @@ export function validateSkillName(name: string): void {
   validateSkillPath(name);
 }
 
+/** Skills written in ORC keep a short description; imported skills keep the spec's 1024 limit. */
+export const AUTHORED_SKILL_DESCRIPTION_MAX = 300;
+
+/** Rejects a long description on a skill authored in ORC, unless the description is unchanged. */
+export function validateAuthoredSkillDescription(content: string, previous?: string): void {
+  const { description } = parseFrontmatter(content).frontmatter;
+  if (previous !== undefined && parseFrontmatter(previous).frontmatter.description === description)
+    return;
+  const length = [...description].length;
+  if (length > AUTHORED_SKILL_DESCRIPTION_MAX)
+    throw new ValidationError(
+      `Skill description is ${length} characters; skills written in ORC keep it to ${AUTHORED_SKILL_DESCRIPTION_MAX}. Say when to use the skill and move details into its body.`,
+    );
+}
+
 /**
  * Validates the spec fields (name, description, license, compatibility, metadata, allowed-tools).
  * Other top-level fields, such as agent-specific `model` or `argument-hint`, are kept as-is in
@@ -483,6 +498,7 @@ export function createSkill(
   name: string,
   content: string,
   files: SkillFileInput[] = [],
+  options: { authored?: boolean } = {},
 ): SkillFull {
   validateSkillName(name);
 
@@ -495,6 +511,7 @@ export function createSkill(
 
   const { frontmatter: fm, body } = parseFrontmatter(content);
   if (fm.name !== name) throw new ValidationError("Skill name must match SKILL.md frontmatter");
+  if (options.authored) validateAuthoredSkillDescription(content);
   const prepared = prepareSkillFiles(files, content);
 
   mkdirSync(USER_SKILLS_DIR, { recursive: true });

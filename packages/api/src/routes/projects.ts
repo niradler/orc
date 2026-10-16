@@ -2,13 +2,13 @@ import type { Database } from "bun:sqlite";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { NotFoundError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
-import { getDb } from "@orc/db/client";
+import { getDb, getSqlite } from "@orc/db/client";
+import { MemoryStore } from "@orc/db/memories";
 import {
   bridge_chats,
   comments,
   jobs,
   knowledge_collections,
-  memories,
   projects,
   sessions,
   tasks,
@@ -364,7 +364,8 @@ app.openapi(deleteRoute, async (c) => {
   if (!existing) throw new NotFoundError("Project", id);
   await db.transaction(async (tx) => {
     await tx.update(tasks).set({ project_id: null }).where(eq(tasks.project_id, id));
-    await tx.update(memories).set({ project_id: null }).where(eq(memories.project_id, id));
+    // Memories belong to one project, so they go with it (with their history and reads).
+    new MemoryStore(getSqlite()).removeProject(id);
     await tx.update(jobs).set({ project_id: null }).where(eq(jobs.project_id, id));
     await tx.update(sessions).set({ project_id: null }).where(eq(sessions.project_id, id));
     await tx.update(bridge_chats).set({ project_id: null }).where(eq(bridge_chats.project_id, id));

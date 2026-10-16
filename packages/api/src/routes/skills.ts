@@ -20,17 +20,13 @@ import {
 import { syncImportedSkill } from "@orc/core/skill-sync";
 import { SkillUpdateSchema, WikiScopeSchema } from "@orc/core/wiki";
 import { getSqlite } from "@orc/db/client";
-import { SkillHistory, type SkillReadSource } from "@orc/db/skill-history";
+import { readSourceFromClient } from "@orc/db/read-usage";
+import { SkillHistory } from "@orc/db/skill-history";
 import { resolveWikiProject } from "./wiki.js";
 
 const app = new OpenAPIHono();
 
 const ORC_CLIENT_HEADER = "X-Orc-Client";
-
-/** Attributes a skill read to the calling client; unknown callers count as plain API reads. */
-function readSource(client: string | undefined): SkillReadSource {
-  return client === "cli" || client === "ui" ? client : "api";
-}
 
 const VisibilitySchema = z
   .object({ hidden_builtins: z.array(z.string().min(1).max(64)).max(512) })
@@ -663,14 +659,14 @@ app.openapi(readRoute, (c) => {
   const history = new SkillHistory(getSqlite());
   const result = history.read(name, projectId, ref);
   if (!result) throw new NotFoundError("Skill", name);
-  history.recordRead(name, projectId, readSource(c.req.header(ORC_CLIENT_HEADER)), ref);
+  history.recordRead(name, projectId, readSourceFromClient(c.req.header(ORC_CLIENT_HEADER)), ref);
   return c.json(result as SkillFull | SkillRefContent);
 });
 
 app.openapi(createRoute_, async (c) => {
   const { name, content, files } = c.req.valid("json");
   try {
-    const skill = createSkill(name, content, files);
+    const skill = createSkill(name, content, files, { authored: true });
     return c.json(skill, 201);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

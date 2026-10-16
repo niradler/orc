@@ -56,7 +56,7 @@ const BOT_COMMANDS = [
   },
   { command: "jobs", description: "List jobs" },
   { command: "run", description: "Run a job: /run <name>" },
-  { command: "mem", description: "Search memories: /mem <query>" },
+  { command: "mem", description: "Project memories: /mem [list|show <name>|add]" },
   { command: "agent", description: "Switch agent: /agent <name>" },
   { command: "sessions", description: "List agent sessions" },
   {

@@ -7,8 +7,10 @@ import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 let app: ReturnType<typeof createApp>;
 beforeAll(async () => {
   app = setupTestApp();
+  let projectId = "";
   for (const name of ["palette-one", "palette-two"]) {
     const project = await (await req(app, "POST", "/projects", { name })).json();
+    projectId = project.id;
     await req(app, "POST", "/tasks", {
       title: `Needle ${name}`,
       body: "body-only-match",
@@ -16,7 +18,12 @@ beforeAll(async () => {
     });
   }
   await req(app, "POST", "/tasks", { title: "literal %_ match" });
-  await req(app, "POST", "/memories", { content: "Needle memory" });
+  await req(app, "POST", "/memories", {
+    project_id: projectId,
+    name: "needle-memory",
+    description: "Needle memory",
+    content: "memory content",
+  });
   new WikiStore(getSqlite()).write({
     project_id: null,
     slug: "needle-wiki",

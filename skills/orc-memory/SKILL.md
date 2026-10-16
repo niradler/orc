@@ -1,164 +1,91 @@
 ---
 name: orc-memory
-description: Use when storing project knowledge, decisions, rules, or discoveries in ORC, when searching for past context, when recalling architectural decisions or conventions, when multiple agents need shared knowledge, or when building a persistent knowledge base. Trigger on "remember", "recall", "what did we decide", "store this", when making architectural decisions, or when you need past context before starting work.
-allowed-tools: mcp__orc__memory_search mcp__orc__memory_get mcp__orc__memory_store mcp__orc__memory_update mcp__orc__search
+description: Use when saving or recalling short project facts in ORC (ports, conventions, gotchas, decisions, pointers), on "remember this" or "what did we decide", or when deciding whether something is a memory or a skill.
+allowed-tools: mcp__orc__memory_list mcp__orc__memory_read mcp__orc__memory_create mcp__orc__memory_update mcp__orc__memory_delete mcp__orc__memory_history mcp__orc__memory_revert mcp__orc__context
 ---
 
-# ORC Memory Workflow
+# ORC Memory
 
-ORC's memory layer is a shared, searchable knowledge store backed by FTS5 full-text search. All agents read/write the same store, scoped by project.
+A memory is a short project fact worth knowing next session. Memories belong to one
+project and are identified by name, like skills.
 
-## Why Use ORC Memory
+Good memories:
 
-CLAUDE.md is for static conventions. ORC memory is for living knowledge - decisions made during work, discoveries from debugging, rules that emerge from experience. It survives across sessions, is searchable by any agent, and important entries float to the top of every `context()` call.
+- **Ports and endpoints** - "API listens on 7700; e2e uses 7799"
+- **Conventions** - "IDs are ULIDs; never use `any`"
+- **Gotchas** - "On Windows, kill the bun server with `taskkill /F /T` or children survive"
+- **Decisions** - "Hono over Express: runs natively in Bun" (include the _why_)
+- **Pointers** - "Release procedure lives in the orc-release skill"
 
----
+## Memory vs skill
 
-## When to Store
+| Memory                                  | Skill                                     |
+| --------------------------------------- | ----------------------------------------- |
+| One fact, rule or decision              | A procedure or long guidance              |
+| At most 800 characters                  | Steps, checklists, examples               |
+| `memory_create` / `memory_update`       | `skill_create` / `skill_update`           |
 
-**Store as `rule`** (highest priority in context): Conventions and must-follow constraints.
+If it does not fit in 800 characters, it is a skill. Write the skill, and keep at most
+a short memory that points to it ("Release steps: see skill orc-release"). Content over
+the cap is rejected with that advice.
 
-> "All IDs are ULIDs", "never use `any` in TypeScript"
+Do not store what the code, git history, CLAUDE.md/AGENTS.md or project docs already
+say, or in-progress task details (use tasks and session events).
 
-**Store as `decision`** (high priority): Choices with rationale - future agents need the _why_.
+## Fields
 
-> "Use Hono over Express - runs natively in Bun"
+- **name** - lowercase-hyphenated, at most 64 characters, unique in the project. Name
+  the subject, not the event: `api-port`, `ulid-ids`, `windows-bun-kill`.
+- **description** - at most 300 characters, saying **when it matters**:
+  "Check before starting or killing the API server on Windows." It is all an agent sees
+  in `context` and `memory_list`, so it decides whether the memory gets read.
+- **content** - the fact itself, with the reason or evidence when it is not obvious.
+- **priority** - 0-100, or unset. How important and broadly relevant the memory is:
+  - 80-100: must-know for almost any work in the project (core conventions, hard rules)
+  - 40-79: matters for a common area of work
+  - 0-39: narrow or situational
+  - unset: not scored yet; ranks below scored memories
 
-**Store as `discovery`** (medium): Findings from debugging or exploration.
+`context` lists the top 30 memories by priority as `name [pN] - description`. Agents
+read the ones that look relevant with `memory_read`. Score honestly; inflating
+priority pushes useful memories out of that list.
 
-> "FTS5 porter stemmer doesn't handle camelCase"
+## Workflow
 
-**Store as `fact`** or **`event`** (low): General knowledge, things that happened.
+1. **Recall** - call `context` first. Read relevant listed memories with
+   `memory_read(name)`. For anything not listed, `memory_list({ q })` searches names and
+   descriptions; `sort` is `reads` (default), `recent` or `priority`.
+2. **Before creating** - `memory_list({ q })` for the subject. If a memory already
+   covers it, `memory_update` that one instead of creating a near-duplicate.
+3. **Create** - `memory_create({ name, description, content, priority })`.
+4. **Correct** - `memory_update(name, { description?, content?, priority?, reason })`.
+   Only the passed fields change; `priority: null` clears the score. Give a reason.
+5. **Remove** - `memory_delete(name, reason)` when a memory is wrong or obsolete.
 
-### Write good titles
+Pass `project` (readable name) when the session is not already scoped to the project.
 
-Title appears in search results and context - it's how agents decide which memories to read. One short sentence: what it is + when to use it.
+## History and revert
 
-Good: `title: "JWT over sessions - check before touching auth"`
-Bad: `title: "auth decision"`
+Every create, update, delete and revert is recorded with the state before and after.
 
-### Before storing, always search first to avoid duplicates.
+- `memory_history(name)` lists changes newest first.
+- `memory_revert(name, change_id, expected_change_id, reason)` restores the state from
+  before `change_id`; reverting a creation deletes the memory. `expected_change_id` must
+  be the latest change from `memory_history`; if someone changed it since, reread first.
+- A deleted memory can be restored by reverting its delete.
 
-If `memory_store` finds a similar existing memory, it will warn you. Use `memory_update` to merge instead of creating duplicates.
+## Common mistakes
 
----
-
-## Updating Memories
-
-Use `memory_update(id, {fields})` to correct or evolve a memory in place. This preserves history (created_at, access_count) and is preferred over delete+recreate.
-
-**Decisions and rules should rarely be deleted** - append corrections to the content instead. Future agents need the historical rationale.
-
----
-
-## Source Metadata
-
-The `source` field is auto-detected from the agent environment (e.g. "claude-code@session_abc"). You can override it with an explicit `source` param for more context (e.g. "code-review", "debugging-session").
-
----
-
-## What NOT to Store
-
-Not everything belongs in memory. Skip:
-
-- **Code patterns and conventions** derivable from reading the codebase
-- **Git history** - use `git log` / `git blame` instead
-- **Code fixes alone** - use the diff/commit for the patch. Preserve surprising root
-  causes, failure conditions and verified procedures when they will help future work.
-- **Anything already in CLAUDE.md** or project docs
-- **Ephemeral task details** - use tasks for in-progress work
-
-Store only what's surprising, non-obvious, or cross-session relevant.
-
----
-
-## Content Size
-
-Keep individual memories under ~2000 characters. If you need more, split into multiple related memories with the same scope and tags.
-
----
-
-## When to Search
-
-- Before starting work - check what decisions have been made
-- When you need to understand past context or rationale
-- When the user asks "what did we decide about X"
-- When you encounter something that might have been solved before
-
-The 3-layer cascade (porter stemming, trigram, LIKE) finds things even when wording varies. Use keywords, not exact phrases.
-
-The unified `search` tool searches across both memories and tasks in one call - use it when you're not sure where the information lives.
-
----
-
-## Scopes
-
-Use scopes to organize: `architecture`, `code-style`, `api`, `security`, `database`, `gateway`, `mcp`, `ops`, `bugs`. Scopes make search faster on large stores.
-
----
-
-## Prompts as Knowledge
-
-Built-in skills (`skill_list`) encode workflow knowledge - how to do code review, planning, bug fixing. Use `skill_read` to load a specific workflow when you need structured guidance. Store project-specific workflow tweaks as `rule` memories.
-
----
-
-## ORC Memory vs CLAUDE.md
-
-| ORC memory                        | CLAUDE.md                    |
-| --------------------------------- | ---------------------------- |
-| Runtime decisions during sessions | Up-front project conventions |
-| Findings from debugging           | Static architectural docs    |
-| Cross-agent shared knowledge      | Agent-specific instructions  |
-| Things that change                | Things that rarely change    |
-| "We decided X because Y"          | "Always do X"                |
-
----
-
-## CLI Fallbacks
-
-```bash
-orc mem search "why ULID" --scope architecture
-orc mem add "Always use strict mode" --type rule --scope code-style --importance critical
-orc mem list --limit 20
-```
-
----
-
-## Token Economics
-
-Know the cost of your actions:
-
-| Tool            | Cost                  | Use when                                   |
-| --------------- | --------------------- | ------------------------------------------ |
-| `context()`     | ~200 tokens           | Always call first - cheap overview         |
-| `memory_search` | ~50-100 tokens/result | Targeted keyword search                    |
-| `search`        | ~50-100 tokens/result | Unified search across memories + tasks     |
-| `memory_get`    | ~500-1000 tokens/item | Full content - **expensive, filter first** |
-| `memory_update` | ~50 tokens            | Update fields in place - cheap             |
-
-**NEVER call `memory_get` without filtering via `memory_search` or `search` first.** Always: search → pick IDs → `memory_get(ids)`. This is 10x more token-efficient than fetching everything.
-
----
-
-## Common Mistakes
-
-| Mistake                                | Fix                                                   |
-| -------------------------------------- | ----------------------------------------------------- |
-| Storing everything as `fact`           | Use `rule`/`decision` - they get priority in context  |
-| Searching with exact phrases           | Use keywords; the stemmer handles variations          |
-| Storing duplicates                     | Search first                                          |
-| Missing rationale in decisions         | Future agents need the _why_, not just the _what_     |
-| Skipping scopes                        | Scopes make search faster                             |
-| Calling `memory_get` without filtering | Search first, then fetch only the IDs you need        |
-| Deleting decisions/rules to "fix" them | Use `memory_update` to correct - preserve the history |
-| Storing code patterns or git history   | Derive from codebase/git - don't duplicate in memory  |
-
----
+| Mistake                                 | Fix                                                  |
+| --------------------------------------- | ---------------------------------------------------- |
+| Pasting a procedure into a memory       | Make it a skill; keep a short pointer memory         |
+| Description restates the name           | Say when the memory matters                          |
+| Creating a second memory on one subject | `memory_list({ q })` first, then `memory_update`     |
+| Every memory at priority 90+            | Reserve high priority for broadly relevant facts     |
+| Deleting a decision to change it        | `memory_update` with a reason; history keeps the old |
 
 ## Related
 
-- **orc-knowledge** skill - indexing and searching document collections (markdown, code docs)
-- **orc-session** skill - session start protocol, recording events
-- **orc-tasks** skill - task lifecycle and HITL review
-- Built-in prompts: `orc-requirements` (skill) gathers requirements and stores in task body, `orc-report` (skill) builds status summaries from memories and tasks
+- **orc-memory-review** - review this work unit's memory changes before delivery
+- **orc-session** - session start, events and logging
+- **orc-wiki** - compiling verified lessons into wiki pages

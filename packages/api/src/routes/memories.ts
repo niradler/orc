@@ -1,369 +1,292 @@
-import type { Database } from "bun:sqlite";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
-import { NotFoundError } from "@orc/core/errors";
-import { getDb, getSqlite } from "@orc/db/client";
-import { MemoryStore, SIMILAR_MEMORY_HINT } from "@orc/db/memories";
-import { memories } from "@orc/db/schema";
-import { eq } from "drizzle-orm";
+import { getSqlite } from "@orc/db/client";
+import { MEMORY_DESCRIPTION_MAX, MEMORY_PRIORITY_MAX, MemoryStore } from "@orc/db/memories";
+import { readSourceFromClient } from "@orc/db/read-usage";
 
 const app = new OpenAPIHono();
-const API_ACTOR = "api";
+const ORC_CLIENT_HEADER = "X-Orc-Client";
+const API_AUTHOR = "api";
 
-const MemoryTypeSchema = z.enum(["fact", "decision", "event", "rule", "discovery"]);
-
+const PrioritySchema = z
+  .number()
+  .int()
+  .min(0)
+  .max(MEMORY_PRIORITY_MAX)
+  .nullable()
+  .openapi({ description: "0-100, higher loads first in context; null = not scored" });
+const ReadsBySourceSchema = z.object({
+  mcp: z.number().int(),
+  cli: z.number().int(),
+  api: z.number().int(),
+  ui: z.number().int(),
+});
 const MemorySchema = z
   .object({
-    id: z.string(),
-    title: z.string().nullable(),
-    type: MemoryTypeSchema,
+    project_id: z.string(),
+    name: z.string(),
+    description: z.string(),
     content: z.string(),
-    source: z.string().nullable(),
-    scope: z.string().nullable(),
-    project_id: z.string().nullable(),
-    tags: z.array(z.string()).nullable(),
-    importance: z.enum(["low", "normal", "high", "critical"]),
-    expires_at: z.string().datetime().nullable(),
-    created_at: z.string().datetime(),
-    updated_at: z.string().datetime(),
+    priority: z.number().int().nullable(),
+    author: z.string(),
+    session_id: z.string().nullable(),
+    created_at: z.number().int(),
+    updated_at: z.number().int(),
   })
   .openapi("Memory");
+const MemoryListItemSchema = MemorySchema.omit({ content: true })
+  .extend({
+    key: z.string(),
+    read_count: z.number().int(),
+    reads_by_source: ReadsBySourceSchema,
+    last_read_at: z.number().int().nullable(),
+    activity_at: z.number().int(),
+  })
+  .openapi("MemoryListItem");
+const SnapshotSchema = z.object({
+  description: z.string(),
+  content: z.string(),
+  priority: z.number().int().nullable(),
+});
+const MemoryChangeSchema = z
+  .object({
+    id: z.string(),
+    project_id: z.string(),
+    memory_name: z.string(),
+    action: z.enum(["memory.created", "memory.updated", "memory.deleted", "memory.reverted"]),
+    previous: SnapshotSchema.nullable(),
+    current: SnapshotSchema.nullable(),
+    reason: z.string().nullable(),
+    author: z.string(),
+    session_id: z.string().nullable(),
+    created_at: z.number().int(),
+  })
+  .openapi("MemoryChange");
 
+const NameParam = z.object({ name: z.string().min(1).max(64) });
+const ProjectQuery = z.object({ project_id: z.string().min(1) });
+const Writer = {
+  author: z.string().min(1).max(200).optional(),
+  session_id: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .openapi({ description: "Native session id of the agent making the change, when known" }),
+};
 const CreateMemorySchema = z
   .object({
-    content: z.string().min(1).max(2_000_000),
-    title: z.string().optional(),
-    type: MemoryTypeSchema.optional().default("fact"),
-    source: z.string().optional(),
-    session_id: z.string().min(1).max(200).optional(),
-    scope: z.string().optional(),
-    project_id: z.string().optional(),
-    tags: z.array(z.string()).optional(),
-    importance: z.enum(["low", "normal", "high", "critical"]).optional().default("normal"),
-    expires_at: z.string().datetime().optional(),
-    merge_into: z
-      .array(z.string())
-      .min(1)
-      .max(20)
-      .optional()
-      .describe("Replace these memories with this one; they are removed and kept in the audit log"),
-    supersedes: z
-      .array(z.string())
-      .max(20)
-      .optional()
-      .describe("Memories this one contradicts; they are removed and kept in the audit log"),
+    project_id: z.string().min(1),
+    name: z.string().min(1).max(64),
+    description: z.string().min(1).max(MEMORY_DESCRIPTION_MAX),
+    content: z.string().min(1),
+    priority: PrioritySchema.optional(),
+    ...Writer,
   })
+  .strict()
   .openapi("CreateMemory");
-
-const SimilarMemorySchema = z.object({
-  id: z.string(),
-  title: z.string().nullable(),
-  type: MemoryTypeSchema,
-  snippet: z.string(),
-  similarity: z.number(),
-});
-
-// The stored memory (or, on skip, the existing one kept) plus the dedup outcome beside it.
-const StoreMemoryResultSchema = MemorySchema.extend({
-  status: z.enum(["added", "merged", "skipped"]),
-  existing_id: z.string().optional().describe("Set on skip: the near-identical memory kept"),
-  merged: z.array(z.string()).optional().describe("Set on merge: the memories this one replaced"),
-  similar: z.array(SimilarMemorySchema),
-  superseded: z.array(z.string()),
-  hint: z.string().optional(),
-}).openapi("StoreMemoryResult");
-
-const searchRoute = createRoute({
-  method: "get",
-  path: "/memories/search",
-  tags: ["Memory"],
-  summary: "Search memories (3-layer BM25: porter → trigram → fallback)",
-  request: {
-    query: z.object({
-      q: z.string().min(1, "Search query cannot be empty"),
-      scope: z.string().optional(),
-      type: MemoryTypeSchema.optional(),
-      project_id: z.string().optional(),
-      limit: z.coerce.number().int().min(1).max(50).optional().default(10),
-    }),
-  },
-  responses: {
-    200: {
-      description: "Search results",
-      content: {
-        "application/json": {
-          schema: z.object({ results: z.array(MemorySchema) }),
-        },
-      },
-    },
-  },
-});
-
-const listRoute = createRoute({
-  method: "get",
-  path: "/memories",
-  tags: ["Memory"],
-  summary: "List memories",
-  request: {
-    query: z.object({
-      scope: z.string().optional(),
-      type: MemoryTypeSchema.optional(),
-      project_id: z.string().optional(),
-      limit: z.coerce.number().int().min(1).max(100).optional().default(20),
-    }),
-  },
-  responses: {
-    200: {
-      description: "Memory list",
-      content: {
-        "application/json": {
-          schema: z.object({ memories: z.array(MemorySchema) }),
-        },
-      },
-    },
-  },
-});
-
-const createRoute_ = createRoute({
-  method: "post",
-  path: "/memories",
-  tags: ["Memory"],
-  summary: "Store a memory (skips near-duplicates, can merge or supersede)",
-  request: { body: { content: { "application/json": { schema: CreateMemorySchema } } } },
-  responses: {
-    200: {
-      description: "Created a merged replacement, or kept a near-duplicate",
-      content: { "application/json": { schema: StoreMemoryResultSchema } },
-    },
-    201: {
-      description: "Created",
-      content: { "application/json": { schema: StoreMemoryResultSchema } },
-    },
-  },
-});
-
 const UpdateMemorySchema = z
   .object({
-    content: z.string().min(1).max(2_000_000).optional(),
-    title: z.string().optional(),
-    type: MemoryTypeSchema.optional(),
-    source: z.string().optional(),
-    session_id: z.string().min(1).max(200).optional(),
-    scope: z.string().optional(),
-    tags: z.array(z.string()).optional(),
-    importance: z.enum(["low", "normal", "high", "critical"]).optional(),
-    supersedes: z
-      .array(z.string())
-      .max(20)
-      .optional()
-      .describe("Memories this one contradicts; they are removed and kept in the audit log"),
+    project_id: z.string().min(1),
+    description: z.string().min(1).max(MEMORY_DESCRIPTION_MAX).optional(),
+    content: z.string().min(1).optional(),
+    priority: PrioritySchema.optional(),
+    reason: z.string().max(2000).optional(),
+    ...Writer,
   })
+  .strict()
   .openapi("UpdateMemory");
 
-const updateRoute = createRoute({
-  method: "patch",
-  path: "/memories/{id}",
-  tags: ["Memory"],
-  summary: "Update a memory (partial)",
-  request: {
-    params: z.object({ id: z.string() }),
-    body: { content: { "application/json": { schema: UpdateMemorySchema } } },
-  },
-  responses: {
-    200: {
-      description: "Updated",
-      content: { "application/json": { schema: MemorySchema } },
+const store = (): MemoryStore => new MemoryStore(getSqlite());
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/memories",
+    tags: ["Memory"],
+    summary: "List memories of a project (or all projects), most read first",
+    request: {
+      query: z.object({
+        project_id: z.string().optional(),
+        q: z.string().optional().openapi({ description: "Search name and description" }),
+        sort: z.enum(["reads", "recent", "priority"]).optional().openapi({
+          description:
+            "reads (default): most read first; recent: last read or updated first; priority: highest priority first",
+        }),
+        limit: z.coerce.number().int().min(1).max(500).optional().default(30),
+      }),
     },
+    responses: {
+      200: {
+        description: "Memory list",
+        content: {
+          "application/json": {
+            schema: z.object({ memories: z.array(MemoryListItemSchema), total: z.number().int() }),
+          },
+        },
+      },
+    },
+  }),
+  (c) => {
+    const { project_id, q, sort, limit } = c.req.valid("query");
+    const memories = store().list(project_id ?? null, { q, sort });
+    return c.json({ memories: memories.slice(0, limit), total: memories.length });
   },
-});
+);
 
-const deleteRoute = createRoute({
-  method: "delete",
-  path: "/memories/{id}",
-  tags: ["Memory"],
-  summary: "Delete memory",
-  request: { params: z.object({ id: z.string() }) },
-  responses: {
-    204: { description: "Deleted" },
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/memories/{name}",
+    tags: ["Memory"],
+    summary: "Read a memory; counts a read for the calling client",
+    request: { params: NameParam, query: ProjectQuery },
+    responses: {
+      200: { description: "Memory", content: { "application/json": { schema: MemorySchema } } },
+      404: { description: "Memory not found" },
+    },
+  }),
+  (c) => {
+    const source = readSourceFromClient(c.req.header(ORC_CLIENT_HEADER));
+    return c.json(store().read(c.req.valid("query").project_id, c.req.valid("param").name, source));
   },
-});
+);
 
-type RawRow = {
-  id: string;
-  title: string | null;
-  type: string;
-  content: string;
-  source: string | null;
-  scope: string | null;
-  project_id: string | null;
-  tags: string | null;
-  importance: string;
-  expires_at: number | null;
-  created_at: number;
-  updated_at: number;
-};
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/memories",
+    tags: ["Memory"],
+    summary: "Create a memory (content over the limit belongs in a skill)",
+    request: { body: { content: { "application/json": { schema: CreateMemorySchema } } } },
+    responses: {
+      201: { description: "Created", content: { "application/json": { schema: MemorySchema } } },
+      400: { description: "Validation error" },
+      409: { description: "A memory with this name already exists in the project" },
+    },
+  }),
+  (c) => {
+    const input = c.req.valid("json");
+    return c.json(store().create({ ...input, author: input.author ?? API_AUTHOR }), 201);
+  },
+);
 
-function rawToDto(r: RawRow) {
-  return {
-    id: r.id,
-    title: r.title ?? null,
-    type: (r.type ?? "fact") as "fact" | "decision" | "event" | "rule" | "discovery",
-    content: r.content,
-    source: r.source,
-    scope: r.scope,
-    project_id: r.project_id ?? null,
-    tags: r.tags ? (JSON.parse(r.tags) as string[]) : null,
-    importance: r.importance as "low" | "normal" | "high" | "critical",
-    expires_at: r.expires_at ? new Date(r.expires_at * 1000).toISOString() : null,
-    created_at: new Date(r.created_at * 1000).toISOString(),
-    updated_at: new Date(r.updated_at * 1000).toISOString(),
-  };
-}
+app.openapi(
+  createRoute({
+    method: "patch",
+    path: "/memories/{name}",
+    tags: ["Memory"],
+    summary: "Update a memory's description, content or priority",
+    request: {
+      params: NameParam,
+      body: { content: { "application/json": { schema: UpdateMemorySchema } } },
+    },
+    responses: {
+      200: { description: "Updated", content: { "application/json": { schema: MemorySchema } } },
+      404: { description: "Memory not found" },
+    },
+  }),
+  (c) => {
+    const { project_id, author, session_id, reason, ...fields } = c.req.valid("json");
+    return c.json(
+      store().update(project_id, c.req.valid("param").name, fields, {
+        author: author ?? API_AUTHOR,
+        session_id,
+        reason,
+      }),
+    );
+  },
+);
 
-function toDto(m: typeof memories.$inferSelect) {
-  return {
-    id: m.id,
-    title: m.title ?? null,
-    type: (m.type ?? "fact") as "fact" | "decision" | "event" | "rule" | "discovery",
-    content: m.content,
-    source: m.source ?? null,
-    scope: m.scope ?? null,
-    project_id: m.project_id ?? null,
-    tags: m.tags ?? null,
-    importance: m.importance,
-    expires_at: m.expires_at?.toISOString() ?? null,
-    created_at: m.created_at.toISOString(),
-    updated_at: m.updated_at.toISOString(),
-  };
-}
+app.openapi(
+  createRoute({
+    method: "delete",
+    path: "/memories/{name}",
+    tags: ["Memory"],
+    summary: "Delete a memory (revertible from its history)",
+    request: {
+      params: NameParam,
+      query: ProjectQuery.extend(Writer),
+    },
+    responses: {
+      204: { description: "Deleted" },
+      404: { description: "Memory not found" },
+    },
+  }),
+  (c) => {
+    const { project_id, author, session_id } = c.req.valid("query");
+    store().remove(project_id, c.req.valid("param").name, {
+      author: author ?? API_AUTHOR,
+      session_id,
+    });
+    return c.body(null, 204);
+  },
+);
 
-const SELECT_COLS = `m.id, m.title, m.type, m.content, m.source, m.scope, m.project_id, m.tags,
-  m.importance, m.expires_at, m.created_at, m.updated_at`;
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/memories/{name}/history",
+    tags: ["Memory"],
+    summary: "Changes to a memory, newest first",
+    request: { params: NameParam, query: ProjectQuery },
+    responses: {
+      200: {
+        description: "Changes",
+        content: {
+          "application/json": { schema: z.object({ changes: z.array(MemoryChangeSchema) }) },
+        },
+      },
+    },
+  }),
+  (c) =>
+    c.json({
+      changes: store().history(c.req.valid("query").project_id, c.req.valid("param").name),
+    }),
+);
 
-app.openapi(searchRoute, async (c) => {
-  const db = getDb();
-  const { q, scope, type, project_id, limit } = c.req.valid("query");
-  const sqlite = (db as unknown as { $client: Database }).$client;
-  const safe = q.replace(/["]/g, " ").trim();
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/memories/{name}/revert",
+    tags: ["Memory"],
+    summary: "Restore the state from before a change, guarded by the latest change id",
+    request: {
+      params: NameParam,
+      body: {
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                project_id: z.string().min(1),
+                change_id: z.string().min(1),
+                expected_change_id: z.string().min(1),
+                reason: z.string().trim().min(1).max(2000),
+                ...Writer,
+              })
+              .strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "The memory after the revert; null when the revert deleted it",
+        content: { "application/json": { schema: z.object({ memory: MemorySchema.nullable() }) } },
+      },
+      409: { description: "Memory changed since review" },
+    },
+  }),
+  (c) => {
+    const input = c.req.valid("json");
+    const memory = store().revert(
+      input.project_id,
+      c.req.valid("param").name,
+      input.change_id,
+      input.expected_change_id,
+      { reason: input.reason, author: input.author ?? "human", session_id: input.session_id },
+    );
+    return c.json({ memory });
+  },
+);
 
-  const scopeClause = scope ? " AND m.scope = ?" : "";
-  const typeClause = type ? " AND m.type = ?" : "";
-  const projectClause = project_id ? " AND m.project_id = ?" : "";
-  const filterParams: (string | number)[] = [
-    ...(scope ? [scope] : []),
-    ...(type ? [type] : []),
-    ...(project_id ? [project_id] : []),
-  ];
-
-  let rows: RawRow[] = [];
-
-  const tryFts = (table: string, expr: string): RawRow[] => {
-    try {
-      return sqlite
-        .query(
-          `SELECT ${SELECT_COLS} FROM ${table} f JOIN memories m ON m.id = f.id
-           WHERE f.${table} MATCH ?${scopeClause}${typeClause}${projectClause}
-           AND (m.expires_at IS NULL OR m.expires_at > unixepoch())
-           ORDER BY bm25(${table}, 0, 1.0, 3.0, 1.5, 0) LIMIT ?`,
-        )
-        .all(expr, ...filterParams, limit) as RawRow[];
-    } catch {
-      return [];
-    }
-  };
-
-  const words = safe.split(/\s+/).filter(Boolean);
-  const andExpr = words.join(" AND ");
-  const orExpr = words.join(" OR ");
-
-  rows = tryFts("memories_fts", andExpr);
-  if (rows.length === 0) rows = tryFts("memories_fts", orExpr);
-  if (rows.length === 0) rows = tryFts("memories_fts_trigram", andExpr);
-  if (rows.length === 0) rows = tryFts("memories_fts_trigram", orExpr);
-
-  if (rows.length === 0) {
-    const fallbackParams: (string | number)[] = [`%${safe.toLowerCase()}%`, ...filterParams, limit];
-    rows = sqlite
-      .query(
-        `SELECT ${SELECT_COLS} FROM memories m
-         WHERE m.content LIKE ?${scopeClause}${typeClause}${projectClause}
-         AND (m.expires_at IS NULL OR m.expires_at > unixepoch())
-         ORDER BY m.created_at DESC LIMIT ?`,
-      )
-      .all(...fallbackParams) as RawRow[];
-  }
-
-  return c.json({ results: rows.map(rawToDto) });
-});
-
-app.openapi(listRoute, async (c) => {
-  const db = getDb();
-  const { scope, type, project_id, limit } = c.req.valid("query");
-  const sqlite = (db as unknown as { $client: Database }).$client;
-
-  const conditions: string[] = [];
-  const params: (string | number)[] = [];
-  if (scope) {
-    conditions.push("scope = ?");
-    params.push(scope);
-  }
-  if (type) {
-    conditions.push("type = ?");
-    params.push(type);
-  }
-  if (project_id) {
-    conditions.push("project_id = ?");
-    params.push(project_id);
-  }
-  params.push(limit);
-
-  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-  const rows = sqlite
-    .query(`SELECT ${SELECT_COLS} FROM memories m ${where} ORDER BY m.created_at DESC LIMIT ?`)
-    .all(...params) as RawRow[];
-
-  return c.json({ memories: rows.map(rawToDto) });
-});
-
-app.openapi(createRoute_, async (c) => {
-  const db = getDb();
-  const body = c.req.valid("json");
-  const result = new MemoryStore(getSqlite(db)).store({
-    ...body,
-    expires_at: body.expires_at ? new Date(body.expires_at) : undefined,
-    actor: API_ACTOR,
-  });
-  const memoryId = result.status === "skipped" ? result.existing_id : result.id;
-  const mem = await db.query.memories.findFirst({ where: eq(memories.id, memoryId) });
-  if (!mem) throw new NotFoundError("Memory", memoryId);
-  const similar = result.status === "merged" ? [] : result.similar;
-  const response = {
-    ...toDto(mem),
-    status: result.status,
-    similar,
-    superseded: result.superseded,
-    ...(result.status === "skipped" ? { existing_id: result.existing_id } : {}),
-    ...(result.status === "merged" ? { merged: result.merged } : {}),
-    ...(similar.length > 0 ? { hint: SIMILAR_MEMORY_HINT } : {}),
-  };
-  return c.json(response, result.status === "added" ? 201 : 200);
-});
-
-app.openapi(updateRoute, async (c) => {
-  const db = getDb();
-  const { id } = c.req.valid("param");
-  const body = c.req.valid("json");
-  const store = new MemoryStore(getSqlite(db));
-  const { supersedes, session_id, ...fields } = body;
-  store.update(id, fields, { actor: API_ACTOR, session_id }, supersedes);
-  const mem = await db.query.memories.findFirst({ where: eq(memories.id, id) });
-  return c.json(toDto(mem as NonNullable<typeof mem>));
-});
-
-app.openapi(deleteRoute, async (c) => {
-  const db = getDb();
-  const { id } = c.req.valid("param");
-  new MemoryStore(getSqlite(db)).remove(id, { actor: API_ACTOR });
-  return new Response(null, { status: 204 });
-});
-
-export { app as memoriesRouter };
+export const memoriesRouter = app;

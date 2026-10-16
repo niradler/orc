@@ -28,11 +28,11 @@ ORC fixes this. Shared memory across every session. A task board where agents su
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | **Agent orchestration**   | Task loop spawns workers across backends (Claude Code, Codex, Gemini, Copilot, A2A), manages concurrency and review cycles         |
 | **Human-in-the-loop**     | Agents submit work for your approval via CLI, Telegram, or Slack before anything lands                                             |
-| **Shared memory**         | Decisions, rules, and discoveries stored once, searchable by any session via ranked full-text search                               |
+| **Shared memory**         | Short project facts (ports, conventions, gotchas, decisions), ranked by priority and loaded into every session's context           |
 | **Task board**            | `todo → queued → doing → review → done` with dependency tracking, priority, and automatic unblocking                               |
 | **Multi-backend routing** | Route to Claude (in-process, nothing to install), ACPX (14+ agents), agentapi, or remote A2A endpoints — with `orc doctor` reporting which are usable |
 | **Job runner**            | Cron, file-watch, webhook, or manual triggers with full run history                                                                |
-| **MCP server**            | 34 tools connect any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) compatible agent — stdio or Streamable HTTP   |
+| **MCP server**            | 54 tools connect any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) compatible agent — stdio or Streamable HTTP   |
 | **Session continuity**    | Snapshots survive context compaction so agents resume where they left off                                                          |
 | **Gateway**               | Approve work, search memory, and chat with live agents from Telegram or Slack                                                      |
 | **Knowledge search**      | Index document collections (markdown, notes, wikis) and search them via BM25 or hybrid (vector + reranking)                        |
@@ -112,7 +112,7 @@ orc project use my-app
 
 # 3. Add tasks and memories - everything auto-scopes to my-app
 orc task add "Fix the auth bug" --priority high
-orc mem add "Use RWMutex for token refresh" --type decision
+orc mem add token-refresh-lock -d "Check before touching token refresh" -c "Use RWMutex for token refresh" --priority 60
 orc job add nightly --command "bun run test" --trigger cron --cron "0 22 * * *"
 
 # 4. See everything
@@ -204,7 +204,7 @@ Add to `~/.claude/settings.json`:
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|StrReplace|EditNotebook|Bash|Shell|Agent|EnterPlanMode|ExitPlanMode|mcp__orc__task_|mcp__orc__memory_store|mcp__orc__memory_delete|mcp__orc__job_run|mcp__orc__job_create|mcp__orc__job_update",
+        "matcher": "Write|Edit|MultiEdit|StrReplace|EditNotebook|Bash|Shell|Agent|EnterPlanMode|ExitPlanMode|mcp__orc__task_|mcp__orc__memory_create|mcp__orc__memory_delete|mcp__orc__job_run|mcp__orc__job_create|mcp__orc__job_update",
         "hooks": [
           {
             "type": "command",
@@ -374,7 +374,7 @@ orc project add my-app -d "Main application"
 orc project use my-app       # set active
 
 orc task list                 # scoped to my-app
-orc mem search "auth"         # scoped to my-app
+orc mem list -q auth          # scoped to my-app
 orc task list -p infra        # override to different project
 orc task list --no-project    # see everything
 ```
@@ -385,21 +385,20 @@ MCP tools follow the same logic - pass `project: "name"` to scope, or omit to us
 
 ### Memory
 
-Store decisions, conventions, and discoveries that persist across all sessions:
+A memory is a short project fact worth knowing next session: ports, conventions, gotchas,
+decisions, pointers. Each has a lowercase-hyphenated `name` (unique per project), a
+`description` saying when it matters, `content` (up to 800 characters by default) and an
+optional `priority` from 0 to 100. `context` loads the top 30 memories by priority; agents
+then read the ones they need. Procedures and long guidance belong in skills.
 
 ```bash
-orc mem add "All IDs are ULIDs" --type rule
-orc mem add "Use PostgreSQL for concurrent writes" --type decision
-orc mem search "authentication"
+orc mem add ulid-ids -d "Check before adding a table or ID field" -c "All IDs are ULIDs" --priority 90
+orc mem list -q ids                    # search names and descriptions
+orc mem show ulid-ids
+orc mem edit ulid-ids --priority 80 -r "Narrower than we thought"
+orc mem history ulid-ids               # every change, with before/after
+orc mem revert ulid-ids <change-id> --expected-change-id <latest-change-id> -r "Undo mistaken edit"
 ```
-
-| Type        | Weight | Use for                                         |
-| ----------- | ------ | ----------------------------------------------- |
-| `rule`      | High   | Conventions: "all IDs are ULIDs"                |
-| `decision`  | High   | Choices: "use PostgreSQL for concurrent writes" |
-| `discovery` | Medium | Findings: "token refresh has a race condition"  |
-| `event`     | Low    | Things that happened: "deployed v1.0"           |
-| `fact`      | Low    | General knowledge (default)                     |
 
 ### Knowledge
 
@@ -560,7 +559,8 @@ npx skills add niradler/orc --all -g
 | --------------- | -------------------------------------------------------------------------- |
 | `orc-session`   | Session start, context compaction, resuming work                           |
 | `orc-tasks`     | Task creation, status updates, HITL review, task decomposition             |
-| `orc-knowledge` | Storing decisions, searching memory, "remember this", "what did we decide" |
+| `orc-memory`    | Short project facts, "remember this", "what did we decide"                 |
+| `orc-knowledge` | Searching indexed docs, managing knowledge collections                     |
 | `orc-gateway`   | Telegram/Slack setup, remote approval, live agent sessions                 |
 
 ### Built-in skill templates
@@ -662,7 +662,7 @@ Tools are available to any connected agent. Start every session with `context`.
 | Category      | Tools                                                                                                                                       |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Project**   | `project_list`                                                                                                                              |
-| **Memory**    | `context`, `memory_search`, `memory_get`, `memory_store`, `memory_update`                                                                   |
+| **Memory**    | `context`, `memory_list`, `memory_read`, `memory_create`, `memory_update`, `memory_delete`, `memory_history`, `memory_revert`                |
 | **Task**      | `task_list`, `task_get`, `task_create`, `task_update`, `task_batch_create`                                                                  |
 | **Skill**     | `skill_list`, `skill_read`, `skill_create`                                                                                                  |
 | **Agent**     | `agent_list`, `agent_read`, `agent_create`, `agent_package_list`, `agent_package_read`, `agent_package_import`                               |
@@ -691,8 +691,10 @@ Runs on port 7700 with auto-generated OpenAPI spec.
 | `GET/POST/PATCH/DELETE` | `/tasks`                       | CRUD tasks                     |
 | `GET/POST`              | `/tasks/{id}/notes`            | Task notes                     |
 | `GET/POST/DELETE`       | `/tasks/{id}/links`            | Task dependencies              |
-| `GET/POST/DELETE`       | `/memories`                    | CRUD memories                  |
-| `GET`                   | `/memories/search`             | BM25 search                    |
+| `GET/POST`              | `/memories`                    | List (`q`, `sort`) / create    |
+| `GET/PATCH/DELETE`      | `/memories/{name}`             | Read / update / delete by name |
+| `GET`                   | `/memories/{name}/history`     | Change history                 |
+| `POST`                  | `/memories/{name}/revert`      | Revert a change                |
 | `GET`                   | `/knowledge/search`            | Search documents (BM25/hybrid) |
 | `GET`                   | `/knowledge/documents/{id}`    | Get document by docid          |
 | `GET/POST/DELETE`       | `/knowledge/collections`       | CRUD collections               |
@@ -728,7 +730,7 @@ orc doctor                       Check which agent backends are usable here
 
 orc project list|add|show|use|update|archive
 orc task list|add|show|update|done|review|approve|reject|delete
-orc mem list|add|search
+orc mem list|show|add|edit|delete|history|revert
 orc job list|add|run|runs
 orc session list|show|log
 orc skill list|show

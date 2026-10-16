@@ -95,22 +95,10 @@ export type Comment = {
   created_at: string;
 };
 
-export type MemoryType = "fact" | "decision" | "event" | "rule" | "discovery";
-
-export type Memory = {
-  id: string;
-  project_id: string | null;
-  title: string | null;
-  type: MemoryType;
-  content: string;
-  source: string | null;
-  scope: string | null;
-  tags: string[] | null;
-  importance: "low" | "normal" | "high" | "critical";
-  expires_at: string | null;
-  created_at: string;
-  updated_at: string;
-};
+export type Memory = components["schemas"]["Memory"];
+export type MemoryListItem = components["schemas"]["MemoryListItem"];
+export type MemoryChange = components["schemas"]["MemoryChange"];
+export type MemoryListSort = "reads" | "recent" | "priority";
 
 export type Job = {
   id: string;
@@ -329,28 +317,9 @@ export type TaskHandoffInput = {
   force?: boolean;
 };
 
-export type CreateMemoryInput = {
-  session_id?: string;
-  content: string;
-  project_id?: string;
-  type?: "fact" | "decision" | "event" | "rule" | "discovery";
-  source?: string;
-  scope?: string;
-  tags?: string[];
-  importance?: "low" | "normal" | "high" | "critical";
-  expires_at?: string;
-};
-
-export type UpdateMemoryInput = {
-  session_id?: string;
-  content?: string;
-  title?: string;
-  type?: "fact" | "decision" | "event" | "rule" | "discovery";
-  source?: string;
-  scope?: string;
-  tags?: string[];
-  importance?: "low" | "normal" | "high" | "critical";
-};
+export type CreateMemoryInput = components["schemas"]["CreateMemory"];
+/** Fields to change on a memory; identity (project_id, name) is passed separately. */
+export type UpdateMemoryInput = Omit<components["schemas"]["UpdateMemory"], "project_id">;
 
 export type CreateJobInput = {
   name: string;

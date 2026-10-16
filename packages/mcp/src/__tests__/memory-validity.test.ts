@@ -1,17 +1,20 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resetConfig } from "@orc/core/config";
-import { closeDb, createTestDb, getDb } from "@orc/db/client";
-import { memories, projects, sessions, tasks } from "@orc/db/schema";
-import { getLayer2, getLayer3, searchLayer1 } from "../search.js";
+import { closeDb, createTestDb, getDb, getSqlite } from "@orc/db/client";
+import { MemoryStore } from "@orc/db/memories";
+import { projects, sessions, tasks } from "@orc/db/schema";
 import { executeTool } from "../tools.js";
+
+const originalActiveProject = process.env.ORC_ACTIVE_PROJECT;
 
 beforeAll(async () => {
   process.env.ORC_DB_PATH = ":memory:";
+  process.env.ORC_ACTIVE_PROJECT = "";
   resetConfig();
   const db = createTestDb();
   await db.insert(projects).values([
-    { id: "validity-a", name: "validity-a" },
-    { id: "validity-b", name: "validity-b" },
+    { id: "mem-a", name: "mem-a" },
+    { id: "mem-b", name: "mem-b" },
     { id: "scope-a", name: "scope-a" },
   ]);
 });
@@ -19,39 +22,205 @@ beforeAll(async () => {
 afterAll(() => {
   closeDb();
   delete process.env.ORC_DB_PATH;
+  if (originalActiveProject === undefined) delete process.env.ORC_ACTIVE_PROJECT;
+  else process.env.ORC_ACTIVE_PROJECT = originalActiveProject;
   resetConfig();
 });
 
-describe("Memory eligibility", () => {
-  test("should scope startup by explicit ID or null without inheriting a project name", async () => {
+const store = () => new MemoryStore(getSqlite());
+
+describe("MCP memory tools", () => {
+  test("should require a project", async () => {
+    await expect(executeTool("memory_list", {})).rejects.toThrow("Memories belong to a project");
+    await expect(
+      executeTool("memory_create", { name: "no-project", description: "d", content: "c" }),
+    ).rejects.toThrow("Memories belong to a project");
+  });
+
+  test("should create, read and list a memory, counting mcp reads", async () => {
+    expect(
+      await executeTool("memory_create", {
+        name: "api-port",
+        description: "Which port the API listens on",
+        content: "The API listens on 7700 by default.",
+        priority: 80,
+        project: "mem-a",
+      }),
+    ).toBe("Created memory api-port");
+
+    const read = await executeTool("memory_read", { name: "api-port", project: "mem-a" });
+    expect(read).toBe(
+      "# api-port (priority 80)\nWhich port the API listens on\n\nThe API listens on 7700 by default.",
+    );
+    await executeTool("memory_read", { name: "api-port", project: "mem-a" });
+
+    const [item] = store().list("mem-a");
+    expect(item?.reads_by_source).toEqual({ mcp: 2, cli: 0, api: 0, ui: 0 });
+
+    const listing = await executeTool("memory_list", { project: "mem-a" });
+    expect(listing).toContain("api-port");
+    expect(listing).toContain("[p80] (2 reads) - Which port the API listens on");
+    expect(await executeTool("memory_list", { project: "mem-b" })).toBe("No memories found.");
+  });
+
+  test("should reject a duplicate name and a missing memory", async () => {
+    await expect(
+      executeTool("memory_create", {
+        name: "api-port",
+        description: "again",
+        content: "again",
+        project: "mem-a",
+      }),
+    ).rejects.toThrow("already exists");
+    await expect(
+      executeTool("memory_read", { name: "missing-memory", project: "mem-a" }),
+    ).rejects.toThrow("not found");
+  });
+
+  test("should tell the caller to make over-cap content a skill", async () => {
+    await expect(
+      executeTool("memory_create", {
+        name: "too-long",
+        description: "Too long for a memory",
+        content: "x".repeat(801),
+        project: "mem-a",
+      }),
+    ).rejects.toThrow("make it a skill");
+    expect(
+      store()
+        .list("mem-a")
+        .map((m) => m.name),
+    ).not.toContain("too-long");
+  });
+
+  test("should update, delete and revert with history", async () => {
+    expect(
+      await executeTool("memory_update", {
+        name: "api-port",
+        content: "The API listens on 7711 in dev.",
+        priority: null,
+        reason: "dev port changed",
+        project: "mem-a",
+      }),
+    ).toBe("Updated memory api-port");
+    const updated = store().get("mem-a", "api-port");
+    expect(updated.content).toBe("The API listens on 7711 in dev.");
+    expect(updated.description).toBe("Which port the API listens on");
+    expect(updated.priority).toBeNull();
+
+    expect(await executeTool("memory_delete", { name: "api-port", project: "mem-a" })).toContain(
+      "Deleted memory api-port",
+    );
+    expect(() => store().get("mem-a", "api-port")).toThrow("not found");
+
+    const { changes } = JSON.parse(
+      await executeTool("memory_history", { name: "api-port", project: "mem-a" }),
+    ) as { changes: { id: string; action: string; reason: string | null }[] };
+    expect(changes.map((c) => c.action)).toEqual([
+      "memory.deleted",
+      "memory.updated",
+      "memory.created",
+    ]);
+    expect(changes[1]?.reason).toBe("dev port changed");
+
+    const [deleted] = changes;
+    expect(
+      await executeTool("memory_revert", {
+        name: "api-port",
+        change_id: deleted?.id,
+        expected_change_id: deleted?.id,
+        reason: "deleted by mistake",
+        project: "mem-a",
+      }),
+    ).toBe("Reverted memory api-port");
+    expect(store().get("mem-a", "api-port").content).toBe("The API listens on 7711 in dev.");
+
+    await expect(
+      executeTool("memory_revert", {
+        name: "api-port",
+        change_id: deleted?.id,
+        expected_change_id: deleted?.id,
+        reason: "stale",
+        project: "mem-a",
+      }),
+    ).rejects.toThrow("Memory changed since review");
+  });
+
+  test("should record the agent session id and list its memories in session_log", async () => {
+    await executeTool(
+      "memory_create",
+      {
+        name: "session-fact",
+        description: "Written during a known session",
+        content: "fact",
+        project: "mem-b",
+      },
+      { agentSessionId: "native-session-1" },
+    );
+    await executeTool(
+      "memory_update",
+      { name: "session-fact", content: "fact v2", project: "mem-b" },
+      { agentSessionId: "native-session-1" },
+    );
+    await executeTool(
+      "memory_create",
+      { name: "other-fact", description: "Other session", content: "x", project: "mem-b" },
+      { agentSessionId: "native-session-2" },
+    );
+    expect(store().get("mem-b", "session-fact").session_id).toBe("native-session-1");
+
+    const logged = await executeTool("session_log", {
+      agent: "test",
+      summary: "Did work",
+      session_id: "native-session-1",
+      project: "mem-b",
+    });
+    expect(logged).toMatch(/^Session logged:/);
+    const row = getSqlite()
+      .query<{ summary: string }, []>(
+        "SELECT summary FROM sessions WHERE summary LIKE 'Did work%' LIMIT 1",
+      )
+      .get();
+    expect(row?.summary).toContain("Memories: session-fact");
+    expect(row?.summary).not.toContain("other-fact");
+  });
+});
+
+describe("Memory context and search", () => {
+  test("should list memories in context by priority", async () => {
+    for (const [name, priority] of [
+      ["low-priority", 10],
+      ["unscored", null],
+      ["high-priority", 90],
+    ] as const)
+      store().create({
+        project_id: "scope-a",
+        name,
+        description: `${name} description`,
+        content: "content",
+        priority,
+      });
+    const context = await executeTool("context", { project: "scope-a" });
+    const section = context.split("## Memories")[1] ?? "";
+    expect(section).toContain("high-priority [p90] - high-priority description");
+    expect(section).toContain("unscored - unscored description");
+    const order = ["high-priority", "low-priority", "unscored"].map((n) => section.indexOf(n));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(order[0]).toBeGreaterThanOrEqual(0);
+    expect(await executeTool("context", { project: "mem-b" })).not.toContain("high-priority");
+  });
+
+  test("should scope context by explicit ID or null without inheriting a project name", async () => {
     await getDb()
       .insert(tasks)
       .values([
-        {
-          id: "scope-task-a",
-          title: "Assigned scoped task",
-          project_id: "scope-a",
-        },
+        { id: "scope-task-a", title: "Assigned scoped task", project_id: "scope-a" },
         { id: "scope-task-none", title: "Unassigned scoped task" },
-      ]);
-    await getDb()
-      .insert(memories)
-      .values([
-        {
-          id: "scope-memory-a",
-          content: "Assigned scoped memory",
-          project_id: "scope-a",
-        },
-        { id: "scope-memory-none", content: "Unassigned scoped memory" },
       ]);
     await getDb()
       .insert(sessions)
       .values([
-        {
-          id: "scope-session-none",
-          agent: "test",
-          summary: "Unassigned session summary",
-        },
+        { id: "scope-session-none", agent: "test", summary: "Unassigned session summary" },
         {
           id: "scope-session-a",
           agent: "test",
@@ -64,140 +233,57 @@ describe("Memory eligibility", () => {
       project_id: "scope-a",
     });
     expect(assigned).toContain("Assigned scoped task");
-    expect(assigned).toContain("Assigned scoped memory");
+    expect(assigned).toContain("high-priority");
     expect(assigned).toContain("Assigned session summary");
     expect(assigned).not.toContain("Unassigned");
-    const unassigned = await executeTool("context", {
-      project: "validity-a",
-      project_id: null,
-    });
+
+    const unassigned = await executeTool("context", { project: "mem-a", project_id: null });
     expect(unassigned).toContain("Unassigned scoped task");
-    expect(unassigned).toContain("Unassigned scoped memory");
+    expect(unassigned).toContain("## Memories\n  (none)");
     expect(unassigned).toContain("Unassigned session summary");
     expect(unassigned).not.toContain("Assigned scoped");
-    expect(unassigned).not.toContain("Assigned session summary");
+
     await expect(executeTool("context", { project_id: "missing-id" })).rejects.toThrow(
       "Project not found",
     );
-  });
-  test("should fail closed for an unknown requested project", async () => {
-    await expect(executeTool("context", { project: "missing-validity-project" })).rejects.toThrow(
+    await expect(executeTool("context", { project: "missing-project" })).rejects.toThrow(
       "Project not found",
     );
   });
-  test("should exclude expired evidence from every search layer without losing historical reads", async () => {
-    const db = getDb();
-    await db.insert(memories).values([
-      {
-        id: "expired-evidence",
-        content: "validityneedle punctuation::needle",
-        expires_at: new Date(Date.now() - 60_000),
-      },
-      {
-        id: "current-evidence",
-        content: "validityneedle punctuation::needle",
-        expires_at: new Date(Date.now() + 60_000),
-      },
-    ]);
-    for (const query of ["validityneedle", "idityneed", "punctuation::needle"]) {
-      const ids = searchLayer1(query).map((result) => result.id);
-      expect(ids).toContain("current-evidence");
-      expect(ids).not.toContain("expired-evidence");
-    }
-    expect(getLayer3(["expired-evidence"])[0]?.id).toBe("expired-evidence");
-  });
 
-  test("should isolate timeline neighbors including the unassigned project", async () => {
-    const now = Date.now();
-    await getDb()
-      .insert(memories)
-      .values([
-        {
-          id: "timeline-target",
-          content: "target",
-          project_id: "validity-a",
-          created_at: new Date(now - 20_000),
-        },
-        {
-          id: "timeline-before",
-          content: "before",
-          project_id: "validity-a",
-          created_at: new Date(now - 30_000),
-        },
-        {
-          id: "timeline-after",
-          content: "after",
-          project_id: "validity-a",
-          created_at: new Date(now - 10_000),
-        },
-        {
-          id: "timeline-other",
-          content: "other",
-          project_id: "validity-b",
-          created_at: new Date(now - 15_000),
-        },
-        {
-          id: "timeline-global",
-          content: "global",
-          created_at: new Date(now - 15_000),
-        },
-        {
-          id: "timeline-expired",
-          content: "expired",
-          project_id: "validity-a",
-          created_at: new Date(now - 12_000),
-          expires_at: new Date(now - 1_000),
-        },
-      ]);
-    const timeline = getLayer2("timeline-target");
-    expect(timeline?.before.map((item) => item.id)).toEqual(["timeline-before"]);
-    expect(timeline?.after.map((item) => item.id)).toEqual(["timeline-after"]);
-    const global = getLayer2("timeline-global");
-    expect(
-      [...(global?.before ?? []), ...(global?.after ?? [])].map((item) => item.id),
-    ).not.toContain("timeline-target");
-  });
-
-  test("should rank all eligible memories before limiting startup context and scope its session", async () => {
-    const now = Date.now();
-    await getDb()
-      .insert(memories)
-      .values([
-        {
-          id: "standing-rule",
-          title: "Standing critical rule",
-          content: "standing rule",
-          project_id: "validity-a",
-          type: "rule",
-          importance: "critical",
-          created_at: new Date(now - 90 * 86_400_000),
-        },
-        {
-          id: "expired-rule",
-          title: "Expired critical rule",
-          content: "expired",
-          project_id: "validity-a",
-          type: "rule",
-          importance: "critical",
-          expires_at: new Date(now - 1_000),
-        },
-        ...Array.from({ length: 40 }, (_, index) => ({
-          id: `noise-${index}`,
-          content: "routine",
-          project_id: "validity-a",
-          type: "event" as const,
-          importance: "low" as const,
-        })),
-      ]);
-    await getDb().insert(sessions).values({
-      id: "other-session",
-      agent: "test",
-      project_id: "validity-b",
-      summary: "PRIVATE OTHER PROJECT SUMMARY",
+  test("should omit memories a wiki page cites from unified search", async () => {
+    for (const name of ["deploy-cited", "deploy-loose"])
+      store().create({
+        project_id: "mem-a",
+        name,
+        description: `zebradeploy note ${name}`,
+        content: "content",
+      });
+    const before = await executeTool("search", {
+      query: "zebradeploy",
+      resources: ["memories"],
+      project: "mem-a",
     });
-    const context = await executeTool("context", { project: "validity-a" });
-    expect(context).toContain("Standing critical rule");
-    expect(context).not.toContain("Expired critical rule");
-    expect(context).not.toContain("PRIVATE OTHER PROJECT SUMMARY");
+    expect(before).toContain("[memory] mem-a/deploy-cited");
+    expect(before).toContain("[memory] mem-a/deploy-loose");
+
+    await executeTool("wiki_write", {
+      project: "mem-a",
+      slug: "deploy-guide",
+      kind: "procedure",
+      title: "Deploy guide",
+      summary: "How deploys work",
+      content: "Compiled from memory.",
+      sources: ["memory:deploy-cited"],
+      note: "compile",
+      expected_revision: 0,
+    });
+    const after = await executeTool("search", {
+      query: "zebradeploy",
+      resources: ["memories"],
+      project: "mem-a",
+    });
+    expect(after).not.toContain("deploy-cited");
+    expect(after).toContain("[memory] mem-a/deploy-loose");
   });
 });

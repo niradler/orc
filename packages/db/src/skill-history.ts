@@ -10,10 +10,21 @@ import {
   type SkillFull,
   type SkillMeta,
   type SkillRefContent,
+  validateAuthoredSkillDescription,
 } from "@orc/core/skill-service";
 import { type SkillUpdate, SkillUpdateSchema } from "@orc/core/wiki";
 import { AuditLog } from "./audit.js";
-import { rankSkillMatches } from "./skill-search.js";
+import {
+  addReads,
+  compareByReads,
+  compareByRecent,
+  emptyReadUsage,
+  type ListSort,
+  type ReadSource,
+  type ReadsBySource,
+  type ReadUsage,
+  rankItems,
+} from "./read-usage.js";
 import { WikiStore } from "./wiki.js";
 
 export function installSkillHistory(sqlite: Database): void {
@@ -52,20 +63,14 @@ export type SkillMutation = {
   author: string;
 };
 export type EffectiveSkill = SkillFull & { mutation?: SkillMutation };
-export type SkillListSort = "reads" | "recent";
+export type SkillListSort = ListSort;
 export type SkillListOptions = ListSkillsOpts & { sort?: SkillListSort | undefined };
 /** Where a skill read came from; `ui` is a person browsing the web app, the rest are agents. */
-export type SkillReadSource = "mcp" | "cli" | "api" | "ui";
-export type SkillReadsBySource = Record<SkillReadSource, number>;
-export type SkillUsage = {
-  /** Agent reads of the main SKILL.md (mcp + cli + api); drives the "reads" sort. */
-  read_count: number;
-  /** Main SKILL.md reads per source, including ui. */
-  reads_by_source: SkillReadsBySource;
+export type SkillReadSource = ReadSource;
+export type SkillReadsBySource = ReadsBySource;
+export type SkillUsage = ReadUsage & {
   /** Supporting-file reads from any source. */
   ref_read_count: number;
-  /** Latest agent read of the main SKILL.md. */
-  last_read_at: number | null;
 };
 type SkillUsageRow = {
   skill_name: string;
@@ -89,26 +94,7 @@ function fileCreatedAt(path: string): number {
   return Math.floor(created / 1000);
 }
 function emptyUsage(): SkillUsage {
-  return {
-    read_count: 0,
-    reads_by_source: { mcp: 0, cli: 0, api: 0, ui: 0 },
-    ref_read_count: 0,
-    last_read_at: null,
-  };
-}
-function compareByReads(left: SkillListItem, right: SkillListItem): number {
-  return (
-    right.read_count - left.read_count ||
-    right.activity_at - left.activity_at ||
-    left.name.localeCompare(right.name)
-  );
-}
-function compareByRecent(left: SkillListItem, right: SkillListItem): number {
-  return (
-    right.activity_at - left.activity_at ||
-    right.read_count - left.read_count ||
-    left.name.localeCompare(right.name)
-  );
+  return { ...emptyReadUsage(), ref_read_count: 0 };
 }
 
 export class SkillHistory {
@@ -119,15 +105,7 @@ export class SkillHistory {
       this.withUsage(this.metadata(skill, projectId), usage),
     );
     if (!opts?.include_hidden) skills = skills.filter((skill) => !skill.discovery_hidden);
-    const compare = opts?.sort === "recent" ? compareByRecent : compareByReads;
-    if (!opts?.q) return skills.sort(compare);
-    const ranks = rankSkillMatches(skills, opts.q);
-    return skills
-      .filter((skill) => ranks.has(skill.name))
-      .sort(
-        (left, right) =>
-          (ranks.get(left.name) ?? 0) - (ranks.get(right.name) ?? 0) || compare(left, right),
-      );
+    return rankItems(skills, opts?.sort === "recent" ? compareByRecent : compareByReads, opts?.q);
   }
   recordRead(name: string, projectId: string | null, source: SkillReadSource, ref?: string): void {
     const file = ref === undefined || ref === "SKILL.md" ? "" : ref;
@@ -147,14 +125,8 @@ export class SkillHistory {
     const usage = new Map<string, SkillUsage>();
     for (const row of rows) {
       const stats = usage.get(row.skill_name) ?? emptyUsage();
-      stats.reads_by_source[row.source] += row.main_reads;
+      addReads(stats, row.source, row.main_reads, row.last_main_read_at);
       stats.ref_read_count += row.ref_reads;
-      if (row.source !== "ui") {
-        stats.read_count += row.main_reads;
-        if (row.last_main_read_at !== null) {
-          stats.last_read_at = Math.max(stats.last_read_at ?? 0, row.last_main_read_at);
-        }
-      }
       usage.set(row.skill_name, stats);
     }
     return usage;
@@ -238,6 +210,7 @@ export class SkillHistory {
         throw new ConflictError(
           "Skill changed since it was read; reload and reconcile before updating",
         );
+      validateAuthoredSkillDescription(page.content, previous);
       this.apply(
         page.skill_name,
         page.project_id,

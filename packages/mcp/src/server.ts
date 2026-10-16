@@ -3,7 +3,13 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createLogger } from "@orc/core/logger";
 import { z } from "zod";
-import { executeTool, type ToolName, toolDefinitions } from "./tools.js";
+import {
+  agentSessionFromEnv,
+  executeTool,
+  type ToolName,
+  type ToolOptions,
+  toolDefinitions,
+} from "./tools.js";
 
 const logger = createLogger("mcp");
 
@@ -18,7 +24,7 @@ export function toolListing() {
   }));
 }
 
-export function createMcpServer(options: { publicApiBaseUrl?: string } = {}) {
+export function createMcpServer(options: ToolOptions = {}) {
   const server = new Server({ name: "orc", version: "0.0.1" }, { capabilities: { tools: {} } });
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -64,7 +70,7 @@ export function createMcpServer(options: { publicApiBaseUrl?: string } = {}) {
 }
 
 export async function startStdioServer() {
-  const server = createMcpServer();
+  const server = createMcpServer({ agentSessionId: agentSessionFromEnv() });
   const transport = new StdioServerTransport();
   await server.connect(transport);
   logger.info("MCP server running on stdio");

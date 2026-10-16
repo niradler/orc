@@ -25,119 +25,6 @@ afterAll(() => {
   delete process.env.ORC_DB_PATH;
 });
 
-// ── Memory tools ────────────────────────────────────────────────────────────
-
-describe("MCP memory tools", () => {
-  let memId: string;
-
-  test("memory_store persists a fact", async () => {
-    const result = await executeTool("memory_store", {
-      content: "The project uses ULIDs for all primary keys",
-      scope: "orc",
-      tags: ["convention"],
-      importance: "high",
-    });
-    expect(result).toMatch(/^Stored: /);
-    memId = result.replace("Stored: ", "").split(/\s/)[0]?.trim() ?? "";
-  });
-
-  test("memory_search finds stored fact by keyword", async () => {
-    const result = await executeTool("memory_search", {
-      query: "ULID primary keys",
-      limit: 5,
-    });
-    expect(result).toContain(shortId(memId));
-  });
-
-  test("memory_get fetches full content", async () => {
-    const result = await executeTool("memory_get", { ids: [memId] });
-    expect(result).toContain("ULIDs");
-  });
-});
-
-// ── Memory type classification ──────────────────────────────────────────────
-
-describe("Memory type & title", () => {
-  test("stores memory with type=decision and retrieves it", async () => {
-    const stored = await executeTool("memory_store", {
-      content: "We use Hono for the REST API because of typed routes",
-      title: "Framework choice: Hono",
-      type: "decision",
-      scope: "orc",
-    });
-    const id = stored.replace("Stored: ", "").split(/\s/)[0]?.trim() ?? "";
-
-    const got = await executeTool("memory_get", { ids: [id] });
-    expect(got).toContain("[decision]");
-    expect(got).toContain("Hono");
-  });
-
-  test("memory_search with type filter returns only matching type", async () => {
-    await executeTool("memory_store", {
-      content: "Always use strict TypeScript",
-      type: "rule",
-      scope: "orc",
-    });
-    await executeTool("memory_store", {
-      content: "Found a race condition in token refresh",
-      type: "discovery",
-      scope: "orc",
-    });
-
-    const ruleResults = await executeTool("memory_search", {
-      query: "TypeScript",
-      type: "rule",
-      limit: 5,
-    });
-    expect(ruleResults).toContain("strict TypeScript");
-    expect(ruleResults).not.toContain("race condition");
-  });
-
-  test("context weights rules and decisions higher than facts", async () => {
-    await executeTool("memory_store", {
-      content: "Never skip code review",
-      type: "rule",
-      importance: "critical",
-      scope: "orc",
-    });
-    await executeTool("memory_store", {
-      content: "A random low-importance fact about nothing",
-      type: "fact",
-      importance: "low",
-      scope: "orc",
-    });
-
-    const ctx = await executeTool("context", {});
-    const rulePos = ctx.indexOf("Never skip code review");
-    const factPos = ctx.indexOf("A random low-importance fact");
-
-    if (rulePos !== -1 && factPos !== -1) {
-      expect(rulePos).toBeLessThan(factPos);
-    } else {
-      expect(ctx).toContain("Never skip code review");
-    }
-  });
-});
-
-// ── Trigram search ──────────────────────────────────────────────────────────
-
-describe("Memory trigram search", () => {
-  test("finds partial word matches via trigram", async () => {
-    await executeTool("memory_store", {
-      content: "We use useCallback for memoizing event handlers in React",
-      scope: "frontend",
-    });
-
-    const result = await executeTool("memory_search", {
-      query: "useCallb",
-      scope: "frontend",
-      limit: 5,
-    });
-    expect(result).toContain("useCallback");
-    expect(result).toContain("(trigram)");
-  });
-});
-
 // ── Session event dedup & eviction ──────────────────────────────────────────
 
 describe("Session event dedup", () => {
@@ -327,10 +214,10 @@ describe("MCP job tools", () => {
 // ── Context layer ─────────────────────────────────────────────────────────────
 
 describe("MCP context tool", () => {
-  test("context returns active tasks and recent memories", async () => {
+  test("context returns active tasks and a memories section", async () => {
     const result = await executeTool("context", {});
     expect(result).toContain("Active Tasks");
-    expect(result).toContain("Key Memory");
+    expect(result).toContain("## Memories");
   });
 });
 
@@ -410,7 +297,10 @@ describe("MCP /mcp/tool HTTP endpoint", () => {
     app = createApp();
   });
 
-  test("POST /mcp/tool executes memory_store via API", async () => {
+  test("POST /mcp/tool executes memory_create via API", async () => {
+    const { getDb } = await import("@orc/db/client");
+    const { projects } = await import("@orc/db/schema");
+    await getDb().insert(projects).values({ id: "mcp-http-project", name: "mcp-http-project" });
     const res = await app.request("/api/mcp/tool", {
       method: "POST",
       headers: {
@@ -418,14 +308,19 @@ describe("MCP /mcp/tool HTTP endpoint", () => {
         Authorization: "Bearer test-secret",
       },
       body: JSON.stringify({
-        name: "memory_store",
-        args: { content: "Hook test fact", importance: "low" },
+        name: "memory_create",
+        args: {
+          name: "hook-test-fact",
+          description: "Hook test fact",
+          content: "Hook test fact content",
+          project: "mcp-http-project",
+        },
       }),
     });
 
     expect(res.status).toBe(200);
     const body = (await res.json()) as { result: string };
-    expect(body.result).toMatch(/^Stored: /);
+    expect(body.result).toBe("Created memory hook-test-fact");
   });
 
   test("POST /mcp/tool returns 400 for unknown tool name", async () => {
@@ -439,202 +334,6 @@ describe("MCP /mcp/tool HTTP endpoint", () => {
     });
 
     expect(res.status).toBe(400);
-  });
-});
-
-// ── Memory update ───────────────────────────────────────────────────────────
-
-describe("memory_update tool", () => {
-  let memId: string;
-
-  beforeAll(async () => {
-    const result = await executeTool("memory_store", {
-      content: "Original content for update test",
-      title: "Update test",
-      type: "fact",
-      scope: "testing",
-      importance: "normal",
-    });
-    memId = result.replace("Stored: ", "").split(/\s/)[0]?.trim() ?? "";
-  });
-
-  test("updates content and bumps updated_at", async () => {
-    const result = await executeTool("memory_update", {
-      id: memId,
-      content: "Updated content via memory_update",
-    });
-    expect(result).toContain("Updated:");
-    expect(result).toContain(memId);
-  });
-
-  test("updated content is found via search (FTS re-indexed)", async () => {
-    const result = await executeTool("memory_search", {
-      query: "Updated content via memory_update",
-      limit: 5,
-    });
-    expect(result).toContain(shortId(memId));
-  });
-
-  test("partial update preserves other fields", async () => {
-    await executeTool("memory_update", {
-      id: memId,
-      title: "New title only",
-    });
-    const got = await executeTool("memory_get", { ids: [memId] });
-    expect(got).toContain("New title only");
-    expect(got).toContain("Updated content via memory_update");
-    expect(got).toContain("[fact]");
-  });
-
-  test("update nonexistent returns not found", async () => {
-    await expect(
-      executeTool("memory_update", { id: "nonexistent", content: "should fail" }),
-    ).rejects.toThrow("not found");
-  });
-});
-
-// ── Source auto-detection ────────────────────────────────────────────────────
-
-describe("memory_store source metadata", () => {
-  test("auto-detects source from env", async () => {
-    process.env.ORC_AGENT = "test-agent";
-    process.env.ORC_SESSION_ID = "sess-123";
-    const result = await executeTool("memory_store", {
-      content: "Auto-source test memory",
-      type: "fact",
-    });
-    delete process.env.ORC_AGENT;
-    delete process.env.ORC_SESSION_ID;
-
-    const id = result.replace("Stored: ", "").split(/\s/)[0]?.trim() ?? "";
-    const got = await executeTool("memory_get", { ids: [id] });
-    expect(got).toContain("test-agent@sess-123");
-  });
-
-  test("explicit source overrides auto-detection", async () => {
-    process.env.ORC_AGENT = "test-agent";
-    const result = await executeTool("memory_store", {
-      content: "Explicit source test",
-      source: "my-custom-source",
-    });
-    delete process.env.ORC_AGENT;
-
-    const id = result.replace("Stored: ", "").split(/\s/)[0]?.trim() ?? "";
-    const got = await executeTool("memory_get", { ids: [id] });
-    expect(got).toContain("my-custom-source");
-    expect(got).not.toContain("test-agent");
-  });
-
-  test("falls back to 'unknown' when no env set", async () => {
-    delete process.env.ORC_AGENT;
-    delete process.env.CLAUDE_MODEL;
-    delete process.env.ORC_SESSION_ID;
-    const result = await executeTool("memory_store", {
-      content: "No-env source test",
-    });
-    const id = result.replace("Stored: ", "").split(/\s/)[0]?.trim() ?? "";
-    const got = await executeTool("memory_get", { ids: [id] });
-    expect(got).toContain("unknown");
-  });
-});
-
-// ── Dedup on store ───────────────────────────────────────────────────────────
-
-function storedId(result: string): string {
-  const match = result.match(
-    /^(?:Stored|Merged into|Skipped: near-identical to existing memory):? (\S+)/,
-  );
-  if (!match?.[1]) throw new Error(`No memory id in: ${result}`);
-  return match[1];
-}
-
-describe("memory_store dedup", () => {
-  test("should list similar memories and suggest merge_into or supersedes", async () => {
-    await executeTool("memory_store", {
-      content: "Always use biome for linting and formatting",
-      type: "rule",
-      scope: "code-style",
-    });
-
-    const result = await executeTool("memory_store", {
-      content: "Always use biome for linting and formatting code",
-      type: "rule",
-      scope: "code-style",
-    });
-    expect(result).toStartWith("Stored:");
-    expect(result).toContain("Similar memories");
-    expect(result).toContain("merge_into");
-  });
-
-  test("should skip a near-identical memory", async () => {
-    const first = await executeTool("memory_store", {
-      content: "Deploy previews live under the staging subdomain only",
-      type: "fact",
-    });
-    const second = await executeTool("memory_store", {
-      content: "Deploy previews live under the staging subdomain only.",
-      type: "fact",
-    });
-    expect(second).toStartWith("Skipped:");
-    expect(storedId(second)).toBe(storedId(first));
-  });
-
-  test("should merge into and supersede existing memories", async () => {
-    const original = storedId(
-      await executeTool("memory_store", { content: "Queue workers poll every 30 seconds" }),
-    );
-    const merged = await executeTool("memory_store", {
-      content: "Queue workers poll every 30 seconds and back off to 5 minutes when idle",
-      merge_into: [original],
-    });
-    expect(merged).toStartWith("Merged into:");
-    expect(merged).toContain(`Replaced: ${original}`);
-    const combined = storedId(merged);
-
-    const replacement = await executeTool("memory_store", {
-      content: "Queue workers are push-based now; polling was removed",
-      supersedes: [combined],
-    });
-    expect(replacement).toContain(`Superseded: ${combined}`);
-    const search = await executeTool("memory_search", { query: "queue workers poll" });
-    expect(search).not.toContain(original);
-    expect(search).not.toContain(combined);
-    await expect(executeTool("memory_update", { id: original, title: "stale" })).rejects.toThrow(
-      "memory.merged",
-    );
-  });
-
-  test("should not list similar memories for genuinely unique content", async () => {
-    const result = await executeTool("memory_store", {
-      content: "xylophone zebra platypus narwhal 9f8a7b6c",
-      type: "fact",
-      scope: "unique-test-scope-12345",
-    });
-    expect(result).not.toContain("Similar memories");
-  });
-});
-
-// ── Access-count scoring boost ───────────────────────────────────────────────
-
-describe("context() access-count scoring", () => {
-  test("frequently accessed memories score higher", async () => {
-    const stored = await executeTool("memory_store", {
-      content: "Frequently accessed memory for scoring test",
-      type: "fact",
-      importance: "low",
-    });
-    const id = stored.replace("Stored: ", "").split(/\s/)[0]?.trim() ?? "";
-
-    // Simulate access_count by searching for it multiple times
-    const { getSqlite } = await import("@orc/db/client");
-    const sqlite = getSqlite();
-    sqlite.query("UPDATE memories SET access_count = 20 WHERE id = ?").run(id);
-
-    const ctx = await executeTool("context", {});
-    // The memory should appear in context due to access boost
-    if (ctx.includes("Frequently accessed memory")) {
-      expect(ctx).toContain("Frequently accessed memory");
-    }
   });
 });
 
