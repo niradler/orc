@@ -24,6 +24,7 @@ import { rulesRouter } from "./routes/rules.js";
 import { searchRouter } from "./routes/search.js";
 import { sessionHandoffsRouter } from "./routes/session-handoffs.js";
 import { sessionsRouter } from "./routes/sessions.js";
+import { settingsRouter } from "./routes/settings.js";
 import { skillsRouter } from "./routes/skills.js";
 import { sshRouter } from "./routes/ssh.js";
 import { tagsRouter } from "./routes/tags.js";
@@ -69,6 +70,7 @@ export function createApp() {
   app.route("/api", sshRouter);
   app.route("/api", chatRouter);
   app.route("/api", healthRouter);
+  app.route("/api", settingsRouter);
   app.route("/api", mcpToolRouter);
   app.route("/", mcpRouter);
   app.route("/api", projectsRouter);

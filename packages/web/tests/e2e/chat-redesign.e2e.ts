@@ -4,7 +4,11 @@ import { API_SECRET } from "./_helpers";
 test("stopping a chunked response preserves partial text and a new send finishes independently", async ({
   page,
 }, testInfo) => {
-  await page.addInitScript((secret) => localStorage.setItem("orc_api_secret", secret), API_SECRET);
+  await page.addInitScript(
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+    API_SECRET,
+  );
   await page.addInitScript(() => {
     const original = window.fetch.bind(window);
     let intercepted = false;
@@ -66,7 +70,11 @@ test("stopping a chunked response preserves partial text and a new send finishes
 test("clearing a pending chat cannot append stale output and preferences survive reload", async ({
   page,
 }) => {
-  await page.addInitScript((secret) => localStorage.setItem("orc_api_secret", secret), API_SECRET);
+  await page.addInitScript(
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+    API_SECRET,
+  );
   let releaseFirst: () => void = () => {};
   const firstGate = new Promise<void>((resolve) => {
     releaseFirst = resolve;
@@ -128,9 +136,13 @@ for (const theme of ["dark", "light"] as const) {
       page,
     }, testInfo) => {
       await page.setViewportSize({ width, height: 900 });
+      await page.request.patch("/api/settings", {
+        headers: { Authorization: `Bearer ${API_SECRET}` },
+        data: { theme },
+      });
       await page.addInitScript(
         ({ secret, theme }) => {
-          localStorage.setItem("orc_api_secret", secret);
+          localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
           localStorage.setItem("orc_theme", theme);
         },
         { secret: API_SECRET, theme },

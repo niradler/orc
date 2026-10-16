@@ -1,8 +1,24 @@
 import { useSyncExternalStore } from "react";
+import { api } from "../api/client";
 
 export type Theme = "dark" | "light";
 export const THEME_KEY = "orc_theme";
 const THEME_EVENT = "orc-theme-change";
+let saveError = "";
+
+function saveTheme(theme: Theme): void {
+  setTheme(theme);
+  saveError = "";
+  void api.settings
+    .save({ theme })
+    .then((preferences) => {
+      if (preferences.theme) setTheme(preferences.theme);
+    })
+    .catch(() => {
+      saveError = "The theme changed here but could not be saved on the server. Try again.";
+      window.dispatchEvent(new Event(THEME_EVENT));
+    });
+}
 
 export function getTheme(): Theme {
   return document.documentElement.dataset.theme === "light" ? "light" : "dark";
@@ -44,5 +60,10 @@ function subscribe(listener: () => void) {
 
 export function useTheme() {
   const theme = useSyncExternalStore(subscribe, getTheme, () => "dark" as const);
-  return { theme, setTheme };
+  const error = useSyncExternalStore(
+    subscribe,
+    () => saveError,
+    () => "",
+  );
+  return { theme, setTheme: saveTheme, error };
 }

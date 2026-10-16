@@ -201,6 +201,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read workspace preferences */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Persistent workspace preferences; credentials are never returned */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {string} */
+                            theme?: "dark" | "light";
+                            terminal_font?: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Persist workspace preferences in the global config file */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        theme?: "dark" | "light";
+                        terminal_font?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Persistent workspace preferences; credentials are never returned */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @enum {string} */
+                            theme?: "dark" | "light";
+                            terminal_font?: string;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
     "/api/mcp/tool": {
         parameters: {
             query?: never;
@@ -1477,12 +1549,12 @@ export interface paths {
                                                     field: string;
                                                     /** @enum {string} */
                                                     operator: "equals";
-                                                    value: string | number | boolean | unknown;
+                                                    value: string | number | boolean | null;
                                                 } | {
                                                     field: string;
                                                     /** @enum {string} */
                                                     operator: "in";
-                                                    value: (string | number | boolean | unknown)[];
+                                                    value: (string | number | boolean | null)[];
                                                 } | {
                                                     field: string;
                                                     /** @enum {string} */
@@ -1634,12 +1706,12 @@ export interface paths {
                                             field: string;
                                             /** @enum {string} */
                                             operator: "equals";
-                                            value: string | number | boolean | unknown;
+                                            value: string | number | boolean | null;
                                         } | {
                                             field: string;
                                             /** @enum {string} */
                                             operator: "in";
-                                            value: (string | number | boolean | unknown)[];
+                                            value: (string | number | boolean | null)[];
                                         } | {
                                             field: string;
                                             /** @enum {string} */
@@ -1741,12 +1813,12 @@ export interface paths {
                                                 field: string;
                                                 /** @enum {string} */
                                                 operator: "equals";
-                                                value: string | number | boolean | unknown;
+                                                value: string | number | boolean | null;
                                             } | {
                                                 field: string;
                                                 /** @enum {string} */
                                                 operator: "in";
-                                                value: (string | number | boolean | unknown)[];
+                                                value: (string | number | boolean | null)[];
                                             } | {
                                                 field: string;
                                                 /** @enum {string} */
@@ -1882,12 +1954,12 @@ export interface paths {
                                                 field: string;
                                                 /** @enum {string} */
                                                 operator: "equals";
-                                                value: string | number | boolean | unknown;
+                                                value: string | number | boolean | null;
                                             } | {
                                                 field: string;
                                                 /** @enum {string} */
                                                 operator: "in";
-                                                value: (string | number | boolean | unknown)[];
+                                                value: (string | number | boolean | null)[];
                                             } | {
                                                 field: string;
                                                 /** @enum {string} */
@@ -2072,6 +2144,56 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search all projects and stored resources for the command palette */
+        get: {
+            parameters: {
+                query: {
+                    q: string;
+                    project_id?: string;
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Bounded results per resource type */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            results: {
+                                /** @enum {string} */
+                                kind: "task" | "project" | "job" | "memory" | "session" | "wiki";
+                                id: string;
+                                title: string;
+                                detail: string;
+                                project_id: string | null;
+                                project_name: string | null;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;

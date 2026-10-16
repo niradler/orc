@@ -24,9 +24,13 @@ for (const theme of ["dark", "light"] as const) {
         kind: "shell",
         cwd: repo,
       });
+      await page.request.patch("/api/settings", {
+        headers: { Authorization: `Bearer ${API_SECRET}` },
+        data: { theme },
+      });
       await page.addInitScript(
         ({ secret, theme }) => {
-          localStorage.setItem("orc_api_secret", secret);
+          localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
           localStorage.setItem("orc_theme", theme);
         },
         { secret: API_SECRET, theme },
@@ -124,7 +128,7 @@ for (const theme of ["dark", "light"] as const) {
       const other = await context.newPage();
       await other.addInitScript(
         ({ secret, theme }) => {
-          localStorage.setItem("orc_api_secret", secret);
+          localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
           localStorage.setItem("orc_theme", theme);
         },
         { secret: API_SECRET, theme },
@@ -164,9 +168,13 @@ for (const theme of ["dark", "light"] as const) {
     page,
   }, testInfo) => {
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.request.patch("/api/settings", {
+      headers: { Authorization: `Bearer ${API_SECRET}` },
+      data: { theme },
+    });
     await page.addInitScript(
       ({ secret, theme }) => {
-        localStorage.setItem("orc_api_secret", secret);
+        localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
         localStorage.setItem("orc_theme", theme);
       },
       { secret: API_SECRET, theme },
@@ -233,7 +241,7 @@ test("first pane transition restores its default on Back and terminal actions re
     cwd: repo,
   });
   await page.addInitScript((secret) => {
-    localStorage.setItem("orc_api_secret", secret);
+    localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
     localStorage.setItem("orc_selected_project", "all");
   }, API_SECRET);
   await page.goto(`/terminals/${terminal.id}?project=${project.id}&chat=open`);

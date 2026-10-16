@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
+import { ApiAccessGate } from "./components/ApiAccessGate";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./index.css";
 
@@ -23,7 +24,9 @@ createRoot(root).render(
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
-          <App />
+          <ApiAccessGate>
+            <App />
+          </ApiAccessGate>
         </BrowserRouter>
       </QueryClientProvider>
     </ErrorBoundary>

@@ -1,6 +1,11 @@
 import type { KnowledgeDocument } from "@orc/core/knowledge";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
 import type { RuleEventCapability } from "@orc/core/rule-events";
+import {
+  API_ACCESS_CHANGED,
+  readApiSecret,
+  type WorkspacePreferences,
+} from "../lib/api-credentials";
 
 export type { PackageDiscovery } from "@orc/core/primitive-types";
 
@@ -136,7 +141,7 @@ import type {
 
 export const getApiUrl = (): string => localStorage.getItem("orc_api_url") ?? "/api";
 
-export const getApiSecret = (): string => localStorage.getItem("orc_api_secret") ?? "";
+export const getApiSecret = (): string => readApiSecret(getApiUrl());
 
 export type TerminalKind = "shell" | "claude" | "codex" | "cursor" | "gemini" | "copilot";
 export type AgentSetup = {
@@ -317,6 +322,7 @@ async function req<T>(
     headers,
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
+  if (res.status === 401) window.dispatchEvent(new Event(API_ACCESS_CHANGED));
   if (res.status === 204) return null as T;
   // "Not there yet" is a normal state for some resources (a task that has never
   // run a flow), so callers can ask for null instead of a thrown error and skip
@@ -334,6 +340,11 @@ async function req<T>(
 // ---- API client ----
 
 export const api = {
+  settings: {
+    get: () => req<WorkspacePreferences>("GET", "/settings"),
+    save: (preferences: WorkspacePreferences) =>
+      req<WorkspacePreferences>("PATCH", "/settings", preferences),
+  },
   search: (q: string, project_id?: string) =>
     req<{ results: GlobalSearchHit[] }>("GET", "/search", undefined, { q, project_id }),
   rules: {

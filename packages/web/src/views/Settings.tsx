@@ -1,58 +1,68 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle, Save } from "lucide-react";
 import { useState } from "react";
-import { getApiSecret, getApiUrl } from "@/api/client";
+import { api, getApiUrl } from "@/api/client";
 import { SshHostSettings } from "@/components/SshHostSettings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { ViewHeader } from "@/components/ViewHeader";
+import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
 import { TERMINAL_FONT_KEY } from "@/lib/terminal-runtime";
-import { useTheme } from "@/lib/theme";
+import { setTheme, useTheme } from "@/lib/theme";
 
 export default function Settings() {
-  const { theme, setTheme } = useTheme();
+  const { theme } = useTheme();
   const [apiUrl, setApiUrl] = useState(getApiUrl);
-  const [apiSecret, setApiSecret] = useState(getApiSecret);
   const [terminalFont, setTerminalFont] = useState(
     () => localStorage.getItem(TERMINAL_FONT_KEY) ?? "",
   );
   const [saved, setSaved] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [storageError, setStorageError] = useState("");
+  const [pending, setPending] = useState(false);
   const qc = useQueryClient();
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setStorageError("");
+    setPending(true);
     try {
       const target = apiUrl.trim();
       if (target && !target.startsWith("/") && !/^https?:\/\//i.test(target))
         throw new Error("Use a relative API path or an http(s) server URL.");
-      localStorage.setItem("orc_api_url", apiUrl.trim() || "/api");
-      localStorage.setItem("orc_api_secret", apiSecret.trim());
-      if (terminalFont.trim()) localStorage.setItem(TERMINAL_FONT_KEY, terminalFont.trim());
+      const preferences = await api.settings.save({ theme, terminal_font: terminalFont.trim() });
+      setTheme(preferences.theme ?? theme);
+      setTerminalFont(preferences.terminal_font ?? "");
+      if (preferences.terminal_font)
+        localStorage.setItem(TERMINAL_FONT_KEY, preferences.terminal_font);
       else localStorage.removeItem(TERMINAL_FONT_KEY);
+      const changed = (target || "/api") !== getApiUrl();
+      localStorage.setItem("orc_api_url", target || "/api");
+      if (changed) window.dispatchEvent(new Event(API_ACCESS_CHANGED));
       qc.invalidateQueries();
       setSaved(true);
-      setFeedback("Connection settings and terminal font saved in this browser.");
+      setFeedback("Workspace preferences saved on the server. API address saved in this browser.");
       setTimeout(() => setSaved(false), 2000);
     } catch (error) {
       setStorageError(
         error instanceof Error ? error.message : "Browser settings could not be saved.",
       );
+    } finally {
+      setPending(false);
     }
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     setStorageError("");
+    setPending(true);
     try {
+      const preferences = await api.settings.save({ terminal_font: "" });
       localStorage.removeItem("orc_api_url");
-      localStorage.removeItem("orc_api_secret");
-      localStorage.removeItem(TERMINAL_FONT_KEY);
+      localStorage.setItem(TERMINAL_FONT_KEY, preferences.terminal_font ?? "");
       setApiUrl("/api");
-      setApiSecret("");
-      setTerminalFont("");
+      setTerminalFont(preferences.terminal_font ?? "");
+      window.dispatchEvent(new Event(API_ACCESS_CHANGED));
       qc.invalidateQueries();
       setSaved(false);
       setFeedback(
@@ -62,8 +72,23 @@ export default function Settings() {
       setStorageError(
         error instanceof Error ? error.message : "Browser settings could not be reset.",
       );
+    } finally {
+      setPending(false);
     }
   };
+
+  async function changeTheme(value: "dark" | "light"): Promise<void> {
+    setStorageError("");
+    setPending(true);
+    try {
+      const preferences = await api.settings.save({ theme: value });
+      setTheme(preferences.theme ?? value);
+    } catch (error) {
+      setStorageError(error instanceof Error ? error.message : "Appearance could not be saved.");
+    } finally {
+      setPending(false);
+    }
+  }
 
   return (
     <div>
@@ -75,7 +100,7 @@ export default function Settings() {
             Appearance
           </h2>
           <p className="mb-4 text-sm text-muted-foreground">
-            Choose a theme for this browser. Your choice is saved immediately.
+            Choose a workspace theme. Your choice is saved on the server immediately.
           </p>
           <fieldset className="flex flex-wrap gap-2" aria-label="Theme">
             {(["dark", "light"] as const).map((value) => (
@@ -84,7 +109,8 @@ export default function Settings() {
                 variant={theme === value ? "secondary" : "outline"}
                 aria-pressed={theme === value}
                 data-testid={`settings-theme-${value}`}
-                onClick={() => setTheme(value)}
+                disabled={pending}
+                onClick={() => void changeTheme(value)}
               >
                 {value === "dark" ? "Dark" : "Light"}
               </Button>
@@ -122,22 +148,6 @@ export default function Settings() {
                 Use <code>/api</code> (dev proxy) or a direct URL when CORS is enabled.
               </p>
             </div>
-            <div className="space-y-2">
-              <Label
-                htmlFor="settings-api-secret"
-                className="font-label text-sm text-muted-foreground"
-              >
-                API secret (Bearer token)
-              </Label>
-              <Input
-                id="settings-api-secret"
-                type="password"
-                value={apiSecret}
-                onChange={(e) => setApiSecret(e.target.value)}
-                placeholder="Leave empty if no auth required"
-                className="bg-background text-on-surface font-body text-sm"
-              />
-            </div>
           </div>
         </section>
 
@@ -171,7 +181,12 @@ export default function Settings() {
 
         {/* Actions */}
         <div className="flex flex-wrap gap-3 pt-2">
-          <Button data-testid="settings-save" onClick={handleSave} className="font-label text-sm ">
+          <Button
+            data-testid="settings-save"
+            disabled={pending}
+            onClick={() => void handleSave()}
+            className="font-label text-sm "
+          >
             {saved ? (
               <>
                 <CheckCircle size={12} className="mr-1.5" /> Saved
@@ -184,7 +199,8 @@ export default function Settings() {
           </Button>
           <Button
             variant="ghost"
-            onClick={handleReset}
+            disabled={pending}
+            onClick={() => void handleReset()}
             className="font-label text-sm text-muted-foreground hover:text-on-surface"
           >
             Reset to defaults
@@ -206,8 +222,9 @@ export default function Settings() {
           <Separator className="bg-outline-variant mb-4" />
           <div className="font-label text-sm  text-muted-foreground mb-2">Storage</div>
           <p className="font-body text-sm text-muted-foreground">
-            Settings are persisted in <code className="text-primary">localStorage</code> and survive
-            page reloads. Clearing browser storage resets to defaults.
+            Workspace preferences and SSH selection are persisted in the server's{" "}
+            <code>~/.orc/config.json</code>. The API address and optionally remembered login are
+            stored in this browser.
           </p>
         </section>
       </div>
