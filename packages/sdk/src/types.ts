@@ -18,6 +18,10 @@ export type {
   SessionHandoffUpload,
 } from "@orc/core/session-handoff";
 export type {
+  LocalSkill,
+  LocalSkillAgentListing,
+  LocalSkillImportItem,
+  LocalSkillImportResult,
   SkillDiscovery,
   SkillImportInput,
   SkillImportOrigin,

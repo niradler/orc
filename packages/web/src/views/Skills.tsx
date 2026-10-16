@@ -9,6 +9,7 @@ import { DocumentTabs } from "@/components/DocumentTabs";
 import { confirmDocumentClose, DocumentWorkspace } from "@/components/DocumentWorkspace";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { ImportLocalSkillsDialog } from "@/components/ImportLocalSkillsDialog";
 import { ImportSkillDialog } from "@/components/ImportSkillDialog";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { SkillHistoryPanel } from "@/components/SkillHistoryPanel";
@@ -78,6 +79,7 @@ export default function Skills({ projectId }: { projectId: string }) {
   } = useDetailRoute("/skills", "skillName");
   const [creating, setCreating] = useState(false);
   const [importingRepository, setImportingRepository] = useState(false);
+  const [importingLocal, setImportingLocal] = useState(false);
   const visibility = useSkillVisibility();
   const setVisibility = useSetSkillVisibility();
 
@@ -110,6 +112,14 @@ export default function Skills({ projectId }: { projectId: string }) {
               onClick={() => setImportingRepository(true)}
             >
               <Download size={12} className="mr-1" /> Import from GitHub
+            </Button>
+            <Button
+              data-testid="import-local-skills-button"
+              size="sm"
+              variant="outline"
+              onClick={() => setImportingLocal(true)}
+            >
+              <Download size={12} className="mr-1" /> Import from agents
             </Button>
             <Button
               data-testid="new-skill-button"
@@ -294,6 +304,7 @@ export default function Skills({ projectId }: { projectId: string }) {
 
       {creating && <CreateSkillDialog open={creating} onClose={() => setCreating(false)} />}
       {importingRepository && <ImportSkillDialog onClose={() => setImportingRepository(false)} />}
+      {importingLocal && <ImportLocalSkillsDialog onClose={() => setImportingLocal(false)} />}
     </div>
   );
 }
