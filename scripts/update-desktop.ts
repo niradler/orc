@@ -131,6 +131,62 @@ export async function installDesktop(options: {
     await Bun.sleep(1000);
   }
   if (!verified) throw new Error("Timed out verifying the installed bundled and user CLI versions");
+  await verifyInstalledDesktop(version);
+}
+
+export async function verifyInstalledDesktop(version: string): Promise<void> {
+  const cli = join(homedir(), ".orc/bin", process.platform === "win32" ? "orc.exe" : "orc");
+  if (
+    !existsSync(cli) ||
+    run(cli, ["--version"], { capture: true, timeout: 10_000, quiet: true }) !== version
+  )
+    throw new Error("Installed user CLI version differs from the release");
+  if (process.platform === "win32") {
+    const local = process.env.LOCALAPPDATA;
+    if (!local) throw new Error("LOCALAPPDATA is missing");
+    const candidates = [
+      join(local, "Programs/@orcdesktop/orc.exe"),
+      join(local, "Programs/orc/orc.exe"),
+    ];
+    const app = process.env.ORC_DESKTOP_PATH ?? candidates.find(existsSync);
+    if (!app) throw new Error("Installed desktop is missing");
+    const product = run(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "(Get-Item -LiteralPath $env:ORC_RELEASE_APP).VersionInfo.ProductVersion",
+      ],
+      { capture: true, timeout: 15_000, quiet: true, env: { ORC_RELEASE_APP: app } },
+    );
+    if (product !== version && product !== `${version}.0`)
+      throw new Error("Installed desktop version differs from the release");
+    const bundled = join(dirname(app), "resources/orc.exe");
+    if (run(bundled, ["--version"], { capture: true, timeout: 10_000, quiet: true }) !== version)
+      throw new Error("Installed bundled CLI version differs from the release");
+  } else if (process.platform === "darwin") {
+    const app = process.env.ORC_DESKTOP_PATH ?? "/Applications/orc.app/Contents/MacOS/orc";
+    const contents = dirname(dirname(app));
+    const product = run(
+      "/usr/libexec/PlistBuddy",
+      ["-c", "Print :CFBundleShortVersionString", join(contents, "Info.plist")],
+      { capture: true, timeout: 15_000, quiet: true },
+    );
+    if (
+      product !== version ||
+      run(join(contents, "Resources/orc"), ["--version"], {
+        capture: true,
+        timeout: 10_000,
+        quiet: true,
+      }) !== version
+    )
+      throw new Error("Installed desktop or bundled CLI version differs from the release");
+  } else if (
+    !existsSync(process.env.ORC_DESKTOP_PATH ?? join(homedir(), ".local/bin/orc-desktop.AppImage"))
+  ) {
+    throw new Error("Installed desktop AppImage is missing");
+  }
   let port = 7700;
   const config = join(homedir(), ".orc/config.json");
   if (existsSync(config))
