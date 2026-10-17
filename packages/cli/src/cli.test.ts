@@ -127,27 +127,124 @@ describe("CLI - status", () => {
 });
 
 describe("CLI - mem commands", () => {
-  test("orc mem add stores a memory", async () => {
-    const result = await cli(
-      "mem",
+  const P = ["-p", "cli-mem-test"];
+  const mem = (...args: string[]) => cli("mem", ...args, ...P);
+
+  beforeAll(async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/api/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${SECRET}` },
+      body: JSON.stringify({ name: "cli-mem-test" }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  test("orc mem add stores a memory by name", async () => {
+    const result = await mem(
       "add",
-      "CLI memory test content",
-      "--type",
-      "fact",
-      "--no-project",
+      "api-port",
+      "--description",
+      "Port the API listens on",
+      "--content",
+      "The API listens on 7700",
+      "--priority",
+      "80",
+    );
+    expect(result.stderr).toBe("");
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatch(/Created memory api-port in cli-mem-test/);
+  });
+
+  test("orc mem add rejects a duplicate name", async () => {
+    const result = await mem("add", "api-port", "-d", "dup", "-c", "dup");
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toMatch(/Error:/);
+  });
+
+  test("orc mem list shows name, priority and description", async () => {
+    const result = await mem("list", "--sort", "priority");
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatch(/api-port\s+p80\s+Port the API listens on/);
+  });
+
+  test("orc mem list --q filters by name and description", async () => {
+    const hit = await mem("list", "--q", "listens");
+    expect(hit.stdout).toMatch(/api-port/);
+    const miss = await mem("list", "--q", "zzz-nothing");
+    expect(miss.stdout).toMatch(/No memories found/);
+  });
+
+  test("orc mem show reads by name", async () => {
+    const result = await mem("show", "api-port");
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatch(/The API listens on 7700/);
+  });
+
+  test("orc mem edit updates content and clears priority with none", async () => {
+    const result = await cli(
+      "--json",
+      "mem",
+      "edit",
+      "api-port",
+      "--content",
+      "The API listens on 7711",
+      "--priority",
+      "none",
+      "--reason",
+      "port moved",
+      ...P,
     );
     expect(result.exitCode).toBe(0);
+    const updated = JSON.parse(result.stdout);
+    expect(updated.content).toBe("The API listens on 7711");
+    expect(updated.priority).toBeNull();
+    expect(updated.author).toBe("cli");
   });
 
-  test("orc mem list shows the memory", async () => {
-    const result = await cli("mem", "list", "--no-project");
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toMatch(/CLI memory test content/i);
+  test("orc mem edit rejects a bad priority before calling the API", async () => {
+    const result = await mem("edit", "api-port", "--priority", "101");
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toMatch(/priority must be an integer 0-100/);
   });
 
-  test("orc mem search finds by keyword", async () => {
-    const result = await cli("mem", "search", "CLI memory test", "--no-project");
+  test("orc mem history lists changes newest first with the reason", async () => {
+    const result = await cli("--json", "mem", "history", "api-port", ...P);
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toMatch(/CLI memory test content/i);
+    const { changes } = JSON.parse(result.stdout);
+    expect(changes.map((c: { action: string }) => c.action)).toEqual([
+      "memory.updated",
+      "memory.created",
+    ]);
+    expect(changes[0].reason).toBe("port moved");
+  });
+
+  test("orc mem history prints change times in the current year", async () => {
+    const result = await mem("history", "api-port");
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain(` ${new Date().getUTCFullYear()}-`);
+  });
+
+  test("orc mem revert restores the state before a change", async () => {
+    const history = JSON.parse((await cli("--json", "mem", "history", "api-port", ...P)).stdout);
+    const latest = history.changes[0].id;
+    const result = await mem(
+      "revert",
+      "api-port",
+      latest,
+      "--expected-change-id",
+      latest,
+      "--reason",
+      "undo move",
+    );
+    expect(result.exitCode).toBe(0);
+    const show = await cli("--json", "mem", "show", "api-port", ...P);
+    expect(JSON.parse(show.stdout).content).toBe("The API listens on 7700");
+  });
+
+  test("orc mem delete removes the memory", async () => {
+    const result = await mem("delete", "api-port");
+    expect(result.exitCode).toBe(0);
+    const show = await mem("show", "api-port");
+    expect(show.exitCode).toBe(1);
   });
 });

@@ -153,24 +153,23 @@ curl -s -H "Authorization: Bearer $SECRET" http://127.0.0.1:$PORT/health
 
 ### 4.1 Memory CRUD (CLI)
 
-- [x] `orc mem add <content> --type rule --importance high -p <project> -t "tags"` stores memory
-- [x] `orc mem add --type decision/event/fact/discovery` all types accepted
-- [x] `orc mem list` lists memories with short IDs and age
-- [x] `orc mem list -p <project>` filters by project
-- [x] `orc mem list --no-project` shows all memories
-- [x] `orc mem search <query>` finds matching memories (BM25)
-- [x] `orc mem show <id>` shows full memory details _(fixed: limit 200→100)_
-- [x] `orc mem edit <id>` updates memory fields _(fixed: limit 200→100)_
-- [x] `orc mem delete <id>` deletes memory _(fixed: limit 200→100)_
-- [x] `orc mem search ""` (empty query) returns validation error with message
+- [ ] `orc mem add <name> -d <description> -c <content> --priority 60 -p <project>` creates a memory
+- [ ] `orc mem add` rejects a non lowercase-hyphenated name and content over the cap (suggests a skill)
+- [ ] `orc mem list` lists memories by reads; `--sort recent|priority` and `-q <text>` work
+- [ ] `orc mem list -p <project>` scopes to a project
+- [ ] `orc mem show <name>` shows the full memory
+- [ ] `orc mem edit <name>` updates description/content/priority with a reason
+- [ ] `orc mem delete <name>` deletes the memory
+- [ ] `orc mem history <name>` lists changes; `orc mem revert <name> <change-id> --expected-change-id <latest-change-id> -r <reason>` restores
 
 ### 4.2 Memory API
 
-- [x] `POST /memories` creates memory
-- [x] `GET /memories` lists memories with filtering (scope, type, project_id, limit)
-- [x] `GET /memories/search?q=<query>` searches via BM25
-- [x] `PATCH /memories/{id}` updates memory fields
-- [x] `DELETE /memories/{id}` deletes memory (returns empty 200)
+- [ ] `POST /memories` creates a memory (201; 409 on duplicate name)
+- [ ] `GET /memories?project_id&q&sort&limit` lists memories with read counts
+- [ ] `GET /memories/{name}?project_id` reads a memory and counts the read for `X-Orc-Source`
+- [ ] `PATCH /memories/{name}` updates description/content/priority
+- [ ] `DELETE /memories/{name}?project_id` deletes the memory (204)
+- [ ] `GET /memories/{name}/history` and `POST /memories/{name}/revert` restore earlier states
 - [ ] **No pagination** - no offset/cursor support
 
 ---
@@ -254,16 +253,18 @@ curl -s -H "Authorization: Bearer $SECRET" http://127.0.0.1:$PORT/health
 
 ### 8.1 Context & Search
 
-- [x] `context` - returns active tasks + key memories + last session
-- [x] `memory_search` with `args.query` - finds matching memories
-- [x] `search` (unified) with `args.query` - searches across tasks and memories
+- [x] `context` - returns active tasks + top memories by priority + last session
+- [ ] `memory_list` with `args.q` - finds matching memories
+- [x] `search` (unified) with `args.query` - searches across wiki, tasks and memories
 - [x] `project_list` - returns all projects
 
 ### 8.2 Memory Tools
 
-- [x] `memory_store` - creates memory
-- [x] `memory_get` - fetches memory by ID(s)
-- [x] `memory_update` - updates memory fields
+- [ ] `memory_create` - creates a memory
+- [ ] `memory_read` - reads a memory by name
+- [ ] `memory_update` - updates memory fields with a reason
+- [ ] `memory_delete` - deletes a memory
+- [ ] `memory_history` / `memory_revert` - lists changes and restores an earlier state
 
 ### 8.3 Task Tools
 
@@ -431,7 +432,6 @@ Specs in `packages/web/tests/e2e/` cover: chat, dashboard, jobs, kanban, memorie
 - [x] Nonexistent job name returns "Job not found"
 - [x] Nonexistent skill returns "Skill not found"
 - [x] Invalid status transitions return clear error messages
-- [x] Empty memory search query returns validation error with message _(fixed: added descriptive message)_
 
 ---
 
@@ -450,11 +450,9 @@ Specs in `packages/web/tests/e2e/` cover: chat, dashboard, jobs, kanban, memorie
 
 | #   | Area       | Fix                                                                                   |
 | --- | ---------- | ------------------------------------------------------------------------------------- |
-| 1   | CLI/Memory | `mem show`, `mem edit`, `mem delete` - changed `limit: 200` to `limit: 100` (API max) |
 | 2   | CLI        | Removed `--dry-run` flag and all related code (was never fully implemented)           |
 | 3   | Tags API   | `GET /tags` - removed nonexistent `prompts` table from `RESOURCE_TABLES`              |
 | 4   | Skills     | `skill create` - validate frontmatter before writing file to disk                     |
-| 5   | UX         | Empty `mem search ""` - added descriptive validation message                          |
 
 ---
 
@@ -472,7 +470,7 @@ bash scripts/e2e.sh
 - Project CRUD (CLI + API)
 - Task CRUD + HITL status flow (review/reject/approve)
 - Task comments + batch create + links
-- Memory CRUD (CLI + API + search)
+- Memory CRUD, history and revert (CLI + API)
 - Job CRUD + execution + run logs
 - Skill list + create + read
 - Session log + list

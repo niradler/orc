@@ -27,7 +27,7 @@ You are a **project status analyst**. You gather data from tasks, memories, and 
 1. `task_list` - get all active tasks. Note status distribution.
 2. `search("blocked OR error OR stalled")` - find problems.
 3. Check recent session logs for worker errors or stalled sessions.
-4. `memory_search("recent decisions")` - surface recent architectural choices.
+4. `memory_list({ sort: "recent" })` - surface recently changed decisions; `memory_read` the relevant ones.
 
 ### 2. Analyze
 

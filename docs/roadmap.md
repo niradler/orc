@@ -13,7 +13,6 @@
 ### v0.0.2 - Multi-Agent & Daemon
 
 - Dual FTS5 search: Porter + Trigram with 3-layer cascade
-- Memory types (`fact | decision | event | rule | discovery`) with importance-weighted scoring
 - Priority-tiered session snapshots (P1/P2/P3, budget-trimmed to 2KB)
 - Session event dedup + FIFO eviction
 - `orc daemon` with cron scheduler + file-watch triggers
@@ -44,17 +43,13 @@
 - **Single-binary deployment** - CLI build bundles the prebuilt dashboard into `packages/cli/dist/web/`; `orc daemon start` serves the API at `/api/*` and the web UI at `/` from one process
 - **TUI removed** - all features migrated to the web dashboard; `@orc/tui` package and `orc tui` command deleted
 
-### v0.1.x - Memory System Improvements
+### Memories redesign
 
-- **`memory_update` MCP tool** - partial update by ID, preserves created_at and access_count history, FTS auto-re-indexes
-- **Source auto-detection** - `source` field auto-populated from agent env (`ORC_AGENT`, `CLAUDE_MODEL`, `ORC_SESSION_ID`), overridable
-- **Similarity hint on store** - warns when a near-duplicate memory exists, guides agent to update instead of duplicate
-- **Access-count scoring boost** - frequently-accessed memories get up to +2 points in `context()` scoring
-- **Title in search results** - `memory_search` Layer 1 now shows title for agent-driven selection
-- **Source in memory_get output** - full content view includes source metadata
-- **Updated orc-knowledge skill** - guidance on what NOT to store, content size limits, title-as-description pattern, update-vs-delete convention
-- **API PATCH /memories/:id** - REST endpoint for partial memory updates
-- **SDK + CLI support** - `memories.update()` in SDK, `orc mem edit` in CLI
+- **Memories work like skills, per project** - identity `(project, name)`, a description that says when the memory matters, content capped at 800 characters by default (longer guidance belongs in a skill), and an optional priority 0-100
+- **`context` loads the top 30 memories by priority**; agents read the relevant ones with `memory_read`
+- **MCP tools** - `memory_list`, `memory_read`, `memory_create`, `memory_update`, `memory_delete`, `memory_history`, `memory_revert`
+- **History and revert** - every change keeps before/after snapshots, reason, author and native session id
+- **Read counts per client** (mcp, cli, api, ui) rank memories in lists
 
 ### v0.1.x - Standalone Binary & Daemon
 
@@ -71,7 +66,6 @@
 - MCP tools for task notes and task links (currently API-only)
 - SDK `project` param support (currently uses `project_id` internally)
 - End-to-end cross-agent validation (task/memory/session roundtrip across agents)
-- Memory cleanup/GC - auto-archive old low-access memories to keep FTS index lean
 
 ### Medium Term
 
@@ -80,8 +74,6 @@
 - Webhook trigger setup with examples (GitHub, CI)
 - Skill versioning and management improvements
 - Discord bridge
-- Push memory scoring into SQL - `context()` currently fetches N×3 into JS for scoring; at thousands of memories this should be a single SQL query with ORDER BY score
-- Memory versioning - track previous content on update for undo/audit (investigate SQLite triggers or shadow table)
 
 ### Long Term
 

@@ -70,6 +70,9 @@ import type {
   JobRunLog,
   LiveSession,
   Memory,
+  MemoryChange,
+  MemoryListItem,
+  MemoryListSort,
   PackageFull,
   PackageMeta,
   Project,
@@ -318,28 +321,61 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     memories: {
-      list: (params?: { scope?: string; project_id?: string; limit?: number }) =>
-        c<{ memories: Memory[] }>(
+      list: (params?: {
+        project_id?: string | undefined;
+        q?: string | undefined;
+        sort?: MemoryListSort | undefined;
+        limit?: number | undefined;
+      }) =>
+        c<{ memories: MemoryListItem[]; total: number }>(
           "GET",
           "/memories",
           undefined,
           params as Record<string, string | number | boolean | undefined>,
         ),
 
-      search: (q: string, opts?: { scope?: string; project_id?: string; limit?: number }) =>
-        c<{ results: Memory[] }>("GET", "/memories/search", undefined, {
-          q,
-          scope: opts?.scope,
-          project_id: opts?.project_id,
-          limit: opts?.limit,
-        }),
+      get: (project_id: string, name: string) =>
+        c<Memory>("GET", `/memories/${encodeURIComponent(name)}`, undefined, { project_id }),
 
       create: (input: CreateMemoryInput) => c<Memory>("POST", "/memories", input),
 
-      update: (id: string, input: UpdateMemoryInput) =>
-        c<Memory>("PATCH", `/memories/${id}`, input),
+      update: (project_id: string, name: string, fields: UpdateMemoryInput) =>
+        c<Memory>("PATCH", `/memories/${encodeURIComponent(name)}`, { project_id, ...fields }),
 
-      delete: (id: string) => c<null>("DELETE", `/memories/${id}`),
+      delete: (
+        project_id: string,
+        name: string,
+        writer?: { author?: string | undefined; session_id?: string | undefined },
+      ) =>
+        c<null>("DELETE", `/memories/${encodeURIComponent(name)}`, undefined, {
+          project_id,
+          author: writer?.author,
+          session_id: writer?.session_id,
+        }),
+
+      history: (project_id: string, name: string) =>
+        c<{ changes: MemoryChange[] }>(
+          "GET",
+          `/memories/${encodeURIComponent(name)}/history`,
+          undefined,
+          { project_id },
+        ),
+
+      revert: (
+        project_id: string,
+        name: string,
+        input: {
+          change_id: string;
+          expected_change_id: string;
+          reason: string;
+          author?: string;
+          session_id?: string;
+        },
+      ) =>
+        c<{ memory: Memory | null }>("POST", `/memories/${encodeURIComponent(name)}/revert`, {
+          project_id,
+          ...input,
+        }),
     },
 
     jobs: {
@@ -614,7 +650,7 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     tags: {
-      list: (params?: { resource_type?: "task" | "project" | "memory" }) =>
+      list: (params?: { resource_type?: "task" | "project" }) =>
         c<{ tags: { name: string; count: number; resource_type: string }[] }>(
           "GET",
           "/tags",

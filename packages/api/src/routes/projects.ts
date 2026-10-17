@@ -4,7 +4,8 @@ import { ConflictError, NotFoundError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import { getDb } from "@orc/db/client";
 import { detachLegacyKnowledgeCollections, projectKbCount } from "@orc/db/kb";
-import { bridge_chats, comments, jobs, memories, projects, sessions, tasks } from "@orc/db/schema";
+import { MemoryStore } from "@orc/db/memories";
+import { bridge_chats, comments, jobs, projects, sessions, tasks } from "@orc/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 
 const app = new OpenAPIHono();
@@ -364,7 +365,8 @@ app.openapi(deleteRoute, async (c) => {
     );
   await db.transaction(async (tx) => {
     await tx.update(tasks).set({ project_id: null }).where(eq(tasks.project_id, id));
-    await tx.update(memories).set({ project_id: null }).where(eq(memories.project_id, id));
+    // Memories belong to one project, so they go with it (with their history and reads).
+    new MemoryStore(sqlite).removeProject(id);
     await tx.update(jobs).set({ project_id: null }).where(eq(jobs.project_id, id));
     await tx.update(sessions).set({ project_id: null }).where(eq(sessions.project_id, id));
     await tx.update(bridge_chats).set({ project_id: null }).where(eq(bridge_chats.project_id, id));

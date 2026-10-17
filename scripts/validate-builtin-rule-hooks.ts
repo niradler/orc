@@ -115,7 +115,7 @@ try {
       "Authorized isolated rule integration probe. Use only the exact Write tool call requested. No task, workflow or memory-management tools are needed. Do not use Bash.",
   });
   await session.send(
-    `Use Write once to save this exact memory topic to ${topic}: "${token}: Verified memory update procedure: match the configured Markdown source directory, preserve source identity on update, and verify the saved shared note by retrieving it through ORC. This observation is specific to this integration probe." Then report success.`,
+    `Use Write once to save this exact memory topic to ${topic}, keeping the frontmatter lines verbatim:\n---\nname: rule-probe-topic\ndescription: Check when validating the shared memory rule probe\n---\n${token}: Verified memory update procedure: match the configured Markdown source directory, preserve source identity on update, and verify the saved shared note by retrieving it through ORC. This observation is specific to this integration probe.\nThen report success.`,
   );
   for await (const event of session.events()) events.push(event);
   await session.close();
@@ -156,12 +156,12 @@ try {
       .at(0)?.id === id,
     "Source update created a duplicate memory",
   );
-  const fetched = await executeTool("memory_search", {
-    query: token,
-    project: "builtin-runtime",
-    limit: 10,
-  });
-  assert(fetched.includes(id), "Shared MCP retrieval did not expose captured memory");
+  const name = db
+    .query<{ name: string }, [string]>("SELECT name FROM memories WHERE id=?")
+    .get(id)?.name;
+  assert(name, "Captured memory has no name");
+  const fetched = await executeTool("memory_read", { name, project: "builtin-runtime" });
+  assert(fetched.includes(token), "Shared MCP retrieval did not expose captured memory");
   await hook("PreCompact", { event_id: "compact", trigger: "manual" }, "pre-compact.ts");
   const restored = await hook("SessionStart", { event_id: "restore", source: "compact" });
   assert(

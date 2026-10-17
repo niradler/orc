@@ -1,6 +1,6 @@
 ---
 name: orc-knowledge
-description: Use when looking up reference material in ORC knowledge bases (uploaded PDFs, Office files, Markdown, registered folders), answering a question with cited evidence, or writing a document to a knowledge base that agents may edit. Trigger on "search the docs", "find in the knowledge base", "what do our docs say about X", "cite the runbook", or when you need project documentation.
+description: Use when looking up reference material in ORC knowledge bases (uploaded files, registered folders), answering a question with cited evidence, or writing to a knowledge base agents may edit. Trigger on "search the docs", "what do our docs say about X", "cite the runbook".
 allowed-tools: mcp__orc__kb_list mcp__orc__kb_search mcp__orc__kb_evidence mcp__orc__kb_read mcp__orc__kb_documents mcp__orc__kb_write mcp__orc__kb_maintenance
 ---
 
@@ -13,8 +13,8 @@ KBs are different from memory and the wiki:
 | Knowledge bases                      | Memory / Wiki                                     |
 | ------------------------------------ | ------------------------------------------------- |
 | Human reference documents and files  | What agents decided, discovered and learned       |
-| Edited from the sources each KB allows | Written by agents (`memory_store`, `wiki_write`) |
-| `kb_search` / `kb_evidence` / `kb_read` | `memory_search` / `wiki_search`                |
+| Edited from the sources each KB allows | Written by agents (`memory_create`, `wiki_write`) |
+| `kb_search` / `kb_evidence` / `kb_read` | `memory_list` / `wiki_search`                  |
 
 Every read is counted per document and per source (mcp, api, cli, ui), so pass `session_id` when you have one.
 
@@ -89,7 +89,7 @@ orc kb status
 | ----------------------------------------- | ---------------------------------------------------------- |
 | Reading whole documents first             | Search, then read a citation or heading                    |
 | Answering without handles                 | Use `kb_evidence` and cite `kb:` handles                   |
-| Storing your own decisions in a KB        | Use `memory_store` or `wiki_write`                         |
+| Storing your own decisions in a KB        | Use `memory_create` or `wiki_write`                        |
 | Retrying a write after a conflict as-is   | Read the current revision and reapply your change          |
 | Searching with whole questions in lexical mode | Use key terms; `mode: "auto"` adds vectors when ready |
 

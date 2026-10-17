@@ -21,6 +21,7 @@ import { useProjects } from "@/hooks/useProjects";
 import { useLiveSessions } from "@/hooks/useSessions";
 import { useTasks } from "@/hooks/useTasks";
 import { formatWhen, STATUS } from "@/lib/live-sessions";
+import { MEMORIES_PATH } from "@/lib/memory-routes";
 
 interface DashboardProps {
   projectId: string;
@@ -49,8 +50,12 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
   const { data: tasks, isLoading: tasksLoading } = tasksQuery;
   const jobsQuery = useJobs(scopeParams);
   const { data: jobs } = jobsQuery;
-  const memoriesQuery = useMemories(scopeParams);
-  const { data: memories } = memoriesQuery;
+  // Memories always belong to a project, so the unassigned scope has none.
+  const memoriesQuery = useMemories(
+    { project_id: scopeParams?.project_id, limit: 1 },
+    { enabled: projectId !== "unassigned" },
+  );
+  const memoryCount = projectId === "unassigned" ? 0 : (memoriesQuery.data?.total ?? 0);
   const { data: projects } = useProjects();
   const sessionsQuery = useLiveSessions(true);
   const sessions = (sessionsQuery.data ?? []).filter(
@@ -62,10 +67,6 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
     projectId === "unassigned"
       ? (jobs ?? []).filter((job) => job.project_id === null)
       : (jobs ?? []);
-  const scopedMemories =
-    projectId === "unassigned"
-      ? (memories ?? []).filter((memory) => memory.project_id === null)
-      : (memories ?? []);
 
   const filteredTasks =
     projectId === "unassigned" ? (tasks ?? []).filter((t) => t.project_id === null) : (tasks ?? []);
@@ -132,9 +133,9 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
     },
     {
       label: "Memories",
-      value: displayedCount(memoriesQuery, scopedMemories.length),
+      value: displayedCount(memoriesQuery, memoryCount),
       sub: "in this scope",
-      path: "/knowledge/memories",
+      path: MEMORIES_PATH,
     },
     {
       label: "Projects",

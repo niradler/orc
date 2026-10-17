@@ -241,7 +241,8 @@ describe("shared SDLC delivery process", () => {
         .query("SELECT gateway_session_id FROM flow_node_runs WHERE task_id=? AND node_id='build'")
         .get(taskId) as { gateway_session_id: string };
       expect(worker.prompt).toContain(`Session ID: ${workerSession.gateway_session_id}`);
-      expect(worker.prompt).toContain("context first, then memory_search and wiki_search");
+      expect(worker.prompt).toContain("call context first; its Memories section lists");
+      expect(worker.prompt).toContain("memory_read, and use memory_list (q) and wiki_search");
       expect(worker.prompt).toContain(
         "Project delivery procedure: inspect shared-component storage.",
       );

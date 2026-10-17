@@ -24,6 +24,5 @@ describe("schema", () => {
     expect(schema.tasks).toBeDefined();
     expect(schema.jobs).toBeDefined();
     expect(schema.sessions).toBeDefined();
-    expect(schema.memories).toBeDefined();
   });
 });

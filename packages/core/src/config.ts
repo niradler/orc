@@ -146,13 +146,20 @@ export const OrcConfigSchema = z.object({
     .object({
       snapshot_max_bytes: z.number().int().default(2048),
       layer1_task_limit: z.number().int().default(10),
-      layer1_memory_limit: z.number().int().default(5),
+      layer1_memory_limit: z.number().int().default(30),
     })
     .default({
       snapshot_max_bytes: 2048,
       layer1_task_limit: 10,
-      layer1_memory_limit: 5,
+      layer1_memory_limit: 30,
     }),
+
+  memory: z
+    .object({
+      // Memories are short facts; anything longer is a skill.
+      max_content_chars: z.number().int().min(1).default(800),
+    })
+    .default({ max_content_chars: 800 }),
 
   knowledge: z
     .object({

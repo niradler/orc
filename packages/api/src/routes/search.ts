@@ -40,9 +40,9 @@ const sources = [
   {
     kind: "memory",
     table: "memories",
-    id: "r.id",
-    title: "coalesce(r.title, substr(r.content, 1, 100))",
-    detail: "r.content",
+    id: "r.name",
+    title: "r.name",
+    detail: "r.description || ' ' || r.content",
     project: "r.project_id",
   },
   {

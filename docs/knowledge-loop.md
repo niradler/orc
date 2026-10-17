@@ -1,17 +1,17 @@
 # Knowledge learning loop
 
-ORC records atomic memories, compiles verified lessons into a wiki, and maintains compact skill instructions. Human KB files are references and are never edited by this loop. Learning is reused through ordinary search and skill reads; startup context is unchanged and the runner does not inject wiki summaries.
+ORC records short project memories, compiles verified lessons into a wiki, and maintains compact skill instructions. Human KB files are references and are never edited by this loop. Learning is reused through ordinary search and skill reads; startup context is unchanged and the runner does not inject wiki summaries.
 
 ## During and after work
 
-`memory_store` skips only near-identical notes in the same project/scope/type, otherwise returns similar-memory hints. The calling agent decides whether to merge duplicates or supersede contradictions. Replaced rows remain in the central audit log. Updates, removals and audit writes share a transaction; an invalid replacement request changes nothing.
+A memory is a short project fact (ports, conventions, gotchas, decisions) identified by `(project, name)`, with a description saying when it matters, content up to `memory.max_content_chars` (default 800) and an optional priority 0-100. Agents check `memory_list` before `memory_create` and `memory_update` an existing memory instead of duplicating it; procedures and long guidance become skills. Every create, update, delete and revert is recorded in `memory_changes` (before/after snapshots, reason, author, native session id) and in the central audit log within one transaction. `memory_history` lists the changes and `memory_revert` restores an earlier state.
 
-At work-unit completion, `orc-session` and the worker contract direct the agent to load `orc-memory-review`. It reviews the session's memory audit entries, preserves topic tags, adds `outcome:worked`, `outcome:failed` or `outcome:verified`, and sets importance from evidence and impact. It resolves outstanding duplicate hints and writes a wiki page only for clear root causes or verified procedures. This is agent workflow guidance, not guaranteed review of every session from an external client.
+At work-unit completion, `orc-session` and the worker contract direct the agent to load `orc-memory-review`. It reviews the session's memory changes, keeps each memory short with a description that says when it matters and a priority that reflects its relevance, moves long guidance into skills, merges overlapping memories, and writes a wiki page only for clear root causes or verified procedures. This is agent workflow guidance, not guaranteed review of every session from an external client.
 
 ## Ordinary retrieval
 
 - `search` searches wiki summaries first, then memories not absorbed into the visible wiki, and tasks. KB search is a fallback when no wiki/memory result exists; explicitly requesting `knowledge` also includes KB citations. KB failures remain visible without discarding wiki/memory results.
-- `wiki_search` and `wiki_index` expose compact results. `wiki_get` loads full content; `wiki_history` loads the retained revisions. `memory_get` still reads an absorbed note by ID.
+- `wiki_search` and `wiki_index` expose compact results. `wiki_get` loads full content; `wiki_history` loads the retained revisions. `memory_read` still reads an absorbed memory by name.
 - `kb_search`, `kb_evidence` and `kb_read` search and read knowledge bases with `kb:<doc>@<rev>#<n>` citations. Agents change KB documents with `kb_write`, only in KBs whose `editable_by` includes `mcp`; each write is a revision with its session.
 - `skill_read` and the API/SDK's ordinary skill reads return effective edited instructions for the selected scope. The runner's existing skill injection uses those same effective reads. There is no new startup wiki index or automatic wiki prompt material.
 
@@ -19,13 +19,13 @@ MCP uses readable `project` names, defaulting to configured activeProject. `scop
 
 ## Wiki writes and traceability
 
-`wiki_write` / `POST /api/wiki` require a slug, kind (lesson/procedure/decision/concept), title, short summary, content, sources, change note and `expected_revision` (0 for creation). Stale revisions return a conflict; reload and reconcile rather than overwriting. Cite absorbed memories as `memory:<id>`. Sources identify supporting records; a citation alone does not prove the lesson's claim.
+`wiki_write` / `POST /api/wiki` require a slug, kind (lesson/procedure/decision/concept), title, short summary, content, sources, change note and `expected_revision` (0 for creation). Stale revisions return a conflict; reload and reconcile rather than overwriting. Cite absorbed memories as `memory:<name>`. Sources identify supporting records; a citation alone does not prove the lesson's claim.
 
-Each write retains author, source session and complete immutable content in revision history. The central audit row points at the revision. `audit_list` / `GET /api/audit` expose knowledge actions and prior memory snapshots. The **Wiki** dashboard opens on **What ORC learned**, with Pages/search and Audit log alongside it. Page details show sources and revision history; reload preserves selection. All Projects/Unassigned show global lessons; select a project for its lessons with global fallback.
+Each write retains author, source session and complete immutable content in revision history. The central audit row points at the revision. `audit_list` / `GET /api/audit` expose knowledge actions; `memory_history` / `GET /api/memories/{name}/history` hold prior memory states. The **Wiki** dashboard opens on **What ORC learned**, with Pages/search and Audit log alongside it. Page details show sources and revision history; reload preserves selection. All Projects/Unassigned show global lessons; select a project for its lessons with global fallback.
 
 ## Knowledge dashboard and Markdown editing
 
-The **Knowledge** dashboard includes Knowledge bases and Memories. Memories retains its existing creation, editing, search, type filters, and project scope. Legacy `/memories` and `/memories/:id` links redirect to the Memories tab and its detail routes. Wiki remains a separate view for now.
+The **Knowledge** dashboard includes Knowledge bases and Memories. Memories lists a project's memories by reads, recent activity or priority, with search over name and description, creation, editing, history and revert. The legacy `/memories` link redirects to the Memories tab. Wiki remains a separate view for now.
 
 Markdown uses a shared Read / Edit / Split workspace with readable rendering, source search, word wrap, and expansion. Split view stacks vertically on phones. Skills include file tabs and a mobile file picker. Unsaved drafts are protected when closing or switching files, and saves check the original content or Wiki revision to reject stale overwrites. Markdown documents in a knowledge base can be edited in place, including copies of Markdown files from a registered folder; ORC never writes the folder, and an edited copy stops following its file. Uploaded PDFs and Office files are read-only parsed text; replace the file to change them. Saves check the document revision. Wiki edits retain revision history and sources, and built-in skill files remain read-only.
 
@@ -49,6 +49,6 @@ The Skills dashboard shows **Mutated**, the date and author, before/after histor
 
 ## Validation
 
-Unit/API/MCP tests cover scoping, authentication, conflict/rollback, absorbed-note retrieval, edit/history/revert, digest claims, expiry, retries and idle skips. Browser tests save/reload/read wiki revisions and manually revert effective skill instructions while preserving supporting files.
+Unit/API/MCP tests cover scoping, authentication, conflict/rollback, absorbed-memory retrieval, edit/history/revert, digest claims, expiry, retries and idle skips. Browser tests save/reload/read wiki revisions and manually revert effective skill instructions while preserving supporting files.
 
 Local probe: `bun --env-file .env .claude/scripts/validate-knowledge-loop.ts`. It uses an isolated DB and source API on 7711, triggers the ordinary cron scheduler, runs one actual Claude digest, retains its pages/audit/session report, and verifies an idle run starts no agent. It requires existing Claude credentials and can incur model charges. These checks establish the tested mechanics; sustained learning and better real-world outcomes require observations across normal work.

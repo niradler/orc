@@ -1,6 +1,6 @@
 ---
 name: orc-gateway
-description: Use when setting up or using ORC's multi-channel gateway (Telegram, Slack) for human-agent collaboration, when routing messages to live agent sessions, when a human needs to approve or monitor agent work remotely, when starting a live Claude/Codex/Cursor session via messaging, or when configuring voice integration. Trigger on gateway, Telegram bot, Slack integration, live agent session, remote approval, bot commands, or voice messages.
+description: "Use when setting up or using ORC's Telegram/Slack gateway: routing messages to live Claude/Codex/Cursor sessions, remote approval and monitoring of agent work, bot commands, or voice messages."
 allowed-tools: mcp__orc__context mcp__orc__task_list
 ---
 
@@ -79,7 +79,7 @@ Telegram voice messages are transcribed and sent to the agent. Responses are con
 ```
 /tasks, /task <id>, /approve <id>, /reject <id>    - Task management
 /jobs, /run <name>                                   - Job management
-/mem <query>                                         - Memory search
+/mem [list] [query], /mem show <name>, /mem add     - Project memories
 /agent <backend>, /sessions, /session stop           - Agent sessions
 /status, /mode, /help                                - Status
 ```

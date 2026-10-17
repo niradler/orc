@@ -205,7 +205,7 @@ Refs (`@e1`, `@e2`, …) are assigned per snapshot - always take a fresh snapsho
 | ----------------------------------- | ----------------------------------------------------------------------------------- |
 | `tasks`                             | Work items with HITL review flow                                                    |
 | `comments`                          | Polymorphic comments (`resource_type` + `resource_id`) for tasks, projects, etc.    |
-| `memories`                          | FTS5-indexed key/value knowledge store                                              |
+| `memories`                          | Short per-project facts keyed by (project, name); history in `memory_changes`       |
 | `jobs` / `job_runs`                 | Scheduled/triggered command execution                                               |
 | `sessions`                          | Agent session logs + snapshots (`agent_version`, `job_run_id`)                      |
 | `projects`                          | Optional grouping for tasks/memories                                                |
@@ -248,9 +248,9 @@ A backend may implement the optional `describe()` to report its kind, what it re
 
 > `repeat` was removed - use `cron` with a 6-field expression for sub-minute intervals (e.g. `*/30 * * * * *` = every 30 s).
 
-## MCP Tools (34 tools in packages/mcp/src/tools.ts)
+## MCP Tools (54 tools in packages/mcp/src/tools.ts)
 
-**Call `context` first in every session** - returns active tasks + key memories in ~200 tokens.
+**Call `context` first in every session** - returns active tasks + the project's top memories by priority (`name [pN] - description`).
 
 All tools that accept `project` take a **readable project name** (e.g. `"orc"`), not a ULID. Omit to use `activeProject` from config.
 
@@ -259,11 +259,14 @@ For CRUD operations not in MCP (delete, project management, job creation), use t
 | Tool                | When to use                                                                                                    |
 | ------------------- | -------------------------------------------------------------------------------------------------------------- |
 | `context`           | Session start - compact overview. Pass `project: "name"` to scope.                                             |
-| `memory_search`     | Find facts/decisions - 3-layer BM25. Pass `project` to scope.                                                  |
-| `memory_get`        | Fetch full content for specific IDs. Batch multiple IDs. Token-expensive - filter first.                       |
-| `memory_store`      | Store a fact/decision/rule/event/discovery. Pass `project` to associate. Source auto-detected from agent env.  |
-| `memory_update`     | Update an existing memory by ID (partial). Preserves created_at and access_count. Prefer over delete+recreate. |
-| `search`            | Unified search across tasks and memories. Use instead of separate calls.                                       |
+| `memory_list`       | List the project's memories (name, description, priority, reads). `q` searches name/description; `sort` reads/recent/priority. |
+| `memory_read`       | Read one memory by name. Counts a read, which ranks it higher in lists.                                        |
+| `memory_create`     | Save a short project fact: name, description (when it matters), content (≤800 chars), optional priority 0-100. |
+| `memory_update`     | Change description/content/priority of a memory by name, with a reason. Prefer over delete+recreate.           |
+| `memory_delete`     | Delete a wrong or obsolete memory. `memory_revert` can restore it.                                             |
+| `memory_history`    | Changes to a memory, newest first, with before/after snapshots.                                                |
+| `memory_revert`     | Restore the state before a change (`change_id` + latest `expected_change_id`).                                 |
+| `search`            | Unified search across wiki, tasks and memories. Use instead of separate calls.                                 |
 | `task_list`         | List active tasks (compact, no body). Pass `project` to filter.                                                |
 | `task_get`          | Fetch full task details by ID                                                                                  |
 | `task_create`       | Create a task. Pass `project` to scope. Set `agent_backend` to route to a specific agent runtime.              |
@@ -286,17 +289,16 @@ For CRUD operations not in MCP (delete, project management, job creation), use t
 | `flow_create`       | Save a reusable user flow to `~/.orc/flows/<name>/flow.json`. Validated before writing.                        |
 | `flow_attach`       | Attach a named flow, or an inline graph for one task only, then optionally start it.                            |
 
-### Memory types
+### Memories
 
-Use the `type` field in `memory_store` - it affects scoring in `context`:
-
-| Type        | Score weight  | Use for                                                |
-| ----------- | ------------- | ------------------------------------------------------ |
-| `rule`      | HIGH          | Conventions: "all IDs are ULIDs", "never use `any`"    |
-| `decision`  | HIGH          | Choices: "use PostgreSQL because of concurrent writes" |
-| `discovery` | MEDIUM        | Findings: "token refresh has a race condition"         |
-| `event`     | LOW           | Things that happened: "deployed to staging"            |
-| `fact`      | LOW (default) | General knowledge                                      |
+A memory is a short project fact worth knowing next session: ports, conventions, gotchas,
+decisions, pointers. Identity is `(project, name)`; `name` is lowercase-hyphenated (≤64),
+`description` (≤300) says when it matters, `content` is capped by `memory.max_content_chars`
+(default 800). Procedures and long guidance are skills; keep at most a short memory pointing
+to the skill. `priority` (0-100, or unset) says how important and broadly relevant the memory
+is; `context` lists the top `context.layer1_memory_limit` (30) by priority. Every write is
+recorded in `memory_changes` with the native session id (`ORC_SESSION_ID` /
+`CLAUDE_CODE_SESSION_ID`; HTTP MCP cannot see it). See the `orc-memory` skill.
 
 ## Config
 
@@ -554,7 +556,7 @@ Skills live in `skills/*/SKILL.md` (built-in, shipped with ORC) and `~/.orc/skil
 1. `context({})` - at session start
 2. `session_event({ type: "file", data: { path } })` - after significant edits
 3. `session_event({ type: "decision", data: { content } })` - after choices
-4. `memory_store({ content, type: "decision"|"rule" })` - for durable cross-session knowledge
+4. `memory_create({ name, description, content, priority })` - for short durable project facts (check `memory_list` first)
 5. `session_log({ agent: "cursor", summary })` - at end of work unit
 
 **Codex** (hooks available via `hooks/codex/settings.json`, same as Claude Code):
@@ -569,7 +571,7 @@ Skills live in `skills/*/SKILL.md` (built-in, shipped with ORC) and `~/.orc/skil
 | ---------- | ------------ | --------------------------------------------- |
 | `file`     | 1 (critical) | File written or edited                        |
 | `task`     | 1 (critical) | Task created or status changed                |
-| `rule`     | 1 (critical) | Convention established (also store in memory) |
+| `rule`     | 1 (critical) | Convention established (also save as memory)  |
 | `decision` | 2 (high)     | Choice made about approach or architecture    |
 | `git`      | 2 (high)     | Git commit, push, branch                      |
 | `env`      | 2 (high)     | Dependency installed, env variable set        |

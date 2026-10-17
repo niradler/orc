@@ -126,8 +126,9 @@ export class CodexSession implements AgentSession {
     if (opts.autoApprove) {
       for (const tool of [
         "context",
-        "memory_search",
-        "memory_get",
+        "memory_list",
+        "memory_read",
+        "memory_history",
         "wiki_search",
         "wiki_get",
         "wiki_index",
@@ -150,7 +151,7 @@ export class CodexSession implements AgentSession {
         "task_get",
         "task_list",
         "task_update",
-        "memory_store",
+        "memory_create",
         "memory_update",
         "wiki_write",
         "flow_report",

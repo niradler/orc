@@ -49,13 +49,34 @@ export async function apiCreateTask(title: string, projectId?: string | null) {
   return res.data;
 }
 
-export async function apiSearchMemories(query: string, projectId?: string | null) {
-  const res = await client().memories.search(query, {
-    limit: 5,
-    ...(projectId ? { project_id: projectId } : {}),
+const GATEWAY_AUTHOR = "gateway";
+
+export async function apiListMemories(projectId: string, q?: string) {
+  const res = await client().memories.list({ project_id: projectId, q, limit: 10 });
+  if (res.error) throw new Error(res.error.error);
+  return res.data ?? { memories: [], total: 0 };
+}
+
+/** Returns null when the project has no memory with this name. */
+export async function apiGetMemory(projectId: string, name: string) {
+  const res = await client().memories.get(projectId, name);
+  if (res.error?.code === "NOT_FOUND") return null;
+  if (res.error) throw new Error(res.error.error);
+  return res.data;
+}
+
+export async function apiCreateMemory(
+  projectId: string,
+  input: { name: string; description: string; content: string },
+) {
+  const res = await client().memories.create({
+    project_id: projectId,
+    ...input,
+    author: GATEWAY_AUTHOR,
   });
   if (res.error) throw new Error(res.error.error);
-  return res.data?.results ?? [];
+  if (!res.data) throw new Error("No memory data returned");
+  return res.data;
 }
 
 export async function apiListJobs(projectId?: string | null) {

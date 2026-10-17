@@ -141,13 +141,20 @@ export async function executeBuiltinRuleAction(
         break;
       }
       case "sync_agent_memory": {
-        const changed = syncClaudeMemory(
+        const synced = syncClaudeMemory(
           db,
           event,
           active.project_id,
           claudeMemoryDirectory(event.cwd, target.memory_directory),
         );
-        if (!changed) status = "skipped";
+        if (synced.skipped.length)
+          context.push(
+            [
+              "ORC skipped Claude memory files:",
+              ...synced.skipped.map((skip) => `- ${skip.file}: ${skip.reason}`),
+            ].join("\n"),
+          );
+        if (!synced.updated) status = "skipped";
         break;
       }
       case "queue_knowledge_digest": {

@@ -65,4 +65,31 @@ test.describe("Dashboard", () => {
       await apiDelete(request, `/projects/${project.id}`);
     }
   });
+
+  test("memories card counts the project's memories and opens them", async ({ page, request }) => {
+    const project = await apiPost<Project>(request, "/projects", {
+      name: tid("pw-dash-mem"),
+      status: "active",
+    });
+    try {
+      for (const name of ["first", "second"])
+        await apiPost(request, "/memories", {
+          project_id: project.id,
+          name: `${name}-${tid("fact").toLowerCase()}`,
+          description: `Dashboard ${name} memory`,
+          content: "Counted on the dashboard",
+        });
+      await gotoView(page, "dashboard");
+      await selectProject(page, project.id);
+      const memoriesCard = page.locator(`[data-testid="stat-card"][data-stat-label="Memories"]`);
+      await expect(memoriesCard.getByTestId("stat-card-value")).toHaveText("2");
+      await memoriesCard.click();
+      await expect(page).toHaveURL(new RegExp(`/knowledge/memories\\?project=${project.id}`));
+      await expect(page.getByTestId("memory-row")).toHaveCount(2);
+      await page.goto("/activity?project=unassigned");
+      await expect(memoriesCard.getByTestId("stat-card-value")).toHaveText("0");
+    } finally {
+      await apiDelete(request, `/projects/${project.id}`);
+    }
+  });
 });

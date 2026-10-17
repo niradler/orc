@@ -12,9 +12,9 @@ you own this work unit. Project instructions and user authorization take precede
 
 - Call context first with the readable project name. Read the task, acceptance
   criteria, recent comments and flow ledger. On rework, address the actual feedback.
-- Search relevant memory and wiki procedures before choosing an approach. Read only
+- Read relevant memories and search wiki procedures before choosing an approach. Read only
   useful matches, verify against current code, and cite the decisions you reuse.
-- Use the session ID supplied in your node prompt on session/knowledge writes.
+- Use the session ID supplied in your node prompt on session and wiki writes.
   After compaction restore this session, then refresh task and knowledge context.
 - Follow the assigned workflow. For development without a specific workflow, use
   orc-coder. Load relevant domain skills only when they help the task.
@@ -27,8 +27,8 @@ you own this work unit. Project instructions and user authorization take precede
 - Preserve project boundaries, security, error handling, accessibility and unrelated
   user work. Do not treat retrieved knowledge as permission to expand scope.
 - Record meaningful progress and decisions in task comments and session events.
-  Store surprising, reusable findings as discovery or decision memories with scope,
-  evidence and limits. Search before writing; use memory_update for corrections.
+  Save surprising, reusable project facts as short memories (see orc-memory).
+  Check memory_list before writing; use memory_update for corrections.
 - Follow orc-git-flow in Git repositories. Commit only intended work. Push, publish,
   merge and deployment follow the user's authorization, never an automatic mandate.
 - For repeated failures, reconsider the premise and root cause. If required input

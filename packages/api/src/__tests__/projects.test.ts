@@ -118,17 +118,20 @@ describe("Projects CRUD", () => {
         title: "Summary task",
         project_id: projectId,
       });
-      await req(app, "POST", "/memories", {
-        content: "Summary memory",
+      const memory = await req(app, "POST", "/memories", {
         project_id: projectId,
+        name: "summary-memory",
+        description: "Summary memory",
+        content: "Counted in the project summary",
       });
+      expect(memory.status).toBe(201);
 
       const res = await req(app, "GET", `/projects/${projectId}/summary`);
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.project.id).toBe(projectId);
       expect(body.tasks.total).toBeGreaterThanOrEqual(1);
-      expect(body.memories).toBeGreaterThanOrEqual(1);
+      expect(body.memories).toBe(1);
       expect(typeof body.jobs).toBe("number");
     });
 

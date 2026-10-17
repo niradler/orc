@@ -7,6 +7,7 @@ import { installAudit } from "./audit.js";
 import { installChangeTracking, stopChangeTracking } from "./changes.js";
 import { installDigest } from "./digest.js";
 import { installKnowledgeBases } from "./kb.js";
+import { installMemories } from "./memories.js";
 import { installRules } from "./rules.js";
 import * as schema from "./schema.js";
 import { installSkillHistory } from "./skill-history.js";
@@ -68,20 +69,6 @@ function setupDb(sqlite: Database): void {
 
     CREATE INDEX IF NOT EXISTS task_links_from_idx ON task_links(from_task_id);
     CREATE INDEX IF NOT EXISTS task_links_to_idx ON task_links(to_task_id);
-
-    CREATE TABLE IF NOT EXISTS memories (
-      id TEXT PRIMARY KEY,
-      title TEXT,
-      type TEXT NOT NULL DEFAULT 'fact',
-      content TEXT NOT NULL,
-      source TEXT,
-      scope TEXT,
-      tags TEXT,
-      importance TEXT NOT NULL DEFAULT 'normal',
-      expires_at INTEGER,
-      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
-    );
 
     CREATE TABLE IF NOT EXISTS jobs (
       id TEXT PRIMARY KEY,
@@ -274,45 +261,6 @@ function setupDb(sqlite: Database): void {
     CREATE INDEX IF NOT EXISTS flow_node_runs_run_idx ON flow_node_runs(flow_run_id, created_at);
     CREATE INDEX IF NOT EXISTS flow_node_runs_status_idx ON flow_node_runs(status);
 
-    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-      id UNINDEXED,
-      content,
-      title,
-      tags,
-      scope UNINDEXED,
-      tokenize='porter ascii'
-    );
-
-    CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts_trigram USING fts5(
-      id UNINDEXED,
-      content,
-      title,
-      tags,
-      scope UNINDEXED,
-      tokenize='trigram'
-    );
-
-    CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
-      INSERT INTO memories_fts(id, content, title, tags, scope)
-        VALUES (new.id, new.content, COALESCE(new.title, ''), COALESCE(new.tags, ''), COALESCE(new.scope, ''));
-      INSERT INTO memories_fts_trigram(id, content, title, tags, scope)
-        VALUES (new.id, new.content, COALESCE(new.title, ''), COALESCE(new.tags, ''), COALESCE(new.scope, ''));
-    END;
-
-    CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
-      DELETE FROM memories_fts WHERE id = old.id;
-      DELETE FROM memories_fts_trigram WHERE id = old.id;
-    END;
-
-    CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
-      DELETE FROM memories_fts WHERE id = old.id;
-      DELETE FROM memories_fts_trigram WHERE id = old.id;
-      INSERT INTO memories_fts(id, content, title, tags, scope)
-        VALUES (new.id, new.content, COALESCE(new.title, ''), COALESCE(new.tags, ''), COALESCE(new.scope, ''));
-      INSERT INTO memories_fts_trigram(id, content, title, tags, scope)
-        VALUES (new.id, new.content, COALESCE(new.title, ''), COALESCE(new.tags, ''), COALESCE(new.scope, ''));
-    END;
-
     CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
       id UNINDEXED,
       title,
@@ -368,8 +316,6 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE tasks ADD COLUMN git_worktree TEXT",
     "ALTER TABLE tasks ADD COLUMN github_issue TEXT",
     "ALTER TABLE tasks ADD COLUMN github_pr TEXT",
-    "ALTER TABLE memories ADD COLUMN title TEXT",
-    "ALTER TABLE memories ADD COLUMN type TEXT NOT NULL DEFAULT 'fact'",
     "ALTER TABLE session_events ADD COLUMN data_hash TEXT",
     "ALTER TABLE tasks ADD COLUMN progress INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE tasks ADD COLUMN claimed_by TEXT",
@@ -390,11 +336,8 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE gateway_sessions ADD COLUMN auto_approve INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE gateway_sessions ADD COLUMN task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL",
     "UPDATE jobs SET enabled=0 WHERE trigger_type='repeat'",
-    "ALTER TABLE memories ADD COLUMN project_id TEXT REFERENCES projects(id)",
     "ALTER TABLE jobs ADD COLUMN project_id TEXT REFERENCES projects(id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS projects_name_idx ON projects(name)",
-    "ALTER TABLE memories ADD COLUMN access_count INTEGER NOT NULL DEFAULT 0",
-    "ALTER TABLE memories ADD COLUMN last_accessed_at INTEGER",
     "INSERT INTO comments (id, resource_type, resource_id, content, author, created_at) SELECT id, 'task', task_id, content, author, created_at FROM task_notes WHERE 1",
     "DROP TABLE IF EXISTS task_notes",
     "DROP TABLE IF EXISTS task_comments",
@@ -433,7 +376,6 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE flow_runs ADD COLUMN paused_secs INTEGER NOT NULL DEFAULT 0",
     "DROP INDEX IF EXISTS flow_node_runs_attempt_idx",
     "CREATE UNIQUE INDEX IF NOT EXISTS flow_node_runs_attempt_idx ON flow_node_runs(flow_run_id, node_id, attempt, retry)",
-    // A contradicted memory is kept for history but points at the memory that replaced it.
   ];
   for (const statement of migrations) {
     try {
@@ -529,6 +471,7 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   installWiki(sqlite);
   installKnowledgeBases(sqlite);
   installSkillHistory(sqlite);
+  installMemories(sqlite);
   installDigest(sqlite);
   installRules(sqlite);
 

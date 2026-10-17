@@ -9,7 +9,20 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useProjectScope } from "@/hooks/useProjectScope";
+import { MEMORIES_PATH, memoryPath } from "@/lib/memory-routes";
 import { workspaceDestination } from "@/lib/workspace-navigation";
+
+/** Wiki pages cite `memory:<name>`; the memory lives in the page's project. */
+function memorySourcePath(name: string, projectId: string, search: string): string {
+  const scoped = projectId !== "all" && projectId !== "unassigned";
+  return workspaceDestination(
+    scoped
+      ? memoryPath(projectId, name)
+      : `${MEMORIES_PATH}?memoryQuery=${encodeURIComponent(name)}`,
+    projectId,
+    search,
+  );
+}
 
 export default function Wiki({ projectId }: { projectId: string }) {
   const location = useLocation();
@@ -247,10 +260,11 @@ export default function Wiki({ projectId }: { projectId: string }) {
                       <li key={source}>
                         {source.startsWith("memory:") ? (
                           <Link
+                            data-testid="wiki-memory-source"
                             className="text-primary underline"
-                            to={workspaceDestination(
-                              `/knowledge/memories/${encodeURIComponent(source.slice(7))}`,
-                              selectedProject,
+                            to={memorySourcePath(
+                              source.slice("memory:".length),
+                              page.data.project_id ?? selectedProject,
                               location.search,
                             )}
                           >

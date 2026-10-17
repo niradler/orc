@@ -3945,50 +3945,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/memories/search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Search memories (3-layer BM25: porter → trigram → fallback) */
-        get: {
-            parameters: {
-                query: {
-                    q: string;
-                    scope?: string;
-                    type?: "fact" | "decision" | "event" | "rule" | "discovery";
-                    project_id?: string;
-                    limit?: number;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Search results */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            results: components["schemas"]["Memory"][];
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/memories": {
         parameters: {
             query?: never;
@@ -3996,13 +3952,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List memories */
+        /** List memories of a project (or all projects), most read first */
         get: {
             parameters: {
                 query?: {
-                    scope?: string;
-                    type?: "fact" | "decision" | "event" | "rule" | "discovery";
                     project_id?: string;
+                    /** @description Search name and description */
+                    q?: string;
+                    /** @description reads (default): most read first; recent: last read or updated first; priority: highest priority first */
+                    sort?: "reads" | "recent" | "priority";
                     limit?: number;
                 };
                 header?: never;
@@ -4018,14 +3976,15 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            memories: components["schemas"]["Memory"][];
+                            memories: components["schemas"]["MemoryListItem"][];
+                            total: number;
                         };
                     };
                 };
             };
         };
         put?: never;
-        /** Store a memory (skips near-duplicates, can merge or supersede) */
+        /** Create a memory (content over the limit belongs in a skill) */
         post: {
             parameters: {
                 query?: never;
@@ -4039,23 +3998,28 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Created a merged replacement, or kept a near-duplicate */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["StoreMemoryResult"];
-                    };
-                };
                 /** @description Created */
                 201: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["StoreMemoryResult"];
+                        "application/json": components["schemas"]["Memory"];
                     };
+                };
+                /** @description Validation error */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description A memory with this name already exists in the project */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
                 };
             };
         };
@@ -4065,23 +4029,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/memories/{id}": {
+    "/api/memories/{name}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete memory */
-        delete: {
+        /** Read a memory; counts a read for the calling client */
+        get: {
             parameters: {
-                query?: never;
+                query: {
+                    project_id: string;
+                };
                 header?: never;
                 path: {
-                    id: string;
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Memory */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Memory"];
+                    };
+                };
+                /** @description Memory not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        /** Delete a memory (revertible from its history) */
+        delete: {
+            parameters: {
+                query: {
+                    project_id: string;
+                    author?: string;
+                    /** @description Native session id of the agent making the change, when known */
+                    session_id?: string;
+                };
+                header?: never;
+                path: {
+                    name: string;
                 };
                 cookie?: never;
             };
@@ -4094,17 +4094,24 @@ export interface paths {
                     };
                     content?: never;
                 };
+                /** @description Memory not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
             };
         };
         options?: never;
         head?: never;
-        /** Update a memory (partial) */
+        /** Update a memory's description, content or priority */
         patch: {
             parameters: {
                 query?: never;
                 header?: never;
                 path: {
-                    id: string;
+                    name: string;
                 };
                 cookie?: never;
             };
@@ -4123,8 +4130,116 @@ export interface paths {
                         "application/json": components["schemas"]["Memory"];
                     };
                 };
+                /** @description Memory not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
             };
         };
+        trace?: never;
+    };
+    "/api/memories/{name}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Changes to a memory, newest first */
+        get: {
+            parameters: {
+                query: {
+                    project_id: string;
+                };
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Changes */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            changes: components["schemas"]["MemoryChange"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memories/{name}/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore the state from before a change, guarded by the latest change id */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        project_id: string;
+                        change_id: string;
+                        expected_change_id: string;
+                        reason: string;
+                        author?: string;
+                        /** @description Native session id of the agent making the change, when known */
+                        session_id?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description The memory after the revert; null when the revert deleted it */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            memory: components["schemas"]["Memory"] & unknown;
+                        };
+                    };
+                };
+                /** @description Memory changed since review */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/wiki": {
@@ -6629,7 +6744,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    resource_type?: "task" | "project" | "memory";
+                    resource_type?: "task" | "project";
                 };
                 header?: never;
                 path?: never;
@@ -8104,81 +8219,79 @@ export interface components {
             /** @enum {string} */
             link_type: "blocks" | "blocked_by" | "relates_to" | "duplicates" | "clones" | "subtask_of" | "parent_of";
         };
-        Memory: {
-            id: string;
-            title: string | null;
-            /** @enum {string} */
-            type: "fact" | "decision" | "event" | "rule" | "discovery";
-            content: string;
-            source: string | null;
-            scope: string | null;
-            project_id: string | null;
-            tags: string[] | null;
-            /** @enum {string} */
-            importance: "low" | "normal" | "high" | "critical";
-            /** Format: date-time */
-            expires_at: string | null;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            updated_at: string;
+        MemoryListItem: {
+            project_id: string;
+            name: string;
+            description: string;
+            priority: number | null;
+            author: string;
+            session_id: string | null;
+            created_at: number;
+            updated_at: number;
+            key: string;
+            read_count: number;
+            reads_by_source: {
+                mcp: number;
+                cli: number;
+                api: number;
+                ui: number;
+            };
+            last_read_at: number | null;
+            activity_at: number;
         };
-        StoreMemoryResult: components["schemas"]["Memory"] & {
-            /** @enum {string} */
-            status: "added" | "merged" | "skipped";
-            /** @description Set on skip: the near-identical memory kept */
-            existing_id?: string;
-            /** @description Set on merge: the memories this one replaced */
-            merged?: string[];
-            similar: {
-                id: string;
-                title: string | null;
-                /** @enum {string} */
-                type: "fact" | "decision" | "event" | "rule" | "discovery";
-                snippet: string;
-                similarity: number;
-            }[];
-            superseded: string[];
-            hint?: string;
+        Memory: {
+            project_id: string;
+            name: string;
+            description: string;
+            content: string;
+            priority: number | null;
+            author: string;
+            session_id: string | null;
+            created_at: number;
+            updated_at: number;
         };
         CreateMemory: {
+            project_id: string;
+            name: string;
+            description: string;
             content: string;
-            title?: string;
-            /**
-             * @default fact
-             * @enum {string}
-             */
-            type: "fact" | "decision" | "event" | "rule" | "discovery";
-            source?: string;
+            /** @description 0-100, higher loads first in context; null = not scored */
+            priority?: number | null;
+            author?: string;
+            /** @description Native session id of the agent making the change, when known */
             session_id?: string;
-            scope?: string;
-            project_id?: string;
-            tags?: string[];
-            /**
-             * @default normal
-             * @enum {string}
-             */
-            importance: "low" | "normal" | "high" | "critical";
-            /** Format: date-time */
-            expires_at?: string;
-            /** @description Replace these memories with this one; they are removed and kept in the audit log */
-            merge_into?: string[];
-            /** @description Memories this one contradicts; they are removed and kept in the audit log */
-            supersedes?: string[];
         };
         UpdateMemory: {
+            project_id: string;
+            description?: string;
             content?: string;
-            title?: string;
-            /** @enum {string} */
-            type?: "fact" | "decision" | "event" | "rule" | "discovery";
-            source?: string;
+            /** @description 0-100, higher loads first in context; null = not scored */
+            priority?: number | null;
+            reason?: string;
+            author?: string;
+            /** @description Native session id of the agent making the change, when known */
             session_id?: string;
-            scope?: string;
-            tags?: string[];
+        };
+        MemoryChange: {
+            id: string;
+            project_id: string;
+            memory_name: string;
             /** @enum {string} */
-            importance?: "low" | "normal" | "high" | "critical";
-            /** @description Memories this one contradicts; they are removed and kept in the audit log */
-            supersedes?: string[];
+            action: "memory.created" | "memory.updated" | "memory.deleted" | "memory.reverted";
+            previous: {
+                description: string;
+                content: string;
+                priority: number | null;
+            } | null;
+            current: {
+                description: string;
+                content: string;
+                priority: number | null;
+            } | null;
+            reason: string | null;
+            author: string;
+            session_id: string | null;
+            created_at: number;
         };
         WikiIndexEntry: {
             slug: string;

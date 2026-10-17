@@ -2,7 +2,13 @@ import { writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { ConflictError, NotFoundError, ValidationError } from "./errors.js";
 import { prepareSkillFiles, readSkillFile, validateSkillPath } from "./skill-files.js";
-import { parseFrontmatter, readSkill, reloadCache, type SkillFull } from "./skill-service.js";
+import {
+  parseFrontmatter,
+  readSkill,
+  reloadCache,
+  type SkillFull,
+  validateAuthoredSkillDescription,
+} from "./skill-service.js";
 
 export function editSkillFile(
   name: string,
@@ -22,6 +28,7 @@ export function editSkillFile(
   const entry = path === "SKILL.md" ? content : readSkillFile(root, "SKILL.md", false).content;
   if (parseFrontmatter(entry).frontmatter.name !== name)
     throw new ValidationError("Skill name must stay unchanged");
+  if (path === "SKILL.md") validateAuthoredSkillDescription(content, file.content);
   const files = skill.files.map((resource) => {
     const value = readSkillFile(root, resource.name, false);
     return {

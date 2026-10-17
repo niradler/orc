@@ -8,11 +8,12 @@ test("session review saves a lesson that normal search and reopened wiki history
   const project = await apiPost<{ id: string; name: string }>(request, "/projects", {
     name: tid("wiki-project"),
   });
-  const memory = await apiPost<{ id: string }>(request, "/memories", {
+  const memory = await apiPost<{ name: string }>(request, "/memories", {
     project_id: project.id,
+    name: "rollback-atomicity",
+    description: "Failed rollback replacements leave memory and audit unchanged",
     content: "wikie2eneedle failed replacements must leave memory and audit unchanged",
-    tags: ["transactions", "outcome:verified"],
-    importance: "high",
+    priority: 80,
   });
   const slug = tid("verified-rollback");
   const entry = {
@@ -23,7 +24,7 @@ test("session review saves a lesson that normal search and reopened wiki history
     summary: "Keep a failed replacement atomic",
     content:
       "# Verified rollback\nBoth memory content and its audit rows must remain unchanged after a rejected supersession.",
-    sources: [`memory:${memory.id}`],
+    sources: [`memory:${memory.name}`],
     author: "codex",
     session_id: "wiki-browser-session",
     note: "Observed rollback behavior",
@@ -57,6 +58,14 @@ test("session review saves a lesson that normal search and reopened wiki history
   await page.getByTestId("wiki-revision").last().locator("summary").click();
   await expect(page.getByTestId("wiki-revision").last()).toContainText("Both memory content");
   await page.screenshot({ path: "../../.claude/wiki-learning-browser.png", fullPage: true });
+  // A `memory:<name>` source opens that memory in the page's project.
+  await page.getByTestId("wiki-memory-source").click();
+  await expect(page).toHaveURL(
+    new RegExp(`/knowledge/memories/${project.id}/${memory.name}\\?project=${project.id}`),
+  );
+  await expect(page.getByTestId("memory-detail-content")).toContainText("wikie2eneedle");
+  await page.goBack();
+  await expect(page.getByTestId("wiki-page-content")).toContainText("Reopen the stored result");
   await page.keyboard.press("Escape");
   await page.getByTestId("wiki-history-toggle").click();
   await page.getByTestId("wiki-search-input").fill("rollback");

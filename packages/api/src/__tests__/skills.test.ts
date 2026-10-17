@@ -171,6 +171,18 @@ API test body.`;
     expect(body.skills.some((s) => s.name === TEST_NAME)).toBe(true);
   });
 
+  test("rejects a description over 300 characters", async () => {
+    const res = await req(app, "POST", "/skills", {
+      name: "long-description-skill",
+      content: `---
+name: long-description-skill
+description: ${"a".repeat(301)}
+---
+Body`,
+    });
+    expect(res.status).toBe(400);
+  });
+
   test("rejects duplicate name", async () => {
     const res = await req(app, "POST", "/skills", {
       name: TEST_NAME,

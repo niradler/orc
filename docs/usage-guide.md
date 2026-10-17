@@ -18,17 +18,19 @@ Once the daemon is running, connect your agent (see [README - Connect your agent
 
 ## Memory best practices
 
-Memory is the shared context layer. What you store determines how useful ORC is across sessions.
+A memory is a short project fact worth knowing next session. What you save determines how useful ORC is across sessions.
 
-### What to store
+### What to save
 
-| Type        | Store when                                                     | Example                                                                |
-| ----------- | -------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `rule`      | A convention is established that all future work should follow | "All API responses use camelCase keys"                                 |
-| `decision`  | A choice was made with tradeoffs                               | "Use PostgreSQL over SQLite for the main app - need concurrent writes" |
-| `discovery` | Something non-obvious was found during investigation           | "The token refresh endpoint has a 2-second race window under load"     |
-| `event`     | Something happened that future sessions might need to know     | "Deployed v2.1 to production on 2026-03-15"                            |
-| `fact`      | General context that doesn't fit other types                   | "The frontend repo is at github.com/team/frontend"                     |
+| Kind        | Example                                                                 |
+| ----------- | ----------------------------------------------------------------------- |
+| Ports       | "API listens on 7700; e2e uses 7799"                                    |
+| Conventions | "All API responses use camelCase keys"                                  |
+| Gotchas     | "The token refresh endpoint has a 2-second race window under load"      |
+| Decisions   | "Use PostgreSQL over SQLite for the main app - need concurrent writes"  |
+| Pointers    | "Release procedure: see the release skill"                              |
+
+Each memory has a lowercase-hyphenated `name` (unique per project), a `description` that says when it matters, `content` up to 800 characters by default, and an optional `priority` 0-100 (how important and broadly relevant it is). Procedures and long guidance belong in skills; keep at most a short memory pointing to the skill.
 
 ### What not to store
 
@@ -37,17 +39,19 @@ Memory is the shared context layer. What you store determines how useful ORC is 
 - Temporary debugging notes
 - Anything that changes every session
 
-### Search effectively
+### Find and read
 
 ```bash
-# BM25 full-text search
-orc mem search "authentication token"
+# Search names and descriptions
+orc mem list -q auth
+orc mem show token-refresh-race
 
-# Via MCP - agents should search before storing to avoid duplicates
-memory_search({ query: "auth", project: "my-app" })
+# Via MCP - agents list before creating to avoid duplicates
+memory_list({ q: "auth", project: "my-app" })
+memory_read({ name: "token-refresh-race", project: "my-app" })
 ```
 
-The `context` MCP tool returns high-weight memories (`rule` and `decision`) automatically at session start. Low-weight memories (`event`, `fact`) are returned only when searched.
+The `context` MCP tool lists the top 30 memories by priority (`name [pN] - description`) at session start; agents read the relevant ones with `memory_read`. Every change is kept in `memory_history` and can be undone with `memory_revert`.
 
 ## Task workflows
 

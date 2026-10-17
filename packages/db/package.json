@@ -13,6 +13,7 @@
     "./kb": "./src/kb.ts",
     "./memories": "./src/memories.ts",
     "./skill-history": "./src/skill-history.ts",
+    "./read-usage": "./src/read-usage.ts",
     "./digest": "./src/digest.ts",
     "./agent-memory": "./src/agent-memory.ts"
   },

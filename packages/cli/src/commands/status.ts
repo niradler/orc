@@ -25,7 +25,7 @@ export function statusCommand() {
 
     const { data: tasks } = await client.tasks.list({ limit: 100 });
     const { data: jobs } = await client.jobs.list();
-    const { data: mems } = await client.memories.list();
+    const { data: mems } = await client.memories.list({ sort: "recent", limit: 10 });
 
     if (isJson())
       return jsonOut({
@@ -33,6 +33,7 @@ export function statusCommand() {
         tasks: tasks?.tasks ?? [],
         jobs: jobs?.jobs ?? [],
         memories: mems?.memories ?? [],
+        memories_total: mems?.total ?? 0,
       });
 
     const taskCounts = countBy(tasks?.tasks ?? [], "status");
@@ -42,7 +43,7 @@ export function statusCommand() {
     }
 
     console.log(`\nJobs: ${jobs?.jobs.length ?? 0} defined`);
-    console.log(`Memory: ${mems?.memories.length ?? 0} recent entries`);
+    console.log(`Memories: ${mems?.total ?? 0} across all projects`);
   });
 }
 

@@ -39,8 +39,9 @@ for (const theme of ["dark", "light"] as const) {
       });
       await apiPost(request, "/memories", {
         project_id: project.id,
-        content: tid("scoped-memory"),
-        type: "fact",
+        name: tid("scoped-memory"),
+        description: "Scoped memory",
+        content: "Counted on the project dashboard",
       });
       await gotoView(page, "dashboard");
       await selectProject(page, project.id);

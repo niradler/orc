@@ -15,6 +15,19 @@ beforeEach(() => {
 });
 afterEach(teardownTestApp);
 
+async function createProject(name: string): Promise<{ id: string; name: string }> {
+  return (await req(app, "POST", "/projects", { name })).json();
+}
+
+function remember(projectId: string, name: string, content: string) {
+  return new MemoryStore(getSqlite()).create({
+    project_id: projectId,
+    name,
+    description: content.slice(0, 80),
+    content,
+  });
+}
+
 const lesson = {
   project_id: null,
   slug: "verified-learning",
@@ -27,24 +40,31 @@ const lesson = {
 };
 
 test("should reuse wiki lessons in ordinary search without putting them in startup context", async () => {
-  const memory = new MemoryStore(getSqlite()).store({
-    content: "reuseprobeneedle failed requests must preserve content and audit state",
-  });
-  if (memory.status !== "added") throw new Error("fixture was not added");
+  const project = await createProject("reuse-learning");
+  const memory = remember(
+    project.id,
+    "reuse-probe",
+    "reuseprobeneedle failed requests must preserve content and audit state",
+  );
   await req(app, "POST", "/wiki", {
     ...lesson,
+    project_id: project.id,
     title: "reuseprobeneedle procedure",
-    sources: [`memory:${memory.id}`],
+    sources: [`memory:${memory.name}`],
   });
   const search = await executeTool("search", {
     query: "reuseprobeneedle",
     resources: ["wiki", "memories"],
+    project: project.name,
   });
   expect(search).toContain("## Wiki");
   expect(search).toContain(lesson.summary);
-  expect(search).not.toContain(`[memory] ${memory.id}`);
-  expect(await executeTool("context", {})).not.toContain(lesson.summary);
-  const ordinaryMemoryRead = await executeTool("memory_get", { ids: [memory.id] });
+  expect(search).not.toContain("[memory]");
+  expect(await executeTool("context", { project: project.name })).not.toContain(lesson.summary);
+  const ordinaryMemoryRead = await executeTool("memory_read", {
+    name: memory.name,
+    project: project.name,
+  });
   expect(ordinaryMemoryRead).toContain("reuseprobeneedle");
 });
 
@@ -146,9 +166,8 @@ test("should seed one enabled daily job and skip agents when no new knowledge ex
 });
 
 test("should claim each changed scope once, keep failures retryable and preserve writes after the captured cursor", async () => {
-  const project = await (await req(app, "POST", "/projects", { name: "digest-learning" })).json();
-  const memories = new MemoryStore(getSqlite());
-  memories.store({ project_id: project.id, content: "digestneedle verified original behavior" });
+  const project = await createProject("digest-learning");
+  remember(project.id, "digest-original", "digestneedle verified original behavior");
   const store = new DigestStore(getSqlite());
   const first = store.claim(project.id);
   if (!first) throw new Error("No digest claim");
@@ -158,10 +177,7 @@ test("should claim each changed scope once, keep failures retryable and preserve
   const retry = store.claim(project.id);
   if (!retry) throw new Error("No retry");
   expect(retry.memories).toHaveLength(1);
-  memories.store({
-    project_id: project.id,
-    content: "digestneedle a different new observation during processing",
-  });
+  remember(project.id, "digest-new", "digestneedle a different new observation during processing");
   store.complete(retry.token, "applied", "Reviewed original observation");
   expect(() => store.complete(retry.token, "applied", "Duplicate callback")).toThrow();
   const next = store.claim(project.id);
@@ -171,11 +187,17 @@ test("should claim each changed scope once, keep failures retryable and preserve
 });
 
 test("should run the digest through its agent boundary and require explicit completion", async () => {
-  new MemoryStore(getSqlite()).store({ content: "digestflowneedle failure rollback verified" });
+  const project = await createProject("digest-flow");
+  remember(project.id, "digest-flow", "digestflowneedle failure rollback verified");
   let calls = 0;
   await runKnowledgeDigest(async (input) => {
     calls++;
-    await req(app, "POST", "/wiki", { ...lesson, sources: [`memory:${input.memories[0]?.id}`] });
+    expect(input.memories.map((m) => m.name)).toEqual(["digest-flow"]);
+    await req(app, "POST", "/wiki", {
+      ...lesson,
+      project_id: project.id,
+      sources: [`memory:${input.memories[0]?.name}`],
+    });
     await executeTool("digest_complete", {
       token: input.token,
       outcome: "applied",
@@ -187,18 +209,19 @@ test("should run the digest through its agent boundary and require explicit comp
     calls++;
   });
   expect(calls).toBe(1);
-  new MemoryStore(getSqlite()).store({ content: "digestflowneedle further observations" });
+  remember(project.id, "digest-flow-more", "digestflowneedle further observations");
   await expect(runKnowledgeDigest(async () => {})).rejects.toThrow("failed");
-  expect(new DigestStore(getSqlite()).claim(null)).not.toBeNull();
+  expect(new DigestStore(getSqlite()).claim(project.id)).not.toBeNull();
 });
 
-test("should not treat an expired or replaced digest token as a completed run", () => {
-  new MemoryStore(getSqlite()).store({ content: "Lease expiry observation" });
+test("should not treat an expired or replaced digest token as a completed run", async () => {
+  const project = await createProject("digest-lease");
+  remember(project.id, "lease-expiry", "Lease expiry observation");
   const store = new DigestStore(getSqlite());
-  const first = store.claim(null);
+  const first = store.claim(project.id);
   if (!first) throw new Error("No initial claim");
   getSqlite().query("UPDATE knowledge_digests SET expires_at=1").run();
-  const next = store.claim(null);
+  const next = store.claim(project.id);
   if (!next) throw new Error("No replacement claim");
   expect(store.completed(first.token)).toBe(false);
   expect(() => store.complete(first.token, "no_change", "Expired claim")).toThrow();
@@ -251,7 +274,7 @@ test("should execute the actual session driver with MCP tools and persist the wo
   try {
     process.env.ORC_AGENT_LOOP_DEFAULT_BACKEND = "knowledge-driver-test";
     resetConfig();
-    new MemoryStore(getSqlite()).store({ content: "Actual session-driver control" });
+    remember((await createProject("digest-driver")).id, "driver", "Actual session-driver control");
     await runKnowledgeDigest();
     expect(
       getSqlite()
@@ -273,7 +296,8 @@ test("should execute the actual session driver with MCP tools and persist the wo
 });
 
 test("should leave digest inputs untouched when the overall job budget is exhausted", async () => {
-  new MemoryStore(getSqlite()).store({ content: "Deferred digest budget observation" });
+  const project = await createProject("digest-budget");
+  remember(project.id, "budget", "Deferred digest budget observation");
   let calls = 0;
   await expect(
     runKnowledgeDigest(async () => {
@@ -281,28 +305,37 @@ test("should leave digest inputs untouched when the overall job budget is exhaus
     }, 0),
   ).rejects.toThrow("timeout");
   expect(calls).toBe(0);
-  expect(new DigestStore(getSqlite()).claim(null)?.memories).toHaveLength(1);
+  expect(new DigestStore(getSqlite()).claim(project.id)?.memories).toHaveLength(1);
 });
 
-test("should identify work-unit memories explicitly and expose tags for review", async () => {
-  const result = await executeTool("memory_store", {
-    content: "Session ownership review note",
-    tags: ["transactions"],
-    session_id: "review-owned-session",
-  });
-  const id = result.replace("Stored: ", "").split(/\s/)[0];
-  if (!id) throw new Error("Missing memory ID");
-  expect(await executeTool("memory_get", { ids: [id] })).toContain('tags: ["transactions"]');
-  await executeTool("memory_update", {
-    id,
-    tags: ["transactions", "outcome:verified"],
-    session_id: "review-owned-session",
-  });
+test("should attribute memory changes to the agent session for review", async () => {
+  const project = await createProject("review-learning");
+  const session = { agentSessionId: "review-owned-session" };
+  await executeTool(
+    "memory_create",
+    {
+      name: "session-ownership",
+      description: "Review note",
+      content: "Session ownership review note",
+      project: project.name,
+    },
+    session,
+  );
+  await executeTool(
+    "memory_update",
+    { name: "session-ownership", priority: 60, reason: "verified", project: project.name },
+    session,
+  );
   const audit = JSON.parse(
-    await executeTool("audit_list", { session_id: "review-owned-session", scope: "global" }),
+    await executeTool("audit_list", { session_id: "review-owned-session", project: project.name }),
   );
   expect(audit.entries.map((entry: { action: string }) => entry.action)).toEqual([
     "memory.updated",
     "memory.created",
   ]);
+  expect(
+    audit.entries.every((entry: { subject_ids: string[] }) =>
+      entry.subject_ids.includes("session-ownership"),
+    ),
+  ).toBe(true);
 });

@@ -1,260 +1,187 @@
-import type { Database } from "bun:sqlite";
+import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { AuditLog } from "../audit.js";
 import { createDb, getSqlite } from "../client.js";
-import { jaccardSimilarity, MemoryStore, type StoreMemoryResult } from "../memories.js";
+import { installMemories, MemoryStore } from "../memories.js";
 
 let sqlite: Database;
 let store: MemoryStore;
-let audit: AuditLog;
 
 beforeEach(() => {
   sqlite = getSqlite(createDb(":memory:"));
   sqlite.exec("INSERT INTO projects(id, name) VALUES ('p1', 'one'), ('p2', 'two')");
-  store = new MemoryStore(sqlite);
-  audit = new AuditLog(sqlite);
+  store = new MemoryStore(sqlite, { maxContentChars: 80 });
 });
 
 afterEach(() => sqlite.close());
 
-const content = "The orc dev API runs on port 7711 with an isolated database";
-
-function countMemories(): number {
-  return sqlite.query<{ total: number }, []>("SELECT COUNT(*) AS total FROM memories").get()
-    ?.total as number;
+function create(name: string, extra: { priority?: number | null; project_id?: string } = {}) {
+  return store.create({
+    project_id: extra.project_id ?? "p1",
+    name,
+    description: `About ${name}`,
+    content: `Content of ${name}`,
+    priority: extra.priority,
+    author: "tester",
+    session_id: "s1",
+  });
 }
 
-function exists(id: string): boolean {
-  return sqlite.query("SELECT 1 FROM memories WHERE id = ?").get(id) !== null;
-}
+describe("MemoryStore", () => {
+  test("should create a memory per project and reject duplicates in the same project", () => {
+    const memory = create("dev-port");
+    expect(memory).toMatchObject({
+      project_id: "p1",
+      name: "dev-port",
+      priority: null,
+      author: "tester",
+      session_id: "s1",
+    });
+    create("dev-port", { project_id: "p2" });
+    expect(() => create("dev-port")).toThrow("already exists");
+  });
 
-function addedId(result: StoreMemoryResult): string {
-  if (result.status !== "added") throw new Error(`expected added, got ${result.status}`);
-  return result.id;
-}
+  test("should validate name, description, content and priority", () => {
+    const base = { project_id: "p1", description: "d", content: "c" };
+    expect(() => store.create({ ...base, name: "Bad Name" })).toThrow("Invalid memory name");
+    expect(() => store.create({ ...base, name: "ok", description: "x".repeat(301) })).toThrow(
+      "limit is 300",
+    );
+    expect(() => store.create({ ...base, name: "ok", content: "x".repeat(81) })).toThrow(
+      "make it a skill",
+    );
+    expect(() => store.create({ ...base, name: "ok", priority: 101 })).toThrow("0 to 100");
+    expect(() => store.create({ ...base, name: "ok", project_id: "missing" })).toThrow("Project");
+  });
 
-function mergedId(result: StoreMemoryResult): string {
-  if (result.status !== "merged") throw new Error(`expected merged, got ${result.status}`);
-  return result.id;
-}
+  test("should update fields partially and clear priority with null", () => {
+    create("dev-port", { priority: 40 });
+    const updated = store.update("p1", "dev-port", { content: "Port 7711" }, { author: "a2" });
+    expect(updated).toMatchObject({ content: "Port 7711", priority: 40, author: "a2" });
+    expect(store.update("p1", "dev-port", { priority: null }).priority).toBeNull();
+  });
 
-describe("jaccardSimilarity", () => {
-  test("should ignore case and punctuation", () => {
-    expect(jaccardSimilarity("Port 7711!", "port, 7711")).toBe(1);
-    expect(jaccardSimilarity("a b", "c d")).toBe(0);
+  test("should count reads per source and rank agent reads only", () => {
+    create("a");
+    create("b");
+    store.read("p1", "b", "mcp");
+    store.read("p1", "b", "cli");
+    store.read("p1", "a", "ui");
+    store.read("p1", "a", "ui");
+    const [first, second] = store.list("p1");
+    expect(first).toMatchObject({ name: "b", read_count: 2 });
+    expect(second?.reads_by_source.ui).toBe(2);
+    expect(second?.read_count).toBe(0);
+  });
+
+  test("should search name and description and scope by project", () => {
+    create("dev-port");
+    create("deploy-steps", { project_id: "p2" });
+    expect(store.list("p1", { q: "port" }).map((m) => m.name)).toEqual(["dev-port"]);
+    expect(store.list("p1", { q: "deploy" })).toEqual([]);
+    expect(
+      store
+        .list(null)
+        .map((m) => m.key)
+        .sort(),
+    ).toEqual(["p1/dev-port", "p2/deploy-steps"]);
+  });
+
+  test("should load context by priority, unscored last, without counting reads", () => {
+    create("low", { priority: 10 });
+    create("none");
+    create("high", { priority: 90 });
+    store.read("p1", "none", "mcp");
+    expect(store.context("p1", 2).map((m) => m.name)).toEqual(["high", "low"]);
+    expect(store.list("p1", { sort: "priority" }).map((m) => m.name)).toEqual([
+      "high",
+      "low",
+      "none",
+    ]);
+    expect(store.list("p1").find((m) => m.name === "high")?.read_count).toBe(0);
+  });
+
+  test("should keep history and revert updates, creations and deletions", () => {
+    create("dev-port");
+    store.update("p1", "dev-port", { content: "Changed" });
+    let [latest] = store.history("p1", "dev-port");
+    expect(latest?.action).toBe("memory.updated");
+    if (!latest) throw new Error("missing history");
+    store.revert("p1", "dev-port", latest.id, latest.id, { reason: "undo" });
+    expect(store.get("p1", "dev-port").content).toBe("Content of dev-port");
+
+    store.remove("p1", "dev-port", { author: "human" });
+    [latest] = store.history("p1", "dev-port");
+    if (!latest) throw new Error("missing history");
+    expect(() =>
+      store.revert("p1", "dev-port", latest?.id ?? "", "stale", { reason: "r" }),
+    ).toThrow("changed since review");
+    store.revert("p1", "dev-port", latest.id, latest.id, { reason: "restore" });
+    expect(store.get("p1", "dev-port").content).toBe("Content of dev-port");
+
+    const created = store.history("p1", "dev-port").at(-1);
+    const [newest] = store.history("p1", "dev-port");
+    if (!created || !newest) throw new Error("missing history");
+    expect(created.action).toBe("memory.created");
+    expect(store.revert("p1", "dev-port", created.id, newest.id, { reason: "drop" })).toBeNull();
+    expect(() => store.get("p1", "dev-port")).toThrow("not found");
+  });
+
+  test("should audit changes by name and find them by session", () => {
+    create("dev-port");
+    store.update("p1", "dev-port", { content: "x" }, { session_id: "s2" });
+    const entries = new AuditLog(sqlite).list({ entityType: "memory" });
+    expect(entries.map((e) => e.subject_ids)).toEqual([["dev-port"], ["dev-port"]]);
+    expect(store.sessionChanges("s1").map((c) => c.action)).toEqual(["memory.created"]);
+  });
+
+  test("should drop a project's memories, history and reads", () => {
+    create("dev-port");
+    store.read("p1", "dev-port", "mcp");
+    store.removeProject("p1");
+    for (const table of ["memories", "memory_changes", "memory_usage"])
+      expect(sqlite.query(`SELECT 1 FROM ${table}`).get()).toBeNull();
   });
 });
 
-describe("MemoryStore", () => {
-  test("should add a new memory, report no similar ones and audit the creation", () => {
-    const result = store.store({
-      content,
-      project_id: "p1",
-      tags: ["API", "api"],
-      actor: "claude",
-      session_id: "s1",
-    });
-    expect(result).toMatchObject({ status: "added", similar: [], superseded: [] });
-    const id = addedId(result);
-    const row = sqlite
-      .query<{ tags: string }, [string]>("SELECT tags FROM memories WHERE id = ?")
-      .get(id);
-    expect(JSON.parse(row?.tags ?? "[]")).toEqual(["api"]);
-    expect(audit.list()).toMatchObject([
-      {
-        action: "memory.created",
-        entity_type: "memory",
-        subject_ids: [id],
-        project_id: "p1",
-        actor: "claude",
-        session_id: "s1",
-      },
-    ]);
+describe("installMemories", () => {
+  test("should drop the old memories table, its search index and sync sources", () => {
+    const old = new Database(":memory:");
+    old.exec(`
+      CREATE TABLE projects(id TEXT PRIMARY KEY);
+      CREATE TABLE memories(id TEXT PRIMARY KEY, type TEXT, content TEXT);
+      CREATE VIRTUAL TABLE memories_fts USING fts5(id UNINDEXED, content);
+      CREATE TRIGGER memories_ai AFTER INSERT ON memories BEGIN
+        INSERT INTO memories_fts(id, content) VALUES (new.id, new.content);
+      END;
+      CREATE TABLE agent_memory_sources(source_key TEXT PRIMARY KEY);
+      INSERT INTO memories VALUES ('m1', 'fact', 'old');
+    `);
+    installMemories(old);
+    const tables = old
+      .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE name LIKE '%memor%'")
+      .all()
+      .map((row) => row.name);
+    expect(tables).not.toContain("memories_fts");
+    expect(tables).not.toContain("agent_memory_sources");
+    expect(tables).not.toContain("memories_ai");
+    expect(old.query("SELECT COUNT(*) AS n FROM memories").get()).toEqual({ n: 0 });
+    installMemories(old);
+    old.close();
   });
 
-  test("should skip a near-identical memory and return the existing id", () => {
-    const first = addedId(store.store({ content, project_id: "p1", scope: "dev" }));
-    const second = store.store({
-      content: `${content.toUpperCase()}.`,
-      project_id: "p1",
-      scope: "dev",
-    });
-    expect(second).toMatchObject({ status: "skipped", existing_id: first });
-    expect(countMemories()).toBe(1);
-  });
-
-  test("should not skip across projects, scopes or types", () => {
-    store.store({ content, project_id: "p1" });
-    expect(store.store({ content, project_id: "p2" }).status).toBe("added");
-    expect(store.store({ content, project_id: "p1", scope: "dev" }).status).toBe("added");
-    expect(store.store({ content, project_id: "p1", type: "decision" }).status).toBe("added");
-  });
-
-  test("should never auto-skip short items", () => {
-    store.store({ content: "use port 7711", project_id: "p1" });
-    const again = store.store({ content: "use port 7711", project_id: "p1" });
-    expect(again.status).toBe("added");
-    if (again.status !== "added") throw new Error("expected added");
-    expect(again.similar[0]?.similarity).toBe(1);
-  });
-
-  test("should add a related memory and report it as similar", () => {
-    const first = addedId(store.store({ content, project_id: "p1" }));
-    const result = store.store({
-      content: "The orc dev API moved to port 7701 after the zombie socket cleared",
-      project_id: "p1",
-    });
-    if (result.status !== "added") throw new Error("expected added");
-    expect(result.similar[0]?.id).toBe(first);
-    expect(result.similar[0]?.similarity).toBeLessThan(0.9);
-    expect(result.similar[0]?.snippet.length).toBeLessThanOrEqual(151);
-  });
-
-  test("should replace merged memories with a new one and keep them in the audit log", () => {
-    const first = addedId(
-      store.store({ content, project_id: "p1", tags: ["api"], importance: "high", title: "Port" }),
-    );
-    const second = addedId(
-      store.store({ content: "Web proxies the API on 3087", project_id: "p1", tags: ["web"] }),
-    );
-    const merged = store.store({
-      content: `${content}; web proxies to it on 3087`,
-      project_id: "p1",
-      merge_into: [first, second],
-      importance: "low",
-      actor: "claude",
-    });
-    const id = mergedId(merged);
-    expect(merged).toMatchObject({ merged: [first, second], superseded: [] });
-    expect(exists(first) || exists(second)).toBe(false);
-    const row = sqlite
-      .query<{ title: string; tags: string; importance: string }, [string]>(
-        "SELECT title, tags, importance FROM memories WHERE id = ?",
-      )
-      .get(id);
-    expect(row).toMatchObject({ title: "Port", importance: "high" });
-    expect(JSON.parse(row?.tags ?? "[]")).toEqual(["api", "web"]);
-
-    const [entry] = audit.list({ entityType: "memory", limit: 1 });
-    expect(entry).toMatchObject({
-      action: "memory.merged",
-      subject_ids: [first, second],
-      result_ids: [id],
-      actor: "claude",
-    });
-    expect(
-      ((entry?.snapshot ?? []) as { content: string }[]).map((memory) => memory.content),
-    ).toEqual([content, "Web proxies the API on 3087"]);
-  });
-
-  test("should point a stale id at its replacement", () => {
-    const first = addedId(store.store({ content, project_id: "p1" }));
-    const id = mergedId(
-      store.store({ content: "merged text", project_id: "p1", merge_into: [first] }),
-    );
-    expect(() => store.store({ content: "x", project_id: "p1", merge_into: [first] })).toThrow(
-      `use ${id}`,
-    );
-    expect(() => store.update(first, { title: "x" })).toThrow("memory.merged");
-  });
-
-  test("should reject a merge across projects or scopes and leave everything in place", () => {
-    const first = addedId(store.store({ content, project_id: "p1", scope: "dev" }));
-    const other = addedId(store.store({ content, project_id: "p1", scope: "prod" }));
-    expect(() => store.store({ content, project_id: "p2", merge_into: [first] })).toThrow(
-      "belongs to",
-    );
-    expect(() => store.store({ content, project_id: "p1", merge_into: [first, other] })).toThrow(
-      "belongs to",
-    );
-    expect(countMemories()).toBe(2);
-  });
-
-  test("should remove superseded memories and record the replacement", () => {
-    const old = addedId(store.store({ content: "Dev API port is 7701", project_id: "p1" }));
-    const next = store.store({
-      content: "Dev API port is now 7711 because 7701 holds a zombie socket",
-      project_id: "p1",
-      supersedes: [old],
-    });
-    const nextId = addedId(next);
-    expect(next.superseded).toEqual([old]);
-    expect(exists(old)).toBe(false);
-    expect(audit.findLatest(old, ["memory.superseded"])).toMatchObject({
-      result_ids: [nextId],
-      snapshot: [{ id: old, content: "Dev API port is 7701" }],
-    });
-  });
-
-  test("should apply supersedes on a skip, with the kept memory as the replacement", () => {
-    const old = addedId(store.store({ content: "Builds run on node", project_id: "p1" }));
-    const kept = addedId(store.store({ content, project_id: "p1" }));
-    const skipped = store.store({ content, project_id: "p1", supersedes: [old] });
-    expect(skipped).toMatchObject({ status: "skipped", existing_id: kept, superseded: [old] });
-    expect(exists(old)).toBe(false);
-  });
-
-  test("should supersede as a follow-up and validate the targets", () => {
-    const old = addedId(store.store({ content: "Builds run on node", project_id: "p1" }));
-    const other = addedId(store.store({ content: "Builds run on node", project_id: "p2" }));
-    const next = addedId(store.store({ content: "Builds run on bun now", project_id: "p1" }));
-    expect(() => store.supersede(next, [next])).toThrow("itself");
-    expect(() => store.supersede(next, [other])).toThrow("belongs to");
-    expect(store.supersede(next, [old])).toEqual([old]);
-    expect(() => store.supersede(next, [old])).toThrow("memory.superseded");
-  });
-
-  test("should roll back the insert when a superseded id is invalid", () => {
-    expect(() => store.store({ content, project_id: "p1", supersedes: ["missing"] })).toThrow(
-      "not found",
-    );
-    expect(countMemories()).toBe(0);
-    expect(audit.list()).toEqual([]);
-  });
-
-  test("should audit updates and deletes with the previous content", () => {
-    const id = addedId(store.store({ content, project_id: "p1" }));
-    store.update(id, { content: "Port is 7711", tags: ["Ops"] }, { actor: "api" });
-    store.remove(id, { actor: "api" });
-    const [deleted, updated] = audit.list({ entityType: "memory" });
-    expect(updated).toMatchObject({ action: "memory.updated", snapshot: [{ content }] });
-    expect(deleted).toMatchObject({
-      action: "memory.deleted",
-      snapshot: [{ content: "Port is 7711", tags: '["ops"]' }],
-    });
-    expect(() => store.remove(id)).toThrow("memory.deleted");
-  });
-
-  test("should roll back an update and its audit when supersession validation fails", () => {
-    const id = addedId(store.store({ content, project_id: "p1" }));
-    const other = addedId(store.store({ content: "Another project note", project_id: "p2" }));
-    const before = audit.list();
-    for (const target of ["missing", id, other]) {
-      expect(() => store.update(id, { content: "Changed" }, {}, [target])).toThrow();
-      expect(sqlite.query("SELECT content FROM memories WHERE id = ?").get(id)).toEqual({
-        content,
-      });
-      expect(audit.list()).toEqual(before);
-      expect(exists(other)).toBe(true);
-    }
-  });
-
-  test("should update and supersede together with both audit entries", () => {
-    const id = addedId(store.store({ content, project_id: "p1" }));
-    const old = addedId(store.store({ content: "Old procedure", project_id: "p1" }));
-    expect(store.update(id, { content: "Verified procedure" }, { actor: "review" }, [old])).toEqual(
-      [old],
-    );
-    expect(exists(old)).toBe(false);
-    expect(
-      audit
-        .list()
-        .slice(0, 2)
-        .map((entry) => entry.action),
-    ).toEqual(["memory.superseded", "memory.updated"]);
-  });
-
-  test("should throw not found for an unknown id", () => {
-    expect(() => store.store({ content, merge_into: ["missing"] })).toThrow("not found");
+  test("should keep new memories after an older build re-adds its columns and triggers", () => {
+    create("kept");
+    sqlite.exec(`
+      ALTER TABLE memories ADD COLUMN type TEXT NOT NULL DEFAULT 'fact';
+      CREATE VIRTUAL TABLE memories_fts USING fts5(id UNINDEXED, content);
+      CREATE TRIGGER memories_ai AFTER INSERT ON memories BEGIN
+        INSERT INTO memories_fts(id, content) VALUES (new.id, new.content);
+      END;
+    `);
+    expect(() => create("blocked")).toThrow("no such column");
+    installMemories(sqlite);
+    expect(store.get("p1", "kept").content).toBe("Content of kept");
+    expect(create("after").name).toBe("after");
   });
 });

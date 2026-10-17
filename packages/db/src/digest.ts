@@ -21,7 +21,7 @@ export type DigestInput = {
   token: string;
   project_id: string | null;
   project: string | null;
-  memories: { id: string; content: string; tags: string | null; importance: string }[];
+  memories: { name: string; description: string; content: string; priority: number | null }[];
   events: { action: string; subject_ids: string; result_ids: string; note: string | null }[];
   sessions: { summary: string | null; agent: string }[];
   wiki: ReturnType<WikiStore["list"]>;
@@ -111,20 +111,19 @@ export class DigestStore {
           sessions.at(-1)?.rowid ?? state.session_cursor,
           projectKey,
         );
-      const ids = new Set(
-        events.flatMap(
-          (event) =>
-            [...JSON.parse(event.subject_ids), ...JSON.parse(event.result_ids)] as string[],
-        ),
-      );
-      const memories = [...ids].flatMap((id) => {
-        const memory = this.sqlite
-          .query<DigestInput["memories"][number], [string, string | null]>(
-            "SELECT id,content,tags,importance FROM memories WHERE id=? AND project_id IS ? AND (expires_at IS NULL OR expires_at>unixepoch())",
-          )
-          .get(id, projectId);
-        return memory ? [{ ...memory, content: memory.content.slice(0, 500) }] : [];
-      });
+      // Memory audit entries name the memory in subject_ids; result_ids are change ids.
+      const names = new Set(events.flatMap((event) => JSON.parse(event.subject_ids) as string[]));
+      const memories =
+        projectId === null
+          ? []
+          : [...names].flatMap((name) => {
+              const memory = this.sqlite
+                .query<DigestInput["memories"][number], [string, string]>(
+                  "SELECT name,description,content,priority FROM memories WHERE project_id=? AND name=?",
+                )
+                .get(projectId, name);
+              return memory ? [memory] : [];
+            });
       const project =
         projectId === null
           ? null

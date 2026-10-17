@@ -29,7 +29,12 @@ for (const theme of ["dark", "light"])
         title: `${term} remote task`,
         project_id: other.id,
       });
-      await apiPost(request, "/memories", { content: `${term} memory`, project_id: project.id });
+      await apiPost(request, "/memories", {
+        project_id: project.id,
+        name: `${term}-memory`,
+        description: `${term} memory`,
+        content: "Palette search fixture",
+      });
       await gotoView(page, "tasks");
       await page.goto(`/tasks?project=${project.id}`);
       const trigger = page.getByTestId("command-palette-open");

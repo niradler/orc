@@ -9,7 +9,7 @@ import { isJson, jsonOut } from "../output.js";
 
 export async function resolveProject(
   client: ReturnType<typeof createOrcClient>,
-  opts: { project?: string; noProject?: boolean },
+  opts: { project?: string | undefined; noProject?: boolean },
 ): Promise<{ id: string; name: string } | null> {
   if (opts.noProject) return null;
 
@@ -34,15 +34,6 @@ function statusIcon(status: string): string {
     archived: "○",
   };
   return icons[status] ?? "?";
-}
-
-function formatAge(isoDate: string): string {
-  const ms = Date.now() - new Date(isoDate).getTime();
-  const mins = Math.floor(ms / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
 }
 
 function taskStatusIcon(status: string): string {
@@ -167,13 +158,14 @@ export function projectCommand() {
         client.projects.summary(project.id),
         client.tasks.list({ project_id: project.id }),
         client.jobs.list({ project_id: project.id }),
-        client.memories.list({ project_id: project.id }),
+        client.memories.list({ project_id: project.id, limit: 5 }),
       ]);
 
       const summary = summaryRes.data;
       const tasks = tasksRes.data?.tasks ?? [];
       const jobs = jobsRes.data?.jobs ?? [];
       const memories = memoriesRes.data?.memories ?? [];
+      const totalMemories = memoriesRes.data?.total ?? 0;
 
       if (isJson())
         return jsonOut({
@@ -214,13 +206,9 @@ export function projectCommand() {
       }
       console.log();
 
-      const totalMemories = summary?.memories ?? memories.length;
-      const shown = memories.slice(0, 5);
-      console.log(`Memories (${shown.length} of ${totalMemories})`);
-      for (const m of shown) {
-        const scope = m.scope ? `[${m.scope}]` : "";
-        const age = formatAge(m.created_at);
-        console.log(`  • ${scope} ${m.content.slice(0, 50).padEnd(50)} ${age}`);
+      console.log(`Memories (${memories.length} of ${totalMemories}, most read)`);
+      for (const m of memories) {
+        console.log(`  • ${m.name.padEnd(32)} ${m.description.slice(0, 60)}`);
       }
     });
 

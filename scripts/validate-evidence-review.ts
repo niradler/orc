@@ -82,6 +82,7 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
   if (!response.ok) throw new Error(`${path}: ${response.status}: ${JSON.stringify(data)}`);
   return data as T;
 }
+const MEMORY_LOOKUP = ["memory_list", "memory_read"];
 const results: unknown[] = [];
 try {
   for (const defective of [true, false]) {
@@ -144,18 +145,13 @@ try {
     )
       throw new Error("Review omitted executable/source evidence");
     const names = knowledgeCalls.map((call) => call.tool);
-    for (const required of [
-      "context",
-      "memory_search",
-      "wiki_search",
-      "audit_list",
-      "session_log",
-      "flow_report",
-    ]) {
+    for (const required of ["context", "wiki_search", "audit_list", "session_log", "flow_report"]) {
       if (!names.includes(required))
         throw new Error(`Review skipped knowledge lifecycle tool: ${required}`);
     }
-    if (names.indexOf("context") > names.indexOf("memory_search"))
+    const memoryLookup = names.findIndex((name) => MEMORY_LOOKUP.includes(name));
+    if (memoryLookup < 0) throw new Error("Review skipped memory lookup (memory_list/memory_read)");
+    if (names.indexOf("context") > memoryLookup)
       throw new Error("Knowledge search preceded context");
     if (names.indexOf("flow_report") < names.indexOf("session_log"))
       throw new Error("Flow outcome preceded knowledge review");

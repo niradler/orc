@@ -1,287 +1,234 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { getSqlite } from "@orc/db/client";
 import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof createApp>;
+let projectId: string;
+let otherProjectId: string;
 
-beforeAll(() => {
+beforeAll(async () => {
   app = setupTestApp();
+  projectId = (await (await req(app, "POST", "/projects", { name: "mem-proj" })).json()).id;
+  otherProjectId = (await (await req(app, "POST", "/projects", { name: "mem-other" })).json()).id;
 });
 
 afterAll(() => {
   teardownTestApp();
 });
 
-describe("Memories CRUD", () => {
-  let memoryId: string;
+type Change = { id: string; action: string; reason: string | null; author: string };
 
-  describe("POST /memories", () => {
-    test("creates a memory with minimal fields", async () => {
-      const res = await req(app, "POST", "/memories", {
-        content: "Always use ULIDs for primary keys",
-      });
-      expect(res.status).toBe(201);
-      const body = await res.json();
-      expect(body.content).toBe("Always use ULIDs for primary keys");
-      expect(body.type).toBe("fact");
-      expect(body.importance).toBe("normal");
-      expect(body.id).toBeTruthy();
-      memoryId = body.id;
+const create = (body: Record<string, unknown>) =>
+  req(app, "POST", "/memories", { project_id: projectId, ...body });
+
+describe("Memories REST API", () => {
+  test("should create a memory with defaults and the given fields", async () => {
+    const res = await create({
+      name: "api-port",
+      description: "Which port the API listens on",
+      content: "The API listens on 7700.",
+      priority: 70,
+      session_id: "native-1",
+    });
+    expect(res.status).toBe(201);
+    expect(await res.json()).toMatchObject({
+      project_id: projectId,
+      name: "api-port",
+      description: "Which port the API listens on",
+      content: "The API listens on 7700.",
+      priority: 70,
+      author: "api",
+      session_id: "native-1",
     });
 
-    test("creates a memory with all fields", async () => {
-      const res = await req(app, "POST", "/memories", {
-        content: "Use PostgreSQL for concurrent writes",
-        title: "DB Choice",
-        type: "decision",
-        source: "arch-review",
-        scope: "backend",
-        tags: ["database", "architecture"],
-        importance: "high",
-      });
-      expect(res.status).toBe(201);
-      const body = await res.json();
-      expect(body.content).toBe("Use PostgreSQL for concurrent writes");
-      expect(body.title).toBe("DB Choice");
-      expect(body.type).toBe("decision");
-      expect(body.source).toBe("arch-review");
-      expect(body.scope).toBe("backend");
-      expect(body.tags).toEqual(["database", "architecture"]);
-      expect(body.importance).toBe("high");
-    });
-
-    test("creates a memory with project_id", async () => {
-      const projRes = await req(app, "POST", "/projects", { name: "mem-proj" });
-      const proj = await projRes.json();
-
-      const res = await req(app, "POST", "/memories", {
-        content: "Project-scoped memory",
-        project_id: proj.id,
-      });
-      expect(res.status).toBe(201);
-      const body = await res.json();
-      expect(body.project_id).toBe(proj.id);
-    });
-
-    test("creates memories of each type", async () => {
-      const types = ["fact", "decision", "event", "rule", "discovery"] as const;
-      for (const type of types) {
-        const res = await req(app, "POST", "/memories", {
-          content: `Memory of type ${type}`,
-          type,
-        });
-        expect(res.status).toBe(201);
-        const body = await res.json();
-        expect(body.type).toBe(type);
-      }
-    });
-
-    test("rejects empty content", async () => {
-      const res = await req(app, "POST", "/memories", { content: "" });
-      expect(res.status).toBe(400);
-    });
+    const minimal = await (
+      await create({ name: "ulid-keys", description: "Primary keys", content: "Use ULIDs." })
+    ).json();
+    expect(minimal.priority).toBeNull();
+    expect(minimal.session_id).toBeNull();
   });
 
-  describe("GET /memories", () => {
-    test("lists all memories", async () => {
-      const res = await req(app, "GET", "/memories");
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.memories.length).toBeGreaterThanOrEqual(7);
-    });
-
-    test("filters by type", async () => {
-      const res = await req(app, "GET", "/memories?type=decision");
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.memories.length).toBeGreaterThanOrEqual(1);
-      for (const m of body.memories) {
-        expect(m.type).toBe("decision");
-      }
-    });
-
-    test("filters by scope", async () => {
-      const res = await req(app, "GET", "/memories?scope=backend");
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      for (const m of body.memories) {
-        expect(m.scope).toBe("backend");
-      }
-    });
-
-    test("filters by project_id", async () => {
-      const projRes = await req(app, "GET", "/projects");
-      const projects = await projRes.json();
-      const projId = projects.projects[0]?.id;
-      if (!projId) return;
-
-      const res = await req(app, "GET", `/memories?project_id=${projId}`);
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      for (const m of body.memories) {
-        expect(m.project_id).toBe(projId);
-      }
-    });
-
-    test("respects limit", async () => {
-      const res = await req(app, "GET", "/memories?limit=2");
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.memories.length).toBeLessThanOrEqual(2);
-    });
+  test("should reject a duplicate with 409", async () => {
+    const res = await create({ name: "api-port", description: "again", content: "again" });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toContain("already exists");
   });
 
-  describe("GET /memories/search", () => {
-    test("should exclude expired memories across lexical and fallback search", async () => {
-      const expired = await req(app, "POST", "/memories", {
-        content: "apivalidityneedle punctuation::needle",
-        expires_at: new Date(Date.now() - 60_000).toISOString(),
-      });
-      const expiredBody = await expired.json();
-      const current = await req(app, "POST", "/memories", {
-        content: "apivalidityneedle punctuation::needle",
-        expires_at: new Date(Date.now() + 60_000).toISOString(),
-      });
-      const currentBody = await current.json();
-      for (const query of ["apivalidityneedle", "validityneed", "punctuation::needle"]) {
-        const response = await req(app, "GET", `/memories/search?q=${encodeURIComponent(query)}`);
-        expect(response.status).toBe(200);
-        const body = await response.json();
-        const ids = body.results.map((item: { id: string }) => item.id);
-        expect(ids).toContain(currentBody.id);
-        expect(ids).not.toContain(expiredBody.id);
-      }
+  test("should reject invalid input with 400 and tell over-cap content to become a skill", async () => {
+    const overCap = await create({
+      name: "too-long",
+      description: "Too long",
+      content: "x".repeat(801),
     });
+    expect(overCap.status).toBe(400);
+    expect((await overCap.json()).error).toContain("make it a skill");
 
-    test("finds memories by keyword", async () => {
-      const res = await req(app, "GET", "/memories/search?q=ULID");
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.results.length).toBeGreaterThanOrEqual(1);
-      expect(body.results.some((r: { id: string }) => r.id === memoryId)).toBe(true);
-    });
-
-    test("finds memories by multi-word query", async () => {
-      const res = await req(app, "GET", "/memories/search?q=PostgreSQL concurrent");
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.results.length).toBeGreaterThanOrEqual(1);
-    });
-
-    test("returns empty for non-matching query", async () => {
-      const res = await req(app, "GET", "/memories/search?q=xyznonexistent999");
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.results.length).toBe(0);
-    });
-
-    test("filters search by scope", async () => {
-      const res = await req(app, "GET", "/memories/search?q=PostgreSQL&scope=backend");
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      for (const r of body.results) {
-        expect(r.scope).toBe("backend");
-      }
-    });
-
-    test("filters search by type", async () => {
-      const res = await req(app, "GET", "/memories/search?q=PostgreSQL&type=decision");
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      for (const r of body.results) {
-        expect(r.type).toBe("decision");
-      }
-    });
-
-    test("respects limit in search", async () => {
-      const res = await req(app, "GET", "/memories/search?q=Memory&limit=1");
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body.results.length).toBeLessThanOrEqual(1);
-    });
+    for (const body of [
+      { name: "Bad Name", description: "d", content: "c" },
+      { name: "no-content", description: "d", content: "" },
+      { name: "bad-priority", description: "d", content: "c", priority: 101 },
+      { name: "legacy", description: "d", content: "c", type: "fact" },
+    ])
+      expect((await create(body)).status).toBe(400);
+    expect(
+      (await req(app, "POST", "/memories", { name: "no-project", description: "d", content: "c" }))
+        .status,
+    ).toBe(400);
   });
 
-  describe("DELETE /memories/:id", () => {
-    test("deletes a memory", async () => {
-      const createRes = await req(app, "POST", "/memories", {
-        content: "To be deleted",
+  test("should count reads per X-Orc-Source source and rank by agent reads", async () => {
+    const path = `/memories/ulid-keys?project_id=${projectId}`;
+    const read = await req(app, "GET", path, undefined, { "X-Orc-Source": "cli" });
+    expect(read.status).toBe(200);
+    expect((await read.json()).content).toBe("Use ULIDs.");
+    await req(app, "GET", path, undefined, { "X-Orc-Source": "cli" });
+    await req(app, "GET", path);
+    for (let i = 0; i < 5; i++)
+      await req(app, "GET", `/memories/api-port?project_id=${projectId}`, undefined, {
+        "X-Orc-Source": "ui",
       });
-      const created = await createRes.json();
 
-      const res = await req(app, "DELETE", `/memories/${created.id}`);
-      expect(res.status).toBe(204);
+    const list = await (await req(app, "GET", `/memories?project_id=${projectId}`)).json();
+    expect(list.total).toBe(2);
+    expect(list.memories.map((m: { name: string }) => m.name)).toEqual(["ulid-keys", "api-port"]);
+    const [ulid, port] = list.memories;
+    expect(ulid).toMatchObject({
+      key: `${projectId}/ulid-keys`,
+      read_count: 3,
+      reads_by_source: { mcp: 0, cli: 2, api: 1, ui: 0 },
     });
+    expect(ulid.content).toBeUndefined();
+    expect(port).toMatchObject({ read_count: 0, reads_by_source: { ui: 5 } });
 
-    test("returns 404 for non-existent memory", async () => {
-      const res = await req(app, "DELETE", "/memories/nonexistent-id");
-      expect(res.status).toBe(404);
-    });
+    expect((await req(app, "GET", `/memories/missing-memory?project_id=${projectId}`)).status).toBe(
+      404,
+    );
   });
 
-  describe("POST /memories dedup", () => {
-    const content = "dedupneedle the staging cluster drains nodes before every upgrade window";
-
-    test("should skip a near-identical memory and return the kept one", async () => {
-      const first = await (await req(app, "POST", "/memories", { content })).json();
-      expect(first.status).toBe("added");
-      const res = await req(app, "POST", "/memories", { content: `${content}!` });
-      expect(res.status).toBe(200);
-      const body = await res.json();
-      expect(body).toMatchObject({ status: "skipped", existing_id: first.id, id: first.id });
+  test("should list by priority, search, limit and scope by project", async () => {
+    await req(app, "POST", "/memories", {
+      project_id: otherProjectId,
+      name: "other-fact",
+      description: "Belongs elsewhere",
+      content: "x",
     });
+    const byPriority = await (
+      await req(app, "GET", `/memories?project_id=${projectId}&sort=priority`)
+    ).json();
+    expect(byPriority.memories[0].name).toBe("api-port");
 
-    test("should report similar memories, merge into one and supersede another", async () => {
-      const related = await req(app, "POST", "/memories", {
-        content: "dedupneedle the staging cluster now skips draining during upgrades",
-      });
-      expect(related.status).toBe(201);
-      const relatedBody = await related.json();
-      expect(relatedBody.similar.length).toBeGreaterThan(0);
-      expect(relatedBody.hint).toContain("supersede");
+    const searched = await (
+      await req(app, "GET", `/memories?project_id=${projectId}&q=port`)
+    ).json();
+    expect(searched.memories.map((m: { name: string }) => m.name)).toEqual(["api-port"]);
 
-      const target = relatedBody.similar[0].id;
-      const merged = await (
-        await req(app, "POST", "/memories", {
-          content: "dedupneedle staging drains nodes before upgrades, then reschedules pods",
-          merge_into: [target],
-          supersedes: [relatedBody.id],
+    const limited = await (
+      await req(app, "GET", `/memories?project_id=${projectId}&limit=1`)
+    ).json();
+    expect(limited.memories).toHaveLength(1);
+    expect(limited.total).toBe(2);
+
+    const all = await (await req(app, "GET", "/memories")).json();
+    expect(all.memories.map((m: { key: string }) => m.key)).toContain(
+      `${otherProjectId}/other-fact`,
+    );
+  });
+
+  test("should update fields, clear priority and keep history", async () => {
+    const res = await req(app, "PATCH", "/memories/api-port", {
+      project_id: projectId,
+      content: "The API listens on 7711 in dev.",
+      priority: null,
+      reason: "dev port",
+      author: "tester",
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      description: "Which port the API listens on",
+      content: "The API listens on 7711 in dev.",
+      priority: null,
+      author: "tester",
+    });
+    expect(
+      (
+        await req(app, "PATCH", "/memories/missing-memory", {
+          project_id: projectId,
+          content: "x",
         })
-      ).json();
-      expect(merged).toMatchObject({
-        status: "merged",
-        merged: [target],
-        superseded: [relatedBody.id],
-      });
+      ).status,
+    ).toBe(404);
 
-      const search = await (await req(app, "GET", "/memories/search?q=dedupneedle")).json();
-      const ids = search.results.map((item: { id: string }) => item.id);
-      expect(ids).toContain(merged.id);
-      expect(ids).not.toContain(target);
-      expect(ids).not.toContain(relatedBody.id);
-      const stale = await req(app, "PATCH", `/memories/${target}`, { title: "x" });
-      expect(stale.status).toBe(409);
-      expect((await stale.json()).error).toContain(`use ${merged.id}`);
+    const { changes } = (await (
+      await req(app, "GET", `/memories/api-port/history?project_id=${projectId}`)
+    ).json()) as { changes: Change[] };
+    expect(changes.map((c) => c.action)).toEqual(["memory.updated", "memory.created"]);
+    expect(changes[0]).toMatchObject({ reason: "dev port", author: "tester" });
+  });
+
+  test("should delete with 204 and revert the deletion", async () => {
+    const del = await req(
+      app,
+      "DELETE",
+      `/memories/api-port?project_id=${projectId}&author=tester&session_id=native-2`,
+    );
+    expect(del.status).toBe(204);
+    expect((await req(app, "GET", `/memories/api-port?project_id=${projectId}`)).status).toBe(404);
+    expect((await req(app, "DELETE", `/memories/api-port?project_id=${projectId}`)).status).toBe(
+      404,
+    );
+
+    const { changes } = (await (
+      await req(app, "GET", `/memories/api-port/history?project_id=${projectId}`)
+    ).json()) as { changes: Change[] };
+    const [deleted, updated] = changes;
+    expect(deleted?.action).toBe("memory.deleted");
+
+    const stale = await req(app, "POST", "/memories/api-port/revert", {
+      project_id: projectId,
+      change_id: deleted?.id,
+      expected_change_id: updated?.id,
+      reason: "stale review",
+    });
+    expect(stale.status).toBe(409);
+
+    const reverted = await req(app, "POST", "/memories/api-port/revert", {
+      project_id: projectId,
+      change_id: deleted?.id,
+      expected_change_id: deleted?.id,
+      reason: "deleted by mistake",
+    });
+    expect(reverted.status).toBe(200);
+    expect((await reverted.json()).memory).toMatchObject({
+      name: "api-port",
+      content: "The API listens on 7711 in dev.",
     });
 
-    test("should supersede through PATCH and reject an invalid target", async () => {
-      const old = await (
-        await req(app, "POST", "/memories", { content: "patchneedle old" })
-      ).json();
-      const next = await (
-        await req(app, "POST", "/memories", { content: "patchneedle new" })
-      ).json();
-      const res = await req(app, "PATCH", `/memories/${next.id}`, { supersedes: [old.id] });
-      expect(res.status).toBe(200);
-      const list = await (await req(app, "GET", "/memories/search?q=patchneedle")).json();
-      expect(list.results.map((item: { id: string }) => item.id)).toEqual([next.id]);
-      const invalid = await req(app, "PATCH", `/memories/${next.id}`, {
-        content: "Must not persist",
-        supersedes: [next.id],
-      });
-      expect(invalid.status).toBe(400);
-      const unchanged = await (await req(app, "GET", "/memories/search?q=patchneedle")).json();
-      expect(unchanged.results).toHaveLength(1);
-      expect(unchanged.results[0].content).toBe("patchneedle new");
+    const created = (
+      (await (
+        await req(app, "GET", `/memories/ulid-keys/history?project_id=${projectId}`)
+      ).json()) as { changes: Change[] }
+    ).changes[0];
+    const undone = await req(app, "POST", "/memories/ulid-keys/revert", {
+      project_id: projectId,
+      change_id: created?.id,
+      expected_change_id: created?.id,
+      reason: "never needed",
     });
+    expect(undone.status).toBe(200);
+    expect((await undone.json()).memory).toBeNull();
+  });
+
+  test("should remove a project's memories, history and reads with the project", async () => {
+    expect((await req(app, "DELETE", `/projects/${projectId}`)).status).toBe(204);
+    const sqlite = getSqlite();
+    for (const table of ["memories", "memory_changes", "memory_usage"])
+      expect(
+        sqlite
+          .query<{ n: number }, [string]>(`SELECT COUNT(*) AS n FROM ${table} WHERE project_id=?`)
+          .get(projectId)?.n,
+      ).toBe(0);
+    const other = await (await req(app, "GET", `/memories?project_id=${otherProjectId}`)).json();
+    expect(other.total).toBe(1);
   });
 });

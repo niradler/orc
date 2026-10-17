@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installEmbeddedSkills } from "./builtin-skills.js";
+import { validateAuthoredSkillDescription } from "./skill-service.js";
 
 test("embedded skills preserve supporting bytes and stable baseline across restarts", () => {
   const root = mkdtempSync(join(tmpdir(), "orc-embedded-skills-"));
@@ -20,4 +21,13 @@ test("embedded skills preserve supporting bytes and stable baseline across resta
   expect(() => installEmbeddedSkills({ "../outside": "AA==" }, root)).toThrow("Invalid reference");
   writeFileSync(join(directory, "orc-wiki/SKILL.md"), "modified");
   expect(() => installEmbeddedSkills(assets, root)).toThrow("cache was modified");
+});
+
+test("built-in skills keep the authored description limit", () => {
+  const skillsRoot = join(import.meta.dir, "../../../skills");
+  for (const entry of readdirSync(skillsRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const content = readFileSync(join(skillsRoot, entry.name, "SKILL.md"), "utf8");
+    expect(() => validateAuthoredSkillDescription(content), entry.name).not.toThrow();
+  }
 });
