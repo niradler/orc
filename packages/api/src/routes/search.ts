@@ -4,7 +4,7 @@ import { createRouter } from "../lib/router.js";
 
 const app = createRouter();
 const Hit = z.object({
-  kind: z.enum(["task", "project", "job", "memory", "session", "wiki"]),
+  kind: z.enum(["task", "project", "job", "memory", "session"]),
   id: z.string(),
   title: z.string(),
   detail: z.string(),
@@ -52,14 +52,6 @@ const sources = [
     id: "r.id",
     title: "coalesce(nullif(r.summary, ''), r.agent)",
     detail: "r.summary",
-    project: "r.project_id",
-  },
-  {
-    kind: "wiki",
-    table: "wiki_pages",
-    id: "r.slug",
-    title: "r.title",
-    detail: "r.summary || ' ' || r.content",
     project: "r.project_id",
   },
 ] as const;

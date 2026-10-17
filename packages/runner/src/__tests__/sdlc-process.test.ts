@@ -242,7 +242,7 @@ describe("shared SDLC delivery process", () => {
         .get(taskId) as { gateway_session_id: string };
       expect(worker.prompt).toContain(`Session ID: ${workerSession.gateway_session_id}`);
       expect(worker.prompt).toContain("call context first; its Memories section lists");
-      expect(worker.prompt).toContain("memory_read, and use memory_list (q) and wiki_search");
+      expect(worker.prompt).toContain("memory_read, and use memory_list (q) and kb_search");
       expect(worker.prompt).toContain(
         "Project delivery procedure: inspect shared-component storage.",
       );

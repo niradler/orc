@@ -21,7 +21,6 @@ const GROUPS = {
   task: "Tasks",
   project: "Projects",
   memory: "Knowledge",
-  wiki: "Knowledge",
   session: "Sessions",
   job: "Jobs",
 } as const;
@@ -213,8 +212,7 @@ export function CommandPalette({
         title: hit.title,
         detail: `${hit.kind} · ${hit.project_name ?? "Unassigned / global"}${hit.detail ? ` · ${hit.detail}` : ""}`,
         group,
-        run: () =>
-          go(searchHitPath(hit), hit.project_id ?? (hit.kind === "wiki" ? "all" : "unassigned")),
+        run: () => go(searchHitPath(hit), hit.project_id ?? "unassigned"),
       });
     }
     for (const doc of documents.data?.hits ?? []) {

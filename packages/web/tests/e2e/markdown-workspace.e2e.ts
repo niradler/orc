@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
-import { AUTH_HEADERS, apiDelete, apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers";
+import { apiDelete, apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers";
 
 for (const viewport of [
   { width: 1440, height: 900 },
@@ -98,46 +98,48 @@ for (const viewport of [
   });
 }
 
-test("should save Wiki revisions and retain the draft after a concurrent conflict", async ({
+test("should save knowledge base document revisions and retain the draft after a concurrent conflict", async ({
   page,
   request,
 }) => {
-  const slug = tid("md-wiki");
-  const original = {
+  const kb = await apiPost<{ id: string; name: string }>(request, "/kb/bases", {
+    name: tid("md-kb"),
     project_id: null,
-    slug,
-    kind: "procedure",
-    title: "Markdown wiki",
-    summary: "Editor validation",
-    content: "# Wiki document\nOriginal lesson.",
-    note: "Created for browser validation",
-    expected_revision: 0,
-  };
-  await apiPost(request, "/wiki", original);
-  await page.addInitScript(
-    (secret) =>
-      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
-    AUTH_HEADERS.Authorization?.slice(7) ?? "",
-  );
-  await page.goto(`/wiki?tab=pages&page=${slug}&scope=global`);
-  await page.getByTestId("markdown-mode-edit").click();
-  await page.getByTestId("wiki-editor-content").fill("# Wiki document\nSaved browser lesson.");
-  await page.getByTestId("document-save").click();
-  await expect(page.getByTestId("document-save-status")).toHaveText("Saved");
-  await page.reload();
-  await expect(page.getByTestId("wiki-editor-content")).toContainText("Saved browser lesson");
-  await page.getByTestId("markdown-mode-read").click();
-  await expect(page.getByTestId("markdown-preview")).toContainText("Saved browser lesson");
-  await page.getByTestId("markdown-mode-edit").click();
-  await page.getByTestId("wiki-editor-content").fill("# My unsaved draft\nKeep this on conflict.");
-  await apiPost(request, "/wiki", {
-    ...original,
-    expected_revision: 2,
-    content: "# Concurrent edit\nKeep the other writer's version.",
   });
-  await page.getByTestId("document-save").click();
-  await expect(page.getByRole("alert")).toContainText("draft has been kept");
-  await expect(page.getByTestId("wiki-editor-content")).toContainText("My unsaved draft");
+  const doc = await apiPost<{ id: string }>(request, `/kb/bases/${kb.id}/documents`, {
+    title: "Markdown document",
+    content: "# Knowledge document\nOriginal lesson.",
+  });
+  try {
+    await gotoView(page, "knowledge");
+    await page.goto(`/knowledge/base?kb=${kb.id}&document=${doc.id}`);
+    await page.getByTestId("markdown-mode-edit").click();
+    await page
+      .getByTestId("kb-document-content")
+      .fill("# Knowledge document\nSaved browser lesson.");
+    await page.getByTestId("document-save").click();
+    await expect(page.getByTestId("document-save-status")).toHaveText("Saved");
+    await page.reload();
+    await expect(page.getByTestId("kb-document-content")).toContainText("Saved browser lesson");
+    await page.getByTestId("markdown-mode-read").click();
+    await expect(page.getByTestId("markdown-preview")).toContainText("Saved browser lesson");
+    await page.getByTestId("markdown-mode-edit").click();
+    await page
+      .getByTestId("kb-document-content")
+      .fill("# My unsaved draft\nKeep this on conflict.");
+    const current = await apiGet<{ revision: number }>(request, `/kb/documents/${doc.id}`);
+    await apiPatch(request, `/kb/documents/${doc.id}`, {
+      expected_revision: current.revision,
+      content: "# Concurrent edit\nKeep the other writer's version.",
+    });
+    await page.getByTestId("document-save").click();
+    await expect(page.getByTestId("document-workspace").getByRole("alert")).toContainText(
+      "draft has been kept",
+    );
+    await expect(page.getByTestId("kb-document-content")).toContainText("My unsaved draft");
+  } finally {
+    await apiDelete(request, `/kb/bases/${kb.id}`);
+  }
 });
 
 test("should edit a copy of a registered folder file without writing it and keep the draft on a conflicting save", async ({

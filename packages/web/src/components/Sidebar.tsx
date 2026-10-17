@@ -32,7 +32,6 @@ const NAV_ITEMS: {
   { id: "terminals", path: "/terminals", label: "Terminals", icon: Terminal },
   { id: "projects", path: "/projects", label: "Projects", icon: Folder },
   { id: "sessions", path: "/sessions", label: "Sessions", icon: History },
-  { id: "wiki", path: "/wiki", label: "Wiki", icon: BookOpen },
   { id: "knowledge", path: "/knowledge", label: "Knowledge", icon: BookOpen },
   { id: "skills", path: "/skills", label: "Skills", icon: Zap },
   { id: "rules", path: "/rules", label: "Rules", icon: ShieldCheck },

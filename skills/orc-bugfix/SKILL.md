@@ -9,7 +9,7 @@ Use the shared orc-worker-base lifecycle, including knowledge lookup before work
 and orc-memory-review before any outcome.
 
 1. Read the report and recent feedback. Identify expected behavior, actual behavior
-   and the triggering input. Read related memories and search wiki procedures.
+   and the triggering input. Read related memories and search knowledge bases.
 2. Reproduce with a focused test or the actual failing interface before editing.
    If reproduction is unavailable, record exactly what is missing and report the
    declared blocked outcome; do not claim a speculative fix is verified.

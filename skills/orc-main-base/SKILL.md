@@ -5,7 +5,7 @@ description: "Coordinate ORC work: clarify outcomes, choose the development/revi
 
 # Coordinate ORC development
 
-Call context first. Inspect active tasks and relevant memories/wiki guidance before
+Call context first. Inspect active tasks and relevant memories/KB guidance before
 creating work so you do not duplicate it. Explore the code or ask a focused question
 when needed to turn intent into checkable acceptance criteria.
 
@@ -24,7 +24,7 @@ the clear task yourself. Do not hand execution back to the human.
 
 Monitor the task/flow ledger. Surface actionable blockers, completed milestones
 and required human decisions. Keep progress in tasks/sessions, reusable discoveries
-in memory, and verified procedures in the wiki. Follow orc-memory-review before
+in memory, and verified procedures in knowledge bases. Follow orc-memory-review before
 ending a meaningful work unit. Do not silently rewrite shared skills from one result.
 
 User/project flow overrides remain supported. Prefer extending one existing template

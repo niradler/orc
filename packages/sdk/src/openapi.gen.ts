@@ -759,8 +759,6 @@ export interface paths {
                         /** @description Current full SKILL.md; a mismatch rejects a stale edit */
                         expected_content: string;
                         session_id?: string;
-                        /** @default [] */
-                        wiki_pages?: string[];
                         author?: string;
                     };
                 };
@@ -1629,7 +1627,7 @@ export interface paths {
                                         /** @enum {string} */
                                         type: "orc_action";
                                         /** @enum {string} */
-                                        action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory" | "queue_knowledge_digest";
+                                        action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory";
                                         /** @default 1000 */
                                         timeout_ms: number;
                                         memory_directory?: string;
@@ -1763,7 +1761,7 @@ export interface paths {
                                             /** @enum {string} */
                                             type: "orc_action";
                                             /** @enum {string} */
-                                            action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory" | "queue_knowledge_digest";
+                                            action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory";
                                             /** @default 1000 */
                                             timeout_ms: number;
                                             memory_directory?: string;
@@ -1920,7 +1918,7 @@ export interface paths {
                                     /** @enum {string} */
                                     type: "orc_action";
                                     /** @enum {string} */
-                                    action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory" | "queue_knowledge_digest";
+                                    action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory";
                                     /** @default 1000 */
                                     timeout_ms?: number;
                                     memory_directory?: string;
@@ -2027,7 +2025,7 @@ export interface paths {
                                         /** @enum {string} */
                                         type: "orc_action";
                                         /** @enum {string} */
-                                        action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory" | "queue_knowledge_digest";
+                                        action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory";
                                         /** @default 1000 */
                                         timeout_ms: number;
                                         memory_directory?: string;
@@ -2168,7 +2166,7 @@ export interface paths {
                                         /** @enum {string} */
                                         type: "orc_action";
                                         /** @enum {string} */
-                                        action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory" | "queue_knowledge_digest";
+                                        action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory";
                                         /** @default 1000 */
                                         timeout_ms: number;
                                         memory_directory?: string;
@@ -2245,7 +2243,7 @@ export interface paths {
                                     /** @enum {string} */
                                     type: "orc_action";
                                     /** @enum {string} */
-                                    action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory" | "queue_knowledge_digest";
+                                    action: "load_context" | "record_event" | "snapshot_session" | "restore_session" | "sync_agent_memory";
                                     /** @default 1000 */
                                     timeout_ms: number;
                                     memory_directory?: string;
@@ -2333,7 +2331,7 @@ export interface paths {
                         "application/json": {
                             results: {
                                 /** @enum {string} */
-                                kind: "task" | "project" | "job" | "memory" | "session" | "wiki";
+                                kind: "task" | "project" | "job" | "memory" | "session";
                                 id: string;
                                 title: string;
                                 detail: string;
@@ -4278,300 +4276,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/wiki": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List visible wiki summaries; project pages shadow global slugs */
-        get: {
-            parameters: {
-                query?: {
-                    project_id?: string;
-                    scope?: "global";
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Wiki index */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            pages: components["schemas"]["WikiIndexEntry"][];
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        /** Write a wiki revision; stale expected_revision returns 409 */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["WikiWrite"];
-                };
-            };
-            responses: {
-                /** @description Updated revision */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["WikiRevision"];
-                    };
-                };
-                /** @description Created page */
-                201: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            slug: string;
-                            project_id: string | null;
-                            /** @enum {string} */
-                            kind: "lesson" | "procedure" | "decision" | "concept";
-                            revision: number;
-                            title: string;
-                            summary: string;
-                            content: string;
-                            tags: string[];
-                            sources: string[];
-                            author: string;
-                            updated_at: number;
-                            note: string;
-                            session_id: string | null;
-                        };
-                    };
-                };
-                /** @description Revision changed; reload before retrying */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/wiki/changes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** What ORC learned: recent wiki revisions */
-        get: {
-            parameters: {
-                query?: {
-                    project_id?: string;
-                    scope?: "global";
-                    limit?: number;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Recent learning */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            changes: components["schemas"]["WikiChange"][];
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/wiki/search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Search visible wiki pages without returning full content */
-        get: {
-            parameters: {
-                query: {
-                    project_id?: string;
-                    scope?: "global";
-                    limit?: number;
-                    q: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Wiki search */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            results: components["schemas"]["WikiSearchHit"][];
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/wiki/{slug}/history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read the resolved page's immutable revision history */
-        get: {
-            parameters: {
-                query?: {
-                    project_id?: string;
-                    scope?: "global";
-                };
-                header?: never;
-                path: {
-                    slug: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Revision history */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            revisions: {
-                                slug: string;
-                                project_id: string | null;
-                                /** @enum {string} */
-                                kind: "lesson" | "procedure" | "decision" | "concept";
-                                revision: number;
-                                title: string;
-                                summary: string;
-                                content: string;
-                                tags: string[];
-                                sources: string[];
-                                author: string;
-                                updated_at: number;
-                                note: string;
-                                session_id: string | null;
-                            }[];
-                        };
-                    };
-                };
-                /** @description Page not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/wiki/{slug}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read full wiki content on demand */
-        get: {
-            parameters: {
-                query?: {
-                    project_id?: string;
-                    scope?: "global";
-                };
-                header?: never;
-                path: {
-                    slug: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Wiki page */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["WikiPage"];
-                    };
-                };
-                /** @description Page not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/audit": {
         parameters: {
             query?: never;
@@ -4585,7 +4289,7 @@ export interface paths {
                 query?: {
                     project_id?: string;
                     scope?: "global";
-                    entity_type?: "memory" | "wiki" | "skill" | "digest";
+                    entity_type?: "memory" | "skill" | "kb";
                     session_id?: string;
                     since?: number | null;
                     limit?: number;
@@ -4728,10 +4432,12 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        /** Delete a knowledge base, its managed files and index entries */
+        /** Delete a knowledge base, its managed files, index entries and digest */
         delete: {
             parameters: {
-                query?: never;
+                query?: {
+                    confirm?: string;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -5236,6 +4942,515 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/api/kb/documents/{id}/edit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Partial edit: exact-text and line-range edits that all refer to expected_revision; overlaps are refused */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expected_revision: number;
+                        edits: ({
+                            old: string;
+                            new: string;
+                            replace_all?: boolean;
+                        } | {
+                            start_line: number;
+                            end_line: number;
+                            new: string;
+                        })[];
+                        note: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Edited document and the lines each edit wrote */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/documents/{id}/lines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Numbered lines of a document, for reading before a line edit */
+        get: {
+            parameters: {
+                query?: {
+                    start?: number;
+                    end?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Lines */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/documents/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bring back a past revision's content as a new revision */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        revision: number;
+                        expected_revision: number;
+                        note?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Restored */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/bases/{id}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Comments on a knowledge base and its documents, open first */
+        get: {
+            parameters: {
+                query?: {
+                    document_id?: string;
+                    status?: "open" | "resolved" | "dismissed";
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Comments */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Comment on a knowledge base, or one of its documents with document_id */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        document_id?: string | null;
+                        body: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/comments/{id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resolve or dismiss a comment with one reply */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "resolved" | "dismissed";
+                        reply: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Closed */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/comments/{id}/reopen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reopen a closed comment */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Reopened */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/digest-template": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Starter digest instructions */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Template */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/bases/{id}/digest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The knowledge base's digest (null when it has none) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Digest */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        /** Create or change the digest and its job (instructions, backend, schedule, enabled) */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        instructions?: string;
+                        backend?: string;
+                        schedule?: {
+                            /** @enum {string} */
+                            type: "cron";
+                            cron: string;
+                        } | {
+                            /** @enum {string} */
+                            type: "manual";
+                        };
+                        enabled?: boolean;
+                        timeout_secs?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Digest */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        post?: never;
+        /** Remove the digest and its job */
+        delete: {
+            parameters: {
+                query?: {
+                    confirm?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/bases/{id}/digest/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start a digest run now */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Run started */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/bases/{id}/digest/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Digest run history, newest first */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Runs */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/kb/documents/{id}/revisions": {
@@ -8333,96 +8548,6 @@ export interface components {
             author: string;
             session_id: string | null;
             created_at: number;
-        };
-        WikiIndexEntry: {
-            slug: string;
-            project_id: string | null;
-            /** @enum {string} */
-            kind: "lesson" | "procedure" | "decision" | "concept";
-            revision: number;
-            title: string;
-            summary: string;
-            tags: string[];
-            updated_at: number;
-        };
-        WikiChange: {
-            slug: string;
-            project_id: string | null;
-            /** @enum {string} */
-            kind: "lesson" | "procedure" | "decision" | "concept";
-            revision: number;
-            title: string;
-            author: string;
-            updated_at: number;
-            note: string;
-            session_id: string | null;
-        };
-        WikiSearchHit: {
-            slug: string;
-            project_id: string | null;
-            /** @enum {string} */
-            kind: "lesson" | "procedure" | "decision" | "concept";
-            revision: number;
-            title: string;
-            summary: string;
-            tags: string[];
-            updated_at: number;
-            snippet: string;
-            score: number;
-        };
-        WikiRevision: {
-            slug: string;
-            project_id: string | null;
-            /** @enum {string} */
-            kind: "lesson" | "procedure" | "decision" | "concept";
-            revision: number;
-            title: string;
-            summary: string;
-            content: string;
-            tags: string[];
-            sources: string[];
-            author: string;
-            updated_at: number;
-            note: string;
-            session_id: string | null;
-        };
-        WikiWrite: {
-            project_id: string | null;
-            slug: string;
-            /** @enum {string} */
-            kind: "lesson" | "procedure" | "decision" | "concept";
-            title: string;
-            /** @description One line shown in the wiki index and search results */
-            summary: string;
-            content: string;
-            /** @default [] */
-            tags: string[];
-            /**
-             * @description Where this came from: session/task IDs, files, commits, URLs
-             * @default []
-             */
-            sources: string[];
-            /** @description What changed in this revision and why */
-            note: string;
-            /** @description Current revision of the page (0 to create). Mismatch means someone else edited it. */
-            expected_revision: number;
-            author?: string;
-            /** @description Session that produced it */
-            session_id?: string;
-        };
-        WikiPage: {
-            slug: string;
-            project_id: string | null;
-            /** @enum {string} */
-            kind: "lesson" | "procedure" | "decision" | "concept";
-            revision: number;
-            title: string;
-            summary: string;
-            content: string;
-            tags: string[];
-            sources: string[];
-            author: string;
-            updated_at: number;
         };
         AuditEntry: {
             id: string;

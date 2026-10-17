@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyRuleTemplate } from "@orc/core/rule-catalog";
 import { getSqlite } from "@orc/db/client";
-import { DIGEST_JOB_NAME } from "@orc/db/digest";
 import { MemoryStore } from "@orc/db/memories";
 import { RuleStore } from "@orc/db/rules";
 import { executeTool } from "@orc/mcp/tools";
@@ -29,7 +28,6 @@ beforeAll(async () => {
     "orc-snapshot",
     "orc-restore",
     "claude-share-memory",
-    "orc-wiki-learning",
   ].map(copyRuleTemplate);
   const memory = rules.find((rule) => rule.id === "claude-share-memory");
   if (memory?.target.type === "orc_action") memory.target.memory_directory = source;
@@ -197,7 +195,7 @@ test("should skip a native memory without a description and say why", async () =
   expect(getSqlite().query("SELECT 1 FROM memories WHERE name='no-description'").get()).toBeNull();
 });
 
-test("should rescan at session end, queue one existing digest and coalesce repeated requests", async () => {
+test("should rescan native memory at session end", async () => {
   writeFileSync(
     join(source, "project-notes.md"),
     nativeMemory(
@@ -212,16 +210,4 @@ test("should rescan at session end, queue one existing digest and coalesce repea
   expect(new MemoryStore(getSqlite()).get(projectId, "project-notes").content).toContain(
     "sessionendneedle",
   );
-  const queued = await run("orc-wiki-learning", event("session-end-digest", "session_end"));
-  expect(queued.status).toBe(200);
-  expect((await run("orc-wiki-learning", event("next-session-end", "session_end"))).status).toBe(
-    200,
-  );
-  const actions = new RuleStore(getSqlite()).actions();
-  expect(actions).toHaveLength(1);
-  const job = getSqlite()
-    .query<{ name: string }, [string]>("SELECT name FROM jobs WHERE id=?")
-    .get(actions[0]?.job_id ?? "");
-  expect(job?.name).toBe(DIGEST_JOB_NAME);
-  expect(getSqlite().query("SELECT id FROM job_runs").all()).toHaveLength(0);
 });

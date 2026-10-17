@@ -4,6 +4,13 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import { createLogger } from "@orc/core/logger";
 import { z } from "zod";
 import {
+  isMetaToolName,
+  type McpMode,
+  metaToolListing,
+  runMetaTool,
+  type ToolResult,
+} from "./meta-tools.js";
+import {
   agentSessionFromEnv,
   executeTool,
   type ToolName,
@@ -13,8 +20,10 @@ import {
 
 const logger = createLogger("mcp");
 
-export function toolListing() {
-  return toolDefinitions.map((t) => ({
+type ListedTool = (typeof toolDefinitions)[number];
+
+function listing(tools: readonly ListedTool[]) {
+  return tools.map((t) => ({
     name: t.name,
     description: t.description,
     inputSchema: z.toJSONSchema(t.inputSchema, {
@@ -24,19 +33,26 @@ export function toolListing() {
   }));
 }
 
-export function createMcpServer(options: ToolOptions = {}) {
+export function toolListing() {
+  return listing(toolDefinitions);
+}
+
+export interface McpServerOptions extends ToolOptions {
+  mode?: McpMode;
+}
+
+export function createMcpServer({ mode = "full", ...options }: McpServerOptions = {}) {
   const server = new Server({ name: "orc", version: "0.0.1" }, { capabilities: { tools: {} } });
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: toolListing(),
-  }));
+  // The set of tools this connection serves. Every lookup, listing and meta
+  // search goes through it, so a future subset filter only changes this line.
+  const served: readonly ListedTool[] = toolDefinitions;
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
+  async function callTool(name: string, args: unknown): Promise<ToolResult> {
     logger.debug(`Tool call: ${name}`, name === "session_handoff" ? undefined : args);
 
     try {
-      const toolDef = toolDefinitions.find((t) => t.name === name);
+      const toolDef = served.find((t) => t.name === name);
       if (!toolDef) {
         return {
           content: [{ type: "text" as const, text: `Unknown tool: ${name}` }],
@@ -64,13 +80,28 @@ export function createMcpServer(options: ToolOptions = {}) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       return { content: [{ type: "text" as const, text: msg }], isError: true };
     }
+  }
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: mode === "meta" ? metaToolListing() : listing(served),
+  }));
+
+  // In meta mode a CallTool naming a real tool is routed through the same
+  // callTool as tool_invoke, so clients that already know a name keep working;
+  // the served set still bounds what is reachable.
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+    if (mode === "meta" && isMetaToolName(name)) {
+      return runMetaTool(served, name, args, callTool);
+    }
+    return callTool(name, args);
   });
 
   return server;
 }
 
-export async function startStdioServer() {
-  const server = createMcpServer({ agentSessionId: agentSessionFromEnv() });
+export async function startStdioServer(mode: McpMode = "full") {
+  const server = createMcpServer({ agentSessionId: agentSessionFromEnv(), mode });
   const transport = new StdioServerTransport();
   await server.connect(transport);
   logger.info("MCP server running on stdio");

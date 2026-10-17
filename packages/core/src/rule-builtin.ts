@@ -24,12 +24,7 @@ export async function runRuleBuiltinActions(
   const base = (process.env.ORC_API_BASE ?? `http://${config.api.host}:${config.api.port}`)
     .replace(/\/$/, "")
     .replace(/\/api$/, "");
-  const actions = [...decision.orc_actions].sort(
-    (left, right) =>
-      Number(left.target.action === "queue_knowledge_digest") -
-      Number(right.target.action === "queue_knowledge_digest"),
-  );
-  for (const action of actions) {
+  for (const action of decision.orc_actions) {
     try {
       const response = await fetch(`${base}/api/rules/actions/run`, {
         method: "POST",

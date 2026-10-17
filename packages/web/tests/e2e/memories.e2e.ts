@@ -167,7 +167,9 @@ test.describe("Memories", () => {
       );
       await expect(row(page, important).getByTestId("memory-priority")).toHaveText("P90");
 
-      // Recent ranks by last read or update; an update moves a memory to the top.
+      // Recent ranks by last read or update; an update moves a memory to the top. Times are
+      // whole seconds, so let the clock pass the reads' second or the update ties with them.
+      await page.waitForTimeout(1100);
       await apiPatch(request, `/memories/${unscored}`, {
         project_id: project.id,
         description: "Updated just now",

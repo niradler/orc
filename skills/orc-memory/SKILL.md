@@ -88,5 +88,4 @@ Every create, update, delete and revert is recorded with the state before and af
 
 - **orc-memory-review** - review this work unit's memory changes before delivery
 - **orc-session** - session start, events and logging
-- **orc-wiki** - compiling verified lessons into wiki pages
-- **orc-knowledge** - searching knowledge bases of human reference documents with citations
+- **orc-knowledge** - knowledge bases: search with citations, documents, comments and digests

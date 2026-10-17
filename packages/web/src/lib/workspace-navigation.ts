@@ -19,9 +19,8 @@ export const WORKSPACE_SECTIONS = [
   {
     id: "knowledge",
     label: "Knowledge",
-    path: "/knowledge/wiki",
+    path: "/knowledge/base",
     pages: [
-      { id: "wiki", label: "Wiki", path: "/knowledge/wiki" },
       { id: "knowledge", label: "Knowledge base", path: "/knowledge/base" },
       { id: "memories", label: "Memories", path: "/knowledge/memories" },
     ],

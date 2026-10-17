@@ -55,9 +55,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
                 const href = typeof props.href === "string" ? props.href : undefined;
                 const children = props.children as ReactNode;
                 if (href?.startsWith("#wiki-")) {
-                  const slug = wikiLinks.loose
-                    ? wikiLinkKey(decodeURIComponent(href.slice(6)))
-                    : href.slice(6);
+                  const slug = wikiLinkKey(decodeURIComponent(href.slice(6)));
                   return wikiLinks.slugs.includes(slug) ? (
                     <button
                       type="button"
@@ -82,10 +80,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
       }}
       {...(wikiLinks
         ? {
-            remarkPlugins: [
-              ...Object.values(defaultRemarkPlugins),
-              [remarkWikiLinks, { loose: Boolean(wikiLinks.loose) }],
-            ],
+            remarkPlugins: [...Object.values(defaultRemarkPlugins), remarkWikiLinks],
           }
         : {})}
       shikiTheme={["github-light", "github-dark"]}

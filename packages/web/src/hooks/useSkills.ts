@@ -1,9 +1,9 @@
-import type { WikiScope } from "@orc/sdk/types";
+import type { ScopeQuery } from "@orc/sdk/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type CreateSkillInput } from "@/api/client";
 
 export function useSkills(
-  params?: { q?: string; source?: "builtin" | "user"; include_hidden?: boolean } & WikiScope,
+  params?: { q?: string; source?: "builtin" | "user"; include_hidden?: boolean } & ScopeQuery,
 ) {
   return useQuery({
     queryKey: ["skills", params],
@@ -26,7 +26,7 @@ export function useSetSkillVisibility() {
   });
 }
 
-export function useSkill(name: string | null, ref?: string, scope: WikiScope = {}) {
+export function useSkill(name: string | null, ref?: string, scope: ScopeQuery = {}) {
   return useQuery({
     queryKey: ["skill", name, ref, scope],
     queryFn: () => api.skills.get(name as string, ref, scope),

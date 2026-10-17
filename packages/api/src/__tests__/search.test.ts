@@ -1,6 +1,4 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { getSqlite } from "@orc/db/client";
-import { WikiStore } from "@orc/db/wiki";
 import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -24,16 +22,6 @@ beforeAll(async () => {
     description: "Needle memory",
     content: "memory content",
   });
-  new WikiStore(getSqlite()).write({
-    project_id: null,
-    slug: "needle-wiki",
-    kind: "concept",
-    title: "Needle wiki",
-    summary: "Wiki result",
-    content: "body-only-wiki",
-    expected_revision: 0,
-    note: "fixture",
-  });
 });
 afterAll(teardownTestApp);
 
@@ -42,7 +30,6 @@ describe("global command search", () => {
     const { results } = await (await req(app, "GET", "/search?q=needle")).json();
     expect(results.filter((r: { kind: string }) => r.kind === "task")).toHaveLength(2);
     expect(results.map((r: { kind: string }) => r.kind)).toContain("memory");
-    expect(results.map((r: { kind: string }) => r.kind)).toContain("wiki");
     const bodies = await (await req(app, "GET", "/search?q=body-only-match")).json();
     expect(bodies.results).toHaveLength(2);
   });

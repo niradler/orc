@@ -556,8 +556,7 @@ export function EventRuleEditor({
             />
             <p className="text-xs text-muted-foreground">
               Uses the existing ORC services and agent connection. Failures are visible in action
-              history. Wiki consolidation is queued through Jobs and can incur model charges; it
-              runs only when the scheduler dispatches it.
+              history.
             </p>
           </>
         )}

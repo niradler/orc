@@ -18,8 +18,6 @@ export function searchHitPath(hit: GlobalSearchHit): string {
         : `${MEMORIES_PATH}?memoryQuery=${id}`;
     case "session":
       return `/audit/${id}`;
-    case "wiki":
-      return `/knowledge/wiki?page=${id}${hit.project_id === null ? "&scope=global" : ""}`;
   }
 }
 

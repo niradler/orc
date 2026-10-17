@@ -10,7 +10,6 @@ export const ORC_RULE_ACTIONS = [
   "snapshot_session",
   "restore_session",
   "sync_agent_memory",
-  "queue_knowledge_digest",
 ] as const;
 export const RuleOrcActionSchema = z
   .object({
@@ -144,7 +143,6 @@ export const EventRuleSchema = z
           snapshot_session: ["pre_compact"],
           restore_session: ["session_start", "post_compact"],
           sync_agent_memory: ["post_tool", "session_end"],
-          queue_knowledge_digest: ["session_end"],
         }[rule.target.action];
         if (capabilities.some((entry) => !entry || !allowed.includes(entry.event)))
           ctx.addIssue({

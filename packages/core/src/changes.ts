@@ -5,7 +5,6 @@ export const CHANGE_RESOURCES = [
   "projects",
   "memories",
   "memory-usage",
-  "wiki",
   "knowledge",
   "skills",
   "skill-usage",

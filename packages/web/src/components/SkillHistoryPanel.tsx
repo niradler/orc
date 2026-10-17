@@ -1,4 +1,4 @@
-import type { SkillMeta, WikiScope } from "@orc/sdk/types";
+import type { ScopeQuery, SkillMeta } from "@orc/sdk/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "@/api/client";
@@ -11,7 +11,7 @@ export function SkillHistoryPanel({
   mutation,
 }: {
   name: string;
-  scope: WikiScope;
+  scope: ScopeQuery;
   mutation?: SkillMeta["mutation"];
 }) {
   const cache = useQueryClient();

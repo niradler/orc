@@ -3,7 +3,6 @@ import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { type RuleEvent, RuleEventSchema, RulePolicySchema } from "@orc/core/rules";
 import { getSqlite } from "@orc/db/client";
-import { DIGEST_COMMAND, DIGEST_JOB_NAME } from "@orc/db/digest";
 import { RuleStore } from "@orc/db/rules";
 import { executeJob } from "./executor.js";
 
@@ -51,19 +50,7 @@ export async function drainRuleActions(): Promise<void> {
             "SELECT r.id,r.project_id,r.payload FROM rule_heads h JOIN rule_revisions r ON r.id=h.revision_id JOIN rule_decisions d ON d.revision_id=h.revision_id JOIN rule_actions a ON a.decision_id=d.id WHERE a.id=?",
           )
           .get(row.id);
-        const digestAction =
-          job.command === DIGEST_COMMAND &&
-          job.name === DIGEST_JOB_NAME &&
-          active &&
-          RulePolicySchema.parse(JSON.parse(active.payload)).rules.some(
-            (rule) =>
-              rule.id === row.rule_id &&
-              rule.kind === "event" &&
-              rule.enabled &&
-              rule.target.type === "orc_action" &&
-              rule.target.action === "queue_knowledge_digest",
-          );
-        if (!active || (active.project_id !== job.project_id && !digestAction)) {
+        if (!active || active.project_id !== job.project_id) {
           db.query(
             "UPDATE rule_actions SET status='cancelled',event_json=NULL,error='Policy changed before dispatch',updated_at=? WHERE id=?",
           ).run(Date.now(), row.id);

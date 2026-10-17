@@ -6,14 +6,12 @@ type MarkdownNode = {
 };
 
 /**
- * `slugs` are the targets that resolve. Loose links (knowledge bases) accept any `[[Title]]`,
- * `[[folder/file]]` or `[[target|label]]` and match on {@link wikiLinkKey}; strict links (Wiki)
- * accept only `[[kebab-slug]]`.
+ * `slugs` are the targets that resolve. Links accept any `[[Title]]`, `[[folder/file]]` or
+ * `[[target|label]]` and match on {@link wikiLinkKey}.
  */
-export type WikiLinks = { slugs: string[]; select: (slug: string) => void; loose?: boolean };
+export type WikiLinks = { slugs: string[]; select: (slug: string) => void };
 
-const STRICT = /\[\[([a-z0-9]+(?:-[a-z0-9]+)*)\]\]/g;
-const LOOSE = /\[\[([^[\]|\n]+?)(?:\|([^[\]\n]+))?\]\]/g;
+const LINK = /\[\[([^[\]|\n]+?)(?:\|([^[\]\n]+))?\]\]/g;
 
 /** Same normalization as the server's link resolver: case/space-insensitive, `.md` optional. */
 export function wikiLinkKey(target: string): string {
@@ -21,8 +19,7 @@ export function wikiLinkKey(target: string): string {
 }
 
 /** Transform text nodes only, leaving code and existing links literal. */
-export function remarkWikiLinks(options: { loose?: boolean } = {}) {
-  const pattern = options.loose ? LOOSE : STRICT;
+export function remarkWikiLinks() {
   return (tree: MarkdownNode) => {
     function visit(parent: MarkdownNode): void {
       if (!parent.children || parent.type === "link") return;
@@ -33,7 +30,7 @@ export function remarkWikiLinks(options: { loose?: boolean } = {}) {
         }
         const parts: MarkdownNode[] = [];
         let offset = 0;
-        for (const match of node.value.matchAll(pattern)) {
+        for (const match of node.value.matchAll(LINK)) {
           if (match.index > offset)
             parts.push({
               type: "text",
@@ -41,7 +38,7 @@ export function remarkWikiLinks(options: { loose?: boolean } = {}) {
             });
           parts.push({
             type: "link",
-            url: `#wiki-${options.loose ? encodeURIComponent(match[1] ?? "") : match[1]}`,
+            url: `#wiki-${encodeURIComponent(match[1] ?? "")}`,
             children: [{ type: "text", value: (match[2] ?? match[1] ?? "").trim() }],
           });
           offset = match.index + match[0].length;

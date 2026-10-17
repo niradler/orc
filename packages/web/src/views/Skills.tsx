@@ -1,4 +1,4 @@
-import type { WikiScope } from "@orc/sdk/types";
+import type { ScopeQuery } from "@orc/sdk/types";
 import { useQueryClient } from "@tanstack/react-query";
 import { Download, Plus, Search } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -62,7 +62,7 @@ const SOURCE_COLORS: Record<SkillSource, string> = {
 
 export default function Skills({ projectId }: { projectId: string }) {
   const project = useProjectScope(projectId);
-  const scope: WikiScope =
+  const scope: ScopeQuery =
     project === "all" || project === "unassigned" ? { scope: "global" } : { project_id: project };
   const [query, setQuery] = useViewParam<string>("skillQuery", "");
   const [searchInput, setSearchInput] = useState(query);
@@ -316,7 +316,7 @@ function SkillDetailSheet({
   onClose,
 }: {
   skillName: string | null;
-  scope: WikiScope;
+  scope: ScopeQuery;
   open: boolean;
   onClose: () => void;
 }) {
@@ -426,7 +426,6 @@ function SkillDetailSheet({
                                       expected_content: expectedContent,
                                       reason: "Manual instruction edit",
                                       author: "human",
-                                      wiki_pages: [],
                                     });
                                   } else
                                     await api.skills.editFile(skill.name, {

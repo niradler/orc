@@ -5,7 +5,7 @@ description: "Produce acceptance criteria and a concise implementation plan; cre
 
 # Plan a work unit
 
-Read the task, feedback, affected code and relevant memory/wiki decisions. Resolve
+Read the task, feedback, affected code and relevant memory/KB decisions. Resolve
 observable questions through inspection. Ask only for decisions the evidence cannot
 settle. Preserve user scope and do not invent adjacent requirements.
 

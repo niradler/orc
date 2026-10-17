@@ -1,5 +1,12 @@
 import type {
+  KbComment,
+  KbCommentClose,
+  KbCommentCreate,
+  KbCommentStatus,
   KbCreate,
+  KbDigest,
+  KbDigestRun,
+  KbDigestSet,
   KbDoclingState,
   KbDocument,
   KbDocumentCreate,
@@ -36,6 +43,7 @@ import type {
   LocalSkillAgentListing,
   LocalSkillImportItem,
   LocalSkillImportResult,
+  ScopeQuery,
   SkillChange,
   SkillDiscovery,
   SkillImportInput,
@@ -43,13 +51,6 @@ import type {
   SkillSyncInput,
   SkillSyncResult,
   SkillUpdate,
-  WikiChange,
-  WikiIndexEntry,
-  WikiPage,
-  WikiRevision,
-  WikiScope,
-  WikiSearchHit,
-  WikiWrite,
 } from "@orc/sdk/types";
 
 export type {
@@ -376,7 +377,7 @@ export type RevertMemoryInput = {
 };
 
 export type GlobalSearchHit = {
-  kind: "task" | "project" | "job" | "memory" | "session" | "wiki";
+  kind: "task" | "project" | "job" | "memory" | "session";
   id: string;
   title: string;
   detail: string;
@@ -673,7 +674,7 @@ export const api = {
       req<{ hidden_builtins: string[] }>("PUT", "/skills/settings/visibility", { hidden_builtins }),
     updateInstructions: (name: string, input: Omit<SkillUpdate, "skill_name">) =>
       req<SkillFull>("PUT", `/skills/${encodeURIComponent(name)}/instructions`, input),
-    history: (name: string, scope: WikiScope = {}) =>
+    history: (name: string, scope: ScopeQuery = {}) =>
       req<{ changes: SkillChange[] }>(
         "GET",
         `/skills/${encodeURIComponent(name)}/history`,
@@ -716,7 +717,7 @@ export const api = {
         undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
-    get: (name: string, ref?: string, scope: WikiScope = {}) =>
+    get: (name: string, ref?: string, scope: ScopeQuery = {}) =>
       req<SkillFull | SkillRefContent>("GET", `/skills/${encodeURIComponent(name)}`, undefined, {
         ...scope,
         ref,
@@ -793,26 +794,8 @@ export const api = {
     list: () => req<{ apm: boolean; skills: boolean; bun: boolean }>("GET", "/package-tools"),
   },
 
-  wiki: {
-    list: (scope: WikiScope = {}) =>
-      req<{ pages: WikiIndexEntry[] }>("GET", "/wiki", undefined, scope),
-    changes: (scope: WikiScope = {}) =>
-      req<{ changes: WikiChange[] }>("GET", "/wiki/changes", undefined, scope),
-    search: (q: string, scope: WikiScope = {}) =>
-      req<{ results: WikiSearchHit[] }>("GET", "/wiki/search", undefined, { ...scope, q }),
-    get: (slug: string, scope: WikiScope = {}) =>
-      req<WikiPage>("GET", `/wiki/${encodeURIComponent(slug)}`, undefined, scope),
-    history: (slug: string, scope: WikiScope = {}) =>
-      req<{ revisions: WikiRevision[] }>(
-        "GET",
-        `/wiki/${encodeURIComponent(slug)}/history`,
-        undefined,
-        scope,
-      ),
-    write: (input: WikiWrite) => req<WikiRevision>("POST", "/wiki", input),
-  },
   audit: {
-    list: (scope: WikiScope = {}) =>
+    list: (scope: ScopeQuery = {}) =>
       req<{ entries: AuditEntry[] }>("GET", "/audit", undefined, scope),
   },
 
@@ -893,6 +876,29 @@ export const api = {
     reparse: (id: string) => req<KbDocument>("POST", `/kb/documents/${enc(id)}/reparse`),
     documentUsage: (id: string) => req<KbUsageStats>("GET", `/kb/documents/${enc(id)}/usage`),
     citation: (handle: string) => req<KbDocumentWithContent>("GET", `/kb/citations/${enc(handle)}`),
+    comments: (
+      kbId: string,
+      filter: { document_id?: string; status?: KbCommentStatus; limit?: number } = {},
+    ) =>
+      req<{ comments: KbComment[] }>("GET", `/kb/bases/${enc(kbId)}/comments`, undefined, filter),
+    addComment: (kbId: string, input: KbCommentCreate) =>
+      req<KbComment>("POST", `/kb/bases/${enc(kbId)}/comments`, input),
+    closeComment: (id: string, input: KbCommentClose) =>
+      req<KbComment>("POST", `/kb/comments/${enc(id)}/close`, input),
+    reopenComment: (id: string) => req<KbComment>("POST", `/kb/comments/${enc(id)}/reopen`),
+    digestTemplate: () => req<{ instructions: string }>("GET", "/kb/digest-template"),
+    digest: (kbId: string) =>
+      req<{ digest: KbDigest | null }>("GET", `/kb/bases/${enc(kbId)}/digest`),
+    setDigest: (kbId: string, input: KbDigestSet) =>
+      req<KbDigest>("PUT", `/kb/bases/${enc(kbId)}/digest`, input),
+    removeDigest: (kbId: string, confirm: string) =>
+      req<null>("DELETE", `/kb/bases/${enc(kbId)}/digest`, undefined, { confirm }),
+    runDigest: (kbId: string) =>
+      req<{ run_id: string }>("POST", `/kb/bases/${enc(kbId)}/digest/run`),
+    digestRuns: (kbId: string, limit?: number) =>
+      req<{ runs: KbDigestRun[] }>("GET", `/kb/bases/${enc(kbId)}/digest/runs`, undefined, {
+        limit,
+      }),
     search: (input: KbSearchRequest, project_id?: string) =>
       req<KbSearchResult>("POST", "/kb/search", input, { project_id }),
     sources: (kbId: string) =>

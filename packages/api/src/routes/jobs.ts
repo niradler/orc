@@ -4,6 +4,7 @@ import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { JobOverlapSchema, JobStatusSchema, JobTriggerTypeSchema } from "@orc/core/types";
 import { getDb } from "@orc/db/client";
+import { KB_DIGEST_COMMAND_PREFIX, kbDigestKbId } from "@orc/db/kb-digest";
 import {
   bridge_messages,
   bridge_permissions,
@@ -32,6 +33,30 @@ function assertValidCron(triggerType: string, cronExpr: string | undefined): voi
   } catch {
     throw new ValidationError(`Invalid cron expression: ${cronExpr}`);
   }
+}
+
+// A knowledge base digest owns its job: the job page may pause it or change when it runs,
+// everything else (instructions, backend, removal) is changed from the knowledge base.
+const DIGEST_JOB_FIELDS = new Set(["enabled", "trigger_type", "cron_expr", "timeout_secs"]);
+
+function assertNotDigestCommand(command: string | undefined): void {
+  if (command?.startsWith(KB_DIGEST_COMMAND_PREFIX))
+    throw new ValidationError("Digest jobs are created from a knowledge base's digest settings");
+}
+
+function assertDigestJobUpdate(command: string, body: Record<string, unknown>): void {
+  if (!kbDigestKbId(command)) return;
+  const other = Object.keys(body).filter((k) => body[k] !== undefined && !DIGEST_JOB_FIELDS.has(k));
+  if (other.length)
+    throw new ValidationError(
+      `This job runs a knowledge base digest; change ${other.join(", ")} in the knowledge base's digest settings`,
+    );
+  if (
+    body.trigger_type !== undefined &&
+    body.trigger_type !== "cron" &&
+    body.trigger_type !== "manual"
+  )
+    throw new ValidationError("A digest job runs on a cron schedule or manually");
 }
 
 const JobSchema = z
@@ -309,6 +334,7 @@ app.openapi(createRoute_, async (c) => {
   const db = getDb();
   const body = c.req.valid("json");
   assertValidCron(body.trigger_type, body.cron_expr);
+  assertNotDigestCommand(body.command);
   const now = new Date();
   const id = ulid();
 
@@ -344,6 +370,8 @@ app.openapi(updateRoute, async (c) => {
 
   const existing = await db.query.jobs.findFirst({ where: eq(jobs.id, id) });
   if (!existing) throw new NotFoundError("Job", id);
+  assertDigestJobUpdate(existing.command, body);
+  assertNotDigestCommand(body.command);
 
   const effectiveTrigger = body.trigger_type ?? existing.trigger_type;
   const effectiveCron =
@@ -382,6 +410,10 @@ app.openapi(deleteRoute, async (c) => {
   const { id } = c.req.valid("param");
   const existing = await db.query.jobs.findFirst({ where: eq(jobs.id, id) });
   if (!existing) throw new NotFoundError("Job", id);
+  if (kbDigestKbId(existing.command))
+    throw new ValidationError(
+      "This job runs a knowledge base digest; remove the digest from the knowledge base instead",
+    );
   const runIds = (
     await db.select({ id: job_runs.id }).from(job_runs).where(eq(job_runs.job_id, id))
   ).map((r) => r.id);

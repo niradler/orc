@@ -255,7 +255,7 @@ curl -s -H "Authorization: Bearer $SECRET" http://127.0.0.1:$PORT/health
 
 - [x] `context` - returns active tasks + top memories by priority + last session
 - [ ] `memory_list` with `args.q` - finds matching memories
-- [x] `search` (unified) with `args.query` - searches across wiki, tasks and memories
+- [x] `search` (unified) with `args.query` - searches across knowledge bases, tasks and memories
 - [x] `project_list` - returns all projects
 
 ### 8.2 Memory Tools

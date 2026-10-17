@@ -11,8 +11,8 @@ on the strength of its summary alone. The node prompt defines the legal verdicts
 ## Start
 
 Call context with the readable project name. Read the task, acceptance criteria,
-worker evidence, feedback and flow ledger. Read relevant memories and search wiki guidance;
-check it against the current artifact. Use the explicit session ID on session and wiki writes.
+worker evidence, feedback and flow ledger. Read relevant memories and search knowledge bases;
+check it against the current artifact. Use the explicit session ID on session and knowledge writes.
 
 For Git work, identify the actual branch, base and commit from task evidence. Inspect
 the diff and connected files in the correct checkout. Do not assume main is the base,
@@ -38,7 +38,7 @@ Tests existing or compiling is not proof that they check the claimed behavior.
   otherwise use the node's declared failure outcome and explain what is missing.
 
 Before reporting, follow orc-memory-review inline. Save a recurring failure pattern as a
-short memory; lessons with evidence are wiki pages (kind: lesson).
+short memory; lessons with evidence go to the project Learnings KB.
 No knowledge write is required for an uneventful review.
 
 Post verdict, findings, checks performed, risks/limits and Knowledge results. Call

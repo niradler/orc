@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { apiPost, gotoView, selectProject, tid } from "./_helpers";
+import { apiDelete, apiPost, gotoView, selectProject, tid } from "./_helpers";
 
 test("shared project URLs align the shell and page without replacing the saved preference", async ({
   page,
@@ -25,45 +25,46 @@ test("shared project URLs align the shell and page without replacing the saved p
     project.id,
   );
   await page.getByTestId("nav-knowledge").click();
-  await expect(page).toHaveURL(new RegExp(`/knowledge/wiki\\?project=${project.id}`));
+  await expect(page).toHaveURL(new RegExp(`/knowledge/base\\?project=${project.id}`));
+  await page.getByTestId("nav-memories").click();
+  await expect(page).toHaveURL(new RegExp(`/knowledge/memories\\?project=${project.id}`));
   await page.getByTestId("section-knowledge").click();
   await expect(page).toHaveURL(new RegExp(`/knowledge/base\\?project=${project.id}`));
-  await page.getByTestId("nav-wiki").click();
-  await expect(page).toHaveURL(new RegExp(`/knowledge/wiki\\?project=${project.id}`));
-  await expect(page.getByTestId("view-title")).toHaveText("Wiki");
+  await expect(page.getByTestId("view-title")).toHaveText("Knowledge bases");
   await page.reload();
   await expect(page.getByRole("banner")).toContainText(project.name);
 });
 
-test("Wiki document modes restore from shared URLs and browser history", async ({
+test("Knowledge base document modes restore from shared URLs and browser history", async ({
   page,
   request,
 }) => {
-  const slug = tid("shared-note");
-  await apiPost(request, "/wiki", {
+  const kb = await apiPost<{ id: string }>(request, "/kb/bases", {
+    name: tid("pw-kb-shared"),
     project_id: null,
-    slug,
-    title: "Shareable document",
-    kind: "concept",
-    summary: "Document route fixture",
-    content: "# Shareable document\n\nCommitted content.",
-    expected_revision: 0,
-    note: "Validation fixture",
   });
-  await gotoView(page, "wiki");
-  await page.goto(`/wiki?page=${slug}&project=all&editorMode=split`);
-  await expect(page.getByTestId("markdown-mode-split")).toHaveAttribute("aria-pressed", "true");
-  await page.getByTestId("markdown-mode-edit").click();
-  expect(new URL(page.url()).searchParams.get("page")).toBe(slug);
-  expect(new URL(page.url()).searchParams.get("editorMode")).toBe("edit");
-  await page.goBack();
-  await expect(page.getByTestId("markdown-mode-split")).toHaveAttribute("aria-pressed", "true");
-  await page.goForward();
-  await expect(page.getByTestId("markdown-mode-edit")).toHaveAttribute("aria-pressed", "true");
-  await page.reload();
-  await expect(page.getByTestId("markdown-mode-edit")).toHaveAttribute("aria-pressed", "true");
-  await page.getByTestId("markdown-mode-read").click();
-  await expect(page.getByTestId("markdown-preview")).toContainText("Committed content.");
+  const doc = await apiPost<{ id: string }>(request, `/kb/bases/${kb.id}/documents`, {
+    title: "Shareable document",
+    content: "# Shareable document\n\nCommitted content.",
+  });
+  try {
+    await gotoView(page, "knowledge");
+    await page.goto(`/knowledge/base?kb=${kb.id}&document=${doc.id}&project=all&editorMode=split`);
+    await expect(page.getByTestId("markdown-mode-split")).toHaveAttribute("aria-pressed", "true");
+    await page.getByTestId("markdown-mode-edit").click();
+    expect(new URL(page.url()).searchParams.get("document")).toBe(doc.id);
+    expect(new URL(page.url()).searchParams.get("editorMode")).toBe("edit");
+    await page.goBack();
+    await expect(page.getByTestId("markdown-mode-split")).toHaveAttribute("aria-pressed", "true");
+    await page.goForward();
+    await expect(page.getByTestId("markdown-mode-edit")).toHaveAttribute("aria-pressed", "true");
+    await page.reload();
+    await expect(page.getByTestId("markdown-mode-edit")).toHaveAttribute("aria-pressed", "true");
+    await page.getByTestId("markdown-mode-read").click();
+    await expect(page.getByTestId("markdown-preview")).toContainText("Committed content.");
+  } finally {
+    await apiDelete(request, `/kb/bases/${kb.id}`);
+  }
 });
 
 test("Chat is generic and its open view restores from the URL across breakpoints", async ({

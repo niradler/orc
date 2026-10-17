@@ -83,10 +83,12 @@ describe("knowledge bases", () => {
     expect(g.project_id).toBeNull();
     expect(p.project_id).toBe("p1");
     expect(() => svc.createKb(human(), { name: "docs", project_id: null })).toThrow(ConflictError);
-    expect(() => svc.createKb(agent(), { name: "X", project_id: null })).toThrow(ForbiddenError);
+    // Agents create KBs over MCP too; folders and parsers stay off MCP.
+    expect(svc.createKb(agent(), { name: "X", project_id: null }).name).toBe("X");
     expect(projectKbCount(getSqlite(), "p1")).toBe(1);
-    expect(svc.listKbs({ ...human(), project_id: "p1" }).map((k) => k.id)).toEqual([p.id, g.id]);
-    expect(svc.listKbs(human()).map((k) => k.id)).toEqual([g.id]);
+    const x = svc.listKbs(human()).find((k) => k.name === "X")?.id as string;
+    expect(svc.listKbs({ ...human(), project_id: "p1" }).map((k) => k.id)).toEqual([p.id, g.id, x]);
+    expect(svc.listKbs(human()).map((k) => k.id)).toEqual([g.id, x]);
   });
 });
 
@@ -358,7 +360,7 @@ describe("edit permissions", () => {
         ForbiddenError,
       );
 
-    // An agent cannot change KB settings, so it cannot grant itself edit rights.
+    // An agent cannot change a KB that does not allow mcp, so it cannot grant itself edit rights.
     expect(() => svc.updateKb(agent(), open_.id, { editable_by: ["mcp"] })).toThrow(ForbiddenError);
     expect(() => svc.deleteKb(agent(), open_.id)).toThrow(ForbiddenError);
     expect(() =>

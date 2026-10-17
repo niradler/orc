@@ -458,3 +458,160 @@ export type KbSettingsPatch = Partial<
     }>;
   }
 >;
+
+// --- Partial document edits ------------------------------------------------------------------
+
+/** Exact text replacement. `old` must match once unless `replace_all`. */
+export const KbTextEditSchema = z
+  .object({
+    old: z.string().min(1).max(KB_MAX_MARKDOWN_BYTES),
+    new: z.string().max(KB_MAX_MARKDOWN_BYTES),
+    replace_all: z.boolean().optional(),
+  })
+  .strict();
+
+/** Replaces lines start_line..end_line (1-based, inclusive). Empty `new` deletes them;
+ * start_line = end_line + 1 inserts before start_line. */
+export const KbLineEditSchema = z
+  .object({
+    start_line: z.number().int().min(1),
+    end_line: z.number().int().min(0),
+    new: z.string().max(KB_MAX_MARKDOWN_BYTES),
+  })
+  .strict();
+
+export const KbDocumentEditSchema = z
+  .object({
+    /** Line numbers in line edits refer to this revision. */
+    expected_revision: z.number().int().min(1),
+    edits: z
+      .array(z.union([KbTextEditSchema, KbLineEditSchema]))
+      .min(1)
+      .max(50),
+    note: z.string().trim().min(1).max(1000),
+  })
+  .strict();
+export type KbDocumentEdit = z.input<typeof KbDocumentEditSchema>;
+
+export type KbDocumentEditResult = {
+  document: KbDocument;
+  /** Line ranges of the new revision that each edit wrote, in edit order. */
+  changed: { start_line: number; end_line: number }[];
+};
+
+// --- Comments --------------------------------------------------------------------------------
+
+export const KB_COMMENT_STATUSES = ["open", "resolved", "dismissed"] as const;
+export type KbCommentStatus = (typeof KB_COMMENT_STATUSES)[number];
+
+export const KbCommentCreateSchema = z
+  .object({
+    /** Omit (or null) for a comment on the whole knowledge base. */
+    document_id: z.string().min(1).nullable().optional(),
+    body: z.string().trim().min(1).max(10_000),
+  })
+  .strict();
+export type KbCommentCreate = z.input<typeof KbCommentCreateSchema>;
+
+export const KbCommentCloseSchema = z
+  .object({
+    status: z.enum(["resolved", "dismissed"]),
+    reply: z.string().trim().min(1).max(4000),
+  })
+  .strict();
+export type KbCommentClose = z.input<typeof KbCommentCloseSchema>;
+
+export type KbComment = {
+  id: string;
+  kb_id: string;
+  document_id: string | null;
+  /** Title of the commented document when it still exists. */
+  document_title: string | null;
+  body: string;
+  author: string;
+  source: KbCallSource;
+  session_id: string | null;
+  status: KbCommentStatus;
+  reply: string | null;
+  resolved_by: string | null;
+  created_at: number;
+  updated_at: number;
+  resolved_at: number | null;
+};
+
+// --- Digests ---------------------------------------------------------------------------------
+
+/** A digest runs either on a cron schedule or only when started by hand. */
+export const KbDigestScheduleSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("cron"), cron: z.string().trim().min(1).max(120) }).strict(),
+  z.object({ type: z.literal("manual") }).strict(),
+]);
+export type KbDigestSchedule = z.infer<typeof KbDigestScheduleSchema>;
+
+export const KbDigestSetSchema = z
+  .object({
+    instructions: z.string().trim().min(1).max(20_000).optional(),
+    backend: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-z][a-z0-9_-]*$/)
+      .optional(),
+    schedule: KbDigestScheduleSchema.optional(),
+    enabled: z.boolean().optional(),
+    timeout_secs: z.number().int().min(60).max(7200).optional(),
+  })
+  .strict();
+export type KbDigestSet = z.input<typeof KbDigestSetSchema>;
+
+export const KB_DIGEST_RUN_STATUSES = ["running", "completed", "failed", "skipped"] as const;
+export type KbDigestRunStatus = (typeof KB_DIGEST_RUN_STATUSES)[number];
+
+export type KbDigest = {
+  kb_id: string;
+  instructions: string;
+  backend: string;
+  job_id: string;
+  schedule: KbDigestSchedule;
+  enabled: boolean;
+  timeout_secs: number;
+  /** Start of the last run that completed; the next run looks at what happened since. */
+  last_success_at: number | null;
+  last_run: {
+    status: KbDigestRunStatus;
+    at: number;
+    note: string | null;
+    session_id: string | null;
+  } | null;
+  open_comments: number;
+  created_at: number;
+  updated_at: number;
+};
+
+export type KbDigestRun = {
+  run_id: string;
+  status: string;
+  trigger_by: string | null;
+  /** Epoch milliseconds, like every other KB time. */
+  started_at: number | null;
+  ended_at: number | null;
+  summary: string | null;
+  error: string | null;
+  session_id: string | null;
+};
+
+export const KB_DIGEST_DEFAULT_CRON = "0 3 * * *";
+
+/** Starter instructions offered when a digest is added; the owner edits them freely. */
+export const KB_DIGEST_TEMPLATE = `Keep this knowledge base an accurate, current record of what has been learned in its scope.
+
+1. Handle every open comment first. Do what it asks when it is right; then resolve it with a short reply saying what you changed, or dismiss it with the reason.
+2. Read what happened since the last run with ORC tools: new and changed memories (memory_list, memory_read), session summaries, and the audit log (audit_list).
+3. Turn durable lessons into documents: decisions and their reasons, pitfalls and fixes, how things work, conventions. Skip one-off status and anything already recorded.
+4. Before writing, search this knowledge base (kb_search). Update the existing document instead of creating a near-duplicate; merge duplicates you find.
+5. When a memory, comment or document links to a source (URL, file, document), read it and write a digested document that cites the source.
+6. Correct documents that new evidence shows are wrong, and remove documents that are obsolete.
+7. Edit long documents with kb_document action "edit" (changed lines only); use kb_write for new documents and full rewrites. Give every write a note saying why.
+8. Keep each document focused on one topic, with a clear title, a one-line description and labels. Link related documents with [[path-or-title]].
+
+Never store secrets, credentials or personal data.`;

@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 import { remarkWikiLinks, wikiLinkKey } from "../../src/lib/wiki-links";
 
-test("wiki links transform prose but preserve code and existing link labels", () => {
+test("links transform prose but preserve code and existing link labels", () => {
   const tree = {
     type: "root",
     children: [
       {
         type: "paragraph",
-        children: [{ type: "text", value: "See [[queue-order]] and [[missing]]." }],
+        children: [{ type: "text", value: "See [[queue-order]] and [[Missing Page]]." }],
       },
       { type: "inlineCode", value: "[[queue-order]]" },
       { type: "code", value: "[[queue-order]]" },
@@ -29,8 +29,8 @@ test("wiki links transform prose but preserve code and existing link labels", ()
     { type: "text", value: " and " },
     {
       type: "link",
-      url: "#wiki-missing",
-      children: [{ type: "text", value: "missing" }],
+      url: "#wiki-Missing%20Page",
+      children: [{ type: "text", value: "Missing Page" }],
     },
     { type: "text", value: "." },
   ]);
@@ -39,7 +39,7 @@ test("wiki links transform prose but preserve code and existing link labels", ()
   expect(tree.children[3]?.children?.[0]?.value).toBe("[[queue-order]]");
 });
 
-test("loose wiki links accept titles, paths and labels and match like the KB resolver", () => {
+test("links accept titles, paths and labels and match like the KB resolver", () => {
   const tree = {
     type: "root",
     children: [
@@ -51,7 +51,7 @@ test("loose wiki links accept titles, paths and labels and match like the KB res
       },
     ],
   };
-  remarkWikiLinks({ loose: true })(tree);
+  remarkWikiLinks()(tree);
   const links = tree.children[0]?.children?.filter((n) => n.type === "link") ?? [];
   expect(links.map((l) => [l.url, l.children?.[0]?.value])).toEqual([
     ["#wiki-Rotate%20Key", "Rotate Key"],

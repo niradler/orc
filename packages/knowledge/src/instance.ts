@@ -13,6 +13,7 @@ export function getKnowledgeService(): Promise<KnowledgeService> {
     instance = KnowledgeService.open({
       db: getSqlite(getDb()),
       config: () => loadConfig().knowledge,
+      defaultBackend: () => loadConfig().agent_loop.default_backend,
     }).then((svc) => {
       svc.start({ maintenance: false });
       return svc;

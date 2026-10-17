@@ -2,10 +2,10 @@ import { type HostProcess, hostSpawn, resolveExecHost } from "@orc/core/exec-hos
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { getDb } from "@orc/db/client";
-import { DIGEST_COMMAND } from "@orc/db/digest";
+import { kbDigestKbId } from "@orc/db/kb-digest";
 import { job_run_logs, job_runs, jobs, sessions } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
-import { runKnowledgeDigest } from "./knowledge-digest.js";
+import { runKbDigest } from "./kb-digest.js";
 
 const logger = createLogger("runner:executor");
 
@@ -61,8 +61,14 @@ export async function executeJob(opts: RunOptions): Promise<string> {
 
     logger.info(`Starting job: ${job.name} [${runId}]`);
 
-    if (job.command === DIGEST_COMMAND) {
-      const summary = await runKnowledgeDigest(undefined, (job.timeout_secs ?? 1800) * 1000);
+    // A KB digest job names its knowledge base; it starts the digest agent, never a shell.
+    const digestKbId = kbDigestKbId(job.command);
+    if (digestKbId) {
+      const summary = await runKbDigest(digestKbId, {
+        runId,
+        triggerBy: opts.triggerBy ?? "manual",
+        timeoutMs: (job.timeout_secs ?? 1800) * 1000,
+      });
       await db
         .update(job_runs)
         .set({ status: "success", ended_at: new Date(), exit_code: 0, stdout: summary })

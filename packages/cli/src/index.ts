@@ -134,9 +134,10 @@ program
 program
   .command("mcp")
   .description("Start the MCP server (stdio)")
-  .action(async () => {
-    const { startStdioServer } = await import("@orc/mcp");
-    await startStdioServer();
+  .option("--mode <mode>", "tool surface: full (default) or meta (tool_search/describe/invoke)")
+  .action(async (opts: { mode?: string }) => {
+    const { parseMcpMode, startStdioServer } = await import("@orc/mcp");
+    await startStdioServer(parseMcpMode(opts.mode));
   });
 
 program.parseAsync(process.argv).catch((err: unknown) => {

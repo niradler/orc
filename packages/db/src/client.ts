@@ -5,13 +5,11 @@ import { loadConfig } from "@orc/core/config";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { installAudit } from "./audit.js";
 import { installChangeTracking, stopChangeTracking } from "./changes.js";
-import { installDigest } from "./digest.js";
 import { installKnowledgeBases } from "./kb.js";
 import { installMemories } from "./memories.js";
 import { installRules } from "./rules.js";
 import * as schema from "./schema.js";
 import { installSkillHistory } from "./skill-history.js";
-import { installWiki } from "./wiki.js";
 
 export type OrcDb = ReturnType<typeof createDb>;
 
@@ -468,11 +466,9 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   )`);
   dropLegacyWiki(sqlite);
   installAudit(sqlite);
-  installWiki(sqlite);
   installKnowledgeBases(sqlite);
   installSkillHistory(sqlite);
   installMemories(sqlite);
-  installDigest(sqlite);
   installRules(sqlite);
 
   installChangeTracking(sqlite, path);

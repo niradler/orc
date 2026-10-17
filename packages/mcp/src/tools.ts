@@ -1,4 +1,3 @@
-import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { createAgent, discoverAgents, readAgent } from "@orc/core/agent-service";
 import { loadConfig } from "@orc/core/config";
@@ -20,12 +19,12 @@ import {
   skillValidationIssues,
   skillWarnings,
 } from "@orc/core/skill-service";
+import { SkillUpdateSchema } from "@orc/core/skill-update";
 import type { TaskStatus } from "@orc/core/types";
 import { AgentBackendSchema } from "@orc/core/types";
-import { SkillUpdateSchema, WikiWriteSchema } from "@orc/core/wiki";
 import { AuditLog } from "@orc/db/audit";
 import { getDb, getSqlite } from "@orc/db/client";
-import { DigestStore } from "@orc/db/digest";
+import { KbDigestStore } from "@orc/db/kb-digest";
 import {
   MEMORY_DESCRIPTION_MAX,
   MEMORY_PRIORITY_MAX,
@@ -35,7 +34,6 @@ import {
 } from "@orc/db/memories";
 import { job_runs, jobs, projects, sessions, tasks } from "@orc/db/schema";
 import { SkillHistory, type SkillListSort } from "@orc/db/skill-history";
-import { WikiStore } from "@orc/db/wiki";
 import { executeJob } from "@orc/runner/executor";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 
@@ -72,29 +70,18 @@ const scopedProjectParams = z.object({
     ),
 });
 
-const wikiScopeParams = z.object({ project: projectParam, scope: z.literal("global").optional() });
-const wikiSearchParams = wikiScopeParams.extend({
-  query: z.string().trim().min(1).max(2000),
-  limit: z.number().int().min(1).max(50).default(10),
-});
-const wikiReadParams = wikiScopeParams.extend({ slug: WikiWriteSchema.shape.slug });
-const wikiWriteParams = WikiWriteSchema.omit({ project_id: true })
-  .extend(wikiScopeParams.shape)
-  .strict();
-const wikiIndexParams = wikiScopeParams.extend({
-  limit: z.number().int().min(1).max(100).default(20),
-});
-const auditParams = wikiScopeParams.extend({
-  entity_type: z.enum(["memory", "wiki", "skill", "digest"]).optional(),
+const scopeParams = z.object({ project: projectParam, scope: z.literal("global").optional() });
+const auditParams = scopeParams.extend({
+  entity_type: z.enum(["memory", "skill", "kb"]).optional(),
   session_id: z.string().min(1).max(200).optional(),
   since: z.number().int().min(0).optional(),
   limit: z.number().int().min(1).max(100).default(50),
 });
 
 const skillUpdateParams = SkillUpdateSchema.omit({ project_id: true })
-  .extend(wikiScopeParams.shape)
+  .extend(scopeParams.shape)
   .strict();
-const skillHistoryParams = wikiScopeParams.extend({ name: z.string().min(1).max(200) });
+const skillHistoryParams = scopeParams.extend({ name: z.string().min(1).max(200) });
 const skillRevertParams = skillHistoryParams.extend({
   change_id: z.string().min(1),
   expected_change_id: z.string().min(1),
@@ -111,7 +98,7 @@ export const toolDefinitions = [
   {
     name: "skill_update",
     description:
-      "Update effective SKILL.md instructions from verified wiki lessons. Read current raw SKILL.md first and pass expected_content. Changes are audited with history; supporting authored files stay intact. Normal skill_read returns the edited version in scope.",
+      "Update effective SKILL.md instructions from verified lessons. Read current raw SKILL.md first and pass expected_content. Changes are audited with history; supporting authored files stay intact. Normal skill_read returns the edited version in scope.",
     inputSchema: skillUpdateParams,
   },
   {
@@ -128,38 +115,8 @@ export const toolDefinitions = [
   {
     name: "digest_complete",
     description:
-      "Finish an assigned knowledge digest only after reviewing its input and applying warranted changes. Pass the assigned token; this advances the watermark. Never call for unrelated work.",
+      "Finish an assigned knowledge base digest run after handling its open comments and new input. Pass the assigned token; this records the run and advances what the next run looks at. Never call for unrelated work.",
     inputSchema: digestCompleteParams,
-  },
-  {
-    name: "wiki_search",
-    description:
-      "Ordinary scoped wiki search. Returns summaries; wiki_get loads full content on demand.",
-    inputSchema: wikiSearchParams,
-  },
-  {
-    name: "wiki_index",
-    description:
-      "Visible wiki summaries and recent learning. Project pages shadow global pages. Use scope: global to explicitly read global pages; wiki_get loads full content.",
-    inputSchema: wikiIndexParams,
-  },
-  {
-    name: "wiki_get",
-    description:
-      "Read one wiki page on demand by slug and scope. Follow search/wiki_index before loading full content.",
-    inputSchema: wikiReadParams,
-  },
-  {
-    name: "wiki_write",
-    description:
-      "Compile a verified procedure, lesson or decision into a wiki page. Cite memory:<name> sources, include a change note, and use expected_revision (0 for new). Stale revisions conflict; read and reconcile before retrying. scope: global explicitly writes a shared page.",
-    inputSchema: wikiWriteParams,
-  },
-  {
-    name: "wiki_history",
-    description:
-      "Read immutable revisions with author, note and source session for one resolved wiki page.",
-    inputSchema: wikiReadParams,
   },
   {
     name: "audit_list",
@@ -388,13 +345,13 @@ export const toolDefinitions = [
   {
     name: "search",
     description:
-      "Ordinary search: wiki summaries first, unabsorbed memories next, KB documents as fallback/citations, plus tasks. Full wiki/KB content loads on demand.",
+      "Ordinary search: knowledge base documents first, then memories and tasks. Read full documents with kb_read.",
     inputSchema: z.object({
       query: z.string().describe("Search query"),
       resources: z
-        .array(z.enum(["wiki", "tasks", "memories", "knowledge"]))
+        .array(z.enum(["knowledge", "tasks", "memories"]))
         .optional()
-        .default(["wiki", "tasks", "memories"]),
+        .default(["knowledge", "tasks", "memories"]),
       project: projectParam,
       limit: z.number().int().min(1).max(20).optional().default(10),
     }),
@@ -724,17 +681,6 @@ function memoryProject(project: string | undefined): string {
   return resolved.id;
 }
 
-/** Drops memories a wiki page in the same scope already cites as memory:<name>. */
-function unabsorbedMemories(sqlite: Database, items: MemoryListItem[]): MemoryListItem[] {
-  const cited = sqlite.query<{ found: number }, [string, string, string]>(
-    `SELECT 1 AS found FROM wiki_pages p, json_each(p.sources) source
-     WHERE source.value = 'memory:' || ? AND (p.project_id IS ? OR (p.project_id IS NULL
-       AND NOT EXISTS (SELECT 1 FROM wiki_pages shadow WHERE shadow.project_id IS ? AND shadow.slug=p.slug)))
-     LIMIT 1`,
-  );
-  return items.filter((m) => !cited.get(m.name, m.project_id, m.project_id));
-}
-
 function formatMemoryLine(memory: MemoryListItem): string {
   const priority = memory.priority === null ? "" : ` [p${memory.priority}]`;
   const reads = ` (${memory.read_count} ${memory.read_count === 1 ? "read" : "reads"})`;
@@ -753,7 +699,7 @@ function resolveProjectId(projectName?: string): { id: string; name: string } | 
   return row;
 }
 
-function resolveWikiScope(input: z.infer<typeof wikiScopeParams>): string | null {
+function resolveScope(input: z.infer<typeof scopeParams>): string | null {
   return input.scope === "global" ? null : (resolveProjectId(input.project)?.id ?? null);
 }
 
@@ -817,7 +763,7 @@ export async function executeTool(
       return JSON.stringify(
         new SkillHistory(getSqlite(db)).update({
           ...input,
-          project_id: resolveWikiScope({ project, scope }),
+          project_id: resolveScope({ project, scope }),
           author: input.author ?? process.env.ORC_AGENT ?? "agent",
           session_id: input.session_id ?? process.env.ORC_SESSION_ID,
         }),
@@ -826,7 +772,7 @@ export async function executeTool(
     case "skill_history": {
       const input = skillHistoryParams.parse(args);
       return JSON.stringify({
-        changes: new SkillHistory(getSqlite(db)).history(input.name, resolveWikiScope(input)),
+        changes: new SkillHistory(getSqlite(db)).history(input.name, resolveScope(input)),
       });
     }
     case "skill_revert": {
@@ -834,7 +780,7 @@ export async function executeTool(
       return JSON.stringify(
         new SkillHistory(getSqlite(db)).revert(
           input.name,
-          resolveWikiScope(input),
+          resolveScope(input),
           input.change_id,
           input.expected_change_id,
           input.reason,
@@ -843,54 +789,16 @@ export async function executeTool(
     }
     case "digest_complete": {
       const input = digestCompleteParams.parse(args);
-      new DigestStore(getSqlite(db)).complete(input.token, input.outcome, input.note);
+      const actor =
+        [process.env.ORC_AGENT, process.env.CLAUDE_MODEL].filter(Boolean).join("/") || "agent";
+      new KbDigestStore(getSqlite(db)).complete(input.token, input.outcome, input.note, actor);
       return "Digest completed";
-    }
-    case "wiki_search": {
-      const input = wikiSearchParams.parse(args);
-      return JSON.stringify({
-        results: new WikiStore(getSqlite(db)).search(input.query, {
-          projectId: resolveWikiScope(input),
-          limit: input.limit,
-        }),
-      });
-    }
-    case "wiki_index": {
-      const input = wikiIndexParams.parse(args);
-      const store = new WikiStore(getSqlite(db));
-      const projectId = resolveWikiScope(input);
-      return JSON.stringify({
-        pages: store.list(projectId).slice(0, input.limit),
-        changes: store.changes(projectId, Math.min(input.limit, 5)),
-      });
-    }
-    case "wiki_get":
-    case "wiki_history": {
-      const input = wikiReadParams.parse(args);
-      const store = new WikiStore(getSqlite(db));
-      const projectId = resolveWikiScope(input);
-      return JSON.stringify(
-        name === "wiki_get"
-          ? store.get(projectId, input.slug)
-          : { revisions: store.history(projectId, input.slug) },
-      );
-    }
-    case "wiki_write": {
-      const { project, scope, ...page } = wikiWriteParams.parse(args);
-      return JSON.stringify(
-        new WikiStore(getSqlite(db)).write({
-          ...page,
-          project_id: resolveWikiScope({ project, scope }),
-          author: page.author ?? process.env.ORC_AGENT ?? process.env.CLAUDE_MODEL ?? "agent",
-          session_id: page.session_id ?? process.env.ORC_SESSION_ID,
-        }),
-      );
     }
     case "audit_list": {
       const input = auditParams.parse(args);
       return JSON.stringify({
         entries: new AuditLog(getSqlite(db)).list({
-          projectId: resolveWikiScope(input),
+          projectId: resolveScope(input),
           entityType: input.entity_type,
           sessionId: input.session_id,
           since: input.since,
@@ -1549,28 +1457,19 @@ export async function executeTool(
       const resolved = resolveProjectId(project);
       const lim = limit ?? 10;
       const parts: string[] = [];
-      let knowledgeHits = 0;
-      if (!resources || resources.includes("wiki")) {
-        const pages = new WikiStore(getSqlite(db)).search(query, {
-          projectId: resolved?.id ?? null,
-          limit: lim,
-        });
-        knowledgeHits += pages.length;
-        if (pages.length)
-          parts.push(
-            "## Wiki",
-            ...pages.map(
-              (page) =>
-                `  [wiki] ${page.slug} (${page.project_id ?? "global"}) ${page.title}: ${page.summary}`,
-            ),
-          );
+      if (!resources || resources.includes("knowledge")) {
+        try {
+          const kbLines = await kbSearchLines(query, resolved?.id ?? null, Math.ceil(lim / 2));
+          if (kbLines.length > 0) parts.push("## Knowledge", ...kbLines);
+        } catch (error) {
+          logger.warn("Knowledge search failed", { error });
+          parts.push("## Knowledge unavailable; memory and task results remain available.");
+        }
       }
       if (!resources || resources.includes("memories")) {
-        const memResults = unabsorbedMemories(
-          getSqlite(db),
-          new MemoryStore(getSqlite(db)).list(resolved?.id ?? null, { q: query }),
-        ).slice(0, Math.ceil(lim / 2));
-        knowledgeHits += memResults.length;
+        const memResults = new MemoryStore(getSqlite(db))
+          .list(resolved?.id ?? null, { q: query })
+          .slice(0, Math.ceil(lim / 2));
         if (memResults.length > 0) {
           // memory_read takes a name plus a project name, so print both.
           const projectNames = new Map(
@@ -1625,19 +1524,6 @@ export async function executeTool(
         }
       }
 
-      if (
-        ((!resources || resources.includes("wiki")) && knowledgeHits === 0) ||
-        resources?.includes("knowledge")
-      ) {
-        try {
-          const kbLines = await kbSearchLines(query, resolved?.id ?? null, Math.ceil(lim / 3));
-          if (kbLines.length > 0) parts.push("## Knowledge", ...kbLines);
-        } catch (error) {
-          logger.warn("Knowledge fallback search failed", { error });
-          parts.push("## Knowledge unavailable; wiki and memory results remain available.");
-        }
-      }
-
       return parts.length > 0 ? parts.join("\n") : "No results found.";
     }
 
@@ -1651,7 +1537,7 @@ export async function executeTool(
         project?: string;
         scope?: "global";
       };
-      const matched = new SkillHistory(getSqlite(db)).list(resolveWikiScope({ project, scope }), {
+      const matched = new SkillHistory(getSqlite(db)).list(resolveScope({ project, scope }), {
         q,
         source,
         sort,
@@ -1685,7 +1571,7 @@ export async function executeTool(
         scope,
       } = args as { name: string; ref?: string; project?: string; scope?: "global" };
       const skillHistory = new SkillHistory(getSqlite(db));
-      const skillScope = resolveWikiScope({ project, scope });
+      const skillScope = resolveScope({ project, scope });
       const result = skillHistory.read(sName, skillScope, ref);
       if (!result) return `Skill not found: ${sName}`;
       skillHistory.recordRead(sName, skillScope, "mcp", ref);
