@@ -247,55 +247,27 @@ describe("digests", () => {
 });
 
 describe("starter Learnings KBs", () => {
-  test("each active project gets one with a digest, once; old wiki pages become its documents", () => {
+  test("each active project gets one with a digest, once", () => {
     db.exec(
       "INSERT INTO projects(id, name) VALUES ('p1', 'one'), ('p2', 'two'); INSERT INTO projects(id, name, status) VALUES ('p3', 'old', 'archived')",
     );
-    // Databases from before KB digests still hold wiki pages.
-    db.exec(`CREATE TABLE IF NOT EXISTS wiki_pages (project_key TEXT NOT NULL, project_id TEXT,
-      slug TEXT NOT NULL, kind TEXT NOT NULL, revision INTEGER NOT NULL, title TEXT NOT NULL,
-      summary TEXT NOT NULL, content TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '[]',
-      sources TEXT NOT NULL DEFAULT '[]', author TEXT NOT NULL, updated_at INTEGER NOT NULL,
-      PRIMARY KEY (project_key, slug))`);
-    db.exec(`INSERT INTO wiki_pages VALUES
-      ('project:p1', 'p1', 'tini-path', 'lesson', 2, 'Tini path', 'Where tini lives', '# Tini\n', '["docker"]', '["memory:tini"]', 'codex', 1),
-      ('global:', NULL, 'otp', 'procedure', 1, 'Publish OTP', 'npm needs --otp', '# OTP\n', '[]', '[]', 'claude', 1)`);
     svc.createKb(human, { name: "learnings", project_id: "p2" });
 
     const created = svc.ensureLearningsKbs();
-    expect(created).toHaveLength(2);
+    expect(created).toHaveLength(1);
     const kbs = svc.listKbs(human, "all").filter((k) => k.name === "Learnings");
-    expect(kbs.map((k) => k.project_id ?? "global").sort()).toEqual(["global", "p1"]);
-    for (const kb of kbs)
-      expect(svc.getDigest(kb.id)).toMatchObject({
-        backend: "codex",
-        instructions: KB_DIGEST_TEMPLATE,
-        schedule: { type: "cron", cron: "0 3 * * *" },
-        enabled: true,
-      });
-
-    const p1 = kbs.find((k) => k.project_id === "p1");
-    const [doc] = svc.listDocuments(p1?.id as string).documents;
-    expect(doc).toMatchObject({
-      title: "Tini path",
-      path: "tini-path.md",
-      labels: ["docker", "lesson"],
-    });
-    const full = svc.getDocument(human, doc?.id as string);
-    expect(full.content).toBe("# Tini\n\n## Sources\n\n- memory:tini\n");
-    expect(svc.revisions(doc?.id as string)[0]).toMatchObject({
-      actor: "codex",
-      note: "Migrated from wiki page tini-path r2",
+    expect(kbs.map((k) => k.project_id)).toEqual(["p1"]);
+    const p1 = kbs[0];
+    expect(svc.getDigest(p1?.id as string)).toMatchObject({
+      backend: "codex",
+      instructions: KB_DIGEST_TEMPLATE,
+      schedule: { type: "cron", cron: "0 3 * * *" },
+      enabled: true,
     });
 
     // A deleted starter is not created again; the user's own KB in p2 is left alone.
     svc.deleteKb(human, p1?.id as string);
     expect(svc.ensureLearningsKbs()).toEqual([]);
-    expect(
-      svc
-        .listKbs(human, "all")
-        .map((k) => k.name)
-        .sort(),
-    ).toEqual(["Learnings", "learnings"]);
+    expect(svc.listKbs(human, "all").map((k) => k.name)).toEqual(["learnings"]);
   });
 });

@@ -37,9 +37,7 @@ for (const width of [1440, 390]) {
       await page.getByTestId("nav-memories").click();
       await expect(row).toBeVisible();
 
-      // The old top-level path still lands on the memories list.
-      await page.goto(`/memories?project=${project.id}&origin=dashboard`);
-      await expect(page).toHaveURL(/\/knowledge\/memories\?project=.*origin=dashboard/);
+      await page.goto(`/knowledge/memories?project=${project.id}`);
       await expect(row).toBeVisible();
       const overflow = await page.getByTestId("nav-memories").evaluate((element) => {
         const bounds = element.getBoundingClientRect();

@@ -1178,104 +1178,60 @@ export class KnowledgeService {
   }
 
   /**
-   * Intake for a file. Markdown/text becomes an authored (editable) document; other formats keep
-   * their immutable original and are parsed in the background.
-   */
-  /**
-   * Gives each active project, and global scope when it has old wiki pages, one starter
-   * "Learnings" KB with the template digest, once per scope. Old wiki pages of the scope become
-   * its documents. Returns the ids of the KBs it created.
+   * Gives each active project one starter "Learnings" KB with the template digest, once per
+   * project. Returns the ids of the KBs it created.
    */
   ensureLearningsKbs(): string[] {
-    const hasWiki = Boolean(
-      this.db
-        .query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'wiki_pages'")
-        .get(),
-    );
-    const scopes: (string | null)[] = (
-      this.db.query("SELECT id FROM projects WHERE status = 'active' ORDER BY id").all() as {
-        id: string;
-      }[]
-    ).map((p) => p.id);
-    if (hasWiki && this.db.query("SELECT 1 FROM wiki_pages WHERE project_id IS NULL").get())
-      scopes.unshift(null);
+    const projects = this.db
+      .query("SELECT id FROM projects WHERE status = 'active' ORDER BY id")
+      .all() as { id: string }[];
     const created: string[] = [];
-    for (const projectId of scopes) {
-      const key = projectId ?? "global";
-      if (this.db.query("SELECT 1 FROM kb_starters WHERE scope_key = ?").get(key)) continue;
+    for (const { id: projectId } of projects) {
+      if (this.db.query("SELECT 1 FROM kb_starters WHERE scope_key = ?").get(projectId)) continue;
       const own = this.db
         .query(
-          "SELECT id FROM knowledge_bases WHERE coalesce(project_id, '') = ? AND name = 'Learnings' COLLATE NOCASE",
+          "SELECT id FROM knowledge_bases WHERE project_id = ? AND name = 'Learnings' COLLATE NOCASE",
         )
-        .get(projectId ?? "") as { id: string } | null;
+        .get(projectId) as { id: string } | null;
       if (own) {
-        // The scope already has its own Learnings KB; leave it as the user made it.
+        // The project already has its own Learnings KB; leave it as the user made it.
         this.db.run("INSERT INTO kb_starters (scope_key, kb_id, created_at) VALUES (?, ?, ?)", [
-          key,
+          projectId,
           own.id,
           Date.now(),
         ]);
         continue;
       }
       try {
-        created.push(this.createLearningsKb(projectId, hasWiki));
+        created.push(this.createLearningsKb(projectId));
       } catch (err) {
-        console.error(`[knowledge] starter KB for ${key} failed: ${(err as Error).message}`);
+        console.error(`[knowledge] starter KB for ${projectId} failed: ${(err as Error).message}`);
       }
     }
     return created;
   }
 
-  private createLearningsKb(projectId: string | null, migrateWiki: boolean): string {
+  private createLearningsKb(projectId: string): string {
     const ctx: KbCallContext = { source: "api", actor: { name: "orc" }, project_id: projectId };
     const kb = this.createKb(ctx, {
       name: "Learnings",
       description:
-        "Lessons, procedures and decisions learned in this scope, kept current by its digest",
+        "Lessons, procedures and decisions learned in this project, kept current by its digest",
       project_id: projectId,
     });
     this.db.run("INSERT INTO kb_starters (scope_key, kb_id, created_at) VALUES (?, ?, ?)", [
-      projectId ?? "global",
+      projectId,
       kb.id,
       Date.now(),
     ]);
     this.setDigest(ctx, kb.id, {});
-    if (!migrateWiki) return kb.id;
-    const pages = this.db
-      .query(
-        "SELECT slug, kind, revision, title, summary, content, tags, sources, author FROM wiki_pages WHERE project_id IS ? ORDER BY slug",
-      )
-      .all(projectId) as {
-      slug: string;
-      kind: string;
-      revision: number;
-      title: string;
-      summary: string;
-      content: string;
-      tags: string;
-      sources: string;
-      author: string;
-    }[];
-    for (const page of pages) {
-      const sources = JSON.parse(page.sources) as string[];
-      this.createDocument(
-        { ...ctx, actor: { name: page.author } },
-        kb.id,
-        {
-          title: page.title,
-          description: page.summary,
-          path: `${page.slug}.md`,
-          labels: [page.kind, ...(JSON.parse(page.tags) as string[])],
-          content: sources.length
-            ? `${page.content.trimEnd()}\n\n## Sources\n\n${sources.map((s) => `- ${s}`).join("\n")}\n`
-            : page.content,
-        },
-        `Migrated from wiki page ${page.slug} r${page.revision}`,
-      );
-    }
     return kb.id;
   }
 
+  /**
+   * Intake for a file. Markdown/text becomes an authored (editable) document; other formats keep
+   * their immutable original and are parsed in the background.
+   */
   upload(ctx: KbCallContext, kbId: string, raw: UploadInput): KbDocument {
     const kb = this.kbOrThrow(kbId);
     this.requireEditable(ctx, kb);

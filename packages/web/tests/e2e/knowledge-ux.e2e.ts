@@ -36,7 +36,7 @@ test("Knowledge base search and filters create history entries and reopen", asyn
     await page.goto(searchUrl);
     await page.reload();
     await expect(page.getByTestId("kb-search-result")).toContainText("Labelled");
-    await page.goto("/knowledge?tab=search");
+    await page.goto("/knowledge");
     await expect(page).toHaveURL(/\/knowledge\/base/);
     await expect(page.getByTestId("section-knowledge")).toHaveAttribute("aria-current", "page");
     await expect(page.getByTestId("kb-search-input")).toBeVisible();

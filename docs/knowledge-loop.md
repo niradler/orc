@@ -24,7 +24,7 @@ Comments on a KB or one of its documents ask for a change: a correction, a sourc
 
 ## Knowledge dashboard and Markdown editing
 
-The **Knowledge** dashboard has Knowledge base and Memories. Memories lists a project's memories by reads, recent activity or priority, with search over name and description, creation, editing, history and revert. The legacy `/memories`, `/knowledge?tab=...` and `/wiki` links redirect.
+The **Knowledge** dashboard has Knowledge base and Memories. Memories lists a project's memories by reads, recent activity or priority, with search over name and description, creation, editing, history and revert.
 
 Markdown uses a shared Read / Edit / Split workspace with readable rendering, source search, word wrap, and expansion. Split view stacks vertically on phones. Skills include file tabs and a mobile file picker. Unsaved drafts are protected when closing or switching files, and saves check the original content or document revision to reject stale overwrites. Markdown documents in a KB can be edited in place, including copies of Markdown files from a registered folder; ORC never writes the folder, and an edited copy stops following its file. Uploaded PDFs and Office files are read-only parsed text; replace the file to change them. Built-in skill files remain read-only.
 

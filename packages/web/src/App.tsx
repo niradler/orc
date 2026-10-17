@@ -15,7 +15,6 @@ import { WorkspaceSidebar as Sidebar } from "@/components/WorkspaceSidebar";
 import { ChatProvider } from "@/hooks/useChat";
 import { BREAKPOINTS } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
-import { MEMORIES_PATH } from "@/lib/memory-routes";
 import { TerminalsProvider } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 
@@ -71,31 +70,9 @@ function DefaultWorkspaceRedirect() {
 
 const STORAGE_KEY = "orc_selected_project";
 
-function LegacyMemoriesRedirect() {
+function KnowledgeRedirect() {
   const { search, hash } = useLocation();
-  const query = new URLSearchParams(search);
-  query.delete("tab");
-  return <Navigate replace to={{ pathname: MEMORIES_PATH, search: query.toString(), hash }} />;
-}
-
-function LegacyKnowledgeRedirect() {
-  const { search, hash } = useLocation();
-  const query = new URLSearchParams(search);
-  const tab = query.get("tab");
-  query.delete("tab");
-  if (tab === "memories")
-    return (
-      <Navigate replace to={{ pathname: "/knowledge/memories", search: query.toString(), hash }} />
-    );
-  const legacyQuery = query.get("documentQuery");
-  query.delete("documentQuery");
-  query.delete("collection");
-  // The old document search covered every knowledge base, not the one the page opens first.
-  if (legacyQuery) {
-    query.set("q", legacyQuery);
-    query.set("searchAll", "1");
-  }
-  return <Navigate replace to={{ pathname: "/knowledge/base", search: query.toString(), hash }} />;
+  return <Navigate replace to={{ pathname: "/knowledge/base", search, hash }} />;
 }
 
 export default function App() {
@@ -248,10 +225,9 @@ export default function App() {
                       <Route path="/sessions" element={<Sessions projectId={projectId} />} />
                       <Route path="/audit" element={<Audit projectId={projectId} />} />
                       <Route path="/audit/:sessionId" element={<Audit projectId={projectId} />} />
-                      <Route path="/memories" element={<LegacyMemoriesRedirect />} />
                       <Route path="/projects" element={<Projects />} />
                       <Route path="/projects/:projectId" element={<Projects />} />
-                      <Route path="/knowledge" element={<LegacyKnowledgeRedirect />} />
+                      <Route path="/knowledge" element={<KnowledgeRedirect />} />
                       <Route path="/knowledge/base" element={<Knowledge projectId={projectId} />} />
                       <Route
                         path="/knowledge/memories"
