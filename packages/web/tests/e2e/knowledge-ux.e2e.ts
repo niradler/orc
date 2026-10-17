@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
-import { apiPost, gotoView, tid } from "./_helpers";
+import { apiDelete, apiPost, gotoView, tid } from "./_helpers";
 
-test("Knowledgebase remains indexed documents while Wiki owns authored pages and legacy note links", async ({
+test("Knowledge bases stay separate from Wiki pages, and legacy note links open the Wiki", async ({
   page,
   request,
 }) => {
@@ -18,7 +18,7 @@ test("Knowledgebase remains indexed documents while Wiki owns authored pages and
   });
   await gotoView(page, "knowledge");
   await expect(page.getByTestId("section-knowledge")).toHaveAttribute("aria-current", "page");
-  await expect(page.getByTestId("knowledge-search-input")).toBeVisible();
+  await expect(page.getByTestId("kb-search-input")).toBeVisible();
   await expect(page.getByTestId("knowledge-notebook")).toHaveCount(0);
   await page.goto(`/knowledge?tab=notebook&page=${slug}&scope=global#authored-page`);
   await expect(page).toHaveURL(/\/knowledge\/wiki\?/);
@@ -30,33 +30,48 @@ test("Knowledgebase remains indexed documents while Wiki owns authored pages and
   await expect(page.getByTestId("notebook-document")).toContainText("Self-built Wiki content");
 });
 
-test("Knowledge routes and contextual collections create one history entry and reopen", async ({
+test("Knowledge base search and filters create history entries and reopen", async ({
   page,
+  request,
 }) => {
-  await gotoView(page, "knowledge");
-  await expect(page.getByTestId("section-knowledge")).toHaveAttribute("aria-current", "page");
-  await page.getByTestId("knowledge-manage-collections").click();
-  await expect(page).toHaveURL(/\/knowledge\/base\?.*view=collections/);
-  const collectionUrl = page.url();
-  await page.getByTestId("nav-memories").click();
-  await expect(page).toHaveURL(/\/knowledge\/memories/);
-  await expect(page.getByTestId("nav-memories")).toHaveAttribute("aria-current", "page");
-  await page.goBack();
-  await expect(page).toHaveURL(collectionUrl);
-  await expect(page.getByTestId("knowledge-back-documents")).toBeVisible();
-  await page.goBack();
-  await expect(page.getByTestId("knowledge-search-input")).toBeVisible();
-  await expect(page.getByTestId("knowledge-back-documents")).toHaveCount(0);
-  await page.goto(collectionUrl);
-  await page.reload();
-  await expect(page.getByTestId("knowledge-back-documents")).toBeVisible();
-  await page.getByTestId("knowledge-back-documents").click();
-  expect(new URL(page.url()).searchParams.has("view")).toBe(false);
-  await expect(page.getByTestId("knowledge-search-input")).toBeVisible();
-  await page.goto("/knowledge?tab=search");
-  await expect(page).toHaveURL(/\/knowledge\/base/);
-  await expect(page.getByTestId("section-knowledge")).toHaveAttribute("aria-current", "page");
-  await expect(page.getByTestId("knowledge-search-input")).toBeVisible();
+  const kb = await apiPost<{ id: string; name: string }>(request, "/kb/bases", {
+    name: tid("pw-kb-history"),
+    project_id: null,
+  });
+  await apiPost(request, `/kb/bases/${kb.id}/documents`, {
+    title: "Labelled",
+    labels: ["history"],
+    content: "# Labelled\n\nkbhistoryneedle",
+  });
+  try {
+    await gotoView(page, "knowledge");
+    await page.locator(`[data-testid="kb-row"][data-kb-name="${kb.name}"]`).click();
+    await page.getByTestId("kb-label-filter").filter({ hasText: "history" }).click();
+    await expect(page).toHaveURL(/label=history/);
+    await page.getByTestId("kb-search-input").fill("kbhistoryneedle");
+    await page.getByTestId("kb-search-submit").click();
+    await expect(page.getByTestId("kb-search-result")).toHaveCount(1);
+    const searchUrl = page.url();
+    await page.getByTestId("nav-memories").click();
+    await expect(page).toHaveURL(/\/knowledge\/memories/);
+    await page.goBack();
+    await expect(page).toHaveURL(searchUrl);
+    await expect(page.getByTestId("kb-search-input")).toHaveValue("kbhistoryneedle");
+    await page.goBack();
+    await expect(page.getByTestId("kb-search-results")).toHaveCount(0);
+    await expect(
+      page.getByTestId("kb-label-filter").filter({ hasText: "history" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await page.goto(searchUrl);
+    await page.reload();
+    await expect(page.getByTestId("kb-search-result")).toContainText("Labelled");
+    await page.goto("/knowledge?tab=search");
+    await expect(page).toHaveURL(/\/knowledge\/base/);
+    await expect(page.getByTestId("section-knowledge")).toHaveAttribute("aria-current", "page");
+    await expect(page.getByTestId("kb-search-input")).toBeVisible();
+  } finally {
+    await apiDelete(request, `/kb/bases/${kb.id}`);
+  }
 });
 
 test("Wiki full-text search, graph, editor mode and page selection are shareable", async ({

@@ -1,10 +1,10 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { getSqlite } from "@orc/db/client";
 import { MEMORY_DESCRIPTION_MAX, MEMORY_PRIORITY_MAX, MemoryStore } from "@orc/db/memories";
-import { readSourceFromClient } from "@orc/db/read-usage";
+import { readSourceFromHeader } from "@orc/db/read-usage";
 
 const app = new OpenAPIHono();
-const ORC_CLIENT_HEADER = "X-Orc-Client";
+const ORC_SOURCE_HEADER = "X-Orc-Source";
 const API_AUTHOR = "api";
 
 const PrioritySchema = z
@@ -146,7 +146,7 @@ app.openapi(
     },
   }),
   (c) => {
-    const source = readSourceFromClient(c.req.header(ORC_CLIENT_HEADER));
+    const source = readSourceFromHeader(c.req.header(ORC_SOURCE_HEADER));
     return c.json(store().read(c.req.valid("query").project_id, c.req.valid("param").name, source));
   },
 );

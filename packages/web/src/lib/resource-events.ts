@@ -48,12 +48,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
     "palette-documents",
     "palette-search",
   ],
-  knowledge: [
-    "knowledge-collections",
-    "knowledge-status",
-    "knowledge-search",
-    "knowledge-document",
-  ],
+  knowledge: ["kb"],
   skills: [
     "skills",
     "skill",

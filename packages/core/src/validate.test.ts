@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PathValidationError, validateCollectionPath, validateTaskTitle } from "./validate.js";
 
 describe("validateTaskTitle", () => {
@@ -69,6 +71,24 @@ describe("validateCollectionPath", () => {
   test("rejects non-existent directory", () => {
     const missing = `${tmpdir()}/orc-does-not-exist-${Date.now()}`;
     expect(() => validateCollectionPath(missing)).toThrow(PathValidationError);
+  });
+
+  test("rejects a link that leads into a sensitive directory", () => {
+    const home = mkdtempSync(join(tmpdir(), "orc-validate-"));
+    const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+    process.env.HOME = home;
+    process.env.USERPROFILE = home;
+    try {
+      mkdirSync(join(home, ".ssh"));
+      const link = join(home, "innocent");
+      // A junction needs no privileges on Windows; elsewhere it is a plain directory symlink.
+      symlinkSync(join(home, ".ssh"), link, "junction");
+      expect(() => validateCollectionPath(link)).toThrow(/sensitive/);
+    } finally {
+      process.env.HOME = saved.HOME;
+      process.env.USERPROFILE = saved.USERPROFILE;
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
   test("accepts an existing absolute directory and returns a resolved path", () => {

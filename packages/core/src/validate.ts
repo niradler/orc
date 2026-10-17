@@ -1,4 +1,4 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 
@@ -40,15 +40,18 @@ export function validateCollectionPath(path: string): string {
     throw new PathValidationError(`Path must be absolute: ${path}`);
   }
   const resolved = resolve(path);
-  const cmp = normForCompare(resolved);
-  for (const root of sensitiveRoots()) {
-    const r = normForCompare(root);
-    if (cmp === r || cmp.startsWith(`${r}/`) || cmp.startsWith(`${r}\\`)) {
-      throw new PathValidationError(`Refusing to index sensitive directory: ${resolved}`);
-    }
-  }
   if (!existsSync(resolved) || !statSync(resolved).isDirectory()) {
     throw new PathValidationError(`Path is not an existing directory: ${resolved}`);
+  }
+  // Check the link-free target too: a symlink or junction must not lead into a blocked folder.
+  for (const candidate of new Set([resolved, realpathSync(resolved)])) {
+    const cmp = normForCompare(candidate);
+    for (const root of sensitiveRoots()) {
+      const r = normForCompare(root);
+      if (cmp === r || cmp.startsWith(`${r}/`) || cmp.startsWith(`${r}\\`)) {
+        throw new PathValidationError(`Refusing to index sensitive directory: ${resolved}`);
+      }
+    }
   }
   return resolved;
 }

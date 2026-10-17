@@ -110,8 +110,13 @@ export function syncClaudeMemory(
       throw new Error("Memory file must be a bounded regular Markdown file");
     bytes += stat.size;
     if (bytes > 1048576) throw new Error("Memory synchronization exceeds byte budget");
-    if (projectId === null)
-      throw new Error("Claude memory synchronization requires a project; memories are per project");
+    if (projectId === null) {
+      result.skipped.push({
+        file: actual,
+        reason: "No ORC project selected; memories are per project",
+      });
+      continue;
+    }
     try {
       const { fields, body } = parseMarkdownFrontmatter(readFileSync(actual, "utf8"));
       const name = memoryName(

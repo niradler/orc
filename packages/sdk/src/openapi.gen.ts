@@ -552,6 +552,13 @@ export interface paths {
                     };
                     content?: never;
                 };
+                /** @description Project still owns knowledge bases */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
             };
         };
         options?: never;
@@ -4574,156 +4581,18 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/knowledge/search": {
+    "/api/kb/bases": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Search knowledge documents (BM25 or hybrid) */
-        get: {
-            parameters: {
-                query: {
-                    q: string;
-                    collection?: string;
-                    project_id?: string;
-                    mode?: "hybrid" | "lexical";
-                    limit?: number;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Search results */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            results: components["schemas"]["KnowledgeSearchResult"][];
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/knowledge/documents/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get document by docid or path */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Document content */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["KnowledgeDocument"];
-                    };
-                };
-                /** @description Not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        /** Save an existing Markdown source file with a stale-content check */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": {
-                        content: string;
-                        expectedContent: string;
-                    };
-                };
-            };
-            responses: {
-                /** @description Saved document */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["KnowledgeDocument"];
-                    };
-                };
-                /** @description Source is not an editable Markdown file */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Document not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Source content changed since it was opened */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/knowledge/collections": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List all knowledge collections */
+        /** List knowledge bases (default: active project's plus global) */
         get: {
             parameters: {
                 query?: {
+                    scope?: "default" | "project" | "global" | "all";
                     project_id?: string;
                 };
                 header?: never;
@@ -4732,21 +4601,19 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Collection list */
+                /** @description Knowledge bases */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            collections: components["schemas"]["KnowledgeCollection"][];
-                        };
+                        "application/json": Record<string, never>;
                     };
                 };
             };
         };
         put?: never;
-        /** Add a knowledge collection */
+        /** Create a knowledge base in a project or deliberately global (project_id null) */
         post: {
             parameters: {
                 query?: never;
@@ -4754,28 +4621,35 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: {
+            requestBody: {
                 content: {
                     "application/json": {
                         name: string;
-                        path: string;
-                        /** @default **\/*.md */
-                        pattern?: string;
-                        project_id?: string;
+                        /** @default  */
+                        description?: string;
+                        project_id: string | null;
+                        /**
+                         * @default [
+                         *       "mcp",
+                         *       "api",
+                         *       "cli",
+                         *       "ui"
+                         *     ]
+                         */
+                        editable_by?: ("mcp" | "api" | "cli" | "ui")[];
+                        /** @default null */
+                        parser?: string | null;
                     };
                 };
             };
             responses: {
-                /** @description Collection added */
+                /** @description Created */
                 201: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            name: string;
-                            indexed: number;
-                        };
+                        "application/json": Record<string, never>;
                     };
                 };
             };
@@ -4786,7 +4660,415 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/knowledge/collections/{name}": {
+    "/api/kb/bases/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a knowledge base */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Knowledge base */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        /** Delete a knowledge base, its managed files and index entries */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        /** Update knowledge base settings (scope cannot change) */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        name?: string;
+                        description?: string;
+                        editable_by?: ("mcp" | "api" | "cli" | "ui")[];
+                        parser?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/api/kb/bases/{id}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List documents with folders, labels and read counts */
+        get: {
+            parameters: {
+                query?: {
+                    folder?: string;
+                    label?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Documents */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Create a Markdown document */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        title: string;
+                        path?: string;
+                        description?: string;
+                        /** @default [] */
+                        labels?: string[];
+                        content: string;
+                        note?: string;
+                        /** @default [] */
+                        derived_from?: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Created */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/bases/{id}/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Upload a file (Markdown/text become documents; others are parsed in the background) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /** Format: binary */
+                        file?: string;
+                        title?: string;
+                        path?: string;
+                        /** @description Comma-separated */
+                        labels?: string;
+                        description?: string;
+                        /** @description Replace this upload's file */
+                        document_id?: string;
+                        expected_revision?: string;
+                        note?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Uploaded */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+                /** @description File too large */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/bases/{id}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read statistics for a knowledge base, by source and kind */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Usage */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/bases/{id}/maintenance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stale derived documents, failed files, unresolved links */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Maintenance queue */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/bases/{id}/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List registered folders */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sources */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Register a local folder; its files are copied in and followed until edited */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        root_path: string;
+                        pattern?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Registered */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/sources/{id}/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rescan a registered folder now */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Scan result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/sources/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -4796,13 +5078,13 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Remove a knowledge collection */
+        /** Unregister a folder (its files are not touched) */
         delete: {
             parameters: {
                 query?: never;
                 header?: never;
                 path: {
-                    name: string;
+                    id: string;
                 };
                 cookie?: never;
             };
@@ -4815,8 +5097,64 @@ export interface paths {
                     };
                     content?: never;
                 };
-                /** @description Not found */
-                404: {
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/documents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read a document (whole, one heading's section, or one passage) */
+        get: {
+            parameters: {
+                query?: {
+                    ordinal?: number | null;
+                    heading?: string;
+                    /** @description false for refreshes that should not count as a read */
+                    record?: "true" | "false";
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Document */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        /** Delete a document and its stored files */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted */
+                204: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -4826,10 +5164,160 @@ export interface paths {
         };
         options?: never;
         head?: never;
+        /** Update a document; expected_revision guards against overwriting newer edits */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        expected_revision: number;
+                        title?: string;
+                        path?: string;
+                        description?: string;
+                        labels?: string[];
+                        content?: string;
+                        note?: string;
+                        derived_from?: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/api/kb/documents/{id}/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Revision history */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Revisions */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/knowledge/update": {
+    "/api/kb/documents/{id}/revisions/{revision}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One revision with its content */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    revision: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Revision */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/documents/{id}/original": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download the uploaded original file */
+        get: {
+            parameters: {
+                query?: {
+                    revision?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description File bytes */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/documents/{id}/reparse": {
         parameters: {
             query?: never;
             header?: never;
@@ -4838,33 +5326,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Re-index knowledge collections */
+        /** Re-extract with the currently selected parser */
         post: {
             parameters: {
                 query?: never;
                 header?: never;
-                path?: never;
+                path: {
+                    id: string;
+                };
                 cookie?: never;
             };
-            requestBody?: {
-                content: {
-                    "application/json": {
-                        collections?: string[];
-                    };
-                };
-            };
+            requestBody?: never;
             responses: {
-                /** @description Re-index result */
+                /** @description Queued */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            indexed: number;
-                            updated: number;
-                            removed: number;
-                        };
+                        "application/json": Record<string, never>;
                     };
                 };
             };
@@ -4875,14 +5355,206 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/knowledge/status": {
+    "/api/kb/documents/{id}/usage": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Knowledge store status */
+        /** Read statistics for a document, by source and kind */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Usage */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/citations/{handle}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resolve a citation handle (kb:<doc>@<rev>#<n>) to its passage */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    handle: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Passage */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Search documents (exact + full-text + vector, fused) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        query: string;
+                        /**
+                         * @default default
+                         * @enum {string}
+                         */
+                        scope?: "default" | "project" | "global" | "all";
+                        kb_ids?: string[];
+                        labels?: string[];
+                        media_types?: string[];
+                        /**
+                         * @default auto
+                         * @enum {string}
+                         */
+                        mode?: "auto" | "lexical" | "semantic" | "hybrid";
+                        /** @default 10 */
+                        limit?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Results */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Budgeted evidence pack with citations, for agents */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        query: string;
+                        /**
+                         * @default default
+                         * @enum {string}
+                         */
+                        scope?: "default" | "project" | "global" | "all";
+                        kb_ids?: string[];
+                        labels?: string[];
+                        media_types?: string[];
+                        /**
+                         * @default auto
+                         * @enum {string}
+                         */
+                        mode?: "auto" | "lexical" | "semantic" | "hybrid";
+                        /** @default 6000 */
+                        token_budget?: number;
+                        /** @default 3 */
+                        max_per_document?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Evidence */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Knowledge status: counts, jobs, embeddings, parsers */
         get: {
             parameters: {
                 query?: never;
@@ -4892,13 +5564,13 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Status info */
+                /** @description Status */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": components["schemas"]["KnowledgeStatus"];
+                        "application/json": Record<string, never>;
                     };
                 };
             };
@@ -4906,6 +5578,189 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Knowledge settings (API keys are never returned) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Settings */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update parser and embedding settings; a new embedding profile re-embeds */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        parser?: string;
+                        docling_enabled?: boolean;
+                        parser_timeout_secs?: number;
+                        max_upload_bytes?: number;
+                        usage_retention_days?: number;
+                        embedding?: {
+                            /** @enum {string} */
+                            provider?: "none" | "ollama" | "openai";
+                            /** Format: uri */
+                            base_url?: string | null;
+                            model?: string | null;
+                            dimensions?: number | null;
+                            api_key?: string | null;
+                            batch_size?: number;
+                            timeout_secs?: number;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Settings */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/api/kb/parsers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Available parsers, what they add and the Docling install state */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Parsers */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/parsers/docling/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Install the optional Docling parser into the knowledge root (background) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Install started */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": Record<string, never>;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/kb/parsers/docling": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove the installed Docling parser */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Removed */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -7540,39 +8395,6 @@ export interface components {
             result_ids: string[];
             note: string | null;
             snapshot?: unknown;
-        };
-        KnowledgeSearchResult: {
-            docid: string;
-            path: string;
-            collection: string;
-            title: string;
-            snippet: string;
-            score: number;
-        };
-        KnowledgeDocument: {
-            docid: string;
-            path: string;
-            collection: string;
-            title: string;
-            content: string;
-            modifiedAt: string;
-            editable?: boolean;
-            readOnlyReason?: string;
-            indexingWarning?: string;
-        };
-        KnowledgeCollection: {
-            name: string;
-            path: string;
-            pattern: string;
-            documentCount: number;
-            lastModified: string | null;
-            projectId: string | null;
-        };
-        KnowledgeStatus: {
-            collections: components["schemas"]["KnowledgeCollection"][];
-            totalDocuments: number;
-            dbPath: string;
-            searchMode: string;
         };
         LiveSession: {
             id: string;

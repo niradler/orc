@@ -17,7 +17,7 @@ describe("createOrcClient", () => {
     expect(typeof client.tags.list).toBe("function");
     expect(typeof client.health.check).toBe("function");
     expect(typeof client.gateway.status).toBe("function");
-    expect(typeof client.knowledge.search).toBe("function");
+    expect(typeof client.kb.search).toBe("function");
   });
 
   test("returns network error when the API is unreachable", async () => {
@@ -28,7 +28,7 @@ describe("createOrcClient", () => {
 });
 
 describe("memories", () => {
-  type Seen = { method: string; path: string; query: string; client: string | null; body: unknown };
+  type Seen = { method: string; path: string; query: string; source: string | null; body: unknown };
   const seen: Seen[] = [];
   const server = Bun.serve({
     port: 0,
@@ -39,7 +39,7 @@ describe("memories", () => {
         method: req.method,
         path: url.pathname,
         query: url.search,
-        client: req.headers.get("X-Orc-Client"),
+        source: req.headers.get("X-Orc-Source"),
         body: text ? JSON.parse(text) : undefined,
       });
       if (req.method === "DELETE") return new Response(null, { status: 204 });
@@ -49,7 +49,7 @@ describe("memories", () => {
   afterAll(() => server.stop(true));
   const memories = createOrcClient({
     baseUrl: `http://localhost:${server.port}`,
-    client: "cli",
+    source: "cli",
   }).memories;
   const last = () => seen.at(-1) as Seen;
 
@@ -59,7 +59,7 @@ describe("memories", () => {
       method: "GET",
       path: "/api/memories",
       query: "?project_id=p1&q=port&sort=priority&limit=5",
-      client: "cli",
+      source: "cli",
     });
   });
 

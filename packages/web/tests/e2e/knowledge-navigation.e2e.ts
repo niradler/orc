@@ -1,28 +1,50 @@
 import { expect, test } from "@playwright/test";
-import { apiPost, gotoView, tid } from "./_helpers";
+import { apiDelete, apiPost, gotoView, tid } from "./_helpers";
 
-test("Knowledge has three canonical destinations and contextual collection management", async ({
+test("Knowledge has three canonical destinations and knowledge-base state is shareable", async ({
   page,
+  request,
 }) => {
-  await gotoView(page, "wiki");
-  await expect(page.getByTestId("nav-wiki")).toHaveAttribute("href", /\/knowledge\/wiki/);
-  await expect(page.getByTestId("section-knowledge")).toHaveAttribute("href", /\/knowledge\/base/);
-  await expect(page.getByTestId("nav-memories")).toHaveAttribute("href", /\/knowledge\/memories/);
-  await page.getByTestId("section-knowledge").click();
-  await expect(page.getByTestId("view-title")).toHaveText("Knowledge base");
-  await expect(page.getByTestId("knowledge-documents-tab")).toHaveCount(0);
-  await page.getByTestId("knowledge-manage-collections").click();
-  expect(new URL(page.url()).searchParams.get("view")).toBe("collections");
-  await page.reload();
-  await expect(page.getByTestId("add-collection-button")).toBeVisible();
-  await page.goBack();
-  await expect(page.getByTestId("knowledge-search-input")).toBeVisible();
-  await page.goForward();
-  await expect(page.getByTestId("knowledge-back-documents")).toBeVisible();
-  await page.getByTestId("knowledge-back-documents").click();
-  await page.getByTestId("nav-memories").click();
-  expect(new URL(page.url()).pathname).toBe("/knowledge/memories");
-  await expect(page.getByTestId("new-memory-button")).toBeVisible();
+  const kb = await apiPost<{ id: string; name: string }>(request, "/kb/bases", {
+    name: tid("pw-kb-nav"),
+    project_id: null,
+  });
+  const doc = await apiPost<{ id: string }>(request, `/kb/bases/${kb.id}/documents`, {
+    title: "Navigation target",
+    content: "# Navigation target\n\nkbnavigationneedle",
+  });
+  try {
+    await gotoView(page, "wiki");
+    await expect(page.getByTestId("nav-wiki")).toHaveAttribute("href", /\/knowledge\/wiki/);
+    await expect(page.getByTestId("section-knowledge")).toHaveAttribute(
+      "href",
+      /\/knowledge\/base/,
+    );
+    await expect(page.getByTestId("nav-memories")).toHaveAttribute("href", /\/knowledge\/memories/);
+    await page.getByTestId("section-knowledge").click();
+    await expect(page.getByTestId("view-title")).toHaveText("Knowledge bases");
+    await page.locator(`[data-testid="kb-row"][data-kb-name="${kb.name}"]`).click();
+    await expect(page).toHaveURL(new RegExp(`kb=${kb.id}`));
+    await page
+      .locator('[data-testid="kb-document-row"][data-document-title="Navigation target"]')
+      .click();
+    await expect(page).toHaveURL(new RegExp(`document=${doc.id}`));
+    await page.reload();
+    await expect(page.getByTestId("kb-document-title")).toHaveText("Navigation target");
+    await page.goBack();
+    await expect(page.getByTestId("kb-overview-name")).toHaveText(kb.name);
+    await page.goForward();
+    await expect(page.getByTestId("kb-document-title")).toHaveText("Navigation target");
+    // Old Knowledge search links land on the new search.
+    await page.goto("/knowledge?tab=search&documentQuery=kbnavigationneedle");
+    await expect(page).toHaveURL(/\/knowledge\/base\?.*q=kbnavigationneedle/);
+    await expect(page.getByTestId("kb-search-result").first()).toContainText("Navigation target");
+    await page.getByTestId("nav-memories").click();
+    expect(new URL(page.url()).pathname).toBe("/knowledge/memories");
+    await expect(page.getByTestId("new-memory-button")).toBeVisible();
+  } finally {
+    await apiDelete(request, `/kb/bases/${kb.id}`);
+  }
 });
 
 test("Wiki History is secondary, shareable and opens the already selected page", async ({

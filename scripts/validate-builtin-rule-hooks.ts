@@ -17,7 +17,7 @@ const source = join(workspace, "claude-memory");
 mkdirSync(source, { recursive: true });
 Object.assign(process.env, {
   ORC_DB_PATH: join(directory, "orc.db"),
-  ORC_KNOWLEDGE_DB_PATH: join(directory, "knowledge.db"),
+  ORC_KNOWLEDGE_ROOT: join(directory, "knowledge"),
   ORC_API_HOST: "127.0.0.1",
   ORC_API_PORT: "7701",
   ORC_API_BASE: "http://127.0.0.1:7701",

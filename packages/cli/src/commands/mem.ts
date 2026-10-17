@@ -47,7 +47,7 @@ function formatTime(epochSeconds: number): string {
 }
 
 async function projectFrom(opts: { project?: string }) {
-  const client = createOrcClient({ client: "cli" });
+  const client = createOrcClient({ source: "cli" });
   const project = await resolveProject(client, { project: opts.project });
   if (!project) fail("No project resolved");
   return { client, project };

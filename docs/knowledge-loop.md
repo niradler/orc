@@ -12,7 +12,7 @@ At work-unit completion, `orc-session` and the worker contract direct the agent 
 
 - `search` searches wiki summaries first, then memories not absorbed into the visible wiki, and tasks. KB search is a fallback when no wiki/memory result exists; explicitly requesting `knowledge` also includes KB citations. KB failures remain visible without discarding wiki/memory results.
 - `wiki_search` and `wiki_index` expose compact results. `wiki_get` loads full content; `wiki_history` loads the retained revisions. `memory_read` still reads an absorbed memory by name.
-- `knowledge_search` and `knowledge_get` keep their existing document interface.
+- `kb_search`, `kb_evidence` and `kb_read` search and read knowledge bases with `kb:<doc>@<rev>#<n>` citations. Agents change KB documents with `kb_write`, only in KBs whose `editable_by` includes `mcp`; each write is a revision with its session.
 - `skill_read` and the API/SDK's ordinary skill reads return effective edited instructions for the selected scope. The runner's existing skill injection uses those same effective reads. There is no new startup wiki index or automatic wiki prompt material.
 
 MCP uses readable `project` names, defaulting to configured activeProject. `scope: "global"` explicitly selects shared pages/instructions. REST uses `project_id`; absent scope is global. A project page hides a global page with the same slug; a project skill instruction edit overrides a global edit. Explicit global reads remain available. Unknown projects fail closed.
@@ -25,9 +25,9 @@ Each write retains author, source session and complete immutable content in revi
 
 ## Knowledge dashboard and Markdown editing
 
-The **Knowledge** dashboard includes Search, Memories, and Collections. Memories lists a project's memories by reads, recent activity or priority, with search over name and description, creation, editing, history and revert. Wiki remains a separate view for now.
+The **Knowledge** dashboard includes Knowledge bases and Memories. Memories lists a project's memories by reads, recent activity or priority, with search over name and description, creation, editing, history and revert. The legacy `/memories` link redirects to the Memories tab. Wiki remains a separate view for now.
 
-Markdown uses a shared Read / Edit / Split workspace with readable rendering, source search, word wrap, and expansion. Split view stacks vertically on phones. Skills include file tabs and a mobile file picker. Unsaved drafts are protected when closing or switching files, and saves check the original content or Wiki revision to reject stale overwrites. Human Knowledge files can be edited manually when their registered collection resolves to one unambiguous existing UTF-8 `.md` or `.markdown` source no larger than 2 MiB; symlink and binary sources remain read-only. Successful file saves refresh the collection index. Wiki edits retain revision history and sources, and built-in skill files remain read-only.
+Markdown uses a shared Read / Edit / Split workspace with readable rendering, source search, word wrap, and expansion. Split view stacks vertically on phones. Skills include file tabs and a mobile file picker. Unsaved drafts are protected when closing or switching files, and saves check the original content or Wiki revision to reject stale overwrites. Markdown documents in a knowledge base can be edited in place, including copies of Markdown files from a registered folder; ORC never writes the folder, and an edited copy stops following its file. Uploaded PDFs and Office files are read-only parsed text; replace the file to change them. Saves check the document revision. Wiki edits retain revision history and sources, and built-in skill files remain read-only.
 
 ## Daily digest
 

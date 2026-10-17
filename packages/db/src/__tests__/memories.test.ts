@@ -169,4 +169,19 @@ describe("installMemories", () => {
     installMemories(old);
     old.close();
   });
+
+  test("should keep new memories after an older build re-adds its columns and triggers", () => {
+    create("kept");
+    sqlite.exec(`
+      ALTER TABLE memories ADD COLUMN type TEXT NOT NULL DEFAULT 'fact';
+      CREATE VIRTUAL TABLE memories_fts USING fts5(id UNINDEXED, content);
+      CREATE TRIGGER memories_ai AFTER INSERT ON memories BEGIN
+        INSERT INTO memories_fts(id, content) VALUES (new.id, new.content);
+      END;
+    `);
+    expect(() => create("blocked")).toThrow("no such column");
+    installMemories(sqlite);
+    expect(store.get("p1", "kept").content).toBe("Content of kept");
+    expect(create("after").name).toBe("after");
+  });
 });

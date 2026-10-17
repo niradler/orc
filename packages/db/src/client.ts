@@ -6,9 +6,10 @@ import { drizzle } from "drizzle-orm/bun-sqlite";
 import { installAudit } from "./audit.js";
 import { installChangeTracking, stopChangeTracking } from "./changes.js";
 import { installDigest } from "./digest.js";
+import { installKnowledgeBases } from "./kb.js";
+import { installMemories } from "./memories.js";
 import { installRules } from "./rules.js";
 import * as schema from "./schema.js";
-import { installMemories } from "./memories.js";
 import { installSkillHistory } from "./skill-history.js";
 import { installWiki } from "./wiki.js";
 
@@ -260,13 +261,6 @@ function setupDb(sqlite: Database): void {
     CREATE INDEX IF NOT EXISTS flow_node_runs_run_idx ON flow_node_runs(flow_run_id, created_at);
     CREATE INDEX IF NOT EXISTS flow_node_runs_status_idx ON flow_node_runs(status);
 
-    CREATE TABLE IF NOT EXISTS knowledge_collections (
-      name TEXT PRIMARY KEY,
-      project_id TEXT REFERENCES projects(id),
-      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
-    );
-
     CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
       id UNINDEXED,
       title,
@@ -475,6 +469,7 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   dropLegacyWiki(sqlite);
   installAudit(sqlite);
   installWiki(sqlite);
+  installKnowledgeBases(sqlite);
   installSkillHistory(sqlite);
   installMemories(sqlite);
   installDigest(sqlite);

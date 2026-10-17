@@ -1,5 +1,30 @@
 import { loadConfig } from "@orc/core/config";
-import type { KnowledgeDocument } from "@orc/core/knowledge";
+import type {
+  KbCallSource,
+  KbCreate,
+  KbDoclingState,
+  KbDocument,
+  KbDocumentCreate,
+  KbDocumentListing,
+  KbDocumentUpdate,
+  KbDocumentWithContent,
+  KbEvidencePack,
+  KbEvidenceRequest,
+  KbMaintenanceQueue,
+  KbParserInfo,
+  KbRevision,
+  KbScope,
+  KbSearchRequest,
+  KbSearchResult,
+  KbSettings,
+  KbSettingsPatch,
+  KbSource,
+  KbSourceScan,
+  KbStatus,
+  KbUpdate,
+  KbUsageStats,
+  KnowledgeBase,
+} from "@orc/core/kb";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
 import type { RuleTemplate } from "@orc/core/rule-catalog";
 import type { RuleEventCapability, RuleHookBackend } from "@orc/core/rule-events";
@@ -83,14 +108,48 @@ import type {
 export type OrcClientOptions = {
   baseUrl?: string;
   secret?: string;
-  /** Sent as X-Orc-Client so the API can attribute usage (e.g. skill reads) to the caller. */
-  client?: string;
+  /**
+   * Transport of knowledge calls (the CLI passes "cli"); it decides which KBs the call may edit
+   * and how reads are counted. Defaults to "api".
+   */
+  source?: KbCallSource;
+  /** Attribution for knowledge writes and reads. Defaults to ORC_AGENT / ORC_SESSION_ID when set. */
+  actor?: { name?: string; session_id?: string };
+  /** Active project for knowledge scope: its KBs plus global ones. */
+  project_id?: string;
+};
+
+function identityHeaders(options?: OrcClientOptions): Record<string, string> {
+  const session = process.env.ORC_SESSION_ID;
+  const agent = process.env.ORC_AGENT;
+  const actor = options?.actor ?? {
+    ...(session ? { session_id: session } : {}),
+    ...(agent ? { name: agent } : {}),
+  };
+  return {
+    ...(options?.source ? { "X-Orc-Source": options.source } : {}),
+    ...(actor.name ? { "X-Orc-Actor-Name": actor.name } : {}),
+    ...(actor.session_id ? { "X-Orc-Session-Id": actor.session_id } : {}),
+    ...(options?.project_id ? { "X-Orc-Project-Id": options.project_id } : {}),
+  };
+}
+
+export type KbUploadInput = {
+  file: Blob;
+  name: string;
+  title?: string;
+  path?: string;
+  labels?: string[];
+  description?: string;
+  /** Replace this upload's file with a new revision. */
+  document_id?: string;
+  expected_revision?: number;
+  note?: string;
 };
 
 async function call<T>(
   baseUrl: string,
-  secret: string | undefined,
-  client: string | undefined,
+  baseHeaders: Record<string, string>,
   method: string,
   path: string,
   body?: unknown,
@@ -106,17 +165,17 @@ async function call<T>(
     if (str) url += `?${str}`;
   }
 
+  const form = body instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...baseHeaders,
+    ...(form ? {} : { "Content-Type": "application/json" }),
   };
-  if (secret) headers.Authorization = `Bearer ${secret}`;
-  if (client) headers["X-Orc-Client"] = client;
 
   try {
     const res = await fetch(url, {
       method,
       headers,
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      ...(body !== undefined ? { body: form ? body : JSON.stringify(body) } : {}),
     });
 
     if (res.status === 204) return { data: null as T, error: null };
@@ -143,12 +202,17 @@ export function createOrcClient(options?: OrcClientOptions) {
   const config = loadConfig();
   const baseUrl = options?.baseUrl ?? `http://${config.api.host}:${config.api.port}`;
   const secret = options?.secret ?? config.api.secret;
+  const headers = {
+    ...identityHeaders(options),
+    ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
+  };
   const c = <T>(
     method: string,
     path: string,
     body?: unknown,
     query?: Record<string, string | number | boolean | undefined>,
-  ) => call<T>(baseUrl, secret, options?.client, method, `/api${path}`, body, query);
+  ) => call<T>(baseUrl, headers, method, `/api${path}`, body, query);
+  const e = encodeURIComponent;
 
   return {
     handoffs: {
@@ -629,90 +693,78 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<{ entries: AuditEntry[] }>("GET", "/audit", undefined, scope),
     },
 
-    knowledge: {
-      search: (
-        q: string,
-        opts?: {
-          collection?: string;
-          project_id?: string;
-          mode?: string;
-          limit?: number;
-        },
-      ) =>
-        c<{
-          results: {
-            docid: string;
-            path: string;
-            collection: string;
-            title: string;
-            snippet: string;
-            score: number;
-          }[];
-        }>("GET", "/knowledge/search", undefined, {
-          q,
-          collection: opts?.collection,
-          project_id: opts?.project_id,
-          mode: opts?.mode,
-          limit: opts?.limit,
+    kb: {
+      list: (opts: { scope?: KbScope; project_id?: string } = {}) =>
+        c<{ knowledge_bases: KnowledgeBase[] }>("GET", "/kb/bases", undefined, opts),
+      get: (id: string) => c<KnowledgeBase>("GET", `/kb/bases/${e(id)}`),
+      create: (input: KbCreate) => c<KnowledgeBase>("POST", "/kb/bases", input),
+      update: (id: string, input: KbUpdate) =>
+        c<KnowledgeBase>("PATCH", `/kb/bases/${e(id)}`, input),
+      remove: (id: string) => c<null>("DELETE", `/kb/bases/${e(id)}`),
+      usage: (id: string) => c<KbUsageStats>("GET", `/kb/bases/${e(id)}/usage`),
+      maintenance: (id: string) => c<KbMaintenanceQueue>("GET", `/kb/bases/${e(id)}/maintenance`),
+
+      documents: (kbId: string, filter: { folder?: string; label?: string } = {}) =>
+        c<KbDocumentListing>("GET", `/kb/bases/${e(kbId)}/documents`, undefined, filter),
+      createDocument: (kbId: string, input: KbDocumentCreate) =>
+        c<KbDocument>("POST", `/kb/bases/${e(kbId)}/documents`, input),
+      upload: (kbId: string, input: KbUploadInput) => {
+        const form = new FormData();
+        form.set("file", input.file, input.name);
+        const fields: Record<string, string | undefined> = {
+          title: input.title,
+          path: input.path,
+          labels: input.labels?.join(","),
+          description: input.description,
+          document_id: input.document_id,
+          expected_revision: input.expected_revision?.toString(),
+          note: input.note,
+        };
+        for (const [k, v] of Object.entries(fields)) if (v !== undefined) form.set(k, v);
+        return c<KbDocument>("POST", `/kb/bases/${e(kbId)}/upload`, form);
+      },
+      document: (id: string, opts: { heading?: string; ordinal?: number; record?: boolean } = {}) =>
+        c<KbDocumentWithContent>("GET", `/kb/documents/${e(id)}`, undefined, {
+          heading: opts.heading,
+          ordinal: opts.ordinal,
+          record: opts.record === false ? "false" : undefined,
         }),
-
-      get: (id: string) =>
-        c<KnowledgeDocument>("GET", `/knowledge/documents/${encodeURIComponent(id)}`),
-
-      edit: (id: string, content: string, expectedContent: string) =>
-        c<KnowledgeDocument>("PUT", `/knowledge/documents/${encodeURIComponent(id)}`, {
-          content,
-          expectedContent,
-        }),
-
-      collections: (params?: { project_id?: string }) =>
-        c<{
-          collections: {
-            name: string;
-            path: string;
-            pattern: string;
-            documentCount: number;
-            lastModified: string | null;
-            projectId: string | null;
-          }[];
-        }>(
+      updateDocument: (id: string, input: KbDocumentUpdate) =>
+        c<KbDocument>("PATCH", `/kb/documents/${e(id)}`, input),
+      removeDocument: (id: string) => c<null>("DELETE", `/kb/documents/${e(id)}`),
+      revisions: (id: string) =>
+        c<{ revisions: KbRevision[] }>("GET", `/kb/documents/${e(id)}/revisions`),
+      revision: (id: string, revision: number) =>
+        c<KbRevision & { content: string | null }>(
           "GET",
-          "/knowledge/collections",
-          undefined,
-          params as Record<string, string | number | boolean | undefined>,
+          `/kb/documents/${e(id)}/revisions/${revision}`,
         ),
+      /** URL of the original upload; fetch it with the Authorization header. */
+      originalUrl: (id: string, revision?: number) =>
+        `${baseUrl}/api/kb/documents/${e(id)}/original${revision ? `?revision=${revision}` : ""}`,
+      reparse: (id: string) => c<KbDocument>("POST", `/kb/documents/${e(id)}/reparse`),
+      documentUsage: (id: string) => c<KbUsageStats>("GET", `/kb/documents/${e(id)}/usage`),
+      citation: (handle: string) => c<KbDocumentWithContent>("GET", `/kb/citations/${e(handle)}`),
 
-      addCollection: (input: {
-        name: string;
-        path: string;
-        pattern?: string;
-        project_id?: string;
-      }) => c<{ name: string; indexed: number }>("POST", "/knowledge/collections", input),
+      search: (req: KbSearchRequest) => c<KbSearchResult>("POST", "/kb/search", req),
+      evidence: (req: KbEvidenceRequest) => c<KbEvidencePack>("POST", "/kb/evidence", req),
 
-      removeCollection: (name: string) =>
-        c<null>("DELETE", `/knowledge/collections/${encodeURIComponent(name)}`),
-
-      update: (opts?: { collections?: string[] }) =>
-        c<{ indexed: number; updated: number; removed: number }>(
-          "POST",
-          "/knowledge/update",
-          opts ?? {},
+      sources: (kbId: string) =>
+        c<{ sources: (KbSource & { document_count: number })[] }>(
+          "GET",
+          `/kb/bases/${e(kbId)}/sources`,
         ),
+      addSource: (kbId: string, input: { root_path: string; pattern?: string }) =>
+        c<{ source: KbSource; scan: KbSourceScan }>("POST", `/kb/bases/${e(kbId)}/sources`, input),
+      scanSource: (id: string) => c<KbSourceScan>("POST", `/kb/sources/${e(id)}/scan`),
+      removeSource: (id: string) => c<null>("DELETE", `/kb/sources/${e(id)}`),
 
-      status: () =>
-        c<{
-          collections: {
-            name: string;
-            path: string;
-            pattern: string;
-            documentCount: number;
-            lastModified: string | null;
-            projectId: string | null;
-          }[];
-          totalDocuments: number;
-          dbPath: string;
-          searchMode: string;
-        }>("GET", "/knowledge/status"),
+      status: () => c<KbStatus>("GET", "/kb/status"),
+      settings: () => c<KbSettings>("GET", "/kb/settings"),
+      updateSettings: (patch: KbSettingsPatch) => c<KbSettings>("PATCH", "/kb/settings", patch),
+      parsers: () => c<{ parsers: KbParserInfo[]; docling: KbDoclingState }>("GET", "/kb/parsers"),
+      installDocling: () => c<KbDoclingState>("POST", "/kb/parsers/docling/install"),
+      uninstallDocling: () => c<null>("DELETE", "/kb/parsers/docling"),
     },
   };
 }

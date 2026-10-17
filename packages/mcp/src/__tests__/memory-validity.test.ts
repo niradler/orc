@@ -264,8 +264,8 @@ describe("Memory context and search", () => {
       resources: ["memories"],
       project: "mem-a",
     });
-    expect(before).toContain("[memory] mem-a/deploy-cited");
-    expect(before).toContain("[memory] mem-a/deploy-loose");
+    expect(before).toContain("[memory] deploy-cited (project: mem-a)");
+    expect(before).toContain("[memory] deploy-loose (project: mem-a)");
 
     await executeTool("wiki_write", {
       project: "mem-a",
@@ -284,6 +284,6 @@ describe("Memory context and search", () => {
       project: "mem-a",
     });
     expect(after).not.toContain("deploy-cited");
-    expect(after).toContain("[memory] mem-a/deploy-loose");
+    expect(after).toContain("[memory] deploy-loose (project: mem-a)");
   });
 });

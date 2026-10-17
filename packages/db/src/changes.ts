@@ -31,6 +31,13 @@ const TABLE_RESOURCES: Record<string, ChangeResource> = {
   skill_usage: "skill-usage",
   skill_instructions: "skills",
   knowledge_collections: "knowledge",
+  // Usage tables are left out: reads write them, and a refresh is a read.
+  knowledge_bases: "knowledge",
+  kb_sources: "knowledge",
+  kb_documents: "knowledge",
+  kb_document_revisions: "knowledge",
+  kb_links: "knowledge",
+  kb_jobs: "knowledge",
   rule_heads: "rules",
   rule_revisions: "rules",
   rule_decisions: "rules",

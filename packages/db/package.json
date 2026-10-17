@@ -10,6 +10,7 @@
     "./rules": "./src/rules.ts",
     "./audit": "./src/audit.ts",
     "./wiki": "./src/wiki.ts",
+    "./kb": "./src/kb.ts",
     "./memories": "./src/memories.ts",
     "./skill-history": "./src/skill-history.ts",
     "./read-usage": "./src/read-usage.ts",

@@ -22,7 +22,6 @@ import {
 } from "@orc/core/skill-service";
 import type { TaskStatus } from "@orc/core/types";
 import { AgentBackendSchema } from "@orc/core/types";
-import { PathValidationError, validateCollectionPath } from "@orc/core/validate";
 import { SkillUpdateSchema, WikiWriteSchema } from "@orc/core/wiki";
 import { AuditLog } from "@orc/db/audit";
 import { getDb, getSqlite } from "@orc/db/client";
@@ -42,7 +41,7 @@ import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { getKnowledgeEngine } from "./knowledge.js";
+import { executeKbTool, isKbTool, kbSearchLines, kbToolDefinitions } from "./kb-tools.js";
 
 const logger = createLogger("mcp:tools");
 const SKILL_LIST_LIMIT = 30;
@@ -400,76 +399,7 @@ export const toolDefinitions = [
       limit: z.number().int().min(1).max(20).optional().default(10),
     }),
   },
-  {
-    name: "knowledge_search",
-    description:
-      "Search indexed document collections (markdown, code docs) via knowledge engine. " +
-      "Returns compact index: docid + path + snippet + score. " +
-      "Use knowledge_get for full content. Manage collections via knowledge_collection_add/remove.",
-    inputSchema: z.object({
-      query: z.string().describe("Search query - keywords, phrases, or natural language"),
-      collection: z.string().optional().describe("Filter to a specific collection name"),
-      project: projectParam,
-      mode: z
-        .enum(["hybrid", "lexical"])
-        .optional()
-        .describe(
-          "'lexical' = BM25 (fast, no LLM) or 'hybrid' = BM25+vectors+reranking. Defaults to config.",
-        ),
-      limit: z.number().int().min(1).max(20).optional().default(10),
-    }),
-  },
-  {
-    name: "knowledge_get",
-    description:
-      "Fetch full document content by docid or path from knowledge store. " +
-      "Token-expensive - only call after filtering via knowledge_search.",
-    inputSchema: z.object({
-      id: z.string().describe("Document docid (#abc123) or display path from knowledge_search"),
-    }),
-  },
-  {
-    name: "knowledge_collections",
-    description: "List all indexed knowledge collections with document counts.",
-    inputSchema: z.object({
-      project: projectParam,
-    }),
-  },
-  {
-    name: "knowledge_collection_add",
-    description:
-      "Add a new knowledge collection - a directory of documents to index. " +
-      "Automatically indexes the files after adding.",
-    inputSchema: z.object({
-      name: z.string().describe("Collection name (e.g. 'docs', 'notes')"),
-      path: z.string().describe("Absolute path to the directory to index"),
-      pattern: z
-        .string()
-        .optional()
-        .default("**/*.md")
-        .describe("Glob pattern for files to include (default: **/*.md)"),
-      project: projectParam,
-    }),
-  },
-  {
-    name: "knowledge_collection_remove",
-    description: "Remove a knowledge collection by name.",
-    inputSchema: z.object({
-      name: z.string().describe("Collection name to remove"),
-    }),
-  },
-  {
-    name: "knowledge_update",
-    description:
-      "Re-index knowledge collections - scan filesystem for new, changed, or deleted files. " +
-      "Optionally scope to specific collections.",
-    inputSchema: z.object({
-      collections: z
-        .array(z.string())
-        .optional()
-        .describe("Collection names to re-index (default: all)"),
-    }),
-  },
+  ...kbToolDefinitions,
   {
     name: "job_list",
     description: "List all jobs with last run status.",
@@ -844,6 +774,11 @@ export async function executeTool(
   args: unknown,
   options: ToolOptions = {},
 ): Promise<string> {
+  if (isKbTool(name)) {
+    const input = args as Record<string, unknown>;
+    const project = typeof input.project === "string" ? input.project : undefined;
+    return executeKbTool(name, input, resolveProjectId(project)?.id ?? null);
+  }
   if (name === "session_handoff") {
     const input = SessionHandoffInputSchema.parse(args);
     const config = loadConfig();
@@ -1637,8 +1572,18 @@ export async function executeTool(
         ).slice(0, Math.ceil(lim / 2));
         knowledgeHits += memResults.length;
         if (memResults.length > 0) {
+          // memory_read takes a name plus a project name, so print both.
+          const projectNames = new Map(
+            getSqlite(db)
+              .query<{ id: string; name: string }, []>("SELECT id, name FROM projects")
+              .all()
+              .map((row) => [row.id, row.name]),
+          );
           parts.push("## Memories");
-          for (const m of memResults) parts.push(`  [memory] ${m.key} ${m.description}`);
+          for (const m of memResults)
+            parts.push(
+              `  [memory] ${m.name} (project: ${projectNames.get(m.project_id) ?? m.project_id}) ${m.description}`,
+            );
         }
       }
 
@@ -1685,19 +1630,8 @@ export async function executeTool(
         resources?.includes("knowledge")
       ) {
         try {
-          const engine = getKnowledgeEngine();
-          const knowledgeResults = await engine.search(query, {
-            limit: Math.ceil(lim / 3),
-            ...(resolved ? { project_id: resolved.id } : {}),
-          });
-          if (knowledgeResults.length > 0) {
-            parts.push("## Knowledge");
-            for (const r of knowledgeResults) {
-              parts.push(
-                `  [knowledge] ${r.docid} [${r.collection}] ${r.title} (score:${r.score.toFixed(2)})`,
-              );
-            }
-          }
+          const kbLines = await kbSearchLines(query, resolved?.id ?? null, Math.ceil(lim / 3));
+          if (kbLines.length > 0) parts.push("## Knowledge", ...kbLines);
         } catch (error) {
           logger.warn("Knowledge fallback search failed", { error });
           parts.push("## Knowledge unavailable; wiki and memory results remain available.");
@@ -1705,104 +1639,6 @@ export async function executeTool(
       }
 
       return parts.length > 0 ? parts.join("\n") : "No results found.";
-    }
-
-    case "knowledge_search": {
-      const { query, collection, project, mode, limit } = args as {
-        query: string;
-        collection?: string;
-        project?: string;
-        mode?: "hybrid" | "lexical";
-        limit?: number;
-      };
-      const resolved = resolveProjectId(project);
-      const engine = getKnowledgeEngine();
-      const results = await engine.search(query, {
-        ...(collection ? { collection } : {}),
-        ...(resolved ? { project_id: resolved.id } : {}),
-        ...(mode ? { mode } : {}),
-        ...(limit != null ? { limit } : {}),
-      });
-      if (results.length === 0) return "No knowledge documents found.";
-      const lines = [`Found ${results.length} results:`];
-      for (const [i, r] of results.entries()) {
-        lines.push(
-          `[${i + 1}] ${r.docid}  ${r.path}  [${r.collection}]  score:${r.score.toFixed(3)}  ${r.snippet}`,
-        );
-      }
-      lines.push("\nUse knowledge_get(id) for full content.");
-      return lines.join("\n");
-    }
-
-    case "knowledge_get": {
-      const { id } = args as { id: string };
-      const engine = getKnowledgeEngine();
-      const doc = await engine.get(id);
-      if (!doc) return `Document not found: ${id}`;
-      return `[${doc.docid}] ${doc.path} [${doc.collection}]\n\n${doc.content}`;
-    }
-
-    case "knowledge_collections": {
-      const { project } = args as { project?: string };
-      const resolved = resolveProjectId(project);
-      const engine = getKnowledgeEngine();
-      const collections = await engine.listCollections(resolved ? { project_id: resolved.id } : {});
-      if (collections.length === 0)
-        return "No knowledge collections. Use knowledge_collection_add to create one.";
-      const lines = ["Collections:"];
-      for (const c of collections) {
-        lines.push(
-          `  ${c.name.padEnd(24)} ${String(c.documentCount).padStart(5)} docs  ${c.pattern}  ${c.path}`,
-        );
-      }
-      return lines.join("\n");
-    }
-
-    case "knowledge_collection_add": {
-      const {
-        name: colName,
-        path: colPath,
-        pattern,
-        project,
-      } = args as {
-        name: string;
-        path: string;
-        pattern?: string;
-        project?: string;
-      };
-      const resolved = resolveProjectId(project);
-      let safeColPath: string;
-      try {
-        safeColPath = validateCollectionPath(colPath);
-      } catch (err) {
-        return err instanceof PathValidationError
-          ? `Error: ${err.message}`
-          : `Error: invalid path: ${colPath}`;
-      }
-      const engine = getKnowledgeEngine();
-      await engine.addCollection(colName, {
-        path: safeColPath,
-        ...(pattern ? { pattern } : {}),
-        ...(resolved ? { project_id: resolved.id } : {}),
-      });
-      const collections = await engine.listCollections();
-      const added = collections.find((c) => c.name === colName);
-      const count = added?.documentCount ?? 0;
-      return `Added collection "${colName}" → ${colPath} (${pattern ?? "**/*.md"})\nIndexed ${count} documents.`;
-    }
-
-    case "knowledge_collection_remove": {
-      const { name: colName } = args as { name: string };
-      const engine = getKnowledgeEngine();
-      const removed = await engine.removeCollection(colName);
-      return removed ? `Removed collection "${colName}".` : `Collection not found: ${colName}`;
-    }
-
-    case "knowledge_update": {
-      const { collections } = args as { collections?: string[] };
-      const engine = getKnowledgeEngine();
-      const result = await engine.update(collections ? { collections } : {});
-      return `Re-indexed: ${result.indexed} new, ${result.updated} updated, ${result.removed} removed.`;
     }
 
     case "skill_list": {

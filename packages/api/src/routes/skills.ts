@@ -20,13 +20,13 @@ import {
 import { syncImportedSkill } from "@orc/core/skill-sync";
 import { SkillUpdateSchema, WikiScopeSchema } from "@orc/core/wiki";
 import { getSqlite } from "@orc/db/client";
-import { readSourceFromClient } from "@orc/db/read-usage";
+import { readSourceFromHeader } from "@orc/db/read-usage";
 import { SkillHistory } from "@orc/db/skill-history";
 import { resolveWikiProject } from "./wiki.js";
 
 const app = new OpenAPIHono();
 
-const ORC_CLIENT_HEADER = "X-Orc-Client";
+const ORC_SOURCE_HEADER = "X-Orc-Source";
 
 const VisibilitySchema = z
   .object({ hidden_builtins: z.array(z.string().min(1).max(64)).max(512) })
@@ -659,7 +659,7 @@ app.openapi(readRoute, (c) => {
   const history = new SkillHistory(getSqlite());
   const result = history.read(name, projectId, ref);
   if (!result) throw new NotFoundError("Skill", name);
-  history.recordRead(name, projectId, readSourceFromClient(c.req.header(ORC_CLIENT_HEADER)), ref);
+  history.recordRead(name, projectId, readSourceFromHeader(c.req.header(ORC_SOURCE_HEADER)), ref);
   return c.json(result as SkillFull | SkillRefContent);
 });
 

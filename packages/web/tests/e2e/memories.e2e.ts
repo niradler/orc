@@ -142,7 +142,7 @@ test.describe("Memories", () => {
       for (const client of ["cli", undefined]) {
         const res = await request.get(
           `${API_BASE}/memories/${popular}?project_id=${encodeURIComponent(project.id)}`,
-          { headers: client ? { ...AUTH_HEADERS, "X-Orc-Client": client } : AUTH_HEADERS },
+          { headers: client ? { ...AUTH_HEADERS, "X-Orc-Source": client } : AUTH_HEADERS },
         );
         expect(res.ok()).toBe(true);
       }
@@ -260,7 +260,7 @@ test.describe("Memories", () => {
       await expect(row(page, name).getByTestId("memory-read-count")).toHaveText("0");
       const res = await request.get(
         `${API_BASE}/memories/${name}?project_id=${encodeURIComponent(project.id)}`,
-        { headers: { ...AUTH_HEADERS, "X-Orc-Client": "cli" } },
+        { headers: { ...AUTH_HEADERS, "X-Orc-Source": "cli" } },
       );
       expect(res.ok()).toBe(true);
       await expect(row(page, name).getByTestId("memory-read-count")).toHaveText("1");

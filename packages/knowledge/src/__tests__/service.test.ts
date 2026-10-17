@@ -1,0 +1,447 @@
+import { type Database, Database as SqliteDatabase } from "bun:sqlite";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { OrcConfigSchema } from "@orc/core/config";
+import { ConflictError, ForbiddenError, ValidationError } from "@orc/core/errors";
+import type { KbCallContext } from "@orc/core/kb";
+import { createTestDb, getSqlite } from "@orc/db";
+import { projectKbCount } from "@orc/db/kb";
+import type { EmbeddingProvider } from "../embeddings.js";
+import type { KnowledgeConfig } from "../engine.js";
+import { KnowledgeService } from "../service.js";
+
+const human = (source: KbCallContext["source"] = "ui"): KbCallContext => ({
+  source,
+  actor: {},
+});
+const agent = (source: KbCallContext["source"] = "mcp", session_id = "s1"): KbCallContext => ({
+  source,
+  actor: { backend: "claude", session_id },
+});
+
+/** Deterministic bag-of-words embedder: shared words => nearby vectors. */
+const fakeEmbedder = (): EmbeddingProvider & { calls: number } => {
+  const e = {
+    provider: "ollama" as const,
+    model: "fake",
+    profile: "ollama:fake:16",
+    batchSize: 8,
+    calls: 0,
+    async embed(texts: string[]) {
+      e.calls++;
+      return texts.map((t) => {
+        const v = new Array(16).fill(0);
+        for (const w of t.toLowerCase().match(/[a-z]+/g) ?? [])
+          v[Number(BigInt(Bun.hash(w)) % 16n)] += 1;
+        return v;
+      });
+    },
+  };
+  return e;
+};
+
+let root: string;
+let db: Database;
+let svc: KnowledgeService;
+let config: KnowledgeConfig;
+
+async function open(embedder: EmbeddingProvider | null = null) {
+  const s = await KnowledgeService.open({ db, config: () => config, root, embedder });
+  s.start();
+  return s;
+}
+
+beforeEach(async () => {
+  root = mkdtempSync(join(tmpdir(), "orc-kb-test-"));
+  db = getSqlite(createTestDb());
+  config = { ...OrcConfigSchema.parse({}).knowledge, root };
+  svc = await open();
+});
+
+afterEach(async () => {
+  await svc.stop();
+  svc.close();
+  rmSync(root, { recursive: true, force: true });
+});
+
+describe("knowledge bases", () => {
+  test("project KBs require an existing project; names are unique per scope", () => {
+    expect(() => svc.createKb(human(), { name: "P", project_id: "nope" })).toThrow("Project");
+    db.run("INSERT INTO projects (id, name) VALUES ('p1', 'Proj')");
+    const g = svc.createKb(human(), { name: "Docs", project_id: null });
+    const p = svc.createKb(human(), { name: "Docs", project_id: "p1" });
+    expect(g.project_id).toBeNull();
+    expect(p.project_id).toBe("p1");
+    expect(() => svc.createKb(human(), { name: "docs", project_id: null })).toThrow(ConflictError);
+    expect(() => svc.createKb(agent(), { name: "X", project_id: null })).toThrow(ForbiddenError);
+    expect(projectKbCount(getSqlite(), "p1")).toBe(1);
+    expect(svc.listKbs({ ...human(), project_id: "p1" }).map((k) => k.id)).toEqual([p.id, g.id]);
+    expect(svc.listKbs(human()).map((k) => k.id)).toEqual([g.id]);
+  });
+});
+
+describe("documents", () => {
+  test("authored document: create, search, cite, read by source", async () => {
+    const kb = svc.createKb(human(), { name: "Ops", project_id: null });
+    const doc = svc.createDocument(human(), kb.id, {
+      title: "Deploy runbook",
+      content: "# Deploy runbook\n\nRoll back with `orc rollback` when the canary fails.\n",
+      labels: ["Ops Team"],
+    });
+    expect(doc.path).toBe("deploy-runbook.md");
+    expect(doc.labels).toEqual(["ops-team"]);
+    expect(existsSync(join(root, "documents", kb.id, `${doc.id}.md`))).toBe(true);
+    await svc.jobs.idle();
+    expect(svc.engine.catalog.doc(doc.id)?.index_state).toBe("lexical_ready");
+
+    const res = await svc.search(agent(), { query: "canary rollback" });
+    expect(res.mode).toBe("lexical");
+    const hit = res.hits[0];
+    expect(hit?.document_id).toBe(doc.id);
+    const citation = hit?.passages[0]?.citation ?? "";
+    expect(citation).toMatch(new RegExp(`^kb:${doc.id}@1#0$`));
+
+    const passage = svc.readCitation(agent(), doc.id, 1, 0);
+    expect(passage.content).toContain("canary");
+    svc.getDocument(agent("mcp", "s2"), doc.id);
+    svc.getDocument(human("api"), doc.id);
+    svc.getDocument(human("ui"), doc.id, { record: false });
+
+    const stats = svc.documentUsage(doc.id);
+    expect(stats.totals.mcp.fetch).toBe(2);
+    expect(stats.totals.api.fetch).toBe(1);
+    expect(stats.totals.ui.fetch).toBe(0);
+    expect(stats.totals.mcp.search_hit).toBe(1);
+    expect(stats.reads).toBe(3);
+    expect(stats.exposures).toBe(1);
+    expect(stats.distinct_sessions).toBe(2);
+    const listing = svc.listDocuments(kb.id);
+    expect(listing.documents[0]?.reads).toBe(3);
+    expect(listing.documents[0]?.reads_by_source).toEqual({ mcp: 2, api: 1 });
+  });
+
+  test("revision conflicts and edit permissions by source", async () => {
+    const kb = svc.createKb(human(), { name: "K", project_id: null, editable_by: ["ui", "cli"] });
+    const doc = svc.createDocument(human(), kb.id, { title: "A", content: "one" });
+    const v2 = svc.updateDocument(human(), doc.id, { expected_revision: 1, content: "two" });
+    expect(v2.revision).toBe(2);
+    expect(() =>
+      svc.updateDocument(human(), doc.id, { expected_revision: 1, content: "three" }),
+    ).toThrow(ConflictError);
+    expect(() =>
+      svc.updateDocument(agent(), doc.id, { expected_revision: 2, content: "x" }),
+    ).toThrow(ForbiddenError);
+    expect(() => svc.deleteDocument(agent(), doc.id)).toThrow(ForbiddenError);
+    expect(() =>
+      svc.updateDocument(human("api"), doc.id, { expected_revision: 2, content: "x" }),
+    ).toThrow(ForbiddenError);
+    expect(svc.revisions(doc.id).map((r) => r.revision)).toEqual([2, 1]);
+    expect(svc.revisionContent(doc.id, 1).content).toBe("one");
+    // Metadata-only change keeps content, bumps revision.
+    const v3 = svc.updateDocument(human(), doc.id, { expected_revision: 2, path: "notes/a.md" });
+    expect(v3.revision).toBe(3);
+    expect(svc.listDocuments(kb.id).folders).toEqual(["notes"]);
+    expect(() =>
+      svc.updateDocument(human(), doc.id, { expected_revision: 3, path: "a.pdf" }),
+    ).toThrow(ValidationError);
+    await svc.jobs.idle();
+    const res = await svc.search(human(), { query: "two" });
+    expect(res.hits[0]?.revision).toBe(3);
+  });
+
+  test("wiki links resolve to backlinks, including documents created later", async () => {
+    const kb = svc.createKb(human(), { name: "K", project_id: null });
+    const a = svc.createDocument(human(), kb.id, {
+      title: "Alpha",
+      content: "See [[Beta]] and [x](gamma.md).",
+    });
+    await svc.jobs.idle();
+    expect(svc.getDocument(human(), a.id).links).toEqual([
+      { target: "beta", document_id: null, title: null },
+      { target: "gamma", document_id: null, title: null },
+    ]);
+    expect(svc.maintenanceQueue(kb.id).unresolved_links).toHaveLength(2);
+    const b = svc.createDocument(human(), kb.id, { title: "Beta", content: "Back to [[Alpha]]" });
+    await svc.jobs.idle();
+    expect(svc.getDocument(human(), a.id).links[0]).toEqual({
+      target: "beta",
+      document_id: b.id,
+      title: "Beta",
+    });
+    expect(svc.getDocument(human(), b.id).backlinks.map((l) => l.document_id)).toEqual([a.id]);
+    expect(svc.getDocument(human(), a.id).backlinks.map((l) => l.document_id)).toEqual([b.id]);
+    expect(svc.maintenanceQueue(kb.id).unresolved_links.map((l) => l.target)).toEqual(["gamma"]);
+  });
+
+  test("uploads are parsed in a worker and become searchable", async () => {
+    const kb = svc.createKb(human(), { name: "K", project_id: null });
+    const html =
+      "<html><body><h1>Quarterly report</h1><p>Revenue grew in the widget segment.</p></body></html>";
+    const doc = svc.upload(human(), kb.id, {
+      name: "report.html",
+      bytes: new TextEncoder().encode(html),
+    });
+    expect(doc.parse_state).toBe("pending");
+    await svc.jobs.idle();
+    const parsed = svc.engine.catalog.doc(doc.id);
+    expect(parsed?.parse_state).toBe("ok");
+    expect(parsed?.parser_id).toBe("basic");
+    const res = await svc.search(human(), { query: "widget revenue" });
+    expect(res.hits[0]?.document_id).toBe(doc.id);
+    // Same bytes again is a no-op; unknown formats are refused.
+    const same = svc.upload(human(), kb.id, {
+      name: "report.html",
+      bytes: new TextEncoder().encode(html),
+      document_id: doc.id,
+      expected_revision: 1,
+    });
+    expect(same.revision).toBe(1);
+    expect(() => svc.upload(human(), kb.id, { name: "x.exe", bytes: new Uint8Array([1]) })).toThrow(
+      ValidationError,
+    );
+    const original = svc.original(human("api"), doc.id);
+    expect(readFileSync(original.path, "utf8")).toBe(html);
+    // Markdown uploads become editable authored docs.
+    const md = svc.upload(human(), kb.id, {
+      name: "Guide.md",
+      bytes: new TextEncoder().encode("# Setup guide\n\nhi"),
+    });
+    expect(md.title).toBe("Setup guide");
+    expect(md.editable).toBe(true);
+  });
+
+  test("deleting a KB removes its stored files and index", async () => {
+    const kb = svc.createKb(human(), { name: "K", project_id: null });
+    const doc = svc.upload(human(), kb.id, {
+      name: "a.csv",
+      bytes: new TextEncoder().encode("a,b\n1,2\n"),
+    });
+    await svc.jobs.idle();
+    expect(existsSync(join(root, "originals", kb.id))).toBe(true);
+    svc.deleteKb(human(), kb.id);
+    expect(existsSync(join(root, "originals", kb.id))).toBe(false);
+    expect(existsSync(join(root, "artifacts", doc.id))).toBe(false);
+    expect(svc.engine.idx.chunkCount()).toBe(0);
+    expect(svc.status().documents).toBe(0);
+  });
+});
+
+describe("jobs", () => {
+  test("interrupted jobs resume after restart; lost index is rebuilt", async () => {
+    await svc.stop();
+    const kb = svc.createKb(human(), { name: "K", project_id: null });
+    const doc = svc.createDocument(human(), kb.id, {
+      title: "Crash",
+      content: "survives restarts",
+    });
+    // A fresh claim belongs to another live process (e.g. a stdio MCP server): left alone.
+    db.run("UPDATE kb_jobs SET status = 'running', started_at = ? WHERE document_id = ?", [
+      Date.now(),
+      doc.id,
+    ]);
+    svc.close();
+    svc = await open();
+    await svc.jobs.idle();
+    expect(svc.engine.catalog.doc(doc.id)?.index_state).toBe("pending");
+    // An expired claim was a crashed process: requeued and finished.
+    await svc.stop();
+    db.run("UPDATE kb_jobs SET started_at = 1 WHERE document_id = ?", [doc.id]);
+    svc.close();
+    svc = await open();
+    await svc.jobs.idle();
+    expect(svc.engine.catalog.doc(doc.id)?.index_state).toBe("lexical_ready");
+    expect((await svc.search(human(), { query: "restarts" })).hits).toHaveLength(1);
+
+    // index.db deleted while stopped: reconcile requeues indexing.
+    await svc.stop();
+    svc.close();
+    for (const f of ["index.db", "index.db-wal", "index.db-shm"])
+      rmSync(join(root, f), { force: true });
+    svc = await open();
+    await svc.jobs.idle();
+    expect((await svc.search(human(), { query: "restarts" })).hits).toHaveLength(1);
+  });
+
+  test("a backup of orc.db and originals restores uploads by parsing them again", async () => {
+    const kb = svc.createKb(human(), { name: "K", project_id: null });
+    const doc = svc.upload(human(), kb.id, {
+      name: "page.html",
+      bytes: new TextEncoder().encode("<html><body><p>restoreneedle text</p></body></html>"),
+    });
+    await svc.jobs.idle();
+    await svc.stop();
+    svc.close();
+    for (const f of ["index.db", "index.db-wal", "index.db-shm", "artifacts", "documents"])
+      rmSync(join(root, f), { recursive: true, force: true });
+    svc = await open();
+    await svc.jobs.idle();
+    expect(svc.engine.catalog.doc(doc.id)).toMatchObject({
+      parse_state: "ok",
+      index_state: "lexical_ready",
+    });
+    expect((await svc.search(human(), { query: "restoreneedle" })).hits).toHaveLength(1);
+  });
+
+  test("an index from an older schema version is rebuilt, vectors included", async () => {
+    await svc.stop();
+    svc.close();
+    svc = await open(fakeEmbedder());
+    const kb = svc.createKb(human(), { name: "K", project_id: null });
+    svc.createDocument(human(), kb.id, { title: "Cats", content: "felines purr and nap" });
+    await svc.jobs.idle();
+    await svc.stop();
+    svc.close();
+    const raw = new SqliteDatabase(join(root, "index.db"));
+    raw.run("PRAGMA user_version = 1");
+    raw.close();
+    svc = await open(fakeEmbedder());
+    await svc.jobs.idle();
+    const res = await svc.search(human(), { query: "purr", mode: "semantic" });
+    expect(res.hits[0]?.title).toBe("Cats");
+    expect(svc.status().embedding.pending_chunks).toBe(0);
+  });
+
+  test("hybrid search with embeddings; vectors are reused across restarts", async () => {
+    await svc.stop();
+    svc.close();
+    const emb = fakeEmbedder();
+    svc = await open(emb);
+    const kb = svc.createKb(human(), { name: "K", project_id: null });
+    svc.createDocument(human(), kb.id, {
+      title: "Cats",
+      content: "felines purr and nap in sunlight",
+    });
+    svc.createDocument(human(), kb.id, { title: "Engines", content: "pistons compress fuel" });
+    await svc.jobs.idle();
+    expect(svc.status().embedding.ready).toBe(true);
+    // Without a configured size, status reports the size the provider returned.
+    expect(svc.status().embedding.dimensions).toBe(16);
+    const res = await svc.search(human(), { query: "purr sunlight", mode: "hybrid" });
+    expect(res.mode).toBe("hybrid");
+    expect(res.hits[0]?.title).toBe("Cats");
+    expect(res.hits[0]?.matched_by).toContain("semantic");
+    const calls = emb.calls;
+    await svc.stop();
+    svc.close();
+    svc = await open(emb);
+    await svc.jobs.idle();
+    expect(emb.calls).toBe(calls);
+  });
+});
+
+describe("edit permissions", () => {
+  test("editable_by decides which call sources may change documents", () => {
+    const open_ = svc.createKb(human(), { name: "Open", project_id: null });
+    expect(open_.editable_by).toEqual(["mcp", "api", "cli", "ui"]);
+    const doc = svc.createDocument(agent(), open_.id, { title: "Direct", content: "d" });
+    expect(doc.updated_by).toBe("claude");
+    expect(svc.revisions(doc.id)[0]?.source).toBe("mcp");
+    svc.updateDocument(human("cli"), doc.id, { expected_revision: 1, content: "e" });
+    expect(svc.revisions(doc.id).map((r) => r.source)).toEqual(["cli", "mcp"]);
+
+    // Order and duplicates do not matter; an empty list freezes the KB for every source.
+    const frozen = svc.updateKb(human(), open_.id, { editable_by: ["ui", "mcp", "ui"] });
+    expect(frozen.editable_by).toEqual(["mcp", "ui"]);
+    svc.updateKb(human(), open_.id, { editable_by: [] });
+    for (const ctx of [human(), human("api"), agent()])
+      expect(() => svc.createDocument(ctx, open_.id, { title: "T", content: "c" })).toThrow(
+        ForbiddenError,
+      );
+
+    // An agent cannot change KB settings, so it cannot grant itself edit rights.
+    expect(() => svc.updateKb(agent(), open_.id, { editable_by: ["mcp"] })).toThrow(ForbiddenError);
+    expect(() => svc.deleteKb(agent(), open_.id)).toThrow(ForbiddenError);
+    expect(() =>
+      svc.createKb(human("api"), { name: "Bad", project_id: null, editable_by: ["root" as "ui"] }),
+    ).toThrow();
+  });
+});
+
+describe("registered folders", () => {
+  test("folder files are copied in, follow the file until edited, and never get written", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "orc-kb-src-"));
+    try {
+      mkdirSync(join(dir, "sub"));
+      mkdirSync(join(dir, ".git"));
+      mkdirSync(join(dir, "node_modules"));
+      writeFileSync(join(dir, "sub", "a.md"), "# Alpha note\n\nzebra facts");
+      writeFileSync(join(dir, "c.md"), "# Gamma\n\nottér notes");
+      writeFileSync(join(dir, ".git", "x.md"), "hidden");
+      writeFileSync(join(dir, "node_modules", "y.md"), "dep");
+      writeFileSync(join(dir, "b.csv"), "k,v\nquokka,1\n");
+      const kb = svc.createKb(human(), { name: "Folder", project_id: null });
+      expect(() => svc.addSource(agent(), kb.id, { root_path: dir })).toThrow(ForbiddenError);
+      const { source, scan } = svc.addSource(human(), kb.id, { root_path: dir });
+      expect(scan).toMatchObject({ added: 3, updated: 0, missing: 0 });
+      await svc.jobs.idle();
+      expect((await svc.search(human(), { query: "zebra" })).hits[0]?.title).toBe("Alpha note");
+      expect((await svc.search(human(), { query: "quokka" })).hits).toHaveLength(1);
+
+      const byTitle = (t: string) => svc.listDocuments(kb.id).documents.find((d) => d.title === t);
+      const a = byTitle("Alpha note");
+      expect(a?.path.endsWith("/sub/a.md")).toBe(true);
+      expect(a).toMatchObject({ editable: true, folder_sync: "following" });
+
+      // Following: a change in the folder updates the copy.
+      writeFileSync(join(dir, "sub", "a.md"), "# Alpha note\n\nchanged in folder");
+      expect(svc.scanSource(source.id)).toMatchObject({ updated: 1, unchanged: 2 });
+      expect(svc.getDocument(human(), a?.id ?? "").content).toBe(
+        "# Alpha note\n\nchanged in folder",
+      );
+
+      // Editing in ORC changes the copy only and detaches it from the file.
+      const edited = svc.updateDocument(human(), a?.id ?? "", {
+        expected_revision: 2,
+        content: "# Alpha note\n\nedited in orc",
+      });
+      expect(edited.folder_sync).toBe("detached");
+      expect(readFileSync(join(dir, "sub", "a.md"), "utf8")).toBe(
+        "# Alpha note\n\nchanged in folder",
+      );
+      writeFileSync(join(dir, "sub", "a.md"), "# Alpha note\n\nchanged again");
+      expect(svc.scanSource(source.id).updated).toBe(0);
+      expect(svc.getDocument(human(), a?.id ?? "").content).toBe("# Alpha note\n\nedited in orc");
+
+      // Binary-ish formats keep a stored original, so a vanished file keeps its copy searchable.
+      const csv = byTitle("b");
+      expect(svc.original(human(), csv?.id ?? "").path.startsWith(dir)).toBe(false);
+      unlinkSync(join(dir, "b.csv"));
+      unlinkSync(join(dir, "c.md"));
+      expect(svc.scanSource(source.id).missing).toBe(2);
+      await svc.jobs.idle();
+      expect((await svc.search(human(), { query: "quokka" })).hits).toHaveLength(1);
+      expect(byTitle("Gamma")?.warnings).toContain("Source file is missing");
+      expect(svc.maintenanceQueue(kb.id).failed).toHaveLength(0);
+      writeFileSync(join(dir, "c.md"), "# Gamma\n\nottér notes");
+      expect(svc.scanSource(source.id).updated).toBe(1);
+      expect(byTitle("Gamma")?.warnings).toEqual([]);
+
+      expect(() => svc.deleteDocument(human(), csv?.id ?? "")).toThrow(ValidationError);
+      svc.removeSource(human(), source.id);
+      expect(svc.listDocuments(kb.id).documents).toHaveLength(0);
+      expect(existsSync(join(dir, "sub", "a.md"))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("storage", () => {
+  test("paths cannot escape the knowledge root", () => {
+    expect(() => svc.engine.storage.resolveRel("../outside")).toThrow();
+    expect(() => svc.engine.storage.resolveRel("originals/../../x")).toThrow();
+    expect(() =>
+      svc.engine.storage.putOriginal("../k", "d", 1, "pdf", new Uint8Array([1])),
+    ).toThrow();
+  });
+});

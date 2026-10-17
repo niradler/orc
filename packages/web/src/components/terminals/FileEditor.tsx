@@ -87,6 +87,17 @@ export function FileEditor({
     };
   }, []);
 
+  // A remount can start from a cached copy that predates the last save; follow the refetched file
+  // until the user has unsaved edits of their own.
+  useEffect(() => {
+    if (pending.current || drafts.has(draftKey) || content === original.current) return;
+    original.current = content;
+    document.current = content;
+    setText(content);
+    setDirty(false);
+    if (active.current) dirtyCallback.current(false);
+  }, [content, draftKey]);
+
   function change(content: string): void {
     document.current = content;
     setText(content);

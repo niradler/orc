@@ -166,7 +166,7 @@ curl -s -H "Authorization: Bearer $SECRET" http://127.0.0.1:$PORT/health
 
 - [ ] `POST /memories` creates a memory (201; 409 on duplicate name)
 - [ ] `GET /memories?project_id&q&sort&limit` lists memories with read counts
-- [ ] `GET /memories/{name}?project_id` reads a memory and counts the read for `X-Orc-Client`
+- [ ] `GET /memories/{name}?project_id` reads a memory and counts the read for `X-Orc-Source`
 - [ ] `PATCH /memories/{name}` updates description/content/priority
 - [ ] `DELETE /memories/{name}?project_id` deletes the memory (204)
 - [ ] `GET /memories/{name}/history` and `POST /memories/{name}/revert` restore earlier states

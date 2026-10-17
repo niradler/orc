@@ -50,7 +50,7 @@ Rules and decisions get highest priority in snapshots and future `context()` cal
 
 ### 5. Log completed work
 
-At the end of a task or work block, load `orc-memory-review` with `skill_read` and follow its review steps inline before calling `session_log` with a summary. Use ordinary `wiki_search` / `search` / `knowledge_search` for lessons as needed; normal `skill_read` returns edited instructions in the selected project. It auto-derives touched files and task changes from your session events, and lists memories changed in this session.
+At the end of a task or work block, load `orc-memory-review` with `skill_read` and follow its review steps inline before calling `session_log` with a summary. Use ordinary `wiki_search` / `search` / `kb_search` for lessons as needed; normal `skill_read` returns edited instructions in the selected project. It auto-derives touched files and task changes from your session events, and lists memories changed in this session.
 
 ---
 

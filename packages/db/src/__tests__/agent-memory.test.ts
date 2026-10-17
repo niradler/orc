@@ -61,7 +61,11 @@ test("should upsert Claude memory files by name and report files that cannot be 
     phase: "session_start",
     input: {},
   });
-  expect(() => syncClaudeMemory(db, event, null, source)).toThrow("requires a project");
+  const noProject = syncClaudeMemory(db, event, null, source);
+  expect(noProject.updated).toBe(0);
+  expect(noProject.skipped.map((skip) => skip.reason)).toContain(
+    "No ORC project selected; memories are per project",
+  );
   const first = syncClaudeMemory(db, event, "p1", source);
   expect(first.updated).toBe(1);
   expect(first.skipped.map((skip) => skip.reason).join()).toContain("make it a skill");

@@ -25,9 +25,9 @@ export type RankedItem = {
   activity_at: number;
 };
 
-/** Attributes a read to the calling client header; unknown callers count as plain API reads. */
-export function readSourceFromClient(client: string | undefined): ReadSource {
-  return client === "cli" || client === "ui" ? client : "api";
+/** Attributes a read to the X-Orc-Source header; unknown callers count as plain API reads. */
+export function readSourceFromHeader(source: string | undefined): ReadSource {
+  return source === "cli" || source === "ui" ? source : "api";
 }
 
 export function emptyReadUsage(): ReadUsage {

@@ -35,7 +35,7 @@ ORC fixes this. Shared memory across every session. A task board where agents su
 | **MCP server**            | 54 tools connect any [Model Context Protocol](https://modelcontextprotocol.io) (MCP) compatible agent — stdio or Streamable HTTP   |
 | **Session continuity**    | Snapshots survive context compaction so agents resume where they left off                                                          |
 | **Gateway**               | Approve work, search memory, and chat with live agents from Telegram or Slack                                                      |
-| **Knowledge search**      | Index document collections (markdown, notes, wikis) and search them via BM25 or hybrid (vector + reranking)                        |
+| **Knowledge bases**       | Upload PDFs, Office files and Markdown or copy in local folders; hybrid full-text + vector search with cited passages            |
 | **Skill library**         | Discoverable workflow templates (coder, reviewer, planner, bugfix) that encode your standards                                      |
 | **Task flows**            | Per-task graphs: conditional edges, bounded loops, parallel fan-out with joins, and human gates — with hard termination rails      |
 
@@ -400,29 +400,29 @@ orc mem history ulid-ids               # every change, with before/after
 orc mem revert ulid-ids <change-id> --expected-change-id <latest-change-id> -r "Undo mistaken edit"
 ```
 
-### Knowledge
+### Knowledge bases
 
-Index existing document collections (markdown, notes, code docs) and make them searchable by any agent. Unlike memory (short agent-authored notes), knowledge searches pre-existing files on disk.
+Knowledge bases hold human reference documents for agents to search and cite. A knowledge base belongs to a project or is global. Add documents by uploading files (PDF, Word, PowerPoint, Excel, HTML, CSV, Markdown, text), writing Markdown in the dashboard, or registering a folder whose files are copied in. ORC never writes the folder: a copy follows its file on each scan until it is edited in ORC, and a file deleted from the folder keeps its copy. Documents have folders, labels and `[[wiki links]]` with backlinks.
 
 ```bash
-# Add a document collection
-orc knowledge add my-docs --path ~/projects/docs --pattern "**/*.md"
-
-# Search across indexed documents
-orc knowledge search "authentication flow"
-
-# List collections
-orc knowledge list
-
-# Re-index after files change
-orc knowledge update
+orc kb create Runbooks --project my-app
+orc kb add Runbooks ./docs/*.pdf          # upload and parse
+orc kb sources add Runbooks ./handbook    # copy a folder in, rescanned periodically
+orc kb editable-by Runbooks ui,cli,api    # agents (mcp) may read but not edit
+orc kb search "rollback procedure"        # cited passages
+orc kb evidence "how do we rotate keys"   # budgeted evidence pack
+orc kb usage Runbooks                     # reads by source (mcp, api, cli, ui)
 ```
 
-Knowledge uses [QMD](https://github.com/nicholasgriffintn/qmd) as the search engine. By default it runs BM25 full-text search (no LLM needed). Set `search_mode: "hybrid"` in config for vector search with reranking - embeddings are generated automatically when documents are indexed.
+Search combines title/path matches, SQLite full-text search and, when embeddings are configured (Ollama or an OpenAI-compatible API), vectors stored with sqlite-vec. Set the embedding URL, model and API key or token in Settings or with `orc kb settings`; the key is stored encrypted and never returned by the API. Results cite passages as `kb:<doc>@<rev>#<n>`. Every read is counted per document and source.
 
-Collections can be scoped to projects. When scoped, searches and listing filter to only that project's collections.
+The built-in parser handles all formats without extra installs. For better PDF layout, tables and OCR, install the optional [Docling](https://github.com/docling-project/docling) parser from Settings or with `orc kb docling install` (about 2 GB); in `auto` mode it is then used for PDFs and images. Each knowledge base can override the parser.
 
-**MCP tools:** `knowledge_search`, `knowledge_get`, `knowledge_collections`, `knowledge_collection_add`, `knowledge_collection_remove`, `knowledge_update`
+Each knowledge base lists the call sources that may change its documents (`editable_by`: `ui`, `cli`, `api`, `mcp`; all four by default). Agents write with `kb_write` where `mcp` is allowed; every change is a revision recording its source and session. Knowledge base settings and knowledge settings cannot be changed over MCP, so an agent cannot widen its own access. Rendered Markdown shows remote images as links instead of loading them.
+
+To back up knowledge bases, stop ORC and copy `~/.orc/orc.db` (with its `-wal` and `-shm` files) and `~/.orc/knowledge/originals/`, plus `~/.orc/secret.key`, without which a saved embedding API key cannot be decrypted and must be entered again. The search index, parse results and Markdown copies are rebuilt on the next start.
+
+**MCP tools:** `kb_list`, `kb_search`, `kb_evidence`, `kb_read`, `kb_documents`, `kb_write`, `kb_maintenance`
 
 ### Task status flow
 
@@ -667,7 +667,7 @@ Tools are available to any connected agent. Start every session with `context`.
 | **Skill**     | `skill_list`, `skill_read`, `skill_create`                                                                                                  |
 | **Agent**     | `agent_list`, `agent_read`, `agent_create`, `agent_package_list`, `agent_package_read`, `agent_package_import`                               |
 | **Flow**      | `flow_report`, `flow_status`, `flow_list`, `flow_read`, `flow_create`, `flow_attach`                                                        |
-| **Knowledge** | `knowledge_search`, `knowledge_get`, `knowledge_collections`, `knowledge_collection_add`, `knowledge_collection_remove`, `knowledge_update` |
+| **Knowledge** | `kb_list`, `kb_search`, `kb_evidence`, `kb_read`, `kb_documents`, `kb_write`, `kb_maintenance`                                               |
 | **Search**    | `search`                                                                                                                                    |
 | **Job**       | `job_list`, `job_run`, `job_status`                                                                                                         |
 | **Session**   | `session_event`, `session_snapshot`, `session_restore`, `session_log`                                                                       |
@@ -773,8 +773,13 @@ ORC merges config in priority order (later wins):
 | `ORC_AGENT_LOOP_DEFAULT_BACKEND` | `claude`              | Default agent backend                             |
 | `ORC_AGENT_LOOP_IDLE_TIMEOUT`    | `20`                  | Session idle timeout (minutes)                    |
 | `ORC_AGENT_LOOP_AUTO_APPROVE`    | `true`                | Auto-approve worker tool permissions              |
-| `ORC_KNOWLEDGE_DB_PATH`          | `~/.orc/knowledge.db` | Knowledge search database path                    |
-| `ORC_KNOWLEDGE_SEARCH_MODE`      | `lexical`             | `lexical` (BM25) or `hybrid` (vector + reranking) |
+| `ORC_KNOWLEDGE_ROOT`             | beside `orc.db`       | Knowledge base storage (files, index)             |
+| `ORC_KNOWLEDGE_PARSER`           | `auto`                | `auto`, `basic` or `docling`                      |
+| `ORC_KNOWLEDGE_EMBEDDING_PROVIDER` | `none`              | `none`, `ollama` or `openai`                      |
+| `ORC_KNOWLEDGE_EMBEDDING_URL`    | provider default      | Embedding endpoint                                |
+| `ORC_KNOWLEDGE_EMBEDDING_MODEL`  | provider default      | Embedding model                                   |
+| `ORC_KNOWLEDGE_EMBEDDING_API_KEY` | -                    | API key for OpenAI-compatible embeddings          |
+| `ORC_SQLITE_VEC_PATH`            | bundled               | Path to a sqlite-vec `vec0` library               |
 
 </details>
 

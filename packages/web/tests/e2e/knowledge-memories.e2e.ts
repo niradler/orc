@@ -33,8 +33,7 @@ for (const width of [1440, 390]) {
       await expect(page.getByTestId("memory-detail")).toHaveCount(0);
 
       await page.getByTestId("section-knowledge").click();
-      await page.getByTestId("knowledge-manage-collections").click();
-      await expect(page.getByTestId("knowledge-back-documents")).toBeVisible();
+      await expect(page.getByTestId("kb-search-input")).toBeVisible();
       await page.getByTestId("nav-memories").click();
       await expect(row).toBeVisible();
 

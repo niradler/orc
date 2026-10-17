@@ -87,19 +87,20 @@ type MemoryChangeRow = Omit<MemoryChange, "previous" | "current"> & {
 
 export function installMemories(sqlite: Database): void {
   // The first memories table (typed/scoped notes with FTS and auto-dedup) was replaced outright;
-  // its rows are dropped, not converted. Only that old shape has a `type` column.
+  // its rows are dropped, not converted. The old shape has no `name` column. Its triggers and FTS
+  // tables are dropped on every start: an older build sharing this database recreates them, and
+  // its triggers reference `new.id`, which would break every insert into the new table.
   const columns = sqlite.query<{ name: string }, []>("PRAGMA table_info(memories)").all();
-  if (columns.some((column) => column.name === "type")) {
-    sqlite.exec(`
-      DROP TRIGGER IF EXISTS memories_ai;
-      DROP TRIGGER IF EXISTS memories_ad;
-      DROP TRIGGER IF EXISTS memories_au;
-      DROP TABLE IF EXISTS memories_fts;
-      DROP TABLE IF EXISTS memories_fts_trigram;
-      DROP TABLE IF EXISTS agent_memory_sources;
-      DROP TABLE memories;
-    `);
-  }
+  sqlite.exec(`
+    DROP TRIGGER IF EXISTS memories_ai;
+    DROP TRIGGER IF EXISTS memories_ad;
+    DROP TRIGGER IF EXISTS memories_au;
+    DROP TABLE IF EXISTS memories_fts;
+    DROP TABLE IF EXISTS memories_fts_trigram;
+    DROP TABLE IF EXISTS agent_memory_sources;
+  `);
+  if (columns.length > 0 && !columns.some((column) => column.name === "name"))
+    sqlite.exec("DROP TABLE memories");
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS memories (
       project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -262,16 +263,18 @@ export class MemoryStore {
       priority: input.priority ?? null,
     };
     this.validate(snapshot);
-    return this.sqlite.transaction((): Memory => {
-      if (!this.sqlite.query("SELECT 1 FROM projects WHERE id=?").get(input.project_id))
-        throw new NotFoundError("Project", input.project_id);
-      if (this.find(input.project_id, input.name))
-        throw new ConflictError(
-          `Memory ${input.name} already exists in this project; update it instead`,
-        );
-      this.write(input.project_id, input.name, null, snapshot, "memory.created", input);
-      return this.get(input.project_id, input.name);
-    })();
+    return this.sqlite
+      .transaction((): Memory => {
+        if (!this.sqlite.query("SELECT 1 FROM projects WHERE id=?").get(input.project_id))
+          throw new NotFoundError("Project", input.project_id);
+        if (this.find(input.project_id, input.name))
+          throw new ConflictError(
+            `Memory ${input.name} already exists in this project; update it instead`,
+          );
+        this.write(input.project_id, input.name, null, snapshot, "memory.created", input);
+        return this.get(input.project_id, input.name);
+      })
+      .immediate();
   }
 
   update(
@@ -280,24 +283,28 @@ export class MemoryStore {
     fields: UpdateMemoryFields,
     writer: MemoryWriter = {},
   ): Memory {
-    return this.sqlite.transaction((): Memory => {
-      const before = this.get(projectId, name);
-      const next: MemorySnapshot = {
-        description: fields.description ?? before.description,
-        content: fields.content ?? before.content,
-        priority: fields.priority === undefined ? before.priority : fields.priority,
-      };
-      this.validate(next);
-      this.write(projectId, name, before, next, "memory.updated", writer);
-      return this.get(projectId, name);
-    })();
+    return this.sqlite
+      .transaction((): Memory => {
+        const before = this.get(projectId, name);
+        const next: MemorySnapshot = {
+          description: fields.description ?? before.description,
+          content: fields.content ?? before.content,
+          priority: fields.priority === undefined ? before.priority : fields.priority,
+        };
+        this.validate(next);
+        this.write(projectId, name, before, next, "memory.updated", writer);
+        return this.get(projectId, name);
+      })
+      .immediate();
   }
 
   remove(projectId: string, name: string, writer: MemoryWriter = {}): void {
-    this.sqlite.transaction((): void => {
-      const before = this.get(projectId, name);
-      this.write(projectId, name, before, null, "memory.deleted", writer);
-    })();
+    this.sqlite
+      .transaction((): void => {
+        const before = this.get(projectId, name);
+        this.write(projectId, name, before, null, "memory.deleted", writer);
+      })
+      .immediate();
   }
 
   history(projectId: string, name: string): MemoryChange[] {
@@ -330,17 +337,19 @@ export class MemoryStore {
     expectedChangeId: string,
     writer: MemoryWriter & { reason: string },
   ): Memory | null {
-    return this.sqlite.transaction((): Memory | null => {
-      const [latest] = this.history(projectId, name);
-      if (!latest || latest.id !== expectedChangeId)
-        throw new ConflictError("Memory changed since review; reload its history");
-      const target = this.history(projectId, name).find((change) => change.id === changeId);
-      if (!target) throw new NotFoundError("Memory change", changeId);
-      const before = this.find(projectId, name);
-      if (target.previous) this.validate(target.previous);
-      this.write(projectId, name, before, target.previous, "memory.reverted", writer);
-      return this.find(projectId, name);
-    })();
+    return this.sqlite
+      .transaction((): Memory | null => {
+        const [latest] = this.history(projectId, name);
+        if (!latest || latest.id !== expectedChangeId)
+          throw new ConflictError("Memory changed since review; reload its history");
+        const target = this.history(projectId, name).find((change) => change.id === changeId);
+        if (!target) throw new NotFoundError("Memory change", changeId);
+        const before = this.find(projectId, name);
+        if (target.previous) this.validate(target.previous);
+        this.write(projectId, name, before, target.previous, "memory.reverted", writer);
+        return this.find(projectId, name);
+      })
+      .immediate();
   }
 
   /** Drops a project's memories with their history and reads (the project is being deleted). */

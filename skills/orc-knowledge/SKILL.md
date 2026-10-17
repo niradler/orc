@@ -1,147 +1,100 @@
 ---
 name: orc-knowledge
-description: Use when searching indexed document collections, retrieving docs or markdown files, adding/removing collections, or re-indexing after file changes. Trigger on "search the docs", "find in knowledge base", "index this directory", or looking up project reference material.
-allowed-tools: mcp__orc__knowledge_search mcp__orc__knowledge_get mcp__orc__knowledge_collections mcp__orc__knowledge_collection_add mcp__orc__knowledge_collection_remove mcp__orc__knowledge_update
+description: Use when looking up reference material in ORC knowledge bases (uploaded files, registered folders), answering a question with cited evidence, or writing to a knowledge base agents may edit. Trigger on "search the docs", "what do our docs say about X", "cite the runbook".
+allowed-tools: mcp__orc__kb_list mcp__orc__kb_search mcp__orc__kb_evidence mcp__orc__kb_read mcp__orc__kb_documents mcp__orc__kb_write mcp__orc__kb_maintenance
 ---
 
 # ORC Knowledge Workflow
 
-ORC's knowledge layer indexes directories of documents (markdown, code docs) and makes them searchable via BM25 full-text search or hybrid BM25+vector search. It is distinct from ORC memory - knowledge is for external reference material, memory holds short project facts (ports, conventions, gotchas, decisions) recorded during work.
+Knowledge bases (KBs) hold human reference documents. A KB belongs to a project or is global. Its documents are uploaded files (PDF, Word, PowerPoint, Excel, HTML, CSV, Markdown, text), Markdown written in the dashboard, or copies of files from a registered folder. ORC never writes the folder; a copy follows its file until someone edits it in ORC. Search combines exact title/path matches, full-text and, when embeddings are configured, vectors.
 
-## Knowledge vs Memory
+KBs are different from memory and the wiki:
 
-| Knowledge                                         | Memory                                          |
-| ------------------------------------------------- | ----------------------------------------------- |
-| External reference documents (docs, wikis, specs) | Short project facts from working sessions       |
-| Indexed from filesystem directories               | Written by agents during work                   |
-| Read-only (index reflects filesystem)             | Read-write (agents create and update)           |
-| Searched by content similarity                    | Listed by name, description and priority        |
-| `knowledge_search` / `knowledge_get`              | `memory_list` / `memory_read`                   |
+| Knowledge bases                      | Memory / Wiki                                     |
+| ------------------------------------ | ------------------------------------------------- |
+| Human reference documents and files  | What agents decided, discovered and learned       |
+| Edited from the sources each KB allows | Written by agents (`memory_create`, `wiki_write`) |
+| `kb_search` / `kb_evidence` / `kb_read` | `memory_list` / `wiki_search`                  |
 
-Use knowledge when you need to look something up in reference material.
-Use memory when you need to recall what was decided or discovered.
+Every read is counted per document and per source (mcp, api, cli, ui), so pass `session_id` when you have one.
 
----
+## Core workflow
 
-## Core Workflow
-
-### 1. Search first
+### 1. Search
 
 ```
-knowledge_search(query, { collection?, mode?, limit? })
+kb_search({ query, project?, scope?, kb_ids?, labels?, mode?, limit? })
 ```
 
-Returns: `docid`, `path`, `title`, `snippet`, `score` - compact results for scanning.
+Returns documents with short passages and citation handles `kb:<doc>@<rev>#<n>`. By default it searches the project's KBs plus global ones; `scope: "all"` searches every project. `mode: "auto"` uses vectors when embeddings are ready.
 
-- Use `collection` to narrow to a specific set of docs
-- `mode: "lexical"` = fast BM25 (default); `mode: "hybrid"` = BM25 + vector reranking (better recall, costs more)
-- Never fetch full documents until you've identified the right one from search results
-
-### 2. Fetch full content only when needed
+### 2. Answer with evidence
 
 ```
-knowledge_get(id)
+kb_evidence({ query, token_budget? })
 ```
 
-`id` is the `docid` (e.g. `#abc123`) or the `path` from search results. Full document content is token-expensive - only call this after you know which document you need.
+Returns a budgeted pack of cited passages from several documents. Cite the handles in your answer. Passages from agent-written summaries are flagged as derived, so don't count them as independent corroboration.
 
-### 3. List collections
-
-```
-knowledge_collections({ project? })
-```
-
-Shows all indexed collections with name, path, glob pattern, document count, and last modified time.
-
----
-
-## Managing Collections
-
-### Add a collection
+### 3. Read only what you need
 
 ```
-knowledge_collection_add({
-  name: "docs",
-  path: "/absolute/path/to/directory",
-  pattern: "**/*.md",   // default
-  project: "my-project" // optional
+kb_read({ citation: "kb:01J...@3#4" })    // one passage
+kb_read({ id, heading: "Rollback" })      // one section
+kb_read({ id })                           // whole document, can be long
+```
+
+A handle names a revision. If the document has changed since, read it again by ID.
+
+### 4. Browse
+
+```
+kb_list({ project? })                     // KBs with document counts; "editable" or "read-only" for you
+kb_documents({ kb_id, folder?, label? })  // documents with path, labels, revision, reads
+```
+
+## Writing documents
+
+Each KB lists the call sources that may change its documents (`editable_by`: ui, cli, api, mcp). Your MCP calls are source `mcp`; `kb_list` marks each KB "editable" or "read-only" for you. Reading and search are open everywhere. Agents cannot change KB settings, so ask a person when a KB you need is read-only.
+
+```
+kb_write({
+  kb_id, title, content,             // create: Markdown
+  path?, labels?,                    // e.g. runbooks/deploy.md
+  note,                              // why, kept in the revision history
+  derived_from?: [document_ids],     // sources this summarises; it goes stale when they change
 })
+kb_write({ document_id, expected_revision, content, note })   // replace
 ```
 
-- `name` is a short label used to filter searches (`collection: "docs"`)
-- `path` must be an absolute path to the directory
-- `pattern` controls which files get indexed (default: all `.md` files)
-- Indexing runs automatically after adding
+Every write is a new revision recorded with your session, so nothing is lost. Never list the document you are rewriting in `derived_from`. A stale `expected_revision` is a conflict: read the document again and redo the change. `kb_maintenance({ kb_id })` lists stale derived documents, failed files and links to missing documents.
 
-### Remove a collection
-
-```
-knowledge_collection_remove({ name: "docs" })
-```
-
-Removes the collection and its indexed documents. Does not delete files from disk.
-
-### Re-index after file changes
-
-```
-knowledge_update({ collections: ["docs"] })  // specific collections
-knowledge_update({})                          // all collections
-```
-
-Run this after adding, editing, or deleting files in an indexed directory. Returns counts: `indexed`, `updated`, `removed`.
-
----
-
-## CLI Equivalents
+## CLI equivalents
 
 ```bash
-orc kb search "authentication flow"
-orc kb get "#abc123"
-orc kb collections
-orc kb add docs /path/to/docs --pattern "**/*.md"
-orc kb remove docs
-orc kb update
+orc kb list
+orc kb search "rollback procedure"
+orc kb evidence "how do we rotate the signing key"
+orc kb get kb:01J...@3#4
+orc kb add Runbooks ./docs/*.pdf
+orc kb sources add Runbooks ./handbook
+orc kb editable-by Runbooks ui,cli,api
+orc kb usage <kb-id>
 orc kb status
 ```
 
----
+## Common mistakes
 
-## Token Economics
-
-| Tool                    | Cost                  | Use when                                    |
-| ----------------------- | --------------------- | ------------------------------------------- |
-| `knowledge_search`      | ~50-100 tokens/result | Always use first - cheap overview           |
-| `knowledge_get`         | ~500-5000 tokens      | Full document - **expensive, filter first** |
-| `knowledge_collections` | ~50 tokens            | See what's indexed                          |
-| `knowledge_update`      | ~50 tokens            | Trigger re-index after file changes         |
-
-**Pattern: search → identify docid → get.** Never call `knowledge_get` blindly. The snippet in search results often has what you need without fetching the full document.
-
----
-
-## Search Tips
-
-- Use keywords and phrases, not questions: `"JWT refresh token"` not `"how does JWT refresh work"`
-- Narrow with `collection` when you know which collection has the answer
-- Use `mode: "hybrid"` when lexical search returns poor results - it adds vector similarity
-- Scores above 0.5 are usually relevant; below 0.2 are likely noise
-
----
-
-## Common Mistakes
-
-| Mistake                                         | Fix                                                                 |
-| ----------------------------------------------- | ------------------------------------------------------------------- |
-| Calling `knowledge_get` without searching first | Always search first, then fetch by docid                            |
-| Using relative paths when adding collections    | `path` must be absolute                                             |
-| Expecting stale results after file changes      | Run `knowledge_update` after filesystem changes                     |
-| Storing agent decisions in knowledge            | Use `memory_create` for decisions - knowledge is read-only reference |
-| Searching with full sentences                   | Use keywords; BM25 matches terms, not intent                        |
-
----
+| Mistake                                   | Fix                                                        |
+| ----------------------------------------- | ---------------------------------------------------------- |
+| Reading whole documents first             | Search, then read a citation or heading                    |
+| Answering without handles                 | Use `kb_evidence` and cite `kb:` handles                   |
+| Storing your own decisions in a KB        | Use `memory_create` or `wiki_write`                        |
+| Retrying a write after a conflict as-is   | Read the current revision and reapply your change          |
+| Searching with whole questions in lexical mode | Use key terms; `mode: "auto"` adds vectors when ready |
 
 ## Related
 
-- **orc-memory** skill - short project facts: ports, conventions, gotchas, decisions
-- **orc-session** skill - session start protocol
-- **orc-tasks** skill - task lifecycle and HITL review
+- **orc-memory**: storing decisions, rules and discoveries
+- **orc-wiki**: compiling verified lessons
+- **orc-session**: session start and end

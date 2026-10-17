@@ -3,10 +3,10 @@ import { gotoView } from "./_helpers";
 
 const pages = [
   {
-    name: "Knowledgebase",
+    name: "Knowledge bases",
     view: "knowledge",
-    endpoint: "/knowledge/collections",
-    empty: { collections: [] },
+    endpoint: "/kb/bases",
+    empty: { knowledge_bases: [] },
   },
   { name: "Wiki", view: "wiki", endpoint: "/wiki", empty: { pages: [] } },
   { name: "Memories", view: "memories", endpoint: "/memories", empty: { memories: [], total: 0 } },

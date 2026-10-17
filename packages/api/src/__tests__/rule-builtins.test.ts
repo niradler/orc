@@ -180,7 +180,7 @@ test("should import native topic memory once, update the same record and expose 
     project: "builtin-project",
     limit: 10,
   });
-  expect(result).toContain(`[memory] ${projectId}/feedback-testing`);
+  expect(result).toContain("[memory] feedback-testing (project: builtin-project)");
   expect(JSON.stringify(new RuleStore(getSqlite()).decisions())).not.toContain("crossagentneedle");
 });
 

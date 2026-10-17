@@ -77,16 +77,16 @@ describe("Memories REST API", () => {
     ).toBe(400);
   });
 
-  test("should count reads per X-Orc-Client source and rank by agent reads", async () => {
+  test("should count reads per X-Orc-Source source and rank by agent reads", async () => {
     const path = `/memories/ulid-keys?project_id=${projectId}`;
-    const read = await req(app, "GET", path, undefined, { "X-Orc-Client": "cli" });
+    const read = await req(app, "GET", path, undefined, { "X-Orc-Source": "cli" });
     expect(read.status).toBe(200);
     expect((await read.json()).content).toBe("Use ULIDs.");
-    await req(app, "GET", path, undefined, { "X-Orc-Client": "cli" });
+    await req(app, "GET", path, undefined, { "X-Orc-Source": "cli" });
     await req(app, "GET", path);
     for (let i = 0; i < 5; i++)
       await req(app, "GET", `/memories/api-port?project_id=${projectId}`, undefined, {
-        "X-Orc-Client": "ui",
+        "X-Orc-Source": "ui",
       });
 
     const list = await (await req(app, "GET", `/memories?project_id=${projectId}`)).json();
