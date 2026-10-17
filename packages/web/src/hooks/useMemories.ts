@@ -21,6 +21,10 @@ export function useMemories(params: MemoryListParams, options?: { enabled?: bool
   });
 }
 
+export function useMemoryLimits() {
+  return useQuery({ queryKey: ["memory-limits"], queryFn: () => api.memories.limits() });
+}
+
 export function useMemory(projectId: string | null, name: string | null) {
   return useQuery({
     queryKey: [DETAIL_KEY, projectId, name],

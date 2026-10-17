@@ -1,4 +1,4 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig, updateGlobalConfig } from "@orc/core/config";
 import { ForbiddenError, NotFoundError, ValidationError } from "@orc/core/errors";
 import {
@@ -17,8 +17,9 @@ import { encryptSecret } from "@orc/core/secrets";
 import { getKnowledgeService, parseCitation } from "@orc/knowledge";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { createRouter } from "../lib/router.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 const svc = getKnowledgeService;
 
 const tooLarge = (c: Context, max: number) =>

@@ -1,11 +1,12 @@
 import { swaggerUI } from "@hono/swagger-ui";
-import { OpenAPIHono } from "@hono/zod-openapi";
 import { type ChangeResource, changes } from "@orc/core/changes";
 import { configuredApiSecret, loadConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
 import { ORC_VERSION } from "@orc/core/version";
+import { HTTPException } from "hono/http-exception";
 import { ZodError, z } from "zod";
+import { createRouter } from "./lib/router.js";
 import { bearerAuth } from "./middleware/auth.js";
 import { auditRouter } from "./routes/audit.js";
 import { backendsRouter } from "./routes/backends.js";
@@ -44,7 +45,7 @@ const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 
 export function createApp() {
   const config = loadConfig();
-  const app = new OpenAPIHono();
+  const app = createRouter();
 
   if (!configuredApiSecret(config.api.secret) && !LOOPBACK_HOSTS.has(config.api.host)) {
     logger.warn(
@@ -87,6 +88,12 @@ export function createApp() {
         orcErr.statusCode as 400 | 401 | 403 | 404 | 409 | 500 | 503,
       );
     }
+    // Hono's own request errors (e.g. malformed JSON body) carry their status.
+    if (err instanceof HTTPException)
+      return c.json(
+        { error: err.message, code: err.status === 400 ? "VALIDATION_ERROR" : "HTTP_ERROR" },
+        err.status,
+      );
     logger.error("Unhandled error", err);
     return c.json({ error: "Internal server error", code: "INTERNAL_ERROR" }, 500);
   });

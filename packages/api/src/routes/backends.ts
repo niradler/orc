@@ -1,8 +1,9 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { probeBackends } from "@orc/agent-runtime";
 import { loadConfig } from "@orc/core/config";
+import { createRouter } from "../lib/router.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 
 const BackendSchema = z
   .object({

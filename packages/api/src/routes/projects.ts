@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { ConflictError, NotFoundError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import { getDb } from "@orc/db/client";
@@ -7,8 +7,9 @@ import { detachLegacyKnowledgeCollections, projectKbCount } from "@orc/db/kb";
 import { MemoryStore } from "@orc/db/memories";
 import { bridge_chats, comments, jobs, projects, sessions, tasks } from "@orc/db/schema";
 import { and, desc, eq } from "drizzle-orm";
+import { createRouter } from "../lib/router.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 
 const ProjectSchema = z
   .object({

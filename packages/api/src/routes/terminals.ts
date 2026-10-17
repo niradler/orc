@@ -1,5 +1,5 @@
 import { basename, dirname } from "node:path";
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { execHostFor, listHostDirectories, resolveExecHost } from "@orc/core/exec-host";
@@ -15,6 +15,7 @@ import { gateway_sessions } from "@orc/db/schema";
 import { and, eq } from "drizzle-orm";
 import { rememberTerminalFolder } from "../git/registry.js";
 import { getHandoffService } from "../handoffs/service.js";
+import { createRouter } from "../lib/router.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
 import { availableLaunchers, buildLaunch, LAUNCH_KINDS } from "../terminals/launch.js";
 import {
@@ -28,7 +29,7 @@ import {
 } from "../terminals/service.js";
 import { prepareSessionDirectory } from "../terminals/session-dir.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 
 const LaunchKindSchema = z.enum(LAUNCH_KINDS);
 

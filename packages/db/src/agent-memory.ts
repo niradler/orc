@@ -60,6 +60,34 @@ function memoryName(name: string): string {
     .replace(/-+$/, "");
 }
 
+function nameOf(file: string, fields: Record<string, unknown>): string {
+  return memoryName(typeof fields.name === "string" ? fields.name : basename(file, ".md"));
+}
+
+function isMemoryFile(file: string): boolean {
+  return /\.md$/i.test(file) && basename(file).toLowerCase() !== "memory.md";
+}
+
+/**
+ * Memory name -> files in the directory that map to it. Mapping is lossy (`foo_bar` and `foo-bar`
+ * both become `foo-bar`), so a name claimed by two files must not be synced from either.
+ * Files that cannot be read here keep their file name; their own sync reports why.
+ */
+function memoryOwners(files: string[]): Map<string, string[]> {
+  const owners = new Map<string, string[]>();
+  for (const file of files) {
+    let name = memoryName(basename(file, ".md"));
+    try {
+      if (statSync(file).size <= 65536)
+        name = nameOf(file, parseMarkdownFrontmatter(readFileSync(file, "utf8")).fields);
+    } catch (error) {
+      if (!(error instanceof ValidationError)) throw error;
+    }
+    owners.set(name, [...(owners.get(name) ?? []), file]);
+  }
+  return owners;
+}
+
 /** Upserts Claude auto-memory files (frontmatter name + description, body) into project memories. */
 export function syncClaudeMemory(
   db: Database,
@@ -73,36 +101,32 @@ export function syncClaudeMemory(
   if (!existsSync(directory)) return result;
   const root = realpathSync(directory);
   if (!statSync(root).isDirectory()) throw new Error("Memory source must be a directory");
-  let files: string[] = [];
+  let changed: string | null = null;
   if (event.phase === "post_tool") {
     if (event.failed) return result;
     const path = event.input.file_path ?? event.input.path;
     if (typeof path !== "string") return result;
-    files = [resolve(event.cwd, path)];
-  } else {
-    let visited = 0;
-    const walk = (path: string, depth = 0): void => {
-      if (++visited > 512 || depth > 16)
-        throw new Error("Memory directory traversal exceeds limit");
-      for (const entry of readdirSync(path, { withFileTypes: true })) {
-        if (entry.isSymbolicLink()) continue;
-        if (entry.isDirectory()) walk(join(path, entry.name), depth + 1);
-        else if (entry.isFile() && /\.md$/i.test(entry.name)) files.push(join(path, entry.name));
-        if (files.length > 256) throw new Error("Memory source file count exceeds limit");
-      }
-    };
-    walk(root);
+    changed = resolve(event.cwd, path);
+    if (!withinWorkspace(root, changed) || !existsSync(changed) || !isMemoryFile(changed))
+      return result;
   }
+  const directoryFiles: string[] = [];
+  let visited = 0;
+  const walk = (path: string, depth = 0): void => {
+    if (++visited > 512 || depth > 16) throw new Error("Memory directory traversal exceeds limit");
+    for (const entry of readdirSync(path, { withFileTypes: true })) {
+      if (entry.isSymbolicLink()) continue;
+      if (entry.isDirectory()) walk(join(path, entry.name), depth + 1);
+      else if (entry.isFile() && isMemoryFile(entry.name))
+        directoryFiles.push(join(path, entry.name));
+      if (directoryFiles.length > 256) throw new Error("Memory source file count exceeds limit");
+    }
+  };
+  walk(root);
+  const owners = memoryOwners(directoryFiles);
   const memories = new MemoryStore(db);
   let bytes = 0;
-  for (const file of files) {
-    if (
-      !withinWorkspace(root, file) ||
-      !existsSync(file) ||
-      basename(file).toLowerCase() === "memory.md" ||
-      !/\.md$/i.test(file)
-    )
-      continue;
+  for (const file of changed ? [changed] : directoryFiles) {
     const actual = realpathSync(file);
     if (!withinWorkspace(root, actual)) throw new Error("Memory file escapes configured directory");
     const stat = statSync(actual);
@@ -119,9 +143,12 @@ export function syncClaudeMemory(
     }
     try {
       const { fields, body } = parseMarkdownFrontmatter(readFileSync(actual, "utf8"));
-      const name = memoryName(
-        typeof fields.name === "string" ? fields.name : basename(actual, ".md"),
-      );
+      const name = nameOf(actual, fields);
+      const others = (owners.get(name) ?? []).filter((other) => realpathSync(other) !== actual);
+      if (others.length > 0)
+        throw new ValidationError(
+          `${[actual, ...others].map((path) => basename(path)).join(", ")} map to the same memory name ${name}; keep one file per name`,
+        );
       if (typeof fields.description !== "string")
         throw new ValidationError("Frontmatter description is required");
       const memory = { description: fields.description.trim(), content: body };

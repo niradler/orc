@@ -1,7 +1,8 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { getGatewayManager, getGatewayStatus, sendGatewayMessage } from "@orc/gateway";
+import { createRouter } from "../lib/router.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 
 const GatewayStatusSchema = z
   .object({

@@ -1,4 +1,4 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { parseFlowDefinition } from "@orc/core/flow";
@@ -14,8 +14,9 @@ import {
 import { getDb } from "@orc/db/client";
 import { tasks } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
+import { createRouter } from "../lib/router.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 
 const FlowMetaSchema = z
   .object({

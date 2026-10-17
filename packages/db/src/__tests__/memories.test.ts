@@ -127,6 +127,26 @@ describe("MemoryStore", () => {
     expect(() => store.get("p1", "dev-port")).toThrow("not found");
   });
 
+  test("should drop reads on delete so a recreated (renamed) memory starts at zero", () => {
+    create("dev-port");
+    store.read("p1", "dev-port", "mcp");
+    store.remove("p1", "dev-port");
+    expect(sqlite.query("SELECT 1 FROM memory_usage").get()).toBeNull();
+    create("dev-port");
+    expect(store.list("p1")[0]).toMatchObject({ name: "dev-port", read_count: 0 });
+  });
+
+  test("should refuse a revert that changes nothing", () => {
+    create("dev-port");
+    store.remove("p1", "dev-port");
+    const [deleted, created] = store.history("p1", "dev-port");
+    if (!deleted || !created) throw new Error("missing history");
+    expect(() =>
+      store.revert("p1", "dev-port", created.id, deleted.id, { reason: "drop" }),
+    ).toThrow("already deleted");
+    expect(store.history("p1", "dev-port")).toHaveLength(2);
+  });
+
   test("should audit changes by name and find them by session", () => {
     create("dev-port");
     store.update("p1", "dev-port", { content: "x" }, { session_id: "s2" });

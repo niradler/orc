@@ -1,4 +1,4 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { RULE_CATALOG } from "@orc/core/rule-catalog";
 import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
@@ -12,9 +12,10 @@ import { RuleEventSchema, RulePolicySchema } from "@orc/core/rules";
 import { getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { bodyLimit } from "hono/body-limit";
+import { createRouter } from "../lib/router.js";
 import { executeBuiltinRuleAction } from "../rule-builtins.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 app.use("/rules/*", bodyLimit({ maxSize: 1_200_000 }));
 const ResultSchema = z.object({
   orc_actions: z

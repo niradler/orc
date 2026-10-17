@@ -1,9 +1,10 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { type ChangeResource, changes } from "@orc/core/changes";
 import { streamSSE } from "hono/streaming";
+import { createRouter } from "../lib/router.js";
 import { retainChangeSources } from "../realtime/sources.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 
 app.openapi(
   createRoute({

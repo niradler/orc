@@ -1,4 +1,4 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { NotFoundError } from "@orc/core/errors";
 import {
   WikiChangeSchema,
@@ -12,8 +12,9 @@ import {
 } from "@orc/core/wiki";
 import { getSqlite } from "@orc/db/client";
 import { WikiStore } from "@orc/db/wiki";
+import { createRouter } from "../lib/router.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 const slugParams = WikiWriteSchema.pick({ slug: true });
 const limitedScope = WikiScopeSchema.extend({
   limit: z.coerce.number().int().min(1).max(100).default(20),

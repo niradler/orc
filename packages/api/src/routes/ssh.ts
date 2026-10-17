@@ -1,4 +1,4 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { hostClaudeLoggedIn } from "@orc/agent-runtime";
 import { configuredApiSecret, loadConfig, updateGlobalConfig } from "@orc/core/config";
 import { ConflictError, ValidationError } from "@orc/core/errors";
@@ -11,9 +11,10 @@ import {
   retireSshMaster,
   sshBinary,
 } from "@orc/core/exec-host";
+import { createRouter } from "../lib/router.js";
 import { refreshConfiguredSessionAdapters } from "../session-watcher.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 
 const SshStateSchema = z
   .object({

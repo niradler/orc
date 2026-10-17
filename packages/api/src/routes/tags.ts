@@ -1,8 +1,9 @@
 import type { Database } from "bun:sqlite";
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { getDb } from "@orc/db/client";
+import { createRouter } from "../lib/router.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 
 const RESOURCE_TABLES: Record<string, string> = {
   task: "tasks",

@@ -16,9 +16,14 @@ SECRET="e2e-test-$$"
 export ORC_API_PORT="$PORT"
 export ORC_DB_PATH="$DB"
 export ORC_API_SECRET="$SECRET"
+export ORC_KNOWLEDGE_ROOT="$DB.knowledge"
+# A throwaway home so the run never reads or writes the real ~/.orc (config, active project, skills).
+E2E_HOME="$(mktemp -d)"
+export HOME="$E2E_HOME" USERPROFILE="$E2E_HOME"
 
 ORC="bun run packages/cli/src/index.ts --port $PORT --db $DB --secret $SECRET"
-API="http://127.0.0.1:$PORT"
+ROOT_URL="http://127.0.0.1:$PORT"
+API="$ROOT_URL/api"
 AUTH_HEADER="Authorization: Bearer $SECRET"
 PASS=0
 FAIL=0
@@ -37,6 +42,8 @@ cleanup() {
     wait "$SERVER_PID" 2>/dev/null || true
   fi
   rm -f "$DB" 2>/dev/null || true
+  rm -rf "$ORC_KNOWLEDGE_ROOT" 2>/dev/null || true
+  rm -rf "$E2E_HOME" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -126,7 +133,7 @@ section "1. Health & Infrastructure"
 assert_contains "GET /health returns ok" '"status":"ok"' "$HEALTH"
 assert_contains "GET /health has version" '"version"' "$HEALTH"
 
-OPENAPI=$(curl -s -H "$AUTH_HEADER" "$API/openapi.json")
+OPENAPI=$(curl -s -H "$AUTH_HEADER" "$ROOT_URL/openapi.json")
 assert_contains "GET /openapi.json returns spec" '"openapi"' "$OPENAPI"
 
 VERSION=$($ORC --version 2>&1)
@@ -364,11 +371,31 @@ assert_contains "GET /tags?resource_type=task" '"tags"' "$API_TAGS_TASK"
 # ── 14. Knowledge ───────────────────────────────────────────────────────────
 section "14. Knowledge"
 
-KNOW_STATUS=$(curl -s -H "$AUTH_HEADER" "$API/knowledge/status")
-assert_contains "GET /knowledge/status" '"searchMode"' "$KNOW_STATUS"
+KB=$(curl -s -X POST -H "$AUTH_HEADER" -H "Content-Type: application/json" \
+  -d "{\"name\":\"e2e-kb\",\"project_id\":\"$PROJ_ID\"}" "$API/kb/bases")
+assert_contains "POST /kb/bases" '"e2e-kb"' "$KB"
+KB_ID=$(echo "$KB" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
 
-KNOW_COLLS=$(curl -s -H "$AUTH_HEADER" "$API/knowledge/collections")
-assert_contains "GET /knowledge/collections" '"collections"' "$KNOW_COLLS"
+KB_DOC=$(curl -s -X POST -H "$AUTH_HEADER" -H "Content-Type: application/json" \
+  -d '{"title":"Deploy runbook","content":"# Deploy\n\nRun the zebrafish rollout before tagging."}' \
+  "$API/kb/bases/$KB_ID/documents")
+assert_contains "POST /kb/bases/{id}/documents" '"Deploy runbook"' "$KB_DOC"
+
+# Indexing is a background job; give it a few seconds.
+for i in $(seq 1 20); do
+  KB_SEARCH=$(curl -s -X POST -H "$AUTH_HEADER" -H "Content-Type: application/json" \
+    -d "{\"query\":\"zebrafish\",\"kb_ids\":[\"$KB_ID\"]}" "$API/kb/search?project_id=$PROJ_ID")
+  echo "$KB_SEARCH" | grep -q 'Deploy runbook' && break
+  sleep 0.5
+done
+assert_contains "POST /kb/search finds the document" 'Deploy runbook' "$KB_SEARCH"
+
+KB_STATUS=$(curl -s -H "$AUTH_HEADER" "$API/kb/status")
+assert_contains "GET /kb/status counts the base" '"knowledge_bases":1' "$KB_STATUS"
+
+KB_BAD_JSON=$(curl -s -o /dev/null -w "%{http_code}" -X POST -H "$AUTH_HEADER" \
+  -H "Content-Type: application/json" -d '{"title":' "$API/kb/bases/$KB_ID/documents")
+assert_eq "malformed JSON body -> 400" "400" "$KB_BAD_JSON"
 
 # ── 15. Schema ──────────────────────────────────────────────────────────────
 section "15. Schema"
@@ -431,6 +458,9 @@ else
   echo -e "  ${GREEN}PASS${NC} job deleted"
 fi
 
+# A project with knowledge bases cannot be deleted; remove the KB first.
+KB_DEL=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE -H "$AUTH_HEADER" "$API/kb/bases/$KB_ID")
+assert_eq "DELETE /kb/bases/{id}" "204" "$KB_DEL"
 $ORC project delete e2e-proj 2>&1
 PROJ_AFTER=$($ORC --json project list 2>&1)
 assert_not_contains "project deleted" "e2e-proj" "$PROJ_AFTER"

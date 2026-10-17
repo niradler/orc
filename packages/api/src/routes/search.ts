@@ -1,7 +1,8 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { getSqlite } from "@orc/db/client";
+import { createRouter } from "../lib/router.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 const Hit = z.object({
   kind: z.enum(["task", "project", "job", "memory", "session", "wiki"]),
   id: z.string(),

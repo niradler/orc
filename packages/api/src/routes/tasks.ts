@@ -1,4 +1,4 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { parseFlowDefinition } from "@orc/core/flow";
 import { readFlow } from "@orc/core/flow-service";
@@ -10,10 +10,11 @@ import { getDb, getSqlite } from "@orc/db/client";
 import { comments, task_links, tasks } from "@orc/db/schema";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 import { and, desc, eq } from "drizzle-orm";
+import { createRouter } from "../lib/router.js";
 
 const logger = createLogger("api:tasks");
 
-const app = new OpenAPIHono();
+const app = createRouter();
 
 const TaskGitFields = {
   git_repo: z.string().min(1).max(4096).nullable(),

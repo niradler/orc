@@ -1,16 +1,17 @@
 import type { Database } from "bun:sqlite";
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { NotFoundError } from "@orc/core/errors";
 import { execHostFor, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { getDb } from "@orc/db/client";
 import { gateway_sessions, session_handoffs, sessions, tasks } from "@orc/db/schema";
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { createRouter } from "../lib/router.js";
 import { LIVE_CHAT_ID, syncNow } from "../session-watcher.js";
 import { searchSessions } from "../sessions/search.js";
 import { bodyLinkIndex, sessionIdsOfTask } from "../sessions/tasklinks.js";
 import { MAX_TRANSCRIPT_BYTES, readTranscriptBytes } from "../sessions/transcript.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 
 const SessionSchema = z
   .object({

@@ -1,4 +1,4 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
@@ -16,10 +16,11 @@ import { executeJob } from "@orc/runner/executor";
 import { syncJob, unscheduleJob } from "@orc/runner/scheduler";
 import { Cron } from "croner";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { createRouter } from "../lib/router.js";
 
 const logger = createLogger("api:jobs");
 
-const app = new OpenAPIHono();
+const app = createRouter();
 
 // Reject invalid cron expressions at write time instead of letting the scheduler
 // throw later and leave a silently-broken job stored in the DB.

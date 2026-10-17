@@ -1,10 +1,11 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { WikiScopeSchema } from "@orc/core/wiki";
 import { AuditLog } from "@orc/db/audit";
 import { getSqlite } from "@orc/db/client";
+import { createRouter } from "../lib/router.js";
 import { resolveWikiProject } from "./wiki.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 const AuditEntrySchema = z
   .object({
     id: z.string(),

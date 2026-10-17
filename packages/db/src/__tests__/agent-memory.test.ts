@@ -80,3 +80,38 @@ test("should upsert Claude memory files by name and report files that cannot be 
   expect(new MemoryStore(db).get("p1", "feedback-testing").content).toBe("Changed.");
   db.close();
 });
+
+test("should skip files whose names map to the same memory instead of overwriting it", () => {
+  const root = mkdtempSync(join(tmpdir(), "orc-memory-collide-"));
+  const source = join(root, "memory");
+  mkdirSync(source);
+  const db = getSqlite(createDb(":memory:"));
+  db.exec("INSERT INTO projects(id, name) VALUES ('p1', 'one')");
+  const page = (description: string): string =>
+    ["---", `description: ${description}`, "---", description].join("\n");
+  writeFileSync(join(source, "foo_bar.md"), page("Underscore"));
+  writeFileSync(join(source, "foo-bar.md"), page("Hyphen"));
+  writeFileSync(join(source, "alone.md"), page("Alone"));
+  const event = RuleEventSchema.parse({
+    id: "e",
+    session_id: "s",
+    backend: "claude",
+    cwd: root,
+    phase: "session_start",
+    input: {},
+  });
+  const full = syncClaudeMemory(db, event, "p1", source);
+  expect(full.updated).toBe(1);
+  expect(full.skipped).toHaveLength(2);
+  expect(full.skipped[0]?.reason).toContain("map to the same memory name foo-bar");
+  const edited = syncClaudeMemory(
+    db,
+    { ...event, phase: "post_tool", input: { file_path: join(source, "foo_bar.md") } },
+    "p1",
+    source,
+  );
+  expect(edited.updated).toBe(0);
+  expect(edited.skipped[0]?.reason).toContain("foo-bar.md");
+  expect(() => new MemoryStore(db).get("p1", "foo-bar")).toThrow("not found");
+  db.close();
+});

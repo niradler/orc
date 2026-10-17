@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { loadConfig } from "@orc/core/config";
 import { getSqlite } from "@orc/db/client";
 import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
@@ -75,6 +76,30 @@ describe("Memories REST API", () => {
       (await req(app, "POST", "/memories", { name: "no-project", description: "d", content: "c" }))
         .status,
     ).toBe(400);
+  });
+
+  test("should explain a rejected query and report the configured limits", async () => {
+    const tooMany = await req(app, "GET", `/memories?project_id=${projectId}&limit=501`);
+    expect(tooMany.status).toBe(400);
+    const body = await tooMany.json();
+    expect(body.code).toBe("VALIDATION_ERROR");
+    expect(body.error).toContain("limit");
+    expect(body.error).toContain("500");
+
+    const malformed = await app.request("/api/memories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer test-secret" },
+      body: '{"name":',
+    });
+    expect(malformed.status).toBe(400);
+    expect(await malformed.json()).toMatchObject({ code: "VALIDATION_ERROR" });
+
+    const limits = await (await req(app, "GET", "/memory-limits")).json();
+    expect(limits).toEqual({
+      description_max: 300,
+      content_max: loadConfig().memory.max_content_chars,
+      priority_max: 100,
+    });
   });
 
   test("should count reads per X-Orc-Source source and rank by agent reads", async () => {

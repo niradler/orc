@@ -1,4 +1,4 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
 import type { ExecHost } from "@orc/core/exec-host";
@@ -8,6 +8,7 @@ import { checkoutGithubFeed } from "../git/github.js";
 import { commitStaged, gitDiff, gitStatus, stageFiles, switchBranch } from "../git/panel.js";
 import { worktreeDeps } from "../git/registry.js";
 import { trackedWorktrees } from "../git/worktrees.js";
+import { createRouter } from "../lib/router.js";
 import { observeCheckout } from "../realtime/sources.js";
 import {
   launchDeps,
@@ -18,7 +19,7 @@ import {
 import { prepareSessionDirectory } from "../terminals/session-dir.js";
 import { WorktreeSchema } from "./git.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 const params = z.object({ id: z.string().min(1) });
 function folder(id: string): { host: ExecHost; cwd: string } {
   requireTerminals(loadConfig());

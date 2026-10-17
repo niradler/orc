@@ -2,7 +2,6 @@ import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
-  MEMORY_CONTENT_MAX,
   MEMORY_DESCRIPTION_MAX,
   MEMORY_PRIORITY_MAX,
   type Memory,
@@ -49,6 +48,7 @@ import {
   useMemories,
   useMemory,
   useMemoryHistory,
+  useMemoryLimits,
   useRevertMemory,
   useUpdateMemory,
 } from "@/hooks/useMemories";
@@ -575,13 +575,27 @@ function MemoryHistoryPanel({
   );
 }
 
-function CharCount({ value, max, testId }: { value: string; max: number; testId: string }) {
+/** Characters as the server counts them (code points, so an emoji is one). */
+function charCount(value: string): number {
+  return [...value].length;
+}
+
+function CharCount({
+  value,
+  max,
+  testId,
+}: {
+  value: string;
+  max: number | undefined;
+  testId: string;
+}) {
+  const count = charCount(value);
   return (
     <span
       data-testid={testId}
-      className={`text-xs ${value.length > max ? "text-destructive" : "text-muted-foreground"}`}
+      className={`text-xs ${max !== undefined && count > max ? "text-destructive" : "text-muted-foreground"}`}
     >
-      {value.length}/{max}
+      {max === undefined ? count : `${count}/${max}`}
     </span>
   );
 }
@@ -608,6 +622,7 @@ function MemoryFormDialog({
   const [reason, setReason] = useState("");
   const createMemory = useCreateMemory();
   const updateMemory = useUpdateMemory();
+  const contentMax = useMemoryLimits().data?.content_max;
   const mutation = memory ? updateMemory : createMemory;
 
   const priorityValue = priority.trim() === "" ? null : Number(priority);
@@ -618,8 +633,9 @@ function MemoryFormDialog({
     Boolean(projectId) &&
     Boolean(name.trim()) &&
     Boolean(description.trim()) &&
-    description.length <= MEMORY_DESCRIPTION_MAX &&
+    charCount(description) <= MEMORY_DESCRIPTION_MAX &&
     Boolean(content.trim()) &&
+    (contentMax === undefined || charCount(content) <= contentMax) &&
     priorityValid;
 
   function submit(): void {
@@ -741,7 +757,7 @@ function MemoryFormDialog({
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <Label className="font-label text-sm text-muted-foreground">Content *</Label>
-              <CharCount value={content} max={MEMORY_CONTENT_MAX} testId="memory-content-count" />
+              <CharCount value={content} max={contentMax} testId="memory-content-count" />
             </div>
             <Textarea
               aria-label="Content"
