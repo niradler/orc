@@ -7,7 +7,6 @@ export type KbUpload = {
   id: number;
   kbId: string;
   file: File;
-  path?: string;
   /** Replace an uploaded document's file instead of adding a new document. */
   replace?: { document_id: string; expected_revision: number };
   progress: number;
@@ -29,7 +28,7 @@ export function useKbUploads() {
     try {
       const document = await api.kb.upload(
         upload.kbId,
-        { file: upload.file, ...(upload.path ? { path: upload.path } : {}), ...upload.replace },
+        { file: upload.file, ...upload.replace },
         (progress) => patch(upload.id, { progress }),
       );
       patch(upload.id, { status: "done", progress: 1, document });
@@ -42,16 +41,11 @@ export function useKbUploads() {
     }
   }
 
-  function add(
-    kbId: string,
-    files: File[],
-    options: { folder?: string; replace?: KbUpload["replace"] } = {},
-  ) {
+  function add(kbId: string, files: File[], options: { replace?: KbUpload["replace"] } = {}) {
     const created = files.map<KbUpload>((file) => ({
       id: nextId.current++,
       kbId,
       file,
-      ...(options.folder ? { path: `${options.folder}/${file.name}` } : {}),
       ...(options.replace ? { replace: options.replace } : {}),
       progress: 0,
       status: "uploading",

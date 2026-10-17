@@ -45,6 +45,7 @@ export default {
           DEFAULT: "rgb(var(--warning) / <alpha-value>)",
           dim: "rgb(var(--warning) / <alpha-value>)",
         },
+        warning: "rgb(var(--warning) / <alpha-value>)",
         "on-surface": "rgb(var(--foreground) / <alpha-value>)",
         "on-surface-variant": "rgb(var(--muted-foreground) / <alpha-value>)",
         "outline-variant": "rgb(var(--border) / <alpha-value>)",

@@ -1,6 +1,7 @@
 import type {
   KbComment,
   KbCommentClose,
+  KbCommentCounts,
   KbCommentCreate,
   KbCommentStatus,
   KbCreate,
@@ -809,19 +810,27 @@ export const api = {
     remove: (id: string) => req<null>("DELETE", `/kb/bases/${enc(id)}`),
     usage: (id: string) => req<KbUsageStats>("GET", `/kb/bases/${enc(id)}/usage`),
     maintenance: (id: string) => req<KbMaintenanceQueue>("GET", `/kb/bases/${enc(id)}/maintenance`),
-    documents: (kbId: string, filter: { folder?: string; label?: string } = {}) =>
-      req<KbDocumentListing>("GET", `/kb/bases/${enc(kbId)}/documents`, undefined, filter),
+    documents: (kbId: string) => req<KbDocumentListing>("GET", `/kb/bases/${enc(kbId)}/documents`),
     createDocument: (kbId: string, input: KbDocumentCreate) =>
       req<KbDocument>("POST", `/kb/bases/${enc(kbId)}/documents`, input),
     /** XHR rather than fetch so the UI can show per-file upload progress. */
     upload: (
       kbId: string,
-      input: { file: File; path?: string; document_id?: string; expected_revision?: number },
+      input: {
+        file: File;
+        title?: string;
+        path?: string;
+        labels?: string[];
+        document_id?: string;
+        expected_revision?: number;
+      },
       onProgress?: (fraction: number) => void,
     ) => {
       const form = new FormData();
       form.set("file", input.file, input.file.name);
+      if (input.title) form.set("title", input.title);
       if (input.path) form.set("path", input.path);
+      if (input.labels?.length) form.set("labels", input.labels.join(","));
       if (input.document_id) form.set("document_id", input.document_id);
       if (input.expected_revision !== undefined)
         form.set("expected_revision", String(input.expected_revision));
@@ -880,7 +889,12 @@ export const api = {
       kbId: string,
       filter: { document_id?: string; status?: KbCommentStatus; limit?: number } = {},
     ) =>
-      req<{ comments: KbComment[] }>("GET", `/kb/bases/${enc(kbId)}/comments`, undefined, filter),
+      req<{ comments: KbComment[]; counts: KbCommentCounts }>(
+        "GET",
+        `/kb/bases/${enc(kbId)}/comments`,
+        undefined,
+        filter,
+      ),
     addComment: (kbId: string, input: KbCommentCreate) =>
       req<KbComment>("POST", `/kb/bases/${enc(kbId)}/comments`, input),
     closeComment: (id: string, input: KbCommentClose) =>

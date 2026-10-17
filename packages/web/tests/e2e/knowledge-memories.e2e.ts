@@ -33,7 +33,10 @@ for (const width of [1440, 390]) {
       await expect(page.getByTestId("memory-detail")).toHaveCount(0);
 
       await page.getByTestId("section-knowledge").click();
+      // On a phone the knowledge base list and search sit behind Browse.
+      if (width < 1024) await page.getByRole("button", { name: "Browse", exact: true }).click();
       await expect(page.getByTestId("kb-search-input")).toBeVisible();
+      if (width < 1024) await page.keyboard.press("Escape");
       await page.getByTestId("nav-memories").click();
       await expect(row).toBeVisible();
 

@@ -1,41 +1,127 @@
-import type { KbComment, KbCommentStatus } from "@orc/core/kb";
+import { KB_COMMENT_STATUSES, type KbComment, type KbCommentStatus } from "@orc/core/kb";
 import { type FormEvent, useState } from "react";
 import { api } from "@/api/client";
 import { useAction } from "@/components/kb/KbDialogs";
+import { KbSetupRow } from "@/components/kb/KbSetupRow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useInvalidateKb, useKbComments } from "@/hooks/useKnowledge";
+import { cn } from "@/lib/utils";
 
-type Filter = KbCommentStatus | "all";
+/** Open comments wait for an agent or a person, so they carry the review color. */
+const STATUS_DOT: Record<KbCommentStatus, string> = {
+  open: "bg-warning",
+  resolved: "bg-secondary",
+  dismissed: "bg-muted-foreground",
+};
+
+function StatusDot({ status }: { status: KbCommentStatus }) {
+  return <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[status])} />;
+}
 
 /**
- * Comments on a knowledge base, or on one document when `documentId` is set. Closing a comment
- * needs a one-line reply; the server checks that the UI may edit this knowledge base.
+ * Comments on a knowledge base, or on one document when `documentId` is set. Collapsed to a
+ * row with a count per status; a count opens the list filtered to that status. Closing a
+ * comment needs a one-line reply; the server checks that the UI may edit this knowledge base.
  */
 export function KbComments({
   kbId,
   documentId,
   onOpenDocument,
-  heading: Heading = "h3",
+  heading = "h3",
+  compact = false,
 }: {
   kbId: string;
   documentId?: string;
   onOpenDocument?: (documentId: string) => void;
   heading?: "h2" | "h3";
+  compact?: boolean;
 }) {
-  const [filter, setFilter] = useState<Filter>("open");
+  const [expanded, setExpanded] = useState(false);
+  const [filter, setFilter] = useState<KbCommentStatus | null>(null);
   const comments = useKbComments(kbId, {
     ...(documentId ? { document_id: documentId } : {}),
-    ...(filter === "all" ? {} : { status: filter }),
+    ...(filter ? { status: filter } : {}),
   });
+  const counts = comments.data?.counts;
+  const total = counts ? counts.open + counts.resolved + counts.dismissed : 0;
+
+  function show(status: KbCommentStatus) {
+    const same = expanded && filter === status;
+    setFilter(same ? null : status);
+    setExpanded(true);
+  }
+
+  return (
+    <KbSetupRow
+      title="Comments"
+      testId="kb-comments"
+      toggleTestId="kb-comments-toggle"
+      heading={heading}
+      compact={compact}
+      expanded={expanded}
+      onExpandedChange={setExpanded}
+      summary={
+        <>
+          {counts && total === 0 && (
+            <span className="text-outline" data-testid="kb-comments-none">
+              None yet
+            </span>
+          )}
+          {counts &&
+            KB_COMMENT_STATUSES.filter((s) => counts[s] > 0).map((s) => (
+              <button
+                type="button"
+                key={s}
+                data-testid={`kb-comments-count-${s}`}
+                aria-pressed={expanded && filter === s}
+                aria-label={`${counts[s]} ${s} ${counts[s] === 1 ? "comment" : "comments"}`}
+                className={cn(
+                  "inline-flex min-h-8 items-center gap-1.5 rounded px-1.5",
+                  expanded && filter === s
+                    ? "bg-surface-highest text-on-surface"
+                    : "text-outline hover:bg-surface-high",
+                )}
+                onClick={() => show(s)}
+              >
+                <StatusDot status={s} />
+                <span className="tabular-nums text-on-surface">{counts[s]}</span>
+                {s}
+              </button>
+            ))}
+          {comments.error && (
+            <span role="alert" className="text-error" data-testid="kb-comments-error">
+              {(comments.error as Error).message}
+            </span>
+          )}
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <AddComment kbId={kbId} documentId={documentId} />
+        {/* Unfiltered, an empty list is already said by "None yet" in the summary. */}
+        {filter && comments.data?.comments.length === 0 && (
+          <p className="text-outline" data-testid="kb-comments-empty">
+            No {filter} comments.
+          </p>
+        )}
+        <ul className="divide-y divide-outline-variant">
+          {comments.data?.comments.map((c) => (
+            <CommentRow
+              key={c.id}
+              comment={c}
+              showDocument={!documentId}
+              onOpenDocument={onOpenDocument}
+            />
+          ))}
+        </ul>
+      </div>
+    </KbSetupRow>
+  );
+}
+
+function AddComment({ kbId, documentId }: { kbId: string; documentId?: string }) {
   const invalidate = useInvalidateKb();
   const add = useAction();
   const [body, setBody] = useState("");
@@ -54,72 +140,33 @@ export function KbComments({
   }
 
   return (
-    <section
-      data-testid="kb-comments"
-      aria-labelledby={`kb-comments-heading-${documentId ?? kbId}`}
-      className="min-w-0 space-y-2 text-sm"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Heading id={`kb-comments-heading-${documentId ?? kbId}`} className="font-medium">
-          Comments
-        </Heading>
-        <Select value={filter} onValueChange={(v) => setFilter(v as Filter)}>
-          <SelectTrigger
-            aria-label="Comment status"
-            data-testid="kb-comments-filter"
-            className="h-8 w-32"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="open">Open</SelectItem>
-            <SelectItem value="resolved">Resolved</SelectItem>
-            <SelectItem value="dismissed">Dismissed</SelectItem>
-            <SelectItem value="all">All</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <form onSubmit={submit} className="space-y-2">
-        <Textarea
-          aria-label={documentId ? "Comment on this document" : "Comment on this knowledge base"}
-          placeholder={documentId ? "Ask for a change to this document" : "Ask for a change"}
-          data-testid="kb-comment-input"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          rows={2}
-          maxLength={10_000}
-        />
+    <form onSubmit={submit} className="space-y-2">
+      <Textarea
+        aria-label={documentId ? "Comment on this document" : "Comment on this knowledge base"}
+        placeholder={documentId ? "Ask for a change to this document" : "Ask for a change"}
+        data-testid="kb-comment-input"
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        rows={2}
+        maxLength={10_000}
+      />
+      {body.trim() && (
         <Button
           type="submit"
           size="sm"
           variant="outline"
           data-testid="kb-comment-add"
-          disabled={!body.trim() || add.pending}
+          disabled={add.pending}
         >
-          Comment
+          Add comment
         </Button>
-      </form>
-      {(add.error || comments.error) && (
-        <p role="alert" className="text-error" data-testid="kb-comments-error">
-          {add.error ?? (comments.error as Error).message}
+      )}
+      {add.error && (
+        <p role="alert" className="text-error" data-testid="kb-comment-add-error">
+          {add.error}
         </p>
       )}
-      {comments.data?.length === 0 && (
-        <p className="text-outline" data-testid="kb-comments-empty">
-          {filter === "all" ? "No comments." : `No ${filter} comments.`}
-        </p>
-      )}
-      <ul className="space-y-3">
-        {comments.data?.map((c) => (
-          <CommentRow
-            key={c.id}
-            comment={c}
-            showDocument={!documentId}
-            onOpenDocument={onOpenDocument}
-          />
-        ))}
-      </ul>
-    </section>
+    </form>
   );
 }
 
@@ -153,28 +200,35 @@ function CommentRow({
   }
 
   return (
-    <li data-testid="kb-comment" data-status={c.status} className="min-w-0 space-y-1">
-      <p className="whitespace-pre-wrap break-words">{c.body}</p>
-      <p className="break-words text-xs text-outline">
-        {c.author} · {c.source} · {new Date(c.created_at).toLocaleString()} ·{" "}
-        <span data-testid="kb-comment-status">{c.status}</span>
-        {showDocument && c.document_id && (
-          <>
-            {" · on "}
-            {onOpenDocument ? (
-              <button
-                type="button"
-                className="text-primary hover:underline"
-                onClick={() => c.document_id && onOpenDocument(c.document_id)}
-              >
-                {c.document_title ?? "a deleted document"}
-              </button>
-            ) : (
-              (c.document_title ?? "a deleted document")
-            )}
-          </>
-        )}
+    <li data-testid="kb-comment" data-status={c.status} className="min-w-0 space-y-1 py-2">
+      <p className="flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-outline">
+        <span className="inline-flex items-center gap-1.5 text-on-surface">
+          <StatusDot status={c.status} />
+          <span data-testid="kb-comment-status">{c.status}</span>
+        </span>
+        <span className="min-w-0 break-words">
+          {/* The source only adds information when it differs from the author, e.g. "ui". */}
+          {c.source === c.author ? c.author : `${c.author} via ${c.source}`} ·{" "}
+          {new Date(c.created_at).toLocaleString()}
+          {showDocument && c.document_id && (
+            <>
+              {" · on "}
+              {onOpenDocument ? (
+                <button
+                  type="button"
+                  className="text-primary hover:underline"
+                  onClick={() => c.document_id && onOpenDocument(c.document_id)}
+                >
+                  {c.document_title ?? "a deleted document"}
+                </button>
+              ) : (
+                (c.document_title ?? "a deleted document")
+              )}
+            </>
+          )}
+        </span>
       </p>
+      <p className="whitespace-pre-wrap break-words">{c.body}</p>
       {c.reply && (
         <p className="break-words text-xs" data-testid="kb-comment-reply-text">
           <span className="text-outline">
@@ -218,7 +272,7 @@ function CommentRow({
           </Button>
         </form>
       ) : c.status === "open" ? (
-        <div className="flex flex-wrap gap-1">
+        <div className="-ml-2 flex flex-wrap">
           <Button
             size="sm"
             variant="ghost"
@@ -240,6 +294,7 @@ function CommentRow({
         <Button
           size="sm"
           variant="ghost"
+          className="-ml-2"
           data-testid="kb-comment-reopen"
           onClick={reopen}
           disabled={action.pending}

@@ -373,6 +373,9 @@ and revision controls support it. Use the same quiet editor frame in read/edit/
 split modes. Display dirty, saving, conflict and error states clearly; never
 trade data protection for visual simplicity. Folder-backed copies remain
 distinct from documents written in ORC. Technical audit details stay secondary.
+Comments stay collapsed to one header row with a count per status (open uses
+the warning dot, resolved done, dismissed neutral); a count opens the list
+filtered to it. Maintenance warnings appear only when a document needs action.
 
 ### Conversation and terminal
 

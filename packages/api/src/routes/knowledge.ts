@@ -488,10 +488,15 @@ app.openapi(
     },
     responses: ok("Comments"),
   }),
-  async (c) =>
-    c.json({
-      comments: (await svc()).listComments(c.req.valid("param").id, c.req.valid("query")),
-    }),
+  async (c) => {
+    const kbId = c.req.valid("param").id;
+    const query = c.req.valid("query");
+    const service = await svc();
+    return c.json({
+      comments: service.listComments(kbId, query),
+      counts: service.commentCounts(kbId, query.document_id),
+    });
+  },
 );
 
 app.openapi(

@@ -7,12 +7,15 @@ import {
   type KbDocument,
   type KnowledgeBase,
 } from "@orc/core/kb";
-import { FolderSync, Trash2 } from "lucide-react";
-import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { FileText, Trash2, Upload, X } from "lucide-react";
+import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { BackendPicker, USE_DEFAULT_BACKEND } from "@/components/BackendPicker";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { cronLabel, cronProblem, WEEKDAYS } from "@/components/kb/KbDigest";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
+import { TagInput } from "@/components/TagInput";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,12 +36,15 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useBackends } from "@/hooks/useBackends";
 import {
+  KB_DIGEST_KEY,
+  KB_KEY,
   useInvalidateKb,
   useKbDigestTemplate,
+  useKbDocuments,
   useKbParsers,
-  useKbSources,
 } from "@/hooks/useKnowledge";
 import { useProjects } from "@/hooks/useProjects";
+import { formatBytes } from "@/lib/utils";
 
 const GLOBAL = "__global__";
 const AUTO_PARSER = "__auto__";
@@ -66,7 +72,15 @@ export function useAction() {
   return { pending, error, run, setError };
 }
 
-function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+export function Field({
+  label,
+  children,
+  hint,
+}: {
+  label: string;
+  children: ReactNode;
+  hint?: string;
+}) {
   return (
     <div className="space-y-1.5">
       <Label className="text-sm text-muted-foreground">{label}</Label>
@@ -76,7 +90,7 @@ function Field({ label, children, hint }: { label: string; children: ReactNode; 
   );
 }
 
-function ErrorLine({ error }: { error: string | null }) {
+export function ErrorLine({ error }: { error: string | null }) {
   if (!error) return null;
   return (
     <p role="alert" data-testid="kb-dialog-error" className="text-sm text-error">
@@ -90,18 +104,21 @@ function Shell({
   onClose,
   title,
   wide,
+  size,
   children,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   wide?: boolean;
+  /** xl fits a document's worth of text. */
+  size?: "xl";
   children: ReactNode;
 }) {
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent
-        className={`bg-surface border-outline-variant ${wide ? "max-w-3xl" : "max-w-md"} max-h-[90vh] overflow-y-auto`}
+        className={`bg-surface border-outline-variant ${size === "xl" ? "w-[calc(100%_-_1rem)] max-w-4xl" : wide ? "max-w-3xl" : "max-w-md"} max-h-[90vh] overflow-y-auto`}
       >
         <DialogHeader>
           <DialogTitle className="text-base text-on-surface">{title}</DialogTitle>
@@ -141,7 +158,7 @@ function ParserSelect({
   );
 }
 
-const SOURCE_LABELS: Record<KbCallSource, string> = {
+export const SOURCE_LABELS: Record<KbCallSource, string> = {
   ui: "Web UI",
   cli: "CLI",
   api: "REST API",
@@ -229,7 +246,7 @@ export function CreateKbDialog({
             data-testid="kb-name-input"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Runbooks"
+            placeholder="e.g. Runbooks"
             autoFocus
           />
         </Field>
@@ -290,6 +307,7 @@ export function KbSettingsDialog({
   onClose: () => void;
   onDeleted: () => void;
 }) {
+  const projects = useProjects();
   const invalidate = useInvalidateKb();
   const action = useAction();
   const [name, setName] = useState(kb.name);
@@ -330,6 +348,15 @@ export function KbSettingsDialog({
             rows={2}
           />
         </Field>
+        <div className="space-y-1 text-sm">
+          <div className="font-medium">Belongs to</div>
+          <p className="text-outline" data-testid="kb-settings-owner">
+            {kb.project_id === null
+              ? "Global, visible in every project"
+              : `${projects.data?.find((p) => p.id === kb.project_id)?.name ?? "A project"}, visible in that project`}
+            . Set when the knowledge base is created.
+          </p>
+        </div>
         <EditableByFields value={editableBy} onChange={setEditableBy} />
         <Field label="Parser for uploads" hint="Applies to new uploads and reparses.">
           <ParserSelect value={parser} onChange={setParser} />
@@ -387,78 +414,201 @@ function slugFile(title: string): string {
   return `${base || "untitled"}.md`;
 }
 
-export function parseLabels(text: string): string[] {
-  return [
-    ...new Set(
-      text
-        .split(",")
-        .map((l) => l.trim())
-        .filter(Boolean),
-    ),
-  ];
+/** A pasted document's own top heading names it when no title is typed. */
+function firstHeading(content: string): string {
+  return content.match(/^#\s+(.+?)\s*#*\s*$/m)?.[1]?.trim() ?? "";
 }
+
+/** Files read as text and edited here; every other format is converted by the server. */
+const TEXT_FILE = /\.(md|markdown|txt)$/i;
 
 export function NewDocumentDialog({
   kb,
-  folder,
+  initialFile,
   onClose,
   onCreated,
+  onUploadMany,
 }: {
   kb: KnowledgeBase;
-  folder: string;
+  /** A file dropped on the page, shown here to review before it is added. */
+  initialFile?: File;
   onClose: () => void;
-  onCreated: (doc: KbDocument) => void;
+  /** `written` is true when the document was created with content rather than empty. */
+  onCreated: (doc: KbDocument, written: boolean) => void;
+  /** Several files chosen at once skip the review and upload together. */
+  onUploadMany: (files: File[]) => void;
 }) {
   const invalidate = useInvalidateKb();
   const action = useAction();
+  const listing = useKbDocuments(kb.id);
   const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
   const [path, setPath] = useState("");
-  const [labels, setLabels] = useState("");
-  const suggested = `${folder ? `${folder}/` : ""}${slugFile(title)}`;
+  const [labels, setLabels] = useState<string[]>([]);
+  // A file the server converts; its text is not editable before it is added.
+  const [file, setFile] = useState<File | null>(null);
+  const [reading, setReading] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const heading = file ? "" : firstHeading(content);
+  const name = title.trim() || heading;
+  const suggested = file ? file.name : slugFile(name);
+  const written = file !== null || content.trim() !== "";
+
+  async function choose(chosen: File) {
+    const stem = chosen.name.replace(/\.[^.]+$/, "");
+    if (!TEXT_FILE.test(chosen.name)) {
+      setFile(chosen);
+      setTitle(stem);
+      setPath("");
+      return;
+    }
+    setReading(true);
+    const text = await action.run(() => chosen.text());
+    setReading(false);
+    if (text === undefined) return;
+    setFile(null);
+    setContent(text);
+    setTitle(firstHeading(text) || stem);
+    setPath(/\.txt$/i.test(chosen.name) ? slugFile(stem) : chosen.name);
+  }
+
+  function pick(files: FileList | null) {
+    const list = [...(files ?? [])];
+    if (list.length > 1) onUploadMany(list);
+    else if (list[0]) void choose(list[0]);
+  }
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a dropped file is read once, when the dialog opens
+  useEffect(() => {
+    if (initialFile) void choose(initialFile);
+  }, []);
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     const doc = await action.run(() =>
-      api.kb.createDocument(kb.id, {
-        title: title.trim(),
-        path: path.trim() || suggested,
-        labels: parseLabels(labels),
-        content: `# ${title.trim()}\n\n`,
-      }),
+      file
+        ? api.kb.upload(kb.id, {
+            file,
+            title: name,
+            path: path.trim() || undefined,
+            labels,
+          })
+        : api.kb.createDocument(kb.id, {
+            title: name,
+            path: path.trim() || suggested,
+            labels,
+            content: written ? content : `# ${name}\n\n`,
+          }),
     );
     if (!doc) return;
     await invalidate();
-    onCreated(doc);
+    onCreated(doc, written);
   }
   return (
-    <Shell open onClose={onClose} title={`New document in ${kb.name}`}>
+    <Shell open onClose={onClose} title={`New document in ${kb.name}`} size="xl">
       <form onSubmit={submit} className="space-y-4">
-        <Field label="Title">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-outline">
+          <span>Write or paste below, or start from a file.</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            data-testid="kb-doc-choose-file"
+            disabled={reading || action.pending}
+            onClick={() => fileInput.current?.click()}
+          >
+            <Upload size={16} />
+            {reading ? "Reading…" : "Upload file"}
+          </Button>
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            hidden
+            data-testid="kb-doc-file-input"
+            onChange={(e) => {
+              pick(e.target.files);
+              e.target.value = "";
+            }}
+          />
+        </div>
+        <Field
+          label="Title"
+          hint={heading && !title.trim() ? "Taken from the first heading." : undefined}
+        >
           <Input
             aria-label="Title"
             data-testid="kb-doc-title-input"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            placeholder={heading || "e.g. Deploy runbook"}
             autoFocus
           />
         </Field>
-        <Field label="Path" hint="Folders come from the path, for example guides/setup.md.">
-          <Input
-            aria-label="Path"
-            data-testid="kb-doc-path-input"
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            placeholder={suggested}
-            className="font-mono text-sm"
-          />
-        </Field>
-        <Field label="Labels" hint="Comma separated.">
-          <Input
-            aria-label="Labels"
-            data-testid="kb-doc-labels-input"
-            value={labels}
-            onChange={(e) => setLabels(e.target.value)}
-          />
-        </Field>
+        {file ? (
+          <Field
+            label="File"
+            hint="Converted to searchable text after it is added. The original file is kept."
+          >
+            <div
+              data-testid="kb-doc-file"
+              className="flex items-center gap-3 rounded-md border border-surface-highest bg-surface p-3"
+            >
+              <FileText size={20} className="shrink-0 text-outline" aria-hidden />
+              <span className="min-w-0 flex-1 truncate text-sm" title={file.name}>
+                {file.name}
+              </span>
+              <span className="shrink-0 text-xs text-outline">{formatBytes(file.size)}</span>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label={`Remove ${file.name}`}
+                data-testid="kb-doc-file-remove"
+                onClick={() => {
+                  setFile(null);
+                  setTitle("");
+                }}
+              >
+                <X size={16} />
+              </Button>
+            </div>
+          </Field>
+        ) : (
+          <Field label="Content" hint="Markdown. Leave empty to start writing in the editor.">
+            <MarkdownEditor
+              path={path.trim() || suggested}
+              value={content}
+              onChange={setContent}
+              testId="kb-doc-content-input"
+              label="Content"
+              placeholder="Write or paste Markdown"
+              initialMode="edit"
+              height="45vh"
+            />
+          </Field>
+        )}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Labels" hint="Enter, comma or space adds a label.">
+            <TagInput
+              aria-label="Labels"
+              data-testid="kb-doc-labels-input"
+              value={labels}
+              onChange={setLabels}
+              suggestions={listing.data?.labels.map((l) => l.label)}
+            />
+          </Field>
+          <Field label="Path" hint="Optional. Folders come from the path, e.g. guides/setup.md.">
+            <Input
+              aria-label="Path"
+              data-testid="kb-doc-path-input"
+              value={path}
+              onChange={(e) => setPath(e.target.value)}
+              placeholder={suggested}
+              className="font-mono text-sm"
+            />
+          </Field>
+        </div>
         <ErrorLine error={action.error} />
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onClose}>
@@ -467,7 +617,7 @@ export function NewDocumentDialog({
           <Button
             type="submit"
             data-testid="kb-doc-create-submit"
-            disabled={!title.trim() || action.pending}
+            disabled={!name || action.pending}
           >
             Create
           </Button>
@@ -479,10 +629,13 @@ export function NewDocumentDialog({
 
 export function DocumentPropertiesDialog({
   doc,
+  linkedFrom,
   onClose,
   onSaved,
 }: {
   doc: KbDocument;
+  /** Documents linking here; links name a title or path, so renaming either breaks them. */
+  linkedFrom: number;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -490,8 +643,10 @@ export function DocumentPropertiesDialog({
   const action = useAction();
   const [title, setTitle] = useState(doc.title);
   const [path, setPath] = useState(doc.path);
-  const [labels, setLabels] = useState(doc.labels.join(", "));
+  const listing = useKbDocuments(doc.kb_id);
+  const [labels, setLabels] = useState(doc.labels);
   const [description, setDescription] = useState(doc.description);
+  const renamed = title.trim() !== doc.title || path.trim() !== doc.path;
   async function submit(e: FormEvent) {
     e.preventDefault();
     const saved = await action.run(() =>
@@ -499,7 +654,7 @@ export function DocumentPropertiesDialog({
         expected_revision: doc.revision,
         title: title.trim(),
         path: path.trim(),
-        labels: parseLabels(labels),
+        labels,
         description: description.trim(),
       }),
     );
@@ -527,12 +682,13 @@ export function DocumentPropertiesDialog({
             className="font-mono text-sm"
           />
         </Field>
-        <Field label="Labels" hint="Comma separated.">
-          <Input
+        <Field label="Labels" hint="Enter, comma or space adds a label.">
+          <TagInput
             aria-label="Labels"
             data-testid="kb-doc-labels-input"
             value={labels}
-            onChange={(e) => setLabels(e.target.value)}
+            onChange={setLabels}
+            suggestions={listing.data?.labels.map((l) => l.label)}
           />
         </Field>
         <Field label="Description">
@@ -543,6 +699,12 @@ export function DocumentPropertiesDialog({
             rows={2}
           />
         </Field>
+        {renamed && linkedFrom > 0 && (
+          <p role="status" className="text-sm text-warning" data-testid="kb-rename-warning">
+            {linkedFrom === 1 ? "1 document links" : `${linkedFrom} documents link`} to this
+            document. Links that use the old title or path will show as missing.
+          </p>
+        )}
         <ErrorLine error={action.error} />
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onClose}>
@@ -561,125 +723,152 @@ export function DocumentPropertiesDialog({
   );
 }
 
-export function SourcesDialog({ kb, onClose }: { kb: KnowledgeBase; onClose: () => void }) {
-  const sources = useKbSources(kb.id);
-  const invalidate = useInvalidateKb();
-  const action = useAction();
-  const [root, setRoot] = useState("");
-  const [pattern, setPattern] = useState("**/*.md");
-  const [result, setResult] = useState<string | null>(null);
-  const [removing, setRemoving] = useState<string | null>(null);
-  function summary(scan: { added: number; updated: number; missing: number; errors: string[] }) {
-    return `${scan.added} added · ${scan.updated} updated · ${scan.missing} missing${scan.errors.length ? ` · ${scan.errors.length} errors: ${scan.errors.slice(0, 3).join("; ")}` : ""}`;
-  }
-  async function add(e: FormEvent) {
-    e.preventDefault();
-    const added = await action.run(() =>
-      api.kb.addSource(kb.id, { root_path: root.trim(), pattern: pattern.trim() || "**/*.md" }),
-    );
-    if (!added) return;
-    setRoot("");
-    setResult(summary(added.scan));
-    await invalidate();
-  }
+type Plan = "daily" | "weekly" | "custom" | "manual";
+
+const PLAN_LABELS: Record<Plan, string> = {
+  daily: "Every day",
+  weekly: "Once a week",
+  custom: "Custom cron",
+  manual: "Manual only",
+};
+
+type ScheduleForm = { plan: Plan; time: string; day: string; cron: string };
+
+/** Opens a saved schedule as the simplest preset that writes the same cron. */
+function scheduleForm(schedule: KbDigestSchedule): ScheduleForm {
+  const cron = schedule.type === "cron" ? schedule.cron : KB_DIGEST_DEFAULT_CRON;
+  const form: ScheduleForm = { plan: "custom", time: "03:00", day: "1", cron };
+  const match = /^(\d{1,2}) (\d{1,2}) \* \* (\*|[0-6])$/.exec(cron.trim().split(/\s+/).join(" "));
+  const [m, h] = [Number(match?.[1]), Number(match?.[2])];
+  const time =
+    match && m <= 59 && h <= 23
+      ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
+      : null;
+  if (schedule.type === "manual") return { ...form, plan: "manual", time: time ?? form.time };
+  if (!match?.[3] || !time) return form;
+  return match[3] === "*"
+    ? { ...form, plan: "daily", time }
+    : { ...form, plan: "weekly", time, day: match[3] };
+}
+
+/** The cron a form writes; null for a manual digest. */
+function formCron({ plan, time, day, cron }: ScheduleForm): string | null {
+  if (plan === "manual") return null;
+  if (plan === "custom") return cron.trim();
+  const [h, m] = time.split(":").map(Number);
+  return `${m} ${h} * * ${plan === "weekly" ? day : "*"}`;
+}
+
+function formProblem(form: ScheduleForm): string | null {
+  if (form.plan === "manual") return null;
+  if (form.plan === "custom") return cronProblem(form.cron);
+  return /^\d{2}:\d{2}$/.test(form.time) ? null : "Pick a time.";
+}
+
+/** "Runs daily at 03:00", "Runs Mondays at 04:00", or the cron itself when it has no plain words. */
+function runsLabel(cron: string): string {
+  const label = cronLabel(cron);
+  if (label === cron) return "Runs on this cron schedule";
+  return WEEKDAYS.some((d) => label.startsWith(d))
+    ? `Runs ${label}`
+    : `Runs ${label.charAt(0).toLowerCase()}${label.slice(1)}`;
+}
+
+function ScheduleFields({
+  value,
+  onChange,
+}: {
+  value: ScheduleForm;
+  onChange: (v: ScheduleForm) => void;
+}) {
+  const cron = formCron(value);
+  const problem = formProblem(value);
+  const set = (patch: Partial<ScheduleForm>) => onChange({ ...value, ...patch });
   return (
-    <Shell open onClose={onClose} title="Registered folders" wide>
-      <p className="text-sm text-outline">
-        Files are copied into ORC and the folder is never written. A copy follows its file on each
-        scan until you edit it here; after that it stays as edited. A file deleted from the folder
-        keeps its copy.
-      </p>
-      <div className="space-y-2" data-testid="kb-sources-list">
-        {sources.isLoading && <p className="text-sm text-outline">Loading…</p>}
-        {sources.data?.length === 0 && (
-          <p className="text-sm text-outline">No folders registered.</p>
-        )}
-        {sources.data?.map((s) => (
-          <div
-            key={s.id}
-            data-testid="kb-source-row"
-            className="flex flex-wrap items-center gap-2 rounded-md border border-outline-variant p-3"
+    <fieldset className="space-y-3 rounded-md border border-outline-variant p-3">
+      <legend className="px-1 text-sm text-muted-foreground">When it runs</legend>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Field label="Schedule">
+          <Select
+            value={value.plan}
+            onValueChange={(v) =>
+              // Switching to custom starts from the preset's cron, so it can be tweaked.
+              set({ plan: v as Plan, ...(v === "custom" && cron ? { cron } : {}) })
+            }
           >
-            <div className="min-w-0 flex-1">
-              <div className="break-all font-mono text-sm">{s.root_path}</div>
-              <div className="text-xs text-outline">
-                {s.pattern} · {s.document_count} documents ·{" "}
-                {s.last_scan_at
-                  ? `scanned ${new Date(s.last_scan_at).toLocaleString()}`
-                  : "never scanned"}
-              </div>
-              {s.last_error && <div className="text-xs text-error">{s.last_error}</div>}
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              data-testid="kb-source-scan"
-              disabled={action.pending}
-              onClick={async () => {
-                const scan = await action.run(() => api.kb.scanSource(s.id));
-                if (scan) setResult(summary(scan));
-                await invalidate();
-              }}
-            >
-              <FolderSync size={14} />
-              Rescan
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-error"
-              data-testid="kb-source-remove"
-              onClick={() => setRemoving(s.id)}
-            >
-              <Trash2 size={14} />
-            </Button>
+            <SelectTrigger aria-label="Schedule" data-testid="kb-digest-schedule">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(PLAN_LABELS) as Plan[]).map((p) => (
+                <SelectItem key={p} value={p}>
+                  {PLAN_LABELS[p]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        {value.plan === "weekly" && (
+          <Field label="Day">
+            <Select value={value.day} onValueChange={(day) => set({ day })}>
+              <SelectTrigger aria-label="Day" data-testid="kb-digest-day">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {WEEKDAYS.map((d, i) => (
+                  <SelectItem key={d} value={String(i)}>
+                    {d}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+        )}
+        {(value.plan === "daily" || value.plan === "weekly") && (
+          <Field label="Time">
+            <Input
+              type="time"
+              aria-label="Time"
+              data-testid="kb-digest-time"
+              value={value.time}
+              onChange={(e) => set({ time: e.target.value })}
+            />
+          </Field>
+        )}
+        {value.plan === "custom" && (
+          <div className="sm:col-span-2">
+            <Field label="Cron expression" hint="minute hour day month weekday, e.g. 0 */6 * * *">
+              <Input
+                aria-label="Cron expression"
+                aria-invalid={problem !== null}
+                data-testid="kb-digest-cron"
+                value={value.cron}
+                onChange={(e) => set({ cron: e.target.value })}
+                className="font-mono"
+                autoComplete="off"
+              />
+            </Field>
           </div>
-        ))}
+        )}
       </div>
-      {result && (
-        <p role="status" data-testid="kb-source-result" className="text-sm text-outline">
-          {result}
-        </p>
-      )}
-      <form onSubmit={add} className="grid gap-3 sm:grid-cols-[1fr_10rem_auto] sm:items-end">
-        <Field label="Folder path">
-          <Input
-            aria-label="Folder path"
-            data-testid="kb-source-path-input"
-            value={root}
-            onChange={(e) => setRoot(e.target.value)}
-            placeholder="/home/me/notes"
-            className="font-mono text-sm"
-          />
-        </Field>
-        <Field label="Pattern">
-          <Input
-            aria-label="Pattern"
-            value={pattern}
-            onChange={(e) => setPattern(e.target.value)}
-            className="font-mono text-sm"
-          />
-        </Field>
-        <Button type="submit" data-testid="kb-source-add" disabled={!root.trim() || action.pending}>
-          Add folder
-        </Button>
-      </form>
-      <ErrorLine error={action.error} />
-      <ConfirmDialog
-        open={removing !== null}
-        title="Remove folder"
-        description="Its copies, including edited ones, leave this knowledge base. The folder on disk is not touched."
-        confirmLabel="Remove"
-        isPending={action.pending}
-        onCancel={() => setRemoving(null)}
-        onConfirm={async () => {
-          const id = removing;
-          setRemoving(null);
-          if (id) await action.run(() => api.kb.removeSource(id));
-          await invalidate();
-        }}
-      />
-    </Shell>
+      <p
+        aria-live="polite"
+        data-testid="kb-digest-schedule-preview"
+        data-valid={problem === null}
+        className={`text-sm ${problem ? "text-error" : "text-outline"}`}
+      >
+        {problem ? (
+          problem
+        ) : cron ? (
+          <>
+            {runsLabel(cron)} <span className="font-mono text-xs">({cron})</span>, in the ORC
+            server's time zone.
+          </>
+        ) : (
+          "Runs only when you start it."
+        )}
+      </p>
+    </fieldset>
   );
 }
 
@@ -687,10 +876,12 @@ export function DigestDialog({
   kb,
   digest,
   onClose,
+  onRemove,
 }: {
   kb: KnowledgeBase;
   digest: KbDigest | null;
   onClose: () => void;
+  onRemove?: () => void;
 }) {
   const invalidate = useInvalidateKb();
   const action = useAction();
@@ -698,25 +889,24 @@ export function DigestDialog({
   const template = useKbDigestTemplate(!digest);
   const [instructions, setInstructions] = useState<string | null>(digest?.instructions ?? null);
   const [backend, setBackend] = useState(digest?.backend ?? USE_DEFAULT_BACKEND);
-  const [scheduleType, setScheduleType] = useState<KbDigestSchedule["type"]>(
-    digest?.schedule.type ?? "cron",
-  );
-  const [cron, setCron] = useState(
-    digest?.schedule.type === "cron" ? digest.schedule.cron : KB_DIGEST_DEFAULT_CRON,
+  const [schedule, setSchedule] = useState(() =>
+    scheduleForm(digest?.schedule ?? { type: "cron", cron: KB_DIGEST_DEFAULT_CRON }),
   );
   useEffect(() => {
     if (instructions === null && template.data) setInstructions(template.data.instructions);
   }, [instructions, template.data]);
 
+  const problem = formProblem(schedule);
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (problem) return action.setError(problem);
     const chosen = backend === USE_DEFAULT_BACKEND ? backends.data?.default_backend : backend;
+    const cron = formCron(schedule);
     const saved = await action.run(() =>
       api.kb.setDigest(kb.id, {
         instructions: instructions?.trim() ?? "",
         ...(chosen ? { backend: chosen } : {}),
-        schedule:
-          scheduleType === "cron" ? { type: "cron", cron: cron.trim() } : { type: "manual" },
+        schedule: cron ? { type: "cron", cron } : { type: "manual" },
       }),
     );
     if (!saved) return;
@@ -725,7 +915,7 @@ export function DigestDialog({
   }
   const ready = instructions !== null;
   return (
-    <Shell open onClose={onClose} title={digest ? "Edit digest" : "Add digest"} wide>
+    <Shell open onClose={onClose} title={digest ? "Digest settings" : "Set up a digest"} wide>
       <form onSubmit={submit} className="min-w-0 space-y-4">
         {!kb.editable_by.includes("mcp") && (
           <p className="text-sm text-warning" data-testid="kb-digest-mcp-hint">
@@ -733,6 +923,8 @@ export function DigestDialog({
             first.
           </p>
         )}
+        <ScheduleFields value={schedule} onChange={setSchedule} />
+        <BackendPicker value={backend} onChange={setBackend} testId="kb-digest-backend" />
         <Field label="Instructions">
           {ready ? (
             <MarkdownEditor
@@ -754,54 +946,34 @@ export function DigestDialog({
             </p>
           )}
         </Field>
-        <BackendPicker value={backend} onChange={setBackend} testId="kb-digest-backend" />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Schedule">
-            <Select
-              value={scheduleType}
-              onValueChange={(v) => setScheduleType(v as KbDigestSchedule["type"])}
-            >
-              <SelectTrigger aria-label="Schedule" data-testid="kb-digest-schedule">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="cron">Cron schedule</SelectItem>
-                <SelectItem value="manual">Manual only</SelectItem>
-              </SelectContent>
-            </Select>
-          </Field>
-          {scheduleType === "cron" && (
-            <Field
-              label="Cron expression"
-              hint={`Default ${KB_DIGEST_DEFAULT_CRON} runs daily at 03:00.`}
-            >
-              <Input
-                aria-label="Cron expression"
-                data-testid="kb-digest-cron"
-                value={cron}
-                onChange={(e) => setCron(e.target.value)}
-                className="font-mono"
-              />
-            </Field>
-          )}
-        </div>
         <ErrorLine error={action.error} />
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            data-testid="kb-digest-save"
-            disabled={
-              !ready ||
-              !instructions?.trim() ||
-              (scheduleType === "cron" && !cron.trim()) ||
-              action.pending
-            }
-          >
-            {action.pending ? "Saving…" : "Save"}
-          </Button>
+        <DialogFooter className="gap-2 sm:justify-between">
+          {digest && onRemove ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="text-error"
+              data-testid="kb-digest-remove"
+              onClick={onRemove}
+            >
+              <Trash2 size={14} />
+              Remove digest
+            </Button>
+          ) : (
+            <span />
+          )}
+          <div className="flex gap-2">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              data-testid="kb-digest-save"
+              disabled={!ready || !instructions?.trim() || problem !== null || action.pending}
+            >
+              {action.pending ? "Saving…" : "Save"}
+            </Button>
+          </div>
         </DialogFooter>
       </form>
     </Shell>
@@ -809,46 +981,40 @@ export function DigestDialog({
 }
 
 export function RemoveDigestDialog({ kb, onClose }: { kb: KnowledgeBase; onClose: () => void }) {
-  const invalidate = useInvalidateKb();
+  const queryClient = useQueryClient();
   const action = useAction();
-  const [typed, setTyped] = useState("");
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    const done = await action.run(() => api.kb.removeDigest(kb.id, typed));
+  async function remove() {
+    // Only an agent (MCP) must name the knowledge base to confirm; this dialog is the UI's confirm.
+    const done = await action.run(() => api.kb.removeDigest(kb.id, kb.name));
     if (done === undefined) return;
-    await invalidate();
+    queryClient.setQueryData([KB_DIGEST_KEY, kb.id], { digest: null });
+    await queryClient.invalidateQueries({ queryKey: [KB_KEY] });
     onClose();
   }
   return (
-    <Shell open onClose={onClose} title="Remove digest">
-      <form onSubmit={submit} className="space-y-4">
+    <Shell open onClose={onClose} title="Remove digest?">
+      <div className="space-y-4">
         <p className="text-sm text-outline">
-          The digest and its job stop. Documents and comments stay. Type {`"${kb.name}"`} to
-          confirm.
+          Documents and comments stay. The digest's instructions, schedule, job and run history are
+          removed.
         </p>
-        <Input
-          aria-label="Knowledge base name"
-          data-testid="kb-digest-remove-input"
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-          autoComplete="off"
-          autoFocus
-        />
         <ErrorLine error={action.error} />
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
           <Button
-            type="submit"
+            type="button"
             variant="destructive"
             data-testid="kb-digest-remove-confirm"
-            disabled={typed !== kb.name || action.pending}
+            onClick={remove}
+            disabled={action.pending}
+            autoFocus
           >
-            Remove
+            {action.pending ? "Removing…" : "Remove digest"}
           </Button>
         </DialogFooter>
-      </form>
+      </div>
     </Shell>
   );
 }

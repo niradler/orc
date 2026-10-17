@@ -580,11 +580,13 @@ export function kbCommand() {
     });
   sources
     .command("rm <source>")
-    .description("Unregister a folder and remove its copies (the folder itself is untouched)")
+    .description(
+      "Stop syncing a folder: unedited copies are removed, edited copies stay as documents (the folder itself is untouched)",
+    )
     .action(async (id: string) => {
       const client = await kbClient({ project: false });
       unwrap(await client.kb.removeSource(id));
-      console.log(`Removed ${id}`);
+      console.log(`Stopped syncing ${id}`);
     });
 
   cmd

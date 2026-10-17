@@ -1,4 +1,4 @@
-import type { KbCommentStatus, KbSearchRequest } from "@orc/core/kb";
+import type { KbCommentStatus, KbDigest, KbSearchRequest } from "@orc/core/kb";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 
@@ -27,10 +27,10 @@ export function useKnowledgeBases(projectId: string | undefined) {
   });
 }
 
-export function useKbDocuments(kbId: string | null, filter: { folder?: string; label?: string }) {
+export function useKbDocuments(kbId: string | null) {
   return useQuery({
-    queryKey: [KB_KEY, "documents", kbId, filter],
-    queryFn: () => api.kb.documents(kbId as string, filter),
+    queryKey: [KB_KEY, "documents", kbId],
+    queryFn: () => api.kb.documents(kbId as string),
     enabled: Boolean(kbId),
     // Parsing and embedding run in the background; keep states fresh while anything is pending.
     refetchInterval: (query) =>
@@ -134,7 +134,6 @@ export function useKbComments(
   return useQuery({
     queryKey: [KB_KEY, "comments", kbId, filter],
     queryFn: () => api.kb.comments(kbId, filter),
-    select: (data) => data.comments,
   });
 }
 
@@ -159,11 +158,16 @@ export function useKbDigest(kbId: string) {
   });
 }
 
-export function useKbDigestRuns(kbId: string, enabled: boolean) {
+/**
+ * Runs exist only while the digest does, so they key off its last run instead of refreshing with
+ * every digest invalidation; a removed digest unmounts this query rather than asking for its runs.
+ */
+export function useKbDigestRuns(kbId: string, digest: KbDigest) {
+  const last = digest.last_run;
   return useQuery({
-    queryKey: [KB_DIGEST_KEY, kbId, "runs"],
+    queryKey: ["kb-digest-runs", kbId, digest.job_id, last?.at ?? null, last?.status ?? null],
     queryFn: () => api.kb.digestRuns(kbId, 10),
-    enabled,
+    placeholderData: (previous) => previous,
     select: (data) => data.runs,
     refetchInterval: (query) =>
       query.state.data?.runs.some((r) => RUN_ACTIVE.has(r.status)) ? 3000 : false,

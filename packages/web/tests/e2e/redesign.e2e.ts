@@ -74,6 +74,7 @@ test("knowledge base document links use real documents and edits reopen after th
     await expect(page.getByTestId("markdown-preview")).toContainText("Task flows");
     await page.getByTestId(`wiki-link-${to}`).click();
     await expect(page.getByTestId("markdown-preview")).toContainText("Agent backends");
+    await page.getByTestId("kb-details-toggle").click();
     await expect(page.getByTestId("kb-backlink")).toContainText(from);
     await page.getByTestId("markdown-mode-edit").click();
     await page
@@ -93,10 +94,11 @@ test("knowledge base document links use real documents and edits reopen after th
       await page.setViewportSize({ width, height: 844 });
       await page
         .getByTestId("knowledge-bases")
-        .getByRole("button", { name: "Files", exact: true })
+        .getByRole("button", { name: "Browse", exact: true })
         .click();
-      await expect(page.getByTestId("kb-documents")).toBeVisible();
-      await page.locator(`[data-testid="kb-document-row"][data-document-title="${from}"]`).click();
+      await expect(page.getByTestId("kb-sidebar")).toBeVisible();
+      await page.locator(`[data-testid="kb-nav-document"][data-document-title="${from}"]`).click();
+      await expect(page.getByTestId("kb-sidebar")).not.toBeVisible();
       await expect(page.getByTestId("markdown-preview")).toContainText("Task flows");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
@@ -180,7 +182,8 @@ test("a conflicting knowledge base document save keeps its draft and explicit di
       await dialog.dismiss();
     };
     page.on("dialog", unexpectedDiscard);
-    await row.click();
+    // Picking the open document again from the sidebar is not a navigation away from the draft.
+    await page.locator(`[data-testid="kb-nav-document"][data-document-title="${title}"]`).click();
     expect(sameNoteDialogs).toBe(0);
     await expect(page.getByTestId("document-save-status")).toHaveText("Unsaved changes");
     page.off("dialog", unexpectedDiscard);

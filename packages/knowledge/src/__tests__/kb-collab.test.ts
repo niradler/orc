@@ -127,6 +127,8 @@ describe("comments", () => {
     );
     const done = svc.closeComment(human, onKb.id, { status: "dismissed", reply: "Out of scope" });
     expect(done).toMatchObject({ status: "dismissed", reply: "Out of scope", resolved_by: "nir" });
+    expect(svc.commentCounts(kb.id)).toEqual({ open: 1, resolved: 0, dismissed: 1 });
+    expect(svc.commentCounts(kb.id, doc.id)).toEqual({ open: 1, resolved: 0, dismissed: 0 });
     expect(() => svc.closeComment(human, onKb.id, { status: "resolved", reply: "x" })).toThrow(
       ConflictError,
     );
@@ -236,6 +238,18 @@ describe("digests", () => {
     expect(() => store.complete(second?.token as string, "applied", "again", "codex")).toThrow(
       ConflictError,
     );
+  });
+
+  test("next_run_at is the next cron start while the schedule is on", () => {
+    const kb = svc.createKb(human, { name: "K", project_id: null });
+    const before = Date.now();
+    const daily = svc.setDigest(human, kb.id, {});
+    const next = new Date(daily.next_run_at as number);
+    expect(next.getTime()).toBeGreaterThan(before);
+    expect(next.getTime() - before).toBeLessThanOrEqual(86_400_000);
+    expect([next.getHours(), next.getMinutes()]).toEqual([3, 0]);
+    expect(svc.setDigest(human, kb.id, { enabled: false }).next_run_at).toBeNull();
+    expect(svc.setDigest(human, kb.id, { schedule: { type: "manual" } }).next_run_at).toBeNull();
   });
 
   test("deleting the KB removes its digest job", () => {

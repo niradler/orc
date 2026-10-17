@@ -34,7 +34,9 @@ export function watchProcessExit(host: ExecHost, pid: number, onExit: () => void
             "-NoProfile",
             "-NonInteractive",
             "-Command",
-            `try { $targetProcess = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($targetProcess) { $targetProcess.WaitForExit() } } catch { [Console]::Error.WriteLine('Process exit watch failed'); exit 1 }`,
+            // A process that is already gone has exited. Exit 0 explicitly: the failed
+            // Get-Process lookup would otherwise make pwsh exit 1 with no error output.
+            `try { $targetProcess = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($targetProcess) { $targetProcess.WaitForExit() }; exit 0 } catch { [Console]::Error.WriteLine("Process exit watch failed: $($_.Exception.Message)"); exit 1 }`,
           ]
         : ["python3", "-u", "-c", WAIT_PROCESS, String(pid)];
       const child = await hostSpawn(host, command, {

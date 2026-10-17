@@ -194,6 +194,8 @@ describe("documents", () => {
       bytes: new TextEncoder().encode(html),
     });
     expect(doc.parse_state).toBe("pending");
+    // An HTML page is titled like a Markdown upload: from its own heading, not the file name.
+    expect(doc.title).toBe("Quarterly report");
     await svc.jobs.idle();
     const parsed = svc.engine.catalog.doc(doc.id);
     expect(parsed?.parse_state).toBe("ok");
@@ -429,7 +431,32 @@ describe("registered folders", () => {
       expect(byTitle("Gamma")?.warnings).toEqual([]);
 
       expect(() => svc.deleteDocument(human(), csv?.id ?? "")).toThrow(ValidationError);
-      svc.removeSource(human(), source.id);
+      expect(svc.listSources(kb.id)).toEqual([
+        expect.objectContaining({ id: source.id, document_count: 3, edited_count: 1 }),
+      ]);
+
+      // Stopping the sync removes the following copies and keeps the edited one as a document.
+      expect(svc.removeSource(human(), source.id)).toEqual({ removed: 2, kept: 1 });
+      expect(svc.listSources(kb.id)).toEqual([]);
+      const kept = svc.listDocuments(kb.id).documents;
+      expect(kept).toHaveLength(1);
+      expect(kept[0]).toMatchObject({
+        id: a?.id,
+        origin: "authored",
+        folder_sync: null,
+        editable: true,
+        original_name: null,
+      });
+      expect(svc.getDocument(human(), a?.id ?? "").content).toBe("# Alpha note\n\nedited in orc");
+      await svc.jobs.idle();
+      expect((await svc.search(human(), { query: "edited" })).hits[0]?.title).toBe("Alpha note");
+      expect((await svc.search(human(), { query: "quokka" })).hits).toHaveLength(0);
+      // A kept copy is an ordinary document now: deletable, and a re-added folder does not claim it.
+      const again = svc.addSource(human(), kb.id, { root_path: dir });
+      expect(again.scan.errors.join("\n")).toContain("already uses the path");
+      expect(again.source).toMatchObject({ document_count: 1, edited_count: 0 });
+      expect(svc.removeSource(human(), again.source.id)).toEqual({ removed: 1, kept: 0 });
+      svc.deleteDocument(human(), a?.id ?? "");
       expect(svc.listDocuments(kb.id).documents).toHaveLength(0);
       expect(existsSync(join(dir, "sub", "a.md"))).toBe(true);
     } finally {

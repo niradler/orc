@@ -53,6 +53,22 @@ test("should receive a native process exit notification without polling", async 
   }
 });
 
+test("should report a process that already exited as exited", async () => {
+  const child = Bun.spawn([process.execPath, "-e", "0"], { stdout: "ignore", stderr: "ignore" });
+  await child.exited;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let stop = (): void => {};
+  try {
+    await new Promise<void>((resolve, reject) => {
+      timeout = setTimeout(() => reject(new Error("No exit event for an exited process")), 4000);
+      stop = watchProcessExit(LOCAL_HOST, child.pid, resolve);
+    });
+  } finally {
+    clearTimeout(timeout);
+    stop();
+  }
+});
+
 test("should notify transcript file changes even when the session metadata does not change", async () => {
   setupTestApp();
   const root = mkdtempSync(join(tmpdir(), "orc-transcript-watch-"));
