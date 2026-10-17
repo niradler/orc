@@ -402,7 +402,8 @@ function setupDb(sqlite: Database): void {
   } catch {}
 }
 
-const LEGACY_WIKI_TABLES = [
+// Tables of the removed wiki and knowledge digest; knowledge bases with digests replaced them.
+const RETIRED_TABLES = [
   "evidence_fts",
   "evidence_embeddings",
   "evidence_passages",
@@ -410,21 +411,18 @@ const LEGACY_WIKI_TABLES = [
   "evidence_sources",
   "wiki_contribution_attempts",
   "wiki_contributions",
+  "wiki_fts",
+  "wiki_revisions",
+  "wiki_pages",
+  "knowledge_digests",
   "skill_evaluation_jobs",
   "skill_evaluations",
   "skill_proposals",
   "skill_activations",
 ];
 
-// The first wiki (evidence passages, contribution queue, evaluated skill proposals) was replaced.
-// wiki_pages/wiki_revisions names are reused, so they are dropped only while they keep the old
-// JSON-payload shape.
-function dropLegacyWiki(sqlite: Database): void {
-  for (const table of LEGACY_WIKI_TABLES) sqlite.exec(`DROP TABLE IF EXISTS ${table}`);
-  for (const table of ["wiki_revisions", "wiki_pages"]) {
-    const columns = sqlite.query<{ name: string }, []>(`PRAGMA table_info(${table})`).all();
-    if (columns.some((column) => column.name === "payload")) sqlite.exec(`DROP TABLE ${table}`);
-  }
+function dropRetiredTables(sqlite: Database): void {
+  for (const table of RETIRED_TABLES) sqlite.exec(`DROP TABLE IF EXISTS ${table}`);
 }
 
 export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof schema>> {
@@ -464,7 +462,7 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   )`);
-  dropLegacyWiki(sqlite);
+  dropRetiredTables(sqlite);
   installAudit(sqlite);
   installKnowledgeBases(sqlite);
   installSkillHistory(sqlite);

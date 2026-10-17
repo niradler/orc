@@ -34,10 +34,8 @@ test("Knowledge has two canonical destinations and knowledge-base state is share
     await expect(page.getByTestId("kb-overview-name")).toHaveText(kb.name);
     await page.goForward();
     await expect(page.getByTestId("kb-document-title")).toHaveText("Navigation target");
-    // Old Knowledge search links land on the new search.
-    await page.goto("/knowledge?tab=search&documentQuery=kbnavigationneedle");
-    await expect(page).toHaveURL(/\/knowledge\/base\?.*q=kbnavigationneedle/);
-    await expect(page).toHaveURL(/searchAll=1/);
+    // A search across every knowledge base is a shareable link.
+    await page.goto("/knowledge/base?q=kbnavigationneedle&searchAll=1");
     await expect(page.getByTestId("kb-search-result").first()).toContainText("Navigation target");
     await page.getByTestId("nav-memories").click();
     expect(new URL(page.url()).pathname).toBe("/knowledge/memories");

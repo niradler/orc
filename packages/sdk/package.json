@@ -9,7 +9,7 @@
     "./types": "./src/types.ts"
   },
   "scripts": {
-    "generate": "openapi-typescript http://localhost:7700/openapi.json -o src/openapi.gen.ts",
+    "generate": "bun ../api/scripts/dump-openapi.ts openapi.json && openapi-typescript openapi.json -o src/openapi.gen.ts && rm openapi.json",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "test": "bun test",
