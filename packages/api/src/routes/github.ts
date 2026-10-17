@@ -1,10 +1,11 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, type OpenAPIHono, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { githubFeed } from "../git/github.js";
+import { createRouter } from "../lib/router.js";
 import { requireTerminals } from "../terminals/service.js";
 
 export function createGithubRouter(readFeed: typeof githubFeed = githubFeed): OpenAPIHono {
-  const app = new OpenAPIHono();
+  const app = createRouter();
   const GithubItemSchema = z.object({
     repo: z.string(),
     number: z.number().int(),

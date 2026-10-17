@@ -1,9 +1,11 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
+import { loadConfig } from "@orc/core/config";
 import { getSqlite } from "@orc/db/client";
 import { MEMORY_DESCRIPTION_MAX, MEMORY_PRIORITY_MAX, MemoryStore } from "@orc/db/memories";
 import { readSourceFromHeader } from "@orc/db/read-usage";
+import { createRouter } from "../lib/router.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 const ORC_SOURCE_HEADER = "X-Orc-Source";
 const API_AUTHOR = "api";
 
@@ -97,6 +99,38 @@ const UpdateMemorySchema = z
   .openapi("UpdateMemory");
 
 const store = (): MemoryStore => new MemoryStore(getSqlite());
+
+// Not under /memories/: a memory may be named "limits".
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/memory-limits",
+    tags: ["Memory"],
+    summary: "Memory size limits (content follows config memory.max_content_chars)",
+    responses: {
+      200: {
+        description: "Limits in characters (code points), priority range 0..priority_max",
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                description_max: z.number().int(),
+                content_max: z.number().int(),
+                priority_max: z.number().int(),
+              })
+              .openapi("MemoryLimits"),
+          },
+        },
+      },
+    },
+  }),
+  (c) =>
+    c.json({
+      description_max: MEMORY_DESCRIPTION_MAX,
+      content_max: loadConfig().memory.max_content_chars,
+      priority_max: MEMORY_PRIORITY_MAX,
+    }),
+);
 
 app.openapi(
   createRoute({

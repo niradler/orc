@@ -1,4 +1,4 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { hiddenBuiltinSkills, updateGlobalConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { editSkillFile } from "@orc/core/skill-edit";
@@ -22,9 +22,10 @@ import { SkillUpdateSchema, WikiScopeSchema } from "@orc/core/wiki";
 import { getSqlite } from "@orc/db/client";
 import { readSourceFromHeader } from "@orc/db/read-usage";
 import { SkillHistory } from "@orc/db/skill-history";
+import { createRouter } from "../lib/router.js";
 import { resolveWikiProject } from "./wiki.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 
 const ORC_SOURCE_HEADER = "X-Orc-Source";
 

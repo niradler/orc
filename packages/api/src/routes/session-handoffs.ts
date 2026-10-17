@@ -1,4 +1,4 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { UnauthorizedError, ValidationError } from "@orc/core/errors";
 import {
   HANDOFF_ID_PATTERN,
@@ -9,8 +9,9 @@ import {
   SessionHandoffUploadSchema,
 } from "@orc/core/session-handoff";
 import { getHandoffService, handoffDto } from "../handoffs/service.js";
+import { createRouter } from "../lib/router.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 const params = z.object({ id: z.string().regex(HANDOFF_ID_PATTERN) });
 const response = {
   description: "Session handoff",

@@ -53,11 +53,10 @@ test.describe("Memories", () => {
       await dialog.getByTestId("memory-description-input").fill("API port for local dev");
       await expect(dialog.getByTestId("memory-description-count")).toHaveText("22/300");
 
-      // Content over the cap is rejected by the server, which says to make it a skill.
+      // Content over the configured cap cannot be saved (the server also rejects it).
       await dialog.getByTestId("memory-content-input").fill("x".repeat(801));
       await expect(dialog.getByTestId("memory-content-count")).toHaveText("801/800");
-      await dialog.getByTestId("memory-submit").click();
-      await expect(dialog.getByTestId("memory-form-error")).toContainText(/skill/i);
+      await expect(dialog.getByTestId("memory-submit")).toBeDisabled();
 
       await dialog.getByTestId("memory-content-input").fill("The API listens on 7711.");
       await dialog.getByTestId("memory-priority-input").fill("70");

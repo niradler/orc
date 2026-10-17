@@ -163,6 +163,15 @@ function snapshotOf(memory: Memory): MemorySnapshot {
   return { description: memory.description, content: memory.content, priority: memory.priority };
 }
 
+function sameSnapshot(left: MemorySnapshot | null, right: MemorySnapshot | null): boolean {
+  if (!left || !right) return left === right;
+  return (
+    left.description === right.description &&
+    left.content === right.content &&
+    left.priority === right.priority
+  );
+}
+
 function parseChange(row: MemoryChangeRow): MemoryChange {
   return {
     ...row,
@@ -345,6 +354,12 @@ export class MemoryStore {
         const target = this.history(projectId, name).find((change) => change.id === changeId);
         if (!target) throw new NotFoundError("Memory change", changeId);
         const before = this.find(projectId, name);
+        if (sameSnapshot(before && snapshotOf(before), target.previous))
+          throw new ValidationError(
+            before
+              ? "Memory already matches the state before that change; nothing to revert"
+              : "Memory is already deleted; nothing to revert",
+          );
         if (target.previous) this.validate(target.previous);
         this.write(projectId, name, before, target.previous, "memory.reverted", writer);
         return this.find(projectId, name);
@@ -399,7 +414,11 @@ export class MemoryStore {
         )
         .run(projectId, name, next.description, next.content, next.priority, author, sessionId);
     } else {
+      // Reads belong to this memory; a later memory with the same name (a rename) starts at zero.
       this.sqlite.query("DELETE FROM memories WHERE project_id=? AND name=?").run(projectId, name);
+      this.sqlite
+        .query("DELETE FROM memory_usage WHERE project_id=? AND memory_name=?")
+        .run(projectId, name);
     }
     const id = ulid();
     this.sqlite

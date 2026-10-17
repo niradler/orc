@@ -1,13 +1,14 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
 import { hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
 import { knownWorktrees, worktreeDeps } from "../git/registry.js";
 import { listWorktrees, removeWorktree, samePath, trackedWorktrees } from "../git/worktrees.js";
+import { createRouter } from "../lib/router.js";
 import { observeCheckout } from "../realtime/sources.js";
 import { requireTerminals } from "../terminals/service.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 
 export const WorktreeSchema = z
   .object({

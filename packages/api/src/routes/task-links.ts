@@ -1,12 +1,13 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import { TaskLinkTypeSchema } from "@orc/core/types";
 import { getDb } from "@orc/db/client";
 import { task_links, tasks } from "@orc/db/schema";
 import { and, eq, or } from "drizzle-orm";
+import { createRouter } from "../lib/router.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 
 const TaskLinkSchema = z
   .object({

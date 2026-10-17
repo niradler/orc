@@ -300,8 +300,9 @@ export class ApiError extends Error {
 // ---- Memories: short per-project facts; identity is (project_id, name) ----
 
 export const MEMORY_DESCRIPTION_MAX = 300;
-export const MEMORY_CONTENT_MAX = 800;
 export const MEMORY_PRIORITY_MAX = 100;
+/** Content limit comes from the server config (memory.max_content_chars). */
+export type MemoryLimits = { description_max: number; content_max: number; priority_max: number };
 /** Memory writes from the dashboard are made by a person, not an agent. */
 const UI_AUTHOR = "human";
 
@@ -545,6 +546,7 @@ export const api = {
   },
 
   memories: {
+    limits: () => req<MemoryLimits>("GET", "/memory-limits"),
     list: (params: MemoryListParams) =>
       req<{ memories: MemoryListItem[]; total: number }>("GET", "/memories", undefined, params),
     get: (projectId: string, name: string) =>

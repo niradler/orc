@@ -1,4 +1,4 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import {
   createAgent,
   deleteAgent,
@@ -32,8 +32,9 @@ import {
   readPackageFile,
   updatePackage,
 } from "@orc/core/package-service";
+import { createRouter } from "../lib/router.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 app.openapi(
   createRoute({
     method: "get",

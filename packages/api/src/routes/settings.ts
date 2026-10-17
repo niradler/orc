@@ -1,7 +1,8 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig, updateGlobalConfig } from "@orc/core/config";
+import { createRouter } from "../lib/router.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 const PreferencesSchema = z
   .object({
     theme: z.enum(["dark", "light"]).optional(),

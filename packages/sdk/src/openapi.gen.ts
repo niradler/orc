@@ -3945,6 +3945,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/memory-limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Memory size limits (content follows config memory.max_content_chars) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Limits in characters (code points), priority range 0..priority_max */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MemoryLimits"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/memories": {
         parameters: {
             query?: never;
@@ -8218,6 +8254,11 @@ export interface components {
             to_task_id: string;
             /** @enum {string} */
             link_type: "blocks" | "blocked_by" | "relates_to" | "duplicates" | "clones" | "subtask_of" | "parent_of";
+        };
+        MemoryLimits: {
+            description_max: number;
+            content_max: number;
+            priority_max: number;
         };
         MemoryListItem: {
             project_id: string;

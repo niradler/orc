@@ -1,8 +1,9 @@
-import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import { createRoute, z } from "@hono/zod-openapi";
 import { ValidationError } from "@orc/core/errors";
 import { executeTool, toolDefinitions } from "@orc/mcp/tools";
+import { createRouter } from "../lib/router.js";
 
-const app = new OpenAPIHono();
+const app = createRouter();
 
 const mcpToolRoute = createRoute({
   method: "post",
