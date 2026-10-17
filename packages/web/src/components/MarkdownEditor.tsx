@@ -27,7 +27,28 @@ export type MarkdownEditorProps = {
   placeholder?: string;
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
+  /**
+   * "frame" (default) is a fixed-height box. "page" flows with the surrounding scroll like an
+   * article in every mode: the toolbar sticks and the editor grows with its content.
+   */
+  layout?: "frame" | "page";
+  /** Controls placed at the end of the toolbar, such as save state. */
+  actions?: ReactNode;
+  /** Messages about the toolbar's actions, such as a failed save, shown right under it. */
+  notice?: ReactNode;
+  /** The title the page already shows; a leading H1 repeating it is not rendered again. */
+  pageTitle?: string;
+  /** Front matter is shown elsewhere as properties, so the preview leaves it out. */
+  hideFrontmatter?: boolean;
 };
+
+/** Drops a first-line `# Title` from the body when it repeats the page title. */
+function withoutRepeatedTitle(body: string, title: string | undefined): string {
+  if (!title) return body;
+  const match = body.match(/^\s*#[ \t]+(.+?)[ \t#]*(?:\r?\n|$)/);
+  const same = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
+  return match?.[1] && same(match[1]) === same(title) ? body.slice(match[0].length) : body;
+}
 
 export function MarkdownEditor({
   path,
@@ -47,6 +68,11 @@ export function MarkdownEditor({
   placeholder,
   expanded: controlledExpanded,
   onExpandedChange,
+  layout = "frame",
+  actions,
+  notice,
+  pageTitle,
+  hideFrontmatter = false,
 }: MarkdownEditorProps) {
   const markdown = isMarkdownFile(path);
   const [localMode, setLocalMode] = useState<Mode>(
@@ -82,19 +108,36 @@ export function MarkdownEditor({
     setLocalExpanded(next);
     onExpandedChange?.(next);
   }
+  // Escape leaves fullscreen on any page. Inside a dialog or sheet, collapseExpandedDocument has
+  // already used the key so the dialog stays open; a popup in the editor or a dialog over it
+  // takes Escape first.
+  useEffect(() => {
+    if (!expanded) return;
+    function leave(event: KeyboardEvent) {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      const dialog = document.querySelector('[role="dialog"], [role="alertdialog"]');
+      if (dialog && !root.current?.contains(dialog)) return;
+      setLocalExpanded(false);
+      onExpandedChange?.(false);
+    }
+    window.addEventListener("keydown", leave);
+    return () => window.removeEventListener("keydown", leave);
+  }, [expanded, onExpandedChange]);
   const rendered = splitMarkdownFrontmatter(value);
+  const body = withoutRepeatedTitle(rendered.body, pageTitle);
+  const flowing = layout === "page" && markdown && !expanded;
+  const style =
+    expanded || flowing
+      ? undefined
+      : { height: height ?? "min(65dvh, 760px)", minHeight: height ? undefined : 280 };
   return (
     <section
       ref={root}
       data-testid="markdown-editor"
       data-expanded={expanded}
       data-document-expanded={expanded}
-      className={`flex min-h-0 min-w-0 flex-col rounded-md border border-surface-highest bg-surface ${expanded ? "fixed inset-2 z-[60] sm:inset-6" : ""}`}
-      style={
-        expanded
-          ? undefined
-          : { height: height ?? "min(65dvh, 760px)", minHeight: height ? undefined : 280 }
-      }
+      className={`flex min-w-0 flex-col ${flowing ? "" : "min-h-0 rounded-md border border-surface-highest bg-surface"} ${expanded ? "fixed inset-2 z-[60] sm:inset-6" : ""}`}
+      style={style}
       aria-label={`Document ${path}`}
       onKeyDown={(event) => {
         if (event.defaultPrevented) return;
@@ -105,7 +148,9 @@ export function MarkdownEditor({
       }}
     >
       {header && <div className="shrink-0 border-b border-surface-highest p-3">{header}</div>}
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-surface-highest p-2">
+      <div
+        className={`flex shrink-0 flex-wrap items-center gap-2 border-b border-surface-highest ${flowing ? "sticky top-0 z-10 bg-background py-2" : "p-2"}`}
+      >
         {markdown && (
           <fieldset className="flex gap-1" aria-label="Document mode">
             {(["read", "edit", "split"] as const).map((item) => (
@@ -114,6 +159,10 @@ export function MarkdownEditor({
                 type="button"
                 size="sm"
                 variant={mode === item ? "default" : "ghost"}
+                // A page is read side by side only with room; phones switch between Read and Edit.
+                className={
+                  item === "split" && layout === "page" ? "hidden md:inline-flex" : undefined
+                }
                 data-testid={`markdown-mode-${item}`}
                 aria-pressed={mode === item}
                 onClick={() => setMode(item)}
@@ -130,9 +179,10 @@ export function MarkdownEditor({
           </fieldset>
         )}
         <span className="min-w-0 flex-1 truncate px-1 text-xs text-outline" title={path}>
-          {path}
+          {layout === "page" ? "" : path}
         </span>
-        {expanded && onSave && !header && (
+        {actions}
+        {expanded && onSave && !header && !actions && (
           <Button type="button" data-testid="markdown-save" disabled={readOnly} onClick={onSave}>
             Save
           </Button>
@@ -149,11 +199,18 @@ export function MarkdownEditor({
           {expanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
         </Button>
       </div>
+      {notice && (
+        <div
+          className={`shrink-0 space-y-1 border-b border-surface-highest ${flowing ? "py-2" : "p-3"}`}
+        >
+          {notice}
+        </div>
+      )}
       <div
-        className={`grid min-h-0 min-w-0 flex-1 overflow-hidden ${mode === "split" && markdown ? "grid-rows-2 md:grid-cols-2 md:grid-rows-1" : "grid-cols-1"}`}
+        className={`grid min-h-0 min-w-0 flex-1 ${flowing ? "items-start gap-6 pt-4" : "overflow-hidden"} ${mode === "split" && markdown ? "grid-rows-2 md:grid-cols-2 md:grid-rows-1" : "grid-cols-1"}`}
       >
         <div
-          className={`min-h-0 min-w-0 overflow-hidden ${mode === "read" && markdown ? "hidden" : ""}`}
+          className={`min-h-0 min-w-0 ${flowing ? "[&_.cm-editor]:min-h-[50dvh]" : "overflow-hidden"} ${mode === "read" && markdown ? "hidden" : ""}`}
         >
           <SourceCodeEditor
             path={path}
@@ -161,7 +218,7 @@ export function MarkdownEditor({
             onChange={onChange}
             onSave={onSave}
             readOnly={readOnly}
-            height="100%"
+            height={flowing ? "auto" : "100%"}
             testId={testId}
             hidePreview
             defaultWrap
@@ -174,10 +231,14 @@ export function MarkdownEditor({
           <article
             data-testid="markdown-preview"
             aria-label="Rendered Markdown"
-            className={`min-h-0 min-w-0 overflow-auto p-4 sm:p-8 ${mode === "split" ? "border-t border-surface-highest md:border-l md:border-t-0" : ""}`}
+            className={`min-h-0 min-w-0 ${flowing ? "pb-6" : "overflow-auto p-4 sm:p-8"} ${mode === "split" && !flowing ? "border-t border-surface-highest md:border-l md:border-t-0" : ""}`}
           >
-            <div className="mx-auto max-w-[76ch] break-words">
-              {rendered.metadata !== null && (
+            {/* A page keeps prose at a reading measure while code, tables and images use the
+                column; a frame centers the whole document. */}
+            <div
+              className={`break-words ${flowing ? "[&_:is(p,ul,ol,blockquote,h1,h2,h3,h4,h5,h6)]:max-w-[72ch]" : "mx-auto max-w-[76ch]"}`}
+            >
+              {rendered.metadata !== null && !hideFrontmatter && (
                 <details className="mb-5 rounded border border-surface-highest p-3 text-sm text-outline">
                   <summary className="cursor-pointer">Document metadata</summary>
                   <pre className="mt-3 whitespace-pre-wrap break-words font-mono text-xs">
@@ -187,7 +248,7 @@ export function MarkdownEditor({
               )}
               {value.trim() ? (
                 <Markdown readable wikiLinks={wikiLinks}>
-                  {rendered.body}
+                  {body}
                 </Markdown>
               ) : (
                 <p className="text-sm text-outline">This document is empty.</p>

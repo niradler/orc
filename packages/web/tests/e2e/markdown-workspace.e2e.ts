@@ -30,7 +30,7 @@ for (const viewport of [
     await page.locator(`[data-testid="skill-row"][data-skill-name="${name}"]`).click();
     const preview = page.getByTestId("markdown-preview");
     await expect(preview).toContainText("Readable document");
-    await expect(preview.locator("h1")).toHaveCSS("font-size", "30px");
+    await expect(preview.locator("h1")).toHaveCSS("font-size", "24px");
     await expect(preview.locator("table")).toBeVisible();
     await expect(preview.locator("svg").first()).toBeVisible();
     await page.getByTestId("markdown-mode-split").click();

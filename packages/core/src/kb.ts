@@ -397,6 +397,10 @@ export type KbSource = {
   last_scan_at: number | null;
   last_error: string | null;
   created_at: number;
+  /** Copies in the KB, following and edited. */
+  document_count: number;
+  /** Copies edited in ORC: they no longer follow their file and are kept when syncing stops. */
+  edited_count: number;
 };
 
 export type KbSourceScan = {
@@ -503,6 +507,8 @@ export type KbDocumentEditResult = {
 
 export const KB_COMMENT_STATUSES = ["open", "resolved", "dismissed"] as const;
 export type KbCommentStatus = (typeof KB_COMMENT_STATUSES)[number];
+/** Comments per status, for a knowledge base or one of its documents. */
+export type KbCommentCounts = Record<KbCommentStatus, number>;
 
 export const KbCommentCreateSchema = z
   .object({
@@ -583,6 +589,8 @@ export type KbDigest = {
     note: string | null;
     session_id: string | null;
   } | null;
+  /** Next scheduled start (ms) for an enabled cron digest, in the daemon's time zone; else null. */
+  next_run_at: number | null;
   open_comments: number;
   created_at: number;
   updated_at: number;

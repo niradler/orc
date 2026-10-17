@@ -23,32 +23,35 @@ describe("shared resource event stream", () => {
     if (!first.body || !second.body) throw new Error("Missing SSE response body");
     const readers = [first.body.getReader(), second.body.getReader()];
     const decode = (value: Uint8Array | undefined): string => new TextDecoder().decode(value);
+    // The stream also watches real folders under the home directory (skills, agents, config),
+    // which other test packages running in parallel may write to. Those changes are genuine
+    // events, so each reader collects everything and the test asserts only on tasks.
+    const received = readers.map(() => "");
+    const pumps = readers.map(async (reader, i) => {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) return;
+        received[i] += decode(value);
+      }
+    });
+    const tasksChanged = (text: string) => /event: change\ndata: .*"tasks"/.test(text);
+    async function until(check: () => boolean, ms: number): Promise<boolean> {
+      for (const end = Date.now() + ms; Date.now() < end; await Bun.sleep(10))
+        if (check()) return true;
+      return check();
+    }
     try {
-      for (const reader of readers)
-        expect(decode((await reader.read()).value)).toContain("event: ready");
-      const waiting = readers.map((reader) => reader.read());
-      const initialWait = waiting[0];
-      if (!initialWait) throw new Error("Missing stream reader");
-      expect(
-        await Promise.race([initialWait.then(() => "event"), Bun.sleep(150).then(() => "idle")]),
-      ).toBe("idle");
+      expect(await until(() => received.every((t) => t.includes("event: ready")), 2000)).toBe(true);
+      await Bun.sleep(150);
+      expect(received.some(tasksChanged)).toBe(false);
       getSqlite()
         .query("INSERT INTO tasks(id,title) VALUES (?,?)")
         .run("event-task", "Updated elsewhere");
-      const updates = await Promise.race([
-        Promise.all(waiting),
-        Bun.sleep(2000).then(() => {
-          throw new Error("No change notification");
-        }),
-      ]);
-      for (const update of updates) {
-        const text = decode(update.value);
-        expect(text).toContain("event: change");
-        expect(text).toContain('"tasks"');
-        expect(text).not.toContain("Updated elsewhere");
-      }
+      expect(await until(() => received.every(tasksChanged), 2000)).toBe(true);
+      for (const text of received) expect(text).not.toContain("Updated elsewhere");
     } finally {
       await Promise.all(readers.map((reader) => reader.cancel()));
+      await Promise.all(pumps);
     }
   });
 
@@ -59,8 +62,12 @@ describe("shared resource event stream", () => {
     try {
       await reader.read();
       changes.publish("terminals");
-      const next = await reader.read();
-      expect(new TextDecoder().decode(next.value)).toContain('"terminals"');
+      // Changes in watched home folders may arrive first; read until the terminals event.
+      let text = "";
+      const end = Date.now() + 2000;
+      while (!text.includes('"terminals"') && Date.now() < end)
+        text += new TextDecoder().decode((await reader.read()).value);
+      expect(text).toContain('"terminals"');
     } finally {
       await reader.cancel();
     }

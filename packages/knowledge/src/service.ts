@@ -10,6 +10,7 @@ import {
   type KbComment,
   type KbCommentClose,
   KbCommentCloseSchema,
+  type KbCommentCounts,
   type KbCommentCreate,
   KbCommentCreateSchema,
   type KbCommentStatus,
@@ -71,7 +72,7 @@ import { IndexDb } from "./index-db.js";
 import { JobRunner } from "./jobs.js";
 import { resolveKbLinks } from "./links.js";
 import { firstHeading, type markdownToBlocks, outline, stripFrontmatter } from "./markdown.js";
-import { BASIC_FORMATS } from "./parsers/basic.js";
+import { BASIC_FORMATS, htmlTitle } from "./parsers/basic.js";
 import {
   DOCLING_FORMATS,
   installDocling,
@@ -86,6 +87,10 @@ import { Usage, type UsageTarget } from "./usage.js";
 const MAINTENANCE_INTERVAL_MS = 60_000;
 const MAX_SOURCE_FILES = 5000;
 const SOURCE_MISSING = "Source file is missing";
+const SOURCE_SELECT = `SELECT s.*,
+  (SELECT count(*) FROM kb_documents d WHERE d.source_id = s.id) AS document_count,
+  (SELECT count(*) FROM kb_documents d WHERE d.source_id = s.id AND d.folder_detached = 1) AS edited_count
+  FROM kb_sources s`;
 const SCANNER = "folder scan";
 const DIGEST_TIMEOUT_SECS = 1800;
 const MAX_COMMENTS = 500;
@@ -984,6 +989,22 @@ export class KnowledgeService {
     ).map(toComment);
   }
 
+  commentCounts(kbId: string, documentId?: string): KbCommentCounts {
+    this.kbOrThrow(kbId);
+    const rows = this.db
+      .query(
+        `SELECT status, COUNT(*) AS n FROM kb_comments
+         WHERE kb_id = ?${documentId ? " AND document_id = ?" : ""} GROUP BY status`,
+      )
+      .all(...(documentId ? [kbId, documentId] : [kbId])) as {
+      status: KbCommentStatus;
+      n: number;
+    }[];
+    const counts: KbCommentCounts = { open: 0, resolved: 0, dismissed: 0 };
+    for (const r of rows) counts[r.status] = r.n;
+    return counts;
+  }
+
   /** Resolving or dismissing is a maintainer action, so it follows `editable_by`. */
   closeComment(ctx: KbCallContext, id: string, raw: KbCommentClose): KbComment {
     const input = KbCommentCloseSchema.parse(raw);
@@ -1029,15 +1050,13 @@ export class KnowledgeService {
       )
       .get(kbId) as DigestJoin | null;
     if (!row) return null;
+    const cron = row.trigger_type === "cron" ? row.cron_expr : null;
     return {
       kb_id: row.kb_id,
       instructions: row.instructions,
       backend: row.backend,
       job_id: row.job_id,
-      schedule:
-        row.trigger_type === "cron" && row.cron_expr
-          ? { type: "cron", cron: row.cron_expr }
-          : { type: "manual" },
+      schedule: cron ? { type: "cron", cron } : { type: "manual" },
       enabled: Boolean(row.enabled),
       timeout_secs: row.timeout_secs,
       last_success_at: row.last_success_at,
@@ -1050,6 +1069,7 @@ export class KnowledgeService {
               session_id: row.last_session_id,
             }
           : null,
+      next_run_at: cron && row.enabled ? nextCronRun(cron) : null,
       open_comments: this.digests.openCommentCount(kbId),
       created_at: row.created_at,
       updated_at: row.updated_at,
@@ -1361,7 +1381,7 @@ export class KnowledgeService {
     const doc: DocRow = {
       id,
       kb_id: kbId,
-      title: input.title ?? name.replace(/\.[^.]+$/, ""),
+      title: input.title ?? uploadTitle(name, ext, input.bytes),
       description: input.description ?? "",
       path,
       labels: JSON.stringify(labels),
@@ -1647,14 +1667,17 @@ export class KnowledgeService {
 
   // --- Registered folders (external sources) -------------------------------------------------
 
-  listSources(kbId: string): (KbSource & { document_count: number })[] {
+  listSources(kbId: string): KbSource[] {
     this.kbOrThrow(kbId);
     return this.db
-      .query(
-        `SELECT s.*, (SELECT count(*) FROM kb_documents d WHERE d.source_id = s.id) AS document_count
-         FROM kb_sources s WHERE s.kb_id = ? ORDER BY s.root_path`,
-      )
-      .all(kbId) as (KbSource & { document_count: number })[];
+      .query(`${SOURCE_SELECT} WHERE s.kb_id = ? ORDER BY s.root_path`)
+      .all(kbId) as KbSource[];
+  }
+
+  private sourceListing(id: string): KbSource {
+    const s = this.db.query(`${SOURCE_SELECT} WHERE s.id = ?`).get(id) as KbSource | null;
+    if (!s) throw new NotFoundError("Source", id);
+    return s;
   }
 
   private sourceOrThrow(id: string): SourceRow {
@@ -1688,19 +1711,40 @@ export class KnowledgeService {
       [id, kbId, root, pattern, Date.now()],
     );
     const scan = this.scanSource(id);
-    return { source: this.sourceOrThrow(id), scan };
+    return { source: this.sourceListing(id), scan };
   }
 
-  /** Unregisters a folder: its copies leave the KB. The files themselves are untouched. */
-  removeSource(ctx: KbCallContext, id: string) {
+  /**
+   * Unregisters a folder. Copies that still follow their file leave the KB; copies edited in
+   * ORC are the user's work, so they stay as ordinary authored documents. The files themselves
+   * are untouched.
+   */
+  removeSource(ctx: KbCallContext, id: string): { removed: number; kept: number } {
     this.requireManager(ctx, "remove folders");
     const source = this.sourceOrThrow(id);
     const docs = this.db
       .query(`SELECT ${DOC_COLUMNS} FROM kb_documents WHERE source_id = ?`)
       .all(id) as DocRow[];
-    for (const d of docs) this.removeDocumentRecord(d, false);
+    const kept = docs.filter((d) => d.folder_detached);
+    this.db.transaction(() => {
+      // An edited copy is Markdown held in the catalog, exactly like an authored document.
+      for (const d of kept)
+        this.db.run(
+          `UPDATE kb_documents SET origin = 'authored', original_name = NULL, source_id = NULL,
+             external_path = NULL, folder_detached = 0, warnings = ? WHERE id = ?`,
+          [
+            JSON.stringify(
+              (JSON.parse(d.warnings) as string[]).filter((w) => w !== SOURCE_MISSING),
+            ),
+            d.id,
+          ],
+        );
+    })();
+    const removed = docs.filter((d) => !d.folder_detached);
+    for (const d of removed) this.removeDocumentRecord(d, false);
     this.db.run("DELETE FROM kb_sources WHERE id = ?", [id]);
     resolveKbLinks(this.db, source.kb_id);
+    return { removed: removed.length, kept: kept.length };
   }
 
   /** Reconciles a folder with its copies: new, changed and missing files. Detached copies are left alone. */
@@ -2007,4 +2051,20 @@ function assertCron(expr: string) {
   } catch (err) {
     throw new ValidationError(`Invalid cron expression "${expr}": ${(err as Error).message}`);
   }
+}
+
+/** Same pattern and local time zone as the runner's scheduler, so the time matches the real start. */
+function nextCronRun(expr: string): number | null {
+  try {
+    return new Cron(expr, { paused: true }).nextRun()?.getTime() ?? null;
+  } catch (err) {
+    console.error(`[knowledge] cannot read cron "${expr}": ${(err as Error).message}`);
+    return null;
+  }
+}
+
+/** An HTML page names itself (first heading, else its <title>); other uploads take the file name. */
+function uploadTitle(name: string, ext: string, bytes: Uint8Array): string {
+  const fromHtml = ext === "html" || ext === "htm" ? htmlTitle(decodeUtf8(bytes) ?? "") : undefined;
+  return fromHtml ?? name.replace(/\.[^.]+$/, "");
 }

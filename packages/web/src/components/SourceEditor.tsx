@@ -1,6 +1,6 @@
 import { indentWithTab } from "@codemirror/commands";
 import { openSearchPanel } from "@codemirror/search";
-import { Annotation, Compartment, EditorState } from "@codemirror/state";
+import { Annotation, Compartment, EditorState, Prec } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { EditorView, placeholder as editorPlaceholder, keymap } from "@codemirror/view";
 import { basicSetup } from "codemirror";
@@ -91,47 +91,52 @@ export function SourceEditor({
           wrapping.current.of(
             original.defaultWrap || isMarkdownFile(original.path) ? EditorView.lineWrapping : [],
           ),
-          EditorView.theme({
-            "&": {
-              height: "100%",
-              backgroundColor: "rgb(var(--background))",
-              color: "rgb(var(--foreground))",
-              fontSize: "14px",
-            },
-            "@media (max-width: 640px)": { "&": { fontSize: "16px" } },
-            ".cm-scroller": {
-              overflow: "auto",
-              fontFamily: '"IBM Plex Mono", Consolas, monospace',
-            },
-            ".cm-gutters": {
-              backgroundColor: "rgb(var(--surface-low))",
-              color: "rgb(var(--muted-foreground))",
-              borderRight: "1px solid rgb(var(--border))",
-            },
-            ".cm-activeLine, .cm-activeLineGutter": {
-              backgroundColor: "rgb(var(--surface-highest) / 0.4)",
-            },
-            ".cm-cursor": { borderLeftColor: "rgb(var(--foreground))" },
-            ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
-              backgroundColor: "rgb(var(--primary) / 0.25)",
-            },
-            ".cm-panels, .cm-tooltip": {
-              backgroundColor: "rgb(var(--surface-high))",
-              color: "rgb(var(--foreground))",
-            },
-            ".cm-textfield, .cm-button": {
-              background: "rgb(var(--background))",
-              color: "rgb(var(--foreground))",
-              border: "1px solid rgb(var(--control-border))",
-            },
-            ".cm-textfield:focus-visible, .cm-button:focus-visible": {
-              outline: "2px solid rgb(var(--focus))",
-              outlineOffset: "3px",
-            },
-            ".cm-placeholder": { color: "rgb(var(--muted-foreground))" },
-            ".cm-content": { padding: "12px 0" },
-            ".cm-line": { padding: "0 12px" },
-          }),
+          // oneDark brings syntax colors but also its own blue-gray chrome; the app's surface
+          // tokens must win over it in both themes.
+          Prec.highest(
+            EditorView.theme({
+              "&": {
+                height: "100%",
+                backgroundColor: "rgb(var(--background))",
+                color: "rgb(var(--foreground))",
+                fontSize: "14px",
+              },
+              "@media (max-width: 640px)": { "&": { fontSize: "16px" } },
+              ".cm-scroller": {
+                overflow: "auto",
+                fontFamily: '"IBM Plex Mono", Consolas, monospace',
+              },
+              ".cm-gutters": {
+                backgroundColor: "rgb(var(--surface-low))",
+                color: "rgb(var(--muted-foreground))",
+                borderRight: "1px solid rgb(var(--border))",
+              },
+              ".cm-activeLine, .cm-activeLineGutter": {
+                backgroundColor: "rgb(var(--surface-highest) / 0.4)",
+              },
+              ".cm-cursor": { borderLeftColor: "rgb(var(--foreground))" },
+              "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
+                {
+                  backgroundColor: "rgb(var(--primary) / 0.25)",
+                },
+              ".cm-panels, .cm-tooltip": {
+                backgroundColor: "rgb(var(--surface-high))",
+                color: "rgb(var(--foreground))",
+              },
+              ".cm-textfield, .cm-button": {
+                background: "rgb(var(--background))",
+                color: "rgb(var(--foreground))",
+                border: "1px solid rgb(var(--control-border))",
+              },
+              ".cm-textfield:focus-visible, .cm-button:focus-visible": {
+                outline: "2px solid rgb(var(--focus))",
+                outlineOffset: "3px",
+              },
+              ".cm-placeholder": { color: "rgb(var(--muted-foreground))" },
+              ".cm-content": { padding: "12px 0" },
+              ".cm-line": { padding: "0 12px" },
+            }),
+          ),
           EditorView.updateListener.of((update) => {
             if (!update.docChanged) return;
             setLines(update.state.doc.lines);

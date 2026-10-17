@@ -143,6 +143,7 @@ describe("MCP kb management, edits, comments and digests", () => {
       }),
     ).toContain("resolved");
     const list = await executeTool("kb_comment", { action: "list", kb_id: kb });
+    expect(list.startsWith("1 open · 1 resolved · 0 dismissed")).toBe(true);
     expect(list.indexOf(c2)).toBeLessThan(list.indexOf(c1));
     expect(list).toContain("-> ");
     expect(list).toContain('on "Releases"');

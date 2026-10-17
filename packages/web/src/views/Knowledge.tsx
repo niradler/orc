@@ -1,74 +1,74 @@
-import type { KbPassage, KnowledgeBase } from "@orc/core/kb";
-import {
-  BookOpen,
-  Check,
-  Copy,
-  FilePlus,
-  FileText,
-  Folder,
-  FolderOpen,
-  FolderSync,
-  Link2,
-  Plus,
-  Search,
-  Settings2,
-  Upload,
-  X,
-} from "lucide-react";
-import { type DragEvent, Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import type { KnowledgeBase } from "@orc/core/kb";
+import { ArrowLeft, BookOpen, ChevronRight, FileText, Menu, Plus, Search, X } from "lucide-react";
+import { type DragEvent, Fragment, type ReactNode, useEffect, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { confirmDocumentClose } from "@/components/DocumentWorkspace";
 import { ErrorState } from "@/components/ErrorState";
-import { KbComments } from "@/components/kb/KbComments";
-import {
-  CreateKbDialog,
-  KbSettingsDialog,
-  NewDocumentDialog,
-  SourcesDialog,
-} from "@/components/kb/KbDialogs";
-import { KbDigestSection } from "@/components/kb/KbDigest";
-import { KbDocumentPane, kbWorkspaceId, UsageTable } from "@/components/kb/KbDocumentPane";
+import { CreateKbDialog, KbSettingsDialog, NewDocumentDialog } from "@/components/kb/KbDialogs";
+import { KbDocumentPane, kbWorkspaceId } from "@/components/kb/KbDocumentPane";
+import { KbHome } from "@/components/kb/KbHome";
+import type { KbUpload } from "@/components/kb/useKbUploads";
 import { useKbUploads } from "@/components/kb/useKbUploads";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ViewHeader } from "@/components/ViewHeader";
 import {
   useKbDocument,
   useKbDocuments,
-  useKbMaintenance,
   useKbSearch,
   useKbStatus,
-  useKbUsage,
   useKnowledgeBases,
 } from "@/hooks/useKnowledge";
 import { useProjectScope } from "@/hooks/useProjectScope";
 import { useProjects } from "@/hooks/useProjects";
+import { cn } from "@/lib/utils";
 import Memories from "@/views/Memories";
 
-type Dialog = "create" | "settings" | "new-document" | "sources" | null;
+type Dialog = "create" | "settings" | "new-document" | null;
 
 export default function Knowledge({ projectId: savedProjectId }: { projectId: string }) {
   const projectId = useProjectScope(savedProjectId);
   const { pathname } = useLocation();
-  return (
-    <div data-testid="knowledge-base-view">
-      {pathname.startsWith("/knowledge/memories") ? (
+  if (pathname.startsWith("/knowledge/memories"))
+    return (
+      <div data-testid="knowledge-base-view">
         <Memories projectId={savedProjectId} embedded />
-      ) : (
-        <KnowledgeBases
-          key={projectId}
-          projectId={projectId === "all" || projectId === "unassigned" ? undefined : projectId}
-        />
-      )}
+      </div>
+    );
+  return (
+    <div data-testid="knowledge-base-view" className="flex min-h-0 min-w-0 flex-1">
+      <KnowledgeBases
+        key={projectId}
+        projectId={projectId === "all" || projectId === "unassigned" ? undefined : projectId}
+      />
     </div>
   );
 }
 
+/** Markdown syntax in a search snippet becomes the plain text a reader sees. */
+function plainText(markdown: string): string {
+  return markdown
+    .replace(/```[\w-]*/g, " ")
+    .replace(/<\/?[a-z][^>]*>/gi, " ")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/(^|\s)#{1,6}\s+/g, "$1")
+    .replace(/(^|\n)\s*(?:>\s*)+/g, "$1")
+    .replace(/(^|\n)\s*(?:[-*+]|\d+[.)])\s+/g, "$1")
+    .replace(/\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?/g, " ")
+    .replace(/(^|\s)(?:\*{3,}|_{3,})(?=\s|$)/g, "$1")
+    .replace(/`/g, "")
+    .replace(/(^|[\s(«])[*_~]+(?=\S)/g, "$1")
+    .replace(/(\S)[*_~]+(?=$|[\s).,;:!?»])/g, "$1")
+    .replace(/\s*\|[\s|]*/g, " · ")
+    .replace(/\s+/g, " ")
+    .replace(/^ · | · $/g, "")
+    .trim();
+}
+
 /** «term» marks from the search snippet become highlights. */
 function Snippet({ text }: { text: string }) {
-  const parts = text.split(/«([^»]*)»/g);
+  const parts = plainText(text).split(/«([^»]*)»/g);
   return (
     <>
       {parts.map((part, i) =>
@@ -86,56 +86,39 @@ function Snippet({ text }: { text: string }) {
   );
 }
 
-function CopyCitation({ passage }: { passage: KbPassage }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      data-testid="kb-citation"
-      title="Copy citation"
-      className="inline-flex items-center gap-1 font-mono text-xs text-outline hover:text-primary"
-      onClick={(e) => {
-        e.stopPropagation();
-        void navigator.clipboard?.writeText(passage.citation).then(() => {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        });
-      }}
-    >
-      {copied ? <Check size={12} /> : <Copy size={12} />}
-      {passage.citation}
-    </button>
-  );
-}
-
 function KnowledgeBases({ projectId }: { projectId: string | undefined }) {
   const [params, setParams] = useSearchParams();
   const kbId = params.get("kb");
   const documentId = params.get("document");
-  const folder = params.get("folder") ?? "";
   const label = params.get("label") ?? "";
   const query = params.get("q") ?? "";
   const searchAll = params.get("searchAll") === "1";
   const [queryInput, setQueryInput] = useState(query);
   useEffect(() => setQueryInput(query), [query]);
   const [dialog, setDialog] = useState<Dialog>(null);
-  const [filesOpen, setFilesOpen] = useState(false);
-  const [linksOpen, setLinksOpen] = useState(true);
+  const [navOpen, setNavOpen] = useState(false);
+  // The details column fits beside a readable document only on wide screens.
+  const [detailsOpen, setDetailsOpen] = useState(
+    () => typeof window !== "undefined" && window.innerWidth >= 1600,
+  );
   const [dragging, setDragging] = useState(false);
   const [pendingHeading, setPendingHeading] = useState<string | null>(null);
-  const uploadInput = useRef<HTMLInputElement>(null);
+  const [droppedFile, setDroppedFile] = useState<File>();
+  function closeNewDocument() {
+    setDialog(null);
+    setDroppedFile(undefined);
+  }
 
-  const status = useKbStatus();
   const projects = useProjects();
   const bases = useKnowledgeBases(projectId);
   const kb = bases.data?.find((b) => b.id === kbId) ?? null;
-  const listing = useKbDocuments(kb?.id ?? null, {
-    ...(folder ? { folder } : {}),
-    ...(label ? { label } : {}),
-  });
+  const listing = useKbDocuments(kb?.id ?? null);
   const doc = useKbDocument(documentId);
+  // The URL's KB resolves once the bases load (or defaults to the first one); searching before
+  // then would send the query unscoped and again scoped.
+  const scopeSettled = bases.data !== undefined && (kb !== null || bases.data.length === 0);
   const search = useKbSearch(
-    query
+    query && scopeSettled
       ? {
           query,
           ...(kb && !searchAll ? { kb_ids: [kb.id] } : {}),
@@ -163,17 +146,38 @@ function KnowledgeBases({ projectId }: { projectId: string | undefined }) {
   const leaveDocument = () => !documentId || confirmDocumentClose(kbWorkspaceId(documentId));
 
   function selectKb(id: string | null) {
-    // Choosing the open KB again leaves the document for its overview.
-    if ((id === kbId && !documentId) || !leaveDocument()) return;
-    update({ kb: id, document: null, folder: null, label: null });
-    setFilesOpen(false);
+    setNavOpen(false);
+    // Choosing the open KB again leaves the document for its home page.
+    if ((id === kbId && !documentId && !query) || !leaveDocument()) return;
+    // Finished uploads belong to the KB being left.
+    if (id !== kbId) uploads.clearFinished();
+    update({ kb: id, document: null, label: null, q: null });
   }
   function openDocument(id: string, heading?: string) {
+    setNavOpen(false);
     if (id !== documentId && !leaveDocument()) return;
     update({ document: id, q: null });
     setPendingHeading(heading ?? null);
-    setFilesOpen(false);
   }
+  /** A result opens with the query kept, so going back shows the same results. */
+  function openResult(id: string, heading?: string) {
+    update({ document: id });
+    setPendingHeading(heading ?? null);
+  }
+  function submitSearch() {
+    setNavOpen(false);
+    const next = queryInput.trim();
+    if (!next) return update({ q: null });
+    if (!leaveDocument()) return;
+    update({ q: next, document: null });
+  }
+
+  useEffect(() => {
+    if (!navOpen) return;
+    const close = (e: KeyboardEvent) => e.key === "Escape" && setNavOpen(false);
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [navOpen]);
 
   // Default to the first visible KB; drop a KB that no longer exists (deleted elsewhere).
   useEffect(() => {
@@ -184,7 +188,7 @@ function KnowledgeBases({ projectId }: { projectId: string | undefined }) {
   // Links and search results can open a document in another KB; follow it.
   useEffect(() => {
     if (doc.data && doc.data.kb_id !== kbId && bases.data?.some((b) => b.id === doc.data.kb_id))
-      update({ kb: doc.data.kb_id, folder: null, label: null }, true);
+      update({ kb: doc.data.kb_id, label: null }, true);
   });
   useEffect(() => {
     if (!pendingHeading || !doc.data) return;
@@ -198,352 +202,228 @@ function KnowledgeBases({ projectId }: { projectId: string | undefined }) {
     }
   });
 
-  function upload(files: FileList | File[] | null) {
-    if (!kb || !files?.length) return;
-    uploads.add(kb.id, [...files], folder ? { folder } : {});
-  }
+  // One dropped file opens for review in the new document dialog; several upload together.
   function onDrop(e: DragEvent) {
     e.preventDefault();
     setDragging(false);
-    upload(e.dataTransfer.files);
+    const files = [...e.dataTransfer.files];
+    if (!kb || files.length === 0) return;
+    if (files.length > 1) uploads.add(kb.id, files);
+    else {
+      setDroppedFile(files[0]);
+      setDialog("new-document");
+    }
   }
 
   const projectName = (id: string | null) =>
     id === null ? "Global" : (projects.data?.find((p) => p.id === id)?.name ?? "Project");
-  const s = status.data;
-  const meta = s
-    ? `${s.documents} documents in ${s.knowledge_bases} knowledge bases · ${
-        s.embedding.provider === "none"
-          ? "keyword search (configure embeddings in Settings for semantic search)"
-          : s.embedding.ready
-            ? `hybrid search · ${s.embedding.model}`
-            : `embeddings: ${s.embedding.detail ?? "not ready"}`
-      }${s.jobs.queued + s.jobs.running ? ` · ${s.jobs.queued + s.jobs.running} jobs running` : ""}`
-    : status.error
-      ? "Knowledge status unavailable"
-      : "Loading…";
 
   if (bases.error)
     return <ErrorState message={(bases.error as Error).message} onRetry={() => bases.refetch()} />;
 
-  const sidebar = (
-    <aside aria-label="Knowledge bases" data-testid="kb-sidebar" className="min-w-0 space-y-5 p-4">
-      <section className="space-y-1">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">Knowledge bases</h2>
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label="New knowledge base"
-            data-testid="kb-create"
-            onClick={() => setDialog("create")}
-          >
-            <Plus size={16} />
-          </Button>
-        </div>
-        {bases.isLoading && <Skeleton className="h-10 w-full" />}
-        <div data-testid="kb-list" className="space-y-0.5">
-          {bases.data?.map((b) => (
-            <button
-              type="button"
-              key={b.id}
-              data-testid="kb-row"
-              data-kb-name={b.name}
-              aria-current={b.id === kbId ? "true" : undefined}
-              className={`flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-surface-high ${b.id === kbId ? "bg-surface-high font-medium" : ""}`}
-              onClick={() => selectKb(b.id)}
-            >
-              <BookOpen size={15} className="shrink-0" />
-              <span className="min-w-0 flex-1 truncate">{b.name}</span>
-              {b.editable_by.includes("mcp") && (
-                <span className="text-xs text-primary" title="Agents can change documents">
-                  agents edit
-                </span>
-              )}
-              {(b.project_id === null || !projectId) && (
-                <span className="text-xs text-outline">{projectName(b.project_id)}</span>
-              )}
-              <span className="text-xs tabular-nums text-outline">{b.document_count}</span>
-            </button>
-          ))}
-        </div>
-      </section>
-      {kb && listing.data && (
-        <>
-          {listing.data.folders.length > 0 && (
-            <section className="space-y-0.5" data-testid="kb-folders">
-              <h2 className="mb-1 text-sm font-medium">Folders</h2>
-              <button
-                type="button"
-                className={`flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-surface-high ${folder ? "" : "bg-surface-high"}`}
-                onClick={() => update({ folder: null })}
-              >
-                <FolderOpen size={14} />
-                All documents
-              </button>
-              {listing.data.folders.map((f) => (
-                <button
-                  type="button"
-                  key={f}
-                  data-testid="kb-folder"
-                  data-folder={f}
-                  className={`flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-surface-high ${folder === f ? "bg-surface-high" : ""}`}
-                  style={{ paddingLeft: `${0.5 + (f.split("/").length - 1) * 0.75}rem` }}
-                  onClick={() => update({ folder: folder === f ? null : f })}
-                >
-                  <Folder size={14} className="shrink-0" />
-                  <span className="truncate">{f.split("/").pop()}</span>
-                </button>
-              ))}
-            </section>
-          )}
-          {listing.data.labels.length > 0 && (
-            <section data-testid="kb-labels">
-              <h2 className="mb-2 text-sm font-medium">Labels</h2>
-              <div className="flex flex-wrap gap-1.5">
-                {listing.data.labels.map((l) => (
-                  <button
-                    type="button"
-                    key={l.label}
-                    data-testid="kb-label-filter"
-                    aria-pressed={label === l.label}
-                    className={`rounded-full border px-2 py-0.5 text-xs ${label === l.label ? "border-primary bg-primary/10 text-primary" : "border-outline-variant text-outline hover:text-on-surface"}`}
-                    onClick={() => update({ label: label === l.label ? null : l.label })}
-                  >
-                    {l.label} {l.count}
-                  </button>
-                ))}
-              </div>
-            </section>
-          )}
-          <section className="space-y-0.5" data-testid="kb-documents">
-            <h2 className="mb-1 text-sm font-medium">
-              Documents{folder || label ? " (filtered)" : ""}
-            </h2>
-            {listing.data.documents.length === 0 && (
-              <p className="text-sm text-outline" data-testid="kb-documents-empty">
-                {folder || label ? "No documents match." : "No documents yet."}
-              </p>
-            )}
-            {listing.data.documents.map((d) => (
-              <button
-                type="button"
-                key={d.id}
-                data-testid="kb-document-row"
-                data-document-title={d.title}
-                aria-current={d.id === documentId ? "true" : undefined}
-                className={`flex min-h-10 w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-surface-high ${d.id === documentId ? "bg-surface-high" : ""}`}
-                onClick={() => openDocument(d.id)}
-              >
-                <FileText size={15} className="mt-0.5 shrink-0" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate">{d.title}</span>
-                  <span className="block truncate font-mono text-xs text-outline">{d.path}</span>
-                </span>
-                <span
-                  className="shrink-0 text-xs text-outline"
-                  title="Reads by agents, CLI, API and UI"
-                >
-                  {d.parse_state === "pending"
-                    ? "parsing…"
-                    : d.parse_state === "failed"
-                      ? "failed"
-                      : d.reads
-                        ? `${d.reads} reads`
-                        : ""}
-                </span>
-              </button>
-            ))}
-          </section>
-        </>
-      )}
-    </aside>
-  );
+  const content = documentId ? (
+    doc.data && kb ? (
+      <KbDocumentPane
+        key={doc.data.id}
+        kb={kb}
+        doc={doc.data}
+        detailsOpen={detailsOpen}
+        onDetailsOpenChange={setDetailsOpen}
+        onHome={() => selectKb(kb.id)}
+        onOpen={openDocument}
+        onDeleted={() => update({ document: null })}
+        onReplaceFile={(file) =>
+          doc.data &&
+          uploads.add(doc.data.kb_id, [file], {
+            replace: { document_id: doc.data.id, expected_revision: doc.data.revision },
+          })
+        }
+      />
+    ) : doc.error ? (
+      <Centered>
+        <p role="alert" data-testid="kb-document-error" className="text-sm text-error">
+          {(doc.error as Error).message}
+        </p>
+        <Button variant="outline" onClick={() => update({ document: null })}>
+          Back
+        </Button>
+      </Centered>
+    ) : (
+      <Centered>
+        <p role="status" className="text-sm text-outline">
+          Loading document…
+        </p>
+      </Centered>
+    )
+  ) : query ? (
+    <Scroll>
+      <SearchResults
+        query={query}
+        search={search}
+        onOpen={openResult}
+        onClear={() => update({ q: null })}
+      />
+    </Scroll>
+  ) : kb ? (
+    <Scroll>
+      <KbHome
+        kb={kb}
+        owner={projectName(kb.project_id)}
+        listing={listing.data}
+        label={label}
+        onLabel={(next) => update({ label: next })}
+        onOpen={openDocument}
+        onNewDocument={() => setDialog("new-document")}
+        onSettings={() => setDialog("settings")}
+      />
+    </Scroll>
+  ) : bases.data?.length === 0 ? (
+    <Centered testId="empty-state">
+      <BookOpen size={28} className="text-primary" />
+      <h2 className="text-xl font-medium">Build a knowledge base</h2>
+      <p className="max-w-md text-outline">
+        Upload documents, write Markdown or sync a folder. Agents search it with citations through
+        MCP, the CLI and the API, and you can see what they read.
+      </p>
+      <Button data-testid="kb-empty-create" onClick={() => setDialog("create")}>
+        <Plus size={16} />
+        New knowledge base
+      </Button>
+    </Centered>
+  ) : null;
 
   return (
-    <>
-      <ViewHeader title="Knowledge bases" meta={<span role="status">{meta}</span>} />
-      <section
-        data-testid="knowledge-bases"
-        className="min-w-0 border border-outline-variant bg-background"
+    <div data-testid="knowledge-bases" className="relative flex min-h-0 min-w-0 flex-1">
+      <h1 data-testid="view-title" className="sr-only">
+        Knowledge bases
+      </h1>
+      <nav
+        id="kb-sidebar-panel"
+        aria-label="Knowledge bases"
+        data-testid="kb-sidebar"
+        className={cn(
+          "min-h-0 flex-col border-outline-variant bg-background lg:static lg:flex lg:w-72 lg:shrink-0 lg:border-r",
+          navOpen ? "absolute inset-0 z-20 flex" : "hidden",
+        )}
       >
-        <div className="flex flex-wrap items-center gap-2 border-b border-outline-variant p-3">
+        <form
+          className="flex shrink-0 items-center gap-1.5 border-b border-outline-variant p-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitSearch();
+          }}
+        >
+          <Input
+            aria-label="Search knowledge"
+            data-testid="kb-search-input"
+            value={queryInput}
+            onChange={(e) => setQueryInput(e.target.value)}
+            placeholder={kb && !searchAll ? `Search ${kb.name}` : "Search everything"}
+            className="h-9 min-w-0 flex-1"
+          />
           <Button
-            variant="outline"
-            className="lg:hidden"
-            aria-expanded={filesOpen}
-            aria-controls="kb-sidebar-panel"
-            onClick={() => setFilesOpen(!filesOpen)}
+            type="submit"
+            size="icon"
+            variant="ghost"
+            data-testid="kb-search-submit"
+            aria-label="Search"
           >
-            <FolderOpen size={16} />
-            Files
+            <Search size={16} />
           </Button>
-          <form
-            className="flex min-w-0 flex-1 items-center gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              update({ q: queryInput.trim() || null });
-            }}
-          >
-            <Input
-              aria-label="Search knowledge"
-              data-testid="kb-search-input"
-              value={queryInput}
-              onChange={(e) => setQueryInput(e.target.value)}
-              placeholder={kb && !searchAll ? `Search ${kb.name}` : "Search all knowledge bases"}
-              className="min-w-0 flex-1 sm:max-w-md"
-            />
+          {navOpen && (
             <Button
-              type="submit"
-              variant="outline"
-              data-testid="kb-search-submit"
-              aria-label="Search"
+              type="button"
+              size="icon"
+              variant="ghost"
+              aria-label="Close"
+              onClick={() => setNavOpen(false)}
             >
-              <Search size={16} />
+              <X size={16} />
             </Button>
-            {kb && (
-              <label className="hidden items-center gap-1 text-xs text-outline sm:flex">
-                <input
-                  type="checkbox"
-                  data-testid="kb-search-all"
-                  checked={searchAll}
-                  onChange={(e) => update({ searchAll: e.target.checked ? "1" : null })}
-                />
-                All knowledge bases
-              </label>
-            )}
-          </form>
-          {kb && (
-            <>
-              <Button data-testid="kb-upload" onClick={() => uploadInput.current?.click()}>
-                <Upload size={16} />
-                Upload
-              </Button>
-              <input
-                ref={uploadInput}
-                type="file"
-                multiple
-                hidden
-                data-testid="kb-upload-input"
-                onChange={(e) => {
-                  upload(e.target.files);
-                  e.target.value = "";
-                }}
-              />
-              <Button
-                variant="ghost"
-                data-testid="kb-new-document"
-                onClick={() => setDialog("new-document")}
-              >
-                <FilePlus size={16} />
-                New
-              </Button>
-              <Button variant="ghost" data-testid="kb-sources" onClick={() => setDialog("sources")}>
-                <FolderSync size={16} />
-                Folders
-              </Button>
-              <Button
-                variant={linksOpen ? "secondary" : "ghost"}
-                aria-pressed={linksOpen}
-                data-testid="kb-details-toggle"
-                onClick={() => setLinksOpen(!linksOpen)}
-              >
-                <Link2 size={16} />
-                Details
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Knowledge base settings"
-                data-testid="kb-settings"
-                onClick={() => setDialog("settings")}
-              >
-                <Settings2 size={16} />
-              </Button>
-            </>
           )}
+        </form>
+        {kb && (
+          <label className="flex shrink-0 items-center gap-2 border-b border-outline-variant px-3 py-2 text-xs text-outline">
+            <input
+              type="checkbox"
+              data-testid="kb-search-all"
+              checked={searchAll}
+              onChange={(e) => update({ searchAll: e.target.checked ? "1" : null })}
+            />
+            Search all knowledge bases
+          </label>
+        )}
+        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+          <div className="flex items-center justify-between px-2 pb-1">
+            <h2 className="text-sm font-medium text-outline">Knowledge bases</h2>
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="New knowledge base"
+              data-testid="kb-create"
+              onClick={() => setDialog("create")}
+            >
+              <Plus size={16} />
+            </Button>
+          </div>
+          {bases.isLoading && <Skeleton className="mx-2 h-9" />}
+          <KbTree
+            bases={bases.data ?? []}
+            projectName={projectName}
+            kbId={kbId}
+            documentId={documentId}
+            documents={listing.data?.documents ?? []}
+            onSelectKb={selectKb}
+            onOpenDocument={openDocument}
+          />
         </div>
+        <KbStatusLine />
+      </nav>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: drop target; uploads also have a button */}
+      <div
+        data-testid="kb-dropzone"
+        className={cn(
+          "relative flex min-h-0 min-w-0 flex-1 flex-col",
+          dragging && "outline-2 -outline-offset-4 outline-dashed outline-primary",
+        )}
+        onDragOver={(e) => {
+          if (!kb) return;
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={onDrop}
+      >
+        <div className="flex shrink-0 items-center gap-2 border-b border-outline-variant px-3 py-2 lg:hidden">
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-expanded={navOpen}
+            aria-controls="kb-sidebar-panel"
+            onClick={() => setNavOpen(true)}
+          >
+            <Menu size={16} />
+            Browse
+          </Button>
+          {kb && <span className="min-w-0 truncate text-sm text-outline">{kb.name}</span>}
+        </div>
+        {documentId && query && (
+          <div className="flex shrink-0 items-center border-b border-outline-variant px-3 py-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="kb-search-back"
+              className="min-w-0"
+              onClick={() => leaveDocument() && update({ document: null })}
+            >
+              <ArrowLeft size={14} />
+              <span className="truncate">Back to results for “{query}”</span>
+            </Button>
+          </div>
+        )}
+        <div className="flex min-h-0 min-w-0 flex-1">{content}</div>
         <UploadQueue uploads={uploads} onOpen={openDocument} />
-        <div className="flex min-h-[60vh] min-w-0 flex-col lg:flex-row">
-          <div
-            id="kb-sidebar-panel"
-            className={`${filesOpen ? "block" : "hidden"} w-full shrink-0 border-b border-outline-variant lg:block lg:w-72 lg:border-b-0 lg:border-r`}
-          >
-            {sidebar}
-          </div>
-          {/* biome-ignore lint/a11y/noStaticElementInteractions: drop target; uploads also have a button */}
-          <div
-            className={`relative flex min-w-0 flex-1 ${dragging ? "outline-2 outline-dashed outline-primary" : ""}`}
-            data-testid="kb-dropzone"
-            onDragOver={(e) => {
-              if (!kb) return;
-              e.preventDefault();
-              setDragging(true);
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={onDrop}
-          >
-            {query ? (
-              <SearchResults
-                query={query}
-                search={search}
-                onOpen={openDocument}
-                onClear={() => update({ q: null })}
-              />
-            ) : documentId ? (
-              doc.data ? (
-                <KbDocumentPane
-                  key={doc.data.id}
-                  doc={doc.data}
-                  linksOpen={linksOpen}
-                  onOpen={openDocument}
-                  onDeleted={() => update({ document: null })}
-                  onReplaceFile={(file) =>
-                    doc.data &&
-                    uploads.add(doc.data.kb_id, [file], {
-                      replace: { document_id: doc.data.id, expected_revision: doc.data.revision },
-                    })
-                  }
-                />
-              ) : doc.error ? (
-                <Centered>
-                  <p role="alert" data-testid="kb-document-error" className="text-sm text-error">
-                    {(doc.error as Error).message}
-                  </p>
-                  <Button variant="outline" onClick={() => update({ document: null })}>
-                    Back
-                  </Button>
-                </Centered>
-              ) : (
-                <Centered>
-                  <p role="status" className="text-sm text-outline">
-                    Loading document…
-                  </p>
-                </Centered>
-              )
-            ) : kb ? (
-              <KbOverview
-                kb={kb}
-                onUpload={() => uploadInput.current?.click()}
-                onOpen={openDocument}
-              />
-            ) : bases.data?.length === 0 ? (
-              <Centered testId="empty-state">
-                <BookOpen size={28} className="text-primary" />
-                <h2 className="text-xl font-medium">Build a knowledge base</h2>
-                <p className="max-w-md text-outline">
-                  Upload documents, write Markdown or register a folder. Agents search it with
-                  citations through MCP, the CLI and the API, and you can see what they read.
-                </p>
-                <Button data-testid="kb-empty-create" onClick={() => setDialog("create")}>
-                  <Plus size={16} />
-                  New knowledge base
-                </Button>
-              </Centered>
-            ) : null}
-          </div>
-        </div>
-      </section>
+      </div>
       {dialog === "create" && (
         <CreateKbDialog
           open
@@ -551,7 +431,7 @@ function KnowledgeBases({ projectId }: { projectId: string | undefined }) {
           onClose={() => setDialog(null)}
           onCreated={(created) => {
             setDialog(null);
-            update({ kb: created.id, document: null, folder: null, label: null });
+            update({ kb: created.id, document: null, label: null, q: null });
           }}
         />
       )}
@@ -561,31 +441,184 @@ function KnowledgeBases({ projectId }: { projectId: string | undefined }) {
           onClose={() => setDialog(null)}
           onDeleted={() => {
             setDialog(null);
-            update({ kb: null, document: null, folder: null, label: null });
+            update({ kb: null, document: null, label: null });
           }}
         />
       )}
       {dialog === "new-document" && kb && (
         <NewDocumentDialog
           kb={kb}
-          folder={folder}
-          onClose={() => setDialog(null)}
-          onCreated={(created) => {
-            setDialog(null);
-            update({ document: created.id, editorMode: "edit" });
+          initialFile={droppedFile}
+          onClose={closeNewDocument}
+          onUploadMany={(files) => {
+            closeNewDocument();
+            uploads.add(kb.id, files);
+          }}
+          onCreated={(created, written) => {
+            closeNewDocument();
+            // An empty document opens ready to write; a pasted one opens to read.
+            update({ document: created.id, editorMode: written ? null : "edit" });
           }}
         />
       )}
-      {dialog === "sources" && kb && <SourcesDialog kb={kb} onClose={() => setDialog(null)} />}
-    </>
+    </div>
   );
+}
+
+/** Knowledge bases grouped by owner; the open one lists its documents beneath it. */
+function KbTree({
+  bases,
+  projectName,
+  kbId,
+  documentId,
+  documents,
+  onSelectKb,
+  onOpenDocument,
+}: {
+  bases: KnowledgeBase[];
+  projectName: (id: string | null) => string;
+  kbId: string | null;
+  documentId: string | null;
+  documents: { id: string; title: string }[];
+  onSelectKb: (id: string) => void;
+  onOpenDocument: (id: string) => void;
+}) {
+  // Clicking the open knowledge base again folds its document list; opening a document unfolds it.
+  const [folded, setFolded] = useState<string | null>(null);
+  useEffect(() => {
+    if (documentId) setFolded(null);
+  }, [documentId]);
+  const groups = new Map<string, KnowledgeBase[]>();
+  for (const b of bases) {
+    const name = projectName(b.project_id);
+    groups.set(name, [...(groups.get(name) ?? []), b]);
+  }
+  const ordered = [...groups.entries()].sort(([a], [b]) =>
+    a === "Global" ? -1 : b === "Global" ? 1 : a.localeCompare(b),
+  );
+  return (
+    <div data-testid="kb-list" className="space-y-3">
+      {ordered.map(([group, list]) => (
+        <section key={group} aria-label={group}>
+          {ordered.length > 1 && (
+            <h3 className="truncate px-2 pb-0.5 pt-1 text-xs text-outline">{group}</h3>
+          )}
+          <ul className="space-y-0.5">
+            {list.map((b) => {
+              const open = b.id === kbId;
+              const listed = open && folded !== b.id && documents.length > 0;
+              return (
+                <li key={b.id}>
+                  <button
+                    type="button"
+                    data-testid="kb-row"
+                    data-kb-name={b.name}
+                    aria-current={open && !documentId ? "page" : undefined}
+                    aria-expanded={listed}
+                    className={cn(
+                      "flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-surface-high",
+                      open && "font-medium",
+                      open && !documentId && "bg-surface-high",
+                    )}
+                    onClick={() => {
+                      if (open) setFolded((f) => (f === b.id ? null : b.id));
+                      onSelectKb(b.id);
+                    }}
+                  >
+                    <ChevronRight
+                      size={14}
+                      aria-hidden
+                      className={cn(
+                        "-mr-1 shrink-0 text-outline transition-transform motion-reduce:transition-none",
+                        listed && "rotate-90",
+                        b.document_count === 0 && "invisible",
+                      )}
+                    />
+                    <BookOpen size={15} className="shrink-0 text-outline" aria-hidden />
+                    <span className="min-w-0 flex-1 truncate">{b.name}</span>
+                    <span className="text-xs font-normal tabular-nums text-outline">
+                      {b.document_count}
+                    </span>
+                  </button>
+                  {listed && (
+                    <ul className="ml-4 mt-0.5 space-y-0.5 border-l border-outline-variant pl-2">
+                      {documents.map((d) => (
+                        <li key={d.id}>
+                          <button
+                            type="button"
+                            data-testid="kb-nav-document"
+                            data-document-title={d.title}
+                            aria-current={d.id === documentId ? "page" : undefined}
+                            className={cn(
+                              "flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-surface-high",
+                              d.id === documentId
+                                ? "bg-surface-high text-on-surface"
+                                : "text-outline",
+                            )}
+                            onClick={() => onOpenDocument(d.id)}
+                          >
+                            <FileText size={14} className="shrink-0" aria-hidden />
+                            <span className="min-w-0 flex-1 truncate">{d.title}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+/** The search mode and background work, at the foot of the navigation. Each KB row shows its
+ * own document count. */
+function KbStatusLine() {
+  const status = useKbStatus();
+  const s = status.data;
+  const searchMode = !s
+    ? null
+    : s.embedding.provider === "none"
+      ? {
+          text: "Keyword search only",
+          title: "Configure embeddings in Settings to also search by meaning",
+        }
+      : s.embedding.ready
+        ? { text: "Hybrid search", title: s.embedding.model ?? undefined }
+        : { text: "Embeddings not ready", title: s.embedding.detail ?? "" };
+  const jobs = s ? s.jobs.queued + s.jobs.running : 0;
+  return (
+    <p
+      role="status"
+      data-testid="kb-status"
+      className="shrink-0 border-t border-outline-variant px-4 py-2 text-xs text-outline"
+    >
+      {s ? (
+        <>
+          <span title={searchMode?.title}>{searchMode?.text}</span>
+          {jobs ? ` · ${jobs} processing` : ""}
+        </>
+      ) : status.error ? (
+        "Knowledge status unavailable"
+      ) : (
+        "Loading…"
+      )}
+    </p>
+  );
+}
+
+function Scroll({ children }: { children: ReactNode }) {
+  return <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">{children}</div>;
 }
 
 function Centered({ children, testId }: { children: ReactNode; testId?: string }) {
   return (
     <div
       data-testid={testId}
-      className="mx-auto flex min-h-72 max-w-lg flex-1 flex-col items-start justify-center gap-4 p-6"
+      className="mx-auto flex max-w-lg flex-1 flex-col items-start justify-center gap-4 p-6"
     >
       {children}
     </div>
@@ -608,14 +641,13 @@ function SearchResults({
     <section
       data-testid="kb-search-results"
       aria-label="Search results"
-      className="min-w-0 flex-1 space-y-4 p-4 sm:p-6"
+      className="w-full min-w-0 space-y-4 p-4 sm:p-8"
     >
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="mr-auto text-lg font-medium">Results for “{query}”</h2>
-        {result && (
-          <span className="text-xs text-outline" data-testid="kb-search-mode">
-            {result.mode} search ·{" "}
-            {Math.round(Object.values(result.timings_ms).reduce((a, b) => a + b, 0))} ms
+        {result && result.hits.length > 0 && (
+          <span className="text-xs text-outline" data-testid="kb-search-count">
+            {result.hits.length} {result.hits.length === 1 ? "result" : "results"}
           </span>
         )}
         <Button variant="ghost" size="sm" onClick={onClear} data-testid="kb-search-clear">
@@ -651,8 +683,8 @@ function SearchResults({
             onClick={() => onOpen(hit.document_id, lastHeading(hit.passages[0]?.heading_path))}
           >
             <span className="block font-medium text-primary hover:underline">{hit.title}</span>
-            <span className="block font-mono text-xs text-outline">
-              {hit.kb_name} · {hit.path} · {hit.matched_by.join(" + ")}
+            <span className="block break-all text-xs text-outline">
+              {hit.kb_name} · {hit.path}
             </span>
           </button>
           {hit.labels.length > 0 && (
@@ -673,21 +705,18 @@ function SearchResults({
               className="cursor-pointer space-y-1 rounded-md p-2 hover:bg-surface-high"
               onClick={() => onOpen(hit.document_id, lastHeading(p.heading_path))}
             >
-              {p.heading_path.length > 0 && (
-                <div className="text-xs text-outline">{p.heading_path.join(" › ")}</div>
+              {(p.heading_path.length > 0 || p.locator?.page || p.locator?.sheet) && (
+                <div className="text-xs text-outline">
+                  {[
+                    ...p.heading_path.map(plainText),
+                    ...(p.locator?.page ? [`page ${p.locator.page}`] : []),
+                    ...(p.locator?.sheet ? [`sheet ${p.locator.sheet}`] : []),
+                  ].join(" › ")}
+                </div>
               )}
               <p className="text-sm leading-relaxed">
                 <Snippet text={p.snippet} />
               </p>
-              <div className="flex flex-wrap items-center gap-3">
-                <CopyCitation passage={p} />
-                {p.locator?.page && (
-                  <span className="text-xs text-outline">page {p.locator.page}</span>
-                )}
-                {p.locator?.sheet && (
-                  <span className="text-xs text-outline">sheet {p.locator.sheet}</span>
-                )}
-              </div>
             </div>
           ))}
         </article>
@@ -696,97 +725,8 @@ function SearchResults({
   );
 }
 
-function KbOverview({
-  kb,
-  onUpload,
-  onOpen,
-}: {
-  kb: KnowledgeBase;
-  onUpload: () => void;
-  onOpen: (documentId: string) => void;
-}) {
-  const usage = useKbUsage(kb.id);
-  const maintenance = useKbMaintenance(kb.id);
-  const m = maintenance.data;
-  return (
-    <section data-testid="kb-overview" className="min-w-0 flex-1 space-y-6 p-4 sm:p-6">
-      <div className="space-y-2">
-        <h2 className="text-2xl font-medium" data-testid="kb-overview-name">
-          {kb.name}
-        </h2>
-        {kb.description && <p className="text-outline">{kb.description}</p>}
-        <p className="text-sm text-outline">
-          {kb.document_count} documents ·{" "}
-          {kb.editable_by.length
-            ? `editable from ${kb.editable_by.join(", ")}`
-            : "read-only from every source"}
-        </p>
-      </div>
-      {kb.document_count === 0 ? (
-        <div className="rounded-md border border-dashed border-outline-variant p-6 text-center">
-          <Upload size={24} className="mx-auto mb-2 text-primary" />
-          <p className="mb-3 text-sm text-outline">
-            Drop files here (PDF, Word, PowerPoint, Excel, HTML, Markdown, text) or
-          </p>
-          <Button onClick={onUpload} data-testid="kb-overview-upload">
-            Choose files
-          </Button>
-        </div>
-      ) : null}
-      <div className="grid gap-6 md:grid-cols-2">
-        <div>
-          <h3 className="mb-2 font-medium">Reads</h3>
-          {usage.data ? (
-            <UsageTable usage={usage.data} testId="kb-usage" />
-          ) : (
-            <p className="text-sm text-outline">Loading…</p>
-          )}
-        </div>
-        <div data-testid="kb-maintenance" className="space-y-2 text-sm">
-          <h3 className="font-medium">Needs attention</h3>
-          {m && !m.stale.length && !m.failed.length && !m.unresolved_links.length && (
-            <p className="text-outline">Nothing. Documents are parsed, indexed and linked.</p>
-          )}
-          {m?.failed.map((d) => (
-            <button
-              type="button"
-              key={d.id}
-              className="block text-left text-error hover:underline"
-              onClick={() => onOpen(d.id)}
-            >
-              Parsing failed: {d.title}
-            </button>
-          ))}
-          {m?.stale.map((d) => (
-            <button
-              type="button"
-              key={d.id}
-              className="block text-left text-warning hover:underline"
-              onClick={() => onOpen(d.id)}
-            >
-              Stale summary: {d.title}
-            </button>
-          ))}
-          {m?.unresolved_links.map((l) => (
-            <button
-              type="button"
-              key={`${l.document_id}-${l.target}`}
-              className="block text-left text-outline hover:underline"
-              onClick={() => onOpen(l.document_id)}
-            >
-              [[{l.target}]] in {l.title} has no target
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="grid gap-6 md:grid-cols-2">
-        <KbDigestSection kb={kb} />
-        <KbComments kbId={kb.id} onOpenDocument={onOpen} />
-      </div>
-    </section>
-  );
-}
-
+/** Floats over the content so it never pushes the page down; finished items stay until dismissed
+ * or the user moves to another knowledge base. */
 function UploadQueue({
   uploads,
   onOpen,
@@ -795,15 +735,16 @@ function UploadQueue({
   onOpen: (documentId: string) => void;
 }) {
   if (!uploads.uploads.length) return null;
-  const active = uploads.uploads.some((u) => u.status === "uploading");
+  const finished = uploads.uploads.some((u) => u.status !== "uploading");
   return (
-    <div
+    <section
       data-testid="kb-upload-queue"
-      className="space-y-1 border-b border-outline-variant p-3 text-sm"
+      aria-label="Uploads"
+      className="absolute bottom-4 right-4 z-10 flex max-h-72 w-80 max-w-[calc(100%-2rem)] flex-col rounded-lg border border-outline-variant bg-surface text-sm shadow-lg"
     >
-      <div className="flex items-center justify-between">
+      <div className="flex shrink-0 items-center justify-between px-3 py-1.5">
         <span className="font-medium">Uploads</span>
-        {!active && (
+        {finished && (
           <Button
             size="sm"
             variant="ghost"
@@ -814,53 +755,77 @@ function UploadQueue({
           </Button>
         )}
       </div>
-      {uploads.uploads.map((u) => (
-        <div
-          key={u.id}
-          data-testid="kb-upload-item"
-          data-status={u.status}
-          className="flex flex-wrap items-center gap-2"
+      <div className="min-h-0 space-y-1 overflow-y-auto px-3 pb-2">
+        {uploads.uploads.map((u) => (
+          <UploadItem key={u.id} upload={u} onOpen={onOpen} onRetry={() => uploads.retry(u.id)} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+const PARSE_LABEL = {
+  pending: "Parsing…",
+  ok: "Open",
+  partial: "Open · partly parsed",
+  failed: "Parse failed",
+};
+
+function UploadItem({
+  upload: u,
+  onOpen,
+  onRetry,
+}: {
+  upload: KbUpload;
+  onOpen: (documentId: string) => void;
+  onRetry: () => void;
+}) {
+  // The upload response is a snapshot taken before background parsing; the KB listing is live.
+  const listing = useKbDocuments(u.status === "done" ? u.kbId : null);
+  const document = listing.data?.documents.find((d) => d.id === u.document?.id) ?? u.document;
+  return (
+    <div
+      data-testid="kb-upload-item"
+      data-status={u.status}
+      data-parse-state={document?.parse_state}
+      className="flex flex-wrap items-center gap-2"
+    >
+      <span className="min-w-0 flex-1 truncate">{u.file.name}</span>
+      {u.status === "uploading" && (
+        <span
+          className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-high"
+          role="progressbar"
+          aria-label="Upload progress"
+          aria-valuenow={Math.round(u.progress * 100)}
         >
-          <span className="min-w-0 flex-1 truncate">{u.file.name}</span>
-          {u.status === "uploading" && (
-            <span
-              className="h-1.5 w-32 overflow-hidden rounded-full bg-surface-high"
-              role="progressbar"
-              aria-label="Upload progress"
-              aria-valuenow={Math.round(u.progress * 100)}
-            >
-              <span
-                className="block h-full bg-primary"
-                style={{ width: `${Math.round(u.progress * 100)}%` }}
-              />
-            </span>
+          <span
+            className="block h-full bg-primary"
+            style={{ width: `${Math.round(u.progress * 100)}%` }}
+          />
+        </span>
+      )}
+      {u.status === "done" && document && (
+        <button
+          type="button"
+          className={cn(
+            "hover:underline",
+            document.parse_state === "failed" ? "text-error" : "text-primary",
           )}
-          {u.status === "done" && u.document && (
-            <button
-              type="button"
-              className="text-primary hover:underline"
-              onClick={() => u.document && onOpen(u.document.id)}
-            >
-              {u.document.parse_state === "pending" ? "Uploaded · parsing" : "Open"}
-            </button>
-          )}
-          {u.status === "failed" && (
-            <>
-              <span role="alert" className="text-error">
-                {u.error}
-              </span>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => uploads.retry(u.id)}
-                data-testid="kb-upload-retry"
-              >
-                Retry
-              </Button>
-            </>
-          )}
-        </div>
-      ))}
+          onClick={() => onOpen(document.id)}
+        >
+          {PARSE_LABEL[document.parse_state]}
+        </button>
+      )}
+      {u.status === "failed" && (
+        <>
+          <span role="alert" className="text-error">
+            {u.error}
+          </span>
+          <Button size="sm" variant="ghost" onClick={onRetry} data-testid="kb-upload-retry">
+            Retry
+          </Button>
+        </>
+      )}
     </div>
   );
 }

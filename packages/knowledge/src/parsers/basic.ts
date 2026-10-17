@@ -68,14 +68,19 @@ export const mdTable = (rows: string[][]) => {
   ].join("\n");
 };
 
-async function htmlToMarkdown(html: string) {
+/**
+ * Head metadata never reaches the text. A page titled only by <title> gets that title as its
+ * leading heading, so converted pages start with their title like Markdown documents do.
+ */
+export async function htmlToMarkdown(html: string) {
   const { default: TurndownService } = await import("turndown");
   const td = new TurndownService({
     headingStyle: "atx",
     bulletListMarker: "-",
     codeBlockStyle: "fenced",
   });
-  td.remove(["script", "style", "noscript", "head"]);
+  // The parser drops <head> but keeps its children, so <title> would otherwise become body text.
+  td.remove(["script", "style", "noscript", "head", "title", "meta", "link", "template"]);
   td.addRule("table", {
     filter: "table",
     replacement: (_content, node) => {
@@ -87,7 +92,11 @@ async function htmlToMarkdown(html: string) {
       return `\n\n${mdTable(rows)}\n\n`;
     },
   });
-  return td.turndown(html);
+  const body = td.turndown(html);
+  const title = elementText(html, "title");
+  if (!title || markdownToBlocks(body).some((b) => b.kind === "heading" && b.level === 1))
+    return body;
+  return `# ${title}\n\n${body}`;
 }
 
 const decode = (s: string) =>
@@ -99,6 +108,21 @@ const decode = (s: string) =>
     .replace(/&#(\d+);/g, (_, n: string) => String.fromCodePoint(Number(n)))
     .replace(/&#x([0-9a-f]+);/gi, (_, n: string) => String.fromCodePoint(Number.parseInt(n, 16)))
     .replace(/&amp;/g, "&");
+
+const elementText = (html: string, tag: "h1" | "title") => {
+  const inner = html.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`, "i"))?.[1];
+  const text =
+    inner &&
+    decode(inner.replace(/<[^>]*>/g, " "))
+      .replace(/\s+/g, " ")
+      .trim();
+  return text || undefined;
+};
+
+/** The title an HTML page gives itself: its first H1, else its <title>, as Markdown files use H1. */
+export function htmlTitle(html: string): string | undefined {
+  return elementText(html, "h1") ?? elementText(html, "title");
+}
 const runs = (xml: string) =>
   [...xml.matchAll(/<a:t(?:\s[^>]*)?>([^<]*)<\/a:t>|<a:br\b[^>]*\/>/g)]
     .map((m) => (m[1] === undefined ? " " : decode(m[1])))

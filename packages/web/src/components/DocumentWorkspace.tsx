@@ -32,6 +32,9 @@ export function DocumentWorkspace({
   navigation,
   expanded,
   onExpandedChange,
+  layout,
+  pageTitle,
+  hideFrontmatter,
 }: {
   documentId: string;
   content: string;
@@ -42,6 +45,9 @@ export function DocumentWorkspace({
   navigation?: ReactNode;
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
+  layout?: MarkdownEditorProps["layout"];
+  pageTitle?: string;
+  hideFrontmatter?: boolean;
 }) {
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -92,6 +98,95 @@ export function DocumentWorkspace({
       setSaving(false);
     }
   }
+  function changeMode(nextMode: string): void {
+    const next = new URLSearchParams(window.location.search);
+    next.set("editorMode", nextMode);
+    if (next.toString() === new URLSearchParams(window.location.search).toString()) return;
+    navigate({ search: next.toString(), hash: window.location.hash });
+  }
+  function discard(): void {
+    if (!confirmDocumentClose(documentId)) return;
+    setDraft(content);
+    setOriginal(content);
+    currentDraft.current = content;
+    setError(null);
+  }
+  const status = !onSave ? "Read-only" : saving ? "Saving…" : dirty ? "Unsaved changes" : "Saved";
+  const notices = (
+    <>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error} Your draft has been kept.
+        </p>
+      )}
+      {dirty && content !== original && (
+        <p role="status" className="text-sm text-outline">
+          The document changed elsewhere. Your draft is preserved; saving will check for conflicts.
+        </p>
+      )}
+    </>
+  );
+  if (layout === "page")
+    // A page keeps one toolbar in every mode: saving appears there only when there is a change,
+    // and save errors or conflicts show directly under it rather than as a bar above the modes.
+    return (
+      <div className="min-w-0" data-testid="document-workspace">
+        <MarkdownEditor
+          path={path}
+          value={draft}
+          onChange={change}
+          onSave={() => void save()}
+          readOnly={!onSave || saving}
+          testId={testId}
+          wikiLinks={wikiLinks}
+          initialMode="read"
+          mode={mode}
+          onModeChange={changeMode}
+          expanded={expanded}
+          onExpandedChange={onExpandedChange}
+          layout="page"
+          pageTitle={pageTitle}
+          hideFrontmatter={hideFrontmatter}
+          notice={error || (dirty && content !== original) ? notices : undefined}
+          actions={
+            (mode !== "read" || dirty || saving) && (
+              <>
+                <span
+                  data-testid="document-save-status"
+                  role="status"
+                  className="text-xs text-outline"
+                >
+                  {status}
+                </span>
+                {onSave && (dirty || saving) && (
+                  <>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      data-testid="document-discard"
+                      disabled={saving}
+                      onClick={discard}
+                    >
+                      Discard
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      data-testid="document-save"
+                      disabled={saving}
+                      onClick={() => void save()}
+                    >
+                      Save
+                    </Button>
+                  </>
+                )}
+              </>
+            )
+          }
+        />
+      </div>
+    );
   return (
     <div className="min-w-0 space-y-3" data-testid="document-workspace">
       <MarkdownEditor
@@ -104,16 +199,12 @@ export function DocumentWorkspace({
         wikiLinks={wikiLinks}
         initialMode="read"
         mode={mode}
-        onModeChange={(nextMode) => {
-          const next = new URLSearchParams(window.location.search);
-          next.set("editorMode", nextMode);
-          if (next.toString() === new URLSearchParams(window.location.search).toString()) return;
-          navigate({ search: next.toString(), hash: window.location.hash });
-        }}
+        onModeChange={changeMode}
         expanded={expanded}
         onExpandedChange={onExpandedChange}
+        layout={layout}
         header={
-          <>
+          <div className="space-y-2">
             {navigation && <div className="mb-3 min-w-0">{navigation}</div>}
             <div className="flex flex-wrap items-center gap-2">
               <span
@@ -121,7 +212,7 @@ export function DocumentWorkspace({
                 role="status"
                 className="min-w-0 flex-1 text-sm text-outline"
               >
-                {!onSave ? "Read-only" : saving ? "Saving…" : dirty ? "Unsaved changes" : "Saved"}
+                {status}
               </span>
               {onSave && (
                 <>
@@ -130,14 +221,7 @@ export function DocumentWorkspace({
                     variant="ghost"
                     data-testid="document-discard"
                     disabled={!dirty || saving}
-                    onClick={() => {
-                      if (confirmDocumentClose(documentId)) {
-                        setDraft(content);
-                        setOriginal(content);
-                        currentDraft.current = content;
-                        setError(null);
-                      }
-                    }}
+                    onClick={discard}
                   >
                     Discard changes
                   </Button>
@@ -152,18 +236,8 @@ export function DocumentWorkspace({
                 </>
               )}
             </div>
-            {error && (
-              <p role="alert" className="mt-2 text-sm text-destructive">
-                {error} Your draft has been kept.
-              </p>
-            )}
-            {dirty && content !== original && (
-              <p role="status" className="mt-2 text-sm text-outline">
-                The document changed elsewhere. Your draft is preserved; saving will check for
-                conflicts.
-              </p>
-            )}
-          </>
+            {notices}
+          </div>
         }
       />
     </div>

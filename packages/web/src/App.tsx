@@ -128,7 +128,11 @@ export default function App() {
   }, [chatRequested]);
 
   const { pathname } = useLocation();
-  const fullBleed = pathname === "/terminals" || pathname.startsWith("/terminals/");
+  // Workspaces whose columns own their scroll fill the main area without page padding.
+  const fullBleed =
+    pathname === "/terminals" ||
+    pathname.startsWith("/terminals/") ||
+    pathname.startsWith("/knowledge/base");
 
   useEffect(() => {
     try {

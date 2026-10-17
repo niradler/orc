@@ -519,13 +519,17 @@ export async function executeKbTool(
         return `Added comment ${c.id}${c.document_title ? ` on "${c.document_title}"` : ""}.`;
       }
       if (action === "list") {
-        const list = svc.listComments(need(args, "kb_id", action), {
-          document_id: args.document_id as string | undefined,
+        const kbId = need(args, "kb_id", action);
+        const documentId = args.document_id as string | undefined;
+        const list = svc.listComments(kbId, {
+          document_id: documentId,
           status: args.status as KbCommentStatus | undefined,
           limit: args.limit as number | undefined,
         });
-        if (!list.length) return "No comments.";
-        return list.map(commentText).join("\n\n");
+        const n = svc.commentCounts(kbId, documentId);
+        const counts = `${n.open} open · ${n.resolved} resolved · ${n.dismissed} dismissed`;
+        if (!list.length) return `No matching comments (${counts}).`;
+        return `${counts}\n\n${list.map(commentText).join("\n\n")}`;
       }
       const id = need(args, "comment_id", action);
       const c =
