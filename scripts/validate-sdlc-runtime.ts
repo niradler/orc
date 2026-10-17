@@ -20,9 +20,9 @@ loadConfig({
   api: { host: "127.0.0.1", port: 7711, secret },
   rules: { enabled: true },
   knowledge: {
-    db_path: join(directory, "knowledge.db"),
+    ...initial.knowledge,
+    root: join(directory, "knowledge"),
     default_limit: 10,
-    search_mode: "lexical",
   },
   agent_loop: {
     ...initial.agent_loop,

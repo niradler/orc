@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { randomUUID } from "node:crypto";
 import { probeBackends } from "../packages/agent-runtime/src/index.js";
 import { createApp } from "../packages/api/src/server.js";
-import { loadConfig } from "../packages/core/src/config.js";
+import { loadConfig, OrcConfigSchema } from "../packages/core/src/config.js";
 import { closeDb } from "../packages/db/src/client.js";
 
 const secret = randomUUID();
@@ -11,9 +11,9 @@ loadConfig({
   api: { host: "127.0.0.1", port: 7700, secret },
   db: { path: "/tmp/orc-container-probe.db" },
   knowledge: {
-    db_path: "/tmp/orc-container-knowledge.db",
+    ...OrcConfigSchema.parse({}).knowledge,
+    root: "/tmp/orc-container-knowledge",
     default_limit: 10,
-    search_mode: "lexical",
   },
 });
 const app = createApp();

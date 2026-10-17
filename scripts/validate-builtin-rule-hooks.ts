@@ -6,10 +6,8 @@ import { createApp } from "../packages/api/src/server.js";
 import { loadConfig, resetConfig } from "../packages/core/src/config.js";
 import { copyRuleTemplate } from "../packages/core/src/rule-catalog.js";
 import { closeDb, getSqlite } from "../packages/db/src/client.js";
-import { DigestStore } from "../packages/db/src/digest.js";
 import { RuleStore } from "../packages/db/src/rules.js";
 import { executeTool } from "../packages/mcp/src/tools.js";
-import { drainRuleActions } from "../packages/runner/src/rule-actions.js";
 
 const directory = resolve(".claude/tooling/command-processors", `builtin-runtime-${Date.now()}`);
 const workspace = join(directory, "workspace");
@@ -171,33 +169,8 @@ try {
   await hook("SessionEnd", { event_id: "end" });
   assert(
     store.actions().some((action) => action.status === "pending"),
-    "Learning hook did not queue the existing digest",
+    "Session-end hook did not queue an action",
   );
-  if (process.argv.includes("--real-digest")) {
-    await drainRuleActions();
-    assert(
-      store.actions().every((action) => action.status === "done"),
-      "Real digest dispatch failed",
-    );
-    assert(
-      new DigestStore(db).claim(project.id) === null,
-      "Real digest did not advance its scoped watermark",
-    );
-    const agents = db
-      .query<{ count: number }, []>(
-        "SELECT count(*) AS count FROM gateway_sessions WHERE mode='knowledge-digest'",
-      )
-      .get()?.count;
-    await hook("SessionEnd", { event_id: "idle-end" });
-    assert(
-      db
-        .query<{ count: number }, []>(
-          "SELECT count(*) AS count FROM gateway_sessions WHERE mode='knowledge-digest'",
-        )
-        .get()?.count === agents,
-      "Idle hook started a new agent",
-    );
-  }
   const report = {
     passed: true,
     nativeHooks: trace,
@@ -207,8 +180,6 @@ try {
     actualWriteEvents: events,
     actions: store.actions(),
     decisions: store.decisions(),
-    realDigest: process.argv.includes("--real-digest"),
-    wiki: db.query("SELECT slug,title,summary FROM wiki_pages WHERE project_id=?").all(project.id),
   };
   writeFileSync(join(directory, "report.json"), JSON.stringify(report, null, 2));
   console.log(
@@ -218,8 +189,6 @@ try {
       stableSourceUpdate: true,
       nativeSnapshotRestore: true,
       sharedMemoryRetrievable: true,
-      realDigest: report.realDigest,
-      wikiPages: report.wiki.length,
       directory,
     }),
   );
