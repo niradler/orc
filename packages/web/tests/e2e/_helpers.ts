@@ -57,7 +57,6 @@ export async function gotoView(
     | "projects"
     | "sessions"
     | "knowledge"
-    | "wiki"
     | "skills"
     | "packages"
     | "agents"
@@ -73,13 +72,7 @@ export async function gotoView(
     );
   }
   const path =
-    view === "memories"
-      ? "knowledge/memories"
-      : view === "knowledge"
-        ? "knowledge/base"
-        : view === "wiki"
-          ? "knowledge/wiki"
-          : view;
+    view === "memories" ? "knowledge/memories" : view === "knowledge" ? "knowledge/base" : view;
   await page.goto(`/${path}`);
 }
 

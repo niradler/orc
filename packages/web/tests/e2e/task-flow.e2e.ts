@@ -4,6 +4,7 @@ import { apiDelete, apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers"
 
 interface Task {
   id: string;
+  title: string;
   status: string;
   flow_name?: string | null;
 }

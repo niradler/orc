@@ -55,6 +55,16 @@ describe("resource events", () => {
     expect(() => parseResources("{}")).toThrow();
   });
 
+  test("should refresh a knowledge base digest when its job runs change", async () => {
+    const client = new QueryClient();
+    client.setQueryData(["kb-digest", "kb1"], null);
+    client.setQueryData(["kb", "documents", "kb1"], []);
+    await invalidateResources(client, ["jobs"]);
+    expect(client.getQueryState(["kb-digest", "kb1"])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(["kb", "documents", "kb1"])?.isInvalidated).toBe(false);
+    client.clear();
+  });
+
   test("should refresh only affected resources and mark inactive queries stale", async () => {
     const client = new QueryClient();
     client.setQueryData(["tasks"], []);

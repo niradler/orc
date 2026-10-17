@@ -1,10 +1,19 @@
 import { loadConfig } from "@orc/core/config";
 import type {
   KbCallSource,
+  KbComment,
+  KbCommentClose,
+  KbCommentCreate,
+  KbCommentStatus,
   KbCreate,
+  KbDigest,
+  KbDigestRun,
+  KbDigestSet,
   KbDoclingState,
   KbDocument,
   KbDocumentCreate,
+  KbDocumentEdit,
+  KbDocumentEditResult,
   KbDocumentListing,
   KbDocumentUpdate,
   KbDocumentWithContent,
@@ -78,6 +87,7 @@ import type {
   Project,
   ProjectSummary,
   ResumeFlowInput,
+  ScopeQuery,
   Session,
   SessionDetail,
   SessionSearchResult,
@@ -96,13 +106,6 @@ import type {
   UpdateMemoryInput,
   UpdateProjectInput,
   UpdateTaskInput,
-  WikiChange,
-  WikiIndexEntry,
-  WikiPage,
-  WikiRevision,
-  WikiScope,
-  WikiSearchHit,
-  WikiWrite,
 } from "./types.js";
 
 export type OrcClientOptions = {
@@ -419,7 +422,7 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<{ hidden_builtins: string[] }>("PUT", "/skills/settings/visibility", { hidden_builtins }),
       updateInstructions: (name: string, input: Omit<SkillUpdate, "skill_name">) =>
         c<SkillFull>("PUT", `/skills/${encodeURIComponent(name)}/instructions`, input),
-      history: (name: string, scope: WikiScope = {}) =>
+      history: (name: string, scope: ScopeQuery = {}) =>
         c<{ changes: SkillChange[] }>(
           "GET",
           `/skills/${encodeURIComponent(name)}/history`,
@@ -670,26 +673,8 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<null>("POST", "/gateway/send", input),
     },
 
-    wiki: {
-      list: (scope: WikiScope = {}) =>
-        c<{ pages: WikiIndexEntry[] }>("GET", "/wiki", undefined, scope),
-      changes: (scope: WikiScope = {}) =>
-        c<{ changes: WikiChange[] }>("GET", "/wiki/changes", undefined, scope),
-      search: (q: string, scope: WikiScope = {}) =>
-        c<{ results: WikiSearchHit[] }>("GET", "/wiki/search", undefined, { ...scope, q }),
-      get: (slug: string, scope: WikiScope = {}) =>
-        c<WikiPage>("GET", `/wiki/${encodeURIComponent(slug)}`, undefined, scope),
-      history: (slug: string, scope: WikiScope = {}) =>
-        c<{ revisions: WikiRevision[] }>(
-          "GET",
-          `/wiki/${encodeURIComponent(slug)}/history`,
-          undefined,
-          scope,
-        ),
-      write: (input: WikiWrite) => c<WikiRevision>("POST", "/wiki", input),
-    },
     audit: {
-      list: (scope: WikiScope = {}) =>
+      list: (scope: ScopeQuery = {}) =>
         c<{ entries: AuditEntry[] }>("GET", "/audit", undefined, scope),
     },
 
@@ -700,7 +685,9 @@ export function createOrcClient(options?: OrcClientOptions) {
       create: (input: KbCreate) => c<KnowledgeBase>("POST", "/kb/bases", input),
       update: (id: string, input: KbUpdate) =>
         c<KnowledgeBase>("PATCH", `/kb/bases/${e(id)}`, input),
-      remove: (id: string) => c<null>("DELETE", `/kb/bases/${e(id)}`),
+      /** Agents pass confirm (the KB's exact name); people in the web UI and CLI need not. */
+      remove: (id: string, confirm?: string) =>
+        c<null>("DELETE", `/kb/bases/${e(id)}`, undefined, { confirm }),
       usage: (id: string) => c<KbUsageStats>("GET", `/kb/bases/${e(id)}/usage`),
       maintenance: (id: string) => c<KbMaintenanceQueue>("GET", `/kb/bases/${e(id)}/maintenance`),
 
@@ -732,6 +719,19 @@ export function createOrcClient(options?: OrcClientOptions) {
       updateDocument: (id: string, input: KbDocumentUpdate) =>
         c<KbDocument>("PATCH", `/kb/documents/${e(id)}`, input),
       removeDocument: (id: string) => c<null>("DELETE", `/kb/documents/${e(id)}`),
+      editDocument: (id: string, input: KbDocumentEdit) =>
+        c<KbDocumentEditResult>("POST", `/kb/documents/${e(id)}/edit`, input),
+      lines: (id: string, start?: number, end?: number) =>
+        c<KbDocument & { text: string; start_line: number; end_line: number; total_lines: number }>(
+          "GET",
+          `/kb/documents/${e(id)}/lines`,
+          undefined,
+          { start, end },
+        ),
+      restoreRevision: (
+        id: string,
+        input: { revision: number; expected_revision: number; note?: string },
+      ) => c<KbDocument>("POST", `/kb/documents/${e(id)}/restore`, input),
       revisions: (id: string) =>
         c<{ revisions: KbRevision[] }>("GET", `/kb/documents/${e(id)}/revisions`),
       revision: (id: string, revision: number) =>
@@ -745,6 +745,27 @@ export function createOrcClient(options?: OrcClientOptions) {
       reparse: (id: string) => c<KbDocument>("POST", `/kb/documents/${e(id)}/reparse`),
       documentUsage: (id: string) => c<KbUsageStats>("GET", `/kb/documents/${e(id)}/usage`),
       citation: (handle: string) => c<KbDocumentWithContent>("GET", `/kb/citations/${e(handle)}`),
+
+      comments: (
+        kbId: string,
+        filter: { document_id?: string; status?: KbCommentStatus; limit?: number } = {},
+      ) => c<{ comments: KbComment[] }>("GET", `/kb/bases/${e(kbId)}/comments`, undefined, filter),
+      addComment: (kbId: string, input: KbCommentCreate) =>
+        c<KbComment>("POST", `/kb/bases/${e(kbId)}/comments`, input),
+      closeComment: (id: string, input: KbCommentClose) =>
+        c<KbComment>("POST", `/kb/comments/${e(id)}/close`, input),
+      reopenComment: (id: string) => c<KbComment>("POST", `/kb/comments/${e(id)}/reopen`),
+
+      digestTemplate: () => c<{ instructions: string }>("GET", "/kb/digest-template"),
+      digest: (kbId: string) =>
+        c<{ digest: KbDigest | null }>("GET", `/kb/bases/${e(kbId)}/digest`),
+      setDigest: (kbId: string, input: KbDigestSet) =>
+        c<KbDigest>("PUT", `/kb/bases/${e(kbId)}/digest`, input),
+      removeDigest: (kbId: string, confirm?: string) =>
+        c<null>("DELETE", `/kb/bases/${e(kbId)}/digest`, undefined, { confirm }),
+      runDigest: (kbId: string) => c<{ run_id: string }>("POST", `/kb/bases/${e(kbId)}/digest/run`),
+      digestRuns: (kbId: string, limit?: number) =>
+        c<{ runs: KbDigestRun[] }>("GET", `/kb/bases/${e(kbId)}/digest/runs`, undefined, { limit }),
 
       search: (req: KbSearchRequest) => c<KbSearchResult>("POST", "/kb/search", req),
       evidence: (req: KbEvidenceRequest) => c<KbEvidencePack>("POST", "/kb/evidence", req),

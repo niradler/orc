@@ -40,8 +40,7 @@ export const RULE_CATALOG: readonly RuleTemplate[] = [
     category: "Guidance",
     description:
       "Load active tasks and key shared memories at session start using ORC's existing context service.",
-    configuration:
-      "Uses this policy's project scope. Requires the configured ORC API connection; no wiki summary is injected.",
+    configuration: "Uses this policy's project scope. Requires the configured ORC API connection.",
     rule: {
       ...base,
       id: "orc-load-context",
@@ -97,8 +96,7 @@ export const RULE_CATALOG: readonly RuleTemplate[] = [
     name: "ORC · Restore session context",
     category: "Guidance",
     description: "Restore the native session's snapshot after compaction or on resume.",
-    configuration:
-      "Delivered through the connected agent's native context response. It does not load a wiki index.",
+    configuration: "Delivered through the connected agent's native context response.",
     rule: {
       ...base,
       id: "orc-restore",
@@ -133,23 +131,6 @@ export const RULE_CATALOG: readonly RuleTemplate[] = [
         memory_directory: "auto",
         timeout_ms: 2000,
       },
-    },
-  }),
-  template({
-    id: "orc-wiki-learning",
-    name: "ORC · Queue learning and wiki consolidation",
-    category: "Automation",
-    description:
-      "Queue the existing knowledge-digest job at session end; it processes changed knowledge using the orc-wiki agent skill.",
-    configuration:
-      "Requires the scheduler and an enabled orc-knowledge-digest job. That existing global job visits all changed project scopes. Can incur model charges and edit wiki/skill instructions. Existing changed-input checks, claims, job capacity and completion rules apply; no new agent runs inside the hook.",
-    rule: {
-      ...base,
-      id: "orc-wiki-learning",
-      reason: "Consolidate new learning through the existing digest",
-      scope: { agents: "all", events: ["session_end"] },
-      filter: { match: "all", conditions: [] },
-      target: { type: "orc_action", action: "queue_knowledge_digest", timeout_ms: 1000 },
     },
   }),
   template({

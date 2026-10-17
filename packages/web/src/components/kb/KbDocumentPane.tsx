@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useInvalidateKb, useKbDocumentUsage, useKbRevisions } from "@/hooks/useKnowledge";
 import { wikiLinkKey } from "@/lib/wiki-links";
+import { KbComments } from "./KbComments";
 import { DocumentPropertiesDialog } from "./KbDialogs";
 
 export const kbWorkspaceId = (documentId: string) => `kb:${documentId}`;
@@ -108,7 +109,6 @@ export function KbDocumentPane({
       .map((l) => [wikiLinkKey(l.target), l.document_id as string]),
   );
   const wikiLinks = {
-    loose: true,
     slugs: [...resolved.keys()],
     select: (key: string) => {
       const target = resolved.get(key);
@@ -329,6 +329,7 @@ export function KbDocumentPane({
               <p className="text-outline">{usage.error ? "Usage unavailable" : "Loading…"}</p>
             )}
           </section>
+          <KbComments kbId={doc.kb_id} documentId={doc.id} heading="h2" />
           {doc.outline.length > 0 && (
             <section>
               <h2 className="mb-2 font-medium">Outline</h2>

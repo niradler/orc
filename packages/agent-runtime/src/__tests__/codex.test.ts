@@ -35,6 +35,8 @@ test("should drain exec JSON and resume by thread ID with stdin prompts", async 
   expect(output.args.slice(0, 3)).toEqual(["exec", "resume", "thread-fixture"]);
   expect(output.args).toContain("--json");
   expect(output.args.join(" ")).not.toContain("bypass");
+  expect(output.args).toContain('mcp_servers.orc.default_tools_approval_mode="approve"');
+  expect(output.args.join(" ")).not.toContain(".approval_mode=");
   await session.close();
 });
 

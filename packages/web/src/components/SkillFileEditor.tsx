@@ -1,4 +1,4 @@
-import type { WikiScope } from "@orc/sdk/types";
+import type { ScopeQuery } from "@orc/sdk/types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "@/api/client";
@@ -15,7 +15,7 @@ export function SkillFileEditor({
   name: string;
   path: string;
   content: string;
-  instructionScope?: WikiScope | undefined;
+  instructionScope?: ScopeQuery | undefined;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState(content);
@@ -29,7 +29,6 @@ export function SkillFileEditor({
             expected_content: content,
             reason: "Manual instruction edit",
             author: "human",
-            wiki_pages: [],
           })
         : api.skills.editFile(name, { path, content: draft, expectedContent: content }),
     onSuccess: async () => {

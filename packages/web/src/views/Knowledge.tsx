@@ -16,15 +16,17 @@ import {
   X,
 } from "lucide-react";
 import { type DragEvent, Fragment, type ReactNode, useEffect, useRef, useState } from "react";
-import { Navigate, useLocation, useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import { confirmDocumentClose } from "@/components/DocumentWorkspace";
 import { ErrorState } from "@/components/ErrorState";
+import { KbComments } from "@/components/kb/KbComments";
 import {
   CreateKbDialog,
   KbSettingsDialog,
   NewDocumentDialog,
   SourcesDialog,
 } from "@/components/kb/KbDialogs";
+import { KbDigestSection } from "@/components/kb/KbDigest";
 import { KbDocumentPane, kbWorkspaceId, UsageTable } from "@/components/kb/KbDocumentPane";
 import { useKbUploads } from "@/components/kb/useKbUploads";
 import { Badge } from "@/components/ui/badge";
@@ -49,15 +51,7 @@ type Dialog = "create" | "settings" | "new-document" | "sources" | null;
 
 export default function Knowledge({ projectId: savedProjectId }: { projectId: string }) {
   const projectId = useProjectScope(savedProjectId);
-  const [searchParams] = useSearchParams();
-  const { pathname, hash } = useLocation();
-
-  // Links from the first Knowledge redesign pointed Wiki pages here; keep them working.
-  if (searchParams.has("page")) {
-    const next = new URLSearchParams(searchParams);
-    next.delete("tab");
-    return <Navigate replace to={{ pathname: "/knowledge/wiki", search: next.toString(), hash }} />;
-  }
+  const { pathname } = useLocation();
   return (
     <div data-testid="knowledge-base-view">
       {pathname.startsWith("/knowledge/memories") ? (
@@ -784,6 +778,10 @@ function KbOverview({
             </button>
           ))}
         </div>
+      </div>
+      <div className="grid gap-6 md:grid-cols-2">
+        <KbDigestSection kb={kb} />
+        <KbComments kbId={kb.id} onOpenDocument={onOpen} />
       </div>
     </section>
   );

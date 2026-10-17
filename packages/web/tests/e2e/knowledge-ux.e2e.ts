@@ -1,35 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { apiDelete, apiPost, gotoView, tid } from "./_helpers";
 
-test("Knowledge bases stay separate from Wiki pages, and legacy note links open the Wiki", async ({
-  page,
-  request,
-}) => {
-  const slug = tid("kb-boundary");
-  await apiPost(request, "/wiki", {
-    project_id: null,
-    slug,
-    kind: "concept",
-    title: "Authored knowledge boundary",
-    summary: "Wiki page, not an imported file",
-    content: "# Authored page\nSelf-built Wiki content.",
-    expected_revision: 0,
-    note: "Browser fixture",
-  });
-  await gotoView(page, "knowledge");
-  await expect(page.getByTestId("section-knowledge")).toHaveAttribute("aria-current", "page");
-  await expect(page.getByTestId("kb-search-input")).toBeVisible();
-  await expect(page.getByTestId("knowledge-notebook")).toHaveCount(0);
-  await page.goto(`/knowledge?tab=notebook&page=${slug}&scope=global#authored-page`);
-  await expect(page).toHaveURL(/\/knowledge\/wiki\?/);
-  expect(new URL(page.url()).searchParams.get("page")).toBe(slug);
-  expect(new URL(page.url()).hash).toBe("#authored-page");
-  await expect(page.getByTestId("notebook-document")).toContainText("Self-built Wiki content");
-  await expect(page.getByTestId("nav-wiki")).toHaveAttribute("aria-current", "page");
-  await page.reload();
-  await expect(page.getByTestId("notebook-document")).toContainText("Self-built Wiki content");
-});
-
 test("Knowledge base search and filters create history entries and reopen", async ({
   page,
   request,
@@ -74,38 +45,41 @@ test("Knowledge base search and filters create history entries and reopen", asyn
   }
 });
 
-test("Wiki full-text search, graph, editor mode and page selection are shareable", async ({
+test("Knowledge base search, document selection and editor mode are shareable", async ({
   page,
   request,
 }) => {
-  const slug = tid("wiki-context");
-  await apiPost(request, "/wiki", {
+  const kb = await apiPost<{ id: string; name: string }>(request, "/kb/bases", {
+    name: tid("pw-kb-context"),
     project_id: null,
-    slug,
-    kind: "lesson",
-    title: "Searchable lesson",
-    summary: "Contextual Wiki search",
-    content: "# Page\nwikibodyonlyneedle evidence.",
-    expected_revision: 0,
-    note: "Browser fixture",
   });
-  await gotoView(page, "wiki");
-  await page.getByTestId("wiki-search-input").fill("wikibodyonlyneedle");
-  await page.getByTestId("wiki-search-submit").click();
-  await expect(page).toHaveURL(/wikiQuery=wikibodyonlyneedle/);
-  await page.locator(`[data-testid="notebook-note"][data-slug="${slug}"]`).click();
-  await page.getByTestId("notebook-graph-toggle").click();
-  await page.getByTestId("markdown-mode-edit").click();
-  const shared = page.url();
-  await page.reload();
-  await expect(page.getByTestId("wiki-editor-content")).toContainText("wikibodyonlyneedle");
-  await expect(page.getByTestId("notebook-graph")).toBeVisible();
-  await expect(page).toHaveURL(shared);
-  await page.getByTestId("wiki-history-toggle").click();
-  await expect(page).toHaveURL(/history=1/);
-  await page.goBack();
-  await expect(page.getByTestId("wiki-editor-content")).toBeVisible();
-  await expect(page.getByTestId("notebook-graph")).toBeVisible();
+  const doc = await apiPost<{ id: string }>(request, `/kb/bases/${kb.id}/documents`, {
+    title: "Searchable lesson",
+    content: "# Page\n\nkbbodyonlyneedle evidence.",
+  });
+  try {
+    await gotoView(page, "knowledge");
+    await page.locator(`[data-testid="kb-row"][data-kb-name="${kb.name}"]`).click();
+    await page.getByTestId("kb-search-input").fill("kbbodyonlyneedle");
+    await page.getByTestId("kb-search-submit").click();
+    await expect(page).toHaveURL(/q=kbbodyonlyneedle/);
+    await page.getByTestId("kb-search-passage").first().click();
+    await expect(page.getByTestId("kb-document-title")).toHaveText("Searchable lesson");
+    expect(new URL(page.url()).searchParams.get("document")).toBe(doc.id);
+    await page.getByTestId("markdown-mode-edit").click();
+    const shared = page.url();
+    await page.reload();
+    await expect(page.getByTestId("kb-document-content")).toContainText("kbbodyonlyneedle");
+    await expect(page.getByTestId("markdown-mode-edit")).toHaveAttribute("aria-pressed", "true");
+    await expect(page).toHaveURL(shared);
+    await page.getByTestId("markdown-mode-read").click();
+    await expect(page).toHaveURL(/editorMode=read/);
+    await page.goBack();
+    await expect(page.getByTestId("markdown-mode-edit")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("kb-document-content")).toBeVisible();
+  } finally {
+    await apiDelete(request, `/kb/bases/${kb.id}`);
+  }
 });
 
 test("Projects and Rules tabs restore on Back and reload", async ({ page }) => {

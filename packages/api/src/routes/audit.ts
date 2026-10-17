@@ -1,9 +1,9 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { WikiScopeSchema } from "@orc/core/wiki";
+import { ScopeQuerySchema } from "@orc/core/scope";
 import { AuditLog } from "@orc/db/audit";
 import { getSqlite } from "@orc/db/client";
 import { createRouter } from "../lib/router.js";
-import { resolveWikiProject } from "./wiki.js";
+import { resolveScopeProject } from "../lib/scope.js";
 
 const app = createRouter();
 const AuditEntrySchema = z
@@ -28,8 +28,8 @@ app.openapi(
     tags: ["Audit"],
     summary: "Read the central knowledge audit log",
     request: {
-      query: WikiScopeSchema.extend({
-        entity_type: z.enum(["memory", "wiki", "skill", "digest"]).optional(),
+      query: ScopeQuerySchema.extend({
+        entity_type: z.enum(["memory", "skill", "kb"]).optional(),
         session_id: z.string().min(1).max(200).optional(),
         since: z.coerce.number().int().min(0).optional(),
         limit: z.coerce.number().int().min(1).max(100).default(50),
@@ -48,7 +48,7 @@ app.openapi(
     const input = c.req.valid("query");
     return c.json({
       entries: new AuditLog(getSqlite()).list({
-        projectId: resolveWikiProject(input),
+        projectId: resolveScopeProject(input),
         entityType: input.entity_type,
         sessionId: input.session_id,
         since: input.since,

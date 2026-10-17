@@ -9,7 +9,7 @@ import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { sessionExecHost } from "./execution-host.js";
 import { endStdin, readLines, writeToStdin } from "./io.js";
-import { type OrcMcpConfigFile, withOrcAllowedTools, writeOrcMcpConfigFile } from "./orc-mcp.js";
+import { ORC_TOOLS_RULE, type OrcMcpConfigFile, writeOrcMcpConfigFile } from "./orc-mcp.js";
 import { registerBackend } from "./registry.js";
 import type {
   AgentBackend,
@@ -171,7 +171,7 @@ class ClaudeSession implements AgentSession {
             "--mcp-config",
             this.mcpConfig?.path ?? "",
             "--allowedTools",
-            withOrcAllowedTools(this.autoApprove ? this.toolAllowlist : []).join(","),
+            [...(this.autoApprove ? this.toolAllowlist : []), ORC_TOOLS_RULE].join(","),
           ]
         : []),
       ...extraArgs,

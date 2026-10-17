@@ -4,13 +4,30 @@ import { basename, extname, sep } from "node:path";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import {
+  KB_DIGEST_DEFAULT_CRON,
+  KB_DIGEST_TEMPLATE,
   type KbCallContext,
+  type KbComment,
+  type KbCommentClose,
+  KbCommentCloseSchema,
+  type KbCommentCreate,
+  KbCommentCreateSchema,
+  type KbCommentStatus,
   type KbCreate,
   KbCreateSchema,
+  type KbDigest,
+  type KbDigestRun,
+  type KbDigestRunStatus,
+  type KbDigestSchedule,
+  type KbDigestSet,
+  KbDigestSetSchema,
   type KbDoclingState,
   type KbDocument,
   type KbDocumentCreate,
   KbDocumentCreateSchema,
+  type KbDocumentEdit,
+  type KbDocumentEditResult,
+  KbDocumentEditSchema,
   type KbDocumentListing,
   type KbDocumentUpdate,
   KbDocumentUpdateSchema,
@@ -31,6 +48,9 @@ import {
   type KnowledgeBase,
 } from "@orc/core/kb";
 import { PathValidationError, validateCollectionPath } from "@orc/core/validate";
+import { AuditLog } from "@orc/db/audit";
+import { deleteJobRow, KbDigestStore, kbDigestCommand, kbDigestJobName } from "@orc/db/kb-digest";
+import { Cron } from "croner";
 import {
   Catalog,
   DOC_COLUMNS,
@@ -44,6 +64,7 @@ import {
   toRevision,
 } from "./catalog.js";
 import { decodeUtf8, documentText, externalFile, isMarkdownName, sourceOf } from "./content.js";
+import { applyEdits, numberedLines } from "./edit.js";
 import { createEmbeddingProvider, type EmbeddingProvider } from "./embeddings.js";
 import type { Engine, KnowledgeConfig } from "./engine.js";
 import { IndexDb } from "./index-db.js";
@@ -66,6 +87,8 @@ const MAINTENANCE_INTERVAL_MS = 60_000;
 const MAX_SOURCE_FILES = 5000;
 const SOURCE_MISSING = "Source file is missing";
 const SCANNER = "folder scan";
+const DIGEST_TIMEOUT_SECS = 1800;
+const MAX_COMMENTS = 500;
 export const DEFAULT_SOURCE_PATTERN = "**/*.{md,markdown,txt,pdf,docx,pptx,xlsx,csv,html,htm}";
 
 const MEDIA_TYPES: Record<string, string> = {
@@ -141,6 +164,43 @@ export type KnowledgeServiceOptions = {
   root?: string;
   /** Overrides the provider built from config (tests). */
   embedder?: EmbeddingProvider | null;
+  /** Backend a new digest uses when none is given. */
+  defaultBackend?: () => string;
+};
+
+/**
+ * Digest jobs are scheduled and run by the process that owns the job scheduler (the daemon). It
+ * installs these hooks; elsewhere digest changes are only stored, and runs are refused.
+ */
+export type KbJobHooks = {
+  /** The job row was created, changed or deleted. */
+  sync(jobId: string): void;
+  /** Starts a run now; resolves to the job run id. */
+  run(jobId: string, triggerBy: string): Promise<string>;
+};
+
+export type KbDeleteOptions = {
+  /** Required over MCP: the knowledge base's name, so a wrong id never deletes anything. */
+  confirm?: string | undefined;
+};
+
+type CommentRow = Omit<KbComment, "source" | "status"> & { source: string; status: string };
+type DigestJoin = {
+  kb_id: string;
+  instructions: string;
+  backend: string;
+  job_id: string;
+  last_success_at: number | null;
+  last_status: string | null;
+  last_note: string | null;
+  last_run_at: number | null;
+  last_session_id: string | null;
+  created_at: number;
+  updated_at: number;
+  trigger_type: string;
+  cron_expr: string | null;
+  enabled: number;
+  timeout_secs: number;
 };
 
 /**
@@ -153,6 +213,8 @@ export class KnowledgeService {
   readonly searcher: Searcher;
   readonly usage: Usage;
   readonly docling: KbDoclingState = { state: "idle", log: [] };
+  /** Set by the process that runs the job scheduler; see KbJobHooks. */
+  jobHooks: KbJobHooks | null = null;
   private maintenance: ReturnType<typeof setInterval> | null = null;
   private embedderCache: { key: string; provider: EmbeddingProvider | null } | null = null;
 
@@ -162,6 +224,7 @@ export class KnowledgeService {
     storage: KnowledgeStorage,
     private readonly cfg: () => KnowledgeConfig,
     embedderOverride: EmbeddingProvider | null | undefined,
+    private readonly defaultBackend: () => string,
   ) {
     const embedder =
       embedderOverride !== undefined
@@ -191,7 +254,14 @@ export class KnowledgeService {
     if (!root) throw new Error("Knowledge root is not configured");
     const storage = new KnowledgeStorage(root);
     const idx = await IndexDb.open(storage.indexPath);
-    return new KnowledgeService(opts.db, idx, storage, opts.config, opts.embedder);
+    return new KnowledgeService(
+      opts.db,
+      idx,
+      storage,
+      opts.config,
+      opts.embedder,
+      opts.defaultBackend ?? (() => "claude"),
+    );
   }
 
   /** Recover interrupted work, repair derived state, then process jobs in the background. */
@@ -220,14 +290,41 @@ export class KnowledgeService {
     return this.engine.catalog;
   }
 
+  private get digests() {
+    return new KbDigestStore(this.db);
+  }
+
   // --- Authorization -------------------------------------------------------------------------
 
   /**
-   * Managing KBs themselves (create, settings, delete, folders, parsers) is not offered over MCP:
-   * otherwise an agent could widen its own `editable_by`.
+   * Folders and parsers act on the daemon host's file system and installed software, so they are
+   * not offered over MCP (which may be served to remote agents).
    */
   private requireManager(ctx: KbCallContext, what: string) {
     if (ctx.source === "mcp") throw new ForbiddenError(`Cannot ${what} over MCP`);
+  }
+
+  /** Deleting over MCP names the KB as well as its id, so a wrong id never deletes anything. */
+  private requireConfirm(ctx: KbCallContext, kb: KbRow, opts: KbDeleteOptions) {
+    if (ctx.source === "mcp" && opts.confirm !== kb.name)
+      throw new ValidationError(`Set confirm to the knowledge base name ("${kb.name}") to delete`);
+  }
+
+  private audit(
+    ctx: KbCallContext,
+    action: string,
+    subjectIds: string[],
+    projectId: string | null,
+    note?: string,
+  ) {
+    new AuditLog(this.db).record({
+      action,
+      subject_ids: subjectIds,
+      project_id: projectId,
+      actor: actorName(ctx),
+      session_id: ctx.actor.session_id ?? null,
+      note: note ?? null,
+    });
   }
 
   /** Document changes are allowed only from the call sources listed in the KB's `editable_by`. */
@@ -276,7 +373,6 @@ export class KnowledgeService {
   }
 
   createKb(ctx: KbCallContext, raw: KbCreate): KnowledgeBase {
-    this.requireManager(ctx, "create knowledge bases");
     const input = KbCreateSchema.parse(raw);
     if (input.project_id && !this.catalog.projectExists(input.project_id))
       throw new NotFoundError("Project", input.project_id);
@@ -303,6 +399,7 @@ export class KnowledgeService {
         now,
       ],
     );
+    this.audit(ctx, "kb.created", [id], input.project_id, input.name);
     return this.getKb(id);
   }
 
@@ -316,10 +413,13 @@ export class KnowledgeService {
       throw new ConflictError(`A knowledge base named "${name}" already exists in this scope`);
   }
 
+  /** Over MCP only a KB whose `editable_by` includes mcp can be changed. */
   updateKb(ctx: KbCallContext, id: string, raw: KbUpdate): KnowledgeBase {
-    this.requireManager(ctx, "change knowledge base settings");
     const input = KbUpdateSchema.parse(raw);
     const kb = this.kbOrThrow(id);
+    if (ctx.source === "mcp") this.requireEditable(ctx, kb);
+    if (input.parser !== undefined && input.parser !== kb.parser)
+      this.requireManager(ctx, "change the parser");
     if (input.name !== undefined) this.assertNameFree(input.name, kb.project_id, id);
     if (
       input.parser &&
@@ -340,22 +440,32 @@ export class KnowledgeService {
     if (sets.length) {
       set("updated_at", Date.now());
       this.db.run(`UPDATE knowledge_bases SET ${sets.join(", ")} WHERE id = ?`, [...params, id]);
+      this.audit(ctx, "kb.updated", [id], kb.project_id, Object.keys(input).join(", "));
     }
     return this.getKb(id);
   }
 
-  /** Deletes the KB, its documents, revisions and stored files. Registered folders are untouched. */
-  deleteKb(ctx: KbCallContext, id: string) {
-    this.requireManager(ctx, "delete knowledge bases");
-    this.kbOrThrow(id);
+  /**
+   * Deletes the KB, its documents, revisions, comments, digest (and its job) and stored files.
+   * Registered folders are untouched.
+   */
+  deleteKb(ctx: KbCallContext, id: string, opts: KbDeleteOptions = {}) {
+    const kb = this.kbOrThrow(id);
+    if (ctx.source === "mcp") this.requireEditable(ctx, kb);
+    this.requireConfirm(ctx, kb, opts);
     const docIds = (
       this.db.query("SELECT id FROM kb_documents WHERE kb_id = ?").all(id) as { id: string }[]
     ).map((r) => r.id);
+    const jobId = this.digests.row(id)?.job_id ?? null;
     this.db.transaction(() => {
       this.db.run("DELETE FROM kb_jobs WHERE kb_id = ?", [id]);
       this.db.run("DELETE FROM kb_links WHERE kb_id = ?", [id]);
+      this.db.run("DELETE FROM kb_digests WHERE kb_id = ?", [id]);
+      if (jobId) deleteJobRow(this.db, jobId);
       this.db.run("DELETE FROM knowledge_bases WHERE id = ?", [id]);
+      this.audit(ctx, "kb.deleted", [id], kb.project_id, kb.name);
     })();
+    if (jobId) this.jobHooks?.sync(jobId);
     this.usage.forgetKb(id);
     this.engine.idx.deleteKb(id);
     this.engine.storage.removeKb(id, docIds);
@@ -517,6 +627,15 @@ export class KnowledgeService {
         doc.updated_at,
       ],
     );
+    // Folder scans mirror files; only changes made by people and agents are audited.
+    if (ctx.actor.name !== SCANNER)
+      this.audit(
+        ctx,
+        doc.revision === 1 ? "kb.document.created" : "kb.document.updated",
+        [doc.id, doc.kb_id],
+        this.catalog.kb(doc.kb_id)?.project_id ?? null,
+        `${doc.path}@${doc.revision}${note ? `: ${note}` : ""}`,
+      );
   }
 
   private insertDocument(doc: DocRow) {
@@ -705,12 +824,26 @@ export class KnowledgeService {
         "This document is a copy from a registered folder; remove the folder from the knowledge base instead",
       );
     this.removeDocumentRecord(doc);
+    this.audit(
+      ctx,
+      "kb.document.deleted",
+      [doc.id, doc.kb_id],
+      this.catalog.kb(doc.kb_id)?.project_id ?? null,
+      doc.path,
+    );
   }
 
+  /** Open comments on a removed document move to the KB, so the digest still sees them. */
   private removeDocumentRecord(doc: DocRow, relink = true) {
     this.db.transaction(() => {
       this.db.run("DELETE FROM kb_jobs WHERE document_id = ?", [doc.id]);
       this.db.run("DELETE FROM kb_documents WHERE id = ?", [doc.id]);
+      this.db.run(
+        `UPDATE kb_comments SET document_id = NULL, updated_at = ?,
+           body = body || char(10) || char(10) || '(Was on the deleted document "' || ? || '".)'
+         WHERE document_id = ? AND status = 'open'`,
+        [Date.now(), doc.title, doc.id],
+      );
     })();
     this.usage.forgetDocument(doc.id);
     this.engine.idx.deleteDocument(doc.id);
@@ -719,9 +852,430 @@ export class KnowledgeService {
   }
 
   /**
+   * Changes part of an authored document: exact text replacements and line-range replacements,
+   * all against `expected_revision`, saved as one new revision.
+   */
+  editDocument(ctx: KbCallContext, id: string, raw: KbDocumentEdit): KbDocumentEditResult {
+    const input = KbDocumentEditSchema.parse(raw);
+    const cur = this.docOrThrow(id);
+    this.requireEditable(ctx, this.kbOrThrow(cur.kb_id));
+    if (!isEditable(cur))
+      throw new ValidationError(
+        "This document's content comes from a file; replace the file instead",
+      );
+    if (input.expected_revision !== cur.revision)
+      throw new ConflictError(
+        `Document changed: you read revision ${input.expected_revision}, current is ${cur.revision}. Read it again and redo the edit.`,
+      );
+    const { text, changed } = applyEdits(cur.content ?? "", input.edits);
+    const document = this.updateDocument(ctx, id, {
+      expected_revision: cur.revision,
+      content: text,
+      note: input.note,
+    });
+    return { document, changed: document.revision === cur.revision ? [] : changed };
+  }
+
+  /** Lines of a document's text with their numbers, so a long document can be read in parts. */
+  readLines(ctx: KbCallContext, id: string, startLine = 1, endLine?: number) {
+    const doc = this.docOrThrow(id);
+    const text = isEditable(doc)
+      ? (doc.content ?? "")
+      : (documentText(this.engine, doc)?.markdown ?? "");
+    this.usage.record(ctx, "fetch", [target(doc)]);
+    return { ...toDoc(doc), ...numberedLines(text, startLine, endLine) };
+  }
+
+  /** Brings back a past revision's title, labels and content as a new revision. */
+  restoreRevision(
+    ctx: KbCallContext,
+    id: string,
+    revision: number,
+    expectedRevision: number,
+    note?: string,
+  ): KbDocument {
+    const cur = this.docOrThrow(id);
+    if (!isEditable(cur))
+      throw new ValidationError("Only authored documents can be restored to a past revision");
+    const rev = this.catalog.revision(id, revision);
+    if (!rev) throw new NotFoundError("Revision", `${id}@${revision}`);
+    return this.updateDocument(ctx, id, {
+      expected_revision: expectedRevision,
+      title: rev.title,
+      labels: JSON.parse(rev.labels) as string[],
+      content: rev.content ?? "",
+      note: note ?? `Restored revision ${revision}`,
+    });
+  }
+
+  // --- Comments ------------------------------------------------------------------------------
+
+  private commentOrThrow(id: string): CommentRow {
+    const row = this.db
+      .query(
+        `SELECT c.*, d.title AS document_title FROM kb_comments c
+         LEFT JOIN kb_documents d ON d.id = c.document_id WHERE c.id = ?`,
+      )
+      .get(id) as CommentRow | null;
+    if (!row) throw new NotFoundError("Comment", id);
+    return row;
+  }
+
+  /** Anyone who can read a KB may comment on it; the digest (or a person) closes comments. */
+  addComment(ctx: KbCallContext, kbId: string, raw: KbCommentCreate): KbComment {
+    const kb = this.kbOrThrow(kbId);
+    const input = KbCommentCreateSchema.parse(raw);
+    const documentId = input.document_id ?? null;
+    if (documentId && this.docOrThrow(documentId).kb_id !== kbId)
+      throw new ValidationError("The document is in a different knowledge base");
+    const id = ulid();
+    const now = Date.now();
+    this.db.run(
+      `INSERT INTO kb_comments (id, kb_id, document_id, body, author, source, session_id, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)`,
+      [
+        id,
+        kbId,
+        documentId,
+        input.body,
+        actorName(ctx),
+        ctx.source,
+        ctx.actor.session_id ?? null,
+        now,
+        now,
+      ],
+    );
+    this.audit(ctx, "kb.comment.added", [id, kbId], kb.project_id, input.body.slice(0, 200));
+    return this.comment(id);
+  }
+
+  comment(id: string): KbComment {
+    return toComment(this.commentOrThrow(id));
+  }
+
+  listComments(
+    kbId: string,
+    filter: {
+      document_id?: string | undefined;
+      status?: KbCommentStatus | undefined;
+      limit?: number | undefined;
+    } = {},
+  ): KbComment[] {
+    this.kbOrThrow(kbId);
+    const where = ["c.kb_id = ?"];
+    const params: (string | number)[] = [kbId];
+    if (filter.document_id) {
+      where.push("c.document_id = ?");
+      params.push(filter.document_id);
+    }
+    if (filter.status) {
+      where.push("c.status = ?");
+      params.push(filter.status);
+    }
+    const limit = Math.min(Math.max(filter.limit ?? 100, 1), MAX_COMMENTS);
+    return (
+      this.db
+        .query(
+          `SELECT c.*, d.title AS document_title FROM kb_comments c
+           LEFT JOIN kb_documents d ON d.id = c.document_id
+           WHERE ${where.join(" AND ")} ORDER BY c.status = 'open' DESC, c.created_at DESC, c.rowid DESC LIMIT ?`,
+        )
+        .all(...params, limit) as CommentRow[]
+    ).map(toComment);
+  }
+
+  /** Resolving or dismissing is a maintainer action, so it follows `editable_by`. */
+  closeComment(ctx: KbCallContext, id: string, raw: KbCommentClose): KbComment {
+    const input = KbCommentCloseSchema.parse(raw);
+    const row = this.commentOrThrow(id);
+    const kb = this.kbOrThrow(row.kb_id);
+    this.requireEditable(ctx, kb);
+    if (row.status !== "open")
+      throw new ConflictError(`Comment is already ${row.status}; reopen it first`);
+    const now = Date.now();
+    this.db.run(
+      "UPDATE kb_comments SET status = ?, reply = ?, resolved_by = ?, resolved_at = ?, updated_at = ? WHERE id = ?",
+      [input.status, input.reply, actorName(ctx), now, now, id],
+    );
+    this.audit(ctx, `kb.comment.${input.status}`, [id, row.kb_id], kb.project_id, input.reply);
+    return this.comment(id);
+  }
+
+  reopenComment(ctx: KbCallContext, id: string): KbComment {
+    const row = this.commentOrThrow(id);
+    const kb = this.kbOrThrow(row.kb_id);
+    this.requireEditable(ctx, kb);
+    if (row.status === "open") return toComment(row);
+    this.db.run(
+      "UPDATE kb_comments SET status = 'open', reply = NULL, resolved_by = NULL, resolved_at = NULL, updated_at = ? WHERE id = ?",
+      [Date.now(), id],
+    );
+    this.audit(ctx, "kb.comment.reopened", [id, row.kb_id], kb.project_id);
+    return this.comment(id);
+  }
+
+  // --- Digests -------------------------------------------------------------------------------
+
+  digestTemplate(): string {
+    return KB_DIGEST_TEMPLATE;
+  }
+
+  getDigest(kbId: string): KbDigest | null {
+    this.kbOrThrow(kbId);
+    const row = this.db
+      .query(
+        `SELECT d.*, j.trigger_type, j.cron_expr, j.enabled, j.timeout_secs
+         FROM kb_digests d JOIN jobs j ON j.id = d.job_id WHERE d.kb_id = ?`,
+      )
+      .get(kbId) as DigestJoin | null;
+    if (!row) return null;
+    return {
+      kb_id: row.kb_id,
+      instructions: row.instructions,
+      backend: row.backend,
+      job_id: row.job_id,
+      schedule:
+        row.trigger_type === "cron" && row.cron_expr
+          ? { type: "cron", cron: row.cron_expr }
+          : { type: "manual" },
+      enabled: Boolean(row.enabled),
+      timeout_secs: row.timeout_secs,
+      last_success_at: row.last_success_at,
+      last_run:
+        row.last_status && row.last_run_at
+          ? {
+              status: row.last_status as KbDigestRunStatus,
+              at: row.last_run_at,
+              note: row.last_note,
+              session_id: row.last_session_id,
+            }
+          : null,
+      open_comments: this.digests.openCommentCount(kbId),
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    };
+  }
+
+  /**
+   * Creates or changes a KB's digest and its job. The digest agent writes through MCP, so the KB's
+   * `editable_by` must include mcp.
+   */
+  setDigest(ctx: KbCallContext, kbId: string, raw: KbDigestSet): KbDigest {
+    const input = KbDigestSetSchema.parse(raw);
+    const kb = this.kbOrThrow(kbId);
+    this.requireEditable(ctx, kb);
+    if (!toKb(kb).editable_by.includes("mcp"))
+      throw new ValidationError(
+        `A digest writes through MCP; allow mcp in "${kb.name}" editable_by first`,
+      );
+    if (input.schedule?.type === "cron") assertCron(input.schedule.cron);
+    const existing = this.getDigest(kbId);
+    const schedule: KbDigestSchedule = input.schedule ??
+      existing?.schedule ?? { type: "cron", cron: KB_DIGEST_DEFAULT_CRON };
+    const enabled = input.enabled ?? existing?.enabled ?? true;
+    const timeout = input.timeout_secs ?? existing?.timeout_secs ?? DIGEST_TIMEOUT_SECS;
+    const cron = schedule.type === "cron" ? schedule.cron : null;
+    const now = Date.now();
+    const nowSecs = Math.floor(now / 1000);
+    const jobId = existing?.job_id ?? ulid();
+    this.db.transaction(() => {
+      if (existing) {
+        this.db.run(
+          "UPDATE jobs SET trigger_type = ?, cron_expr = ?, enabled = ?, timeout_secs = ?, project_id = ?, updated_at = ? WHERE id = ?",
+          [schedule.type, cron, enabled ? 1 : 0, timeout, kb.project_id, nowSecs, jobId],
+        );
+        this.db.run(
+          "UPDATE kb_digests SET instructions = ?, backend = ?, updated_at = ? WHERE kb_id = ?",
+          [
+            input.instructions ?? existing.instructions,
+            input.backend ?? existing.backend,
+            now,
+            kbId,
+          ],
+        );
+      } else {
+        this.db.run(
+          `INSERT INTO jobs (id, name, description, command, inject_context, trigger_type, cron_expr, timeout_secs, overlap, enabled, project_id, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 0, ?, ?, ?, 'skip', ?, ?, ?, ?)`,
+          [
+            jobId,
+            kbDigestJobName(kbId),
+            `Digest for knowledge base "${kb.name}"`,
+            kbDigestCommand(kbId),
+            schedule.type,
+            cron,
+            timeout,
+            enabled ? 1 : 0,
+            kb.project_id,
+            nowSecs,
+            nowSecs,
+          ],
+        );
+        this.db.run(
+          `INSERT INTO kb_digests (kb_id, instructions, backend, job_id, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            kbId,
+            input.instructions ?? KB_DIGEST_TEMPLATE,
+            input.backend ?? this.defaultBackend(),
+            jobId,
+            now,
+            now,
+          ],
+        );
+      }
+      this.audit(
+        ctx,
+        "kb.digest.set",
+        [kbId, jobId],
+        kb.project_id,
+        Object.keys(input).join(", ") || "defaults",
+      );
+    })();
+    this.jobHooks?.sync(jobId);
+    return this.getDigest(kbId) as KbDigest;
+  }
+
+  deleteDigest(ctx: KbCallContext, kbId: string, opts: KbDeleteOptions = {}) {
+    const kb = this.kbOrThrow(kbId);
+    this.requireEditable(ctx, kb);
+    this.requireConfirm(ctx, kb, opts);
+    const row = this.digests.row(kbId);
+    if (!row) throw new NotFoundError("Digest", kbId);
+    this.db.transaction(() => {
+      this.db.run("DELETE FROM kb_digests WHERE kb_id = ?", [kbId]);
+      deleteJobRow(this.db, row.job_id);
+      this.audit(ctx, "kb.digest.deleted", [kbId, row.job_id], kb.project_id);
+    })();
+    this.jobHooks?.sync(row.job_id);
+  }
+
+  /** Starts the digest now, even when nothing new happened since the last run. */
+  async runDigest(ctx: KbCallContext, kbId: string): Promise<{ run_id: string }> {
+    const kb = this.kbOrThrow(kbId);
+    this.requireEditable(ctx, kb);
+    const row = this.digests.row(kbId);
+    if (!row) throw new NotFoundError("Digest", kbId);
+    if (!this.jobHooks)
+      throw new ValidationError("Digest runs start in the ORC daemon; call the ORC API");
+    const runId = await this.jobHooks.run(row.job_id, ctx.source);
+    this.audit(ctx, "kb.digest.started", [kbId, runId], kb.project_id);
+    return { run_id: runId };
+  }
+
+  digestRuns(kbId: string, limit = 20): KbDigestRun[] {
+    this.kbOrThrow(kbId);
+    const row = this.digests.row(kbId);
+    if (!row) throw new NotFoundError("Digest", kbId);
+    return this.db
+      .query(
+        `SELECT r.id AS run_id, r.status, r.trigger_by, r.started_at * 1000 AS started_at, r.ended_at * 1000 AS ended_at,
+           r.stdout AS summary, r.error_msg AS error,
+           (SELECT s.id FROM sessions s WHERE s.job_run_id = r.id ORDER BY s.created_at DESC LIMIT 1) AS session_id
+         FROM job_runs r WHERE r.job_id = ? ORDER BY r.created_at DESC, r.id DESC LIMIT ?`,
+      )
+      .all(row.job_id, Math.min(Math.max(limit, 1), 100)) as KbDigestRun[];
+  }
+
+  /**
    * Intake for a file. Markdown/text becomes an authored (editable) document; other formats keep
    * their immutable original and are parsed in the background.
    */
+  /**
+   * Gives each active project, and global scope when it has old wiki pages, one starter
+   * "Learnings" KB with the template digest, once per scope. Old wiki pages of the scope become
+   * its documents. Returns the ids of the KBs it created.
+   */
+  ensureLearningsKbs(): string[] {
+    const hasWiki = Boolean(
+      this.db
+        .query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'wiki_pages'")
+        .get(),
+    );
+    const scopes: (string | null)[] = (
+      this.db.query("SELECT id FROM projects WHERE status = 'active' ORDER BY id").all() as {
+        id: string;
+      }[]
+    ).map((p) => p.id);
+    if (hasWiki && this.db.query("SELECT 1 FROM wiki_pages WHERE project_id IS NULL").get())
+      scopes.unshift(null);
+    const created: string[] = [];
+    for (const projectId of scopes) {
+      const key = projectId ?? "global";
+      if (this.db.query("SELECT 1 FROM kb_starters WHERE scope_key = ?").get(key)) continue;
+      const own = this.db
+        .query(
+          "SELECT id FROM knowledge_bases WHERE coalesce(project_id, '') = ? AND name = 'Learnings' COLLATE NOCASE",
+        )
+        .get(projectId ?? "") as { id: string } | null;
+      if (own) {
+        // The scope already has its own Learnings KB; leave it as the user made it.
+        this.db.run("INSERT INTO kb_starters (scope_key, kb_id, created_at) VALUES (?, ?, ?)", [
+          key,
+          own.id,
+          Date.now(),
+        ]);
+        continue;
+      }
+      try {
+        created.push(this.createLearningsKb(projectId, hasWiki));
+      } catch (err) {
+        console.error(`[knowledge] starter KB for ${key} failed: ${(err as Error).message}`);
+      }
+    }
+    return created;
+  }
+
+  private createLearningsKb(projectId: string | null, migrateWiki: boolean): string {
+    const ctx: KbCallContext = { source: "api", actor: { name: "orc" }, project_id: projectId };
+    const kb = this.createKb(ctx, {
+      name: "Learnings",
+      description:
+        "Lessons, procedures and decisions learned in this scope, kept current by its digest",
+      project_id: projectId,
+    });
+    this.db.run("INSERT INTO kb_starters (scope_key, kb_id, created_at) VALUES (?, ?, ?)", [
+      projectId ?? "global",
+      kb.id,
+      Date.now(),
+    ]);
+    this.setDigest(ctx, kb.id, {});
+    if (!migrateWiki) return kb.id;
+    const pages = this.db
+      .query(
+        "SELECT slug, kind, revision, title, summary, content, tags, sources, author FROM wiki_pages WHERE project_id IS ? ORDER BY slug",
+      )
+      .all(projectId) as {
+      slug: string;
+      kind: string;
+      revision: number;
+      title: string;
+      summary: string;
+      content: string;
+      tags: string;
+      sources: string;
+      author: string;
+    }[];
+    for (const page of pages) {
+      const sources = JSON.parse(page.sources) as string[];
+      this.createDocument(
+        { ...ctx, actor: { name: page.author } },
+        kb.id,
+        {
+          title: page.title,
+          description: page.summary,
+          path: `${page.slug}.md`,
+          labels: [page.kind, ...(JSON.parse(page.tags) as string[])],
+          content: sources.length
+            ? `${page.content.trimEnd()}\n\n## Sources\n\n${sources.map((s) => `- ${s}`).join("\n")}\n`
+            : page.content,
+        },
+        `Migrated from wiki page ${page.slug} r${page.revision}`,
+      );
+    }
+    return kb.id;
+  }
+
   upload(ctx: KbCallContext, kbId: string, raw: UploadInput): KbDocument {
     const kb = this.kbOrThrow(kbId);
     this.requireEditable(ctx, kb);
@@ -1442,6 +1996,7 @@ export class KnowledgeService {
   maintain() {
     try {
       this.jobs.recoverExpired();
+      this.ensureLearningsKbs();
       this.scanAllSources();
       this.usage.prune(this.cfg().usage_retention_days);
       this.db.run("DELETE FROM kb_jobs WHERE status IN ('done', 'superseded') AND updated_at < ?", [
@@ -1480,4 +2035,20 @@ function sectionOf(blocks: ReturnType<typeof markdownToBlocks>, heading: string)
     out.push(b.kind === "heading" ? `${"#".repeat(b.level ?? 1)} ${b.text}` : b.text);
   }
   return out.join("\n\n");
+}
+
+function toComment(row: CommentRow): KbComment {
+  return {
+    ...row,
+    source: row.source as KbComment["source"],
+    status: row.status as KbCommentStatus,
+  };
+}
+
+function assertCron(expr: string) {
+  try {
+    new Cron(expr, { paused: true }).stop();
+  } catch (err) {
+    throw new ValidationError(`Invalid cron expression "${expr}": ${(err as Error).message}`);
+  }
 }

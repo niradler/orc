@@ -12,6 +12,8 @@ export {
   DEFAULT_SOURCE_PATTERN,
   type DocumentReadOptions,
   KB_UPLOAD_FORMATS,
+  type KbDeleteOptions,
+  type KbJobHooks,
   KnowledgeService,
   type KnowledgeServiceOptions,
   mediaTypeOf,

@@ -266,7 +266,7 @@ For CRUD operations not in MCP (delete, project management, job creation), use t
 | `memory_delete`     | Delete a wrong or obsolete memory. `memory_revert` can restore it.                                             |
 | `memory_history`    | Changes to a memory, newest first, with before/after snapshots.                                                |
 | `memory_revert`     | Restore the state before a change (`change_id` + latest `expected_change_id`).                                 |
-| `search`            | Unified search across wiki, tasks and memories. Use instead of separate calls.                                 |
+| `search`            | Unified search across knowledge bases, tasks and memories. Use instead of separate calls.                      |
 | `task_list`         | List active tasks (compact, no body). Pass `project` to filter.                                                |
 | `task_get`          | Fetch full task details by ID                                                                                  |
 | `task_create`       | Create a task. Pass `project` to scope. Set `agent_backend` to route to a specific agent runtime.              |
@@ -582,4 +582,4 @@ Skills live in `skills/*/SKILL.md` (built-in, shipped with ORC) and `~/.orc/skil
 
 ## Knowledge learning
 
-Read [docs/knowledge-loop.md](docs/knowledge-loop.md) when modifying memory, wiki, digest or instruction-history code. Reuse lessons through normal `search` / `wiki_search` / `kb_search` and `skill_read`; do not add wiki content/index to startup context or inject wiki summaries into runner prompts. At work-unit completion use `orc-memory-review`. Skill edits activate without an evaluation gate, retain history/audit and have manual revert.
+Read [docs/knowledge-loop.md](docs/knowledge-loop.md) when modifying memory, KB digest, KB comment or instruction-history code. Reuse lessons through normal `search` / `kb_search` and `skill_read`; do not add KB content/index to startup context or inject KB summaries into runner prompts. At work-unit completion use `orc-memory-review`. Skill edits activate without an evaluation gate, retain history/audit and have manual revert.

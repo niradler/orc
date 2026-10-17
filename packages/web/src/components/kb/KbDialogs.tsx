@@ -1,13 +1,18 @@
 import {
   KB_CALL_SOURCES,
+  KB_DIGEST_DEFAULT_CRON,
   type KbCallSource,
+  type KbDigest,
+  type KbDigestSchedule,
   type KbDocument,
   type KnowledgeBase,
 } from "@orc/core/kb";
 import { FolderSync, Trash2 } from "lucide-react";
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 import { api } from "@/api/client";
+import { BackendPicker, USE_DEFAULT_BACKEND } from "@/components/BackendPicker";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,7 +31,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useInvalidateKb, useKbParsers, useKbSources } from "@/hooks/useKnowledge";
+import { useBackends } from "@/hooks/useBackends";
+import {
+  useInvalidateKb,
+  useKbDigestTemplate,
+  useKbParsers,
+  useKbSources,
+} from "@/hooks/useKnowledge";
 import { useProjects } from "@/hooks/useProjects";
 
 const GLOBAL = "__global__";
@@ -37,7 +48,7 @@ function message(error: unknown): string {
 }
 
 /** Runs one request at a time and keeps its error for the dialog. */
-function useAction() {
+export function useAction() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   async function run<T>(action: () => Promise<T>): Promise<T | undefined> {
@@ -668,6 +679,176 @@ export function SourcesDialog({ kb, onClose }: { kb: KnowledgeBase; onClose: () 
           await invalidate();
         }}
       />
+    </Shell>
+  );
+}
+
+export function DigestDialog({
+  kb,
+  digest,
+  onClose,
+}: {
+  kb: KnowledgeBase;
+  digest: KbDigest | null;
+  onClose: () => void;
+}) {
+  const invalidate = useInvalidateKb();
+  const action = useAction();
+  const backends = useBackends();
+  const template = useKbDigestTemplate(!digest);
+  const [instructions, setInstructions] = useState<string | null>(digest?.instructions ?? null);
+  const [backend, setBackend] = useState(digest?.backend ?? USE_DEFAULT_BACKEND);
+  const [scheduleType, setScheduleType] = useState<KbDigestSchedule["type"]>(
+    digest?.schedule.type ?? "cron",
+  );
+  const [cron, setCron] = useState(
+    digest?.schedule.type === "cron" ? digest.schedule.cron : KB_DIGEST_DEFAULT_CRON,
+  );
+  useEffect(() => {
+    if (instructions === null && template.data) setInstructions(template.data.instructions);
+  }, [instructions, template.data]);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const chosen = backend === USE_DEFAULT_BACKEND ? backends.data?.default_backend : backend;
+    const saved = await action.run(() =>
+      api.kb.setDigest(kb.id, {
+        instructions: instructions?.trim() ?? "",
+        ...(chosen ? { backend: chosen } : {}),
+        schedule:
+          scheduleType === "cron" ? { type: "cron", cron: cron.trim() } : { type: "manual" },
+      }),
+    );
+    if (!saved) return;
+    await invalidate();
+    onClose();
+  }
+  const ready = instructions !== null;
+  return (
+    <Shell open onClose={onClose} title={digest ? "Edit digest" : "Add digest"} wide>
+      <form onSubmit={submit} className="min-w-0 space-y-4">
+        {!kb.editable_by.includes("mcp") && (
+          <p className="text-sm text-warning" data-testid="kb-digest-mcp-hint">
+            The digest writes through MCP. Allow Agents (MCP) in this knowledge base's settings
+            first.
+          </p>
+        )}
+        <Field label="Instructions">
+          {ready ? (
+            <MarkdownEditor
+              path="digest.md"
+              value={instructions}
+              onChange={setInstructions}
+              testId="kb-digest-instructions"
+              label="Instructions"
+              initialMode="edit"
+              height={320}
+            />
+          ) : template.error ? (
+            <p role="alert" className="text-sm text-error">
+              {message(template.error)}
+            </p>
+          ) : (
+            <p role="status" className="text-sm text-outline">
+              Loading template…
+            </p>
+          )}
+        </Field>
+        <BackendPicker value={backend} onChange={setBackend} testId="kb-digest-backend" />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Schedule">
+            <Select
+              value={scheduleType}
+              onValueChange={(v) => setScheduleType(v as KbDigestSchedule["type"])}
+            >
+              <SelectTrigger aria-label="Schedule" data-testid="kb-digest-schedule">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="cron">Cron schedule</SelectItem>
+                <SelectItem value="manual">Manual only</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          {scheduleType === "cron" && (
+            <Field
+              label="Cron expression"
+              hint={`Default ${KB_DIGEST_DEFAULT_CRON} runs daily at 03:00.`}
+            >
+              <Input
+                aria-label="Cron expression"
+                data-testid="kb-digest-cron"
+                value={cron}
+                onChange={(e) => setCron(e.target.value)}
+                className="font-mono"
+              />
+            </Field>
+          )}
+        </div>
+        <ErrorLine error={action.error} />
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            data-testid="kb-digest-save"
+            disabled={
+              !ready ||
+              !instructions?.trim() ||
+              (scheduleType === "cron" && !cron.trim()) ||
+              action.pending
+            }
+          >
+            {action.pending ? "Saving…" : "Save"}
+          </Button>
+        </DialogFooter>
+      </form>
+    </Shell>
+  );
+}
+
+export function RemoveDigestDialog({ kb, onClose }: { kb: KnowledgeBase; onClose: () => void }) {
+  const invalidate = useInvalidateKb();
+  const action = useAction();
+  const [typed, setTyped] = useState("");
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    const done = await action.run(() => api.kb.removeDigest(kb.id, typed));
+    if (done === undefined) return;
+    await invalidate();
+    onClose();
+  }
+  return (
+    <Shell open onClose={onClose} title="Remove digest">
+      <form onSubmit={submit} className="space-y-4">
+        <p className="text-sm text-outline">
+          The digest and its job stop. Documents and comments stay. Type {`"${kb.name}"`} to
+          confirm.
+        </p>
+        <Input
+          aria-label="Knowledge base name"
+          data-testid="kb-digest-remove-input"
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          autoComplete="off"
+          autoFocus
+        />
+        <ErrorLine error={action.error} />
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="destructive"
+            data-testid="kb-digest-remove-confirm"
+            disabled={typed !== kb.name || action.pending}
+          >
+            Remove
+          </Button>
+        </DialogFooter>
+      </form>
     </Shell>
   );
 }

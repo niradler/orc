@@ -36,7 +36,6 @@ import { taskLinksRouter } from "./routes/task-links.js";
 import { tasksRouter } from "./routes/tasks.js";
 import { terminalGitRouter } from "./routes/terminal-git.js";
 import { terminalsRouter } from "./routes/terminals.js";
-import { wikiRouter } from "./routes/wiki.js";
 import { createWebStatic } from "./static.js";
 
 const logger = createLogger("api");
@@ -115,7 +114,6 @@ export function createApp() {
   app.route("/api", tasksRouter);
   app.route("/api", taskLinksRouter);
   app.route("/api", memoriesRouter);
-  app.route("/api", wikiRouter);
   app.route("/api", auditRouter);
   app.route("/api", knowledgeRouter);
   app.route("/api", sessionsRouter);

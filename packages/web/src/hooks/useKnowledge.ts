@@ -1,13 +1,20 @@
-import type { KbSearchRequest } from "@orc/core/kb";
+import type { KbCommentStatus, KbSearchRequest } from "@orc/core/kb";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 
 // Every knowledge query key starts with "kb" so one invalidation refreshes the whole view.
 export const KB_KEY = "kb";
 
+// A digest is also a job, so its queries refresh on job changes too (see resource-events).
+export const KB_DIGEST_KEY = "kb-digest";
+
 export function useInvalidateKb() {
   const queryClient = useQueryClient();
-  return () => queryClient.invalidateQueries({ queryKey: [KB_KEY] });
+  return () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: [KB_KEY] }),
+      queryClient.invalidateQueries({ queryKey: [KB_DIGEST_KEY] }),
+    ]);
 }
 
 /** A project shows its own KBs plus global ones; "all projects" is a read-only cross-project view. */
@@ -117,5 +124,48 @@ export function useKbParsers() {
     queryKey: [KB_KEY, "parsers"],
     queryFn: () => api.kb.parsers(),
     refetchInterval: (query) => (query.state.data?.docling.state === "installing" ? 2000 : false),
+  });
+}
+
+export function useKbComments(
+  kbId: string,
+  filter: { document_id?: string; status?: KbCommentStatus },
+) {
+  return useQuery({
+    queryKey: [KB_KEY, "comments", kbId, filter],
+    queryFn: () => api.kb.comments(kbId, filter),
+    select: (data) => data.comments,
+  });
+}
+
+export function useKbDigestTemplate(enabled: boolean) {
+  return useQuery({
+    queryKey: [KB_DIGEST_KEY, "template"],
+    queryFn: () => api.kb.digestTemplate(),
+    enabled,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+}
+
+const RUN_ACTIVE = new Set(["pending", "running"]);
+
+export function useKbDigest(kbId: string) {
+  return useQuery({
+    queryKey: [KB_DIGEST_KEY, kbId],
+    queryFn: () => api.kb.digest(kbId),
+    select: (data) => data.digest,
+    refetchInterval: (query) =>
+      query.state.data?.digest?.last_run?.status === "running" ? 3000 : false,
+  });
+}
+
+export function useKbDigestRuns(kbId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: [KB_DIGEST_KEY, kbId, "runs"],
+    queryFn: () => api.kb.digestRuns(kbId, 10),
+    enabled,
+    select: (data) => data.runs,
+    refetchInterval: (query) =>
+      query.state.data?.runs.some((r) => RUN_ACTIVE.has(r.status)) ? 3000 : false,
   });
 }

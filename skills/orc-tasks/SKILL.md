@@ -32,7 +32,7 @@ task_update. Read existing claims and review feedback before working. Human appr
 belongs to the human; do not imply every agent review is a human approval.
 
 Progress belongs in task comments/session events. Preserve the artifact, verification,
-risks, relevant knowledge and next action at each handoff. Memory/wiki are for durable
+risks, relevant knowledge and next action at each handoff. Memory/KBs are for durable
 knowledge, not a second task board. Use orc-session and orc-memory-review for continuity.
 
 CLI operations include orc task add/show/note and orc flow attach/status/resume.

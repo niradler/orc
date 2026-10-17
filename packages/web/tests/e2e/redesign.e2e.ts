@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { API_SECRET, apiPost, gotoView, selectProject, tid } from "./_helpers";
+import { API_SECRET, apiDelete, apiPatch, apiPost, gotoView, selectProject, tid } from "./_helpers";
 
 test("themes persist, grouped navigation works, and the mobile project shortcut opens one dialog", async ({
   page,
@@ -51,63 +51,59 @@ test("themes persist, grouped navigation works, and the mobile project shortcut 
   }
 });
 
-test("notebook links and graph use real notes and edits reopen after theme changes", async ({
+test("knowledge base document links use real documents and edits reopen after theme changes", async ({
   page,
   request,
 }) => {
-  const project = await apiPost<{ id: string }>(request, "/projects", { name: tid("notebook") });
+  const project = await apiPost<{ id: string }>(request, "/projects", { name: tid("kb-links") });
+  const kb = await apiPost<{ id: string; name: string }>(request, "/kb/bases", {
+    name: tid("pw-kb-redesign"),
+    project_id: project.id,
+  });
   const from = tid("flow"),
     to = tid("backend");
-  const write = (slug: string, content: string) =>
-    apiPost(request, "/wiki", {
-      project_id: project.id,
-      slug,
-      title: slug,
-      kind: "concept",
-      summary: "Connected project knowledge",
-      content,
-      expected_revision: 0,
-      note: "Browser fixture",
-    });
-  await write(from, `# Task flows\n\nRead [[${to}]] for agent details.`);
-  await write(to, "# Agent backends\n\nOriginal content.");
-  await gotoView(page, "wiki");
-  await selectProject(page, project.id);
-  await page.locator(`[data-testid="notebook-note"][data-slug="${from}"]`).click();
-  await expect(page.getByTestId("markdown-preview")).toContainText("Task flows");
-  await page.getByTestId(`wiki-link-${to}`).click();
-  await expect(page.getByTestId("markdown-preview")).toContainText("Agent backends");
-  await page.getByTestId("notebook-links-toggle").click();
-  await expect(page.locator("#notebook-links")).toContainText(from);
-  await page.getByTestId("notebook-graph-toggle").click();
-  await expect(page.getByTestId("notebook-graph").locator("svg")).toBeVisible();
-  await page.getByTestId("notebook-graph-toggle").click();
-  await page.getByTestId("notebook-links-toggle").click();
-  await page.getByTestId("markdown-mode-edit").click();
-  await page
-    .getByTestId("wiki-editor-content")
-    .fill("# Agent backends\n\nSaved and reopened notebook content.");
-  await page.getByTestId("theme-toggle").click();
-  await expect(page.getByTestId("wiki-editor-content")).toContainText("Saved and reopened");
-  await page.getByTestId("document-save").click();
-  await expect(page.getByTestId("document-save-status")).toHaveText("Saved");
-  await page.reload();
-  await expect(page.getByTestId("markdown-mode-edit")).toHaveAttribute("aria-pressed", "true");
-  await page.getByTestId("markdown-mode-read").click();
-  await expect(page.getByTestId("markdown-preview")).toContainText(
-    "Saved and reopened notebook content",
-  );
-  for (const width of [390, 320]) {
-    await page.setViewportSize({ width, height: 844 });
-    await page.getByTestId("notebook-files-toggle").click();
-    await expect(page.getByTestId("notebook-files")).toBeVisible();
-    await page
-      .locator(`[data-testid="notebook-files"] [data-testid="notebook-note"][data-slug="${from}"]`)
-      .click();
+  const write = (title: string, content: string) =>
+    apiPost(request, `/kb/bases/${kb.id}/documents`, { title, content });
+  try {
+    await write(from, `# Task flows\n\nRead [[${to}]] for agent details.`);
+    await write(to, "# Agent backends\n\nOriginal content.");
+    await gotoView(page, "knowledge");
+    await selectProject(page, project.id);
+    await page.locator(`[data-testid="kb-row"][data-kb-name="${kb.name}"]`).click();
+    await page.locator(`[data-testid="kb-document-row"][data-document-title="${from}"]`).click();
     await expect(page.getByTestId("markdown-preview")).toContainText("Task flows");
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
-      true,
+    await page.getByTestId(`wiki-link-${to}`).click();
+    await expect(page.getByTestId("markdown-preview")).toContainText("Agent backends");
+    await expect(page.getByTestId("kb-backlink")).toContainText(from);
+    await page.getByTestId("markdown-mode-edit").click();
+    await page
+      .getByTestId("kb-document-content")
+      .fill("# Agent backends\n\nSaved and reopened document content.");
+    await page.getByTestId("theme-toggle").click();
+    await expect(page.getByTestId("kb-document-content")).toContainText("Saved and reopened");
+    await page.getByTestId("document-save").click();
+    await expect(page.getByTestId("document-save-status")).toHaveText("Saved");
+    await page.reload();
+    await expect(page.getByTestId("markdown-mode-edit")).toHaveAttribute("aria-pressed", "true");
+    await page.getByTestId("markdown-mode-read").click();
+    await expect(page.getByTestId("markdown-preview")).toContainText(
+      "Saved and reopened document content",
     );
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      await page
+        .getByTestId("knowledge-bases")
+        .getByRole("button", { name: "Files", exact: true })
+        .click();
+      await expect(page.getByTestId("kb-documents")).toBeVisible();
+      await page.locator(`[data-testid="kb-document-row"][data-document-title="${from}"]`).click();
+      await expect(page.getByTestId("markdown-preview")).toContainText("Task flows");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    }
+  } finally {
+    await apiDelete(request, `/kb/bases/${kb.id}`);
   }
 });
 
@@ -157,54 +153,55 @@ test("mobile project creation opens its first task without a covering navigation
   );
 });
 
-test("a conflicting notebook save keeps its draft and explicit discard adopts the latest revision", async ({
+test("a conflicting knowledge base document save keeps its draft and explicit discard adopts the latest revision", async ({
   page,
   request,
 }) => {
-  const slug = tid("conflict");
-  const baseline = {
+  const kb = await apiPost<{ id: string; name: string }>(request, "/kb/bases", {
+    name: tid("pw-kb-conflict-recovery"),
     project_id: null,
-    slug,
-    title: "Conflict recovery",
-    kind: "concept",
-    summary: "Recovery fixture",
-    note: "Validation",
-  };
-  await apiPost(request, "/wiki", {
-    ...baseline,
-    content: "# Original note",
-    expected_revision: 0,
   });
-  await gotoView(page, "wiki");
-  await page.locator(`[data-testid="notebook-note"][data-slug="${slug}"]`).click();
-  await page.getByTestId("markdown-mode-edit").click();
-  await page.getByTestId("wiki-editor-content").fill("# My unsaved draft");
-  let sameNoteDialogs = 0;
-  const unexpectedDiscard = async (dialog: import("@playwright/test").Dialog) => {
-    sameNoteDialogs++;
-    await dialog.dismiss();
-  };
-  page.on("dialog", unexpectedDiscard);
-  await page.locator(`[data-testid="notebook-note"][data-slug="${slug}"]`).click();
-  expect(sameNoteDialogs).toBe(0);
-  await expect(page.getByTestId("document-save-status")).toHaveText("Unsaved changes");
-  page.off("dialog", unexpectedDiscard);
-  await apiPost(request, "/wiki", {
-    ...baseline,
-    content: "# New external revision",
-    expected_revision: 1,
-  });
-  await page.getByTestId("document-save").click();
-  await expect(page.getByTestId("document-workspace").getByRole("alert")).toBeVisible();
-  await expect(page.getByTestId("wiki-editor-content")).toContainText("My unsaved draft");
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByTestId("document-discard").click();
-  await expect(page.getByTestId("wiki-editor-content")).toContainText("New external revision");
-  await page.getByTestId("wiki-editor-content").fill("# Recovered and saved");
-  await page.getByTestId("document-save").click();
-  await expect(page.getByTestId("document-save-status")).toHaveText("Saved");
-  await page.reload();
-  await expect(page.getByTestId("markdown-mode-edit")).toHaveAttribute("aria-pressed", "true");
-  await page.getByTestId("markdown-mode-read").click();
-  await expect(page.getByTestId("markdown-preview")).toContainText("Recovered and saved");
+  const title = tid("conflict");
+  const row = page.locator(`[data-testid="kb-document-row"][data-document-title="${title}"]`);
+  try {
+    const doc = await apiPost<{ id: string; revision: number }>(
+      request,
+      `/kb/bases/${kb.id}/documents`,
+      { title, content: "# Original note" },
+    );
+    await gotoView(page, "knowledge");
+    await page.locator(`[data-testid="kb-row"][data-kb-name="${kb.name}"]`).click();
+    await row.click();
+    await page.getByTestId("markdown-mode-edit").click();
+    await page.getByTestId("kb-document-content").fill("# My unsaved draft");
+    let sameNoteDialogs = 0;
+    const unexpectedDiscard = async (dialog: import("@playwright/test").Dialog) => {
+      sameNoteDialogs++;
+      await dialog.dismiss();
+    };
+    page.on("dialog", unexpectedDiscard);
+    await row.click();
+    expect(sameNoteDialogs).toBe(0);
+    await expect(page.getByTestId("document-save-status")).toHaveText("Unsaved changes");
+    page.off("dialog", unexpectedDiscard);
+    await apiPatch(request, `/kb/documents/${doc.id}`, {
+      expected_revision: doc.revision,
+      content: "# New external revision",
+    });
+    await page.getByTestId("document-save").click();
+    await expect(page.getByTestId("document-workspace").getByRole("alert")).toBeVisible();
+    await expect(page.getByTestId("kb-document-content")).toContainText("My unsaved draft");
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByTestId("document-discard").click();
+    await expect(page.getByTestId("kb-document-content")).toContainText("New external revision");
+    await page.getByTestId("kb-document-content").fill("# Recovered and saved");
+    await page.getByTestId("document-save").click();
+    await expect(page.getByTestId("document-save-status")).toHaveText("Saved");
+    await page.reload();
+    await expect(page.getByTestId("markdown-mode-edit")).toHaveAttribute("aria-pressed", "true");
+    await page.getByTestId("markdown-mode-read").click();
+    await expect(page.getByTestId("markdown-preview")).toContainText("Recovered and saved");
+  } finally {
+    await apiDelete(request, `/kb/bases/${kb.id}`);
+  }
 });

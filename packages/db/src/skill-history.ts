@@ -12,7 +12,7 @@ import {
   type SkillRefContent,
   validateAuthoredSkillDescription,
 } from "@orc/core/skill-service";
-import { type SkillUpdate, SkillUpdateSchema } from "@orc/core/wiki";
+import { type SkillUpdate, SkillUpdateSchema } from "@orc/core/skill-update";
 import { AuditLog } from "./audit.js";
 import {
   addReads,
@@ -25,7 +25,6 @@ import {
   type ReadUsage,
   rankItems,
 } from "./read-usage.js";
-import { WikiStore } from "./wiki.js";
 
 export function installSkillHistory(sqlite: Database): void {
   sqlite.exec(`CREATE TABLE IF NOT EXISTS skill_changes (
@@ -203,7 +202,6 @@ export class SkillHistory {
       !this.sqlite.query("SELECT id FROM projects WHERE id=?").get(page.project_id)
     )
       throw new NotFoundError("Project", page.project_id);
-    for (const slug of page.wiki_pages) new WikiStore(this.sqlite).get(page.project_id, slug);
     return this.sqlite.transaction(() => {
       const previous = this.current(page.skill_name, page.project_id)?.raw ?? base.content;
       if (previous !== page.expected_content)

@@ -21,8 +21,6 @@ import { cn } from "@/lib/utils";
 
 const Packages = lazy(() => import("@/views/PackageCatalog"));
 
-const Wiki = lazy(() => import("@/views/Wiki"));
-
 const Agents = lazy(() => import("@/views/Agents"));
 
 const Dashboard = lazy(() => import("@/views/Dashboard"));
@@ -81,39 +79,23 @@ function LegacyMemoriesRedirect() {
 }
 
 function LegacyKnowledgeRedirect() {
-  const { pathname, search, hash } = useLocation();
+  const { search, hash } = useLocation();
   const query = new URLSearchParams(search);
   const tab = query.get("tab");
-  let path = "/knowledge/wiki";
-  if (
-    pathname === "/wiki" ||
-    query.has("page") ||
-    tab === "pages" ||
-    tab === "changes" ||
-    tab === "audit"
-  ) {
-    if (tab === "changes" || tab === "audit") {
-      query.set("history", "1");
-      if (query.has("page")) query.set("historyPage", query.get("page") as string);
-      if (tab === "audit") query.set("audit", "1");
-    }
-  } else if (tab === "memories") path = "/knowledge/memories";
-  else if (
-    tab === "documents" ||
-    tab === "search" ||
-    tab === "collections" ||
-    query.has("document") ||
-    query.has("documentQuery") ||
-    query.has("collection")
-  ) {
-    path = "/knowledge/base";
-    const legacyQuery = query.get("documentQuery");
-    query.delete("documentQuery");
-    query.delete("collection");
-    if (legacyQuery) query.set("q", legacyQuery);
-  }
   query.delete("tab");
-  return <Navigate replace to={{ pathname: path, search: query.toString(), hash }} />;
+  if (tab === "memories")
+    return (
+      <Navigate replace to={{ pathname: "/knowledge/memories", search: query.toString(), hash }} />
+    );
+  const legacyQuery = query.get("documentQuery");
+  query.delete("documentQuery");
+  query.delete("collection");
+  // The old document search covered every knowledge base, not the one the page opens first.
+  if (legacyQuery) {
+    query.set("q", legacyQuery);
+    query.set("searchAll", "1");
+  }
+  return <Navigate replace to={{ pathname: "/knowledge/base", search: query.toString(), hash }} />;
 }
 
 export default function App() {
@@ -269,9 +251,7 @@ export default function App() {
                       <Route path="/memories" element={<LegacyMemoriesRedirect />} />
                       <Route path="/projects" element={<Projects />} />
                       <Route path="/projects/:projectId" element={<Projects />} />
-                      <Route path="/wiki" element={<LegacyKnowledgeRedirect />} />
                       <Route path="/knowledge" element={<LegacyKnowledgeRedirect />} />
-                      <Route path="/knowledge/wiki" element={<Wiki projectId={projectId} />} />
                       <Route path="/knowledge/base" element={<Knowledge projectId={projectId} />} />
                       <Route
                         path="/knowledge/memories"

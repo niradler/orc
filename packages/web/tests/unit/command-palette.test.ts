@@ -8,7 +8,7 @@ describe("command palette", () => {
     expect(commandMatches("Go to Knowledge base", "Knowledge", "BASE knowledge")).toBe(true);
     expect(commandMatches("Create task", "new todo", "project")).toBe(false);
   });
-  test("builds encoded internal deep links and preserves global wiki scope", () => {
+  test("builds encoded internal deep links", () => {
     const hit: GlobalSearchHit = {
       kind: "task",
       id: "a/b?c",
@@ -18,12 +18,6 @@ describe("command palette", () => {
       project_name: null,
     };
     expect(searchHitPath(hit)).toBe("/tasks/a%2Fb%3Fc");
-    expect(searchHitPath({ ...hit, kind: "wiki" })).toBe(
-      "/knowledge/wiki?page=a%2Fb%3Fc&scope=global",
-    );
-    expect(searchHitPath({ ...hit, kind: "wiki", project_id: "p" })).toBe(
-      "/knowledge/wiki?page=a%2Fb%3Fc",
-    );
     expect(searchHitPath({ ...hit, kind: "session" })).toBe("/audit/a%2Fb%3Fc");
   });
   test("links memory hits to the memory in its project, keyed by name", () => {

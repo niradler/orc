@@ -9,12 +9,11 @@
     "./client": "./src/client.ts",
     "./rules": "./src/rules.ts",
     "./audit": "./src/audit.ts",
-    "./wiki": "./src/wiki.ts",
     "./kb": "./src/kb.ts",
+    "./kb-digest": "./src/kb-digest.ts",
     "./memories": "./src/memories.ts",
     "./skill-history": "./src/skill-history.ts",
     "./read-usage": "./src/read-usage.ts",
-    "./digest": "./src/digest.ts",
     "./agent-memory": "./src/agent-memory.ts"
   },
   "scripts": {

@@ -75,7 +75,7 @@ function toEntry(row: AuditRow): AuditEntry {
   };
 }
 
-// Actions are "<entity>.<verb>" (memory.merged, wiki.written), so the entity is the prefix.
+// Actions are "<entity>.<verb>" (memory.merged, kb.created), so the entity is the prefix.
 function entityOf(action: string): string {
   return action.split(".")[0] ?? action;
 }

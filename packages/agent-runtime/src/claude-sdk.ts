@@ -19,7 +19,7 @@ import { createLogger } from "@orc/core/logger";
 import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
 import { resolveClaudeSdkLaunch } from "./claude-executable.js";
 import { sessionExecHost } from "./execution-host.js";
-import { buildOrcMcpServers, isImplicitOrcTool, withOrcAllowedTools } from "./orc-mcp.js";
+import { buildOrcMcpServers, ORC_TOOL_PREFIX, ORC_TOOLS_RULE } from "./orc-mcp.js";
 import { registerBackend } from "./registry.js";
 import { createRulesHook, sessionStartRuleContext } from "./rules-hook.js";
 import type {
@@ -201,7 +201,7 @@ class ClaudeSDKSession implements AgentSession {
             ? {
                 tools: this.opts.toolAllowlist.filter((name) => !name.startsWith("mcp__")),
                 mcpServers: buildOrcMcpServers(this.host, this.opts.mcpAlwaysLoad),
-                allowedTools: withOrcAllowedTools(this.opts.toolAllowlist),
+                allowedTools: [...this.opts.toolAllowlist, ORC_TOOLS_RULE],
               }
             : this.opts.ruleGuard
               ? { mcpServers: buildOrcMcpServers(this.host, this.opts.mcpAlwaysLoad) }
@@ -220,7 +220,7 @@ class ClaudeSDKSession implements AgentSession {
           },
           ...(this.abortController ? { abortController: this.abortController } : {}),
           canUseTool: async (toolName, input) => {
-            if (this.opts.toolAllowlist !== undefined && isImplicitOrcTool(toolName)) {
+            if (this.opts.toolAllowlist !== undefined && toolName.startsWith(ORC_TOOL_PREFIX)) {
               return { behavior: "allow", updatedInput: input };
             }
             if (

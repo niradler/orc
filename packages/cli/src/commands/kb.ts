@@ -3,9 +3,12 @@ import { basename, resolve } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import {
   KB_CALL_SOURCES,
+  KB_COMMENT_STATUSES,
   KB_SCOPES,
   KB_SEARCH_MODES,
   type KbCallSource,
+  type KbCommentStatus,
+  type KbDigest,
   type KbScope,
   type KbSearchMode,
 } from "@orc/core/kb";
@@ -68,7 +71,7 @@ function editableBy(v: string): KbCallSource[] {
 
 export function kbCommand() {
   const cmd = new Command("kb").description(
-    "Knowledge bases: documents, uploads, search with citations",
+    "Knowledge bases: documents, uploads, search with citations, comments and digests",
   );
 
   cmd
@@ -355,6 +358,183 @@ export function kbCommand() {
       }
     });
 
+  cmd
+    .command("lines <document> [start] [end]")
+    .description("Numbered lines of a document, for reading before a partial edit")
+    .action(async (id: string, start?: string, end?: string) => {
+      const client = await kbClient({ project: false });
+      const r = unwrap(
+        await client.kb.lines(id, start ? Number(start) : undefined, end ? Number(end) : undefined),
+      );
+      if (isJson()) return jsonOut(r);
+      console.log(
+        `${r.title}  (${r.path})  r${r.revision}  lines ${r.start_line}-${r.end_line} of ${r.total_lines}`,
+      );
+      if (r.text) console.log(r.text);
+    });
+
+  const comment = cmd
+    .command("comment")
+    .description("Comments on a knowledge base or document; its digest handles open ones first");
+  comment
+    .command("list <kb>")
+    .description("Comments, open first")
+    .option("--doc <document>", "Only this document's comments")
+    .addOption(new Option("-s, --status <status>", "Only this status").choices(KB_COMMENT_STATUSES))
+    .action(async (ref: string, opts: { doc?: string; status?: KbCommentStatus }) => {
+      const client = await kbClient({ project: false });
+      const { comments } = unwrap(
+        await client.kb.comments(await resolveKb(client, ref), {
+          ...(opts.doc ? { document_id: opts.doc } : {}),
+          ...(opts.status ? { status: opts.status } : {}),
+        }),
+      );
+      if (isJson()) return jsonOut({ comments });
+      if (!comments.length) return console.log("No comments.");
+      for (const c of comments) {
+        const on = c.document_title ? ` on "${c.document_title}"` : "";
+        console.log(`${c.id} [${c.status}] ${c.author} (${c.source})${on}  ${date(c.created_at)}`);
+        console.log(`  ${flat(c.body)}`);
+        if (c.reply) console.log(`  -> ${c.resolved_by ?? "?"}: ${flat(c.reply)}`);
+      }
+    });
+  comment
+    .command("add <kb> <body>")
+    .description("Comment on a knowledge base, or one document with --doc")
+    .option("--doc <document>", "Comment on this document")
+    .action(async (ref: string, body: string, opts: { doc?: string }) => {
+      const client = await kbClient({ project: false });
+      const c = unwrap(
+        await client.kb.addComment(await resolveKb(client, ref), {
+          body,
+          ...(opts.doc ? { document_id: opts.doc } : {}),
+        }),
+      );
+      if (isJson()) return jsonOut(c);
+      console.log(`Added comment ${c.id}`);
+    });
+  for (const status of ["resolved", "dismissed"] as const)
+    comment
+      .command(`${status === "resolved" ? "resolve" : "dismiss"} <comment> <reply>`)
+      .description(`Mark a comment ${status}, with one reply`)
+      .action(async (id: string, reply: string) => {
+        const client = await kbClient({ project: false });
+        const c = unwrap(await client.kb.closeComment(id, { status, reply }));
+        if (isJson()) return jsonOut(c);
+        console.log(`Comment ${c.id} is ${c.status}`);
+      });
+  comment
+    .command("reopen <comment>")
+    .description("Reopen a closed comment")
+    .action(async (id: string) => {
+      const client = await kbClient({ project: false });
+      const c = unwrap(await client.kb.reopenComment(id));
+      if (isJson()) return jsonOut(c);
+      console.log(`Comment ${c.id} is ${c.status}`);
+    });
+
+  const digest = cmd
+    .command("digest")
+    .description("An agent that keeps a knowledge base current, run as a cron or manual job");
+  digest
+    .command("show <kb>")
+    .description("The knowledge base's digest")
+    .action(async (ref: string) => {
+      const client = await kbClient({ project: false });
+      const { digest: d } = unwrap(await client.kb.digest(await resolveKb(client, ref)));
+      if (isJson()) return jsonOut({ digest: d });
+      if (!d) return console.log("No digest. Add one with 'orc kb digest set <kb>'.");
+      printDigest(d);
+    });
+  digest
+    .command("template")
+    .description("Print the starter digest instructions")
+    .action(async () => {
+      const client = await kbClient({ project: false });
+      const t = unwrap(await client.kb.digestTemplate());
+      if (isJson()) return jsonOut(t);
+      console.log(t.instructions);
+    });
+  digest
+    .command("set <kb>")
+    .description(
+      "Add or change a digest; a new one starts from the template, daily at 03:00, default backend",
+    )
+    .option("-b, --backend <name>", "Agent backend, e.g. codex or claude")
+    .option("--cron <expr>", "Run on this cron schedule")
+    .option("--manual", "Run only when started")
+    .option("-i, --instructions <file>", "Read the instructions from a file")
+    .option("--enable", "Let the schedule run")
+    .option("--disable", "Pause the schedule")
+    .option("--timeout <secs>", "Run timeout in seconds")
+    .action(
+      async (
+        ref: string,
+        opts: {
+          backend?: string;
+          cron?: string;
+          manual?: boolean;
+          instructions?: string;
+          enable?: boolean;
+          disable?: boolean;
+          timeout?: string;
+        },
+      ) => {
+        if (opts.cron && opts.manual) fail("Use --cron or --manual, not both");
+        if (opts.enable && opts.disable) fail("Use --enable or --disable, not both");
+        const client = await kbClient({ project: false });
+        const d = unwrap(
+          await client.kb.setDigest(await resolveKb(client, ref), {
+            ...(opts.backend ? { backend: opts.backend } : {}),
+            ...(opts.cron ? { schedule: { type: "cron" as const, cron: opts.cron } } : {}),
+            ...(opts.manual ? { schedule: { type: "manual" as const } } : {}),
+            ...(opts.instructions
+              ? { instructions: readFileSync(resolve(opts.instructions), "utf8") }
+              : {}),
+            ...(opts.enable ? { enabled: true } : opts.disable ? { enabled: false } : {}),
+            ...(opts.timeout ? { timeout_secs: Number(opts.timeout) } : {}),
+          }),
+        );
+        if (isJson()) return jsonOut(d);
+        printDigest(d);
+      },
+    );
+  digest
+    .command("run <kb>")
+    .description("Start a digest run now")
+    .action(async (ref: string) => {
+      const client = await kbClient({ project: false });
+      const r = unwrap(await client.kb.runDigest(await resolveKb(client, ref)));
+      if (isJson()) return jsonOut(r);
+      console.log(`Started run ${r.run_id}`);
+    });
+  digest
+    .command("runs <kb>")
+    .description("Digest run history, newest first")
+    .option("-l, --limit <n>", "How many", "20")
+    .action(async (ref: string, opts: { limit: string }) => {
+      const client = await kbClient({ project: false });
+      const { runs } = unwrap(
+        await client.kb.digestRuns(await resolveKb(client, ref), Number(opts.limit)),
+      );
+      if (isJson()) return jsonOut({ runs });
+      if (!runs.length) return console.log("No runs yet.");
+      for (const r of runs) {
+        const what = r.error ?? r.summary;
+        console.log(
+          `${r.run_id}  ${r.status}  ${date(r.started_at)}  ${r.trigger_by ?? ""}${r.session_id ? `  session ${r.session_id}` : ""}${what ? `  ${flat(what).slice(0, 120)}` : ""}`,
+        );
+      }
+    });
+  digest
+    .command("rm <kb>")
+    .description("Remove the digest and its job (documents are kept)")
+    .action(async (ref: string) => {
+      const client = await kbClient({ project: false });
+      unwrap(await client.kb.removeDigest(await resolveKb(client, ref)));
+      console.log("Digest removed");
+    });
+
   const sources = cmd
     .command("sources")
     .description("Local folders copied in and kept in sync until edited in ORC");
@@ -534,4 +714,18 @@ export function kbParserWorkerCommand() {
   return new Command(PARSER_WORKER_COMMAND)
     .argument("<request>")
     .action(async (request: string) => process.exit(await runParserWorker(request)));
+}
+
+function printDigest(d: KbDigest) {
+  const when = d.schedule.type === "cron" ? `cron "${d.schedule.cron}"` : "manual";
+  console.log(
+    `backend ${d.backend}  ${when}  ${d.enabled ? "enabled" : "paused"}  timeout ${d.timeout_secs}s  job ${d.job_id}`,
+  );
+  if (d.last_run)
+    console.log(
+      `last run    ${d.last_run.status} ${date(d.last_run.at)}${d.last_run.note ? `  ${flat(d.last_run.note)}` : ""}`,
+    );
+  console.log(`last success ${date(d.last_success_at)}  open comments ${d.open_comments}`);
+  console.log();
+  console.log(d.instructions);
 }

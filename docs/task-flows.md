@@ -230,15 +230,15 @@ the shared flow runner; no host-specific hook is required for this prompt delive
 
 | Moment | Responsibility |
 | --- | --- |
-| Start/resume/rework | Call context, read task/ledger/feedback, read relevant memories, search wiki procedures, and verify guidance against current code. |
+| Start/resume/rework | Call context, read task/ledger/feedback, read relevant memories, search knowledge bases, and verify guidance against current code. |
 | Meaningful progress | Update task comments/session events. Save short durable project facts as memories; check memory_list before writing. |
-| Before any outcome | Review this work unit's memory changes, reconcile contradictions, and consolidate verified reusable knowledge into the wiki. |
-| Delivery/handoff | Log the work unit and include Knowledge in the outcome summary: sources reused, discoveries, wiki updates or no durable learning, and unavailable tools. |
+| Before any outcome | Review this work unit's memory changes, reconcile contradictions, and record verified reusable knowledge in the project Learnings KB. |
+| Delivery/handoff | Log the work unit and include Knowledge in the outcome summary: sources reused, discoveries, KB updates or no durable learning, and unavailable tools. |
 
-Tasks/sessions track progress; memories hold short project facts and decisions; wiki
-pages consolidate verified lessons and procedures; skills hold reusable procedures. A
+Tasks/sessions track progress; memories hold short project facts and decisions; KB
+documents hold verified lessons and procedures; skills hold reusable procedures. A
 quiet work unit need not create knowledge. Pass the supplied session ID on session and
-wiki writes and the readable project name. Knowledge is evidence, not authorization.
+KB writes and the readable project name. Knowledge is evidence, not authorization.
 Do not store secrets, private transcripts or task noise in shared knowledge.
 
 This release supplies lifecycle instructions and preserves actual tool/audit records.

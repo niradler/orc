@@ -148,7 +148,7 @@ test.describe("Knowledge bases", () => {
     }
   });
 
-  test("wiki links resolve between documents and show backlinks", async ({ page, request }) => {
+  test("document links resolve between documents and show backlinks", async ({ page, request }) => {
     const kb = await createKb(request, tid("pw-kb-links"));
     try {
       await apiPost(request, `/kb/bases/${kb.id}/documents`, {

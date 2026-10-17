@@ -107,3 +107,41 @@ describe("MCP HTTP endpoint response body", () => {
     expect(payload.result.serverInfo.name).toBe("orc");
   });
 });
+
+describe("MCP HTTP endpoint mode", () => {
+  const rpc = (query: string, body: unknown) =>
+    app.request(`/mcp${query}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+        Authorization: "Bearer test-secret",
+      },
+      body: JSON.stringify(body),
+    });
+
+  const listNames = async (query: string) => {
+    const res = await rpc(query, { jsonrpc: "2.0", id: 1, method: "tools/list" });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    const payload = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
+    return (payload.result.tools as { name: string }[]).map((t) => t.name);
+  };
+
+  test("?mode=meta lists only the meta tools", async () => {
+    expect(await listNames("?mode=meta")).toEqual(["tool_search", "tool_describe", "tool_invoke"]);
+  });
+
+  test("bare /mcp lists the real tools", async () => {
+    const names = await listNames("");
+    expect(names).toContain("memory_list");
+    expect(names).not.toContain("tool_search");
+  });
+
+  test("an unknown mode is rejected with 400 naming the valid values", async () => {
+    const res = await rpc("?mode=bogus", { jsonrpc: "2.0", id: 1, method: "tools/list" });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("full, meta");
+  });
+});

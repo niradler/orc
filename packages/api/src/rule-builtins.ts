@@ -4,7 +4,6 @@ import { ulid } from "@orc/core/ids";
 import type { RuleEvent } from "@orc/core/rule-types";
 import { claudeMemoryDirectory, syncClaudeMemory } from "@orc/db/agent-memory";
 import { getSqlite } from "@orc/db/client";
-import { DIGEST_COMMAND, DIGEST_JOB_NAME, DigestStore } from "@orc/db/digest";
 import { RuleStore } from "@orc/db/rules";
 import { executeTool } from "@orc/mcp/tools";
 
@@ -155,43 +154,6 @@ export async function executeBuiltinRuleAction(
             ].join("\n"),
           );
         if (!synced.updated) status = "skipped";
-        break;
-      }
-      case "queue_knowledge_digest": {
-        if (!new DigestStore(db).hasChanges(active.project_id)) {
-          status = "skipped";
-          break;
-        }
-        const job = db
-          .query<{ id: string }, [string, string]>(
-            "SELECT id FROM jobs WHERE name=? AND command=? AND enabled=1",
-          )
-          .get(DIGEST_JOB_NAME, DIGEST_COMMAND);
-        if (!job) throw new Error("Knowledge digest job unavailable");
-        const queued = db
-          .transaction(() => {
-            if (
-              db
-                .query(
-                  "SELECT 1 FROM rule_actions WHERE job_id=? AND status IN ('pending','running') UNION SELECT 1 FROM job_runs WHERE job_id=? AND status IN ('pending','running') LIMIT 1",
-                )
-                .get(job.id, job.id)
-            )
-              return false;
-            const count =
-              db
-                .query<{ count: number }, []>(
-                  "SELECT count(*) AS count FROM rule_actions WHERE status='pending'",
-                )
-                .get()?.count ?? 0;
-            if (count >= 1000) throw new Error("Rule action queue capacity exceeded");
-            db.query(
-              "INSERT INTO rule_actions(id,decision_id,rule_id,job_id,status,created_at,updated_at) VALUES(?,?,?,?,'pending',?,?)",
-            ).run(ulid(), receipt.id, ruleId, job.id, Date.now(), Date.now());
-            return true;
-          })
-          .immediate();
-        if (!queued) status = "skipped";
         break;
       }
     }

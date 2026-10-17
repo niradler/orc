@@ -1,6 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { hiddenBuiltinSkills, updateGlobalConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
+import { ScopeQuerySchema } from "@orc/core/scope";
 import { editSkillFile } from "@orc/core/skill-edit";
 import {
   discoverRepositorySkills,
@@ -18,12 +19,12 @@ import {
   skillWarnings,
 } from "@orc/core/skill-service";
 import { syncImportedSkill } from "@orc/core/skill-sync";
-import { SkillUpdateSchema, WikiScopeSchema } from "@orc/core/wiki";
+import { SkillUpdateSchema } from "@orc/core/skill-update";
 import { getSqlite } from "@orc/db/client";
 import { readSourceFromHeader } from "@orc/db/read-usage";
 import { SkillHistory } from "@orc/db/skill-history";
 import { createRouter } from "../lib/router.js";
-import { resolveWikiProject } from "./wiki.js";
+import { resolveScopeProject } from "../lib/scope.js";
 
 const app = createRouter();
 
@@ -210,7 +211,7 @@ const listRoute = createRoute({
   summary: "List installed skills",
   request: {
     query: z.object({
-      ...WikiScopeSchema.shape,
+      ...ScopeQuerySchema.shape,
       q: z.string().optional().openapi({ description: "Full-text search on name and description" }),
       source: z.enum(["builtin", "user"]).optional(),
       sort: z.enum(["reads", "recent"]).optional().openapi({
@@ -250,7 +251,7 @@ const readRoute = createRoute({
   request: {
     params: z.object({ name: z.string() }),
     query: z.object({
-      ...WikiScopeSchema.shape,
+      ...ScopeQuerySchema.shape,
       ref: z.string().optional().openapi({
         description:
           "Skill-relative file path (e.g. scripts/check.py); bare filenames read references/",
@@ -328,7 +329,7 @@ app.openapi(
     path: "/skills/{name}/history",
     tags: ["Skills"],
     summary: "Instruction history for the resolved skill scope",
-    request: { params: z.object({ name: z.string() }), query: WikiScopeSchema },
+    request: { params: z.object({ name: z.string() }), query: ScopeQuerySchema },
     responses: {
       200: {
         description: "Retained changes",
@@ -342,7 +343,7 @@ app.openapi(
     c.json({
       changes: new SkillHistory(getSqlite()).history(
         c.req.valid("param").name,
-        resolveWikiProject(c.req.valid("query")),
+        resolveScopeProject(c.req.valid("query")),
       ),
     }),
 );
@@ -638,7 +639,7 @@ app.openapi(
 
 app.openapi(listRoute, (c) => {
   const { q, source, sort, limit, reload, include_hidden } = c.req.valid("query");
-  const skills = new SkillHistory(getSqlite()).list(resolveWikiProject(c.req.valid("query")), {
+  const skills = new SkillHistory(getSqlite()).list(resolveScopeProject(c.req.valid("query")), {
     q,
     source: source as SkillSource | undefined,
     sort,
@@ -656,7 +657,7 @@ app.openapi(listRoute, (c) => {
 app.openapi(readRoute, (c) => {
   const { name } = c.req.valid("param");
   const { ref } = c.req.valid("query");
-  const projectId = resolveWikiProject(c.req.valid("query"));
+  const projectId = resolveScopeProject(c.req.valid("query"));
   const history = new SkillHistory(getSqlite());
   const result = history.read(name, projectId, ref);
   if (!result) throw new NotFoundError("Skill", name);

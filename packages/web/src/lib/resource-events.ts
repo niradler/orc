@@ -36,19 +36,19 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
     "palette-search",
   ],
   sessions: ["sessions", "session", "palette-live-sessions", "project-summary", "health"],
-  jobs: ["jobs", "job", "job-runs", "job-run-logs", "project-summary", "health", "palette-search"],
-  projects: ["projects", "project", "project-summary", "health", "palette-search"],
-  memories: ["memories", "memory", "memory-history", "project-summary", "health", "palette-search"],
-  wiki: [
-    "wiki",
-    "wiki-page",
-    "wiki-history",
-    "wiki-changes",
-    "wiki-search",
-    "palette-documents",
+  jobs: [
+    "jobs",
+    "job",
+    "job-runs",
+    "job-run-logs",
+    "kb-digest",
+    "project-summary",
+    "health",
     "palette-search",
   ],
-  knowledge: ["kb"],
+  projects: ["projects", "project", "project-summary", "health", "palette-search"],
+  memories: ["memories", "memory", "memory-history", "project-summary", "health", "palette-search"],
+  knowledge: ["kb", "kb-digest", "palette-documents"],
   skills: [
     "skills",
     "skill",
@@ -81,7 +81,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
   ],
   health: ["health"],
   github: ["github", "git"],
-  audit: ["knowledge-audit", "wiki-changes", "skill-history"],
+  audit: ["knowledge-audit", "skill-history"],
 };
 
 export function invalidateResources(

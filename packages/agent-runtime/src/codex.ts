@@ -123,43 +123,7 @@ export class CodexSession implements AgentSession {
     );
     args.push("-c", `mcp_servers.orc.url=${JSON.stringify(mcp.url)}`);
     args.push("-c", "mcp_servers.orc.required=true");
-    if (opts.autoApprove) {
-      for (const tool of [
-        "context",
-        "memory_list",
-        "memory_read",
-        "memory_history",
-        "wiki_search",
-        "wiki_get",
-        "wiki_index",
-        "wiki_history",
-        "skill_read",
-        "skill_list",
-        "kb_list",
-        "kb_search",
-        "kb_evidence",
-        "kb_read",
-        "kb_documents",
-        "kb_maintenance",
-        "kb_write",
-        "search",
-        "audit_list",
-        "session_event",
-        "session_log",
-        "session_snapshot",
-        "session_restore",
-        "task_get",
-        "task_list",
-        "task_update",
-        "memory_create",
-        "memory_update",
-        "wiki_write",
-        "flow_report",
-        "flow_status",
-      ]) {
-        args.push("-c", `mcp_servers.orc.tools.${tool}.approval_mode="approve"`);
-      }
-    }
+    if (opts.autoApprove) args.push("-c", 'mcp_servers.orc.default_tools_approval_mode="approve"');
     if (mcp.headers?.Authorization)
       args.push("-c", 'mcp_servers.orc.bearer_token_env_var="ORC_CODEX_MCP_TOKEN"');
     if (opts.model) args.push("--model", opts.model);

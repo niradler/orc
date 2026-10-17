@@ -251,7 +251,7 @@ describe("Memory context and search", () => {
     );
   });
 
-  test("should omit memories a wiki page cites from unified search", async () => {
+  test("should list memories with their project in unified search", async () => {
     for (const name of ["deploy-cited", "deploy-loose"])
       store().create({
         project_id: "mem-a",
@@ -266,24 +266,5 @@ describe("Memory context and search", () => {
     });
     expect(before).toContain("[memory] deploy-cited (project: mem-a)");
     expect(before).toContain("[memory] deploy-loose (project: mem-a)");
-
-    await executeTool("wiki_write", {
-      project: "mem-a",
-      slug: "deploy-guide",
-      kind: "procedure",
-      title: "Deploy guide",
-      summary: "How deploys work",
-      content: "Compiled from memory.",
-      sources: ["memory:deploy-cited"],
-      note: "compile",
-      expected_revision: 0,
-    });
-    const after = await executeTool("search", {
-      query: "zebradeploy",
-      resources: ["memories"],
-      project: "mem-a",
-    });
-    expect(after).not.toContain("deploy-cited");
-    expect(after).toContain("[memory] deploy-loose (project: mem-a)");
   });
 });

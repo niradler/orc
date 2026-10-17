@@ -12,9 +12,9 @@ you own this work unit. Project instructions and user authorization take precede
 
 - Call context first with the readable project name. Read the task, acceptance
   criteria, recent comments and flow ledger. On rework, address the actual feedback.
-- Read relevant memories and search wiki procedures before choosing an approach. Read only
+- Read relevant memories and search knowledge bases before choosing an approach. Read only
   useful matches, verify against current code, and cite the decisions you reuse.
-- Use the session ID supplied in your node prompt on session and wiki writes.
+- Use the session ID supplied in your node prompt on session and knowledge writes.
   After compaction restore this session, then refresh task and knowledge context.
 - Follow the assigned workflow. For development without a specific workflow, use
   orc-coder. Load relevant domain skills only when they help the task.
@@ -43,7 +43,7 @@ for user-facing changes. Add meaningful tests for nontrivial logic; trivial edit
 not need tests that merely repeat the implementation. State unavailable checks and
 pre-existing failures separately; never call an unverified acceptance criterion met.
 
-Before any outcome, follow orc-memory-review inline. No new memory or wiki page is
+Before any outcome, follow orc-memory-review inline. No new memory or KB document is
 required when there is no durable learning. Prefer an enforceable check to another
 instruction for recurring mistakes; propose skill changes separately from this task.
 
@@ -51,7 +51,7 @@ Deliver a task comment and flow summary with:
 - What changed and why; artifact/branch/PR references when applicable.
 - Acceptance criteria checked; actual commands, results and runtime evidence.
 - Risks, unavailable checks and remaining work.
-- Knowledge: relevant sources reused, discoveries recorded, wiki updates or no
+- Knowledge: relevant sources reused, discoveries recorded, KB updates or no
   durable learning. Disclose unavailable knowledge tools.
 
 Call flow_report once with the exact outcome declared by your node, then stop.

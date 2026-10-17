@@ -138,6 +138,8 @@ The web dashboard ships inside the `orc` binary and is served by the API process
 | `GET /mcp`                         | MCP server (streamable HTTP)                                                                                                   |
 | `GET /tasks/<id>`, `/knowledge`, … | `index.html` again - a navigation request matching no static file falls back to the SPA shell, so dashboard links are shareable |
 
+`/mcp?mode=meta` serves three meta-tools (`tool_search`, `tool_describe`, `tool_invoke`) instead of the full tool list, which keeps client context small; the model finds a tool, reads its schema, then calls it through `tool_invoke` with the same validation as a direct call. Stdio parity: `orc mcp --mode meta`. Any other `mode` value returns HTTP 400.
+
 Override the served dist directory with `ORC_WEB_DIST=/path/to/web/dist` if you want to host a custom build (e.g. a fork). If no dist is found, the server runs in pure-API mode.
 
 ### Desktop app
@@ -402,7 +404,7 @@ orc mem revert ulid-ids <change-id> --expected-change-id <latest-change-id> -r "
 
 ### Knowledge bases
 
-Knowledge bases hold human reference documents for agents to search and cite. A knowledge base belongs to a project or is global. Add documents by uploading files (PDF, Word, PowerPoint, Excel, HTML, CSV, Markdown, text), writing Markdown in the dashboard, or registering a folder whose files are copied in. ORC never writes the folder: a copy follows its file on each scan until it is edited in ORC, and a file deleted from the folder keeps its copy. Documents have folders, labels and `[[wiki links]]` with backlinks.
+Knowledge bases hold human reference documents for agents to search and cite. A knowledge base belongs to a project or is global. Add documents by uploading files (PDF, Word, PowerPoint, Excel, HTML, CSV, Markdown, text), writing Markdown in the dashboard, or registering a folder whose files are copied in. ORC never writes the folder: a copy follows its file on each scan until it is edited in ORC, and a file deleted from the folder keeps its copy. Documents have folders, labels and `[[links]]` with backlinks.
 
 ```bash
 orc kb create Runbooks --project my-app
@@ -414,15 +416,26 @@ orc kb evidence "how do we rotate keys"   # budgeted evidence pack
 orc kb usage Runbooks                     # reads by source (mcp, api, cli, ui)
 ```
 
+Comments on a knowledge base or one of its documents ask for a change: a correction, a source to digest, a lesson to record. Each has an author and source, a status (open, resolved, dismissed) and one closing reply.
+
+Any knowledge base can have a digest: an agent (Claude, Codex, ...) that follows the knowledge base's own instructions on a schedule, handling open comments first and then reading memories, session summaries and audit records to add, correct and clean up documents. The schedule is an ordinary ORC job (cron or manual) with run history. In the dashboard choose **Add digest** on a knowledge base; it starts from a generic template. Scheduled runs are skipped when nothing new happened. Each active project gets a starter **Learnings** knowledge base with a daily 03:00 digest.
+
+```bash
+orc kb comment add Learnings "Digest https://example.com/postmortem"
+orc kb digest template > digest.md        # edit, then:
+orc kb digest set Runbooks -b codex --cron "0 3 * * *" -i digest.md
+orc kb digest run Runbooks
+```
+
 Search combines title/path matches, SQLite full-text search and, when embeddings are configured (Ollama or an OpenAI-compatible API), vectors stored with sqlite-vec. Set the embedding URL, model and API key or token in Settings or with `orc kb settings`; the key is stored encrypted and never returned by the API. Results cite passages as `kb:<doc>@<rev>#<n>`. Every read is counted per document and source.
 
 The built-in parser handles all formats without extra installs. For better PDF layout, tables and OCR, install the optional [Docling](https://github.com/docling-project/docling) parser from Settings or with `orc kb docling install` (about 2 GB); in `auto` mode it is then used for PDFs and images. Each knowledge base can override the parser.
 
-Each knowledge base lists the call sources that may change its documents (`editable_by`: `ui`, `cli`, `api`, `mcp`; all four by default). Agents write with `kb_write` where `mcp` is allowed; every change is a revision recording its source and session. Knowledge base settings and knowledge settings cannot be changed over MCP, so an agent cannot widen its own access. Rendered Markdown shows remote images as links instead of loading them.
+Each knowledge base lists the call sources that may change its documents (`editable_by`: `ui`, `cli`, `api`, `mcp`; all four by default). Agents write with `kb_write` and `kb_document` (partial edits by exact text or line range) where `mcp` is allowed; every change is a revision recording its source and session. Knowledge base settings and knowledge settings cannot be changed over MCP, so an agent cannot widen its own access. Rendered Markdown shows remote images as links instead of loading them.
 
 To back up knowledge bases, stop ORC and copy `~/.orc/orc.db` (with its `-wal` and `-shm` files) and `~/.orc/knowledge/originals/`, plus `~/.orc/secret.key`, without which a saved embedding API key cannot be decrypted and must be entered again. The search index, parse results and Markdown copies are rebuilt on the next start.
 
-**MCP tools:** `kb_list`, `kb_search`, `kb_evidence`, `kb_read`, `kb_documents`, `kb_write`, `kb_maintenance`
+**MCP tools:** `kb_list`, `kb_search`, `kb_evidence`, `kb_read`, `kb_documents`, `kb_write`, `kb_document`, `kb_comment`, `kb_manage`, `kb_digest`, `kb_maintenance`
 
 ### Task status flow
 
@@ -859,7 +872,7 @@ See [AGENTS.md](./AGENTS.md) for the full development guide and coding conventio
 
 ## Learn more
 
-- [Evolving Wiki](./docs/evolving-wiki.md) - cited retrieval, automatic session consolidation, evaluated skill promotion, and human revert
+- [Knowledge learning loop](./docs/knowledge-loop.md) - memories, knowledge base digests and comments, skill edits, and human revert
 - [Agent Rules](./docs/agent-rules.md) - opt-in tool protection, revision history, deterministic job actions, and evidence-based skill evaluation
 - [Usage Guide](./docs/usage-guide.md) - best practices for memory, tasks, multi-agent workflows, and configuration
 - [Vision](./docs/vision.md) - why ORC exists and the problem it solves
@@ -869,4 +882,4 @@ See [AGENTS.md](./AGENTS.md) for the full development guide and coding conventio
 
 ### Knowledge learning
 
-Session review and a daily digest compile verified notes into wiki lessons and edited skills. Reuse them through ordinary wiki/KB search and skill reads. The dashboard shows learning history, audit records and manual skill revert. See [Knowledge learning loop](docs/knowledge-loop.md) for scopes, scheduling and validation limits.
+Session review records verified lessons, and each project's Learnings knowledge base has a daily digest that turns memories, session summaries and comments into documents. Reuse them through ordinary KB search and skill reads. The dashboard shows learning history, audit records and manual skill revert. See [Knowledge learning loop](docs/knowledge-loop.md) for scopes, scheduling and validation limits.

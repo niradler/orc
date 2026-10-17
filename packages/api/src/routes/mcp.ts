@@ -1,7 +1,7 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
-import { createMcpServer } from "@orc/mcp";
+import { createMcpServer, type McpMode, parseMcpMode } from "@orc/mcp";
 import { Hono } from "hono";
 import { bearerAuth } from "../middleware/auth.js";
 
@@ -20,7 +20,13 @@ app.use("/mcp", (c, next) => bearerAuth(loadConfig().api.secret)(c, next));
 // server+transport pair per request. This is the pattern recommended in the
 // SDK docs for stateless HTTP MCP.
 app.all("/mcp", async (c) => {
-  const server = createMcpServer({ publicApiBaseUrl: new URL(c.req.url).origin });
+  let mode: McpMode;
+  try {
+    mode = parseMcpMode(c.req.query("mode"));
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : "Invalid mode" }, 400);
+  }
+  const server = createMcpServer({ publicApiBaseUrl: new URL(c.req.url).origin, mode });
   const transport = new WebStandardStreamableHTTPServerTransport({});
   // handleRequest returns while the SSE body is still streaming, so the
   // per-request server is released on transport close, never in a finally.

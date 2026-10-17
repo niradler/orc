@@ -3,11 +3,16 @@ import { loadConfig, updateGlobalConfig } from "@orc/core/config";
 import { ForbiddenError, NotFoundError, ValidationError } from "@orc/core/errors";
 import {
   KB_CALL_SOURCES,
+  KB_COMMENT_STATUSES,
   KB_SCOPES,
   type KbCallContext,
   type KbCallSource,
+  KbCommentCloseSchema,
+  KbCommentCreateSchema,
   KbCreateSchema,
+  KbDigestSetSchema,
   KbDocumentCreateSchema,
+  KbDocumentEditSchema,
   KbDocumentUpdateSchema,
   KbEvidenceSchema,
   KbSearchSchema,
@@ -17,10 +22,12 @@ import { encryptSecret } from "@orc/core/secrets";
 import { getKnowledgeService, parseCitation } from "@orc/knowledge";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { withKbJobHooks } from "../kb-jobs.js";
 import { createRouter } from "../lib/router.js";
 
 const app = createRouter();
-const svc = getKnowledgeService;
+// The process serving these routes is the one that schedules and runs digest jobs.
+const svc = async () => withKbJobHooks(await getKnowledgeService());
 
 const tooLarge = (c: Context, max: number) =>
   c.json({ error: `File exceeds ${max} bytes`, code: "TOO_LARGE" }, 413);
@@ -44,11 +51,13 @@ export function kbContext(c: Context): KbCallContext {
     : "api";
   const sessionId = c.req.header("x-orc-session-id")?.slice(0, 200);
   const name = c.req.header("x-orc-actor-name")?.slice(0, 80);
+  const backend = c.req.header("x-orc-actor-backend")?.slice(0, 64);
   const project = c.req.header("x-orc-project-id") ?? c.req.query("project_id");
   return {
     source,
     actor: {
       ...(name ? { name } : {}),
+      ...(backend ? { backend } : {}),
       ...(sessionId ? { session_id: sessionId } : {}),
     },
     ...(project ? { project_id: project } : {}),
@@ -64,6 +73,8 @@ const json = <T extends z.ZodType>(schema: T) => ({
   body: { content: { "application/json": { schema } }, required: true },
 });
 const tags = ["Knowledge"];
+/** Agents deleting over MCP repeat the knowledge base's exact name. */
+const confirmQuery = z.object({ confirm: z.string().max(200).optional() });
 
 // --- Knowledge bases -------------------------------------------------------------------------
 
@@ -129,12 +140,12 @@ app.openapi(
     method: "delete",
     path: "/kb/bases/{id}",
     tags,
-    summary: "Delete a knowledge base, its managed files and index entries",
-    request: { params: idParam },
+    summary: "Delete a knowledge base, its managed files, index entries and digest",
+    request: { params: idParam, query: confirmQuery },
     responses: { 204: { description: "Deleted" } },
   }),
   async (c) => {
-    (await svc()).deleteKb(kbContext(c), c.req.valid("param").id);
+    (await svc()).deleteKb(kbContext(c), c.req.valid("param").id, c.req.valid("query"));
     return c.body(null, 204);
   },
 );
@@ -388,6 +399,223 @@ app.openapi(
     (await svc()).deleteDocument(kbContext(c), c.req.valid("param").id);
     return c.body(null, 204);
   },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/kb/documents/{id}/edit",
+    tags,
+    summary:
+      "Partial edit: exact-text and line-range edits that all refer to expected_revision; overlaps are refused",
+    request: { params: idParam, ...json(KbDocumentEditSchema) },
+    responses: ok("Edited document and the lines each edit wrote"),
+  }),
+  async (c) =>
+    c.json((await svc()).editDocument(kbContext(c), c.req.valid("param").id, c.req.valid("json"))),
+);
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/kb/documents/{id}/lines",
+    tags,
+    summary: "Numbered lines of a document, for reading before a line edit",
+    request: {
+      params: idParam,
+      query: z.object({
+        start: z.coerce.number().int().min(1).default(1),
+        end: z.coerce.number().int().min(1).optional(),
+      }),
+    },
+    responses: ok("Lines"),
+  }),
+  async (c) => {
+    const q = c.req.valid("query");
+    return c.json((await svc()).readLines(kbContext(c), c.req.valid("param").id, q.start, q.end));
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/kb/documents/{id}/restore",
+    tags,
+    summary: "Bring back a past revision's content as a new revision",
+    request: {
+      params: idParam,
+      ...json(
+        z
+          .object({
+            revision: z.number().int().min(1),
+            expected_revision: z.number().int().min(1),
+            note: z.string().trim().min(1).max(1000).optional(),
+          })
+          .strict(),
+      ),
+    },
+    responses: ok("Restored"),
+  }),
+  async (c) => {
+    const b = c.req.valid("json");
+    return c.json(
+      (await svc()).restoreRevision(
+        kbContext(c),
+        c.req.valid("param").id,
+        b.revision,
+        b.expected_revision,
+        b.note,
+      ),
+    );
+  },
+);
+
+// --- Comments --------------------------------------------------------------------------------
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/kb/bases/{id}/comments",
+    tags,
+    summary: "Comments on a knowledge base and its documents, open first",
+    request: {
+      params: idParam,
+      query: z.object({
+        document_id: z.string().optional(),
+        status: z.enum(KB_COMMENT_STATUSES).optional(),
+        limit: z.coerce.number().int().min(1).max(500).optional(),
+      }),
+    },
+    responses: ok("Comments"),
+  }),
+  async (c) =>
+    c.json({
+      comments: (await svc()).listComments(c.req.valid("param").id, c.req.valid("query")),
+    }),
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/kb/bases/{id}/comments",
+    tags,
+    summary: "Comment on a knowledge base, or one of its documents with document_id",
+    request: { params: idParam, ...json(KbCommentCreateSchema) },
+    responses: { 201: ok("Created")[200] },
+  }),
+  async (c) =>
+    c.json(
+      (await svc()).addComment(kbContext(c), c.req.valid("param").id, c.req.valid("json")),
+      201,
+    ),
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/kb/comments/{id}/close",
+    tags,
+    summary: "Resolve or dismiss a comment with one reply",
+    request: { params: idParam, ...json(KbCommentCloseSchema) },
+    responses: ok("Closed"),
+  }),
+  async (c) =>
+    c.json((await svc()).closeComment(kbContext(c), c.req.valid("param").id, c.req.valid("json"))),
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/kb/comments/{id}/reopen",
+    tags,
+    summary: "Reopen a closed comment",
+    request: { params: idParam },
+    responses: ok("Reopened"),
+  }),
+  async (c) => c.json((await svc()).reopenComment(kbContext(c), c.req.valid("param").id)),
+);
+
+// --- Digests ---------------------------------------------------------------------------------
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/kb/digest-template",
+    tags,
+    summary: "Starter digest instructions",
+    responses: ok("Template"),
+  }),
+  async (c) => c.json({ instructions: (await svc()).digestTemplate() }),
+);
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/kb/bases/{id}/digest",
+    tags,
+    summary: "The knowledge base's digest (null when it has none)",
+    request: { params: idParam },
+    responses: ok("Digest"),
+  }),
+  async (c) => c.json({ digest: (await svc()).getDigest(c.req.valid("param").id) }),
+);
+
+app.openapi(
+  createRoute({
+    method: "put",
+    path: "/kb/bases/{id}/digest",
+    tags,
+    summary: "Create or change the digest and its job (instructions, backend, schedule, enabled)",
+    request: { params: idParam, ...json(KbDigestSetSchema) },
+    responses: ok("Digest"),
+  }),
+  async (c) =>
+    c.json((await svc()).setDigest(kbContext(c), c.req.valid("param").id, c.req.valid("json"))),
+);
+
+app.openapi(
+  createRoute({
+    method: "delete",
+    path: "/kb/bases/{id}/digest",
+    tags,
+    summary: "Remove the digest and its job",
+    request: { params: idParam, query: confirmQuery },
+    responses: { 204: { description: "Deleted" } },
+  }),
+  async (c) => {
+    (await svc()).deleteDigest(kbContext(c), c.req.valid("param").id, c.req.valid("query"));
+    return c.body(null, 204);
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/kb/bases/{id}/digest/run",
+    tags,
+    summary: "Start a digest run now",
+    request: { params: idParam },
+    responses: { 202: ok("Run started")[200] },
+  }),
+  async (c) => c.json(await (await svc()).runDigest(kbContext(c), c.req.valid("param").id), 202),
+);
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/kb/bases/{id}/digest/runs",
+    tags,
+    summary: "Digest run history, newest first",
+    request: {
+      params: idParam,
+      query: z.object({ limit: z.coerce.number().int().min(1).max(100).default(20) }),
+    },
+    responses: ok("Runs"),
+  }),
+  async (c) =>
+    c.json({
+      runs: (await svc()).digestRuns(c.req.valid("param").id, c.req.valid("query").limit),
+    }),
 );
 
 app.openapi(

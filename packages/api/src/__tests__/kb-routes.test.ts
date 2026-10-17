@@ -64,7 +64,7 @@ describe("/api/kb", () => {
   let learnId: string;
   let docId: string;
 
-  test("creates project and global KBs; names are unique per scope; MCP cannot create", async () => {
+  test("creates project and global KBs; names are unique per scope; MCP deletes name the KB", async () => {
     projectId = (await (await req(app, "POST", "/projects", { name: "kb-proj" })).json()).id;
     const res = await call("POST", "/kb/bases", {
       name: "Runbooks",
@@ -82,8 +82,12 @@ describe("/api/kb", () => {
     expect(
       (await call("POST", "/kb/bases", { name: "Runbooks", project_id: projectId })).status,
     ).toBe(409);
-    expect((await call("POST", "/kb/bases", { name: "X", project_id: null }, agent)).status).toBe(
-      403,
+    const byAgent = await call("POST", "/kb/bases", { name: "X", project_id: null }, agent);
+    expect(byAgent.status).toBe(201);
+    const agentKb = (await byAgent.json()).id;
+    expect((await call("DELETE", `/kb/bases/${agentKb}`, undefined, agent)).status).toBe(400);
+    expect((await call("DELETE", `/kb/bases/${agentKb}?confirm=X`, undefined, agent)).status).toBe(
+      204,
     );
     expect((await call("POST", "/kb/bases", { name: "X" })).status).toBe(400);
 

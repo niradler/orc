@@ -271,7 +271,7 @@ Repeated semibold labels and large headings make a tool feel unnecessarily loud.
 - Page titles: 22px / 500. Section headings: 16px / 500.
 - UI content: 14px / 400. Controls and navigation: 13px / 500.
 - Supporting metadata: 12px / 400, used sparingly and with readable contrast.
-- Wiki and conversation reading: 16px with generous 1.65 line height and a
+- Document and conversation reading: 16px with generous 1.65 line height and a
   comfortable measure around 65–78 characters.
 - Code/editor defaults: 13px IBM Plex Mono; allow users to enlarge text. Use mono
   for code, commands and identifiers, not general navigation or explanatory copy.
@@ -290,8 +290,8 @@ Spacing should explain relationships. Do not wrap each relationship in a card.
 
 The shell is project-centered: a compact sidebar, project dropdown and one
 contextual navigation row. Keep Activity first and the default at `/activity`.
-Knowledge has exactly Wiki, Knowledge base and Memories as sibling destinations.
-Collection management and Wiki History are contextual actions. Chat opens from
+Knowledge has exactly Knowledge base and Memories as sibling destinations.
+KB settings, digest, comments and document history are contextual actions. Chat opens from
 the header; it is not another sidebar destination. The separate Agents/Packages
 relationship remains an open UX decision; this document does not silently resolve it.
 
@@ -366,13 +366,13 @@ canonical control for each filter; do not add duplicate bulk toolbar actions.
 Persistent agent-discovery visibility and a local source filter are distinct
 behaviors, and their labels must explain that distinction.
 
-### Wiki and Knowledge base
+### Knowledge base
 
-The authored page is the focal point. The file tree, graph, backlinks, save state
+The document is the focal point. The file tree, links, comments, save state
 and revision controls support it. Use the same quiet editor frame in read/edit/
 split modes. Display dirty, saving, conflict and error states clearly; never
-trade data protection for visual simplicity. Indexed source documents remain
-distinct from authored Wiki content. Technical audit details stay secondary.
+trade data protection for visual simplicity. Folder-backed copies remain
+distinct from documents written in ORC. Technical audit details stay secondary.
 
 ### Conversation and terminal
 
@@ -410,7 +410,7 @@ not need a decorative reveal to feel polished.
 
 ### Review gate for the next theme pass
 
-Prepare a representative Activity view, populated Tasks list and Wiki/chat
+Prepare a representative Activity view, populated Tasks list and KB document/chat
 reading view using shared variants. Compare them with the current baseline.
 Check that the screen feels quieter with fewer simultaneous borders/fills,
 while primary action, selected item, current project and error state remain easy
@@ -473,7 +473,7 @@ content. Keep table headers secondary and titles primary. Avoid adding labels,
 extra headings or explanatory UI copy merely to fill space. Preserve current sizing;
 Nir confirmed the earlier perceived size issue was browser zoom.
 
-Knowledge remains a reading/editing workspace: Wiki, Knowledgebase and Memories
+Knowledge remains a reading/editing workspace: Knowledge base and Memories
 keep their names and shareable tabs. Chat keeps its dedicated components, Codex default
 and persisted provider selection. Terminals retain terminal state, PTY lifecycle,
 scrollback and key input. Syntax colors may remain domain-specific where needed for

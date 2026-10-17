@@ -73,7 +73,7 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
     name: "orc-default",
     version: 2,
     description:
-      "Development: understand, plan as needed, implement and verify, then independent review. Relevant memory and wiki guidance at start, rework and delivery.",
+      "Development: understand, plan as needed, implement and verify, then independent review. Relevant memory and knowledge base guidance at start, rework and delivery.",
     entry: "build",
     limits: developmentLimits,
     nodes: developmentNodes,

@@ -1,15 +1,7 @@
 import type { components } from "./openapi.gen.js";
 
-export type {
-  SkillUpdate,
-  WikiChange,
-  WikiIndexEntry,
-  WikiPage,
-  WikiRevision,
-  WikiScope,
-  WikiSearchHit,
-  WikiWrite,
-} from "@orc/core/wiki";
+export type { ScopeQuery } from "@orc/core/scope";
+export type { SkillUpdate } from "@orc/core/skill-update";
 export type AuditEntry = components["schemas"]["AuditEntry"];
 export type SkillChange = components["schemas"]["SkillChange"];
 export type {

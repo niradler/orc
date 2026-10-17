@@ -142,6 +142,56 @@ export function installKnowledgeBases(sqlite: Database): void {
       PRIMARY KEY (document_id, source, kind)
     );
     CREATE INDEX IF NOT EXISTS kb_usage_totals_kb_idx ON kb_usage_totals(kb_id);
+
+    -- Comments on a KB (document_id NULL) or one of its documents. The digest handles open ones.
+    -- document_id has no FK: deleting a document moves its comments to the KB level.
+    CREATE TABLE IF NOT EXISTS kb_comments (
+      id TEXT PRIMARY KEY,
+      kb_id TEXT NOT NULL REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+      document_id TEXT,
+      body TEXT NOT NULL,
+      author TEXT NOT NULL,
+      source TEXT NOT NULL,
+      session_id TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      reply TEXT,
+      resolved_by TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      resolved_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS kb_comments_kb_idx ON kb_comments(kb_id, status, created_at);
+    CREATE INDEX IF NOT EXISTS kb_comments_doc_idx ON kb_comments(document_id);
+
+    -- One digest per KB. Its schedule, enabled flag and timeout live on the jobs row (job_id);
+    -- deleting the digest deletes that job. token/expires_at is the claim of a running digest.
+    CREATE TABLE IF NOT EXISTS kb_digests (
+      kb_id TEXT PRIMARY KEY REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+      instructions TEXT NOT NULL,
+      backend TEXT NOT NULL,
+      job_id TEXT NOT NULL REFERENCES jobs(id),
+      last_success_at INTEGER,
+      token TEXT,
+      claimed_at INTEGER,
+      expires_at INTEGER,
+      session_id TEXT,
+      last_status TEXT,
+      last_note TEXT,
+      last_run_at INTEGER,
+      last_session_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS kb_digests_job_idx ON kb_digests(job_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS kb_digests_token_idx ON kb_digests(token) WHERE token IS NOT NULL;
+
+    -- Scopes ('global' or a project id) already given their starter Learnings KB, so one that a
+    -- user deletes is not created again.
+    CREATE TABLE IF NOT EXISTS kb_starters (
+      scope_key TEXT PRIMARY KEY,
+      kb_id TEXT,
+      created_at INTEGER NOT NULL
+    );
   `);
 }
 
