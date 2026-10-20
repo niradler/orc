@@ -1,5 +1,12 @@
 # ORC Agent Orchestration - Design Spec
 
+Historical design record. Its retired skill names and original worker/reviewer
+pipeline describe the earlier implementation. For the current graph-based runtime,
+two-skill routing, scoped compatibility and prompt contract, use
+[Task flows](task-flows.md), [Knowledge learning](knowledge-loop.md) and the
+`orc-platform` / `orc-sdlc` entry points. Do not use this record as current agent
+bootstrap instructions.
+
 > **Date:** 2026-03-21
 > **Status:** Draft
 > **Goal:** Make ORC a one-stop orchestrator for multi-agent coding workflows with human-in-the-loop review.

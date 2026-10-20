@@ -35,7 +35,7 @@ const developmentNodes: Record<string, FlowNode> = {
     outcomes: ["submitted", "blocked"],
     on_error: "blocked",
     prompt:
-      "Read the task, relevant knowledge and affected callers. Choose the feature, bugfix or refactor playbook that fits. Verify observable behavior and record evidence, limits and the knowledge review before reporting submitted; report blocked when required input or validation is unavailable.",
+      "Read the task, original acceptance criteria, relevant knowledge and affected callers. Use orc-sdlc to select the task kind and effort level; clarify or plan only as needed, then complete the assigned work. Verify observable behavior and completeness against the original criteria, self-review the final artifact, and record evidence, limits and the scoped knowledge review before reporting submitted. Report blocked when required input or validation is unavailable. Preserve this node's role and declared outcomes; do not start another flow or treat submission as permission to publish.",
   },
   review_gate: { kind: "gate", description: "Apply the task's agent-review preference" },
   review,
