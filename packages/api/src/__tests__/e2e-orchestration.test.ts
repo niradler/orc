@@ -29,7 +29,7 @@ afterAll(() => {
 // ─── Shared state across the story ───────────────────────────────────────────
 
 let projectId: string;
-const coderSkillName = "orc-coder";
+const coderSkillName = "orc-sdlc";
 let parentId: string;
 let t1Id: string;
 let t2Id: string;
@@ -75,25 +75,21 @@ describe("1. Project Setup", () => {
 describe("2. Skill Discovery", () => {
   test("agent lists all built-in skills", async () => {
     const result = await executeTool("skill_list", {});
-    expect(result).toContain("orc-worker-base");
-    expect(result).toContain("orc-coder");
-    expect(result).toContain("orc-planner");
-    expect(result).toContain("orc-reviewer");
-    expect(result).toContain("orc-bugfix");
-    expect(result).toContain("orc-report");
-    expect(result).toContain("orc-main-base");
-    expect(result).toContain("orc-requirements");
-  });
-
-  test("agent searches skills by keyword", async () => {
-    const result = await executeTool("skill_list", { q: "coder" });
-    expect(result).toContain("orc-coder");
+    expect(result).toContain("orc-platform");
+    expect(result).toContain("orc-sdlc");
+    expect(result).not.toContain("orc-coder");
     expect(result).not.toContain("orc-worker-base");
   });
 
-  test("agent loads full orc-coder skill content", async () => {
-    const result = await executeTool("skill_read", { name: "orc-coder" });
-    expect(result).toContain("# orc-coder");
+  test("agent searches skills by keyword", async () => {
+    const result = await executeTool("skill_list", { q: "sdlc" });
+    expect(result).toContain("orc-sdlc");
+    expect(result).not.toContain("orc-platform");
+  });
+
+  test("agent loads full orc-sdlc skill content", async () => {
+    const result = await executeTool("skill_read", { name: "orc-sdlc" });
+    expect(result).toContain("# orc-sdlc");
     expect(result).toContain((readSkill(coderSkillName) as SkillFull).content);
     expect(result).toContain((readSkill(coderSkillName) as SkillFull).path);
   });

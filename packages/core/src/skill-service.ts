@@ -60,7 +60,7 @@ export type SkillIssue = { path: string; error: string };
 export type SkillWarning = { path: string; message: string };
 
 export type SkillCache = {
-  version: 5;
+  version: 6;
   builtAt: string;
   skills: SkillMeta[];
   broken: SkillIssue[];
@@ -240,7 +240,7 @@ function parseInstalledFrontmatter(
 const BUILTIN_SKILLS_DIR =
   (globalThis as { __ORC_BUILTIN_SKILLS_DIR__?: string }).__ORC_BUILTIN_SKILLS_DIR__ ??
   [resolve(import.meta.dirname, "skills"), resolve(import.meta.dirname, "../../../skills")].find(
-    (directory) => existsSync(join(directory, "orc-worker-base", "SKILL.md")),
+    (directory) => existsSync(join(directory, "orc-sdlc", "SKILL.md")),
   ) ??
   resolve(import.meta.dirname, "../../../skills");
 const USER_SKILLS_DIR = join(homedir(), ".orc", "skills");
@@ -378,7 +378,7 @@ export function scanSkills(
       }
     }
   }
-  // Built-ins win (orc-worker-base is injected into every flow worker), then user, then packages.
+  // Built-ins win, then user-authored skills, then package skills.
   const skills = new Map<string, SkillMeta>();
   for (const skill of [...builtin, ...user, ...packaged]) {
     const existing = skills.get(skill.name);
@@ -402,7 +402,7 @@ function loadCache(): SkillCache | null {
   try {
     const raw = readFileSync(CACHE_PATH, "utf-8");
     const cache = JSON.parse(raw) as SkillCache;
-    return cache.version === 5 ? cache : null;
+    return cache.version === 6 ? cache : null;
   } catch {
     return null;
   }
@@ -419,7 +419,7 @@ export function reloadCache(): SkillCache {
   const warnings: SkillCache["warnings"] = [];
   const skills = scanSkills(broken, warnings);
   const cache: SkillCache = {
-    version: 5,
+    version: 6,
     builtAt: new Date().toISOString(),
     skills,
     broken,
@@ -471,10 +471,80 @@ export function listSkills(opts?: ListSkillsOpts): SkillMeta[] {
   return skills;
 }
 
+// Named-read compatibility only: frozen flows and saved task names must keep
+// working without advertising the retired entry points as additional skills.
+const LEGACY_SKILLS: Record<string, { skill: string; ref: string; mode: string }> = {
+  "orc-main-base": { skill: "orc-sdlc", ref: "planning.md", mode: "Coordinate the assigned work" },
+  "orc-worker-base": {
+    skill: "orc-sdlc",
+    ref: "development.md",
+    mode: "Execute the assigned worker node",
+  },
+  "orc-coder": { skill: "orc-sdlc", ref: "development.md", mode: "Implement the assigned change" },
+  "orc-bugfix": { skill: "orc-sdlc", ref: "development.md", mode: "Use the debugging playbook" },
+  "orc-git-flow": {
+    skill: "orc-sdlc",
+    ref: "development.md",
+    mode: "Use the Git delivery section",
+  },
+  "orc-planner": { skill: "orc-sdlc", ref: "planning.md", mode: "Plan the assigned work" },
+  "orc-requirements": { skill: "orc-sdlc", ref: "planning.md", mode: "Clarify requirements" },
+  "orc-reviewer": {
+    skill: "orc-sdlc",
+    ref: "review-and-delivery.md",
+    mode: "Independently review; do not implement or self-approve",
+  },
+  "orc-memory-review": {
+    skill: "orc-sdlc",
+    ref: "review-and-delivery.md",
+    mode: "Use the delivery and scoped knowledge review section",
+  },
+  "orc-memory": {
+    skill: "orc-platform",
+    ref: "memory.md",
+    mode: "Operate on short project facts",
+  },
+  "orc-knowledge": {
+    skill: "orc-platform",
+    ref: "knowledge.md",
+    mode: "Operate on knowledge bases and documents",
+  },
+  "orc-session": { skill: "orc-platform", ref: "execution.md", mode: "Use session continuity" },
+  "orc-handoff": { skill: "orc-platform", ref: "execution.md", mode: "Hand off a native session" },
+  "orc-tasks": { skill: "orc-platform", ref: "work.md", mode: "Operate on tasks and flows" },
+  "orc-report": { skill: "orc-platform", ref: "work.md", mode: "Report scoped status" },
+  "orc-gateway": { skill: "orc-platform", ref: "work.md", mode: "Operate the gateway" },
+};
+
+/** Canonical readers can discover scoped authored operation-specific supplements lazily. */
+export function legacySkillNames(name: string): string[] {
+  return Object.entries(LEGACY_SKILLS)
+    .filter(([, route]) => route.skill === name)
+    .map(([alias]) => alias);
+}
+
+function readLegacySkill(name: string, ref?: string): SkillFull | SkillRefContent | null {
+  const legacy = Object.hasOwn(LEGACY_SKILLS, name) ? LEGACY_SKILLS[name] : undefined;
+  if (!legacy) return null;
+  const target = readSkill(legacy.skill) as SkillFull | null;
+  if (!target) return null;
+  if (ref && ref !== "SKILL.md") return readSkill(legacy.skill, ref);
+  const content = `${target.content}\n\nCompatibility route for ${name}: ${legacy.mode}. Read references/${legacy.ref} from ${legacy.skill}; use the canonical name for new work.\n`;
+  if (ref) {
+    return {
+      name: ref,
+      path: target.path,
+      encoding: "utf8",
+      content: `---\nname: ${name}\ndescription: ${JSON.stringify(target.description)}\n---\n\n${content}`,
+    };
+  }
+  return { ...target, name, content };
+}
+
 export function readSkill(name: string, ref?: string): SkillFull | SkillRefContent | null {
   const cache = ensureCache();
   const meta = cache.skills.find((s) => s.name === name);
-  if (!meta) return null;
+  if (!meta) return readLegacySkill(name, ref);
 
   const skillDir = dirname(meta.path);
 

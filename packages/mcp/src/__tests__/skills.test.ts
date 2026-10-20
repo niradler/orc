@@ -28,16 +28,35 @@ afterAll(() => {
 describe("skill_list", () => {
   test("lists all built-in skills", async () => {
     const result = await executeTool("skill_list", { limit: 200 });
-    expect(result).toContain("orc-coder");
-    expect(result).toContain("orc-worker-base");
-    expect(result).toContain("orc-reviewer");
-    expect(result).toContain("orc-gateway");
+    expect(result).toContain("orc-sdlc");
+    expect(result).toContain("orc-platform");
+    expect(result).not.toContain("orc-worker-base");
+    expect(result).not.toContain("orc-coder");
   });
 
   test("keyword search", async () => {
-    const result = await executeTool("skill_list", { q: "coder" });
-    expect(result).toContain("orc-coder");
-    expect(result).not.toContain("orc-reviewer");
+    const result = await executeTool("skill_list", { q: "sdlc" });
+    expect(result).toContain("orc-sdlc");
+    expect(result).not.toContain("orc-platform");
+  });
+
+  test("domain discovery finds the platform through metadata only", async () => {
+    for (const q of [
+      "memory",
+      "tasks",
+      "gateway",
+      "embedding",
+      "handoff",
+      "CLI",
+      "MCP",
+      "SSH",
+      "rules",
+      "audit",
+    ]) {
+      const result = await executeTool("skill_list", { source: "builtin", q });
+      expect(result).toContain("orc-platform");
+      expect(result).not.toContain("orc-worker-base");
+    }
   });
 
   test("returns message for no match", async () => {
@@ -47,7 +66,7 @@ describe("skill_list", () => {
 
   test("reload rebuilds cache", async () => {
     const result = await executeTool("skill_list", { reload: true });
-    expect(result).toContain("orc-coder");
+    expect(result).toContain("orc-sdlc");
   });
 });
 
@@ -55,9 +74,9 @@ describe("skill_list", () => {
 
 describe("skill_read", () => {
   test("reads a built-in skill", async () => {
-    const result = await executeTool("skill_read", { name: "orc-coder" });
-    expect(result).toContain("# orc-coder");
-    expect(result).toContain((readSkill("orc-coder") as SkillFull).content);
+    const result = await executeTool("skill_read", { name: "orc-sdlc" });
+    expect(result).toContain("# orc-sdlc");
+    expect(result).toContain((readSkill("orc-sdlc") as SkillFull).content);
   });
 
   test("returns not found message for nonexistent skill", async () => {
@@ -66,8 +85,8 @@ describe("skill_read", () => {
   });
 
   test("shows description in output", async () => {
-    const result = await executeTool("skill_read", { name: "orc-coder" });
-    expect(result).toContain((readSkill("orc-coder") as SkillFull).description);
+    const result = await executeTool("skill_read", { name: "orc-sdlc" });
+    expect(result).toContain((readSkill("orc-sdlc") as SkillFull).description);
   });
 });
 

@@ -6,7 +6,7 @@ ORC records short project memories, keeps knowledge bases (KBs) current with dig
 
 A memory is a short project fact (ports, conventions, gotchas, decisions) identified by `(project, name)`, with a description saying when it matters, content up to `memory.max_content_chars` (default 800) and an optional priority 0-100. Agents check `memory_list` before `memory_create` and `memory_update` an existing memory instead of duplicating it; procedures and long guidance become skills. Every create, update, delete and revert is recorded in `memory_changes` (before/after snapshots, reason, author, native session id) and in the central audit log within one transaction. `memory_history` lists the changes and `memory_revert` restores an earlier state.
 
-At work-unit completion, `orc-session` and the worker contract direct the agent to load `orc-memory-review`. It reviews the session's memory changes, keeps each memory short with a description that says when it matters and a priority that reflects its relevance, moves long guidance into skills, merges overlapping memories, and records clear root causes or verified procedures in the project's Learnings KB (or comments on it when the KB is not editable for the agent). This is agent workflow guidance, not guaranteed review of every session from an external client.
+At work-unit completion, `orc-sdlc` directs the agent to the delivery section of `references/review-and-delivery.md`. It reviews actual memory changes, corrects contradictions within scope, and records verified reusable lessons in the relevant KB or maintained documentation. No durable learning means no new write. `orc-platform` supplies memory operations in `references/memory.md` and knowledge, embedding and document operations in `references/knowledge.md`. This is agent workflow guidance, not guaranteed review of every session from an external client.
 
 ## Ordinary retrieval
 
@@ -45,6 +45,19 @@ What the digest changes is the agent's responsibility; deterministic storage and
 `skill_update` / `PUT /api/skills/{name}/instructions` edit the effective SKILL.md. Supply its full current raw content as `expected_content` to reject stale saves, plus the new content and reason. The frontmatter name must stay unchanged. Edits activate immediately with no evaluation gate or automatic revert.
 
 Instructions are scoped SQLite overlays: original installed SKILL.md, scripts, references and assets stay intact. Native tools reading those original files directly do not receive overlays; ORC API/MCP/SDK/runner skill reads do. Normal upstream file edits do not silently discard a learned instruction overlay.
+
+The two entry points keep learning operational: `orc-platform` covers scoped memory,
+KB intake/edit/search, digest setup/results/recovery and cross-agent retrieval;
+`orc-sdlc` places recall, task/session evidence and knowledge reconciliation throughout
+requirements, implementation, review/rework and delivery. A schedule is not proof of
+useful learning: inspect resulting revisions and verify the next agent can retrieve
+the cited lesson. Ordinary workers do not call a digest run's completion token.
+
+Retired authored instructions remain stored under their original names. Effective
+canonical reads index applicable scoped legacy guidance; managed nodes receive only
+their role's authored worker/coder or reviewer supplements plus knowledge review.
+Unmodified retired playbooks are not reinjected. New/global/project edits retain
+their own identity/revision; conflicts require reconciliation, not a silent rewrite.
 
 The Skills dashboard shows **Mutated**, the date and author, before/after history, and a manual restore action with a required reason. Reverting requires the current mutation ID, retains both versions, and creates an audit entry. `orc skill history <name> [--project-id <id>]` and `orc skill revert <name> <change-id> --expected-change-id <id> --reason "..." [--project-id <id>]` provide the same operation. History older than 90 days is pruned during scheduler maintenance, always retaining the current change and its previous content for revert.
 

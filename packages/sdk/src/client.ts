@@ -43,6 +43,7 @@ import type {
   SessionHandoffInput,
   SessionHandoffUpload,
 } from "@orc/core/session-handoff";
+import type { SkillDownload } from "@orc/core/skill-download";
 import type {
   LocalSkillAgentListing,
   LocalSkillImportItem,
@@ -417,6 +418,8 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     skills: {
+      download: (name: string, ref: string, scope: ScopeQuery = {}) =>
+        c<SkillDownload>("POST", `/skills/${e(name)}/download`, { ref, ...scope }),
       visibility: () => c<{ hidden_builtins: string[] }>("GET", "/skills/settings/visibility"),
       setVisibility: (hidden_builtins: string[]) =>
         c<{ hidden_builtins: string[] }>("PUT", "/skills/settings/visibility", { hidden_builtins }),

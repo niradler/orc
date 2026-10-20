@@ -2,6 +2,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { ValidationError } from "@orc/core/errors";
 import { executeTool, toolDefinitions } from "@orc/mcp/tools";
 import { createRouter } from "../lib/router.js";
+import { skillDownloads } from "../skill-downloads.js";
 
 const app = createRouter();
 
@@ -47,6 +48,8 @@ app.openapi(mcpToolRoute, async (c) => {
 
   const result = await executeTool(name as Parameters<typeof executeTool>[0], parsed.data, {
     publicApiBaseUrl: new URL(c.req.url).origin,
+    skillDownload: (skill, ref, projectId) =>
+      skillDownloads.mint(skill, ref, projectId, new URL(c.req.url).origin),
   });
   return c.json({ result });
 });

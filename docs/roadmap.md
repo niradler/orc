@@ -33,7 +33,7 @@
 - **Three agent backends**: Claude Code (native CLI), ACPX (14+ agents via ACP protocol), A2A (remote agents via Google Agent2Agent JSON-RPC)
 - **Fallback routing** - unknown backend names route through ACPX automatically
 - **Filesystem-based skills** - `skills/*/SKILL.md` (built-in) and `~/.orc/skills/` (user), discoverable via `skill_list`/`skill_read`/`skill_create` MCP tools
-- **Built-in workflow skills** - orc-coder, orc-reviewer, orc-planner, orc-bugfix, orc-requirements, orc-report, orc-worker-base, orc-main-base
+- **Built-in skills** - orc-platform for domain operations and orc-sdlc for task-aware engineering; retired names remain readable for compatibility
 - **Review flow** - configurable `required_review`, `max_review_rounds` with auto-pause on exceeded rounds
 - **Task flows** - per-task graphs replacing the hardcoded worker/reviewer pipeline: conditional edges, bounded loops, parallel fan-out with `all`/`any` joins, human gates, and a durable per-node ledger. Deterministic engine (`@orc/core/flow-engine`) with five independent termination rails; six built-in flows; user flows in `~/.orc/flows/` and inline per-task graphs. See [Task Flows](./task-flows.md)
 - **Per-project concurrency** - `max_workers` on projects to limit parallel agents

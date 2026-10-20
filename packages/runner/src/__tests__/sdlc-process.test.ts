@@ -221,11 +221,35 @@ describe("shared SDLC delivery process", () => {
       max_review_rounds: 3,
     });
     const history = new SkillHistory(getSqlite());
-    const original = readSkill("orc-memory-review", "SKILL.md") as SkillRefContent;
+    const legacyMarkers = {
+      "orc-worker-base": "Project legacy worker constraint",
+      "orc-memory-review": "Project legacy knowledge constraint",
+      "orc-coder": "Project legacy coder constraint",
+      "orc-reviewer": "Project legacy reviewer constraint",
+    };
+    const globalWorker = history.read("orc-worker-base", null, "SKILL.md") as SkillRefContent;
+    history.update({
+      project_id: null,
+      skill_name: "orc-worker-base",
+      content: `${globalWorker.content}\nGlobal worker constraint superseded in this project`,
+      expected_content: globalWorker.content,
+      reason: "Exercise inherited legacy scope",
+    });
+    for (const [name, marker] of Object.entries(legacyMarkers)) {
+      const raw = history.read(name, projectId, "SKILL.md") as SkillRefContent;
+      history.update({
+        project_id: projectId,
+        skill_name: name,
+        content: `${raw.content.replace("Global worker constraint superseded in this project", "")}\n${marker}`,
+        expected_content: raw.content,
+        reason: "Preserve role-specific authored compatibility instructions",
+      });
+    }
+    const original = readSkill("orc-sdlc", "SKILL.md") as SkillRefContent;
     const firstInstructions = `${original.content}\nProject delivery procedure: inspect shared-component storage.\n`;
     history.update({
       project_id: projectId,
-      skill_name: "orc-memory-review",
+      skill_name: "orc-sdlc",
       content: firstInstructions,
       expected_content: original.content,
       reason: "Project-specific procedure",
@@ -235,7 +259,15 @@ describe("shared SDLC delivery process", () => {
     try {
       const worker = await launch();
       expect(worker.resumed).toBe(false);
-      expect(worker.prompt).toContain("## Workflow: orc-coder");
+      expect(worker.prompt).toContain("## Workflow: orc-sdlc");
+      expect(worker.prompt.match(/## Workflow: orc-sdlc/g)).toHaveLength(1);
+      expect(worker.prompt).toContain("Assigned role: worker");
+      expect(worker.prompt).toContain(legacyMarkers["orc-worker-base"]);
+      expect(worker.prompt).toContain(legacyMarkers["orc-memory-review"]);
+      expect(worker.prompt).toContain(legacyMarkers["orc-coder"]);
+      expect(worker.prompt).not.toContain(legacyMarkers["orc-reviewer"]);
+      expect(worker.prompt).not.toContain("Global worker constraint superseded in this project");
+      expect(worker.prompt).toContain("Scope: project; change:");
       expect(worker.prompt).toContain(`Project: ${JSON.stringify(projectName)}`);
       const workerSession = getSqlite()
         .query("SELECT gateway_session_id FROM flow_node_runs WHERE task_id=? AND node_id='build'")
@@ -249,7 +281,14 @@ describe("shared SDLC delivery process", () => {
       await finish(taskId, "build", "submitted", worker);
 
       const reviewer = await launch(false);
-      expect(reviewer.prompt).toContain("## Workflow: orc-reviewer");
+      expect(reviewer.prompt).toContain("## Workflow: orc-sdlc");
+      expect(reviewer.prompt.match(/## Workflow: orc-sdlc/g)).toHaveLength(1);
+      expect(reviewer.prompt).toContain("Assigned role: reviewer");
+      expect(reviewer.prompt).toContain("You are an independent reviewer");
+      expect(reviewer.prompt).toContain(legacyMarkers["orc-reviewer"]);
+      expect(reviewer.prompt).toContain(legacyMarkers["orc-memory-review"]);
+      expect(reviewer.prompt).not.toContain(legacyMarkers["orc-worker-base"]);
+      expect(reviewer.prompt).not.toContain(legacyMarkers["orc-coder"]);
       expect(reviewer.prompt).not.toContain("# Work within an ORC flow");
       expect(reviewer.prompt).toContain(
         "Project delivery procedure: inspect shared-component storage.",
@@ -273,12 +312,27 @@ describe("shared SDLC delivery process", () => {
       const refreshed = `${original.content}\nProject delivery procedure: validate shared-component consumers.\n`;
       history.update({
         project_id: projectId,
-        skill_name: "orc-memory-review",
+        skill_name: "orc-sdlc",
         content: refreshed,
         expected_content: firstInstructions,
         reason: "Updated project procedure",
       });
       await addTaskComment(taskId, "Same-second consumer feedback", "human");
+      const previousKnowledge = history.read(
+        "orc-memory-review",
+        projectId,
+        "SKILL.md",
+      ) as SkillRefContent;
+      history.update({
+        project_id: projectId,
+        skill_name: "orc-memory-review",
+        content: previousKnowledge.content.replace(
+          legacyMarkers["orc-memory-review"],
+          "Refreshed legacy knowledge constraint",
+        ),
+        expected_content: previousKnowledge.content,
+        reason: "Refresh compatibility instructions on resumed work",
+      });
       getSqlite()
         .query(
           "UPDATE comments SET created_at = (SELECT updated_at FROM gateway_sessions WHERE id = ?) WHERE resource_id = ? AND content = ?",
@@ -286,6 +340,8 @@ describe("shared SDLC delivery process", () => {
         .run(workerSession.gateway_session_id, taskId, "Same-second consumer feedback");
       const rework = await launch();
       expect(rework.resumed).toBe(true);
+      expect(rework.prompt).toContain("Refreshed legacy knowledge constraint");
+      expect(rework.prompt).not.toContain(legacyMarkers["orc-memory-review"]);
       expect(rework.prompt).toContain("Check the existing consumer too");
       expect(rework.prompt).toContain("Same-second consumer feedback");
       expect(rework.prompt).toContain(

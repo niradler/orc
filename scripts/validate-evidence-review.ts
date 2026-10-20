@@ -108,7 +108,7 @@ try {
       title: "Verify expiry boundary",
       body: "Review subject.ts and verify.ts. Contract: null expiry remains active; expiry strictly greater than now is active; expiry equal to now or earlier is inactive. Run bun verify.ts and cite its observed result, relevant source file and concrete boundary input in flow_report summary. Do not modify the fixture. Use orc-review-only's declared outcomes and complete the knowledge lifecycle with the supplied project and session ID.",
       project_id: project.id,
-      skill_name: "orc-reviewer",
+      skill_name: "orc-sdlc",
       agent_backend: "claude",
       flow_name: "orc-review-only",
       required_review: false,

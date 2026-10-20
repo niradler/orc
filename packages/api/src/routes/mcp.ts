@@ -4,6 +4,7 @@ import { createLogger } from "@orc/core/logger";
 import { createMcpServer, type McpMode, parseMcpMode } from "@orc/mcp";
 import { Hono } from "hono";
 import { bearerAuth } from "../middleware/auth.js";
+import { skillDownloads } from "../skill-downloads.js";
 
 const logger = createLogger("api:mcp");
 
@@ -26,7 +27,12 @@ app.all("/mcp", async (c) => {
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : "Invalid mode" }, 400);
   }
-  const server = createMcpServer({ publicApiBaseUrl: new URL(c.req.url).origin, mode });
+  const origin = new URL(c.req.url).origin;
+  const server = createMcpServer({
+    publicApiBaseUrl: origin,
+    mode,
+    skillDownload: (name, ref, projectId) => skillDownloads.mint(name, ref, projectId, origin),
+  });
   const transport = new WebStandardStreamableHTTPServerTransport({});
   // handleRequest returns while the SSE body is still streaming, so the
   // per-request server is released on transport close, never in a finally.

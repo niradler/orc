@@ -1,0 +1,121 @@
+# Setup, interfaces and authentication
+
+Contents: installation; connection/config; interfaces; diagnostics and recovery.
+Detailed sources: [Getting started](https://github.com/niradler/orc/blob/master/README.md#getting-started),
+[Connect your agent](https://github.com/niradler/orc/blob/master/README.md#connect-your-agent),
+[Configuration](https://github.com/niradler/orc/blob/master/README.md#configuration).
+
+## Install and verify
+
+Choose the user's target: desktop for an interactive local installation, headless
+CLI/binary or Docker for a server, source checkout for ORC development. Check an
+existing installation before installing another. Do not upgrade or restart a live
+service as an implicit part of answering a setup question.
+
+- Desktop: select the OS/architecture installer from ORC Releases. It bundles the
+  runtime, dashboard and CLI; a separate Bun/Node installation is unnecessary.
+  It attaches to an existing daemon or starts its own. A daemon it starts gets an
+  API secret stored in `~/.orc/config.json`. Open a new terminal after CLI PATH setup.
+- Headless: `npm install -g orc-ai` requires Bun >= 1.4.2; alternatively use the
+  matching standalone release binary. Confirm `orc --version` and executable path.
+- Source: use Bun workspaces (`bun install`, `bun build`). Follow this repository's
+  `AGENTS.md` for dev ports and `bun dev`; a published/global daemon does not run
+  edited source. `npm install -g` above is a distribution install, not a repo workflow.
+- Docker: use the current README Docker recipe, persistent ORC home and a mounted
+  repository. Project folders must be container paths. Installed backend tools do
+  not supply provider credentials or prove native agent hook enforcement.
+
+For a new headless install, `orc daemon start`; skip starting a second daemon if
+desktop or an existing service owns it. Verify `orc daemon status`, `orc status`
+and `orc doctor`. The production API/dashboard default to `http://127.0.0.1:7700`.
+Then `orc project add my-app`, `orc project use my-app`; verify its folder scope
+points to the correct repository on the machine that will execute the work.
+
+## Configuration and credentials
+
+Effective config: user `~/.orc/config.json`, then project `./.orc/config.json`,
+then environment variables. Server processes use their own environment and cwd;
+editing a shell variable does not reconfigure a running daemon. Inspect only
+needed non-secret fields, not a dump of the whole config or environment.
+
+Distinguish these credentials:
+
+| Credential | Used by |
+| --- | --- |
+| `ORC_API_SECRET` / `api.secret` | Clients calling ORC's API and HTTP MCP |
+| Agent/provider login or API key | The backend that runs Claude, Codex, ACPX, etc. |
+| Knowledge embedding API key | The external embedding provider; see knowledge.md |
+| Telegram/Slack token | The messaging gateway |
+
+Set the same ORC Bearer secret on server and clients when authentication is
+enabled. An empty API secret is open mode; check the actual bind address and
+intended exposure before configuring remote access. ORC auth is installation
+access, not a tenant isolation boundary. Do not place credentials in URLs.
+Browser access prompts on `401`; persist a secret only on explicit Remember in
+this browser. Normal non-secret preferences belong in config, not a secrets table.
+
+Workspace theme/terminal-font preferences use Settings or authenticated
+`GET/PATCH /api/settings`; patch only supported non-secret fields and reload to
+verify persistence. Runtime/knowledge/SSH settings have their own supported routes
+or config. Do not put API/provider credentials into the preferences endpoint.
+
+## Choose and connect an interface
+
+| Interface | Use and discovery |
+| --- | --- |
+| Dashboard | Interactive setup, settings, documents, packages and monitoring |
+| CLI | Shell work and operations not exposed by MCP; `orc --help`, then `<command> --help`; use `--json` when supported |
+| REST API | Integrations; `/api/...`, Bearer header, current `/openapi.json` and `/docs` |
+| SDK | Typed integrations over the same API; its base URL is the origin and the SDK appends `/api` |
+| MCP | Agent context and domain operations; discover with `skill_list`, tool schemas, or meta tools |
+
+CLI/stdio clients use `ORC_API_BASE` for the API origin and `ORC_API_SECRET` for
+auth. Check installed help for additional connection flags. For stdio MCP,
+configure the client to launch the resolved `orc mcp` executable with the intended
+environment. Protocol output belongs on stdout and diagnostics on stderr. For
+HTTP MCP use `<origin>/mcp` and the configured auth header; do not append `/api`
+to that MCP endpoint. Preserve other MCP servers when editing client config.
+
+Full MCP lists domain tools directly. Meta mode (`orc mcp --mode meta` or
+`/mcp?mode=meta`) exposes `tool_search`, `tool_describe`, `tool_invoke`:
+search by intent, describe unknown arguments, then invoke the selected tool.
+Reach `context` and other named tools through `tool_invoke` in meta mode.
+Connectors, loaded skills and installed hooks do not establish equal enforcement
+across agent clients. Disclose when MCP is unavailable; never claim a context read ran.
+
+## Diagnose before changing anything
+
+- Connection refused: verify origin, port, service ownership and process logs.
+- HTML instead of JSON: use `/api/<route>`; SPA routes such as `/tasks` serve HTML.
+- `401`: match the ORC secret and endpoint; do not remove auth to make a check pass.
+- Missing tools/options: compare client discovery, executable version and server
+  schema. Do not invent an endpoint or silently substitute another installation.
+- Backend unavailable: `orc doctor` reports actual readiness; inspect that backend's
+  dependency, endpoint and credentials on its execution host.
+- Source changes invisible: check process command/cwd and repo dev instructions;
+  do not kill unrelated Bun/MCP sessions or start competing listeners.
+
+Logs: daemon JSON logs default to `~/.orc/logs/orc.log`; desktop-owned daemon output
+also goes to `~/.orc/desktop-daemon.log`. Read a bounded relevant tail and redact
+secrets. For backup, stop writes consistently and preserve the ORC database with
+its SQLite sidecars, knowledge originals, config and `~/.orc/secret.key` securely.
+The key is needed to decrypt stored embedding credentials. A restored install
+must pass health, scoped data reads and the relevant operation before calling it recovered.
+
+## Service lifecycle, upgrades and recovery
+
+`orc daemon install` registers auto-start and starts the daemon; use it only when
+background operation is intended. Inspect `orc daemon status` and the actual API
+origin afterward. `orc daemon stop` affects the owned daemon; desktop stops only
+one it started. Follow current README service instructions for the OS rather than
+blanket-killing Bun or editing arbitrary startup files.
+
+For an intended upgrade, record current version/executable/config/DB location,
+make a consistent secure backup, select the correct distribution/architecture,
+replace through that installation's supported updater/package path, restart the
+owned service, then verify health, scoped reads, scheduler/backend and representative
+operations. Do not run migrations against the only live copy as an experiment.
+Restore into an isolated location first, including knowledge originals and the
+secret key, and verify document reads/search and credential availability. Rebuilt
+indexes are not substitutes for original documents. Describe unavailable checks;
+publishing ORC releases is a separate maintainer operation documented in docs/releases.md.

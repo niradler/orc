@@ -5,14 +5,14 @@ import type { FlowCondition, FlowNode } from "../flow.js";
 const review: FlowNode = {
   kind: "agent",
   description: "Review the artifact and evidence, then reconcile reusable knowledge",
-  skill: "orc-reviewer",
+  skill: "orc-sdlc",
   backend: "$task.agent_backend",
   role: "reviewer",
   task_status: "review",
   outcomes: ["approved", "changes_requested", "insufficient_evidence"],
   on_error: "review_failed",
   prompt:
-    "Review the actual artifact against acceptance criteria and trace affected callers. Report approved only with sufficient evidence, changes_requested for concrete defects, or insufficient_evidence when required checks cannot be performed. Complete this work unit's knowledge review before reporting. Do not change task status directly.",
+    "You are an independent reviewer. Read orc-sdlc references/review-and-delivery.md and review the actual artifact against acceptance criteria and connected callers. Do not implement the worker's fixes or approve your own implementation. Report approved only with sufficient evidence, changes_requested for concrete defects, or insufficient_evidence when required checks cannot be performed. Do not change task status directly.",
 };
 
 const rework: FlowCondition = {
@@ -35,7 +35,7 @@ const developmentNodes: Record<string, FlowNode> = {
     outcomes: ["submitted", "blocked"],
     on_error: "blocked",
     prompt:
-      "Read the task, relevant knowledge and affected callers. Choose the feature, bugfix or refactor playbook that fits. Verify observable behavior and record evidence, limits and the knowledge review before reporting submitted; report blocked when required input or validation is unavailable.",
+      "Read the task, original acceptance criteria, relevant knowledge and affected callers. Use orc-sdlc to select the task kind and effort level; clarify or plan only as needed, then complete the assigned work. Verify observable behavior and completeness against the original criteria, self-review the final artifact, and record evidence, limits and the scoped knowledge review before reporting submitted. Report blocked when required input or validation is unavailable. Preserve this node's role and declared outcomes; do not start another flow or treat submission as permission to publish.",
   },
   review_gate: { kind: "gate", description: "Apply the task's agent-review preference" },
   review,
@@ -71,7 +71,7 @@ const developmentLimits = {
 export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
   "orc-default": {
     name: "orc-default",
-    version: 2,
+    version: 3,
     description:
       "Development: understand, plan as needed, implement and verify, then independent review. Relevant memory and knowledge base guidance at start, rework and delivery.",
     entry: "build",
@@ -92,7 +92,7 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
   },
   "orc-human-review": {
     name: "orc-human-review",
-    version: 2,
+    version: 3,
     description:
       "Development with human sign-off: implement, verify and independently review, then wait for human approval. Feedback returns to implementation within the review budget.",
     entry: "build",
@@ -124,7 +124,7 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
   },
   "orc-review-only": {
     name: "orc-review-only",
-    version: 2,
+    version: 3,
     description:
       "Review existing work: inspect the artifact, verify acceptance criteria and reconcile relevant knowledge. Approve, request changes or pause when evidence is missing.",
     entry: "review",

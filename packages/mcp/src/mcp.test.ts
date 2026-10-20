@@ -223,10 +223,10 @@ describe("MCP context tool", () => {
 
 describe("MCP skill tools", () => {
   test("should count skill_read and list most-read skills first", async () => {
-    await executeTool("skill_read", { name: "orc-reviewer", scope: "global" });
-    await executeTool("skill_read", { name: "orc-reviewer", scope: "global", ref: "SKILL.md" });
+    await executeTool("skill_read", { name: "orc-platform", scope: "global" });
+    await executeTool("skill_read", { name: "orc-platform", scope: "global", ref: "SKILL.md" });
     const listing = await executeTool("skill_list", { scope: "global", limit: 1 });
-    expect(listing.split("\n")[0]).toContain("orc-reviewer");
+    expect(listing.split("\n")[0]).toContain("orc-platform");
     expect(listing).toContain("(2 reads)");
     expect(listing).toMatch(/Showing 1 of \d+; use q to search or raise limit\./);
   });

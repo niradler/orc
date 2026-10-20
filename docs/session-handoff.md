@@ -1,6 +1,7 @@
 # Continue a local session in ORC
 
-Use the bundled `orc-handoff` skill with Claude Code or Codex. The agent commits and
+Use the bundled `orc-platform` skill's `references/execution.md` handoff section
+with Claude Code or Codex. Within Git authorization, the agent commits and
 pushes the intended work, verifies the remote SHA, calls `session_handoff`, and uploads
 its native conversation. In **Sessions**, the imported session appears as **Ready**.
 Choose **Open in terminal** to continue it.

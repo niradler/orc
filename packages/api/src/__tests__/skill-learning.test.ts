@@ -16,7 +16,7 @@ async function createProject(name: string): Promise<{ id: string; name: string }
 
 test("should activate scoped skill edits, retain raw history, reject stale saves and revert manually", async () => {
   const project = await (await req(app, "POST", "/projects", { name: "skill-learning" })).json();
-  const name = "orc-coder";
+  const name = "orc-sdlc";
   const baseline = await (await req(app, "GET", `/skills/${name}?ref=SKILL.md`)).json();
   const content = `${baseline.content}\n\n## Validated learning\nCheck rollback before reporting success.\n`;
   const update = {
@@ -69,18 +69,18 @@ test("should activate scoped skill edits, retain raw history, reject stale saves
 
 test("should retain the latest skill change after the 90-day history cutoff", () => {
   const history = new SkillHistory(getSqlite());
-  const raw = history.read("orc-coder", null, "SKILL.md");
+  const raw = history.read("orc-sdlc", null, "SKILL.md");
   if (!raw || !("encoding" in raw)) throw new Error("Missing raw instructions");
   const first = history.update({
     project_id: null,
-    skill_name: "orc-coder",
+    skill_name: "orc-sdlc",
     expected_content: raw.content,
     content: `${raw.content}\nFirst lesson`,
     reason: "first",
   });
   const second = history.update({
     project_id: null,
-    skill_name: "orc-coder",
+    skill_name: "orc-sdlc",
     expected_content: `${raw.content}\nFirst lesson`,
     content: `${raw.content}\nSecond lesson`,
     reason: "second",
@@ -88,11 +88,11 @@ test("should retain the latest skill change after the 90-day history cutoff", ()
   if (!second.mutation) throw new Error("Missing mutation metadata");
   getSqlite().query("UPDATE skill_changes SET created_at=1").run();
   history.prune();
-  expect(history.history("orc-coder", null).map((change) => change.id)).toEqual([
+  expect(history.history("orc-sdlc", null).map((change) => change.id)).toEqual([
     second.mutation?.id,
   ]);
   expect(first.mutation?.id).not.toBe(second.mutation?.id);
-  expect(history.history("orc-coder", null)[0]?.previous_raw).toContain("First lesson");
+  expect(history.history("orc-sdlc", null)[0]?.previous_raw).toContain("First lesson");
 });
 
 test("should protect audit reads and validate inputs", async () => {

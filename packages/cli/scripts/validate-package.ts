@@ -151,7 +151,7 @@ if (tarball && failures.length === 0) {
     } else {
       ok("installed orc-ai ships dist/index.js");
     }
-    for (const name of ["orc-worker-base", "orc-session"]) {
+    for (const name of ["orc-platform", "orc-sdlc"]) {
       const entry = join(tmp, "node_modules", "orc-ai", "dist", "skills", name, "SKILL.md");
       if (existsSync(entry)) ok(`installed package ships ${name}`);
       else fail(`installed package is missing required built-in skill ${name}`);

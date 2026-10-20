@@ -25,14 +25,14 @@ test("built-in visibility saves, reopens, and preserves user skills and named re
   try {
     await save([]);
     await gotoView(page, "skills");
-    const toggle = page.getByTestId("skill-visibility-orc-coder");
+    const toggle = page.getByTestId("skill-visibility-orc-sdlc");
     await expect(toggle).toHaveAttribute("aria-checked", "true");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-checked", "false");
     await expect
       .poll(async () =>
         (await apiGet<{ skills: { name: string }[] }>(request, "/skills?scope=global")).skills.some(
-          (skill) => skill.name === "orc-coder",
+          (skill) => skill.name === "orc-sdlc",
         ),
       )
       .toBe(false);
@@ -40,20 +40,20 @@ test("built-in visibility saves, reopens, and preserves user skills and named re
     await expect(toggle).toHaveAttribute("aria-checked", "false");
     expect(
       (
-        await request.get(`${API_BASE}/skills/orc-coder?ref=SKILL.md`, { headers: AUTH_HEADERS })
+        await request.get(`${API_BASE}/skills/orc-sdlc?ref=SKILL.md`, { headers: AUTH_HEADERS })
       ).ok(),
     ).toBe(true);
     const reopened = await browser.newPage();
     await gotoView(reopened, "skills");
-    await expect(reopened.getByTestId("skill-visibility-orc-coder")).toHaveAttribute(
+    await expect(reopened.getByTestId("skill-visibility-orc-sdlc")).toHaveAttribute(
       "aria-checked",
       "false",
     );
     await reopened.close();
     await expect(page.getByTestId("hide-all-builtins")).toHaveCount(0);
     await expect(page.getByTestId("show-all-builtins")).toHaveCount(0);
-    await page.getByTestId("skill-visibility-orc-worker-base").click();
-    await expect(page.getByTestId("skill-visibility-orc-worker-base")).toHaveAttribute(
+    await page.getByTestId("skill-visibility-orc-platform").click();
+    await expect(page.getByTestId("skill-visibility-orc-platform")).toHaveAttribute(
       "aria-checked",
       "false",
     );
@@ -62,14 +62,14 @@ test("built-in visibility saves, reopens, and preserves user skills and named re
       "/skills?scope=global",
     );
     expect(catalog.skills.some((skill) => skill.name === name)).toBe(true);
-    expect(catalog.skills.some((skill) => skill.name === "orc-worker-base")).toBe(false);
+    expect(catalog.skills.some((skill) => skill.name === "orc-platform")).toBe(false);
     await page.getByTestId("skill-source-user").click();
     await expect(
       page.locator(`[data-testid="skill-row"][data-skill-name="${name}"]`),
     ).toBeVisible();
     await page.screenshot({ path: "../../output/playwright/skill-visibility.png", fullPage: true });
     await page.getByTestId("skill-source-all").click();
-    await page.getByTestId("skill-visibility-orc-worker-base").click();
+    await page.getByTestId("skill-visibility-orc-platform").click();
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-checked", "true");
     expect(
