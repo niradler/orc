@@ -57,7 +57,7 @@ authorization, rather than an automatic extra agent.
 
 ## Local execution evidence
 
-- `bun test ./packages --timeout 20000`: 1,215 passed, five existing
+- `bun test ./packages --timeout 20000`: 1,216 passed, five existing
   environment-specific skips, zero failures (134 files), including signed downloads.
 - Focused core/DB/API/MCP/runner suite: 246 passed, including worker/reviewer
   separation, current scoped guidance on resume, project/global precedence,
@@ -72,12 +72,34 @@ authorization, rather than an automatic extra agent.
 - Signed download flow: HTTP MCP and a separate stdio MCP process mint a usable
   ten-minute capability for the original helper; fetch without API credentials,
   verify SHA-256/size, save it locally and run `--help`. The SDK mint also works.
-  Ten integration/security tests cover binary/BOM/CRLF fidelity, authenticated
+  Eleven integration/security tests cover binary/BOM/CRLF fidelity, authenticated
   minting, tampered/expired/restarted capabilities, changed files, path/junction
   protection, project-scoped instructions and legacy helper names. No script body
   is reconstructed from model output and no downloaded script is auto-executed.
 - Targeted browser suite: 22 passed, covering skill visibility/reference reads,
   persistence across reload and task-flow selection, gates and halts.
+
+## Final merge review
+
+Independent coverage review found no behavioral blocker. It verified canonical
+routes, scoped legacy reads, fresh/resumed worker and reviewer roles, script
+downloads, documentation paths, exactly two skill folders and all thirteen
+source/build files matching byte-for-byte. The moved helper matches its original.
+The final relative-link check resolves all fourteen local Markdown targets.
+
+Independent security review reproduced one defect: a valid 1010-character Unicode
+reference minted a 4247-character signed token, exceeding the old 4096-character
+route/verifier limit. Minting and reading now share an 8192-character bound and
+minting rejects oversized claims before issuing a URL. The HTTP regression stubs
+only file storage to remain portable across filesystem path limits; it mints the
+long-path URL and verifies the downloaded bytes. The reviewer independently
+confirmed the fix, expiry/tamper/restart rejection and content-version pinning.
+
+Full build, unit suite and actual HTTP/stdio MCP/SDK download checks pass after
+the fix. A real tarball clean-install check also passed: both skills ship and the
+external Claude SDK/native binary, sqlite-vec/native library and Zod resolve from
+the installed package. Build dependency warnings remain recorded below; none is
+a newly introduced merge blocker.
 
 The full unit suite was refreshed for PR preparation. Build, typecheck, focused
 runtime, browser and transport evidence was established during this change;

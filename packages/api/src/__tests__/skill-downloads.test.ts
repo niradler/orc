@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -47,6 +47,26 @@ async function mint(ref = "scripts/check.py"): Promise<SkillDownload> {
 }
 
 describe("signed skill downloads", () => {
+  test("a valid Unicode file path yields a downloadable URL even when its token exceeds 4096 characters", async () => {
+    const ref = `${Array(8).fill("界".repeat(125)).join("/")}.py`;
+    // Stub only file storage so the protocol regression also runs on hosts with short filesystem path limits.
+    const read = spyOn(SkillHistory.prototype, "read").mockReturnValue({
+      name: ref,
+      path: ref,
+      content: script.toString("utf8"),
+      encoding: "utf8",
+    });
+    try {
+      const link = await mint(ref);
+      expect(new URL(link.download_url).pathname.split("/").at(-1)?.length).toBeGreaterThan(4096);
+      const response = await app.request(link.download_url);
+      expect(response.status).toBe(200);
+      expect(Buffer.from(await response.arrayBuffer())).toEqual(script);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
   test("only authenticated callers can mint URLs", async () => {
     const res = await app.request(`/api/skills/${name}/download`, {
       method: "POST",

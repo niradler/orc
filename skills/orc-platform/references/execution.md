@@ -139,4 +139,3 @@ and GitHub auth are separate. Use available GitHub tooling for authorized PR wri
 reuse the existing PR and verify its branch/commit. The SDK/API feed is a read path,
 not a general GitHub publishing endpoint. For complete implementation/PR delivery
 use the Git delivery section of `orc-sdlc` development guidance.
-

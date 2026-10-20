@@ -1,6 +1,10 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { ConflictError, NotFoundError, UnauthorizedError } from "@orc/core/errors";
-import { SKILL_DOWNLOAD_TTL_MS, type SkillDownload } from "@orc/core/skill-download";
+import { ConflictError, NotFoundError, UnauthorizedError, ValidationError } from "@orc/core/errors";
+import {
+  MAX_SKILL_DOWNLOAD_TOKEN_CHARS,
+  SKILL_DOWNLOAD_TTL_MS,
+  type SkillDownload,
+} from "@orc/core/skill-download";
 import { validateSkillPath } from "@orc/core/skill-files";
 import type { SkillRefContent } from "@orc/core/skill-service";
 import { getSqlite } from "@orc/db/client";
@@ -42,6 +46,8 @@ export class SkillDownloads {
     });
     const payload = Buffer.from(JSON.stringify(claim)).toString("base64url");
     const token = `${payload}.${this.sign(payload)}`;
+    if (token.length > MAX_SKILL_DOWNLOAD_TOKEN_CHARS)
+      throw new ValidationError("Skill file scope exceeds the download URL limit");
     return {
       download_url: new URL(`/api/skills/download/${token}`, origin).toString(),
       filename: ref.split("/").at(-1) as string,
@@ -52,7 +58,7 @@ export class SkillDownloads {
   }
 
   read(token: string): { bytes: Buffer; filename: string } {
-    if (token.length > 4096) throw new UnauthorizedError();
+    if (token.length > MAX_SKILL_DOWNLOAD_TOKEN_CHARS) throw new UnauthorizedError();
     const [payload, signature, extra] = token.split(".");
     if (!payload || !signature || extra !== undefined) throw new UnauthorizedError();
     const expected = this.sign(payload);

@@ -2,7 +2,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { hiddenBuiltinSkills, updateGlobalConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { ScopeQuerySchema } from "@orc/core/scope";
-import { SkillDownloadSchema } from "@orc/core/skill-download";
+import { MAX_SKILL_DOWNLOAD_TOKEN_CHARS, SkillDownloadSchema } from "@orc/core/skill-download";
 import { editSkillFile } from "@orc/core/skill-edit";
 import {
   discoverRepositorySkills,
@@ -83,7 +83,7 @@ app.openapi(
     path: "/skills/download/{token}",
     tags: ["Skills"],
     summary: "Download exact skill-file bytes using a signed capability",
-    request: { params: z.object({ token: z.string().max(4096) }) },
+    request: { params: z.object({ token: z.string().max(MAX_SKILL_DOWNLOAD_TOKEN_CHARS) }) },
     responses: {
       200: {
         description: "Original file; downloading never executes it",

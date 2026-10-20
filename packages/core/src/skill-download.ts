@@ -1,6 +1,8 @@
 import { z } from "zod";
 
 export const SKILL_DOWNLOAD_TTL_MS = 10 * 60_000;
+// A 1024-character UTF-8 path can exceed 4096 characters once its claim is base64url encoded.
+export const MAX_SKILL_DOWNLOAD_TOKEN_CHARS = 8192;
 export const SKILL_DOWNLOAD_PATH_PATTERN =
   /^\/api\/skills\/download\/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/;
 
