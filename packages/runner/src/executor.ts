@@ -14,6 +14,7 @@ export type RunOptions = {
   runId?: string;
   triggerBy?: string;
   envOverrides?: Record<string, string>;
+  input?: { stdin: string; env?: Record<string, string> };
   execution?: {
     argv: string[];
     stdin: string;
@@ -80,8 +81,11 @@ export async function executeJob(opts: RunOptions): Promise<string> {
       ...process.env,
       ORC_JOB_RUN_ID: runId,
       ...(job.env_vars ?? {}),
+      ...(opts.input?.env ?? {}),
       ...(opts.envOverrides ?? {}),
     };
+    const stdin = opts.execution?.stdin ?? opts.input?.stdin;
+    const stdinBytes = stdin === undefined ? "ignore" : new TextEncoder().encode(stdin);
 
     const timeout = opts.execution?.timeout_ms ?? (job.timeout_secs ?? 300) * 1000;
 
@@ -94,8 +98,10 @@ export async function executeJob(opts: RunOptions): Promise<string> {
         passEnv: [
           "ORC_JOB_RUN_ID",
           ...Object.keys(job.env_vars ?? {}),
+          ...Object.keys(opts.input?.env ?? {}),
           ...Object.keys(opts.envOverrides ?? {}),
         ],
+        stdin: stdinBytes,
       });
     } else {
       const local = Bun.spawn({
@@ -104,7 +110,7 @@ export async function executeJob(opts: RunOptions): Promise<string> {
         env: env as Record<string, string>,
         stdout: "pipe",
         stderr: "pipe",
-        stdin: opts.execution ? new TextEncoder().encode(opts.execution.stdin) : "ignore",
+        stdin: stdinBytes,
         timeout,
         killSignal: "SIGKILL",
       });

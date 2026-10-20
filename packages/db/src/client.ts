@@ -204,11 +204,35 @@ function setupDb(sqlite: Database): void {
 
     CREATE TABLE IF NOT EXISTS webhooks (
       id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      provider TEXT NOT NULL,
       job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
       token TEXT NOT NULL UNIQUE,
+      secret TEXT NOT NULL,
+      events TEXT NOT NULL DEFAULT '[]',
+      actions TEXT NOT NULL DEFAULT '[]',
       enabled INTEGER NOT NULL DEFAULT 1,
-      created_at INTEGER NOT NULL DEFAULT (unixepoch())
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
+
+    CREATE TABLE IF NOT EXISTS webhook_deliveries (
+      id TEXT PRIMARY KEY,
+      webhook_id TEXT NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+      delivery_key TEXT NOT NULL,
+      event TEXT NOT NULL,
+      action TEXT,
+      repository TEXT,
+      payload_hash TEXT NOT NULL,
+      status TEXT NOT NULL,
+      job_run_id TEXT REFERENCES job_runs(id) ON DELETE SET NULL,
+      error TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      UNIQUE(webhook_id, delivery_key)
+    );
+    CREATE INDEX IF NOT EXISTS webhook_deliveries_webhook_idx
+      ON webhook_deliveries(webhook_id, created_at);
 
     CREATE TABLE IF NOT EXISTS flow_runs (
       id TEXT PRIMARY KEY,
@@ -374,6 +398,18 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE flow_runs ADD COLUMN paused_secs INTEGER NOT NULL DEFAULT 0",
     "DROP INDEX IF EXISTS flow_node_runs_attempt_idx",
     "CREATE UNIQUE INDEX IF NOT EXISTS flow_node_runs_attempt_idx ON flow_node_runs(flow_run_id, node_id, attempt, retry)",
+    "ALTER TABLE webhooks ADD COLUMN name TEXT NOT NULL DEFAULT 'Webhook'",
+    "ALTER TABLE webhooks ADD COLUMN provider TEXT NOT NULL DEFAULT 'generic'",
+    "ALTER TABLE webhooks ADD COLUMN secret TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE webhooks ADD COLUMN events TEXT NOT NULL DEFAULT '[]'",
+    "ALTER TABLE webhooks ADD COLUMN actions TEXT NOT NULL DEFAULT '[]'",
+    // SQLite only permits constant defaults when adding a column to an existing
+    // table. Backfill from created_at after adding the compatibility column.
+    "ALTER TABLE webhooks ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0",
+    "UPDATE webhooks SET updated_at=created_at WHERE updated_at=0",
+    // Legacy rows predate signed receivers and have no usable secret. Keep them
+    // disabled until an operator rotates the secret explicitly.
+    "UPDATE webhooks SET enabled=0 WHERE secret=''",
   ];
   for (const statement of migrations) {
     try {

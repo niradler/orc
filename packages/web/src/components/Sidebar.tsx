@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   Terminal,
   TerminalSquare,
+  Webhook,
   Zap,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -29,6 +30,7 @@ const NAV_ITEMS: {
   { id: "dashboard", path: "/dashboard", label: "Dashboard", icon: Activity },
   { id: "tasks", path: "/tasks", label: "Tasks", icon: CheckSquare },
   { id: "jobs", path: "/jobs", label: "Jobs", icon: TerminalSquare },
+  { id: "webhooks", path: "/webhooks", label: "Webhooks", icon: Webhook },
   { id: "terminals", path: "/terminals", label: "Terminals", icon: Terminal },
   { id: "projects", path: "/projects", label: "Projects", icon: Folder },
   { id: "sessions", path: "/sessions", label: "Sessions", icon: History },
