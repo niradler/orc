@@ -508,6 +508,25 @@ orc job add on-change --command "bun run lint"      --trigger watch --watch "./s
 orc job add on-push   --command "bun run ci"        --trigger webhook
 ```
 
+### Webhooks
+
+The **Webhooks** page creates signed HTTP endpoints that trigger enabled jobs. Every
+accepted JSON payload is passed unchanged to the job on stdin; bounded metadata is
+also available as `ORC_WEBHOOK_*` environment variables. Delivery history stores
+event metadata and a payload hash, not the payload body or signing secret.
+
+Generic endpoints verify `X-Orc-Signature-256: sha256=<HMAC-SHA256 of the raw body>`.
+Use `X-Orc-Event` for event filtering and `X-Orc-Delivery` (or
+`Idempotency-Key`) for deduplication. GitHub endpoints use
+`X-Hub-Signature-256`, `X-GitHub-Event` and `X-GitHub-Delivery` directly.
+Event names and payload `action` values are configurable, so PR lifecycle,
+reviews, workflow runs, releases, or later providers use the same job trigger.
+
+Signing secrets are encrypted at rest and shown only when an endpoint is created or
+rotated. The receiver is intentionally outside normal ORC bearer authentication;
+the per-endpoint HMAC is its authentication boundary. Management remains under the
+authenticated API.
+
 ### Gateway (Telegram / Slack)
 
 Approve agent work from your phone, search memory, or start a live AI session.

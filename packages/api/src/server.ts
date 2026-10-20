@@ -36,6 +36,7 @@ import { taskLinksRouter } from "./routes/task-links.js";
 import { tasksRouter } from "./routes/tasks.js";
 import { terminalGitRouter } from "./routes/terminal-git.js";
 import { terminalsRouter } from "./routes/terminals.js";
+import { webhookPublicRouter, webhooksRouter } from "./routes/webhooks.js";
 import { createWebStatic } from "./static.js";
 
 const logger = createLogger("api");
@@ -97,6 +98,7 @@ export function createApp() {
     return c.json({ error: "Internal server error", code: "INTERNAL_ERROR" }, 500);
   });
 
+  app.route("/", webhookPublicRouter);
   app.route("/api", backendsRouter);
   app.route("/api", eventsRouter);
   app.route("/api", sshRouter);
@@ -125,6 +127,7 @@ export function createApp() {
   app.route("/api", gitRouter);
   app.route("/api", terminalGitRouter);
   app.route("/api", githubRouter);
+  app.route("/api", webhooksRouter);
 
   app.doc("/openapi.json", {
     openapi: "3.1.0",

@@ -428,13 +428,43 @@ export const flow_node_runs = sqliteTable(
 
 export const webhooks = sqliteTable("webhooks", {
   id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  provider: text("provider", { enum: ["generic", "github"] }).notNull(),
   job_id: text("job_id")
     .notNull()
     .references(() => jobs.id, { onDelete: "cascade" }),
   token: text("token").notNull().unique(),
+  secret: text("secret").notNull(),
+  events: text("events", { mode: "json" }).$type<string[]>().notNull(),
+  actions: text("actions", { mode: "json" }).$type<string[]>().notNull(),
   enabled: integer("enabled", { mode: "boolean" }).default(true).notNull(),
   created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+  updated_at: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
 });
+
+export const webhook_deliveries = sqliteTable(
+  "webhook_deliveries",
+  {
+    id: text("id").primaryKey(),
+    webhook_id: text("webhook_id")
+      .notNull()
+      .references(() => webhooks.id, { onDelete: "cascade" }),
+    delivery_key: text("delivery_key").notNull(),
+    event: text("event").notNull(),
+    action: text("action"),
+    repository: text("repository"),
+    payload_hash: text("payload_hash").notNull(),
+    status: text("status", { enum: ["ignored", "running", "success", "failed"] }).notNull(),
+    job_run_id: text("job_run_id").references(() => job_runs.id, { onDelete: "set null" }),
+    error: text("error"),
+    created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+    updated_at: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+  },
+  (t) => [
+    uniqueIndex("webhook_deliveries_key_idx").on(t.webhook_id, t.delivery_key),
+    index("webhook_deliveries_webhook_idx").on(t.webhook_id, t.created_at),
+  ],
+);
 
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
@@ -454,6 +484,7 @@ export type BridgePermission = typeof bridge_permissions.$inferSelect;
 export type GatewaySession = typeof gateway_sessions.$inferSelect;
 export type GatewaySessionNew = typeof gateway_sessions.$inferInsert;
 export type Webhook = typeof webhooks.$inferSelect;
+export type WebhookDelivery = typeof webhook_deliveries.$inferSelect;
 export type FlowRun = typeof flow_runs.$inferSelect;
 export type NewFlowRun = typeof flow_runs.$inferInsert;
 export type FlowNodeRun = typeof flow_node_runs.$inferSelect;

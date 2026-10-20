@@ -25,6 +25,7 @@ const Agents = lazy(() => import("@/views/Agents"));
 const Dashboard = lazy(() => import("@/views/Dashboard"));
 
 const Jobs = lazy(() => import("@/views/Jobs"));
+const Webhooks = lazy(() => import("@/views/Webhooks"));
 
 const Knowledge = lazy(() => import("@/views/Knowledge"));
 
@@ -226,6 +227,7 @@ export default function App() {
                       <Route path="/terminals/:terminalId" element={<Terminals />} />
                       <Route path="/jobs" element={<Jobs projectId={projectId} />} />
                       <Route path="/jobs/:jobId" element={<Jobs projectId={projectId} />} />
+                      <Route path="/webhooks" element={<Webhooks projectId={projectId} />} />
                       <Route path="/sessions" element={<Sessions projectId={projectId} />} />
                       <Route path="/audit" element={<Audit projectId={projectId} />} />
                       <Route path="/audit/:sessionId" element={<Audit projectId={projectId} />} />

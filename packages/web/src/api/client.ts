@@ -287,6 +287,40 @@ export type GithubFeed = {
   errors: { repo: string; error: string }[];
   truncated: boolean;
 };
+export type ManagedWebhook = {
+  id: string;
+  name: string;
+  provider: "generic" | "github";
+  job_id: string;
+  token: string;
+  events: string[];
+  actions: string[];
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+};
+export type WebhookDelivery = {
+  id: string;
+  webhook_id: string;
+  delivery_key: string;
+  event: string;
+  action: string | null;
+  repository: string | null;
+  payload_hash: string;
+  status: "ignored" | "running" | "success" | "failed";
+  job_run_id: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+export type CreateWebhookInput = {
+  name: string;
+  provider: "generic" | "github";
+  job_id: string;
+  events?: string[];
+  actions?: string[];
+  enabled?: boolean;
+};
 
 export class ApiError extends Error {
   constructor(
@@ -604,6 +638,19 @@ export const api = {
         undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
+  },
+
+  webhooks: {
+    list: (project_id?: string) =>
+      req<{ webhooks: ManagedWebhook[] }>("GET", "/webhooks", undefined, { project_id }),
+    create: (data: CreateWebhookInput) =>
+      req<ManagedWebhook & { secret: string }>("POST", "/webhooks", data),
+    update: (id: string, data: Partial<CreateWebhookInput>) =>
+      req<ManagedWebhook>("PATCH", `/webhooks/${id}`, data),
+    delete: (id: string) => req<null>("DELETE", `/webhooks/${id}`),
+    rotate: (id: string) => req<{ secret: string }>("POST", `/webhooks/${id}/rotate-secret`),
+    deliveries: (id: string) =>
+      req<{ deliveries: WebhookDelivery[] }>("GET", `/webhooks/${id}/deliveries`),
   },
 
   projects: {
