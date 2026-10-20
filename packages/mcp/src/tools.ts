@@ -11,6 +11,7 @@ import {
   readPackageFile,
 } from "@orc/core/package-service";
 import { SessionHandoffInputSchema, SessionHandoffUploadSchema } from "@orc/core/session-handoff";
+import { type SkillDownload, SkillDownloadSchema } from "@orc/core/skill-download";
 import {
   createSkill as createSkillFs,
   type SkillFileInput,
@@ -39,6 +40,7 @@ import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { orcApi } from "./api-client.js";
 import { executeKbTool, isKbTool, kbSearchLines, kbToolDefinitions } from "./kb-tools.js";
 
 const logger = createLogger("mcp:tools");
@@ -476,11 +478,15 @@ export const toolDefinitions = [
     name: "skill_read",
     description:
       "Read a skill by name. Returns SKILL.md instructions and an inventory of supporting files. " +
-      "Pass ref with a skill-relative path to load Markdown, scripts or assets on demand. Binary assets return base64. Reading never executes scripts.",
+      "Pass ref with a skill-relative path to load supporting files. For scripts/assets use download:true with ref to get a signed ten-minute URL and SHA-256 instead of reconstructing file content. Downloading never executes scripts.",
     inputSchema: z.object({
       name: z.string().describe("Skill name"),
       project: projectParam,
       scope: z.literal("global").optional(),
+      download: z
+        .boolean()
+        .optional()
+        .describe("With ref, return a signed download URL instead of file content"),
       ref: z
         .string()
         .optional()
@@ -652,6 +658,7 @@ export type ToolName = (typeof toolDefinitions)[number]["name"];
 
 export type ToolOptions = {
   publicApiBaseUrl?: string;
+  skillDownload?: (name: string, ref: string, projectId: string | null) => SkillDownload;
   /**
    * Native session id of the calling agent. Stdio MCP runs inside the agent's process tree and
    * reads it from the environment; HTTP MCP cannot see it, so it stays unset there.
@@ -1569,9 +1576,32 @@ export async function executeTool(
         ref,
         project,
         scope,
-      } = args as { name: string; ref?: string; project?: string; scope?: "global" };
+        download,
+      } = args as {
+        name: string;
+        ref?: string;
+        project?: string;
+        scope?: "global";
+        download?: boolean;
+      };
       const skillHistory = new SkillHistory(getSqlite(db));
       const skillScope = resolveScope({ project, scope });
+      if (download) {
+        if (!ref) throw new ValidationError("download:true requires a skill-relative ref");
+        const result = options.skillDownload
+          ? options.skillDownload(sName, ref, skillScope)
+          : SkillDownloadSchema.parse(
+              await orcApi("POST", `/skills/${encodeURIComponent(sName)}/download`, {
+                body: {
+                  ref,
+                  ...(skillScope === null ? { scope: "global" } : { project_id: skillScope }),
+                },
+                timeoutMs: 15_000,
+              }),
+            );
+        skillHistory.recordRead(sName, skillScope, "mcp", ref);
+        return JSON.stringify(result);
+      }
       const result = skillHistory.read(sName, skillScope, ref);
       if (!result) return `Skill not found: ${sName}`;
       skillHistory.recordRead(sName, skillScope, "mcp", ref);
@@ -1584,6 +1614,8 @@ export async function executeTool(
       let out = `# ${skill.name}\n${skill.description}\nSkill entry point: ${skill.path}\n\n${skill.content}`;
       if (skill.files.length > 0) {
         out += `\n\nSupporting files (paths relative to the skill root; load with skill_read ref):\n${skill.files.map((r) => `- ${r.name} (${r.path})`).join("\n")}`;
+        out +=
+          "\nFor original script/asset bytes, call skill_read with ref and download:true; fetch the signed URL to a local file and verify sha256. Downloading does not execute it.";
       }
       return out;
     }

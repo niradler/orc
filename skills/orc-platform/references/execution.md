@@ -45,6 +45,12 @@ an ORC event snapshot. Parent sessions are required for Codex child-agent histor
    Codex under its configured home `sessions/` or an explicit archived rollout.
    Use `scripts/upload-session.py` from the **orc-platform skill root**:
 
+   If that file is not locally accessible, request it with
+   `skill_read({name: "orc-platform", ref: "scripts/upload-session.py", download: true, project})`,
+   fetch the signed URL into `scripts/upload-session.py`, and verify the returned
+   SHA-256/size. Do not recreate it from the MCP text. Keep both download and upload
+   capabilities private; downloading the helper does not execute or authorize it.
+
    ```sh
    python scripts/upload-session.py --agent codex --session-file /path/to/rollout.jsonl --upload-url '<returned-url>'
    ```

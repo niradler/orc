@@ -2,6 +2,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { hiddenBuiltinSkills, updateGlobalConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { ScopeQuerySchema } from "@orc/core/scope";
+import { SkillDownloadSchema } from "@orc/core/skill-download";
 import { editSkillFile } from "@orc/core/skill-edit";
 import {
   discoverRepositorySkills,
@@ -25,10 +26,86 @@ import { readSourceFromHeader } from "@orc/db/read-usage";
 import { SkillHistory } from "@orc/db/skill-history";
 import { createRouter } from "../lib/router.js";
 import { resolveScopeProject } from "../lib/scope.js";
+import { skillDownloads } from "../skill-downloads.js";
 
 const app = createRouter();
 
 const ORC_SOURCE_HEADER = "X-Orc-Source";
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/skills/{name}/download",
+    tags: ["Skills"],
+    summary: "Mint a ten-minute signed download for one version of a skill file",
+    request: {
+      params: z.object({ name: z.string().min(1).max(64) }),
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                ref: z.string().min(1).max(1024),
+                ...ScopeQuerySchema.shape,
+              })
+              .strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Download capability; keep its URL private",
+        content: { "application/json": { schema: SkillDownloadSchema } },
+      },
+      400: { description: "Invalid file path or scope" },
+      401: { description: "Authentication required" },
+      404: { description: "Skill or file missing" },
+    },
+  }),
+  (c) => {
+    const input = c.req.valid("json");
+    const result = skillDownloads.mint(
+      c.req.valid("param").name,
+      input.ref,
+      resolveScopeProject(input),
+      new URL(c.req.url).origin,
+    );
+    c.header("Cache-Control", "no-store");
+    return c.json(result);
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/skills/download/{token}",
+    tags: ["Skills"],
+    summary: "Download exact skill-file bytes using a signed capability",
+    request: { params: z.object({ token: z.string().max(4096) }) },
+    responses: {
+      200: {
+        description: "Original file; downloading never executes it",
+        content: {
+          "application/octet-stream": { schema: z.string().openapi({ format: "binary" }) },
+        },
+      },
+      401: { description: "Invalid or expired capability" },
+      404: { description: "File no longer exists" },
+      409: { description: "File changed since the capability was issued" },
+    },
+  }),
+  (c) => {
+    const { bytes, filename } = skillDownloads.read(c.req.valid("param").token);
+    c.header("Content-Type", "application/octet-stream");
+    c.header("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    c.header("Cache-Control", "no-store");
+    c.header("Referrer-Policy", "no-referrer");
+    c.header("X-Content-Type-Options", "nosniff");
+    return c.body(new Uint8Array(bytes));
+  },
+);
 
 const VisibilitySchema = z
   .object({ hidden_builtins: z.array(z.string().min(1).max(64)).max(512) })

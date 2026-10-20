@@ -57,8 +57,8 @@ authorization, rather than an automatic extra agent.
 
 ## Local execution evidence
 
-- `bun test ./packages --timeout 20000`: 1,205 passed, five existing
-  environment-specific skips, zero failures (133 files).
+- `bun test ./packages --timeout 20000`: 1,215 passed, five existing
+  environment-specific skips, zero failures (134 files), including signed downloads.
 - Focused core/DB/API/MCP/runner suite: 246 passed, including worker/reviewer
   separation, current scoped guidance on resume, project/global precedence,
   human feedback/signoff and declared outcome routing.
@@ -69,6 +69,13 @@ authorization, rather than an automatic extra agent.
 - Private authenticated HTTP and built CLI/MCP checks passed: unauthenticated
   reads rejected, exactly two built-ins discovered, every entry/supporting file
   read byte-for-byte, and retired named reads resolve.
+- Signed download flow: HTTP MCP and a separate stdio MCP process mint a usable
+  ten-minute capability for the original helper; fetch without API credentials,
+  verify SHA-256/size, save it locally and run `--help`. The SDK mint also works.
+  Ten integration/security tests cover binary/BOM/CRLF fidelity, authenticated
+  minting, tampered/expired/restarted capabilities, changed files, path/junction
+  protection, project-scoped instructions and legacy helper names. No script body
+  is reconstructed from model output and no downloaded script is auto-executed.
 - Targeted browser suite: 22 passed, covering skill visibility/reference reads,
   persistence across reload and task-flow selection, gates and halts.
 

@@ -677,6 +677,15 @@ The **Agents** page creates/reads specialist profiles. API `/api/agents` and `/a
 
 ## MCP tools
 
+Agents can fetch original skill scripts/assets with
+`skill_read({name: "orc-platform", ref: "scripts/upload-session.py", download: true, project: "my-app"})`.
+It returns a signed ten-minute `download_url`, `sha256`, `size_bytes` and expiry
+instead of the file body. Download to a local file and verify the hash; do not
+reconstruct scripts from tool text. The URL authorizes only that file version and
+does not contain the API secret. Keep it private. Expiry, API restart or file changes
+require a new URL. Downloading never executes scripts. The authenticated REST mint
+endpoint is `POST /api/skills/<name>/download` with `ref` and optional scope.
+
 Tools are available to any connected agent. Start every session with `context`.
 
 | Category      | Tools                                                                                                                                       |

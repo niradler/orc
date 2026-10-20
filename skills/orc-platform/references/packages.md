@@ -12,6 +12,17 @@ effective entry instructions and file inventory. Load a supporting file with
 filenames are supported; paths resolve from the skill root, never the repo cwd.
 Reads do not execute scripts. Binary content uses explicit base64 encoding.
 
+To use an original script/asset outside the ORC host, request
+`skill_read({name, ref: "scripts/check.py", download: true, project})`.
+Fetch the returned `download_url` into the intended local file and verify its
+`sha256` and `size_bytes`; do not retype the script from tool output. This returns
+metadata instead of file content. The URL grants only that file version for ten
+minutes, needs no API secret on the GET, and must stay out of logs/shared documents.
+Expired links, API restarts or changed files require a new URL. Downloading never
+executes it; inspect the script and dependencies before an authorized run. Preserve
+relative paths and fetch required sibling resources from the inventory as needed.
+API/SDK callers use `POST /api/skills/<name>/download` / `client.skills.download`.
+
 Built-ins live in the distribution, user skills in `~/.orc/skills/`, and authored
 instruction changes can be global or project-scoped. Built-in names take precedence
 over same-named user folders; project instruction overrides take precedence over

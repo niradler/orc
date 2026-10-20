@@ -18,6 +18,7 @@
     "./skill-service": "./src/skill-service.ts",
     "./markdown-frontmatter": "./src/markdown-frontmatter.ts",
     "./skill-files": "./src/skill-files.ts",
+    "./skill-download": "./src/skill-download.ts",
     "./skill-import": "./src/skill-import.ts",
     "./skill-import-types": "./src/skill-import-types.ts",
     "./skill-local-import": "./src/skill-local-import.ts",
