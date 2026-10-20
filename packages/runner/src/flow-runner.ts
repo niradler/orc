@@ -2,7 +2,7 @@ import type { AgentSession } from "@orc/agent-runtime";
 import { openAgentSession } from "@orc/agent-runtime";
 import { readAgent } from "@orc/core/agent-service";
 import { loadConfig } from "@orc/core/config";
-import { hostAlias, resolveExecHost } from "@orc/core/exec-host";
+import { type ExecHost, hostAlias, hostExec, resolveExecHost } from "@orc/core/exec-host";
 import type { FlowCondition, FlowDefinition, FlowNode, NumericOperand } from "@orc/core/flow";
 import { declaredOutcomes, resolvePlaceholder } from "@orc/core/flow";
 import type { FlowAction, FlowState, FlowStep } from "@orc/core/flow-engine";
@@ -87,6 +87,8 @@ type TaskRow = {
   required_review: number;
   flow_name: string | null;
   flow_override: string | null;
+  git_repo: string | null;
+  git_worktree: string | null;
 };
 
 type FlowRunRow = {
@@ -124,7 +126,7 @@ function getTask(taskId: string): TaskRow | null {
     (getSqlite()
       .query(
         `SELECT id, title, body, status, project_id, skill_name, agent_backend, agent_model,
-                max_review_rounds, required_review, flow_name, flow_override
+                max_review_rounds, required_review, flow_name, flow_override, git_repo, git_worktree
          FROM tasks WHERE id = ?`,
       )
       .get(taskId) as TaskRow | null) ?? null
@@ -1219,6 +1221,39 @@ function previousNodeSession(
   );
 }
 
+async function validateTaskWorktree(
+  host: ExecHost,
+  cwd: string,
+  repository: string | undefined,
+): Promise<void> {
+  async function gitDirectory(path: string): Promise<string> {
+    const result = await hostExec(
+      host,
+      [
+        "git",
+        "-C",
+        path,
+        "rev-parse",
+        "--is-inside-work-tree",
+        "--path-format=absolute",
+        "--git-common-dir",
+      ],
+      { timeoutMs: 15_000, env: { GIT_TERMINAL_PROMPT: "0" } },
+    );
+    const [inside, directory] = result.stdout.trim().split(/\r?\n/);
+    if (result.code !== 0 || inside !== "true" || !directory)
+      throw new Error(`Task worktree is not an accessible Git working directory: ${path}`);
+    const normalized = directory.replace(/\\/g, "/");
+    return host.kind === "local" && process.platform === "win32"
+      ? normalized.toLowerCase()
+      : normalized;
+  }
+
+  const directory = await gitDirectory(cwd);
+  if (repository && directory !== (await gitDirectory(repository)))
+    throw new Error(`Task worktree does not belong to the task repository: ${cwd}`);
+}
+
 async function spawnNodeSession(nodeRun: NodeRunRow): Promise<boolean> {
   const loaded = loadRun(nodeRun.flow_run_id);
   if (!loaded) return false;
@@ -1230,14 +1265,27 @@ async function spawnNodeSession(nodeRun: NodeRunRow): Promise<boolean> {
   const sqlite = getSqlite();
   const sessionId = ulid();
   const backendName = nodeBackend(node, task);
-  const executionHost = hostAlias(resolveExecHost());
+  const host = resolveExecHost();
+  const executionHost = hostAlias(host);
 
   const prev =
     nodeRun.resume_session === 1 ? previousNodeSession(nodeRun.flow_run_id, nodeRun.node_id) : null;
   const cwd =
-    projectScope(task.project_id) ??
     prev?.cwd ??
-    (resolveExecHost().kind === "ssh" ? "~" : process.cwd());
+    task.git_worktree ??
+    projectScope(task.project_id) ??
+    (host.kind === "ssh" ? "~" : process.cwd());
+  if (task.git_worktree) {
+    try {
+      await validateTaskWorktree(host, cwd, task.git_repo ?? projectScope(task.project_id));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error(message);
+      await addTaskComment(task.id, `Flow node failed: ${message}`, "system");
+      await finishNodeRun(nodeRun.id, message);
+      return false;
+    }
+  }
   const model =
     nodeModel(node, task) ?? (node.agent ? readAgent(node.agent, cwd)?.fields.model : undefined);
 

@@ -121,11 +121,15 @@ export class CodexSession implements AgentSession {
       "-c",
       `sandbox_mode=${JSON.stringify(opts.autoApprove ? "workspace-write" : "read-only")}`,
     );
-    args.push("-c", `mcp_servers.orc.url=${JSON.stringify(mcp.url)}`);
-    args.push("-c", "mcp_servers.orc.required=true");
-    if (opts.autoApprove) args.push("-c", 'mcp_servers.orc.default_tools_approval_mode="approve"');
+    // Codex merges table overrides, so adding a URL to an inherited stdio
+    // entry retains its command and makes the transport configuration invalid.
+    const mcpKey = `mcp_servers.orc_runtime_${this.id}`;
+    args.push("-c", "mcp_servers.orc.enabled=false");
+    args.push("-c", `${mcpKey}.url=${JSON.stringify(mcp.url)}`);
+    args.push("-c", `${mcpKey}.required=true`);
+    if (opts.autoApprove) args.push("-c", `${mcpKey}.default_tools_approval_mode="approve"`);
     if (mcp.headers?.Authorization)
-      args.push("-c", 'mcp_servers.orc.bearer_token_env_var="ORC_CODEX_MCP_TOKEN"');
+      args.push("-c", `${mcpKey}.bearer_token_env_var="ORC_CODEX_MCP_TOKEN"`);
     if (opts.model) args.push("--model", opts.model);
     args.push("-");
 
