@@ -298,7 +298,7 @@ decisions, pointers. Identity is `(project, name)`; `name` is lowercase-hyphenat
 to the skill. `priority` (0-100, or unset) says how important and broadly relevant the memory
 is; `context` lists the top `context.layer1_memory_limit` (30) by priority. Every write is
 recorded in `memory_changes` with the native session id (`ORC_SESSION_ID` /
-`CLAUDE_CODE_SESSION_ID`; HTTP MCP cannot see it). See the `orc-memory` skill.
+`CLAUDE_CODE_SESSION_ID`; HTTP MCP cannot see it). See `orc-platform` references/memory.md.
 
 ## Config
 
@@ -388,7 +388,7 @@ The split that makes this work: **the graph is deterministic, only the nodes are
     "build":  { "kind": "agent", "skill": "$task.skill_name", "task_status": "doing",
                 "outcomes": ["submitted", "blocked"], "on_error": "blocked" },
     "gate":   { "kind": "gate", "routing": "all" },
-    "verify": { "kind": "agent", "skill": "orc-reviewer", "role": "reviewer", "max_visits": 4 },
+    "verify": { "kind": "agent", "skill": "orc-sdlc", "role": "reviewer", "max_visits": 4 },
     "signoff":{ "kind": "human", "prompt": "Approve?", "task_status": "review" },
     "done":   { "kind": "terminal", "task_status": "done" }
   },
@@ -582,4 +582,4 @@ Skills live in `skills/*/SKILL.md` (built-in, shipped with ORC) and `~/.orc/skil
 
 ## Knowledge learning
 
-Read [docs/knowledge-loop.md](docs/knowledge-loop.md) when modifying memory, KB digest, KB comment or instruction-history code. Reuse lessons through normal `search` / `kb_search` and `skill_read`; do not add KB content/index to startup context or inject KB summaries into runner prompts. At work-unit completion use `orc-memory-review`. Skill edits activate without an evaluation gate, retain history/audit and have manual revert.
+Read [docs/knowledge-loop.md](docs/knowledge-loop.md) when modifying memory, KB digest, KB comment or instruction-history code. Reuse lessons through normal `search` / `kb_search` and `skill_read`; do not add KB content/index to startup context or inject KB summaries into runner prompts. At work-unit completion use the delivery section of `orc-sdlc` references/review-and-delivery.md. Skill edits activate without an evaluation gate, retain history/audit and have manual revert.

@@ -94,13 +94,30 @@ test.describe("Skills", () => {
       rmSync(temporary, { recursive: true, force: true });
     }
   });
-  test("builtin skills list loads and rows are visible", async ({ page }) => {
+  test("two built-in entry points load their references and survive reopening", async ({
+    page,
+    request,
+  }) => {
+    const { skills } = await apiGet<{ skills: SkillMeta[] }>(request, "/skills?source=builtin");
+    expect(skills.map((skill) => skill.name).sort()).toEqual(["orc-platform", "orc-sdlc"]);
     await gotoView(page, "skills");
     await expect(page.getByTestId("view-title")).toHaveText(/skills/i);
-
-    // At least one skill row should be visible
-    const rows = page.locator('[data-testid="skill-row"]');
-    await expect(rows.first()).toBeVisible();
+    await page.locator('[data-testid="skill-row"][data-skill-name="orc-platform"]').click();
+    await page
+      .locator('[data-testid="skill-file"][data-file-name="references/knowledge.md"]')
+      .click();
+    await page.getByTestId("markdown-mode-read").click();
+    await expect(page.getByTestId("markdown-preview")).toContainText(
+      "Configure and verify embeddings",
+    );
+    await page.reload();
+    await page.getByTestId("markdown-mode-read").click();
+    await expect(page.getByTestId("markdown-preview")).toContainText(
+      "Configure and verify embeddings",
+    );
+    await page.getByTestId("skill-show-entry").click();
+    await expect(page.getByTestId("markdown-preview")).toContainText("Operate ORC");
+    await page.screenshot({ path: "../../output/playwright/two-skill-entry-points.png" });
   });
 
   test("create user skill via UI then row and source badge appear", async ({ page }) => {

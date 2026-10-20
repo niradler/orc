@@ -27,8 +27,8 @@ describe("GET /skills", () => {
     };
     expect(body.skills.length).toBeGreaterThan(0);
     const names = body.skills.map((s) => s.name);
-    expect(names).toContain("orc-coder");
-    expect(names).toContain("orc-worker-base");
+    expect(names).toContain("orc-sdlc");
+    expect(names).toContain("orc-platform");
   });
 
   test("filters by source=builtin", async () => {
@@ -39,10 +39,10 @@ describe("GET /skills", () => {
   });
 
   test("keyword search with q param", async () => {
-    const res = await req(app, "GET", "/skills?q=coder");
+    const res = await req(app, "GET", "/skills?q=sdlc");
     expect(res.status).toBe(200);
     const body = (await res.json()) as { skills: { name: string }[] };
-    expect(body.skills.some((s) => s.name.includes("coder"))).toBe(true);
+    expect(body.skills.some((s) => s.name.includes("sdlc"))).toBe(true);
   });
 
   test("returns empty for no match", async () => {
@@ -64,15 +64,15 @@ describe("GET /skills", () => {
 
 describe("GET /skills/:name", () => {
   test("reads a built-in skill", async () => {
-    const res = await req(app, "GET", "/skills/orc-coder");
+    const res = await req(app, "GET", "/skills/orc-sdlc");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       name: string;
       content: string;
       references: unknown[];
     };
-    expect(body.name).toBe("orc-coder");
-    expect(body.content).toBe((readSkill("orc-coder") as SkillFull).content);
+    expect(body.name).toBe("orc-sdlc");
+    expect(body.content).toBe((readSkill("orc-sdlc") as SkillFull).content);
     expect(Array.isArray(body.references)).toBe(true);
   });
 
@@ -82,10 +82,10 @@ describe("GET /skills/:name", () => {
   });
 
   test("content excludes frontmatter", async () => {
-    const res = await req(app, "GET", "/skills/orc-coder");
+    const res = await req(app, "GET", "/skills/orc-sdlc");
     const body = (await res.json()) as { content: string };
-    expect(body.content).not.toContain("---");
-    expect(body.content).not.toContain("name: orc-coder");
+    expect(body.content).not.toMatch(/^---\r?\n/);
+    expect(body.content).not.toContain("name: orc-sdlc");
   });
 });
 
@@ -100,13 +100,13 @@ describe("skill read counts", () => {
   };
 
   test("should attribute reads to the X-Orc-Source caller", async () => {
-    await req(app, "GET", "/skills/orc-tasks", undefined, { "X-Orc-Source": "cli" });
-    await req(app, "GET", "/skills/orc-tasks", undefined, { "X-Orc-Source": "ui" });
-    await req(app, "GET", "/skills/orc-tasks", undefined, { "X-Orc-Source": "something-else" });
-    await req(app, "GET", "/skills/orc-tasks");
+    await req(app, "GET", "/skills/orc-platform", undefined, { "X-Orc-Source": "cli" });
+    await req(app, "GET", "/skills/orc-platform", undefined, { "X-Orc-Source": "ui" });
+    await req(app, "GET", "/skills/orc-platform", undefined, { "X-Orc-Source": "something-else" });
+    await req(app, "GET", "/skills/orc-platform");
     await req(app, "GET", "/skills/does-not-exist-xyz", undefined, { "X-Orc-Source": "cli" });
-    const res = await req(app, "GET", "/skills?q=orc-tasks");
-    const skill = ((await res.json()) as Listed).skills.find((s) => s.name === "orc-tasks");
+    const res = await req(app, "GET", "/skills?q=orc-platform");
+    const skill = ((await res.json()) as Listed).skills.find((s) => s.name === "orc-platform");
     expect(skill?.reads_by_source).toEqual({ mcp: 0, cli: 1, api: 2, ui: 1 });
     expect(skill?.read_count).toBe(3);
   });

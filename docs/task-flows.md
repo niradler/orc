@@ -213,20 +213,28 @@ or separate flow per development task type is needed. CLI/MCP use the same catal
 | `orc-review-only` | Review existing work; approve, request changes, or pause when evidence is insufficient. |
 
 
-Development uses the task's assigned skill, defaulting to orc-coder when omitted.
-Its feature/refactor playbooks plan within the work unit; reported defects use
-orc-bugfix. Shared worker rules favor existing components and the smallest complete
-change while retaining security, validation, error handling and accessibility.
+Development uses the task's assigned skill, defaulting to `orc-sdlc` when omitted.
+Its references cover proportional planning, features/refactors, debugging and
+validation. Review nodes use the same entry point with an explicit independent
+reviewer role. References load on demand; the entry point is injected once per
+prompt. Retired skill names remain named-read compatibility routes for saved tasks
+and frozen flow definitions, while new built-in templates use the two-skill layout.
 The human-sign-off workflow uses the same build and review contract. Human feedback
 returns to build while max_review_rounds permits; spent budgets pause for intervention.
 Approval completes the task, not a merge or deployment.
 
 ### Knowledge at the right time
 
-Every agent node receives the existing orc-memory-review instructions and explicit
-project/session identity, including reviewers and resumed workers. Project-edited
-skill instructions are respected. The backend receives the same lifecycle through
+Every agent node receives the effective `orc-sdlc` entry point and explicit
+project/session identity, including reviewers and resumed workers. It directs
+agents to the delivery and knowledge-review reference before any outcome.
+Project-edited skill instructions are respected. The backend receives the same lifecycle through
 the shared flow runner; no host-specific hook is required for this prompt delivery.
+
+Applicable authored retired worker/coder and knowledge-review instructions are retained
+for workers; reviewers receive authored reviewer/knowledge instructions instead.
+Supplements identify scope/change and refresh on resume. Unmodified retired playbooks
+are not injected, and conflicting authored instructions must be surfaced explicitly.
 
 | Moment | Responsibility |
 | --- | --- |

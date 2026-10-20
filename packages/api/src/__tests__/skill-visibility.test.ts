@@ -99,34 +99,34 @@ test("should persist discovery visibility without changing reads, flows, user sk
   expect(
     (
       await req(app, "PUT", "/skills/settings/visibility", {
-        hidden_builtins: ["orc-coder", "orc-worker-base", "orc-coder"],
+        hidden_builtins: ["orc-sdlc", "orc-platform", "orc-sdlc"],
       })
     ).status,
   ).toBe(200);
   const raw = JSON.parse(readFileSync(globalConfigPath(), "utf8"));
-  expect(raw.skills.hidden_builtins).toEqual(["orc-coder", "orc-worker-base"]);
+  expect(raw.skills.hidden_builtins).toEqual(["orc-platform", "orc-sdlc"]);
   expect(raw.visibility_test_marker).toEqual({ value: "preserved" });
   const catalog = await (await req(app, "GET", "/skills?scope=global")).json();
-  expect(catalog.skills.some((skill: { name: string }) => skill.name === "orc-coder")).toBe(false);
+  expect(catalog.skills.some((skill: { name: string }) => skill.name === "orc-sdlc")).toBe(false);
   expect(catalog.skills.some((skill: { name: string }) => skill.name === name)).toBe(true);
-  expect(listSkills().some((skill) => skill.name === "orc-coder")).toBe(false);
-  expect(await executeTool("skill_list", { scope: "global" })).not.toContain("orc-coder");
-  expect(await executeTool("skill_read", { name: "orc-coder", scope: "global" })).toContain(
-    "# orc-coder",
+  expect(listSkills().some((skill) => skill.name === "orc-sdlc")).toBe(false);
+  expect(await executeTool("skill_list", { scope: "global" })).not.toContain("orc-sdlc");
+  expect(await executeTool("skill_read", { name: "orc-sdlc", scope: "global" })).toContain(
+    "# orc-sdlc",
   );
-  expect(readSkill("orc-worker-base")).not.toBeNull();
-  expect((await req(app, "GET", "/skills/orc-coder?scope=global&ref=SKILL.md")).status).toBe(200);
+  expect(readSkill("orc-platform")).not.toBeNull();
+  expect((await req(app, "GET", "/skills/orc-sdlc?scope=global&ref=SKILL.md")).status).toBe(200);
   const managed = await (await req(app, "GET", "/skills?include_hidden=true&scope=global")).json();
   expect(
-    managed.skills.find((skill: { name: string }) => skill.name === "orc-coder").discovery_hidden,
+    managed.skills.find((skill: { name: string }) => skill.name === "orc-sdlc").discovery_hidden,
   ).toBe(true);
   expect(await (await req(app, "GET", "/flows")).json()).toEqual(flowsBefore);
   // Simulate a separate MCP process having saved a new policy while API config is cached.
   updateGlobalConfig((config) => {
-    config.skills = { hidden_builtins: ["orc-reviewer"] };
+    config.skills = { hidden_builtins: ["orc-platform"] };
   });
-  expect(await executeTool("skill_list", { scope: "global" })).toContain("orc-coder");
-  expect(await executeTool("skill_list", { scope: "global" })).not.toContain("orc-reviewer");
+  expect(await executeTool("skill_list", { scope: "global" })).toContain("orc-sdlc");
+  expect(await executeTool("skill_list", { scope: "global" })).not.toContain("orc-platform");
 });
 
 test("should preserve global and project authored overrides during hide-all", async () => {
@@ -135,8 +135,8 @@ test("should preserve global and project authored overrides during hide-all", as
   ).json();
   const history = new SkillHistory(getSqlite());
   for (const [name, project_id] of [
-    ["orc-coder", null],
-    ["orc-reviewer", project.id],
+    ["orc-sdlc", null],
+    ["orc-platform", project.id],
   ] as const) {
     const raw = readSkill(name, "SKILL.md") as SkillRefContent;
     history.update({
@@ -154,21 +154,21 @@ test("should preserve global and project authored overrides during hide-all", as
     (await req(app, "PUT", "/skills/settings/visibility", { hidden_builtins: allBuiltins })).status,
   ).toBe(200);
   const global = await executeTool("skill_list", { scope: "global" });
-  expect(global).toContain("orc-coder");
-  expect(global).not.toContain("orc-reviewer");
+  expect(global).toContain("orc-sdlc");
+  expect(global).not.toContain("orc-platform");
   const scoped = await executeTool("skill_list", { project: project.name });
-  expect(scoped).toContain("orc-coder");
-  expect(scoped).toContain("orc-reviewer");
+  expect(scoped).toContain("orc-sdlc");
+  expect(scoped).toContain("orc-platform");
   const apiScoped = await (await req(app, "GET", `/skills?project_id=${project.id}`)).json();
   expect(
     apiScoped.skills
       .filter((skill: { source: string }) => skill.source === "builtin")
       .map((skill: { name: string }) => skill.name),
-  ).toEqual(["orc-coder", "orc-reviewer"]);
-  expect(history.read("orc-reviewer", project.id)?.content).toContain("Authored override");
-  const updated = history.read("orc-reviewer", project.id, "SKILL.md") as SkillRefContent;
+  ).toEqual(["orc-platform", "orc-sdlc"]);
+  expect(history.read("orc-platform", project.id)?.content).toContain("Authored override");
+  const updated = history.read("orc-platform", project.id, "SKILL.md") as SkillRefContent;
   history.update({
-    skill_name: "orc-reviewer",
+    skill_name: "orc-platform",
     project_id: project.id,
     content: updated.content.replace(
       /description: .*\n/,
@@ -179,7 +179,7 @@ test("should preserve global and project authored overrides during hide-all", as
   });
   expect(
     await executeTool("skill_list", { project: project.name, q: "Unique authored visibility" }),
-  ).toContain("orc-reviewer");
+  ).toContain("orc-platform");
   expect(
     (await req(app, "PUT", "/skills/settings/visibility", { hidden_builtins: [] })).status,
   ).toBe(200);
@@ -193,11 +193,11 @@ test("should retain retired hidden names during edits and fail loudly on corrupt
   expect(
     (
       await req(app, "PUT", "/skills/settings/visibility", {
-        hidden_builtins: ["retired-builtin", "orc-coder"],
+        hidden_builtins: ["retired-builtin", "orc-sdlc"],
       })
     ).status,
   ).toBe(200);
-  expect(hiddenBuiltinSkills()).toEqual(["orc-coder", "retired-builtin"]);
+  expect(hiddenBuiltinSkills()).toEqual(["orc-sdlc", "retired-builtin"]);
   const path = globalConfigPath();
   const saved = readFileSync(path, "utf8");
   try {

@@ -104,7 +104,7 @@ export function taskCommand() {
     .option("--no-project", "Create without project")
     .option("--priority <p>", "Priority (low/normal/high/critical)", "normal")
     .option("-b, --body <text>", "Task body")
-    .option("--skill <name>", "Skill for agent execution (e.g. orc-coder)")
+    .option("--skill <name>", "Skill for agent execution (e.g. orc-sdlc)")
     .option("--backend <backend>", "Agent backend (claude|codex|cursor)")
     .option("--model <model>", "Model override for the agent (e.g. gpt-5.4)")
     .option("--flow <name>", "Flow graph to run (default: orc-default)")

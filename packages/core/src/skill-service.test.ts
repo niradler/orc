@@ -205,16 +205,13 @@ describe("multi-file skill bundles", () => {
 describe("scanSkills", () => {
   test("finds built-in skills", () => {
     const skills = scanSkills();
-    const names = skills.map((s) => s.name);
-    expect(names).toContain("orc-coder");
-    expect(names).toContain("orc-worker-base");
-    expect(names).toContain("orc-reviewer");
-    expect(names).toContain("orc-gateway");
+    const names = skills.filter((s) => s.source === "builtin").map((s) => s.name);
+    expect(names).toEqual(["orc-platform", "orc-sdlc"]);
   });
 
   test("built-in skills have source=builtin", () => {
     const skills = scanSkills();
-    const coder = skills.find((s) => s.name === "orc-coder");
+    const coder = skills.find((s) => s.name === "orc-sdlc");
     expect(coder).toBeTruthy();
     expect(coder?.source).toBe("builtin");
   });
@@ -228,7 +225,7 @@ describe("scanSkills", () => {
 
   test("skill meta has correct fields", () => {
     const skills = scanSkills();
-    const coder = skills.find((s) => s.name === "orc-coder");
+    const coder = skills.find((s) => s.name === "orc-sdlc");
     expect(coder).toBeTruthy();
     expect(coder?.description).toBeTruthy();
     expect(coder?.path).toContain("SKILL.md");
@@ -236,15 +233,15 @@ describe("scanSkills", () => {
   });
 
   test("user skills cannot shadow a built-in skill", () => {
-    const shadowDir = join(getUserSkillsDir(), "orc-worker-base");
+    const shadowDir = join(getUserSkillsDir(), "orc-platform");
     expect(existsSync(shadowDir)).toBe(false);
-    const content = "---\nname: orc-worker-base\ndescription: Shadow\n---\n\nInjected";
-    expect(() => createSkill("orc-worker-base", content)).toThrow("already exists");
+    const content = "---\nname: orc-platform\ndescription: Shadow\n---\n\nInjected";
+    expect(() => createSkill("orc-platform", content)).toThrow("already exists");
     mkdirSync(shadowDir, { recursive: true });
     try {
       writeFileSync(join(shadowDir, "SKILL.md"), content);
       const broken: { path: string; error: string }[] = [];
-      const base = scanSkills(broken).find((s) => s.name === "orc-worker-base");
+      const base = scanSkills(broken).find((s) => s.name === "orc-platform");
       expect(base?.source).toBe("builtin");
       expect(broken.some((b) => b.path.startsWith(shadowDir))).toBe(true);
     } finally {
@@ -358,15 +355,15 @@ Body`,
   });
 
   test("a legacy skill cannot shadow a built-in skill", () => {
-    const dir = join(getUserSkillsDir(), "orc-worker-base");
+    const dir = join(getUserSkillsDir(), "orc-platform");
     mkdirSync(dir, { recursive: true });
     try {
       writeFileSync(
         join(dir, "SKILL.md"),
-        "---\nname: orc-worker-base\ndescription: Use when: shadowing\n---\nInjected",
+        "---\nname: orc-platform\ndescription: Use when: shadowing\n---\nInjected",
       );
       const broken: { path: string; error: string }[] = [];
-      const base = scanSkills(broken).find((x) => x.name === "orc-worker-base");
+      const base = scanSkills(broken).find((x) => x.name === "orc-platform");
       expect(base?.source).toBe("builtin");
       expect(broken.some((b) => b.path.startsWith(dir))).toBe(true);
     } finally {
@@ -378,11 +375,31 @@ Body`,
 // ─── listSkills ──────────────────────────────────────────────────────────────
 
 describe("listSkills", () => {
+  test("routes platform domain queries to its entry point without advertising retired skills", () => {
+    for (const q of [
+      "memory",
+      "tasks",
+      "gateway",
+      "embedding",
+      "handoff",
+      "CLI",
+      "MCP",
+      "SSH",
+      "rules",
+      "GitHub",
+      "audit",
+      "tags",
+    ]) {
+      expect(listSkills({ source: "builtin", q, reload: true }).map((s) => s.name)).toEqual([
+        "orc-platform",
+      ]);
+    }
+  });
   test("returns all skills", () => {
     const skills = listSkills({ reload: true });
     expect(skills.length).toBeGreaterThan(0);
     const names = skills.map((s) => s.name);
-    expect(names).toContain("orc-coder");
+    expect(names).toContain("orc-sdlc");
   });
 
   test("filters by source", () => {
@@ -391,9 +408,9 @@ describe("listSkills", () => {
   });
 
   test("keyword search on name", () => {
-    const results = listSkills({ q: "coder", reload: true });
+    const results = listSkills({ q: "sdlc", reload: true });
     expect(results.length).toBeGreaterThan(0);
-    expect(results.some((s) => s.name.includes("coder"))).toBe(true);
+    expect(results.some((s) => s.name.includes("sdlc"))).toBe(true);
   });
 
   test("keyword search on description", () => {
@@ -416,13 +433,51 @@ describe("listSkills", () => {
 // ─── readSkill ───────────────────────────────────────────────────────────────
 
 describe("readSkill", () => {
+  test("legacy names stay readable without becoming discovery entries", () => {
+    reloadCache();
+    for (const name of [
+      "orc-coder",
+      "orc-worker-base",
+      "orc-reviewer",
+      "orc-memory",
+      "orc-handoff",
+    ]) {
+      expect(
+        listSkills({ source: "builtin", include_hidden: true }).some((s) => s.name === name),
+      ).toBe(false);
+      const skill = readSkill(name) as SkillFull;
+      expect(skill.name).toBe(name);
+      expect(skill.files.length).toBeGreaterThan(0);
+      const raw = readSkill(name, "SKILL.md") as SkillRefContent;
+      expect(parseFrontmatter(raw.content).frontmatter.name).toBe(name);
+    }
+    expect((readSkill("orc-handoff", "scripts/upload-session.py") as SkillRefContent).content).toBe(
+      (readSkill("orc-platform", "scripts/upload-session.py") as SkillRefContent).content,
+    );
+    expect(() => readSkill("orc-handoff", "../secret.md")).toThrow("Invalid");
+    expect(readSkill("constructor")).toBeNull();
+  });
+
+  test("entry points inventory supporting files without preloading them", () => {
+    for (const name of ["orc-platform", "orc-sdlc"]) {
+      const skill = readSkill(name) as SkillFull;
+      expect(skill.references.length).toBeGreaterThan(0);
+      for (const file of skill.references) {
+        const ref = readSkill(name, file.name) as SkillRefContent;
+        expect(ref.encoding).toBe("utf8");
+        expect(ref.content.length).toBeGreaterThan(0);
+        expect(skill.content).not.toContain(ref.content);
+      }
+    }
+  });
+
   test("reads a built-in skill", () => {
     reloadCache();
-    const skill = readSkill("orc-coder") as SkillFull;
+    const skill = readSkill("orc-sdlc") as SkillFull;
     expect(skill).toBeTruthy();
-    expect(skill.name).toBe("orc-coder");
+    expect(skill.name).toBe("orc-sdlc");
     expect(skill.content).toBe(
-      parseFrontmatter(readFileSync(join(getBuiltinSkillsDir(), "orc-coder", "SKILL.md"), "utf8"))
+      parseFrontmatter(readFileSync(join(getBuiltinSkillsDir(), "orc-sdlc", "SKILL.md"), "utf8"))
         .body,
     );
     expect(skill.source).toBe("builtin");
@@ -437,8 +492,8 @@ describe("readSkill", () => {
 
   test("content excludes frontmatter", () => {
     reloadCache();
-    const skill = readSkill("orc-coder") as SkillFull;
-    expect(skill.content).not.toContain("---");
+    const skill = readSkill("orc-sdlc") as SkillFull;
+    expect(skill.content).not.toMatch(/^---\r?\n/);
     expect(skill.content).not.toContain("name:");
   });
 });

@@ -138,7 +138,7 @@ try {
       title: "Implement expiry boundary",
       body: "Implement active() in subject.ts. Read and reuse existing scoped expiry knowledge before implementation; cite that reuse in a progress task comment. Record acceptance criteria, plan/progress and artifact/check evidence through task comments. Contract: null expiry remains active; expiry strictly greater than now is active; expiry equal to now or earlier is inactive. Run bun verify.ts. Review durable knowledge using audit_list and session_log before flow_report. Do not invent knowledge for quiet work units.\nReview subject.ts and verify.ts. Contract: null expiry remains active; expiry strictly greater than now is active; expiry equal to now or earlier is inactive. Run bun verify.ts and cite its observed result, relevant source file and concrete boundary input in flow_report summary. Workers may edit subject.ts; reviewers inspect and execute verification. Use orc-human-review's declared outcomes and complete the knowledge lifecycle with the supplied project and session ID.",
       project_id: project.id,
-      skill_name: "orc-coder",
+      skill_name: "orc-sdlc",
       agent_backend: backend,
       flow_name: "orc-human-review",
       required_review: true,

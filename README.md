@@ -197,6 +197,12 @@ The `--mcp-config` flag wires the host agent back to ORC's [HTTP MCP endpoint](#
 
 ## Connect your agent
 
+Lifecycle hooks and MCP registration are separate. The hook examples below record
+session activity; also register ORC in the client's supported MCP configuration
+using `orc mcp` (stdio) or `<origin>/mcp` (HTTP). Preserve existing servers and
+configure authentication privately. Verify tool discovery and a project-scoped
+`context` call in each client; installed hooks alone do not establish MCP access.
+
 ### Claude Code
 
 Add to `~/.claude/settings.json`:
@@ -309,17 +315,18 @@ The task loop automatically picks up queued tasks and spawns worker agents:
 
 ```bash
 # Create a task with a workflow and backend
-orc task add "Implement user auth" --skill orc-coder --backend claude --priority high
+orc task add "Implement user auth" --skill orc-sdlc --backend claude --priority high
 
 # Or batch-create with dependencies via MCP
 task_batch_create({ tasks: [
-  { title: "Design schema", skill_name: "orc-planner" },
-  { title: "Implement API",  skill_name: "orc-coder", blocked_by: [0] },
-  { title: "Review code",    skill_name: "orc-reviewer", blocked_by: [1] }
+  { ref: "design", title: "Design schema", skill_name: "orc-sdlc" },
+  { ref: "api", title: "Implement API", skill_name: "orc-sdlc", depends_on: ["design"] },
+  { ref: "tests", title: "Verify API integration", skill_name: "orc-sdlc", depends_on: ["api"] }
 ]})
 ```
 
 The loop handles concurrency, session resume on feedback, review round limits, stale claim cleanup, and backend routing.
+Each task's configured flow handles its review; a separate review task is unnecessary.
 
 Every task runs a **flow graph** (see [Task flows](#task-flows)); `orc-default` is the build → review → done pipeline described above.
 
@@ -464,7 +471,7 @@ The graph itself is deterministic; only the nodes are agents. That means loops, 
 ```bash
 orc flow list                                    # what graphs are available
 orc flow show orc-default              # nodes, edges, limits
-orc task add "Fix the flaky test" --flow orc-default --skill orc-bugfix
+orc task add "Fix the flaky test" --flow orc-default --skill orc-sdlc
 orc flow status <taskId>                         # active nodes + the ledger of outcomes
 orc flow resume <taskId> --outcome approved      # resolve a human gate
 orc flow halt <taskId>                           # stop it and kill live nodes
@@ -551,7 +558,7 @@ Same commands as Telegram. Create a Slack app at [api.slack.com/apps](https://ap
 
 ## Skills
 
-ORC ships with agent workflow skills and built-in skill templates for the task loop.
+ORC ships two entry-point skills. Their supporting references load only when needed; custom skills and packages remain supported.
 
 ### Install skills
 
@@ -560,21 +567,23 @@ ORC ships with agent workflow skills and built-in skill templates for the task l
 npx skills add niradler/orc --all
 
 # Or pick specific ones
-npx skills add niradler/orc --skill orc-session orc-tasks
+npx skills add niradler/orc --skill orc-platform orc-sdlc
 
 # Global install
 npx skills add niradler/orc --all -g
 ```
 
-### Agent workflow skills
+### Entry-point skills
 
-| Skill           | Triggers on                                                                |
-| --------------- | -------------------------------------------------------------------------- |
-| `orc-session`   | Session start, context compaction, resuming work                           |
-| `orc-tasks`     | Task creation, status updates, HITL review, task decomposition             |
-| `orc-memory`    | Short project facts, "remember this", "what did we decide"                 |
-| `orc-knowledge` | Searching indexed docs, managing knowledge collections                     |
-| `orc-gateway`   | Telegram/Slack setup, remote approval, live agent sessions                 |
+| Skill | Purpose |
+| --- | --- |
+| `orc-platform` | Operate ORC domains: setup/interfaces/auth, memory and maintained KBs/digests/embeddings, work/operations, sessions/SSH/Git/chat, rules and agent packages |
+| `orc-sdlc` | Requirements → risk/complexity classification → direct work or plan → implementation → tests/completeness → review/rework → authorized Git delivery, with shared learning throughout |
+
+Start with the relevant entry point and read only its selected reference. Platform
+guidance groups related domains while keeping memory, execution and rules independently
+loadable; SDLC has planning, development and review/delivery references. Clear low-risk
+work can execute directly; assigned managed nodes preserve roles and flow contracts.
 
 ### Built-in skill templates
 
@@ -585,7 +594,7 @@ On the **Skills** page, each built-in has an **Agent discovery** toggle, plus
 across the installation and defaults to visible. Hidden built-ins stay on the
 Skills page for management and remain readable by name, including supporting
 files; existing task flows continue to use them. User/imported skills and authored
-global/project instruction overrides remain discoverable.
+global/project instruction overrides of current skills remain discoverable.
 
 The policy is saved under `skills.hidden_builtins` in `~/.orc/config.json` and
 read afresh for discovery, including by existing MCP processes. `GET /api/skills`
@@ -595,16 +604,14 @@ omits hidden built-ins; `include_hidden=true` returns the management catalog wit
 API authentication. This installation-wide preference ignores project config.
 New built-ins default to visible until hidden explicitly.
 
-| Skill              | Type     | Purpose                                                                     |
-| ------------------ | -------- | --------------------------------------------------------------------------- |
-| `orc-worker-base`  | Base     | Default worker behavior - ORC awareness, status updates, deliverable format |
-| `orc-main-base`    | Base     | Orchestration agent - planning, decomposition, monitoring                   |
-| `orc-coder`        | Workflow | Implementation - understand, plan, implement, verify, submit                |
-| `orc-planner`      | Workflow | Task decomposition with dependencies and workflow assignment                |
-| `orc-reviewer`     | Workflow | Structured evaluation - correctness, tests, security, conventions           |
-| `orc-bugfix`       | Workflow | Bug investigation - reproduce, root-cause, fix, regression test             |
-| `orc-requirements` | Skill    | Requirements interview - outcome, criteria, constraints, scope              |
-| `orc-report`       | Skill    | Project status report - health summary, blockers, active work               |
+Retired built-in names (such as `orc-coder` and `orc-reviewer`) remain readable
+as compatibility routes for saved tasks, authored overrides and frozen flows, but
+are not additional discovery entries. New tasks and built-in flows use
+`orc-sdlc`; the node role selects implementation versus independent review.
+Applicable authored legacy worker/coder/reviewer/knowledge instructions remain
+role-scoped supplements with revision provenance, including on resume. Other authored
+legacy domain guidance is indexed from the canonical effective read and loads by name
+when relevant. Conflicts are surfaced rather than silently rewriting stored overlays.
 
 Add custom skills by creating a `SKILL.md` in `~/.orc/skills/my-workflow/SKILL.md`.
 

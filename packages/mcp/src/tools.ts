@@ -121,13 +121,13 @@ export const toolDefinitions = [
   {
     name: "audit_list",
     description:
-      "Review central knowledge audit entries, optionally by session_id. Removed memories survive in snapshot; result_ids identify replacements. Use at session end with orc-memory-review.",
+      "Review central knowledge audit entries, optionally by session_id. Removed memories survive in snapshot; result_ids identify replacements. Use with the delivery section of orc-sdlc references/review-and-delivery.md.",
     inputSchema: auditParams,
   },
   {
     name: "session_handoff",
     description:
-      "Move a Claude Code or Codex session to ORC. FIRST commit and push the intended changes. Report the pushed repository, branch and exact commit SHA, project name, source cwd and native session ID. Returns a single-use upload URL for native session files. Upload through HTTP; then use Sessions → Open in terminal. See orc-handoff skill.",
+      "Move a Claude Code or Codex session to ORC. FIRST commit and push the intended changes within the user's Git authorization. Report the pushed repository, branch and exact commit SHA, project name, source cwd and native session ID. Returns a single-use upload URL for native session files. Upload through HTTP; then use Sessions → Open in terminal. See orc-platform references/execution.md.",
     inputSchema: SessionHandoffInputSchema,
   },
   {
@@ -250,7 +250,7 @@ export const toolDefinitions = [
       skill_name: z
         .string()
         .optional()
-        .describe("Skill to use for agent execution (e.g. orc-coder)"),
+        .describe("Skill to use for agent execution (e.g. orc-sdlc)"),
       required_review: z
         .boolean()
         .optional()

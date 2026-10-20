@@ -71,7 +71,7 @@ beforeAll(() => {
   writeSkill(claudeDir, edited, "Edited body");
   writeSkill(codexDir, shared, "Shared body");
   symlinkSync(join(codexDir, shared), join(claudeDir, shared), "junction");
-  writeSkill(codexDir, "orc-coder", "Not the builtin");
+  writeSkill(codexDir, "orc-sdlc", "Not the builtin");
   mkdirSync(join(claudeDir, extra));
   writeFileSync(join(claudeDir, extra, "SKILL.md"), extraSkill);
   mkdirSync(join(codexDir, "broken"));
@@ -104,8 +104,8 @@ describe("local agent skill import", () => {
   });
 
   test("should report a name already in ORC with other content as a conflict", () => {
-    expect(find("codex", "orc-coder").status).toBe("conflict");
-    const result = importLocalAgentSkills([{ agent: "codex", name: "orc-coder" }], agents);
+    expect(find("codex", "orc-sdlc").status).toBe("conflict");
+    const result = importLocalAgentSkills([{ agent: "codex", name: "orc-sdlc" }], agents);
     expect(result.imported).toEqual([]);
     expect(result.skipped[0]?.reason).toBe("conflict");
   });

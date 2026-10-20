@@ -5,14 +5,14 @@ import type { FlowCondition, FlowNode } from "../flow.js";
 const review: FlowNode = {
   kind: "agent",
   description: "Review the artifact and evidence, then reconcile reusable knowledge",
-  skill: "orc-reviewer",
+  skill: "orc-sdlc",
   backend: "$task.agent_backend",
   role: "reviewer",
   task_status: "review",
   outcomes: ["approved", "changes_requested", "insufficient_evidence"],
   on_error: "review_failed",
   prompt:
-    "Review the actual artifact against acceptance criteria and trace affected callers. Report approved only with sufficient evidence, changes_requested for concrete defects, or insufficient_evidence when required checks cannot be performed. Complete this work unit's knowledge review before reporting. Do not change task status directly.",
+    "You are an independent reviewer. Read orc-sdlc references/review-and-delivery.md and review the actual artifact against acceptance criteria and connected callers. Do not implement the worker's fixes or approve your own implementation. Report approved only with sufficient evidence, changes_requested for concrete defects, or insufficient_evidence when required checks cannot be performed. Do not change task status directly.",
 };
 
 const rework: FlowCondition = {
@@ -71,7 +71,7 @@ const developmentLimits = {
 export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
   "orc-default": {
     name: "orc-default",
-    version: 2,
+    version: 3,
     description:
       "Development: understand, plan as needed, implement and verify, then independent review. Relevant memory and knowledge base guidance at start, rework and delivery.",
     entry: "build",
@@ -92,7 +92,7 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
   },
   "orc-human-review": {
     name: "orc-human-review",
-    version: 2,
+    version: 3,
     description:
       "Development with human sign-off: implement, verify and independently review, then wait for human approval. Feedback returns to implementation within the review budget.",
     entry: "build",
@@ -124,7 +124,7 @@ export const BUILTIN_FLOW_SOURCES: Record<string, unknown> = {
   },
   "orc-review-only": {
     name: "orc-review-only",
-    version: 2,
+    version: 3,
     description:
       "Review existing work: inspect the artifact, verify acceptance criteria and reconcile relevant knowledge. Approve, request changes or pause when evidence is missing.",
     entry: "review",

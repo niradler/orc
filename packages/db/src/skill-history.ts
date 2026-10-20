@@ -4,6 +4,7 @@ import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors"
 import { ulid } from "@orc/core/ids";
 import {
   type ListSkillsOpts,
+  legacySkillNames,
   listSkills,
   parseFrontmatter,
   readSkill,
@@ -171,15 +172,34 @@ export class SkillHistory {
     const base = readSkill(name, ref);
     if (!base) return null;
     const change = this.current(name, projectId);
-    if (!change || (ref && ref !== "SKILL.md")) return base;
-    if (ref) return { ...(base as SkillRefContent), content: change.raw, encoding: "utf8" };
+    if (ref && ref !== "SKILL.md") return base;
+    if (ref)
+      return change
+        ? { ...(base as SkillRefContent), content: change.raw, encoding: "utf8" }
+        : base;
+    const supplements = legacySkillNames(name).flatMap((alias) => {
+      const authored = this.current(alias, projectId);
+      return authored
+        ? [
+            `- ${alias}: ${authored.project_id === null ? "global" : "project"} scope, change ${authored.id}`,
+          ]
+        : [];
+    });
+    const withCompatibility = (skill: EffectiveSkill): EffectiveSkill =>
+      supplements.length
+        ? {
+            ...skill,
+            content: `${skill.content}\n\n## Scoped compatibility guidance available\nFor an operation covered by an authored retired skill below, read that skill by name in this same scope before acting. Apply only the relevant operation/assigned role; surface conflicting instructions rather than silently discarding either. Managed nodes receive their role-specific supplements automatically.\n${supplements.join("\n")}`,
+          }
+        : skill;
+    if (!change) return withCompatibility(base as EffectiveSkill);
     const parsed = parseFrontmatter(change.raw);
-    return {
+    return withCompatibility({
       ...(base as SkillFull),
       ...this.metadata(base as SkillFull, projectId),
       content: parsed.body,
       metadata: parsed.frontmatter.metadata,
-    };
+    });
   }
   history(name: string, projectId: string | null): SkillChange[] {
     const effective = this.current(name, projectId);

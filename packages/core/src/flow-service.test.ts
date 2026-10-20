@@ -77,7 +77,7 @@ describe("listFlows", () => {
       "orc-human-review",
       "orc-review-only",
     ]);
-    for (const name of BUILTIN_FLOW_NAMES) expect(readFlow(name)?.version).toBe(2);
+    for (const name of BUILTIN_FLOW_NAMES) expect(readFlow(name)?.version).toBe(3);
   });
   test("returns every builtin flow, and no builtin is broken", () => {
     const flows = listFlows();
