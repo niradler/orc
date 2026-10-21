@@ -1,3 +1,7 @@
+import type { JobAction, WebhookSubscription } from "@orc/core/job-actions";
+
+export type { JobAction, WebhookSubscription } from "@orc/core/job-actions";
+
 import type { components } from "./openapi.gen.js";
 
 export type { ScopeQuery } from "@orc/core/scope";
@@ -93,6 +97,8 @@ export type MemoryChange = components["schemas"]["MemoryChange"];
 export type MemoryListSort = "reads" | "recent" | "priority";
 
 export type Job = {
+  action?: JobAction;
+  webhooks?: WebhookSubscription[];
   id: string;
   project_id: string | null;
   name: string;
@@ -113,6 +119,8 @@ export type Job = {
 };
 
 export type JobRun = {
+  task_id?: string | null;
+  session_id?: string | null;
   id: string;
   job_id: string;
   status: JobStatus;
@@ -314,10 +322,13 @@ export type CreateMemoryInput = components["schemas"]["CreateMemory"];
 export type UpdateMemoryInput = Omit<components["schemas"]["UpdateMemory"], "project_id">;
 
 export type CreateJobInput = {
+  action?: JobAction;
+  webhooks?: WebhookSubscription[];
   name: string;
+  enabled?: boolean;
   project_id?: string;
   description?: string;
-  command: string;
+  command?: string;
   trigger_type: JobTriggerType;
   cron_expr?: string;
   watch_path?: string;
@@ -330,6 +341,8 @@ export type CreateJobInput = {
 };
 
 export type UpdateJobInput = {
+  action?: JobAction;
+  webhooks?: WebhookSubscription[];
   name?: string;
   description?: string;
   command?: string;

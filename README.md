@@ -197,6 +197,21 @@ The `--mcp-config` flag wires the host agent back to ORC's [HTTP MCP endpoint](#
 
 ## Connect your agent
 
+For coding-agent access, check the installed `spec` CLI bridge first (`spec --help`,
+`spec specs`). It can call ORC's MCP server without configuring MCP separately in
+each agent. Use an existing ORC registration or an inline endpoint for your selected
+installation:
+
+```sh
+spec call --mcp-http http://127.0.0.1:7700/mcp context --data '{"project":"my-app"}'
+spec call --mcp-http http://127.0.0.1:7700/mcp skill_read --data '{"name":"orc-sdlc","project":"my-app"}'
+```
+
+For authenticated servers, use existing secure secret references in spec configuration;
+do not put secrets in command arguments. Use `SPEC_NO_CACHE=1` when refreshing live
+context and effective skills. Direct MCP connections below remain supported when
+already configured. Check the CLI bridge before reporting ORC unavailable.
+
 Lifecycle hooks and MCP registration are separate. The hook examples below record
 session activity; also register ORC in the client's supported MCP configuration
 using `orc mcp` (stdio) or `<origin>/mcp` (HTTP). Preserve existing servers and
@@ -515,12 +530,40 @@ orc job add on-change --command "bun run lint"      --trigger watch --watch "./s
 orc job add on-push   --command "bun run ci"        --trigger webhook
 ```
 
+Jobs separate **what runs** from **when it runs**. Choose **Run command**,
+**Run agent**, or **Create task** in the dashboard. Command is required only for
+Run command. Agent jobs save instructions, backend, optional model and explicit
+tool approval; each run links to its tracked session. Task jobs save a task title
+and instructions and link to the created task. **Start the task flow automatically**
+is off by default, so generated tasks wait for a manual flow start.
+The CLI accepts typed actions through `--action-config <json>`.
+
+New jobs are disabled by default. Select **Enable this job immediately** during
+creation or pass `orc job add ... --enable` to opt in. Jobs supports enable/disable
+directly in the list and for selected rows. Projects shares the selection toolbar
+for activate, pause and archive actions; select-all applies only to displayed rows.
+Failed bulk updates remain selected so you can retry them.
+
 ### Webhooks
 
-The **Webhooks** page creates signed HTTP endpoints that trigger enabled jobs. Every
-accepted JSON payload is passed unchanged to the job on stdin; bounded metadata is
-also available as `ORC_WEBHOOK_*` environment variables. Delivery history stores
-event metadata and a payload hash, not the payload body or signing secret.
+Open **Activity → Webhooks** to see all configured event sources and their connected
+jobs. Create a source without a job, copy its URL and one-time signing secret, then
+register them with the provider. Sources belong to the selected project, or are
+shared across projects when created in All projects.
+
+In **Jobs → New job** (or Edit), choose **Webhook** as the trigger, select an
+existing source or create one inline, and set this job's event/action filters.
+One source can trigger multiple enabled jobs, each with its own filters and action.
+The Webhooks page shows source enablement, connected jobs and recent deliveries,
+including individual run results and links to generated tasks or agent sessions.
+Deleting a job disconnects it while preserving the reusable source.
+
+For command jobs, accepted JSON is passed unchanged on stdin; bounded metadata is
+also available as `ORC_WEBHOOK_*` environment variables. Agent and task jobs receive
+up to 50,000 characters of event data, explicitly marked as untrusted input, alongside
+the configured instructions. Delivery history stores event metadata and a payload
+hash, not the payload body or signing secret; generated tasks and agent prompts can
+contain the supplied event data.
 
 Generic endpoints verify `X-Orc-Signature-256: sha256=<HMAC-SHA256 of the raw body>`.
 Use `X-Orc-Event` for event filtering and `X-Orc-Delivery` (or

@@ -6769,7 +6769,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    enabled?: boolean | null;
+                    enabled?: "true" | "false";
                     project_id?: string;
                     limit?: number;
                 };
@@ -8122,6 +8122,322 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/webhooks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    project_id?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Webhooks */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            webhooks: {
+                                id: string;
+                                name: string;
+                                /** @enum {string} */
+                                provider: "generic" | "github";
+                                job_id: string | null;
+                                project_id: string | null;
+                                subscriptions: {
+                                    job_id: string;
+                                    name: string;
+                                    enabled: boolean;
+                                    events: string[];
+                                    actions: string[];
+                                }[];
+                                token: string;
+                                events: string[];
+                                actions: string[];
+                                enabled: boolean;
+                                /** Format: date-time */
+                                created_at: string;
+                                /** Format: date-time */
+                                updated_at: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        name: string;
+                        /** @enum {string} */
+                        provider: "generic" | "github";
+                        job_id?: string;
+                        project_id?: string | null;
+                        /** @default [] */
+                        events?: string[];
+                        /** @default [] */
+                        actions?: string[];
+                        /** @default true */
+                        enabled?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Secret is shown once */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            provider: "generic" | "github";
+                            job_id: string | null;
+                            project_id: string | null;
+                            subscriptions: {
+                                job_id: string;
+                                name: string;
+                                enabled: boolean;
+                                events: string[];
+                                actions: string[];
+                            }[];
+                            token: string;
+                            events: string[];
+                            actions: string[];
+                            enabled: boolean;
+                            /** Format: date-time */
+                            created_at: string;
+                            /** Format: date-time */
+                            updated_at: string;
+                            secret: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/webhooks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        name?: string;
+                        /** @enum {string} */
+                        provider?: "generic" | "github";
+                        job_id?: string;
+                        project_id?: string | null;
+                        /** @default [] */
+                        events?: string[];
+                        /** @default [] */
+                        actions?: string[];
+                        /** @default true */
+                        enabled?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            provider: "generic" | "github";
+                            job_id: string | null;
+                            project_id: string | null;
+                            subscriptions: {
+                                job_id: string;
+                                name: string;
+                                enabled: boolean;
+                                events: string[];
+                                actions: string[];
+                            }[];
+                            token: string;
+                            events: string[];
+                            actions: string[];
+                            enabled: boolean;
+                            /** Format: date-time */
+                            created_at: string;
+                            /** Format: date-time */
+                            updated_at: string;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/api/webhooks/{id}/rotate-secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Secret is shown once */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            secret: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/webhooks/{id}/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deliveries */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            deliveries: {
+                                id: string;
+                                webhook_id: string;
+                                delivery_key: string;
+                                event: string;
+                                action: string | null;
+                                repository: string | null;
+                                payload_hash: string;
+                                /** @enum {string} */
+                                status: "ignored" | "running" | "success" | "failed";
+                                job_run_id: string | null;
+                                error: string | null;
+                                /** Format: date-time */
+                                created_at: string;
+                                /** Format: date-time */
+                                updated_at: string;
+                                runs: {
+                                    job_id: string;
+                                    job_run_id: string;
+                                    status: string;
+                                    task_id: string | null;
+                                    session_id: string | null;
+                                }[];
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -8755,6 +9071,35 @@ export interface components {
             name: string;
             description: string | null;
             command: string;
+            action: {
+                /** @enum {string} */
+                type: "command";
+                command: string;
+            } | {
+                /** @enum {string} */
+                type: "agent";
+                prompt: string;
+                backend: string;
+                model?: string;
+                /** @default false */
+                auto_approve: boolean;
+            } | {
+                /** @enum {string} */
+                type: "task";
+                title: string;
+                /** @default  */
+                body: string;
+                /** @default false */
+                start_automatically: boolean;
+                flow_name?: string;
+            };
+            webhooks: {
+                webhook_id: string;
+                /** @default [] */
+                events: string[];
+                /** @default [] */
+                actions: string[];
+            }[];
             /** @enum {string} */
             trigger_type: "one-shot" | "cron" | "watch" | "webhook" | "manual" | "bridge-msg";
             cron_expr: string | null;
@@ -8780,10 +9125,41 @@ export interface components {
             name: string;
             description?: string;
             /** @description Shell command executed via `sh -c`. Runs with the server's privileges. */
-            command: string;
+            command?: string;
+            action?: {
+                /** @enum {string} */
+                type: "command";
+                command: string;
+            } | {
+                /** @enum {string} */
+                type: "agent";
+                prompt: string;
+                backend: string;
+                model?: string;
+                /** @default false */
+                auto_approve: boolean;
+            } | {
+                /** @enum {string} */
+                type: "task";
+                title: string;
+                /** @default  */
+                body: string;
+                /** @default false */
+                start_automatically: boolean;
+                flow_name?: string;
+            };
+            webhooks?: {
+                webhook_id: string;
+                /** @default [] */
+                events: string[];
+                /** @default [] */
+                actions: string[];
+            }[];
             /** @enum {string} */
             trigger_type: "one-shot" | "cron" | "watch" | "webhook" | "manual" | "bridge-msg";
             cron_expr?: string;
+            /** @default false */
+            enabled: boolean;
             watch_path?: string;
             /** @default 300 */
             timeout_secs: number;
@@ -8809,6 +9185,35 @@ export interface components {
             name?: string;
             description?: string;
             command?: string;
+            action?: {
+                /** @enum {string} */
+                type: "command";
+                command: string;
+            } | {
+                /** @enum {string} */
+                type: "agent";
+                prompt: string;
+                backend: string;
+                model?: string;
+                /** @default false */
+                auto_approve: boolean;
+            } | {
+                /** @enum {string} */
+                type: "task";
+                title: string;
+                /** @default  */
+                body: string;
+                /** @default false */
+                start_automatically: boolean;
+                flow_name?: string;
+            };
+            webhooks?: {
+                webhook_id: string;
+                /** @default [] */
+                events: string[];
+                /** @default [] */
+                actions: string[];
+            }[];
             /** @enum {string} */
             trigger_type?: "one-shot" | "cron" | "watch" | "webhook" | "manual" | "bridge-msg";
             cron_expr?: string;
@@ -8829,6 +9234,8 @@ export interface components {
         JobRun: {
             id: string;
             job_id: string;
+            task_id: string | null;
+            session_id: string | null;
             /** @enum {string} */
             status: "pending" | "running" | "success" | "failed" | "cancelled" | "skipped";
             trigger_by: string | null;

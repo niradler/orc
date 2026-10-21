@@ -291,7 +291,15 @@ export type ManagedWebhook = {
   id: string;
   name: string;
   provider: "generic" | "github";
-  job_id: string;
+  job_id: string | null;
+  project_id: string | null;
+  subscriptions: {
+    job_id: string;
+    name: string;
+    enabled: boolean;
+    events: string[];
+    actions: string[];
+  }[];
   token: string;
   events: string[];
   actions: string[];
@@ -309,6 +317,13 @@ export type WebhookDelivery = {
   payload_hash: string;
   status: "ignored" | "running" | "success" | "failed";
   job_run_id: string | null;
+  runs: {
+    job_id: string;
+    job_run_id: string;
+    status: string;
+    task_id: string | null;
+    session_id: string | null;
+  }[];
   error: string | null;
   created_at: string;
   updated_at: string;
@@ -316,7 +331,8 @@ export type WebhookDelivery = {
 export type CreateWebhookInput = {
   name: string;
   provider: "generic" | "github";
-  job_id: string;
+  job_id?: string;
+  project_id?: string | null;
   events?: string[];
   actions?: string[];
   enabled?: boolean;

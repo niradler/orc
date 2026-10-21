@@ -21,6 +21,19 @@ packages/
 
 Data flow: `Agent → MCP → API → DB`. CLI goes via `CLI → SDK → API → DB`.
 
+## ORC process access
+
+Check `spec --help` and `spec specs` before concluding ORC is unavailable. The
+spec CLI bridges MCP across coding agents; per-agent MCP configuration is not a
+prerequisite. Use an existing ORC registration or an inline source such as
+`spec call --mcp-http http://localhost:7701/mcp context --data '{"project":"orc"}'`
+for this checkout's running dev API. Verify the selected installation/port first.
+Call `context` first, then `skill_read` for effective `orc-sdlc`, discover other
+skills and read supporting refs on demand. Direct MCP tools may be used when
+already connected. Report a gap only after checking available CLI bridge/direct
+access; preserve authorization and never substitute stale skill text. Keep
+credentials in existing secure configuration/environment references, not argv.
+
 ## Tech Stack
 
 - **Runtime**: Bun (single binary, native SQLite)
@@ -153,6 +166,14 @@ React SPA replacing the removed TUI. Same feature surface - Tasks, Kanban, Jobs,
 - **Flows**: the flow run panel in the task sheet and the `/flows` browser read `GET /tasks/{id}/flow` and `GET /flows`. The graph is drawn by hand (`src/lib/flow-graph.ts` - a pure, unit-tested layered layout, no graph library) so loopbacks are visible as edges that go backwards. See [docs/task-flows.md](docs/task-flows.md#in-the-web-dashboard).
 - **API limit**: task list max is 100 per request (API enforces `max: 100` via Zod)
 
+Resource-list standard: provide row selection and bulk actions using shared
+`useListSelection`, `BulkActionBar`, and `applyBulkAction` (see DESIGN.md).
+Jobs and Projects implement the pattern. Select only displayed rows, reset on
+project/filter changes, retain failed entries for retry, and report partial success.
+Do not make users open individual editors for routine status changes. New jobs
+are disabled unless the creator explicitly enables them; preserve this API/CLI/UI
+contract and allow webhook setup while disabled.
+
 ### Two ways to run the web UI
 
 | Mode                           | When                                                   | How                                                                                                                                      |
@@ -245,6 +266,20 @@ Two rules that are easy to get wrong:
 A backend may implement the optional `describe()` to report its kind, what it requires, and what it resolved to. Anything without it is still probed, just with less detail.
 
 **Job trigger types**: `one-shot | cron | watch | webhook | manual | bridge-msg`
+
+**Job actions**: `command | agent | task` in `jobs.action`. Legacy jobs with no
+action use their existing command. Only command actions require a shell command.
+Agent runs link `job_runs.session_id` to their tracked session; task runs link
+`job_runs.task_id`. Task action auto-start defaults off (`tasks.auto_start=false`),
+which excludes the generated backlog task from automatic pickup while allowing a
+manual flow start. Existing tasks retain automatic eligibility.
+
+**Reusable webhooks**: sources are independent of jobs, project-scoped or global.
+`webhook_subscriptions` connects sources to jobs with per-job events/actions.
+Signed deliveries reserve all matching enabled-job runs atomically and deduplicate
+per source; `webhook_delivery_runs` records each result. Create/select sources
+inside Jobs; manage all sources from Activity → Webhooks. Keep source secrets
+one-time and encrypted; validate subscription project membership on job writes.
 
 > `repeat` was removed - use `cron` with a 6-field expression for sub-minute intervals (e.g. `*/30 * * * * *` = every 30 s).
 

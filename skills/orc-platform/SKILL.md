@@ -6,8 +6,12 @@ description: "Install and use ORC: CLI/API/MCP, auth/settings, projects, tasks/f
 # Operate ORC
 
 Select the intended installation and readable project name; do not assume the
-configured active project matches the current repository. For connected work call
-`context` first. Use current tool schemas and installed CLI help as the operational
+configured active project matches the current repository. Check the installed `spec`
+CLI and registered specs first; it bridges MCP without configuring each coding agent.
+Use an ORC registration or an inline MCP endpoint/secure existing stdio launcher.
+Direct MCP tools can also be used when already connected. Do not report ORC as
+unavailable just because direct tools are absent; check the bridge before giving up.
+Call `context` first. Use current tool schemas and installed CLI help as the operational
 contract. Report missing capabilities rather than inventing calls or changing the
 installation as a side effect.
 

@@ -5,9 +5,15 @@ description: "Assess and execute engineering work on ORC-backed projects: choose
 
 # Choose the process that completes the task
 
-Read repository instructions and the current handoff. Select the readable project
-name and call `context` first when connected; read relevant knowledge, not every
-document. Inspect the actual code/artifact before asking questions that it can answer.
+Read repository instructions and the current handoff. Check the installed `spec`
+CLI bridge and its registered specs before declaring ORC unavailable. Use a registered
+ORC spec, or `--mcp-http <selected ORC URL>/mcp` / an existing secure stdio launcher;
+per-agent MCP configuration is not required. An already connected MCP tool is also
+supported. Select the readable project name and call `context` first, then fetch
+the effective `orc-sdlc` with `skill_read` through that interface. Read relevant
+knowledge, not every document. Inspect the actual code/artifact before asking
+questions that it can answer. Report a connection gap only after checking the
+available bridge and direct connection; preserve scope and never use stale guidance.
 User scope, authorization and project requirements govern the process.
 
 Start with the core problem: who needs what outcome, how the current path works,

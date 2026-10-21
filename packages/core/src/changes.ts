@@ -2,6 +2,7 @@ export const CHANGE_RESOURCES = [
   "tasks",
   "sessions",
   "jobs",
+  "webhooks",
   "projects",
   "memories",
   "memory-usage",

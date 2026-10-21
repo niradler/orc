@@ -27,9 +27,43 @@ afterAll(() => {
 });
 
 describe("managed webhooks", () => {
+  test("should configure a disabled job without enabling it or allowing an event to run it", async () => {
+    const job = await (
+      await req(app, "POST", "/jobs", {
+        name: "disabled-hook-job",
+        command: "echo disabled",
+        trigger_type: "webhook",
+      })
+    ).json();
+    expect(job.enabled).toBe(false);
+    const create = await req(app, "POST", "/webhooks", {
+      name: "Disabled job hook",
+      provider: "generic",
+      job_id: job.id,
+    });
+    expect(create.status).toBe(201);
+    const hook = await create.json();
+    const body = JSON.stringify({ event: "test" });
+    const response = await app.request(`/webhooks/${hook.token}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-orc-signature-256": sign(hook.secret, body),
+      },
+      body,
+    });
+    expect(response.status).toBe(202);
+    expect(((await response.json()) as { accepted: boolean }).accepted).toBe(false);
+    expect(
+      await getDb().query.job_runs.findMany({ where: eq(job_runs.job_id, job.id) }),
+    ).toHaveLength(0);
+    const saved = await (await req(app, "GET", `/jobs/${job.id}`)).json();
+    expect(saved.enabled).toBe(false);
+  });
   test("generic delivery verifies, deduplicates, and reaches job stdin", async () => {
     const jobResponse = await req(app, "POST", "/jobs", {
       name: "webhook-stdin-job",
+      enabled: true,
       command:
         "bun -e 'process.stdout.write((await Bun.stdin.text())+\"|\"+Bun.env.ORC_WEBHOOK_EVENT)'",
       trigger_type: "webhook",

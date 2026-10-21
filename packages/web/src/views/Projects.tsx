@@ -9,6 +9,7 @@ import type {
   UpdateProjectInput,
 } from "@/api/client";
 import { api } from "@/api/client";
+import { BulkActionBar } from "@/components/BulkActionBar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { DetailField } from "@/components/DetailField";
@@ -45,11 +46,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
+import { useListSelection } from "@/hooks/useListSelection";
 import {
   useCreateProject,
   useDeleteProject,
   useProjectSummary,
   useProjects,
+  useSetProjectsStatus,
   useUpdateProject,
 } from "@/hooks/useProjects";
 import { MEMORIES_PATH } from "@/lib/memory-routes";
@@ -88,6 +91,22 @@ export default function Projects() {
     const all = projects ?? [];
     return filter === "all" ? all : all.filter((p) => p.status === filter);
   }, [projects, filter]);
+
+  const selection = useListSelection(
+    visible.map((project) => project.id),
+    filter,
+  );
+  const bulkUpdate = useSetProjectsStatus();
+  const bulkResult = bulkUpdate.data?.scope === filter ? bulkUpdate.data : undefined;
+
+  async function setSelectedStatus(status: ProjectStatus): Promise<void> {
+    const result = await bulkUpdate.mutateAsync({
+      ids: selection.selectedIds,
+      status,
+      scope: filter,
+    });
+    selection.select(result.failed.map((item) => item.id));
+  }
 
   const counts = useMemo(() => {
     return (projects ?? []).reduce(
@@ -128,6 +147,7 @@ export default function Projects() {
           {STATUS_TABS.map(({ value, label }) => (
             <TabsTrigger
               key={value}
+              data-testid={`projects-filter-${value}`}
               value={value}
               className="font-label text-sm  px-4 py-2 rounded-md
                 data-[state=active]:bg-surface-highest data-[state=active]:text-on-surface data-[state=active]:shadow-none
@@ -142,6 +162,51 @@ export default function Projects() {
             </TabsTrigger>
           ))}
         </TabsList>
+        {visible.length > 0 && (
+          <BulkActionBar
+            resourceLabel="projects"
+            count={selection.selectedIds.length}
+            allSelected={selection.allSelected}
+            someSelected={selection.someSelected}
+            onSelectAll={selection.selectAll}
+            onClear={selection.clear}
+            disabled={bulkUpdate.isPending}
+          >
+            {PROJECT_STATUSES.map((status) => (
+              <Button
+                key={status}
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={bulkUpdate.isPending}
+                data-testid={`projects-bulk-${status}`}
+                onClick={() => void setSelectedStatus(status)}
+              >
+                {status === "active" ? "Activate" : status === "paused" ? "Pause" : "Archive"}{" "}
+                selected
+              </Button>
+            ))}
+          </BulkActionBar>
+        )}
+        {bulkUpdate.isPending && (
+          <p role="status" className="mb-3 text-sm text-outline">
+            Updating selected projects...
+          </p>
+        )}
+        {!bulkUpdate.isPending && bulkResult && (
+          <div role="status" className="mb-3 space-y-1 text-sm" data-testid="projects-bulk-result">
+            <p>
+              {bulkResult.succeeded.length} projects set to {bulkResult.status}.
+            </p>
+            {bulkResult.failed.map((item) => (
+              <p key={item.id} className="text-error">
+                {projects?.find((project) => project.id === item.id)?.name ?? item.id}: {item.error}
+                . Still selected for retry.
+              </p>
+            ))}
+          </div>
+        )}
+
         <TabsContent value={filter}>
           {isLoading ? (
             <div className="space-y-2">
@@ -157,6 +222,9 @@ export default function Projects() {
               <Table>
                 <TableHeader>
                   <TableRow className="border-b border-outline-variant hover:bg-transparent">
+                    <TableHead className="w-11">
+                      <span className="sr-only">Select projects</span>
+                    </TableHead>
                     <TableHead className="font-label text-sm  text-muted-foreground">
                       Name
                     </TableHead>
@@ -188,6 +256,18 @@ export default function Projects() {
                       className="border-b border-outline-variant/50 hover:bg-surface-high cursor-pointer"
                       onClick={() => openEdit(p.id)}
                     >
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          data-testid="project-select"
+                          aria-label={`Select ${p.name}`}
+                          className="size-4 accent-primary"
+                          checked={selection.selectedIds.includes(p.id)}
+                          disabled={bulkUpdate.isPending}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={() => selection.toggle(p.id)}
+                        />
+                      </TableCell>
                       <TableCell className="font-body text-sm font-medium text-on-surface">
                         <button
                           type="button"

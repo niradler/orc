@@ -17,6 +17,7 @@ export class OrcTaskProvider implements TaskProvider {
         `SELECT t.id, t.title, t.body, t.status, t.skill_name, t.agent_backend, t.agent_model, t.tags, t.project_id
          FROM tasks t
          WHERE (t.status = 'todo' OR t.status = 'changes_requested')
+           AND t.auto_start = 1
            AND t.claimed_by IS NULL
            AND (t.skill_name IS NOT NULL OR t.agent_backend IS NOT NULL
                 OR t.flow_name IS NOT NULL OR t.flow_override IS NOT NULL

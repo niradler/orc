@@ -1,8 +1,10 @@
 import { ChevronDown, ChevronRight, Pencil, Play, Power } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import type { Job, JobRun } from "@/api/client";
 import { DetailField } from "@/components/DetailField";
 import { ErrorState } from "@/components/ErrorState";
+import { JobWebhooks } from "@/components/JobWebhooks";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -61,9 +63,13 @@ export function JobDetailSheet({ jobId, open, onClose, onEdit }: JobDetailSheetP
             <div className="space-y-6">
               {/* Metadata */}
               <div className="space-y-4">
-                <DetailField label="Command">
+                <DetailField label="Action">
                   <pre className="font-mono text-xs bg-background p-2 rounded-lg border border-surface-highest overflow-x-auto whitespace-pre-wrap break-all">
-                    {job.command}
+                    {job.action?.type === "agent"
+                      ? `Run agent (${job.action.backend}): ${job.action.prompt}`
+                      : job.action?.type === "task"
+                        ? `Create task: ${job.action.title}`
+                        : job.command}
                   </pre>
                 </DetailField>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -100,6 +106,8 @@ export function JobDetailSheet({ jobId, open, onClose, onEdit }: JobDetailSheetP
                   </DetailField>
                 )}
               </div>
+
+              {!job.command.startsWith("__") && <JobWebhooks key={job.id} job={job} />}
 
               {/* Recent runs */}
               <div>
@@ -219,6 +227,28 @@ function RunItem({
           </span>
         )}
       </button>
+      {(run.task_id || run.session_id) && (
+        <div className="flex gap-3 px-3 py-2 text-xs">
+          {run.task_id && (
+            <Link
+              className="underline"
+              data-testid="job-run-task-link"
+              to={`/tasks/${run.task_id}?project=all`}
+            >
+              Created task
+            </Link>
+          )}
+          {run.session_id && (
+            <Link
+              className="underline"
+              data-testid="job-run-session-link"
+              to={`/audit/${run.session_id}?project=all`}
+            >
+              Agent session
+            </Link>
+          )}
+        </div>
+      )}
       {run.error_msg && (
         <div className="px-3 pb-2">
           <span className="font-body text-xs text-error">{run.error_msg}</span>

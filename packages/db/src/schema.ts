@@ -1,3 +1,4 @@
+import type { JobAction } from "@orc/core/job-actions";
 import type { SessionHandoffRequest } from "@orc/core/session-handoff";
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
@@ -64,6 +65,7 @@ export const tasks = sqliteTable("tasks", {
   agent_backend: text("agent_backend"),
   agent_model: text("agent_model"),
   max_review_rounds: integer("max_review_rounds").default(3).notNull(),
+  auto_start: integer("auto_start", { mode: "boolean" }).default(true).notNull(),
   flow_name: text("flow_name"),
   // An inline graph for this task alone, for work whose shape no named flow
   // covers. Takes precedence over flow_name.
@@ -125,6 +127,7 @@ export const jobs = sqliteTable(
     name: text("name").notNull(),
     description: text("description"),
     command: text("command").notNull(),
+    action: text("action", { mode: "json" }).$type<JobAction>(),
     skill_name: text("skill_name"),
     prompt_vars: text("prompt_vars", { mode: "json" }).$type<Record<string, string>>(),
     inject_context: integer("inject_context", { mode: "boolean" }).default(true).notNull(),
@@ -165,6 +168,8 @@ export const job_runs = sqliteTable(
     status: text("status", {
       enum: ["pending", "running", "success", "failed", "cancelled", "skipped"],
     }).notNull(),
+    task_id: text("task_id").references(() => tasks.id, { onDelete: "set null" }),
+    session_id: text("session_id"),
     trigger_by: text("trigger_by"),
     started_at: integer("started_at", { mode: "timestamp" }),
     ended_at: integer("ended_at", { mode: "timestamp" }),
@@ -430,9 +435,8 @@ export const webhooks = sqliteTable("webhooks", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   provider: text("provider", { enum: ["generic", "github"] }).notNull(),
-  job_id: text("job_id")
-    .notNull()
-    .references(() => jobs.id, { onDelete: "cascade" }),
+  project_id: text("project_id").references(() => projects.id, { onDelete: "set null" }),
+  job_id: text("job_id").references(() => jobs.id, { onDelete: "set null" }),
   token: text("token").notNull().unique(),
   secret: text("secret").notNull(),
   events: text("events", { mode: "json" }).$type<string[]>().notNull(),
@@ -489,3 +493,29 @@ export type FlowRun = typeof flow_runs.$inferSelect;
 export type NewFlowRun = typeof flow_runs.$inferInsert;
 export type FlowNodeRun = typeof flow_node_runs.$inferSelect;
 export type NewFlowNodeRun = typeof flow_node_runs.$inferInsert;
+
+export const webhook_subscriptions = sqliteTable(
+  "webhook_subscriptions",
+  {
+    webhook_id: text("webhook_id")
+      .notNull()
+      .references(() => webhooks.id, { onDelete: "cascade" }),
+    job_id: text("job_id")
+      .notNull()
+      .references(() => jobs.id, { onDelete: "cascade" }),
+    events: text("events", { mode: "json" }).$type<string[]>().notNull().default([]),
+    actions: text("actions", { mode: "json" }).$type<string[]>().notNull().default([]),
+  },
+  (table) => [uniqueIndex("webhook_subscriptions_pair_idx").on(table.webhook_id, table.job_id)],
+);
+export const webhook_delivery_runs = sqliteTable("webhook_delivery_runs", {
+  delivery_id: text("delivery_id")
+    .notNull()
+    .references(() => webhook_deliveries.id, { onDelete: "cascade" }),
+  job_id: text("job_id")
+    .notNull()
+    .references(() => jobs.id, { onDelete: "cascade" }),
+  job_run_id: text("job_run_id")
+    .notNull()
+    .references(() => job_runs.id, { onDelete: "cascade" }),
+});
