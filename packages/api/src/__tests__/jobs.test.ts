@@ -18,6 +18,29 @@ afterAll(() => {
 });
 
 describe("Jobs enable/disable against a live scheduler", () => {
+  test("should keep a newly created cron job disabled and unscheduled unless explicitly enabled", async () => {
+    const response = await req(app, "POST", "/jobs", {
+      name: "disabled-default-cron",
+      command: "echo disabled",
+      trigger_type: "cron",
+      cron_expr: "* * * * * *",
+    });
+    expect(response.status).toBe(201);
+    const created = await response.json();
+    expect(created.enabled).toBe(false);
+    expect(created.next_run_at).toBeNull();
+    const invalid = await req(app, "POST", "/jobs", {
+      name: "invalid-enable-job",
+      command: "echo invalid",
+      trigger_type: "manual",
+      enabled: "true",
+    });
+    expect(invalid.status).toBe(400);
+    const disabled = await (await req(app, "GET", "/jobs?enabled=false")).json();
+    expect(disabled.jobs.some((job: { id: string }) => job.id === created.id)).toBe(true);
+    const enabled = await (await req(app, "GET", "/jobs?enabled=true")).json();
+    expect(enabled.jobs.some((job: { id: string }) => job.id === created.id)).toBe(false);
+  });
   test("PATCH enabled=false stops a running cron job and enabled=true resumes it", async () => {
     await startScheduler();
     const created = await req(app, "POST", "/jobs", {
@@ -25,6 +48,7 @@ describe("Jobs enable/disable against a live scheduler", () => {
       command: "echo live",
       trigger_type: "cron",
       cron_expr: "* * * * * *",
+      enabled: true,
     });
     const { id } = await created.json();
     const countRuns = async () =>
@@ -67,7 +91,7 @@ describe("Jobs CRUD", () => {
       expect(body.name).toBe("test-job");
       expect(body.command).toBe("echo hello");
       expect(body.trigger_type).toBe("manual");
-      expect(body.enabled).toBe(true);
+      expect(body.enabled).toBe(false);
       expect(body.timeout_secs).toBe(300);
       expect(body.max_retries).toBe(0);
       expect(body.overlap).toBe("skip");
@@ -78,6 +102,7 @@ describe("Jobs CRUD", () => {
     test("creates a job with all fields", async () => {
       const res = await req(app, "POST", "/jobs", {
         name: "full-job",
+        enabled: true,
         description: "A full job",
         command: "bun run build",
         trigger_type: "cron",
@@ -90,6 +115,7 @@ describe("Jobs CRUD", () => {
       expect(res.status).toBe(201);
       const body = await res.json();
       expect(body.name).toBe("full-job");
+      expect(body.enabled).toBe(true);
       expect(body.description).toBe("A full job");
       expect(body.trigger_type).toBe("cron");
       expect(body.cron_expr).toBe("0 * * * *");

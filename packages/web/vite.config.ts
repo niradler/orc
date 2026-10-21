@@ -12,6 +12,10 @@ export default defineConfig({
   server: {
     port: Number(process.env.ORC_WEB_PORT) || 9742,
     proxy: {
+      "/webhooks/": {
+        target: `http://localhost:${process.env.ORC_API_PORT ?? 7701}`,
+        changeOrigin: true,
+      },
       "/api": {
         target: `http://localhost:${process.env.ORC_API_PORT ?? 7701}`,
         changeOrigin: true,

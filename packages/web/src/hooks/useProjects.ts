@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, type CreateProjectInput, type UpdateProjectInput } from "@/api/client";
+import {
+  api,
+  type CreateProjectInput,
+  type ProjectStatus,
+  type UpdateProjectInput,
+} from "@/api/client";
+import { applyBulkAction } from "@/lib/bulk-actions";
 
 export function useProjects(params?: { status?: string }) {
   return useQuery({
@@ -51,6 +57,30 @@ export function useDeleteProject() {
   return useMutation({
     mutationFn: (id: string) => api.projects.delete(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["projects"] }),
+  });
+}
+
+export function useSetProjectsStatus() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      ids,
+      status,
+      scope,
+    }: {
+      ids: string[];
+      status: ProjectStatus;
+      scope: string;
+    }) => ({
+      ...(await applyBulkAction(ids, (id) => api.projects.update(id, { status }))),
+      status,
+      scope,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["project"] });
+      queryClient.invalidateQueries({ queryKey: ["project-summary"] });
+    },
   });
 }
 

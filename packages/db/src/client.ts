@@ -7,6 +7,7 @@ import { installAudit } from "./audit.js";
 import { installChangeTracking, stopChangeTracking } from "./changes.js";
 import { installKnowledgeBases } from "./kb.js";
 import { installMemories } from "./memories.js";
+import { installReusableWebhooks } from "./reusable-webhooks.js";
 import { installRules } from "./rules.js";
 import * as schema from "./schema.js";
 import { installSkillHistory } from "./skill-history.js";
@@ -377,6 +378,10 @@ function setupDb(sqlite: Database): void {
     "ALTER TABLE gateway_sessions ADD COLUMN a2a_url TEXT",
     "ALTER TABLE tasks ADD COLUMN skill_name TEXT",
     "ALTER TABLE jobs ADD COLUMN skill_name TEXT",
+    "ALTER TABLE jobs ADD COLUMN action TEXT",
+    "ALTER TABLE job_runs ADD COLUMN task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL",
+    "ALTER TABLE job_runs ADD COLUMN session_id TEXT",
+    "ALTER TABLE tasks ADD COLUMN auto_start INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE tasks ADD COLUMN agent_model TEXT",
     "ALTER TABLE gateway_sessions ADD COLUMN permission_mode TEXT",
     "ALTER TABLE gateway_sessions ADD COLUMN summary TEXT",
@@ -429,6 +434,8 @@ function setupDb(sqlite: Database): void {
       }
     }
   }
+
+  installReusableWebhooks(sqlite);
 
   try {
     sqlite.exec(`INSERT OR IGNORE INTO bridge_chats (id, platform, chat_id, mode, authorized, updated_at, created_at)

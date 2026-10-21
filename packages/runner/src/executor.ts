@@ -5,6 +5,7 @@ import { getDb } from "@orc/db/client";
 import { kbDigestKbId } from "@orc/db/kb-digest";
 import { job_run_logs, job_runs, jobs, sessions } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
+import { runJobAction } from "./job-actions.js";
 import { runKbDigest } from "./kb-digest.js";
 
 const logger = createLogger("runner:executor");
@@ -35,6 +36,7 @@ export async function executeJob(opts: RunOptions): Promise<string> {
       where: eq(jobs.id, opts.jobId),
     });
     if (!job) throw new Error(`Job not found: ${opts.jobId}`);
+    if (opts.triggerBy?.startsWith("webhook:") && !job.enabled) throw new Error("Job is disabled");
 
     const now = new Date();
 
@@ -73,6 +75,18 @@ export async function executeJob(opts: RunOptions): Promise<string> {
       await db
         .update(job_runs)
         .set({ status: "success", ended_at: new Date(), exit_code: 0, stdout: summary })
+        .where(eq(job_runs.id, runId));
+      return runId;
+    }
+
+    if (job.action && job.action.type !== "command") {
+      const output = await runJobAction(job, job.action, runId, opts.input?.stdin);
+      await db
+        .insert(job_run_logs)
+        .values({ run_id: runId, ts: new Date(), stream: "stdout", line: output });
+      await db
+        .update(job_runs)
+        .set({ status: "success", ended_at: new Date(), exit_code: 0, stdout: output })
         .where(eq(job_runs.id, runId));
       return runId;
     }

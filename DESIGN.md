@@ -482,6 +482,26 @@ and persisted provider selection. Terminals retain terminal state, PTY lifecycle
 scrollback and key input. Syntax colors may remain domain-specific where needed for
 legibility; no blanket grayscale filters or broad descendant color overrides.
 
+### Selection and bulk actions
+
+Resource lists should support selecting specific entries and applying common actions
+without opening an editor for each item. Jobs and Projects are the first adopters.
+Reuse `useListSelection`, `BulkActionBar`, and `applyBulkAction`; keep action semantics
+in the resource hook rather than duplicating selection or request handling per page.
+
+- Give each row a labeled checkbox; selection must not open its editor. Provide
+  select-all-displayed, a mixed checkbox state, a selected count, and Clear selection.
+- Scope selection to displayed rows and current project/filter. Clear it when scope
+  changes; never silently apply a visible selection to hidden/server-wide records.
+- Show resource-specific actions only for a nonempty selection. Keep the toolbar
+  usable with keyboard, on mobile and in both themes. Disable repeated submissions.
+- Report successes and failures separately; keep failed entries selected for retry.
+  Refresh affected lists/details and prevent old results appearing in another scope.
+- New jobs start disabled. Enabling is explicit at creation, in the list, or in edit.
+  Allow configuring webhook connections while disabled without enabling the job.
+- Destructive actions retain resource-specific confirmation and authorization; a
+  generic bulk toolbar does not imply permission to add bulk deletion.
+
 ### Verification and ownership
 
 Each owner reports exact changed files, scoped lint/typecheck or relevant tests,

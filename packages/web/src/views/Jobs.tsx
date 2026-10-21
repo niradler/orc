@@ -1,10 +1,14 @@
+import type { JobAction, WebhookSubscription } from "@orc/core/job-actions";
 import { Pencil, Play, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { CreateJobInput, Job, JobTriggerType, UpdateJobInput } from "@/api/client";
+import { BulkActionBar } from "@/components/BulkActionBar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { JobActionFields, jobActionValid } from "@/components/JobActionFields";
 import { JobDetailSheet } from "@/components/JobDetailSheet";
+import { WebhookPicker } from "@/components/JobWebhooks";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -31,10 +35,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
-import { useCreateJob, useDeleteJob, useJobs, useTriggerJob, useUpdateJob } from "@/hooks/useJobs";
+import {
+  useCreateJob,
+  useDeleteJob,
+  useJobs,
+  useSetJobsEnabled,
+  useTriggerJob,
+  useUpdateJob,
+} from "@/hooks/useJobs";
+import { useListSelection } from "@/hooks/useListSelection";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjectScope } from "@/hooks/useProjectScope";
 import { useProjects } from "@/hooks/useProjects";
@@ -55,11 +66,32 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
   const desktop = useBreakpoint("sm");
   const projectId = useProjectScope(savedProjectId);
   const scopedProjectId = projectId === "all" || projectId === "unassigned" ? undefined : projectId;
-  const { data: allJobs, isLoading, error, refetch } = useJobs({ project_id: scopedProjectId });
+  const {
+    data: allJobs,
+    isLoading,
+    error,
+    refetch,
+  } = useJobs({ project_id: scopedProjectId, limit: 100 });
   const jobs =
     projectId === "unassigned" ? allJobs?.filter((job) => job.project_id === null) : allJobs;
   const triggerJob = useTriggerJob();
   const deleteJob = useDeleteJob();
+  const updateJob = useUpdateJob();
+  const bulkUpdate = useSetJobsEnabled();
+  const bulkResult = bulkUpdate.data?.scope === projectId ? bulkUpdate.data : undefined;
+
+  const selection = useListSelection(
+    (jobs ?? []).map((job) => job.id),
+    projectId,
+  );
+  async function setSelectedEnabled(enabled: boolean): Promise<void> {
+    const result = await bulkUpdate.mutateAsync({
+      ids: selection.selectedIds,
+      enabled,
+      scope: projectId,
+    });
+    selection.select(result.failed.map((item) => item.id));
+  }
 
   const {
     selectedId: selectedJobId,
@@ -97,10 +129,61 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
         }
       />
 
-      {(triggerJob.error || deleteJob.error) && (
+      {(triggerJob.error || deleteJob.error || updateJob.error) && (
         <p role="alert" className="mb-4 text-sm text-error">
-          {(triggerJob.error ?? deleteJob.error)?.message}
+          {(triggerJob.error ?? deleteJob.error ?? updateJob.error)?.message}
         </p>
+      )}
+
+      {!!jobs?.length && (
+        <BulkActionBar
+          resourceLabel="jobs"
+          count={selection.selectedIds.length}
+          allSelected={selection.allSelected}
+          someSelected={selection.someSelected}
+          onSelectAll={selection.selectAll}
+          onClear={selection.clear}
+          disabled={bulkUpdate.isPending}
+        >
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-testid="jobs-bulk-enable"
+            disabled={bulkUpdate.isPending || updateJob.isPending}
+            onClick={() => void setSelectedEnabled(true)}
+          >
+            Enable selected
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-testid="jobs-bulk-disable"
+            disabled={bulkUpdate.isPending || updateJob.isPending}
+            onClick={() => void setSelectedEnabled(false)}
+          >
+            Disable selected
+          </Button>
+        </BulkActionBar>
+      )}
+      {bulkUpdate.isPending && (
+        <p role="status" className="mb-3 text-sm text-outline">
+          Updating selected jobs…
+        </p>
+      )}
+      {!bulkUpdate.isPending && bulkResult && (
+        <div className="mb-3 space-y-1 text-sm" data-testid="jobs-bulk-result" role="status">
+          <p>
+            {bulkResult.succeeded.length} jobs {bulkResult.enabled ? "enabled" : "disabled"}.
+          </p>
+          {bulkResult.failed.map((item) => (
+            <p key={item.id} className="text-error">
+              {jobs?.find((job) => job.id === item.id)?.name ?? item.id}: {item.error}. Still
+              selected for retry.
+            </p>
+          ))}
+        </div>
       )}
 
       {isLoading ? (
@@ -123,24 +206,45 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
               className="border-b border-border/65 py-4 space-y-3"
             >
               <div className="flex items-start justify-between gap-3">
+                <input
+                  type="checkbox"
+                  className="size-4 accent-primary shrink-0 mt-1"
+                  aria-label={`Select ${job.name}`}
+                  data-testid="job-select"
+                  checked={selection.selectedIds.includes(job.id)}
+                  disabled={bulkUpdate.isPending}
+                  onChange={() => selection.toggle(job.id)}
+                />
                 <button
                   type="button"
                   className="min-w-0 text-left font-medium text-sm text-on-surface break-words hover:text-primary"
+                  data-testid="job-open-detail"
                   onClick={() => openJobDetail(job.id)}
                 >
                   {job.name}
                 </button>
-                <span
-                  className={`text-xs shrink-0 ${job.enabled ? "text-secondary" : "text-outline"}`}
+                <Button
+                  type="button"
+                  data-testid="job-toggle-enabled"
+                  variant="outline"
+                  size="sm"
+                  aria-label={`${job.enabled ? "Disable" : "Enable"} ${job.name}`}
+                  aria-pressed={job.enabled}
+                  disabled={updateJob.isPending || bulkUpdate.isPending}
+                  onClick={() => updateJob.mutate({ id: job.id, enabled: !job.enabled })}
                 >
-                  {job.enabled ? "Enabled" : "Disabled"}
-                </span>
+                  {job.enabled ? "Disable" : "Enable"}
+                </Button>
               </div>
               {job.description && (
                 <p className="text-sm text-outline break-words">{job.description}</p>
               )}
               <code className="block whitespace-pre-wrap break-all text-xs text-on-surface-variant">
-                {job.command}
+                {job.action?.type === "agent"
+                  ? `Agent: ${job.action.backend}`
+                  : job.action?.type === "task"
+                    ? `Task: ${job.action.title}`
+                    : job.command}
               </code>
               <p className="text-xs text-outline">
                 {job.trigger_type} · {job.run_count} runs
@@ -184,12 +288,15 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
           <Table>
             <TableHeader>
               <TableRow className="border-b border-border hover:bg-transparent">
+                <TableHead className="w-11">
+                  <span className="sr-only">Select jobs</span>
+                </TableHead>
                 <TableHead className="font-label text-xs font-medium text-outline">Name</TableHead>
                 <TableHead className="font-label text-xs font-medium text-outline w-24">
                   Trigger
                 </TableHead>
                 <TableHead className="font-label text-xs font-medium text-outline w-48">
-                  Command
+                  Action
                 </TableHead>
                 <TableHead className="font-label text-xs font-medium text-outline w-16">
                   Enabled
@@ -217,9 +324,22 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                   onClick={() => openJobDetail(job.id)}
                 >
                   <TableCell>
+                    <input
+                      type="checkbox"
+                      className="size-4 accent-primary"
+                      aria-label={`Select ${job.name}`}
+                      data-testid="job-select"
+                      checked={selection.selectedIds.includes(job.id)}
+                      disabled={bulkUpdate.isPending}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={() => selection.toggle(job.id)}
+                    />
+                  </TableCell>
+                  <TableCell>
                     <button
                       type="button"
                       className="font-body text-sm font-medium text-on-surface text-left hover:text-primary"
+                      data-testid="job-open-detail"
                       onClick={(event) => {
                         event.stopPropagation();
                         openJobDetail(job.id);
@@ -240,15 +360,29 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                   </TableCell>
                   <TableCell>
                     <code className="font-mono text-xs text-outline truncate block max-w-[180px]">
-                      {job.command}
+                      {job.action?.type === "agent"
+                        ? `Agent: ${job.action.backend}`
+                        : job.action?.type === "task"
+                          ? `Task: ${job.action.title}`
+                          : job.command}
                     </code>
                   </TableCell>
                   <TableCell>
-                    <span
-                      className={`font-label text-xs font-medium ${job.enabled ? "text-on-surface" : "text-outline"}`}
+                    <Button
+                      type="button"
+                      data-testid="job-toggle-enabled"
+                      variant="outline"
+                      size="sm"
+                      aria-label={`${job.enabled ? "Disable" : "Enable"} ${job.name}`}
+                      aria-pressed={job.enabled}
+                      disabled={updateJob.isPending || bulkUpdate.isPending}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        updateJob.mutate({ id: job.id, enabled: !job.enabled });
+                      }}
                     >
-                      {job.enabled ? "Enabled" : "Disabled"}
-                    </span>
+                      {job.enabled ? "Disable" : "Enable"}
+                    </Button>
                   </TableCell>
                   <TableCell className="font-label text-xs text-outline">
                     {job.last_run_at ? new Date(job.last_run_at).toLocaleString() : "\u2014"}
@@ -351,7 +485,8 @@ function CreateJobDialog({
   const { data: projects } = useProjects();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [command, setCommand] = useState("");
+  const [action, setAction] = useState<JobAction>({ type: "command", command: "" });
+  const [bindings, setBindings] = useState<WebhookSubscription[]>([]);
   const [triggerType, setTriggerType] = useState<JobTriggerType>("manual");
   const [cronExpr, setCronExpr] = useState("");
   const [timeoutSecs, setTimeoutSecs] = useState("300");
@@ -361,15 +496,19 @@ function CreateJobDialog({
   const [workingDir, setWorkingDir] = useState("");
   const [projectId, setProjectId] = useState<string>(defaultProjectId ?? "");
   const createJob = useCreateJob();
+  const [enabled, setEnabled] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !command.trim()) return;
+    if (!name.trim() || !jobActionValid(action) || (triggerType === "webhook" && !bindings.length))
+      return;
     const input: CreateJobInput = {
       name: name.trim(),
       description: description.trim(),
-      command: command.trim(),
+      action,
+      webhooks: triggerType === "webhook" ? bindings : [],
       trigger_type: triggerType,
+      enabled,
       cron_expr: triggerType === "cron" ? cronExpr.trim() || undefined : undefined,
       timeout_secs: Number.parseInt(timeoutSecs, 10) || undefined,
       max_retries: Number.parseInt(maxRetries, 10),
@@ -390,6 +529,19 @@ function CreateJobDialog({
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3 mt-2">
+          <label className="flex min-h-11 items-center gap-3 text-sm">
+            <input
+              type="checkbox"
+              data-testid="job-create-enabled"
+              checked={enabled}
+              onChange={(event) => setEnabled(event.target.checked)}
+              className="size-4 accent-primary"
+            />
+            Enable this job immediately
+          </label>
+          <p className="text-xs text-outline">
+            New jobs stay disabled until you enable them. You can configure their webhook first.
+          </p>
           <div className="space-y-1.5">
             <Label className="font-label text-xs font-medium text-outline">Name *</Label>
             <Input
@@ -412,18 +564,7 @@ function CreateJobDialog({
               className="bg-background border-control-border text-on-surface font-body text-sm"
             />
           </div>
-          <div className="space-y-1.5">
-            <Label className="font-label text-xs font-medium text-outline">Command *</Label>
-            <Textarea
-              aria-label="Command"
-              data-testid="job-command-input"
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-              placeholder="bun run build"
-              className="bg-background border-control-border text-on-surface font-mono text-xs resize-none"
-              rows={3}
-            />
-          </div>
+          <JobActionFields value={action} onChange={setAction} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="font-label text-xs font-medium text-outline">Trigger Type</Label>
@@ -433,19 +574,35 @@ function CreateJobDialog({
               >
                 <SelectTrigger
                   aria-label="Trigger type"
+                  data-testid="job-trigger-type"
                   className="bg-background border-control-border text-on-surface font-body text-sm min-h-11"
                 >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-surface border-border">
                   {TRIGGER_TYPES.map((t) => (
-                    <SelectItem key={t} value={t} className="font-body text-sm">
+                    <SelectItem
+                      key={t}
+                      value={t}
+                      data-testid={`job-trigger-${t}`}
+                      className="font-body text-sm"
+                    >
                       {t}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+
+            {triggerType === "webhook" && (
+              <div className="sm:col-span-2">
+                <WebhookPicker
+                  value={bindings}
+                  onChange={setBindings}
+                  projectId={projectId || undefined}
+                />
+              </div>
+            )}
             {triggerType === "cron" && (
               <div className="space-y-1.5">
                 <Label className="font-label text-xs font-medium text-outline">
@@ -539,7 +696,10 @@ function CreateJobDialog({
             <Label className="font-label text-xs font-medium text-outline">Project</Label>
             <Select
               value={projectId || "__none__"}
-              onValueChange={(v) => setProjectId(v === "__none__" ? "" : v)}
+              onValueChange={(v) => {
+                setProjectId(v === "__none__" ? "" : v);
+                setBindings([]);
+              }}
             >
               <SelectTrigger
                 aria-label="Project"
@@ -574,10 +734,19 @@ function CreateJobDialog({
               data-testid="job-submit"
               type="submit"
               size="sm"
-              disabled={createJob.isPending || !name.trim() || !command.trim()}
+              disabled={
+                createJob.isPending ||
+                !name.trim() ||
+                !jobActionValid(action) ||
+                (triggerType === "webhook" && !bindings.length)
+              }
               className="font-label text-xs bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {createJob.isPending ? "Creating..." : "Create"}
+              {createJob.isPending
+                ? "Creating..."
+                : triggerType === "webhook"
+                  ? "Create job"
+                  : "Create"}
             </Button>
           </DialogFooter>
           {createJob.error && (
@@ -594,7 +763,10 @@ function CreateJobDialog({
 function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClose: () => void }) {
   const [name, setName] = useState(job.name);
   const [description, setDescription] = useState(job.description ?? "");
-  const [command, setCommand] = useState(job.command);
+  const [action, setAction] = useState<JobAction>(
+    job.action ?? { type: "command", command: job.command },
+  );
+  const [bindings, setBindings] = useState<WebhookSubscription[]>(job.webhooks ?? []);
   const [triggerType, setTriggerType] = useState<JobTriggerType>(job.trigger_type);
   const [cronExpr, setCronExpr] = useState(job.cron_expr ?? "");
   const [timeoutSecs, setTimeoutSecs] = useState(String(job.timeout_secs));
@@ -606,12 +778,14 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !command.trim()) return;
+    if (!name.trim() || !jobActionValid(action) || (triggerType === "webhook" && !bindings.length))
+      return;
     const input: UpdateJobInput & { id: string } = {
       id: job.id,
       name: name.trim(),
       description: description.trim(),
-      command: command.trim(),
+      action,
+      webhooks: triggerType === "webhook" ? bindings : [],
       trigger_type: triggerType,
       cron_expr: triggerType === "cron" ? cronExpr.trim() || undefined : undefined,
       timeout_secs: Number.parseInt(timeoutSecs, 10) || undefined,
@@ -631,7 +805,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
             Edit job
           </DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-3 mt-2">
+        <form id="edit-job-form" onSubmit={handleSubmit} className="space-y-3 mt-2">
           <div className="space-y-1.5">
             <Label className="font-label text-xs font-medium text-outline">Name *</Label>
             <Input
@@ -650,16 +824,7 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
               className="bg-background border-control-border text-on-surface font-body text-sm"
             />
           </div>
-          <div className="space-y-1.5">
-            <Label className="font-label text-xs font-medium text-outline">Command *</Label>
-            <Textarea
-              aria-label="Command"
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-              className="bg-background border-control-border text-on-surface font-mono text-xs resize-none"
-              rows={3}
-            />
-          </div>
+          <JobActionFields value={action} onChange={setAction} />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="font-label text-xs font-medium text-outline">Trigger Type</Label>
@@ -669,19 +834,34 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
               >
                 <SelectTrigger
                   aria-label="Trigger type"
+                  data-testid="job-trigger-type"
                   className="bg-background border-control-border text-on-surface font-body text-sm min-h-11"
                 >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-surface border-border">
                   {TRIGGER_TYPES.map((t) => (
-                    <SelectItem key={t} value={t} className="font-body text-sm">
+                    <SelectItem
+                      key={t}
+                      value={t}
+                      data-testid={`job-trigger-${t}`}
+                      className="font-body text-sm"
+                    >
                       {t}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+            {triggerType === "webhook" && (
+              <div className="sm:col-span-2">
+                <WebhookPicker
+                  value={bindings}
+                  onChange={setBindings}
+                  projectId={job.project_id ?? undefined}
+                />
+              </div>
+            )}
             {triggerType === "cron" && (
               <div className="space-y-1.5">
                 <Label className="font-label text-xs font-medium text-outline">
@@ -775,32 +955,38 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
               </button>
             </div>
           </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onClose}
-              className="font-label text-xs text-outline"
-            >
-              Cancel
-            </Button>
-            <Button
-              data-testid="job-edit-submit"
-              type="submit"
-              size="sm"
-              disabled={updateJob.isPending || !name.trim() || !command.trim()}
-              className="font-label text-xs bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              {updateJob.isPending ? "Saving..." : "Save"}
-            </Button>
-          </DialogFooter>
-          {updateJob.error && (
-            <p role="alert" className="text-sm text-error">
-              {updateJob.error.message}
-            </p>
-          )}
         </form>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            className="font-label text-xs text-outline"
+          >
+            Cancel
+          </Button>
+          <Button
+            data-testid="job-edit-submit"
+            form="edit-job-form"
+            type="submit"
+            size="sm"
+            disabled={
+              updateJob.isPending ||
+              !name.trim() ||
+              !jobActionValid(action) ||
+              (triggerType === "webhook" && !bindings.length)
+            }
+            className="font-label text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            {updateJob.isPending ? "Saving..." : "Save"}
+          </Button>
+        </DialogFooter>
+        {updateJob.error && (
+          <p role="alert" className="text-sm text-error">
+            {updateJob.error.message}
+          </p>
+        )}
       </DialogContent>
     </Dialog>
   );

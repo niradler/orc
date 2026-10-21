@@ -33,6 +33,24 @@ function makeTask(overrides: Partial<typeof tasks.$inferInsert> = {}): typeof ta
 }
 
 describe("OrcTaskProvider.pickWorkTasks()", () => {
+  test("does not automatically pick opted-out tasks even with a configured skill and flow", async () => {
+    const id = ulid();
+    await getDb()
+      .insert(tasks)
+      .values(
+        makeTask({
+          id,
+          auto_start: false,
+          skill_name: "orc-sdlc",
+          flow_name: "orc-default",
+          tags: ["agent"],
+        }),
+      );
+    expect((await new OrcTaskProvider().pickWorkTasks()).some((task) => task.id === id)).toBe(
+      false,
+    );
+  });
+
   test("returns empty array when no eligible tasks", async () => {
     const provider = new OrcTaskProvider();
     const db = getDb();

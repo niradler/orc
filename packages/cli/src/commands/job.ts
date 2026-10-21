@@ -1,4 +1,5 @@
 import { shortId } from "@orc/core/ids";
+import { JobActionSchema } from "@orc/core/job-actions";
 import { createOrcClient } from "@orc/sdk/client";
 import { Command } from "commander";
 import { isJson, jsonOut } from "../output.js";
@@ -33,7 +34,9 @@ export function jobCommand() {
   cmd
     .command("add <name>")
     .description("Create a job")
-    .requiredOption("-c, --command <cmd>", "Shell command to run")
+    .option("--enable", "Enable the job immediately (new jobs are disabled by default)", false)
+    .option("-c, --command <cmd>", "Shell command to run")
+    .option("--action-config <json>", "Typed action JSON: command, agent or task")
     .option("--trigger <type>", "Trigger type (manual/cron/watch/one-shot/webhook)", "manual")
     .option("--cron <expr>", "Cron expression (e.g. '0 22 * * *' or '*/30 * * * * *' every 30s)")
     .option("--watch <path>", "Watch path for file changes")
@@ -51,9 +54,12 @@ export function jobCommand() {
         : await resolveProject(client, { project: opts.project, noProject });
       const { data, error } = await client.jobs.create({
         name,
+        enabled: opts.enable,
         ...(project ? { project_id: project.id } : {}),
         description: opts.description,
-        command: opts.command,
+        ...(opts.actionConfig
+          ? { action: JobActionSchema.parse(JSON.parse(opts.actionConfig)) }
+          : { command: opts.command }),
         trigger_type: opts.trigger as
           | "manual"
           | "cron"

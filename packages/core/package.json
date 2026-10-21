@@ -4,6 +4,7 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./job-actions": "./src/job-actions.ts",
     "./changes": "./src/changes.ts",
     ".": "./src/index.ts",
     "./config": "./src/config.ts",

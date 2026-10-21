@@ -61,6 +61,27 @@ or config. Do not put API/provider credentials into the preferences endpoint.
 
 ## Choose and connect an interface
 
+### CLI bridge first
+
+Before reporting unavailable ORC tools, check `spec --help` and `spec specs`.
+Use an existing ORC registration when present. Otherwise use an inline source;
+no registry write or per-agent MCP setup is required:
+
+```sh
+spec show --mcp-http <orc-base-url>/mcp context
+spec call --mcp-http <orc-base-url>/mcp context --data '{"project":"orc"}'
+spec call --mcp-http <orc-base-url>/mcp skill_read --data '{"name":"orc-sdlc","project":"orc"}'
+```
+
+Select the intended installation first; the example project is not a default for
+other repositories. Inspect actual schemas with `spec show`, discover tools with
+`spec list`, and load references with `skill_read`'s `ref` argument. An existing
+secure stdio launcher can be passed with `--mcp-stdio` instead. For authenticated
+HTTP use the existing registration's secret references (`env:NAME` or `file:...`),
+not a literal secret in argv, documents or logs. Already connected direct MCP tools
+remain supported. Only report a gap after the applicable bridge/direct checks fail;
+identify the actual failure without reconfiguring agents or exposing credentials.
+
 | Interface | Use and discovery |
 | --- | --- |
 | Dashboard | Interactive setup, settings, documents, packages and monitoring |

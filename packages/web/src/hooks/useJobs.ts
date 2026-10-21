@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type CreateJobInput, type UpdateJobInput } from "@/api/client";
+import { applyBulkAction } from "@/lib/bulk-actions";
 
-export function useJobs(params?: { project_id?: string; enabled?: boolean }) {
+export function useJobs(params?: { project_id?: string; enabled?: boolean; limit?: number }) {
   return useQuery({
     queryKey: ["jobs", params],
     queryFn: () => api.jobs.list(params),
@@ -21,7 +22,10 @@ export function useCreateJob() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (data: CreateJobInput) => api.jobs.create(data),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["jobs"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["webhooks"] });
+    },
   });
 }
 
@@ -32,6 +36,32 @@ export function useUpdateJob() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["jobs"] });
       qc.invalidateQueries({ queryKey: ["job"] });
+      qc.invalidateQueries({ queryKey: ["webhooks"] });
+    },
+  });
+}
+
+export function useSetJobsEnabled() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      ids,
+      enabled,
+      scope,
+    }: {
+      ids: string[];
+      enabled: boolean;
+      scope: string;
+    }) => {
+      return {
+        ...(await applyBulkAction(ids, (id) => api.jobs.update(id, { enabled }))),
+        enabled,
+        scope,
+      };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["job"] });
     },
   });
 }
@@ -40,7 +70,10 @@ export function useDeleteJob() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.jobs.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["jobs"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["webhooks"] });
+    },
   });
 }
 
@@ -48,7 +81,10 @@ export function useTriggerJob() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.jobs.trigger(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["jobs"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["jobs"] });
+      qc.invalidateQueries({ queryKey: ["webhooks"] });
+    },
   });
 }
 

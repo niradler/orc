@@ -39,6 +39,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
   jobs: [
     "jobs",
     "job",
+    "webhooks",
     "job-runs",
     "job-run-logs",
     "kb-digest",
@@ -46,6 +47,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
     "health",
     "palette-search",
   ],
+  webhooks: ["webhooks", "webhook-deliveries", "jobs", "job"],
   projects: ["projects", "project", "project-summary", "health", "palette-search"],
   memories: ["memories", "memory", "memory-history", "project-summary", "health", "palette-search"],
   knowledge: ["kb", "kb-digest", "palette-documents"],
