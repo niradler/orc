@@ -20,6 +20,8 @@ MCP uses readable `project` names, defaulting to configured activeProject. `scop
 
 Agents change documents with `kb_write` (create or full rewrite) and `kb_document` (partial edits by exact text or line range, metadata, history, restore, delete), and manage KBs with `kb_manage`, only in KBs whose `editable_by` includes `mcp`. KB access settings cannot be changed over MCP. Every write is a revision with its author, source and session; a stale `expected_revision` is a conflict to reread and reconcile. The central audit log records KB actions; `audit_list` / `GET /api/audit` expose them.
 
+`kb_write` and `kb_document` use `document_id` to target a document. `kb_document` also accepts the legacy `id` alias; if both are supplied they must match. For a new document, omit `path` to generate it from the title, or supply a relative Markdown path ending in `.md` or `.markdown` (case-insensitive).
+
 Comments on a KB or one of its documents ask for a change: a correction, a source to digest, a lesson to record. Anyone may add one (`kb_comment`, `orc kb comment add`, the dashboard). Each comment has an author and source, a status (open, resolved, dismissed) and one closing reply saying what was done or why not.
 
 ## Knowledge dashboard and Markdown editing

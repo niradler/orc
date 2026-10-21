@@ -2,9 +2,12 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { resetConfig } from "@orc/core/config";
 import { closeDb, createTestDb } from "@orc/db/client";
 import { closeKnowledgeService, getKnowledgeService } from "@orc/knowledge";
+import { createMcpServer } from "../server.js";
 import { executeTool } from "../tools.js";
 
 const ENV = ["ORC_DB_PATH", "ORC_ACTIVE_PROJECT", "ORC_KNOWLEDGE_ROOT", "ORC_SESSION_ID"];
@@ -45,6 +48,122 @@ afterAll(async () => {
 describe("MCP kb management, edits, comments and digests", () => {
   test("kb_list says how to create a KB when there is none", async () => {
     expect(await executeTool("kb_list", {})).toContain("kb_manage action create");
+  });
+
+  test("should expose Markdown paths and accept document_id through the MCP protocol", async () => {
+    const server = createMcpServer();
+    const client = new Client({ name: "kb-contract-test", version: "1" });
+    const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    const call = (name: string, args: Record<string, unknown>) =>
+      client.callTool({ name, arguments: args });
+    try {
+      const { tools } = await client.listTools();
+      const path = tools.find((tool) => tool.name === "kb_write")?.inputSchema.properties?.path;
+      expect(path).toHaveProperty("description", expect.stringContaining(".md"));
+      expect(path).toHaveProperty("pattern");
+      const base = idOf(
+        await executeTool("kb_manage", { action: "create", name: "Contract", global: true }),
+      );
+      expect(
+        await call("kb_write", {
+          kb_id: base,
+          title: "Invalid path",
+          path: "scratch/repro",
+          content: "x",
+          note: "repro",
+        }),
+      ).toHaveProperty("isError", true);
+      for (const key of ["document_id", "id"]) {
+        const id = idOf(
+          await executeTool("kb_write", {
+            kb_id: base,
+            title: key,
+            path: `${key}.${key === "id" ? "MARKDOWN" : "md"}`,
+            content: "original",
+            note: "fixture",
+          }),
+        );
+        const target = { [key]: id };
+        expect(await call("kb_document", { action: "history", ...target })).not.toHaveProperty(
+          "isError",
+          true,
+        );
+        expect(
+          await call("kb_document", {
+            action: "edit",
+            ...target,
+            expected_revision: 1,
+            edits: [{ old: "original", new: "edited" }],
+            note: "edit",
+          }),
+        ).not.toHaveProperty("isError", true);
+        expect(
+          await call("kb_document", {
+            action: "update",
+            ...target,
+            expected_revision: 2,
+            title: "Renamed",
+          }),
+        ).not.toHaveProperty("isError", true);
+        expect(
+          await call("kb_document", {
+            action: "restore",
+            ...target,
+            expected_revision: 3,
+            revision: 1,
+          }),
+        ).not.toHaveProperty("isError", true);
+        expect(
+          (await getKnowledgeService()).getDocument({ source: "mcp", actor: {} }, id).content,
+        ).toBe("original");
+        expect(
+          await call("kb_document", {
+            action: "update",
+            ...target,
+            expected_revision: 1,
+            title: "Stale",
+          }),
+        ).toHaveProperty("isError", true);
+        expect(
+          await call("kb_document", { action: "history", id, document_id: "other" }),
+        ).toHaveProperty("isError", true);
+        expect(
+          await call("kb_document", { action: "history", id, document_id: id }),
+        ).not.toHaveProperty("isError", true);
+        expect(await call("kb_document", { action: "delete", ...target })).not.toHaveProperty(
+          "isError",
+          true,
+        );
+      }
+      expect(await call("kb_document", { action: "history" })).toHaveProperty("isError", true);
+      expect(await call("kb_document", { action: "history", document_id: "" })).toHaveProperty(
+        "isError",
+        true,
+      );
+      const locked = idOf(
+        await executeTool("kb_write", {
+          kb_id: base,
+          title: "Locked",
+          content: "original",
+          note: "fixture",
+        }),
+      );
+      const service = await getKnowledgeService();
+      service.updateKb({ source: "ui", actor: {} }, base, { editable_by: ["ui"] });
+      expect(
+        await call("kb_document", {
+          action: "update",
+          document_id: locked,
+          expected_revision: 1,
+          title: "Forbidden",
+        }),
+      ).toHaveProperty("isError", true);
+      expect(service.getDocument({ source: "mcp", actor: {} }, locked).title).toBe("Locked");
+    } finally {
+      await client.close();
+      await server.close();
+    }
   });
 
   test("kb_manage creates, updates and deletes with the exact name", async () => {

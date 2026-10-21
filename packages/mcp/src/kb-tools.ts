@@ -117,7 +117,13 @@ export const kbToolDefinitions = [
       document_id: z.string().optional().describe("Document to replace"),
       expected_revision: z.number().int().min(1).optional(),
       title: KbDocumentCreateSchema.shape.title.optional(),
-      path: KbDocumentCreateSchema.shape.path,
+      path: KbDocumentCreateSchema.shape.path
+        .unwrap()
+        .regex(/\.[mM](?:[dD]|[aA][rR][kK][dD][oO][wW][nN])$/, "Use a .md or .markdown path")
+        .optional()
+        .describe(
+          "Relative Markdown path ending in .md or .markdown (case-insensitive). For new documents, omit to generate from title.",
+        ),
       description: KbDocumentCreateSchema.shape.description,
       labels: KbDocumentUpdateSchema.shape.labels,
       content: KbDocumentCreateSchema.shape.content,
@@ -155,10 +161,19 @@ export const kbToolDefinitions = [
       "text or {start_line, end_line, new} for whole lines (end_line = start_line - 1 inserts); all edits refer to " +
       "expected_revision as read (kb_read with start_line/end_line shows numbered lines), so later edits never " +
       "shift. update: title, path (move), description or labels. history: revisions. restore: bring back a past " +
-      "revision. delete: remove the document.",
+      "revision. delete: remove the document. Pass document_id (or its legacy alias id).",
     inputSchema: z.object({
       action: z.enum(["edit", "update", "history", "restore", "delete"]),
-      id: z.string().describe("Document ID"),
+      document_id: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Document ID; required unless id is supplied"),
+      id: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Legacy alias for document_id; must match if both are supplied"),
       expected_revision: z.number().int().min(1).optional().describe("edit, update, restore"),
       edits: KbDocumentEditSchema.shape.edits.optional(),
       title: KbDocumentUpdateSchema.shape.title,
@@ -454,7 +469,9 @@ export async function executeKbTool(
       return `Deleted knowledge base ${kbId} "${kb.name}".`;
     }
     case "kb_document": {
-      const id = args.id as string;
+      if (args.document_id !== undefined && args.id !== undefined && args.document_id !== args.id)
+        throw new ValidationError("document_id and id must match when both are supplied");
+      const id = need({ document_id: args.document_id ?? args.id }, "document_id", "kb_document");
       switch (args.action as "edit" | "update" | "history" | "restore" | "delete") {
         case "edit": {
           const { document: d, changed } = svc.editDocument(ctx, id, {
