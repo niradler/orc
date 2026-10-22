@@ -256,3 +256,24 @@ await retireSshMaster(host.alias);
 `),
   20_000,
 );
+
+test(
+  "retirement waits for setup after its only command times out",
+  () =>
+    sshScenario(`
+writeFileSync(process.env.HOME + "/delay-master", "");
+const command = hostExec(host, ["queued-command"], { timeoutMs: 150 })
+  .then(() => "executed", error => String(error));
+await until(() => events().includes("master-start"));
+await retireSshMaster(host.alias);
+expect(await command).toContain("timed out");
+await Bun.sleep(50);
+const closedDuringSetup = events().includes("close");
+writeFileSync(process.env.HOME + "/release-master", "");
+expect(closedDuringSetup).toBe(false);
+await until(() => events().includes("master" + String.fromCharCode(10)));
+await until(() => readFileSync(process.env.HOME + "/master", "utf8") === "down");
+expect(events()).not.toContain("queued-ran");
+`),
+  20_000,
+);

@@ -509,7 +509,7 @@ export function trackHostProcess(alias: string, exited: Promise<unknown>): void 
       return;
     }
     liveProcesses.delete(alias);
-    if (retiring.has(alias) && !masterInUse(alias)) void closeSshMaster(alias);
+    if (retiring.has(alias) && !masterInUse(alias)) void retireSshMaster(alias);
     else scheduleMasterIdle(alias);
   });
 }
@@ -531,7 +531,7 @@ function scheduleMasterIdle(alias: string): void {
   if (masterInUse(alias) || retiring.has(alias)) return;
   const timer = setTimeout(() => {
     idleMasters.delete(alias);
-    if (!masterInUse(alias)) void closeSshMaster(alias);
+    if (!masterInUse(alias)) void retireSshMaster(alias);
   }, MASTER_IDLE_MS);
   timer.unref();
   idleMasters.set(alias, timer);
@@ -603,7 +603,7 @@ function endHostCommand(alias: string): void {
   const left = (activeCommands.get(alias) ?? 1) - 1;
   if (left > 0) activeCommands.set(alias, left);
   else activeCommands.delete(alias);
-  if (retiring.has(alias) && !masterInUse(alias)) void closeSshMaster(alias);
+  if (retiring.has(alias) && !masterInUse(alias)) void retireSshMaster(alias);
   else scheduleMasterIdle(alias);
 }
 
