@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   bumpPatch,
@@ -27,6 +27,21 @@ describe("release safety", () => {
     expect(run("npm", ["--version"], { capture: true, quiet: true, timeout: 10_000 })).toMatch(
       /^\d+\.\d+\.\d+$/,
     );
+  });
+  test("should refuse local preparation without explicit execution before changing release state", () => {
+    const manifest = resolve(import.meta.dir, "../package.json");
+    const checkpoint = resolve(import.meta.dir, "../.orc/release-state.json");
+    const before = readFileSync(manifest, "utf8");
+    const state = existsSync(checkpoint) ? readFileSync(checkpoint, "utf8") : undefined;
+    expect(() =>
+      run(process.execPath, [resolve(import.meta.dir, "release.ts"), "--prepare"], {
+        capture: true,
+        quiet: true,
+        timeout: 10_000,
+      }),
+    ).toThrow("--prepare requires --yes");
+    expect(readFileSync(manifest, "utf8")).toBe(before);
+    expect(existsSync(checkpoint) ? readFileSync(checkpoint, "utf8") : undefined).toBe(state);
   });
   test("should reject combining verification with publication before touching release state", () => {
     const manifest = resolve(import.meta.dir, "../package.json");

@@ -3,11 +3,13 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  mkdtempSync,
   readdirSync,
   readFileSync,
   renameSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { publishDockerRelease } from "./release-docker.js";
@@ -47,6 +49,7 @@ const { values } = parseArgs({
   options: {
     yes: { type: "boolean" },
     resume: { type: "boolean" },
+    prepare: { type: "boolean" },
     check: { type: "boolean" },
     verify: { type: "boolean" },
     "ci-matrix": { type: "boolean" },
@@ -81,8 +84,14 @@ function validate(): void {
   command("bun", ["x", "biome", "check", "./packages", "./scripts"]);
   command("bun", ["run", "typecheck"]);
   command("bun", ["x", "tsc", "-p", "scripts/tsconfig.json"]);
-  command("bun", ["test", "scripts/release.test.ts", "scripts/release-verification.test.ts"]);
-  command("bun", ["run", "test"]);
+  const testHome = mkdtempSync(join(tmpdir(), "orc-release-home-"));
+  console.log(`Release test home: ${testHome}`);
+  const env = { HOME: testHome, USERPROFILE: testHome };
+  run("bun", ["test", "scripts/release.test.ts", "scripts/release-verification.test.ts"], {
+    cwd: ROOT,
+    env,
+  });
+  run("bun", ["run", "test"], { cwd: ROOT, env });
 }
 
 async function verifyRelease(state: State, runtime: boolean): Promise<void> {
@@ -121,10 +130,14 @@ async function verifyRelease(state: State, runtime: boolean): Promise<void> {
 async function main(): Promise<void> {
   if (values.help) {
     console.log(
-      "bun run release [--yes | --check | --verify | --resume --yes]\nDefault: print plan. --check: run all checks without bump/publish.\n--verify: verify the checkpointed public release and installed desktop; no publication or installation.\n--yes: test, bump patch, build, tag, release, npm, Docker runtime checks, update desktop, verify.\n--resume --yes: continue the same version after a failure. Only the tag is pushed; no branch push.",
+      "bun run release [--yes | --prepare --yes | --check | --verify | --resume --yes]\nDefault: print plan. --check: run all checks without bump/publish.\n--prepare --yes: test, bump patch and build locally; stop before tag push or publication.\n--verify: verify the checkpointed public release and installed desktop; no publication or installation.\n--yes: test, bump patch, build, tag, release, npm, Docker runtime checks, update desktop, verify.\n--resume --yes: continue the same version after a failure. Only the tag is pushed; no branch push.",
     );
     return;
   }
+  if (values.prepare && (!values.yes || values.verify || values.check || values["ci-matrix"]))
+    throw new Error(
+      "--prepare requires --yes and cannot be combined with --verify, --check or --ci-matrix",
+    );
   if (values.verify) {
     if (values.yes || values.resume || values.check || values["ci-matrix"])
       throw new Error("--verify cannot be combined with publication or --check");
@@ -259,6 +272,12 @@ async function main(): Promise<void> {
       throw new Error("Missing local installer");
     checkClean();
   });
+  if (values.prepare) {
+    console.log(
+      `Prepared ${tag} locally. No tag pushed or artifacts published. Continue with --resume --yes.`,
+    );
+    return;
+  }
   await step("tag", () => {
     const existing = command("git", ["tag", "--list", tag], ROOT, true);
     if (!existing) command("git", ["tag", "-a", tag, "-m", `orc ${tag}`]);
