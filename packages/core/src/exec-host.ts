@@ -80,6 +80,7 @@ export interface HostExecOptions {
   cwd?: string | undefined;
   env?: Record<string, string> | undefined;
   input?: string | Uint8Array | undefined;
+  /** For SSH, includes channel queueing and connection setup. */
   timeoutMs?: number | undefined;
   login?: boolean | undefined;
 }
@@ -136,6 +137,8 @@ const MAX_SHARED_SESSIONS = 8;
 const pendingMasters = new Map<string, { key: string; promise: Promise<void> }>();
 const closingMasters = new Map<string, Promise<void>>();
 const verifiedMasters = new Map<string, number>();
+// Late results from a replaced connection must not invalidate its successor.
+const masterGenerations = new Map<string, symbol>();
 const probes = new Map<string, { at: number; probe: Promise<HostProbe> }>();
 const liveProcesses = new Map<string, number>();
 const activeCommands = new Map<string, number>();
@@ -351,8 +354,10 @@ async function startMaster(host: SshExecHost): Promise<void> {
         return;
       }
     }
+    masterGenerations.set(host.alias, Symbol());
     await controlCommand(host.alias, "exit");
   }
+  masterGenerations.set(host.alias, Symbol());
   const direct = !host.automaticPort && (await remoteApiReachable(host));
   const log = join(sshDir(), `${host.alias}.log`);
   writeFileSync(log, "", { mode: 0o600 });
@@ -462,7 +467,6 @@ async function remoteApiReachable(host: SshExecHost, shared = false): Promise<bo
 
 export async function ensureSshMaster(host: SshExecHost): Promise<void> {
   const key = `${host.alias}|${host.remotePort}|${host.apiTarget}`;
-  retiring.delete(host.alias);
   await closingMasters.get(host.alias);
   const pending = pendingMasters.get(host.alias);
   if (pending) {
@@ -484,6 +488,7 @@ export async function ensureSshMaster(host: SshExecHost): Promise<void> {
   }
   if (host.automaticPort)
     host.remotePort = allocatedPorts.get(`${host.alias}|${host.apiTarget}`) ?? 0;
+  if (!masterGenerations.has(host.alias)) masterGenerations.set(host.alias, Symbol());
   verifiedMasters.set(key, Date.now());
   scheduleMasterIdle(host.alias);
 }
@@ -504,7 +509,7 @@ export function trackHostProcess(alias: string, exited: Promise<unknown>): void 
       return;
     }
     liveProcesses.delete(alias);
-    if (retiring.has(alias) && !masterInUse(alias)) void closeSshMaster(alias);
+    if (retiring.has(alias) && !masterInUse(alias)) void retireSshMaster(alias);
     else scheduleMasterIdle(alias);
   });
 }
@@ -526,23 +531,64 @@ function scheduleMasterIdle(alias: string): void {
   if (masterInUse(alias) || retiring.has(alias)) return;
   const timer = setTimeout(() => {
     idleMasters.delete(alias);
-    if (!masterInUse(alias)) void closeSshMaster(alias);
+    if (!masterInUse(alias)) void retireSshMaster(alias);
   }, MASTER_IDLE_MS);
   timer.unref();
   idleMasters.set(alias, timer);
 }
 
-async function beginHostCommand(alias: string): Promise<void> {
+function commandTimeLeft(alias: string, deadline: number | undefined): number | undefined {
+  if (deadline === undefined) return undefined;
+  const left = Math.ceil(deadline - performance.now());
+  if (left <= 0) throw new SshError(`SSH command on ${alias} timed out`);
+  return left;
+}
+
+async function commandSetup(host: SshExecHost, deadline: number | undefined): Promise<void> {
+  const timeoutMs = commandTimeLeft(host.alias, deadline);
+  if (timeoutMs === undefined) return ensureSshMaster(host);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      ensureSshMaster(host),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new SshError(`SSH command on ${host.alias} timed out`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function beginHostCommand(alias: string, deadline: number | undefined): Promise<void> {
+  const timeoutMs = commandTimeLeft(alias, deadline);
   clearMasterIdle(alias);
   const active = activeCommands.get(alias) ?? 0;
   if (active < MAX_SHARED_SESSIONS) {
     activeCommands.set(alias, active + 1);
     return;
   }
-  await new Promise<void>((resolve) => {
+  await new Promise<void>((resolve, reject) => {
     const waiters = commandWaiters.get(alias) ?? [];
-    waiters.push(resolve);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const ready = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    waiters.push(ready);
     commandWaiters.set(alias, waiters);
+    if (timeoutMs !== undefined) {
+      timer = setTimeout(() => {
+        const index = waiters.indexOf(ready);
+        if (index < 0) return;
+        waiters.splice(index, 1);
+        if (waiters.length === 0) commandWaiters.delete(alias);
+        reject(new SshError(`SSH command on ${alias} timed out`));
+      }, timeoutMs);
+    }
   });
 }
 
@@ -557,7 +603,7 @@ function endHostCommand(alias: string): void {
   const left = (activeCommands.get(alias) ?? 1) - 1;
   if (left > 0) activeCommands.set(alias, left);
   else activeCommands.delete(alias);
-  if (retiring.has(alias) && !masterInUse(alias)) void closeSshMaster(alias);
+  if (retiring.has(alias) && !masterInUse(alias)) void retireSshMaster(alias);
   else scheduleMasterIdle(alias);
 }
 
@@ -567,6 +613,7 @@ async function closeSshMaster(alias: string): Promise<void> {
   if (existing) return existing;
   const closing = (async () => {
     retiring.delete(alias);
+    masterGenerations.set(alias, Symbol());
     forgetHost(alias);
     try {
       await controlCommand(alias, "exit");
@@ -586,6 +633,7 @@ export async function retireSshMaster(alias: string): Promise<void> {
   if (pending) {
     retiring.add(alias);
     await pending.promise.catch(() => undefined);
+    if (masterInUse(alias)) return;
   }
   await closeSshMaster(alias);
 }
@@ -620,12 +668,15 @@ export async function hostExec(
       }),
     );
   }
-  await beginHostCommand(host.alias);
+  const deadline = opts.timeoutMs ? performance.now() + opts.timeoutMs : undefined;
+  await beginHostCommand(host.alias, deadline);
   try {
-    await ensureSshMaster(host);
+    await commandSetup(host, deadline);
+    const generation = masterGenerations.get(host.alias);
     const withEnv = opts.env
       ? ["env", ...Object.entries(opts.env).map(([k, v]) => `${k}=${v}`), ...argv]
       : argv;
+    const remainingTimeoutMs = commandTimeLeft(host.alias, deadline);
     const result = await collect(
       Bun.spawn(
         sshArgv(host, remoteCommand(withEnv, { cwd: opts.cwd, login: opts.login }), {
@@ -636,11 +687,15 @@ export async function hostExec(
           stdin: input,
           stdout: "pipe",
           stderr: "pipe",
-          ...(opts.timeoutMs ? { timeout: opts.timeoutMs } : {}),
+          ...(remainingTimeoutMs !== undefined ? { timeout: remainingTimeoutMs } : {}),
         },
       ),
     );
-    if (result.code === 255 && isSshTransportFailure(result.stderr))
+    if (
+      result.code === 255 &&
+      isSshTransportFailure(result.stderr) &&
+      masterGenerations.get(host.alias) === generation
+    )
       await closeSshMaster(host.alias);
     return result;
   } finally {
@@ -824,6 +879,12 @@ export async function hostHome(host: ExecHost): Promise<string> {
   return host.kind === "local" ? homedir() : (await probeHost(host)).home;
 }
 
+function pathCheckResult(host: SshExecHost, result: ExecResult): boolean {
+  if (result.code === 0) return true;
+  if (result.code === 1) return false;
+  throw new SshError(describeSshFailure(host.alias, result.stderr || "Remote path check failed"));
+}
+
 export async function hostIsDirectory(host: ExecHost, path: string): Promise<boolean> {
   if (host.kind === "local") {
     try {
@@ -834,8 +895,9 @@ export async function hostIsDirectory(host: ExecHost, path: string): Promise<boo
   }
   const result = await hostExec(host, ["test", "-d", await expandHostPath(host, path)], {
     login: false,
+    timeoutMs: 30_000,
   });
-  return result.code === 0;
+  return pathCheckResult(host, result);
 }
 
 export async function hostIsFile(host: ExecHost, path: string): Promise<boolean> {
@@ -847,8 +909,11 @@ export async function hostIsFile(host: ExecHost, path: string): Promise<boolean>
       return false;
     }
   }
-  const result = await hostExec(host, ["test", "-f", target], { login: false });
-  return result.code === 0;
+  const result = await hostExec(host, ["test", "-f", target], {
+    login: false,
+    timeoutMs: 30_000,
+  });
+  return pathCheckResult(host, result);
 }
 
 export async function readHostFile(

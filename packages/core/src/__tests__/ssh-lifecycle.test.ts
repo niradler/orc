@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-test("shares bounded SSH channels and waits for commands before retiring a master", async () => {
+async function sshScenario(body: string): Promise<void> {
   if (process.platform === "win32") return;
   const dir = mkdtempSync(join(tmpdir(), "orc-ssh-lifecycle-"));
   const fake = join(dir, "ssh");
@@ -20,8 +20,32 @@ if (args.includes("-O")) {
   if (op === "check") process.exit(existsSync(state) && await Bun.file(state).text() === "up" ? 0 : 1);
   if (op === "exit") { writeFileSync(state, "down"); log("close"); process.exit(0); }
 }
-if (args.includes("-N")) { writeFileSync(state, "up"); log("master"); process.exit(0); }
+if (args.includes("-N")) {
+  if (existsSync(root + "/delay-master")) {
+    log("master-start");
+    while (!existsSync(root + "/release-master")) await Bun.sleep(5);
+  }
+  writeFileSync(state, "up"); log("master"); process.exit(0);
+}
 if (args.at(-1).includes("curl")) process.exit(0);
+const command = args.at(-1);
+if (existsSync(root + "/fail-file-check") && (command.includes("test -f") || command.includes("test -d"))) {
+  console.error("Connection reset by peer");
+  process.exit(255);
+}
+if (command.includes("gate-command")) {
+  log("gate-start");
+  while (!existsSync(root + "/release")) await Bun.sleep(5);
+  log("gate-end"); process.exit(0);
+}
+if (command.includes("failure-fast") || command.includes("failure-slow")) {
+  const kind = command.includes("failure-fast") ? "fast" : "slow";
+  log(kind + "-start");
+  while (!existsSync(root + "/release-" + kind)) await Bun.sleep(5);
+  console.error("mux_client_request_session: read from master failed");
+  process.exit(255);
+}
+if (command.includes("queued-command")) { log("queued-ran"); process.exit(0); }
 if (!args.at(-1).includes("hold-command") && !args.at(-1).includes("'echo'")) {
   log("start");
   const proc = Bun.spawn(["/bin/sh", "-c", args.at(-1)], {
@@ -44,19 +68,49 @@ console.log("ok");
     scenario,
     `
 import { expect } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { Database } from "bun:sqlite";
 import { codexAdapter } from ${JSON.stringify(resolve(import.meta.dir, "../../../api/src/sessions/codex.ts"))};
 import { hostExec, hostRuntime, retireSshMaster, trackHostProcess } from ${JSON.stringify(modulePath)};
 const host = { kind: "ssh", alias: "fixture", remotePort: 7700,
   apiTarget: "127.0.0.1:7700", secret: undefined, connectTimeoutSecs: 1 };
 const logPath = process.env.HOME + "/events";
+const events = () => existsSync(logPath) ? readFileSync(logPath, "utf8") : "";
+const until = async (check) => {
+  const deadline = Date.now() + 3000;
+  while (!check()) {
+    if (Date.now() > deadline) throw new Error("fixture condition timed out");
+    await Bun.sleep(5);
+  }
+};
+${body}
+
+`,
+  );
+  const child = Bun.spawn([process.execPath, scenario], {
+    env: { ...process.env, HOME: dir, USERPROFILE: dir, PATH: `${dir}:${process.env.PATH}` },
+    stdout: "pipe",
+    stderr: "pipe",
+    timeout: 15_000,
+  });
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  expect({ code, stdout, stderr }).toEqual({ code: 0, stdout: "", stderr: "" });
+}
+
+test(
+  "shares bounded SSH channels and discovers Codex sessions",
+  () =>
+    sshScenario(`
 const results = await Promise.all(Array.from({length: 24}, () => hostExec(host, ["echo", "ok"])));
 expect(results.every(r => r.code === 0 && r.stdout.trim() === "ok")).toBe(true);
 let active = 0, peak = 0;
-const events = readFileSync(logPath, "utf8").trim().split("\\n");
-expect(events.filter(e => e === "master").length).toBe(1);
-for (const event of events) {
+const initialEvents = readFileSync(logPath, "utf8").trim().split("\\n");
+expect(initialEvents.filter(e => e === "master").length).toBe(1);
+for (const event of initialEvents) {
   if (event === "start") peak = Math.max(peak, ++active);
   if (event === "end") active--;
 }
@@ -98,19 +152,128 @@ expect(sessions).toHaveLength(35);
 expect(sessions.every(session => session.status === "running")).toBe(true);
 expect(new Set(sessions.map(session => session.externalId)).size).toBe(35);
 await retireSshMaster(host.alias);
+`),
+  20_000,
+);
 
-`,
-  );
-  const child = Bun.spawn([process.execPath, scenario], {
-    env: { ...process.env, HOME: dir, USERPROFILE: dir, PATH: `${dir}:${process.env.PATH}` },
-    stdout: "pipe",
-    stderr: "pipe",
-    timeout: 15_000,
-  });
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ]);
-  expect({ code, stdout, stderr }).toEqual({ code: 0, stdout: "", stderr: "" });
-}, 20_000);
+test(
+  "expires queued commands without executing them or leaking a channel",
+  () =>
+    sshScenario(`
+const blockers = Array.from({ length: 8 }, () => hostExec(host, ["gate-command"]));
+await until(() => events().split("gate-start").length - 1 === 8);
+const queued = hostExec(host, ["queued-command"], { timeoutMs: 50 })
+  .then(() => "executed", error => String(error));
+const outcome = await Promise.race([queued, Bun.sleep(300).then(() => "still queued")]);
+writeFileSync(process.env.HOME + "/release", "");
+await Promise.all(blockers);
+await queued;
+expect(outcome).toContain("timed out");
+expect(events()).not.toContain("queued-ran");
+expect((await hostExec(host, ["echo", "ok"])).code).toBe(0);
+await retireSshMaster(host.alias);
+`),
+  20_000,
+);
+
+test(
+  "retirement survives commands that were already queued",
+  () =>
+    sshScenario(`
+const commands = Array.from({ length: 9 }, () => hostExec(host, ["gate-command"]));
+await until(() => events().split("gate-start").length - 1 === 8);
+await retireSshMaster(host.alias);
+writeFileSync(process.env.HOME + "/release", "");
+await Promise.all(commands);
+await until(() => readFileSync(process.env.HOME + "/master", "utf8") === "down");
+expect(events().split("gate-end").length - 1).toBe(9);
+`),
+  20_000,
+);
+
+test(
+  "a delayed old transport error cannot close its replacement",
+  () =>
+    sshScenario(`
+const fast = hostExec(host, ["failure-fast"]);
+const slow = hostExec(host, ["failure-slow"]);
+await until(() => events().includes("fast-start") && events().includes("slow-start"));
+writeFileSync(process.env.HOME + "/release-fast", "");
+expect((await fast).code).toBe(255);
+expect((await hostExec(host, ["echo", "ok"])).code).toBe(0);
+expect(events().split("master").length - 1).toBe(2);
+writeFileSync(process.env.HOME + "/release-slow", "");
+expect((await slow).code).toBe(255);
+expect(readFileSync(process.env.HOME + "/master", "utf8")).toBe("up");
+await retireSshMaster(host.alias);
+`),
+  20_000,
+);
+
+test(
+  "a setup timeout never launches the expired command",
+  () =>
+    sshScenario(`
+writeFileSync(process.env.HOME + "/delay-master", "");
+const command = hostExec(host, ["queued-command"], { timeoutMs: 150 })
+  .then(() => "executed", error => String(error));
+await until(() => events().includes("master-start"));
+const outcome = await Promise.race([command, Bun.sleep(400).then(() => "still starting")]);
+writeFileSync(process.env.HOME + "/release-master", "");
+await until(() => existsSync(process.env.HOME + "/master"));
+expect(outcome).toContain("timed out");
+expect(events()).not.toContain("queued-ran");
+expect((await hostExec(host, ["echo", "ok"])).code).toBe(0);
+await retireSshMaster(host.alias);
+`),
+  20_000,
+);
+
+test(
+  "SSH file-check failures cannot turn Codex discovery into an empty success",
+  () =>
+    sshScenario(`
+writeFileSync(process.env.HOME + "/fail-file-check", "");
+const runtime = hostRuntime(host);
+await expect(codexAdapter(process.env.HOME + "/state.sqlite", { runtime }).list())
+  .rejects.toThrow("Connection reset");
+await expect(runtime.isDirectory(process.env.HOME)).rejects.toThrow("Connection reset");
+await retireSshMaster(host.alias);
+`),
+  20_000,
+);
+
+test(
+  "genuinely missing remote files remain false",
+  () =>
+    sshScenario(`
+const runtime = hostRuntime(host);
+expect(await runtime.isFile(process.env.HOME + "/missing")).toBe(false);
+expect(await runtime.isDirectory(process.env.HOME + "/missing")).toBe(false);
+expect(await runtime.isFile(process.env.HOME + "/events")).toBe(true);
+expect(await runtime.isDirectory(process.env.HOME)).toBe(true);
+await retireSshMaster(host.alias);
+`),
+  20_000,
+);
+
+test(
+  "retirement waits for setup after its only command times out",
+  () =>
+    sshScenario(`
+writeFileSync(process.env.HOME + "/delay-master", "");
+const command = hostExec(host, ["queued-command"], { timeoutMs: 150 })
+  .then(() => "executed", error => String(error));
+await until(() => events().includes("master-start"));
+await retireSshMaster(host.alias);
+expect(await command).toContain("timed out");
+await Bun.sleep(50);
+const closedDuringSetup = events().includes("close");
+writeFileSync(process.env.HOME + "/release-master", "");
+expect(closedDuringSetup).toBe(false);
+await until(() => events().includes("master" + String.fromCharCode(10)));
+await until(() => readFileSync(process.env.HOME + "/master", "utf8") === "down");
+expect(events()).not.toContain("queued-ran");
+`),
+  20_000,
+);
