@@ -504,7 +504,7 @@ export function trackHostProcess(alias: string, exited: Promise<unknown>): void 
       return;
     }
     liveProcesses.delete(alias);
-    if (retiring.has(alias)) void closeSshMaster(alias);
+    if (retiring.has(alias) && !masterInUse(alias)) void closeSshMaster(alias);
     else scheduleMasterIdle(alias);
   });
 }

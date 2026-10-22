@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
+import { userHome } from "./home.js";
 import { decryptSecret } from "./secrets.js";
 
 const ChannelDefaultModeSchema = z
@@ -265,7 +265,7 @@ export type OrcConfig = z.infer<typeof OrcConfigSchema>;
 export type GatewayPlatformConfig = z.infer<typeof GatewayPlatformConfigSchema>;
 
 function resolvePath(p: string): string {
-  if (p.startsWith("~/")) return join(homedir(), p.slice(2));
+  if (p.startsWith("~/")) return join(userHome(), p.slice(2));
   return p;
 }
 
@@ -480,7 +480,7 @@ export function resetConfig(): void {
 }
 
 export function globalConfigPath(): string {
-  return join(homedir(), ".orc", "config.json");
+  return join(userHome(), ".orc", "config.json");
 }
 
 export function hiddenBuiltinSkills(): string[] {
