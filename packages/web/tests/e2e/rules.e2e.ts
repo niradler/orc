@@ -102,6 +102,7 @@ test("should reuse filters for context, job, and both script targets while retai
   try {
     const job = await apiPost<{ id: string }>(request, "/jobs", {
       name: `rule-job-${Date.now()}`,
+      enabled: true,
       command: "echo validated",
       trigger_type: "manual",
     });
