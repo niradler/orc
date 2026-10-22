@@ -241,16 +241,8 @@ export type ProjectSummary = {
   jobs: number;
 };
 
-export type HealthResponse = {
-  status: "ok";
-  version: string;
-  uptime: number;
-  agent_loop: {
-    enabled: boolean;
-    poll_interval_minutes: number;
-    max_workers: number;
-  };
-};
+export type HealthResponse = components["schemas"]["HealthResponse"];
+export type RestartResponse = components["schemas"]["RestartResponse"];
 
 export type CreateTaskInput = TaskGitLinks & {
   title: string;

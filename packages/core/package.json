@@ -4,6 +4,8 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./process-supervisor": "./src/process-supervisor.ts",
+    "./github-auth": "./src/github-auth.ts",
     "./job-actions": "./src/job-actions.ts",
     "./changes": "./src/changes.ts",
     ".": "./src/index.ts",

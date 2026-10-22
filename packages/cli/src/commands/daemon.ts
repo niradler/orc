@@ -9,7 +9,9 @@ import {
 } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
+import { registerShutdownHook } from "@orc/api/lifecycle";
 import { loadConfig } from "@orc/core/config";
+import { superviseServer } from "@orc/core/process-supervisor";
 import { startGateway, stopGateway } from "@orc/gateway";
 import {
   startScheduler,
@@ -241,6 +243,7 @@ export function daemonCommand() {
     .command("start", { isDefault: true })
     .description("Start the daemon (use global --port / --host / --db / --secret to configure)")
     .action(async () => {
+      if (!(await superviseServer())) return;
       ensureOrcHome();
       inheritLoginShellPath();
 
@@ -258,6 +261,17 @@ export function daemonCommand() {
       const config = loadConfig();
 
       writePid();
+      registerShutdownHook(async () => {
+        stopTaskLoop();
+        stopScheduler();
+        try {
+          await stopWatchers();
+          await stopGateway();
+        } finally {
+          removePid();
+        }
+        process.stdout.write("[orc] Stopped.\n");
+      });
       await import("@orc/api");
       console.log(`[orc] home     ${ORC_HOME}`);
       console.log(`[orc] db       ${config.db.path}`);
@@ -269,20 +283,6 @@ export function daemonCommand() {
       await startGateway();
       startTaskLoop();
       console.log("[orc] Scheduler + watchers + gateway + task loop active. Ctrl+C to stop.\n");
-
-      const shutdown = async (signal: string) => {
-        process.stdout.write(`\n[orc] ${signal} - shutting down...\n`);
-        stopTaskLoop();
-        stopScheduler();
-        await stopWatchers();
-        await stopGateway();
-        removePid();
-        process.stdout.write("[orc] Stopped.\n");
-        process.exit(0);
-      };
-
-      process.on("SIGINT", () => void shutdown("SIGINT"));
-      process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
       await new Promise(() => {});
     });

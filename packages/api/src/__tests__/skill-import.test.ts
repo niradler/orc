@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import * as githubAuth from "@orc/core/github-auth";
 import { getUserSkillsDir, reloadCache } from "@orc/core/skill-service";
 import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
@@ -23,13 +24,21 @@ const files = new Map<string, Buffer>([
 ]);
 let app: ReturnType<typeof createApp>;
 let fetchMock: ReturnType<typeof spyOn<typeof globalThis, "fetch">>;
+let authMock: ReturnType<typeof spyOn<typeof githubAuth, "resolveGithubAuth">>;
 
 beforeAll(() => {
   app = setupTestApp();
+  authMock = spyOn(githubAuth, "resolveGithubAuth").mockResolvedValue({
+    source: "gh",
+    token: "private-import-token",
+  });
   fetchMock = spyOn(globalThis, "fetch").mockImplementation((async (
     input: string | URL | Request,
+    init?: RequestInit,
   ) => {
     const url = String(input);
+    if (new Headers(init?.headers).get("Authorization") !== "Bearer private-import-token")
+      return new Response(null, { status: 404 });
     if (url.startsWith("https://api.github.com/repos/acme/skills/commits/"))
       return Response.json({ sha: currentCommit });
     if (url.startsWith("https://api.github.com/repos/acme/skills/git/trees/"))
@@ -43,8 +52,13 @@ beforeAll(() => {
           size: oversized ? 9 * 1024 * 1024 : bytes.length,
         })),
       });
-    if (url.startsWith("https://raw.githubusercontent.com/acme/skills/")) {
-      const path = url.split("/").slice(6).map(decodeURIComponent).join("/");
+    if (
+      url.startsWith("https://raw.githubusercontent.com/acme/skills/") ||
+      url.startsWith("https://api.github.com/repos/acme/skills/contents/")
+    ) {
+      const path = url.startsWith("https://api.github.com/")
+        ? new URL(url).pathname.split("/").slice(5).map(decodeURIComponent).join("/")
+        : url.split("/").slice(6).map(decodeURIComponent).join("/");
       const file = files.get(path);
       return new Response(file ? new Uint8Array(file) : null, { status: file ? 200 : 404 });
     }
@@ -53,6 +67,7 @@ beforeAll(() => {
 });
 afterAll(() => {
   fetchMock.mockRestore();
+  authMock.mockRestore();
   for (const value of [name, unsafeName]) {
     rmSync(join(getUserSkillsDir(), value), { recursive: true, force: true });
     rmSync(join(homedir(), ".orc", "skill-imports", `${value}.json`), { force: true });
@@ -115,6 +130,7 @@ test("should import, edit, sync, report conflicts and override only reviewed ver
   const provenance = await origin.json();
   expect(provenance).toMatchObject({ repository: "acme/skills", commit, path: `skills/${name}` });
   expect(provenance.files).toBeUndefined();
+  expect(JSON.stringify(provenance)).not.toContain("private-import-token");
   expect(
     (
       await req(app, "POST", "/skills/import", {

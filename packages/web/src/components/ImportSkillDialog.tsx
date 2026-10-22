@@ -57,8 +57,9 @@ export function ImportSkillDialog({ onClose }: { onClose: () => void }) {
             autoFocus
           />
           <p className="text-xs text-outline">
-            Public GitHub repositories, owner/repo, skill-folder URLs and skills.sh links.
-            Supporting files are included.
+            GitHub repositories, owner/repo, skill-folder URLs and skills.sh links. Private
+            repositories use gh login on the execution host (local or SSH), or ORC_GITHUB_TOKEN on
+            the ORC server. Supporting files are included.
           </p>
           <Button type="submit" data-testid="skill-discover" disabled={busy || !source.trim()}>
             {discover.isPending ? "Discovering…" : "Discover skills"}

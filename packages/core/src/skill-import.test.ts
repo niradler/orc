@@ -1,6 +1,74 @@
-import { describe, expect, test } from "bun:test";
-import { parseSkillRepository } from "./skill-import.js";
+import { describe, expect, spyOn, test } from "bun:test";
+import {
+  parseSkillRepository,
+  readRepositoryFile,
+  readTree,
+  resolveCommit,
+} from "./skill-import.js";
 import { mergeSkillFiles } from "./skill-sync.js";
+
+test("should authenticate private commit, tree and binary file requests without following redirects", async () => {
+  const commit = "a".repeat(40);
+  const requests: string[] = [];
+  const respond = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const url = String(input);
+    requests.push(url);
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer private-secret");
+    expect(init?.redirect).toBe("error");
+    expect(new URL(url).origin).toBe("https://api.github.com");
+    if (url.includes("/commits/")) return Response.json({ sha: commit });
+    if (url.includes("/git/trees/")) return Response.json({ tree: [], truncated: false });
+    expect(new Headers(init?.headers).get("Accept")).toBe("application/vnd.github.raw+json");
+    return new Response(new Uint8Array([0, 255, 128]));
+  };
+  const remote = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(respond, { preconnect: fetch.preconnect }),
+  );
+  try {
+    expect(await resolveCommit("acme/private-skills", "HEAD", "private-secret")).toBe(commit);
+    expect(await readTree("acme/private-skills", commit, "private-secret")).toEqual([]);
+    expect(
+      await readRepositoryFile(
+        "acme/private-skills",
+        commit,
+        "skills/demo/a b.bin",
+        "private-secret",
+      ),
+    ).toEqual(Buffer.from([0, 255, 128]));
+    expect(requests[2]).toBe(
+      `https://api.github.com/repos/acme/private-skills/contents/skills/demo/a%20b.bin?ref=${commit}`,
+    );
+  } finally {
+    remote.mockRestore();
+  }
+});
+
+test("should retain anonymous public downloads and give safe authentication errors", async () => {
+  let status = 200;
+  const respond = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    expect(new Headers(init?.headers).has("Authorization")).toBe(false);
+    expect(String(input)).toStartWith("https://raw.githubusercontent.com/acme/skills/");
+    return new Response("public", { status });
+  };
+  const remote = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(respond, { preconnect: fetch.preconnect }),
+  );
+  try {
+    expect((await readRepositoryFile("acme/skills", "a".repeat(40), "SKILL.md")).toString()).toBe(
+      "public",
+    );
+    status = 404;
+    await expect(readRepositoryFile("acme/skills", "a".repeat(40), "SKILL.md")).rejects.toThrow(
+      "sign in with gh on the execution host",
+    );
+    status = 401;
+    await expect(readRepositoryFile("acme/skills", "a".repeat(40), "SKILL.md")).rejects.toThrow(
+      "GitHub authentication failed",
+    );
+  } finally {
+    remote.mockRestore();
+  }
+});
 
 describe("skill repository sources", () => {
   test("should resolve shorthand, GitHub tree and skills.sh URLs", () => {

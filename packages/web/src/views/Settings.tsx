@@ -3,6 +3,7 @@ import { CheckCircle, Save } from "lucide-react";
 import { useState } from "react";
 import { api, getApiUrl } from "@/api/client";
 import { KnowledgeSettings } from "@/components/kb/KnowledgeSettings";
+import { ServerSettings } from "@/components/ServerSettings";
 import { SshHostSettings } from "@/components/SshHostSettings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -153,6 +154,7 @@ export default function Settings() {
         </section>
 
         <SshHostSettings />
+        <ServerSettings />
 
         <KnowledgeSettings />
 

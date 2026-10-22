@@ -61,6 +61,8 @@ On first launch the app sets everything up:
 
 The builds are unsigned: on macOS right-click the app and choose Open the first time, on Windows choose "More info" then "Run anyway".
 
+The sidebar shows the saved execution host, for example `Connected (lab)` or `Connected (local)`. Switching hosts applies to new actions immediately. For a full restart, use **Settings → ORC server → Restart ORC server**; it keeps settings and reconnects the dashboard automatically. Restart closes active terminals and may interrupt running work. Host changes never trigger a restart automatically.
+
 <details>
 <summary>Headless / CLI-only install (servers, Docker, CI)</summary>
 
@@ -698,7 +700,7 @@ orc skill validate ./my-workflow
 orc skill export my-workflow ./exported/my-workflow
 ```
 
-Import public GitHub skills from **Skills → Import from GitHub**. Paste a repository URL, `owner/repo`, a GitHub skill-folder URL, or a `https://skills.sh/owner/repo/skill` link, discover the skills, then select which to import. ORC copies each complete folder at the displayed commit, including nested documentation, scripts and binary assets. Existing names are never overwritten by an import. Select up to 16 skills per import (64 MiB total).
+Import GitHub skills from **Skills → Import from GitHub**. Paste a repository URL, `owner/repo`, a GitHub skill-folder URL, or a `https://skills.sh/owner/repo/skill` link, discover the skills, then select which to import. Private repositories use `gh` credentials on the configured execution host (local by default, remote when `ssh.host` is set), falling back to `ORC_GITHUB_TOKEN` / `github.token` on the ORC server; credentials need access to the repository. Without credentials, public repositories still work. ORC copies each complete folder at the displayed commit, including nested documentation, scripts and binary assets. Existing names are never overwritten by an import. Select up to 16 skills per import (64 MiB total).
 
 ```bash
 orc skill import vercel-labs/agent-skills --list
