@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { hostRuntime, LOCAL_HOST, SshError } from "@orc/core/exec-host";
 import type { createApp } from "../server.js";
 import { runSync, startSessionWatcher, tokensSettled } from "../session-watcher.js";
 import { claudeAdapter } from "../sessions/claude.js";
@@ -403,4 +404,40 @@ describe("cursor adapter", () => {
     ]);
     expect(rows.find((row) => row.session_id === "cursor-ended")?.status).toBe("stopped");
   });
+});
+
+test("failed Codex filesystem discovery preserves previously visible running sessions", async () => {
+  const now = new Date();
+  await runSync(
+    [
+      {
+        backend: "codex",
+        minIntervalMs: 0,
+        list: async () => [
+          {
+            backend: "codex",
+            externalId: "codex-retained-on-disconnect",
+            title: "Retained session",
+            status: "running",
+            createdAt: now,
+            lastActivityAt: now,
+          },
+        ],
+      },
+    ],
+    { force: true },
+  );
+  const adapter = codexAdapter("/unreachable/state.sqlite", {
+    runtime: {
+      ...hostRuntime(LOCAL_HOST),
+      isFile: async () => {
+        throw new SshError("Connection reset by peer");
+      },
+    },
+  });
+  const result = await runSync([adapter], { force: true });
+  expect(result[0]?.error).toContain("Connection reset");
+  expect(await live({ agent: "codex" })).toMatchObject([
+    { session_id: "codex-retained-on-disconnect", status: "running" },
+  ]);
 });
