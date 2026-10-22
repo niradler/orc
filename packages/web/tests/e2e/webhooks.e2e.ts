@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { resolve } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
-import { apiGet, apiPost, gotoView, tid } from "./_helpers";
+import { apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers";
 
 async function newWebhookJob(
   page: Page,
@@ -158,6 +158,7 @@ test("mobile navigation opens configured sources and job connections without ove
   page,
   request,
 }) => {
+  await apiPatch(request, "/settings", { theme: "dark" });
   const name = tid("mobile-source");
   const hook = await apiPost<{ id: string }>(request, "/webhooks", { name, provider: "github" });
   await apiPost(request, "/jobs", {
@@ -172,6 +173,7 @@ test("mobile navigation opens configured sources and job connections without ove
   const endpoint = page.getByTestId("webhook-endpoint").filter({ hasText: name });
   await expect(endpoint).toContainText("Connected jobs (1)");
   await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(page.locator("html")).toHaveClass(/dark/);
   await page.getByTestId("theme-toggle").click();
   await expect(page.locator("html")).not.toHaveClass(/dark/);
   await page.evaluate(async () => {
