@@ -403,6 +403,7 @@ export function CreateProjectDialog({
   const [status, setStatus] = useState<ProjectStatus>("active");
   const [tags, setTags] = useState("");
   const [scope, setScope] = useState("");
+  const [gitRemoteUrl, setGitRemoteUrl] = useState("");
   const [maxWorkers, setMaxWorkers] = useState("");
   const createProject = useCreateProject();
   const [firstTask, setFirstTask] = useState(true);
@@ -422,6 +423,7 @@ export function CreateProjectDialog({
             .filter(Boolean)
         : undefined,
       scope: scope.trim() || undefined,
+      git_remote_url: gitRemoteUrl.trim() || undefined,
       max_workers: maxWorkers ? Number(maxWorkers) : undefined,
     };
     createProject.mutate(input, {
@@ -434,7 +436,7 @@ export function CreateProjectDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="bg-surface border-outline-variant max-w-md">
+      <DialogContent className="bg-surface border-outline-variant max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-headline text-base  text-on-surface">
             New project
@@ -543,6 +545,25 @@ export function CreateProjectDialog({
               </p>
             )}
           </div>
+          <div className="space-y-1.5">
+            <Label
+              htmlFor="project-git-remote-url"
+              className="font-label text-sm text-muted-foreground"
+            >
+              Git remote URL (optional)
+            </Label>
+            <Input
+              id="project-git-remote-url"
+              className="bg-background border-control-border text-on-surface font-body text-sm"
+              data-testid="project-git-remote-url"
+              value={gitRemoteUrl}
+              onChange={(event) => setGitRemoteUrl(event.target.value)}
+              placeholder="https://github.com/owner/repo.git or git@github.com:owner/repo.git"
+            />
+            <p className="text-xs text-muted-foreground">
+              Repository address without credentials. Leave blank if not needed.
+            </p>
+          </div>
           <label className="flex flex-wrap gap-2 text-xs text-muted-foreground">
             <input
               type="checkbox"
@@ -599,6 +620,7 @@ function EditProjectDialog({
   const [status, setStatus] = useState<ProjectStatus>(project.status);
   const [tags, setTags] = useState((project.tags ?? []).join(", "));
   const [scope, setScope] = useState(project.scope ?? "");
+  const [gitRemoteUrl, setGitRemoteUrl] = useState(project.git_remote_url ?? "");
   const [maxWorkers, setMaxWorkers] = useState(
     project.max_workers != null ? String(project.max_workers) : "",
   );
@@ -620,6 +642,7 @@ function EditProjectDialog({
             .filter(Boolean)
         : null,
       scope: scope.trim() || null,
+      git_remote_url: gitRemoteUrl.trim() || null,
       max_workers: maxWorkers ? Number(maxWorkers) : null,
     };
     updateProject.mutate(input, {
@@ -631,7 +654,7 @@ function EditProjectDialog({
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent
         data-testid="edit-project-dialog"
-        className="bg-surface border-outline-variant max-w-lg"
+        className="bg-surface border-outline-variant max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto"
       >
         <DialogHeader>
           <DialogTitle className="font-headline text-base  text-on-surface">
@@ -723,6 +746,25 @@ function EditProjectDialog({
               onChange={(e) => setScope(e.target.value)}
               className="bg-background border-control-border text-on-surface font-body text-sm"
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label
+              htmlFor="edit-project-git-remote-url"
+              className="font-label text-sm text-muted-foreground"
+            >
+              Git remote URL (optional)
+            </Label>
+            <Input
+              id="edit-project-git-remote-url"
+              className="bg-background border-control-border text-on-surface font-body text-sm"
+              data-testid="edit-project-git-remote-url"
+              value={gitRemoteUrl}
+              onChange={(event) => setGitRemoteUrl(event.target.value)}
+              placeholder="https://github.com/owner/repo.git or git@github.com:owner/repo.git"
+            />
+            <p className="text-xs text-muted-foreground">
+              Clear this field to remove the saved address.
+            </p>
           </div>
           <DialogFooter>
             <Button

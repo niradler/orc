@@ -395,6 +395,8 @@ Enable the task loop in `~/.orc/config.json`:
 
 Projects group tasks, memories, and jobs. Set an active project and all commands auto-scope:
 
+Projects can also store an optional Git remote URL in the create/edit dialog or through `--git-remote-url`. HTTPS and SSH addresses are supported without embedded credentials. The address is project metadata; setting it does not clone a repository or change a checkout's remote. Clear it in the editor, send `git_remote_url: null` through the API, or use `orc project update my-app --clear-git-remote-url`.
+
 ```bash
 orc project add my-app -d "Main application"
 orc project use my-app       # set active

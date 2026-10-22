@@ -1,13 +1,50 @@
 import { expect, test } from "@playwright/test";
-import { apiDelete, apiPost, gotoView, tid } from "./_helpers";
+import { apiDelete, apiGet, apiPost, gotoView, tid } from "./_helpers";
 
 interface Project {
   id: string;
   name: string;
   status: string;
+  git_remote_url: string | null;
 }
 
 test.describe("Projects CRUD", () => {
+  test("saves, reopens, changes and clears an optional project Git remote URL", async ({
+    page,
+    request,
+  }) => {
+    const name = tid("pw-project-remote");
+    await gotoView(page, "projects");
+    await page.getByTestId("new-project-button").click();
+    await page.getByTestId("project-name-input").fill(name);
+    await page.getByTestId("project-first-task").uncheck();
+    await page.getByTestId("project-git-remote-url").fill("https://github.com/acme/project.git");
+    await page.getByTestId("project-submit").click();
+    const row = page.locator(`[data-testid="project-row"][data-project-name="${name}"]`);
+    await expect(row).toBeVisible();
+    const id = await row.getAttribute("data-project-id");
+    try {
+      await page.reload();
+      await row.click();
+      const remote = page.getByTestId("edit-project-git-remote-url");
+      await expect(remote).toHaveValue("https://github.com/acme/project.git");
+      await page.screenshot({ path: "../../.claude/docs/project-git-remote-desktop.png" });
+      await remote.fill("git@github.com:acme/project.git");
+      await page.getByTestId("edit-project-submit").click();
+      await expect(page.getByTestId("edit-project-dialog")).not.toBeVisible();
+      await row.click();
+      await expect(remote).toHaveValue("git@github.com:acme/project.git");
+      await remote.fill("");
+      await page.getByTestId("edit-project-submit").click();
+      await expect(page.getByTestId("edit-project-dialog")).not.toBeVisible();
+      await page.reload();
+      await row.click();
+      await expect(remote).toHaveValue("");
+      expect((await apiGet<Project>(request, `/projects/${id}`)).git_remote_url).toBeNull();
+    } finally {
+      await apiDelete(request, `/projects/${id}`);
+    }
+  });
   test("create via UI, then delete via UI", async ({ page }) => {
     const name = tid("pw-proj");
     await gotoView(page, "projects");

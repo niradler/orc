@@ -227,6 +227,7 @@ export type Project = {
   description: string | null;
   status: ProjectStatus;
   scope: string | null;
+  git_remote_url: string | null;
   tags: string[] | null;
   obsidian_path: string | null;
   max_workers: number | null;
@@ -427,6 +428,7 @@ export type CreateProjectInput = {
   description?: string;
   status?: ProjectStatus;
   scope?: string;
+  git_remote_url?: string | null;
   tags?: string[];
   obsidian_path?: string;
   max_workers?: number;
@@ -437,6 +439,7 @@ export type UpdateProjectInput = {
   description?: string | null;
   status?: ProjectStatus;
   scope?: string | null;
+  git_remote_url?: string | null;
   tags?: string[] | null;
   obsidian_path?: string | null;
   max_workers?: number | null;

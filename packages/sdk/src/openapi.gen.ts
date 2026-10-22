@@ -8555,6 +8555,7 @@ export interface components {
             /** @enum {string} */
             status: "active" | "archived" | "paused";
             scope: string | null;
+            git_remote_url: string | null;
             tags: string[] | null;
             obsidian_path: string | null;
             max_workers: number | null;
@@ -8572,6 +8573,7 @@ export interface components {
              */
             status: "active" | "archived" | "paused";
             scope?: string;
+            git_remote_url?: string | null;
             tags?: string[];
             obsidian_path?: string;
             max_workers?: number;
@@ -8582,6 +8584,7 @@ export interface components {
             /** @enum {string} */
             status?: "active" | "archived" | "paused";
             scope?: string | null;
+            git_remote_url?: string | null;
             tags?: string[] | null;
             obsidian_path?: string;
             max_workers?: number | null;
