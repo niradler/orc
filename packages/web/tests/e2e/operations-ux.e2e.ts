@@ -33,6 +33,7 @@ for (const theme of ["dark", "light"] as const) {
         name: tid("editable-job"),
         project_id: project.id,
         description: "Clear me",
+        enabled: true,
         command: "echo operations",
         trigger_type: "manual",
         max_retries: 3,

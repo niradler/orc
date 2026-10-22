@@ -1,13 +1,13 @@
 import { existsSync, realpathSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
+import { userHome } from "./home.js";
 
 const MAX_TITLE_LENGTH = 200;
 
 // Directories that should never be indexed/served as a knowledge collection —
 // they hold credentials, keys, or kernel/process state.
 function sensitiveRoots(): string[] {
-  const home = homedir();
+  const home = userHome();
   return [
     resolve(home, ".ssh"),
     resolve(home, ".aws"),

@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { userHome } from "./home.js";
 
 /**
  * Encryption at rest for secrets ORC stores in its own files (API keys in config, later the
@@ -12,7 +12,7 @@ import { dirname, join } from "node:path";
 const PREFIX = "enc:v1:";
 const KEY_BYTES = 32;
 
-export const secretKeyPath = () => join(homedir(), ".orc", "secret.key");
+export const secretKeyPath = () => join(userHome(), ".orc", "secret.key");
 
 let cached: { path: string; key: Buffer } | null = null;
 

@@ -8,12 +8,14 @@ import {
   envScript,
   execHostFor,
   forwardedEnv,
+  isSshTransportFailure,
   parseProbe,
   parseSshConfigHosts,
   remoteCommand,
   type SshExecHost,
   shQuote,
   sshArgv,
+  sshMasterArgv,
 } from "../exec-host.js";
 
 const host: SshExecHost = {
@@ -152,7 +154,7 @@ describe("execHostFor", () => {
 });
 
 describe("sshArgv", () => {
-  test("keeps ordinary commands independent from control sockets", () => {
+  test("keeps long-lived commands independent from control sockets", () => {
     if (process.platform === "win32") {
       expect(() => sshArgv(host, "true")).toThrow("Windows does not support");
       return;
@@ -162,6 +164,39 @@ describe("sshArgv", () => {
     expect(argv).toContain("ControlPath=none");
     expect(argv).not.toContain("ControlMaster=yes");
     expect(argv).toContain("-tt");
+  });
+
+  test("reuses the control socket for ordinary commands", () => {
+    if (process.platform === "win32") return;
+    const argv = sshArgv(host, "true", { shared: true });
+    expect(argv).toContain("ControlMaster=no");
+    expect(argv).not.toContain("ControlPath=none");
+    expect(argv.some((arg) => arg.includes("ControlPath=") && arg.endsWith("/.orc/ssh/%C"))).toBe(
+      true,
+    );
+    expect(argv).toContain("-T");
+  });
+
+  test("starts direct and forwarded control masters without mixing their modes", () => {
+    if (process.platform === "win32") return;
+    const direct = sshMasterArgv(host, null);
+    const forwarded = sshMasterArgv(host, "7799:127.0.0.1:7700");
+    expect(direct).toContain("ControlMaster=yes");
+    expect(direct).not.toContain("-R");
+    expect(forwarded.slice(forwarded.indexOf("-R"), forwarded.indexOf("-R") + 2)).toEqual([
+      "-R",
+      "7799:127.0.0.1:7700",
+    ]);
+  });
+});
+
+describe("isSshTransportFailure", () => {
+  test("recognizes broken transports without treating remote command errors as connection loss", () => {
+    expect(isSshTransportFailure("mux_client_request_session: read from master failed")).toBe(true);
+    expect(isSshTransportFailure("kex_exchange_identification: Connection reset by peer")).toBe(
+      true,
+    );
+    expect(isSshTransportFailure("remote command exited with status 255")).toBe(false);
   });
 });
 

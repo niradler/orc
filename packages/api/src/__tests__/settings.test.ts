@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { globalConfigPath, resetConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
@@ -25,7 +25,7 @@ const headers = { Authorization: "Bearer test-secret", "Content-Type": "applicat
 beforeAll(() => {
   process.env.HOME = privateHome;
   process.env.USERPROFILE = privateHome;
-  expect(homedir()).toBe(privateHome);
+  expect(globalConfigPath()).toBe(join(privateHome, ".orc", "config.json"));
   mkdirSync(join(privateHome, ".orc"));
   writeFileSync(
     globalConfigPath(),

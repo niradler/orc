@@ -127,6 +127,7 @@ test.describe("Sessions", () => {
       "Activity",
       "Sessions",
       "Jobs",
+      "Webhooks",
       "Audit",
     ]);
 

@@ -12,7 +12,7 @@ import { basename, dirname, join, resolve } from "node:path";
 
 const steps: Array<[string, string[]]> = [
   ["Lint", ["bun", "run", "lint"]],
-  ["Format check", ["bunx", "biome", "format", "./packages"]],
+  ["Format check", ["bun", "x", "biome", "format", "./packages"]],
   ["Typecheck", ["bun", "run", "typecheck"]],
   ["Test", ["bun", "run", "--sequential", "--filter", "!@orc/web", "test"]],
   ["Dependency security regressions", ["bun", "test", "scripts/dependency-security.test.ts"]],

@@ -128,11 +128,19 @@ const LOGIN_SHELL =
 
 const VERIFY_TTL_MS = 5_000;
 const PROBE_TTL_MS = 30_000;
+const MASTER_IDLE_MS = 60_000;
+// OpenSSH commonly permits ten sessions per connection. Leave headroom for
+// health checks and tunnel management while adapters fan out filesystem reads.
+const MAX_SHARED_SESSIONS = 8;
 
-const pendingMasters = new Map<string, Promise<void>>();
+const pendingMasters = new Map<string, { key: string; promise: Promise<void> }>();
+const closingMasters = new Map<string, Promise<void>>();
 const verifiedMasters = new Map<string, number>();
 const probes = new Map<string, { at: number; probe: Promise<HostProbe> }>();
 const liveProcesses = new Map<string, number>();
+const activeCommands = new Map<string, number>();
+const commandWaiters = new Map<string, Array<() => void>>();
+const idleMasters = new Map<string, ReturnType<typeof setTimeout>>();
 const retiring = new Set<string>();
 const allocatedPorts = new Map<string, number>();
 
@@ -258,17 +266,29 @@ function masterOptions(host: Pick<SshExecHost, "connectTimeoutSecs">): string[] 
   return [...commonOptions(host), "-o", `ControlPath=${join(sshDir(), "%C")}`];
 }
 
-export function sshArgv(host: SshExecHost, remote: string, opts: { tty?: boolean } = {}): string[] {
+export function sshArgv(
+  host: SshExecHost,
+  remote: string,
+  opts: { tty?: boolean; shared?: boolean } = {},
+): string[] {
+  const connectionOptions = opts.shared
+    ? [...masterOptions(host), "-o", "ControlMaster=no"]
+    : [...commonOptions(host), "-o", "ControlMaster=no", "-o", "ControlPath=none"];
+  return [sshBinary(), ...connectionOptions, opts.tty ? "-tt" : "-T", host.alias, remote];
+}
+
+export function sshMasterArgv(host: SshExecHost, reverseForward: string | null): string[] {
   return [
     sshBinary(),
-    ...commonOptions(host),
+    ...masterOptions(host),
     "-o",
-    "ControlMaster=no",
+    "ControlMaster=yes",
     "-o",
-    "ControlPath=none",
-    opts.tty ? "-tt" : "-T",
+    "ExitOnForwardFailure=yes",
+    "-f",
+    "-N",
+    ...(reverseForward ? ["-R", reverseForward] : []),
     host.alias,
-    remote,
   ];
 }
 
@@ -319,13 +339,10 @@ async function startMaster(host: SshExecHost): Promise<void> {
   const forward = `${host.automaticPort ? "auto" : host.remotePort}:${host.apiTarget}`;
   const stateFile = join(sshDir(), `${host.alias}.forward`);
   const current = existsSync(stateFile) ? readFileSync(stateFile, "utf8") : "";
-  // In colocated Docker installs the API is already reachable on the SSH
-  // host, so no persistent connection or reverse tunnel is needed. Keeping a
-  // direct-mode ControlMaster would only consume a process and leave ordinary
-  // PTYs dependent on its socket.
-  if (!host.automaticPort && current === "direct" && (await remoteApiReachable(host))) return;
   if (await controlCommand(host.alias, "check")) {
     if (current === forward) return;
+    if (!host.automaticPort && current === "direct" && (await remoteApiReachable(host, true)))
+      return;
     if (host.automaticPort && current.startsWith(`${forward}|`)) {
       const port = Number(current.slice(forward.length + 1));
       if (Number.isInteger(port) && port > 0 && port <= 65535) {
@@ -336,21 +353,14 @@ async function startMaster(host: SshExecHost): Promise<void> {
     }
     await controlCommand(host.alias, "exit");
   }
+  const direct = !host.automaticPort && (await remoteApiReachable(host));
   const log = join(sshDir(), `${host.alias}.log`);
   writeFileSync(log, "", { mode: 0o600 });
   const proc = Bun.spawn(
-    [
-      sshBinary(),
-      ...masterOptions(host),
-      "-o",
-      "ControlMaster=yes",
-      "-o",
-      "ExitOnForwardFailure=yes",
-      "-f",
-      "-N",
-      ...(host.automaticPort ? [] : ["-R", `${host.remotePort}:${host.apiTarget}`]),
-      host.alias,
-    ],
+    sshMasterArgv(
+      host,
+      host.automaticPort || direct ? null : `${host.remotePort}:${host.apiTarget}`,
+    ),
     {
       stdin: "ignore",
       stdout: "ignore",
@@ -359,19 +369,34 @@ async function startMaster(host: SshExecHost): Promise<void> {
     },
   );
   if ((await proc.exited) !== 0) {
-    const failure = readFileSync(log, "utf8");
-    // A colocated Docker deployment can already expose ORC on the SSH host's
-    // loopback port. In that case a reverse forward cannot bind the port, but
-    // agents can still reach the authenticated API directly from the host.
+    let failure = readFileSync(log, "utf8");
+    // The host API can become reachable between the preflight and a failed
+    // reverse bind. Recover by establishing the same shared master without a
+    // tunnel instead of falling back to unshared one-shot connections.
     if (
       !host.automaticPort &&
+      !direct &&
       /remote port forwarding failed/i.test(failure) &&
       (await remoteApiReachable(host))
     ) {
-      writeFileSync(stateFile, "direct", { mode: 0o600 });
-      return;
+      writeFileSync(log, "", { mode: 0o600 });
+      const fallback = Bun.spawn(sshMasterArgv(host, null), {
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: Bun.file(log),
+        timeout: (host.connectTimeoutSecs + 20) * 1000,
+      });
+      if ((await fallback.exited) === 0) {
+        writeFileSync(stateFile, "direct", { mode: 0o600 });
+        return;
+      }
+      failure = readFileSync(log, "utf8");
     }
     throw new SshError(describeSshFailure(host.alias, failure));
+  }
+  if (direct) {
+    writeFileSync(stateFile, "direct", { mode: 0o600 });
+    return;
   }
   if (host.automaticPort) {
     const allocation = await collect(
@@ -408,17 +433,10 @@ async function startMaster(host: SshExecHost): Promise<void> {
   writeFileSync(stateFile, forward, { mode: 0o600 });
 }
 
-async function remoteApiReachable(host: SshExecHost): Promise<boolean> {
+async function remoteApiReachable(host: SshExecHost, shared = false): Promise<boolean> {
   const result = Bun.spawn(
-    [
-      sshBinary(),
-      ...commonOptions(host),
-      "-o",
-      "ControlMaster=no",
-      "-o",
-      "ControlPath=none",
-      "-T",
-      host.alias,
+    sshArgv(
+      host,
       remoteCommand(
         [
           "curl",
@@ -430,7 +448,8 @@ async function remoteApiReachable(host: SshExecHost): Promise<boolean> {
         ],
         { login: false },
       ),
-    ],
+      { shared },
+    ),
     {
       stdin: "ignore",
       stdout: "ignore",
@@ -444,16 +463,29 @@ async function remoteApiReachable(host: SshExecHost): Promise<boolean> {
 export async function ensureSshMaster(host: SshExecHost): Promise<void> {
   const key = `${host.alias}|${host.remotePort}|${host.apiTarget}`;
   retiring.delete(host.alias);
-  if ((verifiedMasters.get(key) ?? 0) > Date.now() - VERIFY_TTL_MS) return;
-  let pending = pendingMasters.get(host.alias);
-  if (!pending) {
-    pending = startMaster(host).finally(() => pendingMasters.delete(host.alias));
-    pendingMasters.set(host.alias, pending);
+  await closingMasters.get(host.alias);
+  const pending = pendingMasters.get(host.alias);
+  if (pending) {
+    await pending.promise;
+    if (pending.key !== key) return ensureSshMaster(host);
+  } else {
+    const promise = (async () => {
+      const recentlyVerified = (verifiedMasters.get(key) ?? 0) > Date.now() - VERIFY_TTL_MS;
+      if (recentlyVerified && (await controlCommand(host.alias, "check"))) return;
+      await startMaster(host);
+    })();
+    const entry = { key, promise };
+    pendingMasters.set(host.alias, entry);
+    try {
+      await promise;
+    } finally {
+      if (pendingMasters.get(host.alias) === entry) pendingMasters.delete(host.alias);
+    }
   }
-  await pending;
   if (host.automaticPort)
     host.remotePort = allocatedPorts.get(`${host.alias}|${host.apiTarget}`) ?? 0;
   verifiedMasters.set(key, Date.now());
+  scheduleMasterIdle(host.alias);
 }
 
 function forgetHost(alias: string): void {
@@ -463,6 +495,7 @@ function forgetHost(alias: string): void {
 }
 
 export function trackHostProcess(alias: string, exited: Promise<unknown>): void {
+  clearMasterIdle(alias);
   liveProcesses.set(alias, (liveProcesses.get(alias) ?? 0) + 1);
   void exited.finally(() => {
     const left = (liveProcesses.get(alias) ?? 1) - 1;
@@ -471,25 +504,96 @@ export function trackHostProcess(alias: string, exited: Promise<unknown>): void 
       return;
     }
     liveProcesses.delete(alias);
-    if (retiring.has(alias)) void closeSshMaster(alias);
+    if (retiring.has(alias) && !masterInUse(alias)) void closeSshMaster(alias);
+    else scheduleMasterIdle(alias);
   });
 }
 
+function masterInUse(alias: string): boolean {
+  return Boolean(
+    activeCommands.get(alias) || liveProcesses.get(alias) || commandWaiters.get(alias)?.length,
+  );
+}
+
+function clearMasterIdle(alias: string): void {
+  const timer = idleMasters.get(alias);
+  if (timer) clearTimeout(timer);
+  idleMasters.delete(alias);
+}
+
+function scheduleMasterIdle(alias: string): void {
+  clearMasterIdle(alias);
+  if (masterInUse(alias) || retiring.has(alias)) return;
+  const timer = setTimeout(() => {
+    idleMasters.delete(alias);
+    if (!masterInUse(alias)) void closeSshMaster(alias);
+  }, MASTER_IDLE_MS);
+  timer.unref();
+  idleMasters.set(alias, timer);
+}
+
+async function beginHostCommand(alias: string): Promise<void> {
+  clearMasterIdle(alias);
+  const active = activeCommands.get(alias) ?? 0;
+  if (active < MAX_SHARED_SESSIONS) {
+    activeCommands.set(alias, active + 1);
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    const waiters = commandWaiters.get(alias) ?? [];
+    waiters.push(resolve);
+    commandWaiters.set(alias, waiters);
+  });
+}
+
+function endHostCommand(alias: string): void {
+  const waiters = commandWaiters.get(alias);
+  const next = waiters?.shift();
+  if (waiters?.length === 0) commandWaiters.delete(alias);
+  if (next) {
+    next();
+    return;
+  }
+  const left = (activeCommands.get(alias) ?? 1) - 1;
+  if (left > 0) activeCommands.set(alias, left);
+  else activeCommands.delete(alias);
+  if (retiring.has(alias) && !masterInUse(alias)) void closeSshMaster(alias);
+  else scheduleMasterIdle(alias);
+}
+
 async function closeSshMaster(alias: string): Promise<void> {
-  retiring.delete(alias);
-  forgetHost(alias);
-  try {
-    await controlCommand(alias, "exit");
-  } catch {}
+  clearMasterIdle(alias);
+  const existing = closingMasters.get(alias);
+  if (existing) return existing;
+  const closing = (async () => {
+    retiring.delete(alias);
+    forgetHost(alias);
+    try {
+      await controlCommand(alias, "exit");
+    } catch {}
+  })().finally(() => closingMasters.delete(alias));
+  closingMasters.set(alias, closing);
+  return closing;
 }
 
 export async function retireSshMaster(alias: string): Promise<void> {
-  if (liveProcesses.get(alias)) {
+  if (masterInUse(alias)) {
     retiring.add(alias);
     forgetHost(alias);
     return;
   }
+  const pending = pendingMasters.get(alias);
+  if (pending) {
+    retiring.add(alias);
+    await pending.promise.catch(() => undefined);
+  }
   await closeSshMaster(alias);
+}
+
+export function isSshTransportFailure(stderr: string): boolean {
+  return /(?:control socket connect|mux_client_|kex_exchange_identification|connection (?:closed|reset) by|broken pipe|connection timed out)/i.test(
+    stderr,
+  );
 }
 
 export async function hostExec(
@@ -516,19 +620,32 @@ export async function hostExec(
       }),
     );
   }
-  await ensureSshMaster(host);
-  const withEnv = opts.env
-    ? ["env", ...Object.entries(opts.env).map(([k, v]) => `${k}=${v}`), ...argv]
-    : argv;
-  return collect(
-    Bun.spawn(sshArgv(host, remoteCommand(withEnv, { cwd: opts.cwd, login: opts.login })), {
-      env: process.env,
-      stdin: input,
-      stdout: "pipe",
-      stderr: "pipe",
-      ...(opts.timeoutMs ? { timeout: opts.timeoutMs } : {}),
-    }),
-  );
+  await beginHostCommand(host.alias);
+  try {
+    await ensureSshMaster(host);
+    const withEnv = opts.env
+      ? ["env", ...Object.entries(opts.env).map(([k, v]) => `${k}=${v}`), ...argv]
+      : argv;
+    const result = await collect(
+      Bun.spawn(
+        sshArgv(host, remoteCommand(withEnv, { cwd: opts.cwd, login: opts.login }), {
+          shared: true,
+        }),
+        {
+          env: process.env,
+          stdin: input,
+          stdout: "pipe",
+          stderr: "pipe",
+          ...(opts.timeoutMs ? { timeout: opts.timeoutMs } : {}),
+        },
+      ),
+    );
+    if (result.code === 255 && isSshTransportFailure(result.stderr))
+      await closeSshMaster(host.alias);
+    return result;
+  } finally {
+    endHostCommand(host.alias);
+  }
 }
 
 export async function writeHostFile(
