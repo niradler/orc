@@ -31,6 +31,8 @@ import type {
 } from "@orc/core/kb";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
 import type { RuleEventCapability } from "@orc/core/rule-events";
+import type { ArchiveSearchResult, ArchiveSession, ArchiveUpload } from "@orc/core/session-archive";
+import type { SessionHandoff } from "@orc/core/session-handoff";
 import {
   API_ACCESS_CHANGED,
   readApiSecret,
@@ -697,6 +699,33 @@ export const api = {
   },
 
   sessions: {
+    archive: (params: {
+      q?: string;
+      project_id?: string;
+      agent?: string;
+      offset?: number;
+      limit?: number;
+    }) => req<ArchiveSearchResult>("GET", "/sessions/archive", undefined, params),
+    archiveUpload: (input: ArchiveUpload) =>
+      req<{ session: ArchiveSession; outcome: string }>("POST", "/sessions/archive/upload", input),
+    archiveIndex: (project_id?: string) =>
+      req<{ indexed: number; failed: number; skipped: number }>("POST", "/sessions/archive/index", {
+        project_id,
+      }),
+    archiveTranscript: (
+      id: string,
+      params?: { revision?: number; offset?: number; limit?: number },
+    ) => req<TranscriptPage>("GET", `/sessions/archive/${id}/transcript`, undefined, params),
+    archiveResume: (
+      id: string,
+      input: {
+        revision?: number;
+        repository?: string;
+        branch?: string;
+        commit?: string;
+        subdirectory?: string;
+      },
+    ) => req<SessionHandoff>("POST", `/sessions/archive/${id}/resume`, input),
     list: (params?: {
       agent?: string;
       job_run_id?: string;

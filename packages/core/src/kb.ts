@@ -437,6 +437,7 @@ export type KbEmbeddingSettings = {
 
 /** GET /api/kb/settings. API keys are never returned. */
 export type KbSettings = {
+  session_embeddings: boolean;
   root: string;
   parser: string;
   docling_enabled: boolean;

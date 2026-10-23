@@ -1,231 +1,196 @@
 # Coding session archive, remote sync and retrieval
 
-Status: design proposal, checked against this checkout on 2026-10-23. The bulk
-archive/upload and semantic session APIs below are not implemented. Use current
-runtime schemas/help before operating an installation. This reference explains
-the intended process and how it differs from the existing handoff.
+Status: implemented in this feature checkout; use the selected installation's
+schemas/help to confirm its version includes these operations. Archive sync and
+native continuation are two separate user outcomes. The design rationale below
+also records limits and future improvements; it is not permission to deploy.
 
-Contents: current behavior; upload/sync; identity and revisions; retrieval;
-resume; scale/security; implementation and acceptance criteria.
+## Sync local histories for offline retrieval
 
-## What exists today
+Use this when asked to upload this project's sessions, all Claude sessions or a
+selected collection to remote ORC. The completed outcome is searchable history in
+**Sessions → Archived sessions**, available while the PC is offline. **Show ended
+is selected by default**; explicitly hiding ended sessions also hides the archive.
+Archival creates neither a native agent process nor a worktree.
 
-| Capability | Current behavior |
+1. Select the intended ORC installation and existing project(s). Call
+   `session_sync({projects:["my-app"]})` for one/more requested projects, or
+   `session_sync({})` for an all-project history request. It returns a private,
+   one-hour sync grant with covered projects. Pass the result to the helper via
+   `--grant-stdin` or a private JSON file with `--grant-file`; do not print its URL,
+   put it in argv/history or commit the grant file. The main API secret is not needed.
+   For a single project, use
+   its readable name and the local cwd. For an all-agent/history request, discover
+   remote projects and use their configured Git remote identities or a small
+   explicit cwd/repository-to-project JSON map. Unmapped histories stay local and
+   are reported; do not guess a project from a directory basename.
+2. Use trusted `scripts/sync-sessions.py` from the orc-platform root. Do not read
+   its full source. If absent locally, call
+   `skill_read({name:"orc-platform",ref:"scripts/sync-sessions.py",download:true,project})`,
+   download the signed bytes privately and verify the supplied SHA-256/size. Run
+   `python scripts/sync-sessions.py --help` for current flags. Downloading does not
+   execute the script. A configured standalone client may alternatively use
+   `ORC_API_BASE` and `ORC_API_SECRET` from its secure environment, never literal argv.
+3. Preview with `--dry-run`, then sync the requested scope. Examples using the
+   private grant JSON returned to the connected agent:
+
+   ```sh
+   python scripts/sync-sessions.py --grant-file /private/sync-grant.json --project my-app --cwd /local/repo --dry-run
+   python scripts/sync-sessions.py --grant-file /private/sync-grant.json --project my-app --cwd /local/repo
+   python scripts/sync-sessions.py --grant-file /private/sync-grant.json --agent claude --project-map /local/project-map.json
+   python scripts/sync-sessions.py --grant-file /private/sync-grant.json --agent codex --project my-app --session-file /local/rollout.jsonl
+   ```
+
+   For Windows, quote a cwd such as `"C:\Projects\my-app"`. A map is an object
+   such as `{"C:\\Projects\\my-app":"my-app","https://github.com/org/repo":"another-app"}`.
+   `--project` explicitly assigns every selected session to that project; combine
+   it with `--cwd` for a project-only request. For collections spanning projects,
+   prefer remote matching/mapping. `--root` overrides a native root for one agent;
+   `--exclude` is repeatable. Default Claude discovery uses `CLAUDE_CONFIG_DIR/projects`;
+   Codex uses `CODEX_HOME/sessions` and `archived_sessions`, with normal home fallbacks.
+4. Inspect per-session outcomes and final counts. Nonzero exit means failed,
+   unmapped or conflicting items need attention; successful items remain stored.
+   Repeat the command after correcting those items. The script persists a stable
+   source UUID and receipts under `~/.orc`, verifies unchanged receipts against the
+   remote manifest, retries transient requests and uploads changed snapshots only.
+   It extracts native identity, parent/version, cwd, available repository/branch/commit
+   and timestamps; it does not invent a historical commit from today's checkout.
+   A changing file is retried later, and an unfinished last JSONL line is held back.
+5. Verify Sessions for the selected project, search a known transcript phrase and
+   open the saved history. The archive API exposes lexical index revision, pending
+   embedding chunks and errors separately. Use `--reindex` to resend a snapshot and
+   retry its index without duplicating the archive session. No local ORC database
+   or SSH connection from the server to the PC is required.
+
+Native bundles are bounded to 64 MiB per encoded request and 128 files. Claude
+subagent sidecars are included; configuration, credentials, SQLite databases and
+repository files are not uploaded. Large collections use bounded concurrency and
+per-session checkpoints; a single file over the limit is reported, not split into
+an invalid native session. Resumable multipart uploads are future work.
+
+## Move a session and continue on ORC
+
+Use this when the user wants to close the PC and continue the work on the ORC
+execution host. The outcome is a **running resumed terminal**, not just stored
+history or a Ready badge. Keep the source idle during the final transfer.
+
+- For a currently local session, follow [execution.md](execution.md)'s handoff:
+  within the user's Git authorization commit/push the intended code, verify its
+  exact remote SHA, call `session_handoff`, then use trusted
+  `scripts/upload-session.py` with the single-use upload URL. Use its instructions
+  and `--help`; full script inspection is for debugging/untrusted code.
+- For an already archived session, use its **Prepare and resume in terminal**
+  action. Supply/verify the pushed repository, branch and commit where history
+  lacks them. The server uses the existing handoff import/checks and keeps the
+  archive revision and handoff link. Preparation copies history to a new native ID
+  and pinned worktree; the source archive remains intact.
+- After status is `ready`, an agent completing a move-and-continue request calls
+  authenticated `POST /api/terminals` with `{kind:"claude"|"codex",live_session_id}`
+  and verifies the returned terminal/cwd/host. The UI action performs this launch
+  automatically. Do not stop at upload acceptance or Ready when continuation was
+  requested. Destination agent credentials/dependencies must already be available;
+  ignored files and running local processes are not transferred.
+
+## Settings and retrieval APIs
+
+Settings → Knowledge has **Search coding sessions with embeddings**, off by
+default. It uses the existing configured embedding provider. Enabling also indexes
+discovered Claude/Codex sessions already assigned to projects on the selected host;
+**Index discovered sessions** can index those histories manually without vectors.
+The existing native metadata/ripgrep search and paged transcripts remain available.
+Uploads additionally have a persistent server-side keyword index, so fallback
+does not depend on the original PC. Provider failures/pending vectors are visible.
+
+| Operation | API |
 | --- | --- |
-| Discover coding sessions | Agent adapters/watchers upsert native session metadata from the selected execution host. `POST /api/sessions/live/sync` triggers discovery; it does not upload files from the caller's computer. |
-| Session identity | Watcher matches live chat marker, backend, native session ID and execution host. A matching record is updated. This does not define cross-device archive identity. |
-| Session search | `GET /api/sessions/live/search?q=...&limit=...` matches title/summary/cwd and uses ripgrep over configured transcript roots. Returns ranked session metadata and up to three short transcript snippets per file. Default limit 100, maximum 500; no search cursor or embeddings. Transcript matches must map to discovered session records. |
-| Read conversation | `GET /api/sessions/live/{id}/transcript?offset=0&limit=100` returns a page of parsed turns, total, offset and optional query match indexes. Limit is at most 500. Pagination bounds output; the handler still reads the bounded transcript file before parsing. |
-| Transfer for resume | `POST /api/session-handoffs` initiates a Claude/Codex handoff. A single-use upload capability accepts a bounded native bundle, then preparation creates a worktree and a new native session UUID. See [execution.md](execution.md). This is not a bulk archival API. |
-| KB search | `kb_search` retrieves indexed chunks, groups hits by document and returns document metadata plus up to three cited passages, including passage text and a short snippet. Default 10 documents, maximum 50. It has a top-k limit, not cursor pagination. |
-| Optional embeddings | KB `auto` mode uses hybrid lexical/vector search when a provider is configured, otherwise lexical. Provider failure falls back to lexical and reports degradation. Configuring embeddings does not currently embed coding sessions. |
+| Mint scoped connected-agent sync grant | `POST /api/sessions/archive/sync` |
+| Upload one snapshot | `POST /api/sessions/archive/upload` |
+| Compare up to 100 origins | `POST /api/sessions/archive/manifest` |
+| List/search bounded hits | `GET /api/sessions/archive?q=...&project_id=...&limit=20&offset=0` |
+| Index discovered project histories | `POST /api/sessions/archive/index` |
+| Metadata, revisions and handoff links | `GET /api/sessions/archive/{id}` |
+| Pinned conversation page | `GET /api/sessions/archive/{id}/transcript?revision=1&offset=0&limit=100` |
+| Resolve a passage | `GET /api/sessions/archive/{id}/passage?revision=1&ordinal=0` |
+| Original native bundle | `GET /api/sessions/archive/{id}/export?revision=1` |
+| Prepare native continuation | `POST /api/sessions/archive/{id}/resume` |
 
-The MCP unified `search` currently combines knowledge, memories and tasks. The
-dashboard command-palette `/api/search` also searches stored session summaries;
-that is separate from native transcript search and is not semantic session search.
+Normal installation API authentication applies. Remote hosting must configure a
+secret and HTTPS. The grant's private `/api/session-sync/<token>` base permits only
+its scoped project listing, manifest checks and uploads; it cannot read transcripts,
+mint grants or launch terminals. An expired grant needs a new `session_sync` call;
+reruns retain the local origin/receipts and do not duplicate acknowledged history.
+Upload includes required readable `project`, stable `source_id`,
+`agent`, native `session_id`, `title`, `metadata` and the existing version-1 native
+`bundle`. Optional `expected_revision` rejects stale writers; verified identical or
+older prefixes remain no-ops. A conflict returns HTTP409 with its retained revision;
+it never replaces current history. Do not blindly retry divergence as an overwrite.
 
-KB passages carry `kb:<document>@<revision>#<ordinal>` citations. Read more with
-`kb_read` by citation, heading or line range; request a whole document only when
-needed. `kb_evidence` assembles a token-budgeted passage pack (default 6,000,
-maximum 32,000 approximate tokens) with document references and omissions.
-KB chunking targets 1,600 characters with a 2,400-character packing/splitting
-threshold; semantic search ranks chunks, not whole documents. Embedding workers
-send pending chunks in provider-sized batches. Those internal embedding batches
-are different from result pages and retrieved passages.
+MCP `session_sync` supplies the uploader capability. `session_search` returns bounded cited passages; `session_read` fetches a pinned
+passage or message page. Citations are `session:<archive-id>@<revision>#<ordinal>`.
+The SDK provides archive search/upload/index/read/passage/resume under `sessions`.
+Search returns at most three passages per session; no whole history is included.
+Current archive list/search pagination uses limit/offset, not snapshot cursors.
 
-Source map in the ORC repository:
+The remaining sections explain the architecture and future scale decisions.
 
-- `packages/api/src/session-watcher.ts`, `sessions/search.ts`, `routes/sessions.ts`
-- `packages/api/src/routes/session-handoffs.ts`, `packages/core/src/session-handoff.ts`
-- `packages/knowledge/src/{chunker,embeddings,jobs,search}.ts`, `packages/core/src/kb.ts`
-- `packages/mcp/src/tools.ts`, `packages/api/src/routes/search.ts`
+## Identity, updates and retrieval guarantees
 
-## Recommended local-to-remote process (to implement)
+The origin key is (source installation ID, agent, native session UUID), independent
+of filename, cwd and project labels. The uploader persists its installation UUID;
+reinstallations should retain it. A copy from another PC has a different origin
+unless the operator explicitly uses the same source ID. A native ID alone never
+merges unrelated sessions. Original native files remain untouched.
 
-Keep the archive on the central ORC server, independent of its current execution
-host. A lightweight local uploader reads explicitly selected native agent homes;
-it needs API access, not a local ORC database or an SSH-accessible PC. Initially
-support Claude Code and Codex, then add adapters for other formats.
+- Identical canonical records: return the same archive ID/revision; no re-embedding.
+- Verified extension of every existing file's ordered records: advance the same
+  archive to a new immutable revision and reuse unchanged chunk embeddings.
+- Older verified prefix: stale/no-op; never truncate current history.
+- Divergence, rewritten records, missing earlier sidecars or an incompatible
+  expected revision: retain the conflicting snapshot, return HTTP409 and leave
+  the canonical head intact. Conflicting replay is idempotent. Resolve explicitly;
+  no timestamp-based concatenation or last-write-wins.
+- Native continuation creates a new session ID; an archive-to-handoff relation
+  preserves its source revision. It never rewrites the archived original.
 
-1. Select the authenticated HTTPS ORC installation and required project mapping. Preview
-   discovered files, session counts and bytes; allow project/date/agent exclusions.
-   Do not infer remote projects solely from local cwd strings. Use explicit mapping
-   and credential-free repository identity. For v1, every remote upload must name an
-   existing authorized ORC project. Ask once per batch, split mixed-project batches,
-   and keep unmapped sessions local until the user assigns them. Native discovery
-   may still contain unassigned sessions; this requirement applies to remote ingest.
-2. Read a consistent snapshot of complete native records. An incomplete final JSONL
-   line remains pending for the next scan. Record agent/parser version, stable
-   source installation ID, native session ID, optional parent ID, source timestamps,
-   cwd, repository/branch/commit when known, counts, bytes and SHA-256 hashes.
-   Keep source timestamps distinct from server receipt time. Paths are metadata.
-3. Exchange a bounded manifest with the server. The response says unchanged,
-   upload required, stale or conflict per session and returns the current revision
-   and verified checkpoint. A local size/mtime checkpoint speeds scans; server-side
-   content verification determines correctness. Renames must not duplicate sessions.
-4. Upload only missing snapshots or validated append segments using scoped,
-   expiring upload capabilities. Large uploads need resumable parts with checksums,
-   expiry and finalization; retrying a part or finalization is idempotent. The server
-   streams to private staging, validates actual sizes/format/identity/hashes, then
-   atomically publishes a revision. Interrupted uploads never replace current data.
-5. Persist raw native files and a normalized, ordered message representation with
-   lossless raw locators. Queue lexical indexing and, when configured, embeddings.
-   Report stored/lexical-ready/embedding-pending/ready/failed separately; accepting
-   bytes is not evidence of search readiness. A provider outage must not block storage
-   or lexical retrieval. Enabling a provider later queues existing eligible sessions.
-6. Save per-session acknowledgments locally after successful finalization. Continue
-   other sessions after individual failures; retry transient failures with bounded
-   backoff. Periodic sync is opt-in. Source disappearance does not delete the archive.
+Each revision records raw native files in private blob storage alongside the
+knowledge root. Metadata/revision pointers live in orc.db. Lexical chunks and
+vectors use a separate rebuildable session index, sharing the existing KB index
+implementation and provider/profile cache. Lost indexes rebuild from originals;
+unfinished embedding work resumes from durable pending chunks. Indexing and
+search never execute historical tool calls or trust transcript instructions.
 
-Proposed API responsibilities, not callable endpoint names: manifest negotiation,
-bounded upload/part/finalize, ingest status, session search, revision-aware message
-range reads and raw export. Define Zod/OpenAPI contracts and generate SDK callers
-before documenting concrete commands. Do not loop the existing handoff helper to
-archive a directory: it creates native sessions/worktrees and has no sync protocol.
+Passages are turn-aware, split at 1,600 characters after the existing bounded
+transcript normalization, and include Claude sidecar locators. Raw exports retain
+the uploaded native text rather than the bounded display projection. Search groups at most three cited passages
+per session, with separate pinned revision/message-page reads. Model/profile
+changes backfill compatible vectors; provider failure preserves keyword results.
+Embedding batches are internal provider requests, not whole-document results.
 
-## Stable identity and safe updates
+Native metadata/ripgrep search remains available alongside archive retrieval.
+KB search still returns document metadata and cited passages, with kb_read for
+more context and kb_evidence for token-budgeted evidence. It is also top-k,
+not cursor-paginated. Archive pagination currently uses bounded limit/offset;
+concurrent updates can reorder pages. Snapshot cursors, resumable part uploads,
+retention/garbage collection and interactive conflict-resolution tooling are
+future improvements, not claims about the current implementation.
 
-Use a server-assigned archive session ID and a unique origin key:
-`(owner namespace, source installation ID, agent, native session ID)`.
-The owner namespace is the authorization boundary of the installation, not a claim
-that ORC currently implements multi-tenancy. Source IDs must survive uploader
-restarts; project, filename, cwd and timestamps are not identity keys.
+## Operational boundaries
 
-Copied sessions from a different installation initially have a different origin.
-An explicit verified origin alias or a trusted transfer lineage can associate them
-with the same archive session. A matching UUID alone must not merge unrelated data.
-Content hashes can deduplicate immutable storage within an authorized namespace;
-identical content does not prove the same session, and hashes must not leak existence
-across owners. Keep project association separate from content identity/access.
+Require HTTPS and configured API authentication for remote hosting. Existing
+shared API-secret access is installation access, not per-user tenant isolation.
+Select explicit project scope for retrieval. Session text can contain private
+code or secrets: exclude/redact at the source as needed, and enable external
+embeddings only with a provider approved for that text. Credentials/config and
+agent databases are never selected as native session inputs.
 
-| Incoming data | Action |
-| --- | --- |
-| Same origin and identical canonical content hash | No-op; return the same archive ID/revision; do not embed again. |
-| Same origin, existing ordered records are a verified prefix | Publish the extended revision under the same archive ID; preserve prior revisions; index changed/new chunks. |
-| Older snapshot that is a verified prefix of current data | Report stale/no-op; never truncate newer history. |
-| Same origin but changed earlier records, compaction, truncation or divergent tails | Preserve both revisions as conflict/branch evidence; require explicit resolution before replacing the canonical head. Do not concatenate by timestamp or last-write-wins. |
-| Concurrent uploads based on the same revision | Compare-and-swap the head using expected revision/hash; an identical retry succeeds, an older prefix is stale, otherwise return conflict. |
-| Same content, different origin/session | Share eligible blob storage if useful, retain separate session identities unless verified lineage establishes an alias. |
-| Resume/copy creates a new native ID | Record parent/source archive revision and destination identity; treat new execution history as a child, not an overwrite of the original. |
+Uploads count actual streamed bytes, enforce format/identity/path limits, and
+never write to uploader-supplied filesystem destinations. Failed network retries
+and stale snapshots cannot replace current data. Check storage/index/provider
+states separately. A searchable archive without available code or destination
+credentials remains readable/exportable; it is not automatically resumable.
 
-The current entry should advance when verified new messages arrive, but blindly
-overwriting the old file risks losing history to late retries. Use immutable revisions
-and an atomic current pointer. Stable native message IDs are preferred; where absent,
-retain ordered record hashes/occurrence positions so repeated identical messages are
-not collapsed. Checkpoint append uploads against the prior record/hash boundary.
-Metadata-only changes do not require recomputing unchanged message embeddings.
-
-## Retrieval contract for sessions and KBs
-
-Return bounded relevant passages with stable source references first. Fetch nearby
-messages/sections or the complete source separately. A result page is a collection
-of hits; a chunk is an indexing unit; a passage is the returned evidence. None
-requires returning the full document or transcript by default.
-
-For sessions, normalize role/time/text/tool relationships, then chunk around turns
-and message ranges. Keep tool calls linked to results, bound huge outputs and use
-limited overlap. Preserve raw evidence separately; summaries can assist ranking
-but cannot replace the transcript. Share provider/profile, lexical/vector fusion
-and citation conventions with KBs without making every session a user KB document.
-
-Proposed session hit shape (illustrative; citation syntax is not implemented):
-
-```json
-{
-  "session_id": "archive-id",
-  "revision": 4,
-  "agent": "codex",
-  "title": "Repair callback forwarding",
-  "score": 0.032,
-  "matched_by": ["lexical", "semantic"],
-  "passages": [{
-    "citation": "session:archive-id@4#chunk-17",
-    "message_range": {"start": 38, "end": 44},
-    "text": "Bounded relevant conversation excerpt"
-  }]
-}
-```
-
-Include accessible project/repository identity and activity timestamps in actual
-hits. Resolve citations against their pinned revision, even after new messages
-arrive, or report explicit expiry/unavailability under the retention policy.
-Support project/agent/repository/date filters before ranking; paginate larger result
-sets with bounded cursors tied to a query/index snapshot so sync does not cause
-missing or duplicate hits. This cursor contract would be new for session and KB
-search; existing KB search is bounded top-k. Offer token-budgeted evidence for
-agents and revision-aware message ranges for reading around a session match.
-
-Add an explicit session-embeddings toggle in Settings, separate from merely having
-an embedding provider configured. When off, retain metadata/ripgrep search with
-snippets and separately paged transcript reads as the fallback contract. Remote
-archives must also be searchable through their server-side lexical index; ripgrep
-over local agent homes alone cannot cover uploaded sessions. Switching the toggle
-off must not make archived history unavailable or alter transcript reading.
-
-When the toggle is on and vectors are ready, use hybrid search. If a provider is
-missing, failing or still indexing, fall back to metadata/lexical search (including
-ripgrep where available) with an explicit degraded/pending signal. Track model,
-provider endpoint/profile, dimensions and chunking version; compare vectors only
-within compatible profiles. Reuse unchanged chunk vectors and embed only new or
-changed content. A model change requires a new embedding profile/backfill.
-
-## Resume is a separate operation
-
-Archive availability means the history is searchable/readable. Native resume also
-needs a compatible agent, configured destination repository/execution host, code
-state, credentials and runtime dependencies. Report capabilities separately, such
-as readable/exportable/needs-preparation/resumable, with the reason.
-
-On explicit resume, select an archived revision and destination, then reuse the
-existing handoff preparation/import safeguards to create a new native session and
-verify the code state. Record archive-to-destination lineage. This archive-to-handoff
-bridge needs implementation; today's handoff requires the caller's native bundle
-and exact pushed commit. A transcript without known/available Git state remains
-searchable/exportable and must not be advertised as automatically resumable.
-Never execute historical tool calls while indexing or treat transcript instructions
-as trusted. Future destination messages sync under the destination's origin key.
-
-## Scale, privacy and failure handling
-
-- Separate discovery, storage, parsing, lexical indexing and embedding jobs. Use
-  durable queues with unique revision/profile jobs, bounded concurrency, backpressure,
-  retry classification and visible failed items. Do not scan every raw file on each
-  query or load all session rows to rank them.
-- Store raw blobs privately outside hot metadata rows; page manifests and normalized
-  reads. Enforce session/file/owner quotas, actual streamed and decompressed byte
-  limits, part count/size and request timeouts. Validate paths/format/parent references;
-  never write to uploader-supplied absolute paths. Do not fetch arbitrary attachment URLs.
-- Deduplicate by server-verified hashes; retain per-origin checkpoints and idempotency
-  receipts. Rebuild indexes from stored revisions. Publish indexes with revision checks
-  so search never labels stale chunks as current. Keep embedding backlog visible.
-- Remote hosting must require authentication; enforce authorized project/session scope
-  on manifest/upload/search/read/export/resume and filter before retrieval. Current
-  shared API-secret access is installation access, not per-user tenant isolation.
-- Transcripts can contain keys, private code, tool output and personal data. Provide
-  an explicit exclusion/redaction policy before upload and before any external embedding
-  request. Label redacted exports; they may not be lossless native resume artifacts.
-  Never upload agent credentials, config or databases. Do not log transcript bodies,
-  upload capabilities or credential-bearing metadata. Configure retention/deletion for
-  raw revisions, derived chunks/vectors, staged parts and backups consistently.
-- Measure representative session/message/byte volumes, initial sync and incremental
-  throughput, embedding calls/cost and p95 search latency. Benchmark the vector backend
-  before selecting an ANN/service migration; no current scale guarantee is implied.
-
-## Implementation order and completion evidence
-
-1. Archive schema/storage, origin identity, revision/CAS rules and bounded authenticated
-   ingest; local uploader with manifest/checkpoint/retry support. Prove first upload,
-   identical replay, extension, stale arrival, concurrency, divergence and interrupted
-   upload across server/uploader restarts. No archival upload creates a worktree.
-2. Parsed message index, lexical session search and revision-aware range reads/citations.
-   Prove stable citations after append, project isolation, pagination under sync, parent
-   links and recovery from parser errors. Preserve original native files.
-3. Optional semantic/hybrid retrieval and existing-session backfill. Prove semantic
-   paraphrase retrieval, provider-off/outage fallback, model changes, unchanged-vector
-   reuse, bounded large tool outputs and acceptable measured cost/latency.
-4. Explicit archive-to-native resume using handoff preparation and lineage. Validate
-   real Claude/Codex history and destination cwd/code state through terminal launch;
-   unavailable code/credentials must produce actionable capability limits.
-
-This document is the design deliverable. Runtime implementation, remote deployment
-and a real local-to-remote archival/resume trial remain future work.
+Verify both outcomes proportionally: repeat/increment/conflict/recovery tests for
+archive sync; then a real browser flow from saved history through pinned Git
+preparation to a terminal with the expected host/cwd and native session. Local
+isolated E2E evidence does not establish a hosted production deployment or a
+successful paid model turn.

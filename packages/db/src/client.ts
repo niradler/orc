@@ -10,6 +10,7 @@ import { installMemories } from "./memories.js";
 import { installReusableWebhooks } from "./reusable-webhooks.js";
 import { installRules } from "./rules.js";
 import * as schema from "./schema.js";
+import { installSessionArchive } from "./session-archive.js";
 import { installSkillHistory } from "./skill-history.js";
 
 export type OrcDb = ReturnType<typeof createDb>;
@@ -510,6 +511,7 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   dropRetiredTables(sqlite);
   installAudit(sqlite);
   installKnowledgeBases(sqlite);
+  installSessionArchive(sqlite);
   installSkillHistory(sqlite);
   installMemories(sqlite);
   installRules(sqlite);

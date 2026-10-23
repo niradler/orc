@@ -26,6 +26,7 @@ function size(bytes: number | null): string {
 }
 
 type Form = {
+  session_embeddings: boolean;
   parser: string;
   docling_enabled: boolean;
   parser_timeout_secs: string;
@@ -41,6 +42,7 @@ type Form = {
 
 function toForm(s: KbSettings): Form {
   return {
+    session_embeddings: s.session_embeddings ?? false,
     parser: s.parser,
     docling_enabled: s.docling_enabled,
     parser_timeout_secs: String(s.parser_timeout_secs),
@@ -115,6 +117,7 @@ export function KnowledgeSettings() {
     if (!form) return;
     const num = (v: string) => (v.trim() ? Number(v) : null);
     const patch: KbSettingsPatch = {
+      session_embeddings: form.session_embeddings,
       parser: form.parser,
       docling_enabled: form.docling_enabled,
       parser_timeout_secs: Number(form.parser_timeout_secs),
@@ -298,6 +301,22 @@ export function KnowledgeSettings() {
         </div>
         <div className="space-y-3">
           <h3 className="text-sm font-medium">Semantic search</h3>
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              data-testid="settings-session-embeddings"
+              checked={form.session_embeddings}
+              onChange={(e) => set({ session_embeddings: e.target.checked })}
+            />
+            <span>
+              Search coding sessions with embeddings
+              <span className="block text-xs text-outline">
+                Uses the provider below for session passages. Keyword search and transcript reading
+                remain available when off. Enabling sends session text to this provider and indexes
+                discovered project sessions.
+              </span>
+            </span>
+          </label>
           {status.data && (
             <p className="text-xs text-outline" data-testid="settings-embedding-status">
               {status.data.embedding.ready

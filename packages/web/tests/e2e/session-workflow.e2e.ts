@@ -115,6 +115,9 @@ for (const width of [1440, 390]) {
     });
     writeRegistration({ ...registration, status: "stopped", updatedAt: Date.now() });
     await apiPost(request, "/sessions/live/sync", {});
+    await expect(page.getByTestId("show-ended")).toBeChecked();
+    await expect(row).toBeVisible();
+    await page.getByTestId("show-ended").click();
     await expect(row).toHaveCount(0);
     await page.getByTestId("show-ended").click();
     await expect(page.getByTestId("show-ended")).toBeChecked();

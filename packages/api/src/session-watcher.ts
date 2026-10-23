@@ -12,6 +12,7 @@ import { and, eq, isNull, ne, notInArray } from "drizzle-orm";
 import { watchRemotePaths } from "./realtime/host-watch.js";
 import { watchProcessExit } from "./realtime/process-watch.js";
 import { watchResourcePath } from "./realtime/sources.js";
+import { indexSessionsWhenEnabled } from "./sessions/archive-local.js";
 import { CLAUDE_REGISTRY_DIR, claudeAdapter } from "./sessions/claude.js";
 import { codexAdapter } from "./sessions/codex.js";
 import { LIVE_CHAT_ID, projectIdFor } from "./sessions/common.js";
@@ -204,6 +205,7 @@ export function runSync(
         await upsertRecord(record, selectedHostAlias());
     }
     await synchronized?.();
+    indexSessionsWhenEnabled();
     return results;
   });
 }
