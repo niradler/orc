@@ -17,7 +17,7 @@ import type { KbCallContext } from "@orc/core/kb";
 import { createTestDb, getSqlite } from "@orc/db";
 import { projectKbCount } from "@orc/db/kb";
 import { chunkBlocks } from "../chunker.js";
-import type { EmbeddingProvider } from "../embeddings.js";
+import { createEmbeddingProvider, type EmbeddingProvider } from "../embeddings.js";
 import type { KnowledgeConfig } from "../engine.js";
 import { markdownToBlocks } from "../markdown.js";
 import { KnowledgeService } from "../service.js";
@@ -256,6 +256,159 @@ describe("documents", () => {
 });
 
 describe("jobs", () => {
+  test.each(["invalid-json", "wrong-source"])(
+    "rebuilds a corrupt parser cache from the retained original (%s)",
+    async (damage) => {
+      const kb = svc.createKb(human(), { name: "Parser recovery", project_id: null });
+      const doc = svc.upload(human(), kb.id, {
+        name: "recovery.html",
+        bytes: new TextEncoder().encode("<h1>Original</h1><p>retained original content</p>"),
+      });
+      await svc.jobs.idle();
+      const row = svc.engine.catalog.doc(doc.id);
+      if (!row?.parser_id || !row.parser_version) throw Error("Missing parsed fixture");
+      const path = svc.engine.storage.artifactPath(
+        doc.id,
+        row.content_hash,
+        row.parser_id,
+        row.parser_version,
+      );
+      if (damage === "invalid-json") writeFileSync(path, "{");
+      else {
+        const artifact = JSON.parse(readFileSync(path, "utf8"));
+        artifact.source_sha256 = "0".repeat(64);
+        artifact.markdown = "Wrong document content";
+        artifact.blocks = [{ kind: "paragraph", text: "Wrong document content", heading_path: [] }];
+        writeFileSync(path, JSON.stringify(artifact));
+      }
+      svc.engine.catalog.enqueue(kb.id, doc.id, 1, "index", "cache-recovery-job");
+      svc.jobs.kick();
+      await svc.jobs.idle();
+      expect(svc.getDocument(human(), doc.id).content).toContain("retained original content");
+      expect(
+        svc.engine.idx
+          .documentChunks(doc.id)
+          .map((c) => c.text)
+          .join("\n"),
+      ).toContain("retained original content");
+      expect(svc.engine.catalog.doc(doc.id)?.revision).toBe(1);
+    },
+  );
+  test("transient provider failures leave keyword search available and resume the durable embedding job", async () => {
+    let calls = 0;
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        const body = (await request.json()) as { input: string[] };
+        calls++;
+        if (calls === 1) return new Response("private provider payload", { status: 429 });
+        return Response.json({ embeddings: body.input.map(() => [1, 0]) });
+      },
+    });
+    try {
+      const provider = createEmbeddingProvider({
+        provider: "ollama",
+        model: "fixture",
+        base_url: `http://127.0.0.1:${server.port}`,
+        batch_size: 2,
+        timeout_secs: 1,
+      });
+      svc.engine.embedder = () => provider;
+      const kb = svc.createKb(human(), { name: "Durable retry", project_id: null });
+      const doc = svc.createDocument(human(), kb.id, {
+        title: "Retryable",
+        content: "unique retry keyword",
+      });
+      await svc.jobs.idle();
+      const job = db
+        .query(
+          "SELECT status, attempts, error FROM kb_jobs WHERE document_id = ? AND kind = 'embed'",
+        )
+        .get(doc.id) as { status: string; attempts: number; error: string };
+      expect(job.status).toBe("queued");
+      expect(job.attempts).toBe(1);
+      expect(job.error).not.toContain("private");
+      expect(
+        (await svc.search(human(), { query: "unique retry", mode: "lexical" })).hits[0]
+          ?.document_id,
+      ).toBe(doc.id);
+      db.run("UPDATE kb_jobs SET run_after = 0 WHERE document_id = ? AND kind = 'embed'", [doc.id]);
+      svc.jobs.kick();
+      await svc.jobs.idle();
+      expect(svc.engine.catalog.doc(doc.id)?.index_state).toBe("semantic_ready");
+      expect(calls).toBe(2);
+    } finally {
+      server.stop(true);
+    }
+  });
+  test("reconcile repairs a nonempty index containing a superseded revision", async () => {
+    const kb = svc.createKb(human(), { name: "Stale index", project_id: null });
+    const doc = svc.createDocument(human(), kb.id, {
+      title: "Current",
+      content: "current catalog passage",
+    });
+    await svc.jobs.idle();
+    svc.engine.idx.db.run(
+      "UPDATE chunks SET revision = 0, text = 'superseded passage' WHERE document_id = ?",
+      [doc.id],
+    );
+    svc.reconcile();
+    await svc.jobs.idle();
+    expect(
+      svc.engine.idx
+        .documentChunks(doc.id)
+        .every((c) => c.revision === 1 && c.text === "current catalog passage"),
+    ).toBe(true);
+  });
+  test("reconcile clears orphaned derived passages left by an interrupted document deletion", async () => {
+    const kb = svc.createKb(human(), { name: "Interrupted removal", project_id: null });
+    const doc = svc.createDocument(human(), kb.id, {
+      title: "Removed document",
+      content: "private deleted passage",
+    });
+    await svc.jobs.idle();
+    // Simulate a crash after catalog deletion committed but before index cleanup.
+    db.run("DELETE FROM kb_documents WHERE id = ?", [doc.id]);
+    expect(svc.engine.idx.documentChunks(doc.id).length).toBeGreaterThan(0);
+    svc.reconcile();
+    expect(svc.engine.idx.documentChunks(doc.id)).toEqual([]);
+  });
+  test.each([false, true])(
+    "changing embedding profile during an in-flight job finishes the new active profile (old failure: %s)",
+    async (fail) => {
+      let release: (() => void) | undefined;
+      let started: (() => void) | undefined;
+      const began = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      const wait = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const old = fakeEmbedder();
+      old.embed = async (texts) => {
+        started?.();
+        await wait;
+        if (fail) throw new Error("Old endpoint unavailable");
+        return texts.map(() => [1, 0]);
+      };
+      const next = { ...fakeEmbedder(), profile: "new-active-profile" };
+      let active: EmbeddingProvider = old;
+      svc.engine.embedder = () => active;
+      const kb = svc.createKb(human(), { name: "Profile race", project_id: null });
+      const doc = svc.createDocument(human(), kb.id, {
+        title: "Network",
+        content: "DNS resolver instructions",
+      });
+      await began;
+      active = next;
+      svc.reconcile();
+      release?.();
+      await svc.jobs.idle();
+      expect(svc.engine.idx.fullyEmbedded(next.profile, doc.id)).toBe(true);
+      expect(svc.engine.catalog.doc(doc.id)?.index_state).toBe("semantic_ready");
+    },
+  );
   test("rebuilding legacy passages preserves citations; new revisions opt into improved chunking", async () => {
     await svc.stop();
     const kb = svc.createKb(human(), { name: "Versioned chunks", project_id: null });

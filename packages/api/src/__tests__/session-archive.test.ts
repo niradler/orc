@@ -65,6 +65,20 @@ afterEach(async () => {
 });
 
 describe("session archive storage and identities", () => {
+  test("startup repairs stale index revisions even when chunks are present", async () => {
+    const first = await svc.ingest(upload());
+    await svc.idle();
+    svc.index.db.run("UPDATE chunks SET revision = 0 WHERE document_id = ?", [first.session.id]);
+    await svc.close();
+    svc = await SessionArchive.open({
+      db: getSqlite(),
+      root: join(root, "direct"),
+      config: () => config,
+    });
+    await svc.idle();
+    expect(svc.index.documentChunks(first.session.id).every((c) => c.revision === 1)).toBe(true);
+    expect((await svc.search(search("sunrise"))).sessions[0]?.id).toBe(first.session.id);
+  });
   test("legacy session citations survive reindex and appends while new revisions use safe splitting", async () => {
     const text = "A sentence with whitespace and historical citation boundaries. ".repeat(80);
     const first = await svc.ingest(upload([message(text)]));

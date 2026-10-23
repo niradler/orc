@@ -162,9 +162,9 @@ export class SessionArchive {
       options.config ?? loadConfig,
       options.embedder,
     );
-    const indexed = index.documentChunkCounts();
+    const indexed = index.documentRevisions();
     for (const row of service.db.query<Row, []>("SELECT * FROM session_archives").all())
-      if (!indexed.has(row.id))
+      if (indexed.get(row.id) !== row.revision)
         service.db.run("UPDATE session_archives SET index_revision = 0 WHERE id = ?", [row.id]);
     service.timer = setInterval(() => service.kick(), 30_000);
     service.timer.unref();

@@ -1,5 +1,38 @@
 import { expect, test } from "bun:test";
-import { createEmbeddingProvider, type EmbeddingConfig } from "../embeddings.js";
+import { createEmbeddingProvider, type EmbeddingConfig, EmbeddingError } from "../embeddings.js";
+
+test.each([
+  { status: 408, retryable: true },
+  { status: 429, retryable: true },
+  { status: 503, retryable: true },
+  { status: 400, retryable: false },
+  { status: 401, retryable: false },
+])("classifies provider HTTP $status for bounded job retries", async ({ status, retryable }) => {
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response("private response", { status }),
+  });
+  try {
+    const provider = createEmbeddingProvider({
+      provider: "ollama",
+      model: "fixture",
+      base_url: `http://127.0.0.1:${server.port}`,
+      batch_size: 2,
+      timeout_secs: 1,
+    });
+    try {
+      await provider?.embed(["input"], "document");
+      throw Error("Expected rejection");
+    } catch (error) {
+      if (!(error instanceof EmbeddingError)) throw error;
+      expect(error.retryable).toBe(retryable);
+      expect(error.message).not.toContain("private");
+    }
+  } finally {
+    server.stop(true);
+  }
+});
 
 async function providerResponse(
   provider: "ollama" | "openai",
@@ -162,3 +195,50 @@ test("Ollama uses task prefixes, batches inputs and refuses silent truncation", 
     server.stop(true);
   }
 });
+
+test.each(
+  [
+    {
+      model: "mxbai-embed-large:latest",
+      query: "Represent this sentence for searching relevant passages: question",
+    },
+    {
+      model: "qwen3-embedding:0.6b",
+      query:
+        "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: question",
+    },
+  ].flatMap((item) => (["ollama", "openai"] as const).map((provider) => ({ ...item, provider }))),
+)(
+  "$provider prepares retrieval queries for $model without changing document inputs",
+  async ({ model, query, provider: kind }) => {
+    const inputs: string[][] = [];
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(req) {
+        const body = (await req.json()) as { input: string[] };
+        inputs.push(body.input);
+        const vectors = body.input.map(() => [1, 0]);
+        return Response.json(
+          kind === "ollama"
+            ? { embeddings: vectors }
+            : { data: vectors.map((embedding, index) => ({ index, embedding })) },
+        );
+      },
+    });
+    try {
+      const provider = createEmbeddingProvider({
+        provider: kind,
+        model,
+        base_url: `http://127.0.0.1:${server.port}`,
+        batch_size: 8,
+        timeout_secs: 5,
+      });
+      await provider?.embed(["document"], "document");
+      await provider?.embed(["question"], "query");
+      expect(inputs).toEqual([["document"], [query]]);
+    } finally {
+      server.stop(true);
+    }
+  },
+);

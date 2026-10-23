@@ -221,6 +221,16 @@ export class IndexDb {
     return new Map(rows.map((r) => [r.document_id, r.n]));
   }
 
+  /** A mixed or superseded revision is not a usable projection of the current catalog. */
+  documentRevisions(): Map<string, number> {
+    const rows = this.db
+      .query(
+        "SELECT document_id, min(revision) AS revision FROM chunks GROUP BY document_id HAVING min(revision) = max(revision)",
+      )
+      .all() as { document_id: string; revision: number }[];
+    return new Map(rows.map((row) => [row.document_id, row.revision]));
+  }
+
   chunkCount(): number {
     return (this.db.query("SELECT count(*) n FROM chunks").get() as { n: number }).n;
   }

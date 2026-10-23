@@ -102,8 +102,22 @@ export class KnowledgeStorage {
   ): ParsedDocument | null {
     const path = this.artifactPath(docId, contentHash, parserId, version);
     if (!existsSync(path)) return null;
-    const parsed = ParsedDocumentSchema.safeParse(JSON.parse(readFileSync(path, "utf8")));
-    return parsed.success ? parsed.data : null;
+    let value: unknown;
+    try {
+      value = JSON.parse(readFileSync(path, "utf8"));
+    } catch (error) {
+      if (error instanceof SyntaxError || (error as NodeJS.ErrnoException).code === "ENOENT")
+        return null;
+      throw error;
+    }
+    const parsed = ParsedDocumentSchema.safeParse(value);
+    if (!parsed.success) return null;
+    const artifact = parsed.data;
+    return artifact.source_sha256 === contentHash &&
+      artifact.parser.id === parserId &&
+      artifact.parser.version === version
+      ? artifact
+      : null;
   }
 
   /**

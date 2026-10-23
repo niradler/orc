@@ -1598,6 +1598,7 @@ export class KnowledgeService {
    */
   reconcile() {
     const counts = this.engine.idx.documentChunkCounts();
+    const revisions = this.engine.idx.documentRevisions();
     const embedder = this.engine.embedder();
     const docs = this.db
       .query(
@@ -1618,6 +1619,10 @@ export class KnowledgeService {
         }[]
       ).map((r) => r.k),
     );
+    const retained = new Set(docs.map((doc) => doc.id));
+    // Catalog deletion commits before the separate derived index is cleaned. Recover
+    // a crash in that window so removed passages cannot occupy retrieval candidates.
+    for (const id of counts.keys()) if (!retained.has(id)) this.engine.idx.deleteDocument(id);
     let queued = 0;
     for (const d of docs) {
       const has = (kind: string) => active.has(`${d.id}@${d.revision}:${kind}`);
@@ -1630,7 +1635,7 @@ export class KnowledgeService {
       if (d.parse_state === "pending" || d.parse_state === "failed" || has("parse") || has("index"))
         continue;
       const ready = d.index_state === "lexical_ready" || d.index_state.startsWith("semantic");
-      if (ready && !counts.has(d.id)) {
+      if (ready && revisions.get(d.id) !== d.revision) {
         this.catalog.enqueue(d.kb_id, d.id, d.revision, "index", ulid());
         queued++;
         continue;

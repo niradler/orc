@@ -27,6 +27,16 @@ export class EmbeddingError extends Error {
   }
 }
 
+/** Retrieval instructions from upstream model cards; documents for these models stay unprefixed. */
+function retrievalQuery(model: string, text: string): string {
+  const name = model.toLowerCase().split("/").at(-1) ?? model;
+  if (/^mxbai-embed-large(?:[:-]|$)/.test(name))
+    return `Represent this sentence for searching relevant passages: ${text}`;
+  if (/^qwen3-embedding(?:[:-]|$)/.test(name))
+    return `Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery: ${text}`;
+  return text;
+}
+
 async function post(url: string, body: unknown, timeoutSecs: number, apiKey?: string) {
   let res: Response;
   try {
@@ -48,7 +58,7 @@ async function post(url: string, body: unknown, timeoutSecs: number, apiKey?: st
     await res.body?.cancel();
     throw new EmbeddingError(
       `Embedding request failed (${res.status})`,
-      res.status === 429 || res.status >= 500,
+      res.status === 408 || res.status === 429 || res.status >= 500,
     );
   }
   try {
@@ -111,7 +121,9 @@ export function createEmbeddingProvider(cfg: EmbeddingConfig): EmbeddingProvider
           `${base}/api/embed`,
           {
             model,
-            input: texts.map((t) => prefix + t),
+            input: texts.map((t) =>
+              prefix ? prefix + t : kind === "query" ? retrievalQuery(model, t) : t,
+            ),
             truncate: false,
             ...(cfg.dimensions ? { dimensions: cfg.dimensions } : {}),
           },
@@ -128,11 +140,15 @@ export function createEmbeddingProvider(cfg: EmbeddingConfig): EmbeddingProvider
     model,
     profile,
     batchSize: cfg.batch_size,
-    async embed(texts) {
+    async embed(texts, kind) {
       if (!texts.length) return [];
       const json = await post(
         `${base}/embeddings`,
-        { model, input: texts, ...(cfg.dimensions ? { dimensions: cfg.dimensions } : {}) },
+        {
+          model,
+          input: kind === "query" ? texts.map((text) => retrievalQuery(model, text)) : texts,
+          ...(cfg.dimensions ? { dimensions: cfg.dimensions } : {}),
+        },
         cfg.timeout_secs,
         cfg.api_key,
       );

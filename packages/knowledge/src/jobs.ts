@@ -252,24 +252,35 @@ export class JobRunner {
   }
 
   private async embed(doc: DocRow) {
-    const embedder = this.e.embedder();
-    if (!embedder) {
-      this.e.db.run(
-        "UPDATE kb_documents SET index_state = 'lexical_ready' WHERE id = ? AND revision = ?",
-        [doc.id, doc.revision],
-      );
+    for (;;) {
+      if (this.e.catalog.doc(doc.id)?.revision !== doc.revision) return;
+      const embedder = this.e.embedder();
+      if (!embedder) {
+        this.e.db.run(
+          "UPDATE kb_documents SET index_state = 'lexical_ready' WHERE id = ? AND revision = ?",
+          [doc.id, doc.revision],
+        );
+        return;
+      }
+      let count: number;
+      try {
+        count = await embedPendingBatch(this.e.idx, embedder, doc.id);
+      } catch (error) {
+        if (this.e.embedder()?.profile !== embedder.profile) continue;
+        throw error;
+      }
+      // Settings may change while awaiting the provider. Drain the active profile before
+      // marking ready; reconcile cannot enqueue another job while this one owns the lease.
+      if (this.e.embedder()?.profile !== embedder.profile) continue;
+      if (this.e.catalog.doc(doc.id)?.revision !== doc.revision) return;
+      if (count) continue;
+      if (this.e.idx.fullyEmbedded(embedder.profile, doc.id))
+        this.e.db.run(
+          "UPDATE kb_documents SET index_state = 'semantic_ready' WHERE id = ? AND revision = ?",
+          [doc.id, doc.revision],
+        );
       return;
     }
-    for (;;) {
-      if (!(await embedPendingBatch(this.e.idx, embedder, doc.id))) break;
-      // A newer revision replaced the chunks mid-flight; its own embed job takes over.
-      if (this.e.catalog.doc(doc.id)?.revision !== doc.revision) return;
-    }
-    if (this.e.idx.fullyEmbedded(embedder.profile, doc.id))
-      this.e.db.run(
-        "UPDATE kb_documents SET index_state = 'semantic_ready' WHERE id = ? AND revision = ?",
-        [doc.id, doc.revision],
-      );
   }
 }
 
