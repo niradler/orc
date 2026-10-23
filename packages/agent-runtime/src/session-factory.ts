@@ -85,6 +85,7 @@ export async function openAgentSession(
     if (!profile) return session;
     return {
       id: session.id,
+      getRuntimeSessionId: () => session.getRuntimeSessionId?.(),
       send: (prompt, images) => session.send(`${context}\n\n${prompt}`, images),
       respondPermission: (requestId, result) => session.respondPermission(requestId, result),
       events: () => session.events(),

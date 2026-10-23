@@ -424,6 +424,10 @@ class AcpxSession implements AgentSession {
     return this.proc.exitCode === null;
   }
 
+  getRuntimeSessionId(): string {
+    return this.sessionName;
+  }
+
   async close(): Promise<void> {
     if (!this.proc) return;
     this.killProc?.();

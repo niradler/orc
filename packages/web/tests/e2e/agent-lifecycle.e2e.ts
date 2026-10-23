@@ -85,6 +85,12 @@ test("registered agents share idle visibility, transcripts, task links and termi
       page.locator(`[data-testid="live-session-row"][data-session-id="${prefix}-${backend}"]`),
     ).toBeVisible();
   }
+  // Ended rows are hidden by the active-only filter; enable archive visibility
+  // before checking the stopped registrations and then verify hiding them again.
+  await expect(page.getByTestId("show-ended")).not.toBeChecked();
+  await page.getByTestId("show-ended").click();
+  await expect(page.getByTestId("show-ended")).toBeChecked();
+  await expect(page).toHaveURL(/ended=1/);
   for (const backend of agents)
     writeRegistration({
       backend,

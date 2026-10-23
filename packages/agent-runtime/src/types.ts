@@ -51,6 +51,8 @@ export type AgentEvent =
 
 export interface AgentSession {
   readonly id: string;
+  /** Native identity may be known before a turn completes, including on cancellation. */
+  getRuntimeSessionId?(): string | undefined;
   send(prompt: string, images?: ImageAttachment[]): Promise<void>;
   respondPermission(requestId: string, result: PermissionResult): void;
   events(): AsyncIterable<AgentEvent>;

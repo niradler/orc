@@ -39,6 +39,7 @@ function session(call: (typeof calls)[number]): AgentSession {
   });
   return {
     id: "fixture",
+    getRuntimeSessionId: () => (waitPermission ? "early-native-fixture" : undefined),
     send: async (prompt) => {
       call.prompt = prompt;
     },
@@ -418,6 +419,9 @@ describe("native chat runtime", () => {
     reader.releaseLock();
     expect(closed).toBeGreaterThan(previousClosed);
     expect(
+      ((await (await request(`/chat/threads/${opened.thread.id}`)).json()) as ChatThread).runtimeId,
+    ).toBe("early-native-fixture");
+    expect(
       (
         await request(`/chat/runs/${opened.runId}/permission`, {
           requestId: "permission-1",
@@ -426,6 +430,11 @@ describe("native chat runtime", () => {
       ).status,
     ).toBe(409);
     waitPermission = false;
+    await turn({
+      threadId: opened.thread.id,
+      messages: [{ role: "user", content: "continue after stopping" }],
+    });
+    expect(calls[calls.length - 1]?.id).toBe("early-native-fixture");
   });
 
   test("database failures release workers and report unsaved responses", async () => {

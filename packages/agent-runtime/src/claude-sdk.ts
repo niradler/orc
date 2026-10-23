@@ -354,6 +354,10 @@ class ClaudeSDKSession implements AgentSession {
     return !this.done;
   }
 
+  getRuntimeSessionId(): string | undefined {
+    return this.runtimeSessionId;
+  }
+
   async close(): Promise<void> {
     for (const resolve of this.permissionResolvers.values()) resolve("denied");
     this.permissionResolvers.clear();

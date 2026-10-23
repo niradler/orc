@@ -443,6 +443,9 @@ app.openapi(
         clearInterval(ping);
         clearTimeout(timer);
         c.req.raw.signal.removeEventListener("abort", close);
+        const nativeId = run.session?.getRuntimeSessionId?.();
+        if (!thread.runtimeId && nativeId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(nativeId))
+          thread.runtimeId = nativeId;
         await run.session?.close().catch(() => {});
         if (assistant.content || assistant.activity?.length) thread.messages.push(assistant);
         thread.updatedAt = Date.now();

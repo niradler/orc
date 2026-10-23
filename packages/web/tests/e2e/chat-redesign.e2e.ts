@@ -1,5 +1,27 @@
+import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
 import { API_SECRET } from "./_helpers";
+
+test.beforeEach(async ({ request }) => {
+  await request.patch("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+    data: { chat: ChatSettingsSchema.parse({}) },
+  });
+});
+test.afterEach(async ({ request }) => {
+  await request.patch("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+    data: { chat: ChatSettingsSchema.parse({}) },
+  });
+});
+
+async function saveClaudeDefault(page: import("@playwright/test").Page) {
+  const response = await page.request.patch("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+    data: { chat: ChatSettingsSchema.parse({ agent: "claude" }) },
+  });
+  expect(response.ok()).toBe(true);
+}
 
 test("stopping a chunked response preserves partial text and a new send finishes independently", async ({
   page,
@@ -51,7 +73,7 @@ test("stopping a chunked response preserves partial text and a new send finishes
   await page.getByTestId("chat-input").fill("Start a chunked response");
   await page.getByTestId("chat-send-button").click();
   await expect(page.getByTestId("chat-message-content").last()).toContainText("Partial response ✓");
-  await page.getByTestId("chat-agent-select").selectOption("claude");
+  await expect(page.getByTestId("chat-agent-select")).toBeDisabled();
   await expect(page.getByRole("status").filter({ hasText: "codex is responding" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("chat-loading-partial.png") });
   await page.getByTestId("chat-cancel-button").click();
@@ -123,6 +145,7 @@ test("clearing a pending chat cannot append stale output and preferences survive
   await mobile.getByLabel("Close chat", { exact: true }).click();
   await page.getByTestId("chat-open-button").click();
   await expect(mobile.getByTestId("chat-message")).toHaveCount(2);
+  await saveClaudeDefault(page);
   await page.reload();
   await expect(page.getByTestId("chat-panel")).toBeVisible();
   await expect(page.getByTestId("mobile-chat-sheet").getByTestId("chat-agent-select")).toHaveValue(
@@ -183,10 +206,11 @@ for (const theme of ["dark", "light"] as const) {
       await expect(panel.getByTestId("chat-message-content").last()).toContainText(
         "Response from codex",
       );
-      await picker.selectOption("claude");
       await expect(
         panel.locator('[data-role="assistant"]').first().getByTestId("chat-message-agent"),
       ).toHaveText("codex");
+      await panel.getByTestId("chat-clear-button").click();
+      await picker.selectOption("claude");
       await input.fill("Second request");
       await input.press("Enter");
       await expect(panel.getByTestId("chat-message-content").last()).toContainText(
@@ -204,6 +228,7 @@ for (const theme of ["dark", "light"] as const) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
         false,
       );
+      await saveClaudeDefault(page);
       await page.reload();
       await expect(page.getByTestId("chat-panel")).toBeVisible();
       await expect(page.getByTestId("chat-agent-select")).toHaveValue("claude");
