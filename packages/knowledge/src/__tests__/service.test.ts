@@ -16,8 +16,10 @@ import { ConflictError, ForbiddenError, ValidationError } from "@orc/core/errors
 import type { KbCallContext } from "@orc/core/kb";
 import { createTestDb, getSqlite } from "@orc/db";
 import { projectKbCount } from "@orc/db/kb";
+import { chunkBlocks } from "../chunker.js";
 import type { EmbeddingProvider } from "../embeddings.js";
 import type { KnowledgeConfig } from "../engine.js";
+import { markdownToBlocks } from "../markdown.js";
 import { KnowledgeService } from "../service.js";
 
 const human = (source: KbCallContext["source"] = "ui"): KbCallContext => ({
@@ -93,6 +95,19 @@ describe("knowledge bases", () => {
 });
 
 describe("documents", () => {
+  test("exact-title fallback does not cite superseded chunks while reindex is pending", async () => {
+    const kb = svc.createKb(human(), { name: "Revision fixture", project_id: null });
+    const doc = svc.createDocument(human(), kb.id, {
+      title: "Unique Runbook",
+      content: "Obsolete passage",
+    });
+    await svc.jobs.idle();
+    await svc.stop();
+    db.run("UPDATE kb_documents SET revision = revision + 1 WHERE id = ?", [doc.id]);
+    const res = await svc.search(agent(), { query: "Unique Runbook" });
+    expect(res.hits[0]?.document_id).toBe(doc.id);
+    expect(res.hits[0]?.passages).toEqual([]);
+  });
   test("authored document: create, search, cite, read by source", async () => {
     const kb = svc.createKb(human(), { name: "Ops", project_id: null });
     const doc = svc.createDocument(human(), kb.id, {
@@ -241,6 +256,35 @@ describe("documents", () => {
 });
 
 describe("jobs", () => {
+  test("rebuilding legacy passages preserves citations; new revisions opt into improved chunking", async () => {
+    await svc.stop();
+    const kb = svc.createKb(human(), { name: "Versioned chunks", project_id: null });
+    const content = "A long sentence for the old citation boundaries. ".repeat(100);
+    const doc = svc.createDocument(human(), kb.id, { title: "Legacy", content });
+    db.run("UPDATE kb_document_revisions SET chunk_version = 1 WHERE document_id = ?", [doc.id]);
+    svc.start();
+    await svc.jobs.idle();
+    const expected = chunkBlocks(markdownToBlocks(content), 1);
+    expect(svc.engine.idx.documentChunks(doc.id).map((c) => c.text)).toEqual(
+      expected.map((c) => c.text),
+    );
+    await svc.stop();
+    svc.close();
+    for (const file of ["index.db", "index.db-wal", "index.db-shm"])
+      rmSync(join(root, file), { force: true });
+    svc = await open();
+    await svc.jobs.idle();
+    const first = expected[0];
+    if (!first) throw new Error("Missing expected legacy passage");
+    expect(svc.readCitation(human(), doc.id, 1, 0).content).toBe(first.text);
+    svc.updateDocument(human(), doc.id, {
+      expected_revision: 1,
+      content: `${content}\nNew revision.`,
+    });
+    await svc.jobs.idle();
+    expect(svc.engine.catalog.revision(doc.id, 2)?.chunk_version).toBe(2);
+    expect(() => svc.readCitation(human(), doc.id, 1, 0)).toThrow(ConflictError);
+  });
   test("interrupted jobs resume after restart; lost index is rebuilt", async () => {
     await svc.stop();
     const kb = svc.createKb(human(), { name: "K", project_id: null });

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { OrcConfig } from "@orc/core/config";
+import { validateVector } from "./vector.js";
 
 export type EmbeddingConfig = OrcConfig["knowledge"]["embedding"];
 
@@ -38,28 +39,47 @@ async function post(url: string, body: unknown, timeoutSecs: number, apiKey?: st
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutSecs * 1000),
     });
-  } catch (e) {
-    throw new EmbeddingError(`Embedding endpoint unreachable: ${(e as Error).message}`, true);
+  } catch {
+    throw new EmbeddingError("Embedding endpoint unreachable", true);
   }
   if (!res.ok) {
-    const text = (await res.text().catch(() => "")).slice(0, 300);
+    // Provider bodies may echo credentials or private input. Never expose them
+    // through job errors, logs or the search API's degraded message.
+    await res.body?.cancel();
     throw new EmbeddingError(
-      `Embedding request failed (${res.status}): ${text}`,
+      `Embedding request failed (${res.status})`,
       res.status === 429 || res.status >= 500,
     );
   }
-  return (await res.json()) as Record<string, unknown>;
+  try {
+    const json: unknown = await res.json();
+    if (!json || typeof json !== "object" || Array.isArray(json)) throw new Error();
+    return json as Record<string, unknown>;
+  } catch {
+    throw new EmbeddingError("Embedding response is not a JSON object", false);
+  }
 }
 
-function checkVectors(vectors: unknown, count: number, dims?: number): number[][] {
+export function validateEmbeddingVectors(
+  vectors: unknown,
+  count: number,
+  dims?: number,
+): number[][] {
   if (!Array.isArray(vectors) || vectors.length !== count)
     throw new EmbeddingError("Embedding response has the wrong number of vectors", false);
+  let dimensions = dims;
   for (const v of vectors) {
-    if (!Array.isArray(v) || !v.length || (dims && v.length !== dims))
+    if (!Array.isArray(v))
+      throw new EmbeddingError("Embedding response has an invalid vector", false);
+    dimensions ??= v.length;
+    try {
+      validateVector(v, dimensions);
+    } catch {
       throw new EmbeddingError(
-        `Embedding response has unexpected dimensions${dims ? ` (expected ${dims})` : ""}`,
+        "Embedding response has invalid vectors or inconsistent dimensions",
         false,
       );
+    }
   }
   return vectors as number[][];
 }
@@ -80,6 +100,7 @@ export function createEmbeddingProvider(cfg: EmbeddingConfig): EmbeddingProvider
       profile,
       batchSize: cfg.batch_size,
       async embed(texts, kind) {
+        if (!texts.length) return [];
         // nomic-embed models are trained with task prefixes; without them recall drops noticeably.
         const prefix = /nomic-embed/i.test(model)
           ? kind === "query"
@@ -91,14 +112,14 @@ export function createEmbeddingProvider(cfg: EmbeddingConfig): EmbeddingProvider
           {
             model,
             input: texts.map((t) => prefix + t),
-            truncate: true,
+            truncate: false,
             ...(cfg.dimensions ? { dimensions: cfg.dimensions } : {}),
           },
           cfg.timeout_secs,
           // Local Ollama needs none; a hosted or proxied one takes a bearer token.
           cfg.api_key,
         );
-        return checkVectors(json.embeddings, texts.length, cfg.dimensions);
+        return validateEmbeddingVectors(json.embeddings, texts.length, cfg.dimensions);
       },
     };
   }
@@ -108,15 +129,31 @@ export function createEmbeddingProvider(cfg: EmbeddingConfig): EmbeddingProvider
     profile,
     batchSize: cfg.batch_size,
     async embed(texts) {
+      if (!texts.length) return [];
       const json = await post(
         `${base}/embeddings`,
         { model, input: texts, ...(cfg.dimensions ? { dimensions: cfg.dimensions } : {}) },
         cfg.timeout_secs,
         cfg.api_key,
       );
-      const data = json.data as { index: number; embedding: number[] }[] | undefined;
-      const sorted = Array.isArray(data) ? [...data].sort((a, b) => a.index - b.index) : data;
-      return checkVectors(
+      const data = json.data;
+      if (!Array.isArray(data) || data.length !== texts.length)
+        throw new EmbeddingError("Embedding response has the wrong number of vectors", false);
+      const indices = new Set<number>();
+      for (const row of data) {
+        if (
+          !row ||
+          typeof row !== "object" ||
+          !Number.isInteger(row.index) ||
+          row.index < 0 ||
+          row.index >= texts.length ||
+          indices.has(row.index)
+        )
+          throw new EmbeddingError("Embedding response has invalid input indices", false);
+        indices.add(row.index);
+      }
+      const sorted = [...data].sort((a, b) => a.index - b.index);
+      return validateEmbeddingVectors(
         sorted?.map((d) => d.embedding),
         texts.length,
         cfg.dimensions,

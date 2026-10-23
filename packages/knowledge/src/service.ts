@@ -614,8 +614,8 @@ export class KnowledgeService {
     originalRel: string | null,
   ) {
     this.db.run(
-      `INSERT INTO kb_document_revisions (document_id, revision, title, path, labels, content, content_hash, original_rel, note, actor, source, session_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO kb_document_revisions (document_id, revision, title, path, labels, content, content_hash, original_rel, note, actor, source, session_id, created_at, chunk_version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2)`,
       [
         doc.id,
         doc.revision,

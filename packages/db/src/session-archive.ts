@@ -45,4 +45,13 @@ export function installSessionArchive(db: Database): void {
       expires_at INTEGER NOT NULL
     );
   `);
+  db.transaction(() => {
+    const columns = db.query("PRAGMA table_info(session_archive_revisions)").all() as {
+      name: string;
+    }[];
+    if (!columns.some((c) => c.name === "chunk_version"))
+      db.exec(
+        "ALTER TABLE session_archive_revisions ADD COLUMN chunk_version INTEGER NOT NULL DEFAULT 1",
+      );
+  }).immediate();
 }

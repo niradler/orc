@@ -10,6 +10,7 @@ import {
   encodeVector,
   loadVectorBackend,
   type VectorBackend,
+  validateVector,
 } from "./vector.js";
 
 const INDEX_SCHEMA_VERSION = 2;
@@ -67,9 +68,21 @@ export const embeddingInput = (c: Pick<IndexedChunk, "title" | "heading_path" | 
 
 export const inputHash = (text: string) => createHash("sha256").update(text).digest("hex");
 
+// Only the relaxed OR fallback drops English filler when meaningful terms remain.
+// Strict matching, all-filler queries, identifiers and other languages retain their terms.
+const QUERY_FILLER = new Set(
+  "a an the and or of to in on for from with by at is are was were be been this that these those it its as do does did how what when where why which who can could should would will i we you they he she my our your their".split(
+    " ",
+  ),
+);
+
 /** FTS5 query from free text: every term quoted (no syntax injection), last term as a prefix. */
 export function ftsQuery(query: string, op: "AND" | "OR"): string | null {
-  const terms = query.match(/[\p{L}\p{N}_]+/gu)?.slice(0, 32) ?? [];
+  let terms = query.match(/[\p{L}\p{N}_]+/gu)?.slice(0, 32) ?? [];
+  if (op === "OR") {
+    const meaningful = terms.filter((term) => !QUERY_FILLER.has(term.toLowerCase()));
+    if (meaningful.length) terms = meaningful;
+  }
   if (!terms.length) return null;
   return terms
     .map((t, i) => `"${t}"${i === terms.length - 1 && t.length >= 3 ? "*" : ""}`)
@@ -298,6 +311,7 @@ export class IndexDb {
   /** Exact cosine KNN over the eligible rows (filters apply before ranking, not after). */
   semantic(vector: number[], profile: string, f: ChunkFilter, limit: number, perDocument?: number) {
     if (!f.kb_ids.length) return [];
+    validateVector(vector, this.vectorDimensions(profile) ?? undefined);
     const filter = this.filterSql(f, "c");
     if (this.backend === "sqlite-vec") {
       const rows = this.db
@@ -408,12 +422,22 @@ export class IndexDb {
     );
     // The chunk may have been replaced by a newer revision while the embedding call was in flight.
     const exists = this.db.query("SELECT 1 FROM chunks WHERE id = ? AND input_hash = ?");
-    this.db.transaction(() => {
-      for (const r of rows) {
-        cache.run(profile, r.hash, r.vector);
-        if (exists.get(r.chunk_id, r.hash)) vec.run(r.chunk_id, profile, r.vector);
-      }
-    })();
+    this.db
+      .transaction(() => {
+        let dimensions = this.vectorDimensions(profile) ?? undefined;
+        for (const row of rows) {
+          const vector = decodeVector(row.vector);
+          dimensions ??= vector.length;
+          validateVector(vector, dimensions);
+        }
+        const cached = new Set<string>();
+        for (const r of rows) {
+          if (!cached.has(r.hash)) cache.run(profile, r.hash, r.vector);
+          cached.add(r.hash);
+          if (exists.get(r.chunk_id, r.hash)) vec.run(r.chunk_id, profile, r.vector);
+        }
+      })
+      .immediate();
   }
 
   /** True when every chunk of the document has a vector for this profile. */

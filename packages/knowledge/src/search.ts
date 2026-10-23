@@ -202,7 +202,11 @@ export class Searcher {
         let passageChunks = r.chunks
           .slice(0, PASSAGES_PER_HIT)
           .map((id) => byId.get(id) as IndexedChunk);
-        if (!passageChunks.length) passageChunks = this.e.idx.documentChunks(r.doc.id).slice(0, 1);
+        if (!passageChunks.length)
+          passageChunks = this.e.idx
+            .documentChunks(r.doc.id)
+            .filter((c) => c.revision === r.doc.revision)
+            .slice(0, 1);
         return {
           document_id: r.doc.id,
           kb_id: r.kb.id,

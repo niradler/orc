@@ -3,12 +3,13 @@ import { ulid } from "@orc/core/ids";
 import type { DocRow, JobKind, JobRow } from "./catalog.js";
 import { chunkBlocks } from "./chunker.js";
 import { documentText } from "./content.js";
+import { embedPendingBatch } from "./embedding-batch.js";
 import { EmbeddingError } from "./embeddings.js";
 import type { Engine } from "./engine.js";
-import { embeddingInput, inputHash } from "./index-db.js";
+import { inputHash } from "./index-db.js";
 import { setDocumentLinks } from "./links.js";
 import { ParserUnavailableError, runParser, selectParser } from "./parsers/registry.js";
-import { decodeVector, encodeVector } from "./vector.js";
+import { decodeVector } from "./vector.js";
 
 const MAX_ATTEMPTS = 3;
 /** Idle re-check so jobs queued by another process (e.g. a stdio MCP server) are picked up. */
@@ -225,7 +226,10 @@ export class JobRunner {
       return;
     }
     if (!text) throw new PermanentJobError("Document content is unavailable");
-    const chunks = chunkBlocks(text.blocks);
+    const chunks = chunkBlocks(
+      text.blocks,
+      this.e.catalog.revision(doc.id, doc.revision)?.chunk_version ?? 1,
+    );
     this.e.idx.replaceDocument({
       document_id: doc.id,
       kb_id: doc.kb_id,
@@ -257,28 +261,9 @@ export class JobRunner {
       return;
     }
     for (;;) {
-      const pending = this.e.idx.pendingEmbeddings(embedder.profile, embedder.batchSize, doc.id);
-      if (!pending.length) break;
-      const rows: { chunk_id: number; hash: string; vector: Uint8Array }[] = [];
-      const missing: { chunk_id: number; hash: string; text: string }[] = [];
-      for (const c of pending) {
-        const cached = this.e.idx.cachedEmbedding(embedder.profile, c.input_hash);
-        if (cached) rows.push({ chunk_id: c.id, hash: c.input_hash, vector: cached });
-        else missing.push({ chunk_id: c.id, hash: c.input_hash, text: embeddingInput(c) });
-      }
-      if (missing.length) {
-        const vectors = await embedder.embed(
-          missing.map((m) => m.text),
-          "document",
-        );
-        missing.forEach((m, i) => {
-          rows.push({ chunk_id: m.chunk_id, hash: m.hash, vector: encodeVector(vectors[i] ?? []) });
-        });
-      }
-      this.e.idx.putVectors(embedder.profile, rows);
+      if (!(await embedPendingBatch(this.e.idx, embedder, doc.id))) break;
       // A newer revision replaced the chunks mid-flight; its own embed job takes over.
       if (this.e.catalog.doc(doc.id)?.revision !== doc.revision) return;
-      if (rows.length < pending.length) break;
     }
     if (this.e.idx.fullyEmbedded(embedder.profile, doc.id))
       this.e.db.run(

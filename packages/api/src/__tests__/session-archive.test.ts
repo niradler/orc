@@ -65,6 +65,25 @@ afterEach(async () => {
 });
 
 describe("session archive storage and identities", () => {
+  test("legacy session citations survive reindex and appends while new revisions use safe splitting", async () => {
+    const text = "A sentence with whitespace and historical citation boundaries. ".repeat(80);
+    const first = await svc.ingest(upload([message(text)]));
+    await svc.idle();
+    getSqlite().run("UPDATE session_archive_revisions SET chunk_version = 1 WHERE session_id = ?", [
+      first.session.id,
+    ]);
+    await svc.ingest({ ...upload([message(text)]), reindex: true });
+    await svc.idle();
+    expect((await svc.citation(first.session.id, 1, 0)).text).toBe(text.slice(0, 1600));
+    expect(svc.index.documentChunks(first.session.id)[0]?.text).toBe(text.slice(0, 1600));
+    await svc.ingest(upload([message(text), message(`A${"😀".repeat(1600)}`)]));
+    await svc.idle();
+    expect((await svc.citation(first.session.id, 1, 0)).text).toBe(text.slice(0, 1600));
+    for (const chunk of svc.index.documentChunks(first.session.id)) {
+      expect(new TextDecoder().decode(new TextEncoder().encode(chunk.text))).toBe(chunk.text);
+      expect((await svc.citation(first.session.id, 2, chunk.ordinal)).text).toBe(chunk.text);
+    }
+  });
   test("simultaneous indexing scans each requested project and coalesces only identical scopes", async () => {
     for (const project of ["pa", "pb"]) {
       const id = randomUUID();
