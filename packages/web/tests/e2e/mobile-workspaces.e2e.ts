@@ -177,21 +177,15 @@ for (const theme of ["dark", "light"] as const) {
             capture: true,
           });
           const box = canvas.getBoundingClientRect();
-          const finger = (y: number) =>
-            new Touch({ identifier: 7, target: canvas, clientX: box.left + 20, clientY: y });
-          canvas.dispatchEvent(
-            new TouchEvent("touchstart", { bubbles: true, touches: [finger(box.top + 30)] }),
-          );
-          canvas.dispatchEvent(
-            new TouchEvent("touchmove", {
-              bubbles: true,
-              cancelable: true,
-              touches: [finger(box.top + 90)],
-            }),
-          );
-          canvas.dispatchEvent(
-            new TouchEvent("touchend", { bubbles: true, cancelable: true, touches: [] }),
-          );
+          // Event properties keep synthetic gesture fixtures compatible with WebKit.
+          const touch = (type: string, y?: number) =>
+            Object.assign(new Event(type, { bubbles: true, cancelable: true }), {
+              touches:
+                y === undefined ? [] : [{ identifier: 7, clientX: box.left + 20, clientY: y }],
+            });
+          canvas.dispatchEvent(touch("touchstart", box.top + 30));
+          canvas.dispatchEvent(touch("touchmove", box.top + 90));
+          canvas.dispatchEvent(touch("touchend"));
           return { deltas, sameFocus: document.activeElement === previousFocus };
         });
         expect(gesture.deltas).toEqual([-60]);
