@@ -31,6 +31,7 @@ test("imports a real GitHub skill, edits it, reopens it and preserves edits on s
   await page.getByTestId("skill-import-submit").click();
   const row = page.locator('[data-testid="skill-row"][data-skill-name="find-skills"]');
   await expect(row).toBeVisible({ timeout: 60000 });
+  await expect(row.getByTestId("skill-repository-cell")).toHaveText("vercel-labs/skills");
   await row.click();
   await expect(page.getByTestId("skill-sync")).toBeVisible();
   await page.getByTestId("markdown-mode-edit").click();
@@ -190,6 +191,89 @@ test("bulk sync selects only GitHub skills and retains conflicts without overrid
   await expect(page.getByTestId("skills-bulk-result")).toHaveCount(0);
   await page.getByTestId("skill-source-all").click();
   await expect(page.getByTestId("skill-select").first()).not.toBeChecked();
+});
+
+test("shows GitHub repositories and sorts groups without losing skill selection", async ({
+  page,
+  request,
+}) => {
+  const prefix = tid("repo-sort");
+  const names = ["a-zulu", "b-alpha", "c-alpha", "d-local"].map((suffix) => `${prefix}-${suffix}`);
+  for (const name of names)
+    await apiPost(request, "/skills", {
+      name,
+      content: `---\nname: ${name}\ndescription: Repository sorting fixture\n---\nInstructions`,
+    });
+  const repositories = ["zulu/skills", "alpha/skills", "alpha/skills"];
+  for (const [index, name] of names.slice(0, 3).entries())
+    await page.route(`**/api/skills/${name}/origin`, (route) =>
+      route.fulfill({
+        json: {
+          repository: repositories[index],
+          ref: "HEAD",
+          path: name,
+          commit: "a".repeat(40),
+          importedAt: new Date().toISOString(),
+        },
+      }),
+    );
+  await gotoView(page, "skills");
+  await page.getByTestId("skill-search-input").fill(prefix);
+  await page.getByTestId("skill-search-submit").click();
+  const rows = page.getByTestId("skill-row");
+  const header = page.getByTestId("skill-repository-header");
+  await expect(rows).toHaveCount(4);
+  const zulu = page.locator(`[data-testid="skill-row"][data-skill-name="${names[0]}"]`);
+  await expect(zulu.getByTestId("skill-repository-cell")).toHaveText("zulu/skills");
+  await expect(zulu.getByTestId("skill-repository-link")).toHaveAttribute(
+    "href",
+    "https://github.com/zulu/skills",
+  );
+  await zulu.getByTestId("skill-select").check();
+  const original = await rows.evaluateAll((elements) =>
+    elements.map((element) => element.getAttribute("data-skill-name")),
+  );
+  await page.getByTestId("skill-repository-sort").click();
+  await expect(header).toHaveAttribute("aria-sort", "ascending");
+  await expect(rows.getByTestId("skill-repository-cell")).toHaveText([
+    "alpha/skills",
+    "alpha/skills",
+    "zulu/skills",
+    "—",
+  ]);
+  expect(
+    await rows.evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute("data-skill-name")),
+    ),
+  ).toEqual([names[1], names[2], names[0], names[3]]);
+  await expect(zulu.getByTestId("skill-select")).toBeChecked();
+  await page.getByTestId("skill-repository-sort").click();
+  await expect(header).toHaveAttribute("aria-sort", "descending");
+  await expect(rows.getByTestId("skill-repository-cell")).toHaveText([
+    "zulu/skills",
+    "alpha/skills",
+    "alpha/skills",
+    "—",
+  ]);
+  await page.reload();
+  await expect(header).toHaveAttribute("aria-sort", "descending");
+  await expect(rows.getByTestId("skill-repository-cell")).toHaveText([
+    "zulu/skills",
+    "alpha/skills",
+    "alpha/skills",
+    "—",
+  ]);
+  await page.screenshot({
+    path: "../../output/playwright/skills-repository-sort.png",
+    fullPage: true,
+  });
+  await page.getByTestId("skill-repository-sort").click();
+  await expect(header).toHaveAttribute("aria-sort", "none");
+  expect(
+    await rows.evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute("data-skill-name")),
+    ),
+  ).toEqual(original);
 });
 
 test("shows conflicts and requires confirmation before sending an override", async ({

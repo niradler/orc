@@ -1,6 +1,6 @@
 import type { ScopeQuery } from "@orc/sdk/types";
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import { Download, Plus, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Download, Plus, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, type SkillFull, type SkillRefContent, type SkillSource } from "@/api/client";
 import { BulkActionBar } from "@/components/BulkActionBar";
@@ -51,6 +51,14 @@ import { readPrimitiveFolder } from "@/lib/primitive-files";
 import { useViewParam } from "@/lib/view-params";
 
 type SourceFilter = "all" | "builtin" | "user";
+type RepositorySort = "default" | "asc" | "desc";
+
+const REPOSITORY_SORT_ORDER: Record<RepositorySort, "none" | "ascending" | "descending"> = {
+  default: "none",
+  asc: "ascending",
+  desc: "descending",
+};
+const REPOSITORY_SORT_ICONS = { default: ArrowUpDown, asc: ArrowUp, desc: ArrowDown };
 
 const SOURCE_FILTERS: Array<{ value: SourceFilter; label: string }> = [
   { value: "all", label: "All" },
@@ -74,6 +82,12 @@ export default function Skills({ projectId }: { projectId: string }) {
     "builtin",
     "user",
   ]);
+  const [repositorySort, setRepositorySort] = useViewParam<RepositorySort>(
+    "skillRepositorySort",
+    "default",
+    ["default", "asc", "desc"],
+  );
+  const RepositorySortIcon = REPOSITORY_SORT_ICONS[repositorySort];
   useEffect(() => setSearchInput(query), [query]);
   const {
     selectedId: selectedSkill,
@@ -109,6 +123,23 @@ export default function Skills({ projectId }: { projectId: string }) {
   const importedNames = userSkills
     .filter((_, index) => Boolean(origins[index]?.data))
     .map((skill) => skill.name);
+  const repositoryByName = new Map(
+    userSkills.map((skill, index) => [skill.name, origins[index]?.data?.repository]),
+  );
+  const displayedSkills = [...(skills ?? [])];
+  if (repositorySort !== "default") {
+    displayedSkills.sort((left, right) => {
+      const leftRepository = repositoryByName.get(left.name);
+      const rightRepository = repositoryByName.get(right.name);
+      if (!leftRepository && rightRepository) return 1;
+      if (leftRepository && !rightRepository) return -1;
+      const compared = (leftRepository ?? "").localeCompare(rightRepository ?? "", undefined, {
+        sensitivity: "base",
+      });
+      if (compared) return repositorySort === "asc" ? compared : -compared;
+      return left.name.localeCompare(right.name);
+    });
+  }
   const selectionScope = JSON.stringify([project, query, sourceFilter]);
   const currentScope = useRef(selectionScope);
   currentScope.current = selectionScope;
@@ -322,11 +353,29 @@ export default function Skills({ projectId }: { projectId: string }) {
                 <TableHead className="font-label text-sm  text-muted-foreground w-24">
                   Source
                 </TableHead>
+                <TableHead
+                  data-testid="skill-repository-header"
+                  aria-sort={REPOSITORY_SORT_ORDER[repositorySort]}
+                >
+                  <button
+                    type="button"
+                    data-testid="skill-repository-sort"
+                    className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground hover:text-on-surface"
+                    onClick={() => {
+                      if (repositorySort === "default") setRepositorySort("asc");
+                      else if (repositorySort === "asc") setRepositorySort("desc");
+                      else setRepositorySort("default");
+                    }}
+                    title="Sort by GitHub repository: ascending, descending, then default order"
+                  >
+                    GitHub repository <RepositorySortIcon size={14} aria-hidden="true" />
+                  </button>
+                </TableHead>
                 <TableHead className="text-xs text-muted-foreground">Agent discovery</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(skills ?? []).map((skill) => (
+              {displayedSkills.map((skill) => (
                 <TableRow
                   key={skill.name}
                   data-testid="skill-row"
@@ -369,6 +418,26 @@ export default function Skills({ projectId }: { projectId: string }) {
                     >
                       {skill.source}
                     </span>
+                  </TableCell>
+                  <TableCell
+                    data-testid="skill-repository-cell"
+                    onClick={(event) => event.stopPropagation()}
+                    className="max-w-56 truncate text-sm text-muted-foreground"
+                  >
+                    {repositoryByName.get(skill.name) ? (
+                      <a
+                        data-testid="skill-repository-link"
+                        href={`https://github.com/${repositoryByName.get(skill.name)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline"
+                        title={repositoryByName.get(skill.name)}
+                      >
+                        {repositoryByName.get(skill.name)}
+                      </a>
+                    ) : (
+                      "—"
+                    )}
                   </TableCell>
                   <TableCell onClick={(event) => event.stopPropagation()}>
                     {skill.source === "builtin" && !skill.mutation ? (
