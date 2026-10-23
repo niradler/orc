@@ -135,8 +135,9 @@ function KnowledgeBases({ projectId }: { projectId: string | undefined }) {
 
   function update(changes: Record<string, string | null>, replace = false) {
     setParams(
-      (previous) => {
-        const next = new URLSearchParams(previous);
+      () => {
+        // Another workspace action may navigate before this render's effects run.
+        const next = new URLSearchParams(window.location.search);
         for (const [k, v] of Object.entries(changes)) {
           if (v) next.set(k, v);
           else next.delete(k);
