@@ -17,10 +17,23 @@ const state = root + "/master";
 const log = (event) => appendFileSync(root + "/events", event + "\\n");
 if (args.includes("-O")) {
   const op = args[args.indexOf("-O") + 1];
-  if (op === "check") process.exit(existsSync(state) && await Bun.file(state).text() === "up" ? 0 : 1);
+  if (op === "check") {
+    const socket = existsSync(root + "/socket-path") ? (await Bun.file(root + "/socket-path").text()).trim() : "";
+    if (socket && existsSync(socket)) {
+      console.error("Control socket connect(" + socket + "): Connection refused"); process.exit(255);
+    }
+    process.exit(existsSync(state) && await Bun.file(state).text() === "up" ? 0 : 1);
+  }
   if (op === "exit") { writeFileSync(state, "down"); log("close"); process.exit(0); }
 }
 if (args.includes("-N")) {
+  if (existsSync(root + "/fail-master")) {
+    log("master-failed");
+    const failure = (await Bun.file(root + "/fail-master").text()).trim();
+    console.error(failure === "auth" ? "Permission denied (publickey)." : "kex_exchange_identification: read: Connection reset by peer");
+    if (failure === "once") writeFileSync(root + "/fail-master", "recovered");
+    if (failure !== "recovered") process.exit(255);
+  }
   if (existsSync(root + "/delay-master")) {
     log("master-start");
     while (!existsSync(root + "/release-master")) await Bun.sleep(5);
@@ -29,6 +42,19 @@ if (args.includes("-N")) {
 }
 if (args.at(-1).includes("curl")) process.exit(0);
 const command = args.at(-1);
+if (command.includes("handshake-once")) {
+  if (!args.includes("ProxyCommand=false")) throw new Error("Shared fallback must be disabled");
+  log("handshake-attempt");
+  if (!existsSync(root + "/handshake-failed")) {
+    writeFileSync(root + "/handshake-failed", "");
+    console.error("Connection closed by UNKNOWN port 65535"); process.exit(255);
+  }
+  log("executed"); process.exit(0);
+}
+if (command.includes("handshake-always")) {
+  log("handshake-attempt");
+  console.error("kex_exchange_identification: Connection closed by remote host"); process.exit(255);
+}
 if (existsSync(root + "/fail-file-check") && (command.includes("test -f") || command.includes("test -d"))) {
   console.error("Connection reset by peer");
   process.exit(255);
@@ -98,8 +124,130 @@ ${body}
     new Response(child.stderr).text(),
     child.exited,
   ]);
-  expect({ code, stdout, stderr }).toEqual({ code: 0, stdout: "", stderr: "" });
+  expect(code, stderr).toBe(0);
+  expect(stdout).toBe("");
 }
+
+test(
+  "should recover a stale socket before establishing a shared master",
+  () =>
+    sshScenario(`
+const socket = process.env.HOME + "/.orc/ssh/stale";
+const { mkdirSync } = await import("node:fs");
+mkdirSync(process.env.HOME + "/.orc/ssh", { recursive: true });
+const child = Bun.spawn([process.execPath, "-e", 'require("node:net").createServer().listen(process.argv[1], () => process.exit(0))', socket]);
+expect(await child.exited).toBe(0);
+expect(existsSync(socket)).toBe(true);
+writeFileSync(process.env.HOME + "/socket-path", socket);
+expect((await hostExec(host, ["echo", "ok"])).code).toBe(0);
+expect(existsSync(socket)).toBe(false);
+expect(events().trim().split("\\n").filter(e => e === "master")).toHaveLength(1);
+const logs = readFileSync(process.env.HOME + "/.orc/logs/orc.log", "utf8");
+expect(logs).toContain("Removed stale SSH control socket");
+await retireSshMaster(host.alias);
+`),
+  20_000,
+);
+
+test(
+  "should share a bounded setup retry across concurrent callers",
+  () =>
+    sshScenario(`
+writeFileSync(process.env.HOME + "/fail-master", "once");
+const results = await Promise.all(Array.from({ length: 8 }, () => hostExec(host, ["echo", "ok"])));
+expect(results.every(result => result.code === 0)).toBe(true);
+expect(events().trim().split("\\n").filter(e => e === "master")).toHaveLength(1);
+const logs = readFileSync(process.env.HOME + "/.orc/logs/orc.log", "utf8");
+expect(logs).toContain("Retrying SSH connection");
+expect(logs).toContain("SSH connection recovered");
+await retireSshMaster(host.alias);
+`),
+  20_000,
+);
+
+test(
+  "should preserve non-socket files and symlinks during stale socket recovery",
+  () =>
+    sshScenario(`
+const { mkdirSync, symlinkSync } = await import("node:fs");
+const directory = process.env.HOME + "/.orc/ssh";
+mkdirSync(directory, { recursive: true });
+const file = directory + "/regular-file";
+writeFileSync(file, "preserve");
+writeFileSync(process.env.HOME + "/socket-path", file);
+await expect(hostExec(host, ["echo", "ok"])).rejects.toThrow("connection sharing");
+expect(readFileSync(file, "utf8")).toBe("preserve");
+const link = directory + "/symlink";
+symlinkSync(file, link);
+writeFileSync(process.env.HOME + "/socket-path", link);
+await expect(hostExec(host, ["echo", "ok"])).rejects.toThrow("connection sharing");
+expect(existsSync(link)).toBe(true);
+expect(readFileSync(file, "utf8")).toBe("preserve");
+await retireSshMaster(host.alias);
+`),
+  20_000,
+);
+
+test(
+  "should preserve sockets outside ORC's SSH directory",
+  () =>
+    sshScenario(`
+const socket = process.env.HOME + "/outside";
+const child = Bun.spawn([process.execPath, "-e", 'require("node:net").createServer().listen(process.argv[1], () => process.exit(0))', socket]);
+expect(await child.exited).toBe(0);
+writeFileSync(process.env.HOME + "/socket-path", socket);
+await expect(hostExec(host, ["echo", "ok"])).rejects.toThrow("connection sharing");
+expect(existsSync(socket)).toBe(true);
+await retireSshMaster(host.alias);
+`),
+  20_000,
+);
+
+test(
+  "should bound setup retries and fail authentication immediately",
+  () =>
+    sshScenario(`
+writeFileSync(process.env.HOME + "/fail-master", "always");
+await expect(hostExec(host, ["echo", "ok"])).rejects.toThrow("Connection reset");
+expect(events().trim().split("\\n").filter(e => e === "master-failed")).toHaveLength(3);
+writeFileSync(process.env.HOME + "/fail-master", "auth");
+await expect(hostExec(host, ["echo", "ok"])).rejects.toThrow("rejected the login");
+expect(events().trim().split("\\n").filter(e => e === "master-failed")).toHaveLength(4);
+expect(events()).not.toContain("start\\n");
+await retireSshMaster(host.alias);
+`),
+  20_000,
+);
+
+test(
+  "should reconnect a failed handshake without a second caller action",
+  () =>
+    sshScenario(`
+const result = await hostExec(host, ["handshake-once", "private-command-argument"], { env: { PRIVATE_TOKEN: "private-value" } });
+expect(result.code).toBe(0);
+expect(events().trim().split("\\n").filter(e => e === "handshake-attempt")).toHaveLength(2);
+expect(events().trim().split("\\n").filter(e => e === "executed")).toHaveLength(1);
+const logs = readFileSync(process.env.HOME + "/.orc/logs/orc.log", "utf8");
+expect(logs).toContain("SSH command connection recovered");
+expect(logs).not.toContain("private-command-argument");
+expect(logs).not.toContain("private-value");
+await retireSshMaster(host.alias);
+`),
+  20_000,
+);
+
+test(
+  "should bound command recovery and preserve the original deadline",
+  () =>
+    sshScenario(`
+expect((await hostExec(host, ["handshake-always"])).code).toBe(255);
+expect(events().trim().split("\\n").filter(e => e === "handshake-attempt")).toHaveLength(3);
+await expect(hostExec(host, ["handshake-always"], { timeoutMs: 100 })).rejects.toThrow("timed out");
+expect(events().trim().split("\\n").filter(e => e === "handshake-attempt")).toHaveLength(4);
+await retireSshMaster(host.alias);
+`),
+  20_000,
+);
 
 test(
   "shares bounded SSH channels and discovers Codex sessions",

@@ -2,17 +2,20 @@ import { Database } from "bun:sqlite";
 import {
   type Dirent,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { configuredApiSecret, loadConfig, type OrcConfig } from "./config.js";
 import { OrcError, ValidationError } from "./errors.js";
 import { ulid } from "./ids.js";
+import { createLogger } from "./logger.js";
 
 export interface SshExecHost {
   kind: "ssh";
@@ -86,7 +89,10 @@ export interface HostExecOptions {
 }
 
 export class SshError extends OrcError {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly retryable = false,
+  ) {
     super(message, "SSH_FAILED", 502);
     this.name = "SshError";
   }
@@ -133,6 +139,8 @@ const MASTER_IDLE_MS = 60_000;
 // OpenSSH commonly permits ten sessions per connection. Leave headroom for
 // health checks and tunnel management while adapters fan out filesystem reads.
 const MAX_SHARED_SESSIONS = 8;
+const SSH_ATTEMPTS = 3;
+const logger = createLogger("core:ssh");
 
 const pendingMasters = new Map<string, { key: string; promise: Promise<void> }>();
 const closingMasters = new Map<string, Promise<void>>();
@@ -275,7 +283,7 @@ export function sshArgv(
   opts: { tty?: boolean; shared?: boolean } = {},
 ): string[] {
   const connectionOptions = opts.shared
-    ? [...masterOptions(host), "-o", "ControlMaster=no"]
+    ? [...masterOptions(host), "-o", "ControlMaster=no", "-o", "ProxyCommand=false"]
     : [...commonOptions(host), "-o", "ControlMaster=no", "-o", "ControlPath=none"];
   return [sshBinary(), ...connectionOptions, opts.tty ? "-tt" : "-T", host.alias, remote];
 }
@@ -314,9 +322,23 @@ async function controlCommand(
 ): Promise<boolean> {
   const proc = Bun.spawn(
     [sshBinary(), ...masterOptions({ connectTimeoutSecs }), "-O", command, alias],
-    { stdin: "ignore", stdout: "ignore", stderr: "ignore", timeout: 10_000 },
+    { stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 10_000 },
   );
-  return (await proc.exited) === 0;
+  const result = await collect(proc);
+  if (command === "check" && result.code !== 0) {
+    const socket = /Control socket connect\((.+)\): Connection refused/.exec(result.stderr)?.[1];
+    if (socket && resolve(dirname(socket)) === resolve(sshDir())) {
+      try {
+        if (lstatSync(socket).isSocket()) {
+          unlinkSync(socket);
+          logger.warn("Removed stale SSH control socket", { alias, reason: "connection_refused" });
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+  }
+  return result.code === 0;
 }
 
 export function describeSshFailure(alias: string, log: string): string {
@@ -392,13 +414,17 @@ async function startMaster(host: SshExecHost): Promise<void> {
         timeout: (host.connectTimeoutSecs + 20) * 1000,
       });
       if ((await fallback.exited) === 0) {
+        if (!(await controlCommand(host.alias, "check")))
+          throw new SshError(`SSH connection sharing could not start for ${host.alias}`, true);
         writeFileSync(stateFile, "direct", { mode: 0o600 });
         return;
       }
       failure = readFileSync(log, "utf8");
     }
-    throw new SshError(describeSshFailure(host.alias, failure));
+    throw new SshError(describeSshFailure(host.alias, failure), isSshTransportFailure(failure));
   }
+  if (!(await controlCommand(host.alias, "check")))
+    throw new SshError(`SSH connection sharing could not start for ${host.alias}`, true);
   if (direct) {
     writeFileSync(stateFile, "direct", { mode: 0o600 });
     return;
@@ -476,7 +502,29 @@ export async function ensureSshMaster(host: SshExecHost): Promise<void> {
     const promise = (async () => {
       const recentlyVerified = (verifiedMasters.get(key) ?? 0) > Date.now() - VERIFY_TTL_MS;
       if (recentlyVerified && (await controlCommand(host.alias, "check"))) return;
-      await startMaster(host);
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await startMaster(host);
+          if (attempt > 1) logger.info("SSH connection recovered", { alias: host.alias, attempt });
+          return;
+        } catch (error) {
+          if (!(error instanceof SshError) || !error.retryable || attempt >= SSH_ATTEMPTS) {
+            logger.warn("SSH connection failed", {
+              alias: host.alias,
+              attempt,
+              retryable: error instanceof SshError && error.retryable,
+            });
+            throw error;
+          }
+          logger.warn("Retrying SSH connection", {
+            alias: host.alias,
+            attempt,
+            nextAttempt: attempt + 1,
+            delayMs: 250 * attempt,
+          });
+          await Bun.sleep(250 * attempt);
+        }
+      }
     })();
     const entry = { key, promise };
     pendingMasters.set(host.alias, entry);
@@ -639,7 +687,7 @@ export async function retireSshMaster(alias: string): Promise<void> {
 }
 
 export function isSshTransportFailure(stderr: string): boolean {
-  return /(?:control socket connect|mux_client_|kex_exchange_identification|connection (?:closed|reset) by|broken pipe|connection timed out)/i.test(
+  return /(?:control socket connect|mux_client_|kex_exchange_identification|connection (?:closed|reset) by|broken pipe|connection timed out|connect to host .*connection refused)/i.test(
     stderr,
   );
 }
@@ -671,33 +719,55 @@ export async function hostExec(
   const deadline = opts.timeoutMs ? performance.now() + opts.timeoutMs : undefined;
   await beginHostCommand(host.alias, deadline);
   try {
-    await commandSetup(host, deadline);
-    const generation = masterGenerations.get(host.alias);
-    const withEnv = opts.env
-      ? ["env", ...Object.entries(opts.env).map(([k, v]) => `${k}=${v}`), ...argv]
-      : argv;
-    const remainingTimeoutMs = commandTimeLeft(host.alias, deadline);
-    const result = await collect(
-      Bun.spawn(
-        sshArgv(host, remoteCommand(withEnv, { cwd: opts.cwd, login: opts.login }), {
-          shared: true,
-        }),
-        {
-          env: process.env,
-          stdin: input,
-          stdout: "pipe",
-          stderr: "pipe",
-          ...(remainingTimeoutMs !== undefined ? { timeout: remainingTimeoutMs } : {}),
-        },
-      ),
-    );
-    if (
-      result.code === 255 &&
-      isSshTransportFailure(result.stderr) &&
-      masterGenerations.get(host.alias) === generation
-    )
-      await closeSshMaster(host.alias);
-    return result;
+    for (let attempt = 1; ; attempt++) {
+      await commandSetup(host, deadline);
+      const generation = masterGenerations.get(host.alias);
+      const withEnv = opts.env
+        ? ["env", ...Object.entries(opts.env).map(([k, v]) => `${k}=${v}`), ...argv]
+        : argv;
+      const remainingTimeoutMs = commandTimeLeft(host.alias, deadline);
+      const result = await collect(
+        Bun.spawn(
+          sshArgv(host, remoteCommand(withEnv, { cwd: opts.cwd, login: opts.login }), {
+            shared: true,
+          }),
+          {
+            env: process.env,
+            stdin: input,
+            stdout: "pipe",
+            stderr: "pipe",
+            ...(remainingTimeoutMs !== undefined ? { timeout: remainingTimeoutMs } : {}),
+          },
+        ),
+      );
+      if (result.code === 255 && isSshTransportFailure(result.stderr)) {
+        logger.warn("SSH transport failed", { alias: host.alias, attempt });
+        if (masterGenerations.get(host.alias) === generation) await closeSshMaster(host.alias);
+      }
+      // With fallback disabled, a handshake failure precedes remote execution.
+      // Session/stream failures are ambiguous and must never replay a command.
+      if (
+        result.code === 255 &&
+        result.stdout.length === 0 &&
+        /(?:^kex_exchange_identification:|^mux_client_hello_exchange:|^Connection closed by UNKNOWN port 65535\r?$)/im.test(
+          result.stderr,
+        )
+      ) {
+        if (attempt < SSH_ATTEMPTS) {
+          logger.warn("Retrying SSH command before remote execution", {
+            alias: host.alias,
+            attempt,
+          });
+          const delay = Math.min(250 * attempt, commandTimeLeft(host.alias, deadline) ?? 500);
+          await Bun.sleep(delay);
+          continue;
+        }
+        logger.warn("SSH command connection failed", { alias: host.alias, attempt });
+      } else if (attempt > 1) {
+        logger.info("SSH command connection recovered", { alias: host.alias, attempt });
+      }
+      return result;
+    }
   } finally {
     endHostCommand(host.alias);
   }
