@@ -14,12 +14,21 @@ import {
 } from "lucide-react";
 import { type KeyboardEvent, lazy, type ReactElement, Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { api, type Terminal } from "@/api/client";
+import { api, type GitStatus, type Terminal } from "@/api/client";
+import { fileChangeState } from "@/lib/git-status";
 import "./FilePanel.css";
 
 const FileEditor = lazy(() =>
   import("./FileEditor").then((module) => ({ default: module.FileEditor })),
 );
+
+type FileView = {
+  selected: string | null;
+  openFiles: string[];
+  dirtyFiles: Set<string>;
+  expanded: Set<string>;
+};
+const fileViews = new Map<string, FileView>();
 
 function fileIcon(name: string): typeof File {
   const extension = name.split(".").pop()?.toLowerCase();
@@ -39,6 +48,7 @@ type DirectoryProps = {
   expanded: Set<string>;
   toggle: (path: string) => void;
   select: (path: string) => void;
+  changes: GitStatus["files"];
 };
 
 function Directory({
@@ -48,6 +58,7 @@ function Directory({
   expanded,
   toggle,
   select,
+  changes,
 }: DirectoryProps): ReactElement {
   const files = useQuery({
     queryKey: ["checkout-files", terminalId, path],
@@ -68,6 +79,8 @@ function Directory({
       )}
       {files.data?.entries?.map((entry) => {
         const open = expanded.has(entry.path);
+        const changed = changes.find((file) => file.path === entry.path);
+        const change = changed ? fileChangeState(changed) : null;
         let Icon = fileIcon(entry.name);
         if (entry.directory) Icon = open ? FolderOpen : Folder;
         return (
@@ -94,7 +107,16 @@ function Directory({
                 size={15}
                 className={`shrink-0 ${entry.directory ? "text-on-surface-variant" : "text-on-surface-variant"}`}
               />
-              <span className="truncate">{entry.name}</span>
+              <span className="truncate flex-1">{entry.name}</span>
+              {change && (
+                <span
+                  data-testid="file-change-badge"
+                  title={change.label}
+                  className={`shrink-0 text-xs ${change.conflict ? "text-error" : "text-warning"}`}
+                >
+                  {change.conflict ? "U" : changed?.index === "?" ? "?" : change.label.slice(0, 1)}
+                </span>
+              )}
             </button>
             {entry.directory && open && (
               <Directory
@@ -104,6 +126,7 @@ function Directory({
                 expanded={expanded}
                 toggle={toggle}
                 select={select}
+                changes={changes}
               />
             )}
           </li>
@@ -121,10 +144,14 @@ function Directory({
 export function FilePanel({
   terminal,
   active = true,
+  paneId,
 }: {
   terminal: Terminal;
   active?: boolean;
+  paneId: string;
 }): ReactElement {
+  const viewKey = `${terminal.id}:${paneId}`;
+  const remembered = fileViews.get(viewKey);
   const [params, setParams] = useSearchParams();
   const requestedFile =
     active &&
@@ -132,11 +159,26 @@ export function FilePanel({
     (params.get("paneTerminal") ?? terminal.id) === terminal.id
       ? params.get("file")
       : null;
-  const [selected, setSelected] = useState<string | null>(requestedFile);
+  const [selected, setSelected] = useState<string | null>(
+    requestedFile ?? remembered?.selected ?? null,
+  );
+  const [openFiles, setOpenFiles] = useState<string[]>(() => [
+    ...new Set([...(remembered?.openFiles ?? []), ...(requestedFile ? [requestedFile] : [])]),
+  ]);
+  const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(remembered?.dirtyFiles ?? new Set());
   const [dirty, setDirty] = useState(false);
   const [rootOpen, setRootOpen] = useState(true);
   const [browserOpen, setBrowserOpen] = useState(false);
-  const [expanded, setExpanded] = useState(new Set<string>());
+  const [expanded, setExpanded] = useState(remembered?.expanded ?? new Set<string>());
+  useEffect(() => {
+    fileViews.delete(viewKey);
+    fileViews.set(viewKey, { selected, openFiles, dirtyFiles, expanded });
+    while (fileViews.size > 64) {
+      const oldest = fileViews.keys().next().value;
+      if (oldest === undefined) break;
+      fileViews.delete(oldest);
+    }
+  }, [viewKey, selected, openFiles, dirtyFiles, expanded]);
   useEffect(() => {
     if (!active) return;
     if (requestedFile !== selected) {
@@ -144,6 +186,9 @@ export function FilePanel({
       setDirty(false);
     }
     if (requestedFile) {
+      setOpenFiles((current) =>
+        current.includes(requestedFile) ? current : [...current, requestedFile],
+      );
       const segments = requestedFile.split("/");
       setExpanded(
         (current) =>
@@ -167,6 +212,10 @@ export function FilePanel({
     refetchOnWindowFocus: false,
   });
   const rootPath = root.data?.root ?? terminal.cwd ?? "";
+  const git = useQuery({
+    queryKey: ["git", terminal.id, "status"],
+    queryFn: () => api.git.status(terminal.id),
+  });
   const rootName =
     rootPath.replace(/\\/g, "/").replace(/\/$/, "").split("/").pop() || rootPath || "Files";
   function selectFile(path: string | null): void {
@@ -177,6 +226,7 @@ export function FilePanel({
     )
       return;
     setDirty(false);
+    if (path) setOpenFiles((current) => (current.includes(path) ? current : [...current, path]));
     setSelected(path);
     setBrowserOpen(false);
     setParams((current) => {
@@ -187,6 +237,32 @@ export function FilePanel({
       else next.set("file", path);
       return next;
     });
+  }
+  function closeFile(path: string): void {
+    const remaining = openFiles.filter((item) => item !== path);
+    if (selected === path) {
+      if (
+        dirty &&
+        !window.confirm(
+          "Close this file with unsaved changes? Your draft will be kept in this page.",
+        )
+      )
+        return;
+      setDirty(false);
+      const nextFile = remaining[Math.max(0, openFiles.indexOf(path) - 1)] ?? null;
+      setSelected(nextFile);
+      setParams((current) => {
+        const next = new URLSearchParams(current);
+        if (nextFile) next.set("file", nextFile);
+        else next.delete("file");
+        return next;
+      });
+    } else if (
+      dirtyFiles.has(path) &&
+      !window.confirm("Close this file with unsaved changes? Your draft will be kept in this page.")
+    )
+      return;
+    setOpenFiles(remaining);
   }
   function navigateTree(event: KeyboardEvent<HTMLElement>): void {
     if (!(event.target instanceof HTMLButtonElement)) return;
@@ -258,6 +334,44 @@ export function FilePanel({
           <RefreshCw size={14} className={root.isFetching ? "animate-spin" : ""} />
         </button>
       </header>
+      {openFiles.length > 0 && (
+        <nav
+          data-testid="file-tabs"
+          aria-label="Open files"
+          className="flex shrink-0 min-w-0 overflow-x-auto border-b border-outline-variant bg-background"
+        >
+          {openFiles.map((path) => (
+            <div
+              key={path}
+              className={`flex shrink-0 items-center border-r border-outline-variant ${path === selected ? "bg-surface" : ""}`}
+            >
+              <button
+                type="button"
+                data-testid="file-tab"
+                data-path={path}
+                aria-current={path === selected ? "page" : undefined}
+                title={path}
+                onClick={() => selectFile(path)}
+                className={`flex items-center gap-2 max-w-56 min-h-11 sm:min-h-9 pl-3 pr-1 text-xs ${path === selected ? "text-on-surface" : "text-on-surface-variant"}`}
+              >
+                <File size={13} className="shrink-0" />
+                <span className="truncate">{path.split("/").pop()}</span>
+                {dirtyFiles.has(path) && <span title="Unsaved changes">●</span>}
+              </button>
+              <button
+                type="button"
+                data-testid="file-tab-close"
+                aria-label={`Close ${path}`}
+                title={`Close ${path}`}
+                onClick={() => closeFile(path)}
+                className="flex min-h-11 min-w-11 sm:min-h-9 sm:min-w-8 items-center justify-center text-on-surface-variant hover:text-on-surface"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+        </nav>
+      )}
       <div
         className="file-panel-body"
         data-preview={selected !== null}
@@ -301,6 +415,7 @@ export function FilePanel({
                     return next;
                   })
                 }
+                changes={git.data?.files ?? []}
               />
             </div>
           )}
@@ -355,7 +470,16 @@ export function FilePanel({
                   path={selected}
                   content={preview.data.content}
                   readOnly={preview.data.truncated}
-                  onDirty={setDirty}
+                  onDirty={(changed) => {
+                    setDirty(changed);
+                    setDirtyFiles((current) => {
+                      if (current.has(selected) === changed) return current;
+                      const next = new Set(current);
+                      if (changed) next.add(selected);
+                      else next.delete(selected);
+                      return next;
+                    });
+                  }}
                 />
               </Suspense>
             )}

@@ -1,0 +1,65 @@
+.terminal-select-wrap {
+  position: relative;
+  display: inline-flex;
+  width: 100%;
+  min-width: 0;
+}
+
+.terminal-select-wrap > svg {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: rgb(var(--muted-foreground));
+}
+
+.terminal-select,
+.terminal-field {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid rgb(var(--control-border));
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 16px;
+  outline: none;
+}
+
+.terminal-select {
+  appearance: none;
+  padding-right: 30px;
+  text-overflow: ellipsis;
+}
+
+.terminal-select option {
+  background: rgb(var(--background));
+  color: rgb(var(--foreground));
+}
+
+.terminal-select:focus-visible,
+.terminal-field:focus-visible {
+  outline: 2px solid rgb(var(--focus));
+  outline-offset: 2px;
+}
+
+.terminal-select:disabled,
+.terminal-field:disabled {
+  opacity: 0.5;
+}
+
+@media (min-width: 640px) and (pointer: fine) {
+  .terminal-launch-controls button[data-testid="terminal-browse"] {
+    min-height: 32px;
+  }
+  .terminal-select,
+  .terminal-field {
+    min-height: 32px;
+    padding-top: 5px;
+    padding-bottom: 5px;
+    font-size: 13px;
+  }
+}

@@ -2,7 +2,7 @@ import { basename, dirname } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
-import { execHostFor, listHostDirectories, resolveExecHost } from "@orc/core/exec-host";
+import { execHostFor, LOCAL_HOST, listHostDirectories } from "@orc/core/exec-host";
 import {
   AgentSetupSchema,
   buildPackagePlan,
@@ -17,6 +17,11 @@ import { rememberTerminalFolder } from "../git/registry.js";
 import { getHandoffService } from "../handoffs/service.js";
 import { createRouter } from "../lib/router.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
+import {
+  selectedTerminalHost,
+  TerminalHostQuerySchema,
+  TerminalHostSchema,
+} from "../terminals/host.js";
 import { availableLaunchers, buildLaunch, LAUNCH_KINDS } from "../terminals/launch.js";
 import {
   getTerminalManager,
@@ -55,6 +60,7 @@ const listRoute = createRoute({
   path: "/terminals",
   tags: ["Terminals"],
   summary: "List terminals and whether this server can start them",
+  request: { query: z.object({ host: TerminalHostQuerySchema }) },
   responses: {
     200: {
       description: "Terminals",
@@ -85,6 +91,10 @@ const createTerminalRoute = createRoute({
         "application/json": {
           schema: z.object({
             kind: LaunchKindSchema.optional(),
+            host: TerminalHostSchema.optional().openapi({
+              description:
+                "SSH config alias, or null for Local. Omit to use the configured default.",
+            }),
             cwd: z.string().min(1).optional(),
             name: z.string().max(120).optional(),
             live_session_id: z.string().min(1).optional(),
@@ -118,7 +128,10 @@ const pickFolderRoute = createRoute({
     body: {
       content: {
         "application/json": {
-          schema: z.object({ initial: z.string().max(4096).optional() }),
+          schema: z.object({
+            initial: z.string().max(4096).optional(),
+            host: TerminalHostSchema.optional(),
+          }),
         },
       },
     },
@@ -140,7 +153,9 @@ const browseRoute = createRoute({
   path: "/terminals/browse",
   tags: ["Terminals"],
   summary: "List the folders inside a folder on the machine where terminals run",
-  request: { query: z.object({ path: z.string().max(4096).default("") }) },
+  request: {
+    query: z.object({ path: z.string().max(4096).default(""), host: TerminalHostQuerySchema }),
+  },
   responses: {
     200: {
       description: "Folders",
@@ -181,6 +196,30 @@ const deleteTerminalRoute = createRoute({
   responses: { 204: { description: "Removed" } },
 });
 
+const renameTerminalRoute = createRoute({
+  method: "patch",
+  path: "/terminals/{id}",
+  tags: ["Terminals"],
+  summary: "Rename a terminal",
+  request: {
+    params: idParam,
+    body: {
+      required: true,
+      content: {
+        "application/json": {
+          schema: z.object({ name: z.string().trim().min(1).max(120) }).strict(),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Renamed terminal",
+      content: { "application/json": { schema: TerminalSchema } },
+    },
+  },
+});
+
 const ticketRoute = createRoute({
   method: "post",
   path: "/terminals/{id}/ticket",
@@ -202,7 +241,8 @@ const ticketRoute = createRoute({
 app.openapi(listRoute, async (c) => {
   const config = loadConfig();
   const availability = terminalsAvailability(config);
-  const host = resolveExecHost(config);
+  const requested = c.req.valid("query").host;
+  const host = selectedTerminalHost(config, requested === "" ? null : requested);
   let { ready, reason } = availability;
   let launchers: ReturnType<typeof availableLaunchers> = [];
   if (ready) {
@@ -231,7 +271,7 @@ app.openapi(createTerminalRoute, async (c) => {
   requireTerminals(config);
   const body = c.req.valid("json");
   const manager = getTerminalManager();
-  let host = resolveExecHost(config);
+  let host = body.live_session_id ? LOCAL_HOST : selectedTerminalHost(config, body.host);
   let deps = await launchDeps(config, host);
   const checkRules = (cwd: string | undefined | null): void => {
     if (!config.rules.enabled) return;
@@ -276,12 +316,13 @@ app.openapi(createTerminalRoute, async (c) => {
       },
       name: body.name ?? plan.setup.name,
     });
-    rememberTerminalFolder(info.cwd);
+    rememberTerminalFolder(info.cwd, info.host);
     return c.json(info, 201);
   }
 
   if (body.live_session_id) {
     if (body.worktree) throw new ValidationError("A resumed session keeps its own folder");
+    if (body.host !== undefined) throw new ValidationError("A resumed session keeps its own host");
     const existing = manager.findByLiveSession(body.live_session_id);
     if (existing) {
       checkRules(existing.cwd);
@@ -335,7 +376,7 @@ app.openapi(createTerminalRoute, async (c) => {
       liveSessionId: row.id,
     });
     if (handoff) await getHandoffService().markResumed(row.id);
-    rememberTerminalFolder(info.cwd);
+    rememberTerminalFolder(info.cwd, info.host);
     return c.json(info, 201);
   }
 
@@ -356,7 +397,7 @@ app.openapi(createTerminalRoute, async (c) => {
     launch: await launchOnHost(host, { ...launch, cwd }),
     name,
   });
-  rememberTerminalFolder(info.cwd);
+  rememberTerminalFolder(info.cwd, info.host);
   return c.json(info, 201);
 });
 
@@ -366,15 +407,17 @@ function worktreeName(path: string): string {
 }
 
 app.openapi(pickFolderRoute, async (c) => {
-  requireTerminals(loadConfig());
-  const { initial } = c.req.valid("json");
-  return c.json({ path: await pickFolderOnce(initial) }, 200);
+  const config = loadConfig();
+  requireTerminals(config);
+  const { initial, host } = c.req.valid("json");
+  return c.json({ path: await pickFolderOnce(initial, selectedTerminalHost(config, host)) }, 200);
 });
 
 app.openapi(browseRoute, async (c) => {
   const config = loadConfig();
   requireTerminals(config);
-  const host = resolveExecHost(config);
+  const requested = c.req.valid("query").host;
+  const host = selectedTerminalHost(config, requested === "" ? null : requested);
   const listing = await listHostDirectories(host, c.req.valid("query").path);
   return c.json({ host: host.kind === "ssh" ? host.alias : null, ...listing }, 200);
 });
@@ -388,6 +431,14 @@ app.openapi(deleteTerminalRoute, (c) => {
   requireTerminals(loadConfig());
   getTerminalManager().remove(c.req.valid("param").id);
   return c.body(null, 204);
+});
+
+app.openapi(renameTerminalRoute, (c) => {
+  requireTerminals(loadConfig());
+  return c.json(
+    getTerminalManager().rename(c.req.valid("param").id, c.req.valid("json").name),
+    200,
+  );
 });
 
 app.openapi(ticketRoute, (c) => {

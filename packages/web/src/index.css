@@ -151,3 +151,40 @@ html[data-magicui-theme-vt="active"]::view-transition-new(root) {
   transform: none;
   animation: none;
 }
+
+@layer components {
+  .form-control {
+    width: 100%;
+    min-width: 0;
+    border: 1px solid rgb(var(--control-border));
+    border-radius: 6px;
+    padding: 6px 10px;
+    background: transparent;
+    color: rgb(var(--foreground));
+    font: inherit;
+    font-size: 16px;
+  }
+  .form-control-single {
+    height: 44px;
+  }
+  .form-control::placeholder {
+    color: rgb(var(--muted-foreground));
+  }
+  .form-control:focus-visible {
+    outline: 2px solid rgb(var(--focus));
+    outline-offset: 2px;
+  }
+  .form-control:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+  @media (min-width: 640px) and (pointer: fine) {
+    .form-control {
+      font-size: 13px;
+      padding-block: 5px;
+    }
+    .form-control-single {
+      height: 32px;
+    }
+  }
+}

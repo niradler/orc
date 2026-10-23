@@ -140,15 +140,15 @@ for (const theme of ["dark", "light"] as const) {
         { secret: API_SECRET, theme },
       );
       await other.goto(shared);
-      await expect(other.getByTestId("pane-view")).toHaveValue("files");
+      await expect(other.getByTestId("pane-view")).toHaveAttribute("data-view", "files");
       await expect(other.getByTestId("markdown-mode-read")).toHaveAttribute("aria-pressed", "true");
       await expect(other.getByTestId("markdown-preview")).toContainText(
         "Saved from redesign validation",
       );
-      await other.getByTestId("pane-view").selectOption("git");
+      await other.getByTestId("pane-view-git").click();
       await expect(other).toHaveURL(/view=git/);
       await other.goBack();
-      await expect(other.getByTestId("pane-view")).toHaveValue("files");
+      await expect(other.getByTestId("pane-view")).toHaveAttribute("data-view", "files");
       await expect(other.getByTestId("markdown-preview")).toContainText(
         "Saved from redesign validation",
       );
@@ -190,7 +190,7 @@ for (const theme of ["dark", "light"] as const) {
       release = resolve;
     });
     let fail = false;
-    await page.route("**/api/terminals", async (route) => {
+    await page.route(/\/api\/terminals(?:\?.*)?$/, async (route) => {
       await gate;
       if (fail)
         await route.fulfill({
@@ -251,13 +251,13 @@ test("first pane transition restores its default on Back and terminal actions re
     localStorage.setItem("orc_selected_project", "all");
   }, API_SECRET);
   await page.goto(`/terminals/${terminal.id}?project=${project.id}&chat=open`);
-  await expect(page.getByTestId("pane-view")).toHaveValue("terminal");
-  await page.getByTestId("pane-view").selectOption("files");
+  await expect(page.getByTestId("pane-view")).toHaveAttribute("data-view", "terminal");
+  await page.getByTestId("pane-view-files").click();
   await expect(page).toHaveURL(/view=files/);
   await page.goBack();
-  await expect(page.getByTestId("pane-view")).toHaveValue("terminal");
+  await expect(page.getByTestId("pane-view")).toHaveAttribute("data-view", "terminal");
   await page.goForward();
-  await expect(page.getByTestId("pane-view")).toHaveValue("files");
+  await expect(page.getByTestId("pane-view")).toHaveAttribute("data-view", "files");
   await page.getByTestId("terminal-new").click();
   await page.getByTestId("terminal-cwd").fill(repo);
   await page.getByTestId("terminal-launch-shell").click();
@@ -270,6 +270,7 @@ test("first pane transition restores its default on Back and terminal actions re
     .filter({ has: page.locator(`a[href*="/terminals/${createdId}"]`) })
     .getByRole("button")
     .click();
+  await page.getByTestId("terminal-close-selected").click();
   await page.getByTestId("confirm-dialog-confirm").click();
   await expect.poll(() => new URL(page.url()).pathname).not.toBe(`/terminals/${createdId}`);
   expect(new URL(page.url()).searchParams.get("project")).toBe(project.id);

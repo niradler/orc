@@ -1,19 +1,33 @@
-import { Columns2, Rows2, X } from "lucide-react";
+import {
+  ChevronDown,
+  Columns2,
+  Ellipsis,
+  Files,
+  GitBranch,
+  PanelsTopLeft,
+  PanelTop,
+  Rows2,
+  TerminalSquare,
+  X,
+} from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { Terminal } from "@/api/client";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
+import { openTerminalPalette } from "@/lib/terminal-palette";
 import {
   closePane,
   type Layout,
   leaves,
   type Pane,
-  type PaneKind,
   readLayout,
   updateLayout,
 } from "@/lib/workspace-layout";
 import { FilePanel } from "./FilePanel";
 import { GitPanelBody } from "./GitPanel";
+import { TerminalCheckout } from "./TerminalCheckout";
+import { TerminalPaneLinks } from "./TerminalPaneLinks";
+import "./TerminalWorkspace.css";
 
 type WorkspaceProps = {
   selected: Terminal;
@@ -28,9 +42,23 @@ type TreeProps = WorkspaceProps & {
   change: (id: string, update: (node: Layout) => Layout) => void;
   close: (id: string) => void;
   mobile: boolean;
+  zoomed: string | null;
+  zoom: (id: string | null) => void;
 };
 function WorkspaceTree(props: TreeProps) {
-  const { node, root, terminals, active, focus, change, close, renderTerminal, mobile } = props;
+  const {
+    node,
+    root,
+    terminals,
+    active,
+    focus,
+    change,
+    close,
+    renderTerminal,
+    mobile,
+    zoomed,
+    zoom,
+  } = props;
   if (!("kind" in node)) {
     const horizontal = node.direction === "row";
     const ratio = (next: number) =>
@@ -44,8 +72,8 @@ function WorkspaceTree(props: TreeProps) {
         style={{ flexDirection: mobile ? "column" : node.direction }}
       >
         <div
-          className={`${mobile && !leaves(node.first).some((pane) => pane.id === active) ? "hidden" : "flex"} min-w-0 min-h-0`}
-          style={{ flex: mobile ? "1 1 0%" : `${node.ratio} 1 0%` }}
+          className={`${(mobile && !leaves(node.first).some((pane) => pane.id === active)) || (zoomed && !leaves(node.first).some((pane) => pane.id === zoomed)) ? "hidden" : "flex"} min-w-0 min-h-0`}
+          style={{ flex: mobile || zoomed ? "1 1 0%" : `${node.ratio} 1 0%` }}
         >
           <WorkspaceTree {...props} node={node.first} />
         </div>
@@ -59,7 +87,7 @@ function WorkspaceTree(props: TreeProps) {
           aria-valuemax={80}
           tabIndex={0}
           data-testid="workspace-resize"
-          className={`${mobile ? "hidden" : ""} shrink-0 bg-border hover:bg-surface focus-visible:bg-focus touch-none ${horizontal ? "w-2 cursor-col-resize" : "h-2 cursor-row-resize"}`}
+          className={`${mobile || zoomed ? "hidden" : ""} shrink-0 bg-border hover:bg-surface focus-visible:bg-focus touch-none ${horizontal ? "w-2 cursor-col-resize" : "h-2 cursor-row-resize"}`}
           onDoubleClick={() => ratio(50)}
           onKeyDown={(event) => {
             const decrease = horizontal ? "ArrowLeft" : "ArrowUp";
@@ -92,8 +120,8 @@ function WorkspaceTree(props: TreeProps) {
           }}
         />
         <div
-          className={`${mobile && !leaves(node.second).some((pane) => pane.id === active) ? "hidden" : "flex"} min-w-0 min-h-0`}
-          style={{ flex: mobile ? "1 1 0%" : `${100 - node.ratio} 1 0%` }}
+          className={`${(mobile && !leaves(node.second).some((pane) => pane.id === active)) || (zoomed && !leaves(node.second).some((pane) => pane.id === zoomed)) ? "hidden" : "flex"} min-w-0 min-h-0`}
+          style={{ flex: mobile || zoomed ? "1 1 0%" : `${100 - node.ratio} 1 0%` }}
         >
           <WorkspaceTree {...props} node={node.second} />
         </div>
@@ -110,6 +138,7 @@ function WorkspaceTree(props: TreeProps) {
     change(node.id, (old) => ("kind" in old ? { ...old, ...patch } : old));
   const split = (direction: "row" | "column") => {
     if (leaves(root).length >= 8) return;
+    zoom(null);
     const paneId = crypto.randomUUID();
     change(node.id, (old) => ({
       id: crypto.randomUUID(),
@@ -131,81 +160,188 @@ function WorkspaceTree(props: TreeProps) {
       data-active={active === node.id ? "true" : "false"}
       onPointerDownCapture={() => focus(node.id)}
       onFocusCapture={() => focus(node.id)}
-      className={`flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden border ${active === node.id ? "border-outline-variant" : "border-transparent"}`}
+      className={`terminal-workspace-pane flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden border ${active === node.id ? "border-outline-variant" : "border-transparent"}`}
     >
-      <header className="flex shrink-0 gap-1 items-center flex-wrap p-1.5 bg-background border-b border-outline-variant">
-        <select
+      <header className="flex shrink-0 gap-1 items-center p-1.5 bg-background border-b border-outline-variant">
+        <fieldset
           data-testid="pane-view"
+          data-view={node.kind}
           aria-label="Pane view"
-          value={node.kind}
-          onChange={(event) => {
-            const kind = event.target.value as PaneKind;
-            setPane({
-              kind,
-              terminalId:
-                kind === "terminal" && occupied.has(node.terminalId)
-                  ? (terminals.find((terminal) => !occupied.has(terminal.id))?.id ?? null)
-                  : node.terminalId,
-            });
-          }}
-          className="min-h-11 sm:min-h-8 rounded-md border border-control-border bg-background text-base sm:text-sm p-1.5 min-w-0"
+          className="flex items-center rounded-md bg-surface p-0.5"
         >
-          <option value="terminal">Terminal</option>
-          <option value="git">Git</option>
-          <option value="files">Files</option>
-        </select>
-        <select
-          data-testid="pane-terminal"
-          aria-label="Pane terminal or checkout"
-          value={terminal?.id ?? ""}
-          onChange={(event) => setPane({ terminalId: event.target.value || null })}
-          className="flex-1 min-w-0 min-h-11 sm:min-h-8 rounded-md border border-control-border bg-background text-base sm:text-sm p-1.5"
-        >
-          <option value="">Choose terminal</option>
-          {terminals.map((terminal) => (
-            <option
-              key={terminal.id}
-              value={terminal.id}
-              disabled={node.kind === "terminal" && occupied.has(terminal.id)}
+          {(
+            [
+              { kind: "terminal", label: "Terminal", icon: TerminalSquare },
+              { kind: "files", label: "Files", icon: Files },
+              { kind: "git", label: "Git", icon: GitBranch },
+            ] as const
+          ).map(({ kind, label, icon: Icon }) => (
+            <button
+              type="button"
+              key={kind}
+              data-testid={`pane-view-${kind}`}
+              aria-label={label}
+              aria-pressed={node.kind === kind}
+              onClick={() => {
+                setPane({
+                  kind,
+                  terminalId:
+                    kind === "terminal" && occupied.has(node.terminalId)
+                      ? (terminals.find((terminal) => !occupied.has(terminal.id))?.id ?? null)
+                      : node.terminalId,
+                });
+              }}
+              className={`inline-flex items-center justify-center gap-1.5 min-h-11 sm:min-h-8 rounded px-2 text-xs ${node.kind === kind ? "bg-surface-highest text-on-surface" : "text-on-surface-variant hover:text-on-surface"}`}
             >
-              {terminal.name}
-            </option>
+              <Icon size={14} />
+              <span className="pane-view-label">{label}</span>
+            </button>
           ))}
-        </select>
+        </fieldset>
+        <div className="flex-1 min-w-0 flex items-center gap-3 overflow-hidden px-1">
+          {terminal && (
+            <>
+              {node.kind !== "git" && (
+                <div className="pane-checkout-context min-w-0 max-w-72">
+                  <TerminalCheckout terminal={terminal} paneId={node.id} />
+                </div>
+              )}
+              <TerminalPaneLinks terminal={terminal} paneId={node.id} />
+            </>
+          )}
+        </div>
         <button
           type="button"
-          data-testid="pane-split-horizontal"
-          aria-label="Split side by side"
-          title="Split side by side"
-          disabled={leaves(root).length >= 8}
-          onClick={() => split("row")}
-          className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-primary hover:bg-surface disabled:opacity-40"
+          data-testid="pane-terminal"
+          data-terminal-id={terminal?.id ?? ""}
+          aria-label="Find and switch terminal"
+          aria-haspopup="dialog"
+          title={`Find terminal: ${terminal?.name ?? "None selected"}`}
+          className="shrink-0 inline-flex items-center justify-center min-h-11 w-11 sm:min-h-8 sm:w-10 rounded-md text-on-surface-variant hover:bg-surface"
+          onClick={() =>
+            openTerminalPalette({
+              currentId: terminal?.id ?? null,
+              select: (id) => {
+                const existing = leaves(root).find(
+                  (pane) => pane.kind === "terminal" && pane.terminalId === id,
+                );
+                if (node.kind === "terminal" && existing && existing.id !== node.id) {
+                  zoom(null);
+                  focus(existing.id);
+                  return;
+                }
+                setPane({ terminalId: id });
+              },
+            })
+          }
         >
-          <Columns2 size={16} />
+          <TerminalSquare size={16} aria-hidden="true" />
+          <ChevronDown size={11} aria-hidden="true" />
         </button>
-        <button
-          type="button"
-          data-testid="pane-split-vertical"
-          aria-label="Split top and bottom"
-          title="Split top and bottom"
-          disabled={leaves(root).length >= 8}
-          onClick={() => split("column")}
-          className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-primary hover:bg-surface disabled:opacity-40"
+        <details
+          className="relative md:hidden"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") event.currentTarget.removeAttribute("open");
+          }}
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest("button"))
+              event.currentTarget.removeAttribute("open");
+          }}
         >
-          <Rows2 size={16} />
-        </button>
-        {leaves(root).length > 1 && (
+          <summary
+            data-testid="pane-actions"
+            aria-label="Pane actions"
+            title="Pane actions"
+            className="list-none flex min-h-11 min-w-11 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface cursor-pointer"
+          >
+            <Ellipsis size={18} />
+          </summary>
+          <div className="absolute right-0 top-full z-30 w-60 rounded-md border border-outline-variant bg-surface-high p-2 shadow-lg">
+            <button
+              type="button"
+              disabled={leaves(root).length >= 8}
+              onClick={() => split("row")}
+              className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
+            >
+              Split side by side
+            </button>
+            <button
+              type="button"
+              disabled={leaves(root).length >= 8}
+              onClick={() => split("column")}
+              className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
+            >
+              Split top and bottom
+            </button>
+            {leaves(root).length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => zoom(zoomed ? null : node.id)}
+                  className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
+                >
+                  {zoomed ? "Restore split layout" : "Expand pane"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => close(node.id)}
+                  className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
+                >
+                  Close pane
+                </button>
+              </>
+            )}
+          </div>
+        </details>
+        <div className="hidden md:flex items-center gap-1">
           <button
             type="button"
-            data-testid="pane-close"
-            aria-label="Close pane (keep terminal running)"
-            title="Close pane; terminal keeps running"
-            onClick={() => close(node.id)}
-            className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-on-surface-variant hover:bg-surface"
+            data-testid="pane-split-horizontal"
+            aria-label="Split side by side"
+            title="Split side by side"
+            disabled={leaves(root).length >= 8}
+            onClick={() => split("row")}
+            className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-primary hover:bg-surface disabled:opacity-40"
           >
-            <X size={16} />
+            <Columns2 size={16} />
           </button>
-        )}
+          <button
+            type="button"
+            data-testid="pane-split-vertical"
+            aria-label="Split top and bottom"
+            title="Split top and bottom"
+            disabled={leaves(root).length >= 8}
+            onClick={() => split("column")}
+            className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-primary hover:bg-surface disabled:opacity-40"
+          >
+            <Rows2 size={16} />
+          </button>
+          {leaves(root).length > 1 && (
+            <button
+              type="button"
+              data-testid="pane-focus"
+              aria-label={zoomed ? "Restore split layout" : "Expand pane"}
+              title={zoomed ? "Restore split layout" : "Expand pane"}
+              aria-pressed={!!zoomed}
+              onClick={() => zoom(zoomed ? null : node.id)}
+              className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-on-surface-variant hover:bg-surface"
+            >
+              {zoomed ? <PanelsTopLeft size={15} /> : <PanelTop size={15} />}
+            </button>
+          )}
+          {leaves(root).length > 1 && (
+            <button
+              type="button"
+              data-testid="pane-close"
+              aria-label="Close pane (keep terminal running)"
+              title="Close pane; terminal keeps running"
+              onClick={() => close(node.id)}
+              className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-on-surface-variant hover:bg-surface"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
       </header>
       {!terminal ? (
         <p className="p-4 text-sm text-on-surface-variant">
@@ -218,7 +354,12 @@ function WorkspaceTree(props: TreeProps) {
       ) : node.kind === "git" ? (
         <GitPanelBody key={terminal.id} terminal={terminal} paneId={node.id} />
       ) : (
-        <FilePanel key={terminal.id} terminal={terminal} active={active === node.id} />
+        <FilePanel
+          key={terminal.id}
+          terminal={terminal}
+          active={active === node.id}
+          paneId={node.id}
+        />
       )}
     </section>
   );
@@ -239,6 +380,7 @@ export function TerminalWorkspace(props: WorkspaceProps) {
     };
   });
   const [active, setActive] = useState(() => leaves(layout)[0]?.id ?? layout.id);
+  const [zoomed, setZoomed] = useState<string | null>(null);
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
   const requestedView = params.get("view");
@@ -262,6 +404,7 @@ export function TerminalWorkspace(props: WorkspaceProps) {
     const panes = leaves(current);
     const target = panes.find((pane) => pane.id === requestedPane) ?? panes[0];
     if (!target) return;
+    setZoomed((current) => (current && current !== target.id ? null : current));
     const terminalId = requestedTerminal ?? props.selected.id;
     const occupied =
       view === "terminal"
@@ -275,12 +418,15 @@ export function TerminalWorkspace(props: WorkspaceProps) {
       return;
     }
     setActive(target.id);
-    if (target.kind === view && target.terminalId === terminalId) return;
-    const next = updateLayout(current, target.id, (node) =>
-      "kind" in node ? { ...node, kind: view, terminalId } : node,
-    );
-    layoutRef.current = next;
-    setLayout(next);
+    setLayout((previous) => {
+      const latest = leaves(previous).find((pane) => pane.id === target.id);
+      if (!latest || (latest.kind === view && latest.terminalId === terminalId)) return previous;
+      const next = updateLayout(previous, target.id, (node) =>
+        "kind" in node ? { ...node, kind: view, terminalId } : node,
+      );
+      layoutRef.current = next;
+      return next;
+    });
   }, [requestedView, requestedPane, requestedTerminal, props.selected.id]);
 
   function publishPane(next: Layout, paneId: string) {
@@ -299,6 +445,7 @@ export function TerminalWorkspace(props: WorkspaceProps) {
   function focusPane(id: string) {
     if (id === active) return;
     setActive(id);
+    if (zoomed) setZoomed(id);
     publishPane(layoutRef.current, id);
   }
   useEffect(() => {
@@ -336,6 +483,8 @@ export function TerminalWorkspace(props: WorkspaceProps) {
         node={layout}
         root={layout}
         active={activePane.id}
+        zoomed={panes.some((pane) => pane.id === zoomed) ? zoomed : null}
+        zoom={setZoomed}
         mobile={!desktop}
         focus={focusPane}
         change={(id, update) => {
@@ -346,6 +495,7 @@ export function TerminalWorkspace(props: WorkspaceProps) {
           publishPane(next, target?.id ?? activePane.id);
         }}
         close={(id) => {
+          setZoomed(null);
           const next = closePane(layoutRef.current, id);
           layoutRef.current = next;
           setLayout(next);

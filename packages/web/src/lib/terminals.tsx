@@ -44,6 +44,7 @@ interface TerminalsContextValue {
   create: (input: CreateTerminalInput) => Promise<Terminal>;
   openLiveSession: (session: LiveSession) => Promise<Terminal>;
   remove: (id: string) => Promise<void>;
+  rename: (id: string, name: string) => Promise<Terminal>;
   attach: (id: string, container: HTMLElement) => Promise<void>;
   detach: (id: string) => void;
 }
@@ -59,7 +60,7 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
 
   const query = useQuery({
     queryKey: ["terminals"],
-    queryFn: () => api.terminals.list(),
+    queryFn: () => api.terminals.list(null),
     retry: false,
   });
   const info = query.data;
@@ -155,6 +156,24 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
     [create, navigate],
   );
 
+  const rename = useCallback(
+    async (id: string, name: string): Promise<Terminal> => {
+      const terminal = await api.terminals.rename(id, name);
+      await queryClient.cancelQueries({ queryKey: ["terminals"] });
+      queryClient.setQueryData<TerminalsInfo>(["terminals"], (current) =>
+        current
+          ? {
+              ...current,
+              terminals: current.terminals.map((item) => (item.id === id ? terminal : item)),
+            }
+          : current,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["terminals"] });
+      return terminal;
+    },
+    [queryClient],
+  );
+
   const remove = useCallback(
     async (id: string): Promise<void> => {
       await api.terminals.remove(id);
@@ -175,6 +194,7 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
   const attach = useCallback(
     async (id: string, container: HTMLElement): Promise<void> => {
       pendingContainers.current.set(id, container);
+      const focusedBeforeLoad = document.activeElement;
       try {
         await loadGhostty();
         setEngineError(null);
@@ -188,7 +208,7 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
         runtime = createRuntime(id);
         runtimes.current.set(id, runtime);
       }
-      mountRuntime(runtime, container);
+      mountRuntime(runtime, container, document.activeElement === focusedBeforeLoad);
       void connectRuntime(runtime, callbacks);
     },
     [callbacks],
@@ -220,6 +240,7 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
       connectionOf,
       create,
       openLiveSession,
+      rename,
       remove,
       attach,
       detach,
@@ -236,6 +257,7 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
       connectionOf,
       create,
       openLiveSession,
+      rename,
       remove,
       attach,
       detach,

@@ -6,6 +6,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api, type Terminal } from "@/api/client";
 import { useTasks, useUpdateTask } from "@/hooks/useTasks";
 import { workspaceDestination } from "@/lib/workspace-navigation";
+import { TerminalSelect } from "./TerminalSelect";
 
 export function TerminalTaskLink({ terminal }: { terminal: Terminal }) {
   const [params] = useSearchParams();
@@ -49,6 +50,8 @@ export function TerminalTaskLink({ terminal }: { terminal: Terminal }) {
         ref={button}
         type="button"
         data-testid="terminal-task-link-toggle"
+        aria-label="Link ORC task"
+        title="Link ORC task"
         aria-expanded={open}
         onClick={() => {
           const rect = button.current?.getBoundingClientRect();
@@ -59,10 +62,9 @@ export function TerminalTaskLink({ terminal }: { terminal: Terminal }) {
             });
           setOpen(!open);
         }}
-        className="inline-flex min-h-11 sm:min-h-8 gap-1 items-center rounded-md text-sm text-primary"
+        className="git-icon-button"
       >
         <Link2 size={14} />
-        Link task
       </button>
       {open &&
         createPortal(
@@ -83,12 +85,11 @@ export function TerminalTaskLink({ terminal }: { terminal: Terminal }) {
                 <X size={14} />
               </button>
             </div>
-            <select
+            <TerminalSelect
               data-testid="git-link-task"
               aria-label="Task to link"
               value={taskId}
               onChange={(event) => setTaskId(event.target.value)}
-              className="w-full min-h-11 rounded-md border border-control-border bg-background p-2"
             >
               <option value="">Choose task</option>
               {tasks.data?.map((task) => (
@@ -96,7 +97,7 @@ export function TerminalTaskLink({ terminal }: { terminal: Terminal }) {
                   {task.title}
                 </option>
               ))}
-            </select>
+            </TerminalSelect>
             <button
               type="button"
               data-testid="git-link-save"

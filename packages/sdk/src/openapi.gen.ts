@@ -7853,7 +7853,9 @@ export interface paths {
         /** List terminals and whether this server can start them */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    host?: "" | string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -7892,6 +7894,8 @@ export interface paths {
                     "application/json": {
                         /** @enum {string} */
                         kind?: "shell" | "claude" | "codex" | "cursor" | "gemini" | "copilot";
+                        /** @description SSH config alias, or null for Local. Omit to use the configured default. */
+                        host?: string | null;
                         cwd?: string;
                         name?: string;
                         live_session_id?: string;
@@ -7966,6 +7970,7 @@ export interface paths {
                 content: {
                     "application/json": {
                         initial?: string;
+                        host?: string | null;
                     };
                 };
             };
@@ -8001,6 +8006,7 @@ export interface paths {
             parameters: {
                 query?: {
                     path?: string;
+                    host?: "" | string;
                 };
                 header?: never;
                 path?: never;
@@ -8087,7 +8093,35 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        patch?: never;
+        /** Rename a terminal */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        name: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Renamed terminal */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Terminal"];
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/api/terminals/{id}/ticket": {
@@ -8143,6 +8177,7 @@ export interface paths {
             parameters: {
                 query: {
                     cwd: string;
+                    host?: "" | string;
                 };
                 header?: never;
                 path?: never;
@@ -8193,6 +8228,7 @@ export interface paths {
                 content: {
                     "application/json": {
                         cwd: string;
+                        host?: string | null;
                         path: string;
                         force?: boolean;
                         delete_branch?: boolean;
@@ -8305,6 +8341,93 @@ export interface paths {
                             }[];
                         };
                     };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/terminals/{id}/git/pulls/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the current branch PR, changed files and review discussion */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    number: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Pull request review */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PullReview"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/terminals/{id}/git/pulls/{number}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send an explicit general, inline or reply comment to the current branch PR */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    number: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PullCommentInput"];
+                };
+            };
+            responses: {
+                /** @description Comment posted */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description PR changed or closed; draft retained */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
                 };
             };
         };
@@ -8470,6 +8593,8 @@ export interface paths {
                         "application/json": {
                             /** @enum {string} */
                             auth: "gh" | "token" | "none";
+                            /** @enum {string} */
+                            unavailable_reason?: "no_remote" | "detached_head";
                             login: string | null;
                             truncated: boolean;
                             errors: {
@@ -8487,6 +8612,13 @@ export interface paths {
                                 branch: string | null;
                                 assignees: string[];
                                 task_ids: string[];
+                                ci?: {
+                                    /** @enum {string} */
+                                    state: "success" | "failure" | "pending" | "none";
+                                    total: number;
+                                    /** Format: uri */
+                                    url: string;
+                                } | null;
                             }[];
                         };
                     };
@@ -9997,6 +10129,99 @@ export interface components {
             upstream_gone?: boolean;
             stale?: boolean;
             active_terminal?: string | null;
+        };
+        PullReview: {
+            repo: string;
+            number: number;
+            title: string;
+            body: string;
+            state: string;
+            /** Format: uri */
+            url: string;
+            author: string;
+            head: string;
+            branch: string;
+            base: string;
+            changed_files: number;
+            files: {
+                filename: string;
+                previous_filename?: string;
+                status: string;
+                additions: number;
+                deletions: number;
+                patch?: string;
+                patch_truncated: boolean;
+            }[];
+            comments: {
+                id: number;
+                body: string | null;
+                user: {
+                    login: string;
+                } | null;
+                /** Format: uri */
+                html_url: string;
+                created_at: string;
+                path?: string;
+                line?: number | null;
+                original_line?: number | null;
+                side?: string;
+                in_reply_to_id?: number;
+                state?: string;
+            }[];
+            discussion: {
+                id: number;
+                body: string | null;
+                user: {
+                    login: string;
+                } | null;
+                /** Format: uri */
+                html_url: string;
+                created_at: string;
+                path?: string;
+                line?: number | null;
+                original_line?: number | null;
+                side?: string;
+                in_reply_to_id?: number;
+                state?: string;
+            }[];
+            reviews: {
+                id: number;
+                body: string | null;
+                user: {
+                    login: string;
+                } | null;
+                /** Format: uri */
+                html_url: string;
+                created_at: string;
+                path?: string;
+                line?: number | null;
+                original_line?: number | null;
+                side?: string;
+                in_reply_to_id?: number;
+                state?: string;
+            }[];
+            truncated: boolean;
+        };
+        PullCommentInput: {
+            /** @enum {string} */
+            kind: "discussion";
+            head: string;
+            body: string;
+        } | {
+            /** @enum {string} */
+            kind: "inline";
+            head: string;
+            body: string;
+            path: string;
+            line: number;
+            /** @enum {string} */
+            side: "LEFT" | "RIGHT";
+        } | {
+            /** @enum {string} */
+            kind: "reply";
+            head: string;
+            body: string;
+            comment_id: number;
         };
     };
     responses: never;

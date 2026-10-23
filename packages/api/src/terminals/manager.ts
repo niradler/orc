@@ -88,6 +88,13 @@ export class TerminalManager {
     return { ...this.entry(id).info };
   }
 
+  rename(id: string, name: string): TerminalInfo {
+    const entry = this.entry(id);
+    entry.info.name = name;
+    changes.publish("terminals");
+    return { ...entry.info };
+  }
+
   findByLiveSession(liveSessionId: string): TerminalInfo | null {
     for (const e of this.entries.values()) {
       if (e.info.live_session_id === liveSessionId && e.info.status === "running") {

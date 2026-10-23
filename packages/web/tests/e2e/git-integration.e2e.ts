@@ -78,6 +78,7 @@ test("slice 3 git panel status, diff, selected staging, commit, branches and tas
   await expect(page.getByTestId("terminal-git-toggle")).toHaveCount(0);
   await expect(page.getByTestId("git-status-file")).toHaveCount(2);
   await expect(page.getByTestId("git-branch-select")).toHaveValue("main");
+  await page.getByTestId("git-checkout-toggle").click();
   await expect(page.getByTestId("git-tab-status")).toHaveCount(0);
   await expect(page.getByTestId("git-tab-diff")).toHaveCount(0);
   await expect(page.getByTestId("git-tab-branches")).toHaveCount(0);
@@ -94,6 +95,7 @@ test("slice 3 git panel status, diff, selected staging, commit, branches and tas
   });
   await expect(tracked.getByTestId("git-diff-add")).toHaveCSS("color", colors.added);
   await expect(tracked.getByTestId("git-diff-remove")).toHaveCSS("color", colors.removed);
+  await untracked.scrollIntoViewIfNeeded();
   await expect(untracked.getByTestId("git-diff")).toContainText("+keep unstaged");
   await expect(untracked.getByTestId("git-diff")).not.toContainText("panel edit");
   await tracked.getByTestId("git-diff-file-toggle").click();
@@ -205,6 +207,7 @@ test("Git pane selects all, switches branches and worktrees, and shows the curre
   await expect(page.getByTestId("git-panel-worktree").filter({ hasText: "Current" })).toContainText(
     "main",
   );
+  await page.getByTestId("git-checkout-toggle").click();
   await page.getByTestId("git-branch-select").selectOption("feature");
   await expect(page.getByTestId("git-branch").filter({ hasText: "feature" })).toHaveAttribute(
     "aria-current",
@@ -234,7 +237,7 @@ test("Git pane selects all, switches branches and worktrees, and shows the curre
     page
       .locator('[data-testid="workspace-pane"][data-kind="terminal"]')
       .getByTestId("pane-terminal"),
-  ).toHaveValue(terminal.id);
+  ).toHaveAttribute("data-terminal-id", terminal.id);
   await expect(page.getByTestId("terminal-git-panel")).toContainText("other");
   await expect(page.getByTestId("git-panel-worktree").filter({ hasText: "Current" })).toContainText(
     other,

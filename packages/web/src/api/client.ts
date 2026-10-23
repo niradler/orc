@@ -46,6 +46,8 @@ import type {
   LocalSkillAgentListing,
   LocalSkillImportItem,
   LocalSkillImportResult,
+  PullCommentInput,
+  PullReview,
   RestartResponse,
   ScopeQuery,
   SkillChange,
@@ -60,6 +62,8 @@ import type {
 export type {
   LocalSkill,
   LocalSkillAgentListing,
+  PullCommentInput,
+  PullReview,
   SkillDiscovery,
   SkillImportInput,
   SkillImportOrigin,
@@ -238,6 +242,7 @@ export type SshTest = {
 
 export type CreateTerminalInput = {
   kind: TerminalKind;
+  host?: string | null;
   cwd?: string;
   name?: string;
   live_session_id?: string;
@@ -282,6 +287,7 @@ export type GithubItem = {
   branch: string | null;
   assignees: string[];
   task_ids: string[];
+  ci?: { state: "success" | "failure" | "pending" | "none"; total: number; url: string } | null;
 };
 export type GithubFeed = {
   auth: "gh" | "token" | "none";
@@ -289,6 +295,7 @@ export type GithubFeed = {
   items: GithubItem[];
   errors: { repo: string; error: string }[];
   truncated: boolean;
+  unavailable_reason?: "no_remote" | "detached_head";
 };
 export type ManagedWebhook = {
   id: string;
@@ -1045,20 +1052,24 @@ export const api = {
   },
 
   terminals: {
-    list: () => req<TerminalsInfo>("GET", "/terminals"),
+    list: (host?: string | null) =>
+      req<TerminalsInfo>("GET", "/terminals", undefined, { host: host === null ? "" : host }),
     create: (data: CreateTerminalInput) => req<Terminal>("POST", "/terminals", data),
     get: (id: string) => req<Terminal>("GET", `/terminals/${encodeURIComponent(id)}`),
+    rename: (id: string, name: string) =>
+      req<Terminal>("PATCH", `/terminals/${encodeURIComponent(id)}`, { name }),
     remove: (id: string) => req<null>("DELETE", `/terminals/${encodeURIComponent(id)}`),
     ticket: (id: string) =>
       req<{ ticket: string; expires_in: number }>(
         "POST",
         `/terminals/${encodeURIComponent(id)}/ticket`,
       ),
-    pickFolder: (initial?: string) =>
-      req<{ path: string | null }>("POST", "/terminals/pick-folder", initial ? { initial } : {}),
-    browse: (path?: string) =>
+    pickFolder: (initial?: string, host?: string | null) =>
+      req<{ path: string | null }>("POST", "/terminals/pick-folder", { initial, host }),
+    browse: (path?: string, host?: string | null) =>
       req<HostDirectoryListing>("GET", "/terminals/browse", undefined, {
         path,
+        host: host === null ? "" : host,
       }),
   },
 
@@ -1094,6 +1105,10 @@ export const api = {
       }),
     checkoutGithub: (id: string) =>
       req<GithubFeed>("GET", `/terminals/${encodeURIComponent(id)}/git/github`),
+    pullReview: (id: string, number: number) =>
+      req<PullReview>("GET", `/terminals/${encodeURIComponent(id)}/git/pulls/${number}`),
+    postPullComment: (id: string, number: number, body: PullCommentInput) =>
+      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/pulls/${number}/comments`, body),
     saveFile: (id: string, path: string, content: string, original: string) =>
       req<null>("PUT", `/terminals/${encodeURIComponent(id)}/files`, {
         path,
@@ -1131,8 +1146,12 @@ export const api = {
       req<{
         results: { path: string; removed: boolean; error: string | null }[];
       }>("POST", "/git/worktrees/cleanup", { items }),
-    worktrees: (cwd: string) => req<WorktreeListing>("GET", "/git/worktrees", undefined, { cwd }),
-    removeWorktree: (data: { cwd: string; path: string; force?: boolean }) =>
+    worktrees: (cwd: string, host?: string | null) =>
+      req<WorktreeListing>("GET", "/git/worktrees", undefined, {
+        cwd,
+        host: host === null ? "" : host,
+      }),
+    removeWorktree: (data: { cwd: string; path: string; force?: boolean; host?: string | null }) =>
       req<null>("POST", "/git/worktrees/remove", data),
   },
 

@@ -255,17 +255,30 @@ function attachClickToMove(runtime: TerminalRuntime, encoder: TextEncoder): void
   });
 }
 
-export function mountRuntime(runtime: TerminalRuntime, container: HTMLElement): void {
+export function mountRuntime(runtime: TerminalRuntime, container: HTMLElement, focus = true): void {
+  const focusedBeforeMount = document.activeElement;
+  const shouldFocus =
+    focus && !focusedBeforeMount?.closest('[role="dialog"], [data-radix-popper-content-wrapper]');
   container.appendChild(runtime.element);
   if (!runtime.opened) {
-    runtime.term.open(runtime.element);
+    // Ghostty's focus() schedules a second, unguarded focus. Startup owns focus below
+    // so opening a menu immediately after mount cannot be interrupted by that timer.
+    const originalFocus = runtime.term.focus;
+    runtime.term.focus = () => {};
+    try {
+      runtime.term.open(runtime.element);
+    } finally {
+      runtime.term.focus = originalFocus;
+    }
     runtime.fit.observeResize();
     runtime.opened = true;
   }
   requestAnimationFrame(() => {
     if (runtime.disposed || runtime.element.parentElement !== container) return;
     runtime.fit.fit();
-    runtime.term.focus();
+    // Loading the renderer must not dismiss a menu or interrupt a newer interaction.
+    if (shouldFocus && document.activeElement === focusedBeforeMount)
+      runtime.element.focus({ preventScroll: true });
   });
 }
 
