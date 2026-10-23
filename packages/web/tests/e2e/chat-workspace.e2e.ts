@@ -9,6 +9,9 @@ const defaults = ChatSettingsSchema.parse({});
 const artifacts = resolve(process.cwd(), "../../.claude/validation/chat");
 mkdirSync(artifacts, { recursive: true });
 test.beforeEach(async ({ page, request }) => {
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({ json: { models: [], warning: null } }),
+  );
   await request.patch("/api/settings", { headers, data: { chat: defaults } });
   await page.addInitScript(
     (secret) =>
@@ -42,7 +45,7 @@ for (const width of [320, 820, 1440]) {
       },
     });
     await openChat(page);
-    await page.getByTestId("chat-model-button").click();
+    await page.getByTestId("chat-config-button").click();
     await expect(page.getByTestId("chat-config-dialog")).toContainText(prompt);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
@@ -50,8 +53,8 @@ for (const width of [320, 820, 1440]) {
     await page.screenshot({
       path: resolve(artifacts, `${testInfo.project.name}-model-${width}.png`),
     });
-    await page.getByTestId("chat-model-input").fill("fixture-selected");
-    await page.getByTestId("chat-model-apply").click();
+    await page.keyboard.press("Escape");
+    await page.getByTestId("chat-model-select").selectOption("fixture-selected");
     const marker = `chat-history-${width}-${Date.now()}`;
     const sent = page.waitForRequest((req) => req.url().endsWith("/api/chat/stream"));
     await page.getByTestId("chat-input").fill(`Reply with exactly: ${marker}.`);
@@ -155,7 +158,7 @@ test("chat defaults save and reload through Settings", async ({ page }) => {
     "Saved from the mobile settings form",
   );
   await openChat(page);
-  await expect(page.getByTestId("chat-model-button")).toContainText("fixture-settings-model");
+  await expect(page.getByTestId("chat-model-select")).toHaveValue("fixture-settings-model");
 });
 
 test("coding-session selection opens native history before sending a continuation", async ({
@@ -210,7 +213,7 @@ test("coding-session selection opens native history before sending a continuatio
   await page.getByTestId("chat-resume-live").filter({ hasText: "Imported coding work" }).click();
   await expect(page.getByTestId("chat-message-content")).toContainText("Earlier native answer");
   await expect(page.getByTestId("chat-agent-select")).toBeDisabled();
-  await page.getByTestId("chat-model-button").click();
+  await page.getByTestId("chat-config-button").click();
   await expect(page.getByTestId("chat-config-dialog")).toContainText("/fixture/repository");
 });
 

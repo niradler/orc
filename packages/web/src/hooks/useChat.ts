@@ -37,6 +37,9 @@ function useChatController() {
   const [config, setConfig] = useState<ChatConfig>(DEFAULT_CONFIG);
   const [ready, setReady] = useState(false);
   const [thread, setThread] = useState<ChatThread | null>(null);
+  const [historyBefore, setHistoryBefore] = useState<number | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const historyRequest = useRef<symbol | null>(null);
   const [permission, setPermission] = useState<{
     requestId: string;
     tool: string;
@@ -77,6 +80,7 @@ function useChatController() {
   useEffect(
     () => () => {
       generation.current++;
+      historyRequest.current = null;
       abortRef.current?.abort();
     },
     [],
@@ -108,6 +112,9 @@ function useChatController() {
   }, [finishPartial]);
   const openThread = useCallback((next: ChatThread) => {
     if (abortRef.current) return;
+    historyRequest.current = null;
+    setLoadingHistory(false);
+    setHistoryBefore(next.historyBefore ?? null);
     setThread(next);
     history.current = next.messages;
     setMessages(next.messages);
@@ -116,12 +123,38 @@ function useChatController() {
   }, []);
   const clear = useCallback(() => {
     cancel();
+    historyRequest.current = null;
+    setLoadingHistory(false);
+    setHistoryBefore(null);
     history.current = [];
     setMessages([]);
     setThread(null);
     setConfig(defaults.current);
     setError(null);
   }, [cancel]);
+
+  const loadOlder = useCallback(async () => {
+    const current = currentThread.current;
+    if (!current || historyBefore === null || historyRequest.current) return;
+    const request = Symbol();
+    historyRequest.current = request;
+    setLoadingHistory(true);
+    setError(null);
+    try {
+      const page = await api.chat.history(current.id, historyBefore);
+      if (historyRequest.current !== request) return;
+      setHistoryBefore(page.before);
+      setMessages((messages) => [...page.messages, ...messages]);
+    } catch (cause) {
+      if (historyRequest.current === request)
+        setError(cause instanceof Error ? cause.message : "Older messages could not be loaded.");
+    } finally {
+      if (historyRequest.current === request) {
+        historyRequest.current = null;
+        setLoadingHistory(false);
+      }
+    }
+  }, [historyBefore]);
 
   const send = useCallback(
     async (input: string) => {
@@ -245,6 +278,9 @@ function useChatController() {
     ready,
     thread,
     openThread,
+    historyBefore,
+    loadingHistory,
+    loadOlder,
     permission,
     respondPermission,
     send,

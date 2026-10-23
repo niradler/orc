@@ -10,7 +10,7 @@ import {
   registerBackend,
   type SessionOpts,
 } from "@orc/agent-runtime";
-import type { ChatEvent, ChatThread } from "@orc/core/chat";
+import { type ChatEvent, ChatHistoryPageSchema, type ChatThread } from "@orc/core/chat";
 import { resetConfig, updateGlobalConfig } from "@orc/core/config";
 import { getDb, getSqlite } from "@orc/db/client";
 import { bridge_chats, gateway_sessions } from "@orc/db/schema";
@@ -215,6 +215,99 @@ describe("native chat runtime", () => {
     ).toHaveLength(4);
     expect(closed).toBeGreaterThanOrEqual(2);
   });
+  test("model catalog validates auth, agent and conversation scope", async () => {
+    expect((await request("/chat/models?agent=gemini", undefined, false)).status).toBe(401);
+    expect((await request("/chat/models?agent=--bad")).status).toBe(400);
+    expect((await request("/chat/models?agent=gemini&host=other")).status).toBe(400);
+    const fallback = await (await request("/chat/models?agent=gemini")).json();
+    expect(fallback).toMatchObject({ models: [], warning: expect.any(String) });
+    const existing = await turn({ messages: [{ role: "user", content: "Model scope" }] });
+    const threadEvent = existing.events.find((event) => event.type === "thread");
+    if (threadEvent?.type !== "thread") throw new Error("No thread fixture");
+    expect(
+      (await request(`/chat/models?agent=claude&threadId=${threadEvent.thread.id}`)).status,
+    ).toBe(400);
+    expect(
+      (await request("/chat/models?agent=codex&threadId=00000000-0000-4000-8000-000000000999"))
+        .status,
+    ).toBe(404);
+  });
+
+  test("loads 500 native turns, pages older history and continues beyond the old count/size caps", async () => {
+    getDb()
+      .insert(bridge_chats)
+      .values({ id: LIVE_CHAT_ID, platform: "telegram", chat_id: "chat-fixture" })
+      .onConflictDoNothing()
+      .run();
+    const transcript = join(home, "long-native.jsonl");
+    writeFileSync(
+      transcript,
+      Array.from({ length: 1105 }, (_, index) =>
+        JSON.stringify({
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: index % 2 ? "assistant" : "user",
+            content: [
+              {
+                type: index % 2 ? "output_text" : "input_text",
+                text: `history-${index}: ${index >= 605 ? "x".repeat(11000) : "earlier"}`,
+              },
+            ],
+          },
+        }),
+      ).join("\n"),
+    );
+    getDb()
+      .insert(gateway_sessions)
+      .values({
+        id: "source-long",
+        backend: "codex",
+        mode: "direct",
+        status: "stopped",
+        chat_id: LIVE_CHAT_ID,
+        runtime_session_id: "long-native",
+        cwd: home,
+        transcript_path: transcript,
+      })
+      .run();
+    const prepared = (await (
+      await request("/chat/threads", { sourceSessionId: "source-long" })
+    ).json()) as ChatThread;
+    expect(prepared.messages).toHaveLength(500);
+    expect(prepared.messages[0]?.content).toStartWith("history-605:");
+    expect(prepared.messages.at(-1)?.content).toStartWith("history-1104:");
+    expect(prepared.historyBefore).toBe(605);
+    expect(prepared.importedMessages).toBe(500);
+    expect(JSON.stringify(prepared.messages).length).toBeGreaterThan(5000000);
+    const historyUrl = `/chat/threads/${prepared.id}/history`;
+    expect((await request(`${historyUrl}?before=605`, undefined, false)).status).toBe(401);
+    for (const before of ["-1", "0", "606", "1.5", "bad"])
+      expect((await request(`${historyUrl}?before=${before}`)).status).toBe(400);
+    const older = ChatHistoryPageSchema.parse(
+      await (await request(`${historyUrl}?before=605`)).json(),
+    );
+    expect(older.messages).toHaveLength(500);
+    expect(older.messages[0]?.content).toStartWith("history-105:");
+    expect(older.messages.at(-1)?.content).toStartWith("history-604:");
+    expect(older.before).toBe(105);
+    const first = ChatHistoryPageSchema.parse(
+      await (await request(`${historyUrl}?before=105`)).json(),
+    );
+    expect(first.messages).toHaveLength(105);
+    expect(first.messages[0]?.content).toStartWith("history-0:");
+    expect(first.before).toBeNull();
+    const continued = await turn({
+      threadId: prepared.id,
+      messages: [{ role: "user", content: "continue long history" }],
+    });
+    expect(continued.response.status).toBe(200);
+    expect(calls.at(-1)).toMatchObject({ id: "long-native", prompt: "continue long history" });
+    const saved = (await (await request(`/chat/threads/${prepared.id}`)).json()) as ChatThread;
+    expect(saved.messages).toHaveLength(502);
+    expect(saved.historyBefore).toBe(605);
+  });
+
   test("resumes discovered native identity and directory, rejects active/unsupported/missing sources", async () => {
     getDb()
       .insert(bridge_chats)

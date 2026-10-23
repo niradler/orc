@@ -31,6 +31,11 @@ export const ChatSettingsSchema = z
   })
   .strict();
 export type ChatSettings = z.infer<typeof ChatSettingsSchema>;
+export const ChatModelsSchema = z.object({
+  models: z.array(z.object({ id: ChatModelSchema, label: z.string().max(120) })),
+  warning: z.string().nullable(),
+});
+export type ChatModels = z.infer<typeof ChatModelsSchema>;
 export const ChatActivitySchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("thinking"), id: z.string(), text: z.string() }),
   z.object({
@@ -53,6 +58,12 @@ export const ChatMessageSchema = z.object({
   activity: z.array(ChatActivitySchema).optional(),
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
+export const CHAT_HISTORY_PAGE_SIZE = 500;
+export const ChatHistoryPageSchema = z.object({
+  messages: z.array(ChatMessageSchema),
+  before: z.number().int().nonnegative().nullable(),
+});
+export type ChatHistoryPage = z.infer<typeof ChatHistoryPageSchema>;
 export const ChatThreadSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
@@ -63,6 +74,8 @@ export const ChatThreadSchema = z.object({
   backend: z.string(),
   sourceId: z.string().nullable(),
   messages: z.array(ChatMessageSchema),
+  historyBefore: z.number().int().nonnegative().nullable().optional(),
+  importedMessages: z.number().int().nonnegative().optional(),
   updatedAt: z.number(),
 });
 export type ChatThread = z.infer<typeof ChatThreadSchema>;

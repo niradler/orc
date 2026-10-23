@@ -1,7 +1,7 @@
-import { ChatSettingsSchema } from "@orc/core/chat";
+import { ChatModelSchema } from "@orc/core/chat";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import { useQuery } from "@tanstack/react-query";
-import { History } from "lucide-react";
+import { History, Settings2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useChat } from "@/hooks/useChat";
+import { useSsh } from "@/hooks/useSsh";
 
 export function ChatSessionPicker() {
   const chat = useChat();
@@ -251,137 +252,159 @@ export function ChatSessionPicker() {
 }
 
 export function ChatModelPicker() {
-  const { config, setConfig, streaming, thread } = useChat();
-  const [open, setOpen] = useState(false);
-  const [model, setModel] = useState(config.model);
+  const { config, setConfig, streaming, thread, ready } = useChat();
+  const { data: ssh } = useSsh();
+  const [custom, setCustom] = useState(false);
+  const [model, setModel] = useState("");
   const [error, setError] = useState("");
+  const catalog = useQuery({
+    queryKey: ["chat-models", config.agent, thread?.id, thread ? thread.host : ssh?.host],
+    queryFn: () => api.chat.models(config.agent, thread?.id),
+    enabled: ready,
+    staleTime: 120_000,
+    retry: false,
+  });
+  const choices = new Map((catalog.data?.models ?? []).map((model) => [model.id, model.label]));
+  for (const model of config.models.filter((model) => model.agent === config.agent))
+    if (!choices.has(model.id)) choices.set(model.id, model.id);
+  if (config.model && !choices.has(config.model)) choices.set(config.model, config.model);
+  const warning = catalog.isError
+    ? "Models could not be loaded. Saved and custom models are available."
+    : catalog.data?.warning;
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(value) => {
-        setOpen(value);
-        if (value) {
-          setModel(config.model);
-          setError("");
-        }
-      }}
-    >
+    <div className="min-w-0">
+      <label className="block min-w-0">
+        <span className="sr-only">Model</span>
+        <select
+          data-testid="chat-model-select"
+          aria-label="Chat model"
+          title={catalog.isFetching ? "Loading models…" : config.model || "Agent default"}
+          value={custom ? "__custom__" : config.model}
+          disabled={streaming || !ready}
+          onChange={(event) => {
+            setError("");
+            const value = event.target.value;
+            setCustom(value === "__custom__");
+            if (value === "__custom__") setModel(config.model);
+            else setConfig({ ...config, model: value });
+          }}
+          className="min-h-11 w-full min-w-0 rounded-md border border-control-border bg-background px-2 text-base sm:text-sm text-on-surface disabled:opacity-50"
+        >
+          <option value="">Agent default</option>
+          {[...choices].map(([id, label]) => (
+            <option key={id} value={id}>
+              {label}
+            </option>
+          ))}
+          <option value="__custom__">Custom model…</option>
+        </select>
+      </label>
+      {custom && (
+        <form
+          className="mt-2 flex min-w-0 gap-1"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const parsed = ChatModelSchema.safeParse(model);
+            if (!parsed.success) {
+              setError("Enter a valid model ID (up to 200 characters).");
+              return;
+            }
+            setConfig({ ...config, model: parsed.data });
+            setCustom(false);
+          }}
+        >
+          <Input
+            data-testid="chat-custom-model"
+            aria-label="Custom model ID"
+            value={model}
+            disabled={streaming}
+            onChange={(event) => setModel(event.target.value)}
+            className="min-w-0"
+          />
+          <Button
+            type="submit"
+            data-testid="chat-custom-model-apply"
+            disabled={streaming}
+            className="min-h-11 px-2"
+          >
+            Use
+          </Button>
+        </form>
+      )}
+      {(error || warning) && (
+        <p
+          data-testid="chat-model-warning"
+          role={error ? "alert" : "status"}
+          className="mt-1 text-xs text-on-surface-variant break-words"
+        >
+          {error || warning}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function ChatConversationInfo() {
+  const { config, thread } = useChat();
+  return (
+    <Dialog>
       <DialogTrigger asChild>
         <button
-          data-testid="chat-model-button"
           type="button"
-          disabled={streaming}
-          className="min-h-11 min-w-0 max-w-[65%] truncate rounded-md px-2 text-xs text-on-surface-variant hover:bg-background disabled:opacity-40"
-          title="Model and chat configuration"
+          data-testid="chat-config-button"
+          aria-label="Conversation settings"
+          title="Conversation settings"
+          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface"
         >
-          {config.model || "Agent default"} ▾
+          <Settings2 size={17} />
         </button>
       </DialogTrigger>
       <DialogContent data-testid="chat-config-dialog" className="w-[calc(100%-1rem)]">
-        <DialogTitle>Choose a model</DialogTitle>
+        <DialogTitle>Conversation settings</DialogTitle>
         <DialogDescription>
-          Use a model supported by your agent account. Edit new-chat defaults in Settings.
+          Current conversation setup. Change new-chat defaults in Settings.
         </DialogDescription>
-        <label htmlFor="chat-model-input" className="space-y-2 text-sm">
-          Model
-          <Input
-            id="chat-model-input"
-            data-testid="chat-model-input"
-            aria-label="Chat model"
-            list="chat-models"
-            placeholder="Agent default"
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-          />
-          <datalist id="chat-models">
-            {config.models
-              .filter((m) => m.agent === config.agent)
-              .map((m) => (
-                <option key={m.id} value={m.id} />
-              ))}
-          </datalist>
-        </label>
-        <fieldset className="flex min-w-0 flex-wrap gap-2" aria-label="Configured model choices">
-          {[
-            "",
-            ...new Set(
-              config.models.filter((item) => item.agent === config.agent).map((item) => item.id),
-            ),
-          ].map((value) => (
-            <Button
-              key={value || "default"}
-              variant={model === value ? "secondary" : "outline"}
-              aria-pressed={model === value}
-              onClick={() => setModel(value)}
-              className="max-w-full truncate"
-            >
-              {value || "Agent default"}
-            </Button>
-          ))}
-        </fieldset>
+        <dl className="space-y-3 text-sm break-words">
+          <div>
+            <dt className="text-muted-foreground">Agent and working folder</dt>
+            <dd>
+              {config.agent} · {thread?.host || "Selected execution host"}
+              {thread?.cwd && <span className="block font-mono text-xs">{thread.cwd}</span>}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Tools</dt>
+            <dd>
+              {config.mcp === "orc"
+                ? "ORC MCP connection plus agent host configuration"
+                : "Agent host configuration"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">Permissions</dt>
+            <dd>
+              {config.autoApprove
+                ? "Automatic agent actions"
+                : config.agent === "codex"
+                  ? "Read-only sandbox"
+                  : config.agent === "claude"
+                    ? "Ask in chat"
+                    : "Agent permission policy"}
+            </dd>
+          </div>
+        </dl>
         <details className="text-sm">
-          <summary className="min-h-11 cursor-pointer py-3">Conversation setup</summary>
-          <dl className="space-y-3 text-sm break-words">
-            <div>
-              <dt className="text-muted-foreground">Agent and working folder</dt>
-              <dd>
-                {config.agent} · {thread?.host || "Selected execution host"}
-                {thread?.cwd && <span className="block font-mono text-xs">{thread.cwd}</span>}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Tools</dt>
-              <dd>
-                {config.mcp === "orc"
-                  ? "ORC MCP connection plus agent host configuration"
-                  : "Agent host configuration"}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">Permissions</dt>
-              <dd>
-                {config.autoApprove
-                  ? "Automatic agent actions"
-                  : config.agent === "codex"
-                    ? "Read-only sandbox"
-                    : config.agent === "claude"
-                      ? "Ask in chat"
-                      : "Agent permission policy"}
-              </dd>
-            </div>
-          </dl>
-          <details className="text-sm">
-            <summary className="min-h-11 cursor-pointer py-3">Conversation instructions</summary>
-            <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs">
-              {config.system || "No additional instructions"}
-            </pre>
-            <p className="mt-2 text-xs text-muted-foreground">
-              {config.agent === "claude"
-                ? "Appended to Claude’s coding system prompt."
-                : "Sent as turn instructions to the agent."}{" "}
-              Agent and workspace instructions may also apply.
-            </p>
-          </details>
-        </details>
-        {error && (
-          <p role="alert" className="text-sm text-error">
-            {error}
+          <summary className="min-h-11 cursor-pointer py-3">Conversation instructions</summary>
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs">
+            {config.system || "No additional instructions"}
+          </pre>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {config.agent === "claude"
+              ? "Appended to Claude’s coding system prompt."
+              : "Sent as turn instructions to the agent."}{" "}
+            Agent and workspace instructions may also apply.
           </p>
-        )}
-        <Button
-          data-testid="chat-model-apply"
-          onClick={() => {
-            const parsed = ChatSettingsSchema.safeParse({ ...config, model });
-            if (!parsed.success) {
-              setError("Use a model ID of at most 200 characters without control characters.");
-              return;
-            }
-            setConfig(parsed.data);
-            setOpen(false);
-          }}
-        >
-          Apply model
-        </Button>
+        </details>
       </DialogContent>
     </Dialog>
   );

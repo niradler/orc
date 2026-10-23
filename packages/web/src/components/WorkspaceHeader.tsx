@@ -36,7 +36,7 @@ export function WorkspaceHeader({
         ? "Unassigned"
         : (projects?.find((p) => p.id === projectId)?.name ?? "Project");
   return (
-    <div className="shrink-0 border-b border-border bg-background">
+    <div className="workspace-header shrink-0 border-b border-border bg-background">
       {themeError && (
         <p role="alert" className="px-6 py-2 text-sm text-error">
           {themeError}

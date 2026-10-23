@@ -9,6 +9,7 @@ export function useVisualViewport(): void {
       if (viewport.scale !== 1) return;
       root.style.setProperty("--app-height", `${viewport.height}px`);
       root.style.setProperty("--app-top", `${viewport.offsetTop}px`);
+      root.dataset.compactViewport = String(viewport.height < 320);
     };
     update();
     viewport.addEventListener("resize", update);
@@ -18,6 +19,7 @@ export function useVisualViewport(): void {
       viewport.removeEventListener("scroll", update);
       root.style.removeProperty("--app-height");
       root.style.removeProperty("--app-top");
+      delete root.dataset.compactViewport;
     };
   }, []);
 }

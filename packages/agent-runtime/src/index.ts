@@ -6,6 +6,7 @@ export {
   resolveAcpxCli,
 } from "./acpx.js";
 export { hostClaudeLoggedIn } from "./claude-sdk.js";
+export { type AgentModel, discoverAgentModels } from "./models.js";
 export { type BackendProbe, probeBackend, probeBackends } from "./probe.js";
 export {
   createBackend,

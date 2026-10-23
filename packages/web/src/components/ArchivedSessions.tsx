@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
+import { AgentMessageText } from "@/components/AgentMessageText";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -314,7 +315,7 @@ export function ArchivedSessions({ projectId }: { projectId: string }) {
               data-testid="archive-turn"
             >
               <p className="text-xs text-outline">{turn.role}</p>
-              <pre className="whitespace-pre-wrap break-words text-sm">
+              <AgentMessageText plain>
                 {turn.blocks
                   .map((block) =>
                     block.type === "tool_use"
@@ -322,7 +323,7 @@ export function ArchivedSessions({ projectId }: { projectId: string }) {
                       : block.text,
                   )
                   .join("\n")}
-              </pre>
+              </AgentMessageText>
             </div>
           ))}
           <div className="flex justify-end gap-2">

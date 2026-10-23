@@ -1,8 +1,9 @@
 import * as Popover from "@radix-ui/react-popover";
-import { Check, ChevronDown, Copy, Link2, SquareTerminal } from "lucide-react";
+import { Check, ChevronDown, Copy, Link2, MessageSquare, SquareTerminal } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import type { LiveSession } from "@/api/client";
+import { api, type LiveSession } from "@/api/client";
+import { useChat } from "@/hooks/useChat";
 import { resumeCommand, resumeUnavailableReason, scopedSessionPath } from "@/lib/live-sessions";
 import {
   absoluteUrl,
@@ -18,14 +19,18 @@ const ACTION =
 export function ResumeActions({ session }: { session: LiveSession }) {
   const { openLiveSession, info, terminals } = useTerminals();
   const navigate = useNavigate();
+  const chat = useChat();
   const [params] = useSearchParams();
   const [pending, setPending] = useState(false);
+  const [chatPending, setChatPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const command = resumeCommand(session);
   const existing = runningTerminalForSession(terminals, session.id);
   const scope = params.get("project") ?? session.project_id;
+  const chatSupported = ["claude", "codex"].includes(session.agent) && !!command && !!session.cwd;
+  const chatActive = session.status === "running" || session.status === "idle";
   useEffect(() => {
     if (!copied) return;
     const timeout = setTimeout(() => setCopied(null), 2000);
@@ -59,6 +64,22 @@ export function ResumeActions({ session }: { session: LiveSession }) {
     }
   }
 
+  async function openChat(): Promise<void> {
+    setChatPending(true);
+    setError(null);
+    try {
+      chat.openThread(await api.chat.resume(session.id));
+      const next = new URLSearchParams(params);
+      next.delete("session");
+      next.set("chat", "open");
+      navigate({ search: next.toString() });
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Could not resume in chat");
+    } finally {
+      setChatPending(false);
+    }
+  }
+
   if (!command && !existing)
     return (
       <span data-testid="resume-unavailable" className="block max-w-64 text-xs text-outline">
@@ -72,12 +93,12 @@ export function ResumeActions({ session }: { session: LiveSession }) {
         <button
           type="button"
           data-testid="open-terminal-resume"
-          disabled={pending || (!existing && !info?.ready)}
+          disabled={pending || chatPending || (!existing && !info?.ready)}
           onClick={() => void open()}
           className={`${ACTION} rounded-r-none`}
         >
           <SquareTerminal size={13} />
-          {pending ? "Resuming…" : "Resume"}
+          {pending ? "Resuming…" : "Resume in terminal"}
         </button>
         {command && (
           <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
@@ -131,6 +152,21 @@ export function ResumeActions({ session }: { session: LiveSession }) {
           </Popover.Root>
         )}
       </fieldset>
+      {chatSupported && (
+        <button
+          type="button"
+          data-testid="open-chat-resume"
+          disabled={pending || chatPending || chat.streaming || chatActive}
+          title={
+            chatActive ? "End the original agent session before resuming it in chat." : undefined
+          }
+          onClick={() => void openChat()}
+          className={`${ACTION} min-h-11`}
+        >
+          <MessageSquare size={13} />
+          {chatPending ? "Resuming…" : "Resume in chat"}
+        </button>
+      )}
       {info && !info.ready && !existing && (
         <p className="text-xs text-outline">
           {info.reason ??

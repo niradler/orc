@@ -10,10 +10,14 @@ import {
   Square,
   X,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
+import { AgentMessageText } from "@/components/AgentMessageText";
 import { ChatActivityList } from "@/components/ChatActivityList";
-import { ChatModelPicker, ChatSessionPicker } from "@/components/ChatControls";
-import { Markdown } from "@/components/Markdown";
+import {
+  ChatConversationInfo,
+  ChatModelPicker,
+  ChatSessionPicker,
+} from "@/components/ChatControls";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { cn } from "@/lib/utils";
@@ -29,9 +33,7 @@ interface ChatPanelProps {
 const iconButton =
   "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-40";
 const textParts = {
-  Text: ({ text }: { text: string }) => (
-    <Markdown fallback={<p className="whitespace-pre-wrap break-words">{text}</p>}>{text}</Markdown>
-  ),
+  Text: ({ text }: { text: string }) => <AgentMessageText>{text}</AgentMessageText>,
 };
 
 export function ChatPanel({
@@ -52,10 +54,23 @@ export function ChatPanel({
     clear,
     ready,
     thread,
+    historyBefore,
+    loadingHistory,
+    loadOlder,
     permission,
     respondPermission,
   } = useChat();
   const input = useRef<HTMLTextAreaElement>(null);
+  const viewport = useRef<HTMLDivElement>(null);
+  const historyAnchor = useRef<{ height: number; top: number; threadId: string } | null>(null);
+  useLayoutEffect(() => {
+    const anchor = historyAnchor.current;
+    const element = viewport.current;
+    if (loadingHistory || !anchor || !element) return;
+    if (anchor.threadId === thread?.id)
+      element.scrollTop = anchor.top + element.scrollHeight - anchor.height;
+    historyAnchor.current = null;
+  }, [loadingHistory, thread?.id]);
   const panel = usePanelWidth({
     storageKey: "orc_chat_panel_width",
     initial: 384,
@@ -94,12 +109,39 @@ export function ChatPanel({
           {...panel.handleProps}
         />
       )}
-      <header className="shrink-0 border-b border-outline-variant px-4 py-2">
+      <header className="chat-header shrink-0 border-b border-outline-variant px-4 py-2">
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <MessageSquare size={18} className="text-primary" />
             <h2 className="text-sm font-medium">Chat</h2>
           </div>
+          <div className="flex items-center">
+            <ChatConversationInfo />
+            <ChatSessionPicker />
+            {onToggleFullscreen && (
+              <button
+                type="button"
+                data-testid="chat-fullscreen-button"
+                onClick={onToggleFullscreen}
+                className={`${iconButton} hidden xl:inline-flex`}
+                aria-label={fullscreen ? "Exit full screen chat" : "Full screen chat"}
+                title={fullscreen ? "Exit full screen" : "Full screen"}
+              >
+                {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose ?? onToggle}
+              data-testid="chat-close-button"
+              className={iconButton}
+              aria-label="Close chat"
+            >
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+        <div className="chat-header-controls mx-auto mt-1 grid w-full max-w-3xl grid-cols-2 items-start gap-2">
           <label className="flex min-w-0 flex-1 items-center text-sm text-on-surface-variant">
             <span className="sr-only">Agent</span>
             <select
@@ -117,41 +159,34 @@ export function ChatPanel({
               ))}
             </select>
           </label>
-          <div className="flex items-center">
-            <ChatSessionPicker />
-            {onToggleFullscreen && (
-              <button
-                type="button"
-                data-testid="chat-fullscreen-button"
-                onClick={onToggleFullscreen}
-                className={`${iconButton} hidden xl:inline-flex`}
-                aria-label={fullscreen ? "Exit full screen chat" : "Full screen chat"}
-                title={fullscreen ? "Exit full screen" : "Full screen"}
-              >
-                {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onClose ?? onToggle}
-              className={iconButton}
-              aria-label="Close chat"
-            >
-              <X size={18} />
-            </button>
-          </div>
+          <ChatModelPicker key={`${thread?.id ?? "new"}:${config.agent}`} />
         </div>
       </header>
-      {thread?.sourceId && (
-        <p className="shrink-0 px-4 pt-3 text-xs text-on-surface-variant">
-          Resumed native session. Up to 100 recent transcript turns are shown; the agent retains its
-          native history.
-        </p>
-      )}
       <ThreadPrimitive.Viewport
+        ref={viewport}
         data-testid="chat-messages"
         className="relative flex-1 min-h-0 overflow-y-auto px-4 py-5"
       >
+        {historyBefore !== null && (
+          <button
+            type="button"
+            data-testid="chat-load-older"
+            disabled={loadingHistory || streaming}
+            className="mx-auto mb-4 block min-h-11 rounded-md border border-border px-3 text-sm text-primary hover:bg-surface disabled:opacity-50"
+            onClick={() => {
+              const element = viewport.current;
+              if (element && thread)
+                historyAnchor.current = {
+                  height: element.scrollHeight,
+                  top: element.scrollTop,
+                  threadId: thread.id,
+                };
+              void loadOlder();
+            }}
+          >
+            {loadingHistory ? "Loading older messages…" : "Load older messages"}
+          </button>
+        )}
         {messages.length === 0 && !streaming && (
           <div className="mx-auto flex h-full w-full max-w-3xl flex-col justify-center gap-2">
             <h3 className="text-lg font-medium">What are you working on?</h3>
@@ -163,6 +198,7 @@ export function ChatPanel({
         <ThreadPrimitive.Messages>
           {({ message }) => (
             <MessagePrimitive.Root
+              style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
               data-testid="chat-message"
               data-role={message.role}
               className={cn(
@@ -236,7 +272,7 @@ export function ChatPanel({
           </div>
         </div>
       )}
-      <div className="mx-auto w-full max-w-3xl shrink-0 px-3 pt-2 pb-3">
+      <div className="chat-composer-footer mx-auto w-full max-w-3xl shrink-0 px-3 pt-2 pb-3">
         <ThreadPrimitive.ScrollToBottom
           aria-label="Scroll to latest response"
           className="mx-auto mb-2 flex min-h-9 items-center gap-1 rounded-md border border-control-border bg-background px-3 text-xs text-on-surface-variant disabled:hidden"
@@ -244,7 +280,7 @@ export function ChatPanel({
           <ArrowDown size={14} />
           Latest response
         </ThreadPrimitive.ScrollToBottom>
-        <ComposerPrimitive.Root className="rounded-lg border border-control-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus">
+        <ComposerPrimitive.Root className="chat-composer-box rounded-lg border border-control-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus">
           <ComposerPrimitive.Input
             ref={input}
             data-testid="chat-input"
@@ -254,7 +290,7 @@ export function ChatPanel({
             submitMode="enter"
             unstable_insertNewlineOnTouchEnter
             rows={2}
-            className="w-full resize-none bg-transparent p-2 text-base sm:text-sm leading-relaxed placeholder:text-on-surface-variant focus-visible:outline-none disabled:opacity-60"
+            className="chat-composer-input block max-h-[min(12rem,calc(var(--app-height,100dvh)*0.3))] w-full resize-none overflow-y-auto bg-transparent p-2 text-base sm:text-sm leading-relaxed placeholder:text-on-surface-variant focus-visible:outline-none disabled:opacity-60"
           />
           <div className="flex items-center justify-between gap-2">
             <button
@@ -267,7 +303,6 @@ export function ChatPanel({
             >
               <Plus size={16} />
             </button>
-            <ChatModelPicker />
             {streaming ? (
               <ComposerPrimitive.Cancel
                 data-testid="chat-cancel-button"

@@ -17,14 +17,17 @@ import {
   type Terminal,
   type TerminalsInfo,
 } from "@/api/client";
+import { terminalFontSize } from "@/lib/terminal-font-size";
 import {
   type ConnectionState,
   connectRuntime,
   createRuntime,
   disposeRuntime,
+  focusRuntime,
   loadGhostty,
   mountRuntime,
   type RuntimeCallbacks,
+  setRuntimeFontSize,
   type TerminalRuntime,
   unmountRuntime,
 } from "@/lib/terminal-runtime";
@@ -49,6 +52,8 @@ interface TerminalsContextValue {
   detach: (id: string) => void;
   sendInput: (id: string, data: string) => void;
   focus: (id: string) => void;
+  fontSizeOf: (id: string) => number;
+  setFontSize: (id: string, size: number) => void;
 }
 
 const TerminalsContext = createContext<TerminalsContextValue | null>(null);
@@ -75,6 +80,7 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
 
   const [connections, setConnections] = useState<Record<string, ConnectionState>>({});
   const [engineError, setEngineError] = useState<string | null>(null);
+  const [fontSizes, setFontSizes] = useState<Record<string, number>>({});
   const [lastActiveId, setLastActiveId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -107,6 +113,11 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
     if (runtime) disposeRuntime(runtime);
     runtimes.current.delete(id);
     pendingContainers.current.delete(id);
+    setFontSizes((previous) => {
+      if (!(id in previous)) return previous;
+      const { [id]: _removed, ...rest } = previous;
+      return rest;
+    });
     setConnections((previous) => {
       if (!(id in previous)) return previous;
       const { [id]: _removed, ...rest } = previous;
@@ -207,7 +218,9 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
       if (pendingContainers.current.get(id) !== container) return;
       let runtime = runtimes.current.get(id);
       if (!runtime) {
-        runtime = createRuntime(id);
+        runtime = createRuntime(id, (size) =>
+          setFontSizes((previous) => ({ ...previous, [id]: size })),
+        );
         runtimes.current.set(id, runtime);
       }
       mountRuntime(runtime, container, document.activeElement === focusedBeforeLoad);
@@ -236,7 +249,13 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
     runtime.socket.send(new TextEncoder().encode(input));
   }, []);
   const focus = useCallback((id: string) => {
-    runtimes.current.get(id)?.term.focus();
+    const runtime = runtimes.current.get(id);
+    if (runtime) focusRuntime(runtime);
+  }, []);
+  const fontSizeOf = useCallback((id: string) => fontSizes[id] ?? terminalFontSize(), [fontSizes]);
+  const setFontSize = useCallback((id: string, size: number) => {
+    const runtime = runtimes.current.get(id);
+    if (runtime) setRuntimeFontSize(runtime, size);
   }, []);
 
   const { refetch: refetchList } = query;
@@ -263,6 +282,8 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
       detach,
       sendInput,
       focus,
+      fontSizeOf,
+      setFontSize,
     }),
     [
       terminals,
@@ -282,6 +303,8 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
       detach,
       sendInput,
       focus,
+      fontSizeOf,
+      setFontSize,
     ],
   );
 

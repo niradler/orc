@@ -1,6 +1,7 @@
 import { ArrowDown, ChevronLeft, ChevronRight, RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LiveSession, TranscriptPage } from "@/api/client";
+import { AgentMessageText } from "@/components/AgentMessageText";
 import { Markdown } from "@/components/Markdown";
 import { ResumeActions } from "@/components/ResumeActions";
 import { SessionTaskLink } from "@/components/SessionTaskLink";
@@ -144,7 +145,8 @@ function ToolBox({
 }
 
 function Block({ block, matched }: { block: TurnBlock; matched: boolean }) {
-  if (block.type === "text") return <Markdown>{block.text}</Markdown>;
+  if (block.type === "text")
+    return <AgentMessageText revealContext={matched}>{block.text}</AgentMessageText>;
   if (block.type === "tool_use") return <ToolBox block={block} open={matched} />;
   const label = block.type === "thinking" ? "thinking" : "result";
   return (
