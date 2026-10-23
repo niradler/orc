@@ -1,6 +1,6 @@
 {
   "name": "@orc/web",
-  "version": "0.1.38",
+  "version": "0.1.39",
   "type": "module",
   "scripts": {
     "dev": "bun --env-file ../../.env vite",
@@ -68,6 +68,6 @@
     "autoprefixer": "^10.5.4",
     "postcss": "^8.5.23",
     "tailwindcss": "^3.4.19",
-    "vite": "^6.4.3"
+    "vite": "^6.4.5"
   }
 }

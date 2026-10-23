@@ -259,6 +259,7 @@ function WorkspaceTree(props: TreeProps) {
           <div className="absolute right-0 top-full z-30 w-60 rounded-md border border-outline-variant bg-surface-high p-2 shadow-lg">
             <button
               type="button"
+              data-testid="pane-action-split-horizontal"
               disabled={leaves(root).length >= 8}
               onClick={() => split("row")}
               className="w-full text-left min-h-11 px-2 rounded hover:bg-surface"
@@ -366,7 +367,7 @@ function WorkspaceTree(props: TreeProps) {
 }
 
 export function TerminalWorkspace(props: WorkspaceProps) {
-  const desktop = useBreakpoint("md");
+  const desktop = useBreakpoint("lg");
   const [params, setParams] = useSearchParams();
   const [layout, setLayout] = useState<Layout>(() => {
     try {
@@ -461,7 +462,7 @@ export function TerminalWorkspace(props: WorkspaceProps) {
         <nav
           aria-label="Workspace panes"
           data-testid="mobile-workspace-panes"
-          className="flex shrink-0 gap-1 overflow-x-auto border-b border-outline-variant bg-background p-2"
+          className="flex shrink-0 gap-1 overflow-x-auto border-b border-outline-variant bg-background px-2 py-1"
         >
           {panes.map((pane, index) => (
             <button

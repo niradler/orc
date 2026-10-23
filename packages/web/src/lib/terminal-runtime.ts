@@ -3,6 +3,7 @@ import { api, terminalSocketUrl } from "@/api/client";
 import { isMacPlatform, resolveTerminalKey } from "@/lib/terminal-keys";
 import { cellAt, cursorMoveKeys, isPlainClick } from "@/lib/terminal-mouse";
 import { writeTerminalOutput } from "@/lib/terminal-output";
+import { attachTerminalTouchScroll } from "@/lib/terminal-touch";
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "exited" | "closed";
 
@@ -194,6 +195,7 @@ export function createRuntime(id: string): TerminalRuntime {
   });
 
   attachClickToMove(runtime, encoder);
+  attachTerminalTouchScroll(element);
 
   return runtime;
 }

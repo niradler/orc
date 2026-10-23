@@ -253,7 +253,7 @@ export function KbDocumentPane({
               <button
                 type="button"
                 data-testid="kb-breadcrumb-kb"
-                className="shrink-0 hover:text-on-surface hover:underline"
+                className="min-w-0 max-w-[60%] truncate hover:text-on-surface hover:underline"
                 onClick={onHome}
               >
                 {kb.name}

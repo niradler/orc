@@ -1,6 +1,6 @@
 {
   "name": "@orc/api",
-  "version": "0.1.38",
+  "version": "0.1.39",
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
@@ -32,5 +32,8 @@
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.13",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@orc/sdk": "workspace:*"
   }
 }

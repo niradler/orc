@@ -1,4 +1,5 @@
 import type { KnowledgeBase } from "@orc/core/kb";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { ArrowLeft, BookOpen, ChevronRight, FileText, Menu, Plus, Search, X } from "lucide-react";
 import { type DragEvent, Fragment, type ReactNode, useEffect, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
@@ -20,6 +21,7 @@ import {
   useKbStatus,
   useKnowledgeBases,
 } from "@/hooks/useKnowledge";
+import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjectScope } from "@/hooks/useProjectScope";
 import { useProjects } from "@/hooks/useProjects";
 import { cn } from "@/lib/utils";
@@ -97,6 +99,7 @@ function KnowledgeBases({ projectId }: { projectId: string | undefined }) {
   useEffect(() => setQueryInput(query), [query]);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [navOpen, setNavOpen] = useState(false);
+  const wide = useBreakpoint("lg");
   // The details column fits beside a readable document only on wide screens.
   const [detailsOpen, setDetailsOpen] = useState(
     () => typeof window !== "undefined" && window.innerWidth >= 1600,
@@ -173,11 +176,8 @@ function KnowledgeBases({ projectId }: { projectId: string | undefined }) {
   }
 
   useEffect(() => {
-    if (!navOpen) return;
-    const close = (e: KeyboardEvent) => e.key === "Escape" && setNavOpen(false);
-    window.addEventListener("keydown", close);
-    return () => window.removeEventListener("keydown", close);
-  }, [navOpen]);
+    if (wide) setNavOpen(false);
+  }, [wide]);
 
   // Default to the first visible KB; drop a KB that no longer exists (deleted elsewhere).
   useEffect(() => {
@@ -292,176 +292,199 @@ function KnowledgeBases({ projectId }: { projectId: string | undefined }) {
     </Centered>
   ) : null;
 
-  return (
-    <div data-testid="knowledge-bases" className="relative flex min-h-0 min-w-0 flex-1">
-      <h1 data-testid="view-title" className="sr-only">
-        Knowledge bases
-      </h1>
-      <nav
-        id="kb-sidebar-panel"
-        aria-label="Knowledge bases"
-        data-testid="kb-sidebar"
-        className={cn(
-          "min-h-0 flex-col border-outline-variant bg-background lg:static lg:flex lg:w-72 lg:shrink-0 lg:border-r",
-          navOpen ? "absolute inset-0 z-20 flex" : "hidden",
-        )}
+  const sidebar = (
+    <nav
+      id="kb-sidebar-panel"
+      aria-label="Knowledge bases"
+      data-testid="kb-sidebar"
+      className="flex h-full min-h-0 flex-col border-outline-variant bg-background lg:w-72 lg:shrink-0 lg:border-r"
+    >
+      <form
+        className="flex shrink-0 items-center gap-1.5 border-b border-outline-variant p-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submitSearch();
+        }}
       >
-        <form
-          className="flex shrink-0 items-center gap-1.5 border-b border-outline-variant p-3"
-          onSubmit={(e) => {
-            e.preventDefault();
-            submitSearch();
-          }}
+        <Input
+          aria-label="Search knowledge"
+          data-testid="kb-search-input"
+          value={queryInput}
+          onChange={(e) => setQueryInput(e.target.value)}
+          placeholder={kb && !searchAll ? `Search ${kb.name}` : "Search everything"}
+          className="h-9 min-w-0 flex-1"
+        />
+        <Button
+          type="submit"
+          size="icon"
+          variant="ghost"
+          data-testid="kb-search-submit"
+          aria-label="Search"
         >
-          <Input
-            aria-label="Search knowledge"
-            data-testid="kb-search-input"
-            value={queryInput}
-            onChange={(e) => setQueryInput(e.target.value)}
-            placeholder={kb && !searchAll ? `Search ${kb.name}` : "Search everything"}
-            className="h-9 min-w-0 flex-1"
-          />
+          <Search size={16} />
+        </Button>
+        {navOpen && (
           <Button
-            type="submit"
+            type="button"
             size="icon"
             variant="ghost"
-            data-testid="kb-search-submit"
-            aria-label="Search"
+            data-testid="kb-browser-close"
+            aria-label="Close knowledge browser"
+            onClick={() => setNavOpen(false)}
           >
-            <Search size={16} />
+            <X size={16} />
           </Button>
-          {navOpen && (
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              aria-label="Close"
-              onClick={() => setNavOpen(false)}
-            >
-              <X size={16} />
-            </Button>
-          )}
-        </form>
-        {kb && (
-          <label className="flex shrink-0 items-center gap-2 border-b border-outline-variant px-3 py-2 text-xs text-outline">
-            <input
-              type="checkbox"
-              data-testid="kb-search-all"
-              checked={searchAll}
-              onChange={(e) => update({ searchAll: e.target.checked ? "1" : null })}
-            />
-            Search all knowledge bases
-          </label>
         )}
-        <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          <div className="flex items-center justify-between px-2 pb-1">
-            <h2 className="text-sm font-medium text-outline">Knowledge bases</h2>
-            <Button
-              size="icon"
-              variant="ghost"
-              aria-label="New knowledge base"
-              data-testid="kb-create"
-              onClick={() => setDialog("create")}
-            >
-              <Plus size={16} />
-            </Button>
-          </div>
-          {bases.isLoading && <Skeleton className="mx-2 h-9" />}
-          <KbTree
-            bases={bases.data ?? []}
-            projectName={projectName}
-            kbId={kbId}
-            documentId={documentId}
-            documents={listing.data?.documents ?? []}
-            onSelectKb={selectKb}
-            onOpenDocument={openDocument}
+      </form>
+      {kb && (
+        <label className="flex shrink-0 items-center gap-2 border-b border-outline-variant px-3 py-2 text-xs text-outline">
+          <input
+            type="checkbox"
+            data-testid="kb-search-all"
+            checked={searchAll}
+            onChange={(e) => update({ searchAll: e.target.checked ? "1" : null })}
           />
-        </div>
-        <KbStatusLine />
-      </nav>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: drop target; uploads also have a button */}
-      <div
-        data-testid="kb-dropzone"
-        className={cn(
-          "relative flex min-h-0 min-w-0 flex-1 flex-col",
-          dragging && "outline-2 -outline-offset-4 outline-dashed outline-primary",
-        )}
-        onDragOver={(e) => {
-          if (!kb) return;
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
-      >
-        <div className="flex shrink-0 items-center gap-2 border-b border-outline-variant px-3 py-2 lg:hidden">
+          Search all knowledge bases
+        </label>
+      )}
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
+        <div className="flex items-center justify-between px-2 pb-1">
+          <h2 className="text-sm font-medium text-outline">Knowledge bases</h2>
           <Button
+            size="icon"
             variant="ghost"
-            size="sm"
-            aria-expanded={navOpen}
-            aria-controls="kb-sidebar-panel"
-            onClick={() => setNavOpen(true)}
+            aria-label="New knowledge base"
+            data-testid="kb-create"
+            onClick={() => setDialog("create")}
           >
-            <Menu size={16} />
-            Browse
+            <Plus size={16} />
           </Button>
-          {kb && <span className="min-w-0 truncate text-sm text-outline">{kb.name}</span>}
         </div>
-        {documentId && query && (
-          <div className="flex shrink-0 items-center border-b border-outline-variant px-3 py-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              data-testid="kb-search-back"
-              className="min-w-0"
-              onClick={() => leaveDocument() && update({ document: null })}
-            >
-              <ArrowLeft size={14} />
-              <span className="truncate">Back to results for “{query}”</span>
-            </Button>
-          </div>
-        )}
-        <div className="flex min-h-0 min-w-0 flex-1">{content}</div>
-        <UploadQueue uploads={uploads} onOpen={openDocument} />
+        {bases.isLoading && <Skeleton className="mx-2 h-9" />}
+        <KbTree
+          bases={bases.data ?? []}
+          projectName={projectName}
+          kbId={kbId}
+          documentId={documentId}
+          documents={listing.data?.documents ?? []}
+          onSelectKb={selectKb}
+          onOpenDocument={openDocument}
+        />
       </div>
-      {dialog === "create" && (
-        <CreateKbDialog
-          open
-          projectId={projectId}
-          onClose={() => setDialog(null)}
-          onCreated={(created) => {
-            setDialog(null);
-            update({ kb: created.id, document: null, label: null, q: null });
+      <KbStatusLine />
+    </nav>
+  );
+
+  return (
+    <DialogPrimitive.Root open={navOpen && !wide} onOpenChange={setNavOpen}>
+      <div data-testid="knowledge-bases" className="relative flex min-h-0 min-w-0 flex-1">
+        <h1 data-testid="view-title" className="sr-only">
+          Knowledge bases
+        </h1>
+        {wide && sidebar}
+        {!wide && (
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70" />
+            <DialogPrimitive.Content
+              data-testid="kb-mobile-browser"
+              className="viewport-sheet fixed inset-x-0 z-50 bg-background"
+            >
+              <DialogPrimitive.Title className="sr-only">Browse knowledge</DialogPrimitive.Title>
+              <DialogPrimitive.Description className="sr-only">
+                Search knowledge bases and choose a document
+              </DialogPrimitive.Description>
+              {sidebar}
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        )}
+        {/* biome-ignore lint/a11y/noStaticElementInteractions: drop target; uploads also have a button */}
+        <div
+          data-testid="kb-dropzone"
+          className={cn(
+            "relative flex min-h-0 min-w-0 flex-1 flex-col",
+            dragging && "outline-2 -outline-offset-4 outline-dashed outline-primary",
+          )}
+          onDragOver={(e) => {
+            if (!kb) return;
+            e.preventDefault();
+            setDragging(true);
           }}
-        />
-      )}
-      {dialog === "settings" && kb && (
-        <KbSettingsDialog
-          kb={kb}
-          onClose={() => setDialog(null)}
-          onDeleted={() => {
-            setDialog(null);
-            update({ kb: null, document: null, label: null });
-          }}
-        />
-      )}
-      {dialog === "new-document" && kb && (
-        <NewDocumentDialog
-          kb={kb}
-          initialFile={droppedFile}
-          onClose={closeNewDocument}
-          onUploadMany={(files) => {
-            closeNewDocument();
-            uploads.add(kb.id, files);
-          }}
-          onCreated={(created, written) => {
-            closeNewDocument();
-            // An empty document opens ready to write; a pasted one opens to read.
-            update({ document: created.id, editorMode: written ? null : "edit" });
-          }}
-        />
-      )}
-    </div>
+          onDragLeave={() => setDragging(false)}
+          onDrop={onDrop}
+        >
+          <div className="flex shrink-0 items-center gap-2 border-b border-outline-variant px-3 py-2 lg:hidden">
+            <DialogPrimitive.Trigger asChild>
+              <Button
+                data-testid="kb-browser-open"
+                variant="ghost"
+                size="sm"
+                aria-expanded={navOpen}
+                aria-controls="kb-sidebar-panel"
+                onClick={() => setNavOpen(true)}
+              >
+                <Menu size={16} />
+                Browse
+              </Button>
+            </DialogPrimitive.Trigger>
+            {kb && <span className="min-w-0 truncate text-sm text-outline">{kb.name}</span>}
+          </div>
+          {documentId && query && (
+            <div className="flex shrink-0 items-center border-b border-outline-variant px-3 py-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="kb-search-back"
+                className="min-w-0"
+                onClick={() => leaveDocument() && update({ document: null })}
+              >
+                <ArrowLeft size={14} />
+                <span className="truncate">Back to results for “{query}”</span>
+              </Button>
+            </div>
+          )}
+          <div className="flex min-h-0 min-w-0 flex-1">{content}</div>
+          <UploadQueue uploads={uploads} onOpen={openDocument} />
+        </div>
+        {dialog === "create" && (
+          <CreateKbDialog
+            open
+            projectId={projectId}
+            onClose={() => setDialog(null)}
+            onCreated={(created) => {
+              setDialog(null);
+              setNavOpen(false);
+              update({ kb: created.id, document: null, label: null, q: null });
+            }}
+          />
+        )}
+        {dialog === "settings" && kb && (
+          <KbSettingsDialog
+            kb={kb}
+            onClose={() => setDialog(null)}
+            onDeleted={() => {
+              setDialog(null);
+              update({ kb: null, document: null, label: null });
+            }}
+          />
+        )}
+        {dialog === "new-document" && kb && (
+          <NewDocumentDialog
+            kb={kb}
+            initialFile={droppedFile}
+            onClose={closeNewDocument}
+            onUploadMany={(files) => {
+              closeNewDocument();
+              uploads.add(kb.id, files);
+            }}
+            onCreated={(created, written) => {
+              closeNewDocument();
+              // An empty document opens ready to write; a pasted one opens to read.
+              update({ document: created.id, editorMode: written ? null : "edit" });
+            }}
+          />
+        )}
+      </div>
+    </DialogPrimitive.Root>
   );
 }
 

@@ -111,9 +111,9 @@ export class CodexSession implements AgentSession {
 
   async start(opts: SessionOpts, prompt: string): Promise<void> {
     if (this.host.kind === "ssh") await ensureSshMaster(this.host);
-    const mcp = buildOrcMcpServer(this.host);
+    const mcp = opts.orcMcp === false ? null : buildOrcMcpServer(this.host);
     const env = buildCodexEnv();
-    if (mcp.headers?.Authorization) env.ORC_CODEX_MCP_TOKEN = mcp.headers.Authorization.slice(7);
+    if (mcp?.headers?.Authorization) env.ORC_CODEX_MCP_TOKEN = mcp.headers.Authorization.slice(7);
     const args = [...(await this.launcher(this.host)), "exec"];
     if (opts.runtimeSessionId) args.push("resume", opts.runtimeSessionId);
     args.push("--json", "--skip-git-repo-check", "-c", 'approval_policy="never"');
@@ -124,12 +124,14 @@ export class CodexSession implements AgentSession {
     // Codex merges table overrides, so adding a URL to an inherited stdio
     // entry retains its command and makes the transport configuration invalid.
     const mcpKey = `mcp_servers.orc_runtime_${this.id}`;
-    args.push("-c", "mcp_servers.orc.enabled=false");
-    args.push("-c", `${mcpKey}.url=${JSON.stringify(mcp.url)}`);
-    args.push("-c", `${mcpKey}.required=true`);
-    if (opts.autoApprove) args.push("-c", `${mcpKey}.default_tools_approval_mode="approve"`);
-    if (mcp.headers?.Authorization)
-      args.push("-c", `${mcpKey}.bearer_token_env_var="ORC_CODEX_MCP_TOKEN"`);
+    if (mcp) {
+      args.push("-c", "mcp_servers.orc.enabled=false");
+      args.push("-c", `${mcpKey}.url=${JSON.stringify(mcp.url)}`);
+      args.push("-c", `${mcpKey}.required=true`);
+      if (opts.autoApprove) args.push("-c", `${mcpKey}.default_tools_approval_mode="approve"`);
+      if (mcp.headers?.Authorization)
+        args.push("-c", `${mcpKey}.bearer_token_env_var="ORC_CODEX_MCP_TOKEN"`);
+    }
     if (opts.model) args.push("--model", opts.model);
     args.push("-");
 
@@ -142,7 +144,10 @@ export class CodexSession implements AgentSession {
     });
     this.proc = handle.proc;
     this.killProc = handle.kill;
-    writeToStdin(this.proc.stdin, new TextEncoder().encode(prompt));
+    writeToStdin(
+      this.proc.stdin,
+      new TextEncoder().encode([opts.systemPromptAppend, prompt].filter(Boolean).join("\n\n")),
+    );
     endStdin(this.proc.stdin);
 
     if (this.proc.stdout) {
@@ -184,6 +189,8 @@ export class CodexSession implements AgentSession {
       const id = String(item.id ?? ulid());
       if (item.type === "agent_message" && type === "item.completed") {
         this.push({ type: "text", data: String(item.text ?? "") });
+      } else if (item.type === "reasoning" && type === "item.completed") {
+        this.push({ type: "thinking", data: String(item.text ?? "") });
       } else if (item.type === "command_execution" || item.type === "mcp_tool_call") {
         if (type === "item.started") {
           this.push({
@@ -295,8 +302,8 @@ function createCodexBackend(): AgentBackend {
     name: "codex-cli",
     profileCapabilities: { model: true, toolAllowlist: false },
 
-    async preflight() {
-      const host = resolveExecHost();
+    async preflight(opts = {}) {
+      const host = sessionExecHost(opts);
       try {
         if (await hostBinary(host, "codex")) {
           const launch = await codexCommand(host);

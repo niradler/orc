@@ -1,5 +1,6 @@
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useQuery } from "@tanstack/react-query";
-import { FolderOpen, GitBranch, Plus, Trash2 } from "lucide-react";
+import { FolderOpen, GitBranch, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import {
   ApiError,
@@ -33,6 +34,7 @@ interface NewTerminalMenuProps {
   error: string | null;
   onCreate: (input: CreateTerminalInput) => Promise<boolean>;
   className?: string;
+  compact?: boolean;
 }
 
 type Removal = { worktree: Worktree; step: "confirm" | "dirty" };
@@ -63,6 +65,7 @@ export function NewTerminalMenu({
   error,
   onCreate,
   className,
+  compact = false,
 }: NewTerminalMenuProps) {
   const hostSelectId = useId();
   const [prefs] = useState(() => readLaunchPrefs(storage));
@@ -221,227 +224,262 @@ export function NewTerminalMenu({
     hostError?.message ??
     hostsError?.message ??
     hostInfo?.reason;
+  const MenuSurface = compact ? DialogPrimitive.Content : "div";
 
   return (
-    <div ref={rootRef} className={cn("relative", className)}>
-      <button
-        type="button"
-        data-testid="terminal-new"
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => onOpenChange(!open)}
-        className="w-full inline-flex items-center justify-center gap-2 min-h-11 px-3 py-2 rounded-md bg-primary border border-primary text-primary-foreground font-label text-xs hover:bg-primary/90 transition-colors"
-      >
-        <Plus size={14} />
-        New terminal
-      </button>
-      {open && (
-        <div
-          role="dialog"
-          aria-label="New terminal"
-          data-testid="terminal-launch-menu"
-          className="terminal-launch-controls absolute right-0 md:left-0 md:right-auto top-full mt-1 z-30 w-[22rem] max-w-[calc(100vw-2rem)] bg-surface-high border border-outline-variant rounded-lg shadow-xl p-3 space-y-3 max-h-[70dvh] overflow-y-auto"
+    <DialogPrimitive.Root open={compact && open} onOpenChange={onOpenChange}>
+      <div ref={rootRef} className={cn("relative", className)}>
+        <button
+          type="button"
+          data-testid="terminal-new"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={() => onOpenChange(!open)}
+          className="w-full min-w-11 inline-flex items-center justify-center gap-2 min-h-11 px-3 py-2 rounded-md bg-primary border border-primary text-primary-foreground font-label text-xs hover:bg-primary/90 transition-colors"
         >
-          <label
-            htmlFor={hostSelectId}
-            className="flex items-center gap-2 font-label text-xs text-on-surface-variant"
+          <Plus size={14} />
+          <span className={compact ? "sr-only" : undefined}>New terminal</span>
+        </button>
+        {compact && open && <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70" />}
+        {open && (
+          <MenuSurface
+            {...(compact
+              ? {
+                  onCloseAutoFocus: (event: Event) => {
+                    event.preventDefault();
+                    rootRef.current
+                      ?.querySelector<HTMLButtonElement>('[data-testid="terminal-new"]')
+                      ?.focus();
+                  },
+                }
+              : {})}
+            role="dialog"
+            aria-label="New terminal"
+            aria-describedby={undefined}
+            data-testid="terminal-launch-menu"
+            className={cn(
+              "terminal-launch-controls bg-surface-high border border-outline-variant rounded-lg shadow-xl p-3 space-y-3 overflow-y-auto overscroll-contain",
+              compact
+                ? "fixed inset-x-3 top-[calc(var(--app-top,0px)_+_env(safe-area-inset-top)_+_1rem)] z-50 max-h-[calc(var(--app-height,100dvh)-2rem)]"
+                : "absolute left-0 top-full mt-1 z-30 w-[22rem] max-w-[calc(100vw-2rem)] max-h-[70dvh]",
+            )}
           >
-            Host
-            <TerminalSelect
-              id={hostSelectId}
-              data-testid="terminal-host-select"
-              value={host ?? ""}
-              onChange={(event) => chooseHost(event.target.value || null)}
-              disabled={pending || browsing}
-              className=""
+            {compact && (
+              <div className="flex items-center justify-between">
+                <DialogPrimitive.Title className="text-sm font-medium">
+                  New terminal
+                </DialogPrimitive.Title>
+                <DialogPrimitive.Close
+                  className="flex size-11 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface"
+                  aria-label="Close terminal launcher"
+                >
+                  <X size={18} />
+                </DialogPrimitive.Close>
+              </div>
+            )}
+            <label
+              htmlFor={hostSelectId}
+              className="flex items-center gap-2 text-sm text-on-surface-variant"
             >
-              <option value="">Local</option>
-              {[...new Set([...(ssh?.hosts ?? []), ...(ssh?.host ? [ssh.host] : [])])].map(
-                (alias) => (
-                  <option key={alias} value={alias}>
-                    {alias}
-                  </option>
-                ),
-              )}
-            </TerminalSelect>
-          </label>
-          <label className="block">
-            <span className="font-label text-xs text-on-surface-variant">
-              Working directory
-              {host && (
-                <span
-                  data-testid="terminal-host"
-                  className="ml-1 px-1 rounded-md bg-surface-highest text-on-surface normal-case tracking-normal"
-                >
-                  on {host}
-                </span>
-              )}
-            </span>
-            <div className="mt-1 flex gap-1">
-              <input
-                type="text"
-                data-testid="terminal-cwd"
-                value={cwd}
-                onChange={(e) => chooseFolder(e.target.value)}
-                placeholder="~ (home folder)"
-                spellCheck={false}
-                className="terminal-field flex-1"
-              />
-              <button
-                type="button"
-                data-testid="terminal-browse"
-                disabled={busy}
-                onClick={() => void browse()}
-                title="Choose a folder"
-                className="shrink-0 inline-flex items-center gap-1 min-h-11 px-2 py-1 rounded-md border border-control-border font-label text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-50"
+              Host
+              <TerminalSelect
+                id={hostSelectId}
+                data-testid="terminal-host-select"
+                value={host ?? ""}
+                onChange={(event) => chooseHost(event.target.value || null)}
+                disabled={pending || browsing}
               >
-                <FolderOpen size={12} />
-                {browsing ? "Choosing" : "Browse"}
-              </button>
-            </div>
-          </label>
-          {host && remoteBrowsing && (
-            <RemoteFolderBrowser
-              key={host}
-              host={host}
-              initial={cwd.trim()}
-              onPick={(path) => {
-                chooseFolder(path);
-                setRemoteBrowsing(false);
-              }}
-              onClose={() => setRemoteBrowsing(false)}
-            />
-          )}
-          <label className="flex items-center gap-2 px-1 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              data-testid="terminal-worktree"
-              checked={worktree}
-              onChange={(e) => {
-                setWorktree(e.target.checked);
-                saveLaunchPref(storage, WORKTREE_KEY, e.target.checked ? "1" : "0");
-              }}
-              className="accent-primary"
-            />
-            <span className="font-body text-xs text-on-surface-variant">
-              New git worktree for agents
-            </span>
-          </label>
-          <div className="space-y-0.5">
-            {launchers.map((kind) => {
-              const { label, icon: Icon } = TERMINAL_KINDS[kind];
-              return (
+                <option value="">Local</option>
+                {[...new Set([...(ssh?.hosts ?? []), ...(ssh?.host ? [ssh.host] : [])])].map(
+                  (alias) => (
+                    <option key={alias} value={alias}>
+                      {alias}
+                    </option>
+                  ),
+                )}
+              </TerminalSelect>
+            </label>
+            <label className="block">
+              <span className="font-label text-xs text-on-surface-variant">
+                Working directory
+                {host && (
+                  <span
+                    data-testid="terminal-host"
+                    className="ml-1 px-1 rounded-md bg-surface-highest text-on-surface normal-case tracking-normal"
+                  >
+                    on {host}
+                  </span>
+                )}
+              </span>
+              <div className="mt-1 flex gap-1">
+                <input
+                  type="text"
+                  data-testid="terminal-cwd"
+                  value={cwd}
+                  onChange={(e) => chooseFolder(e.target.value)}
+                  placeholder="~ (home folder)"
+                  spellCheck={false}
+                  className="min-w-0 flex-1 bg-background border border-control-border rounded-md min-h-11 px-2 py-1 font-body text-base sm:text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-focus"
+                />
                 <button
-                  key={kind}
                   type="button"
-                  data-testid={`terminal-launch-${kind}`}
+                  data-testid="terminal-browse"
                   disabled={busy}
-                  onClick={() => void launch(kind)}
-                  className="w-full flex items-center gap-2 min-h-11 px-2 py-1.5 rounded-md font-label text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-50"
+                  onClick={() => void browse()}
+                  title="Choose a folder"
+                  className="shrink-0 inline-flex items-center gap-1 min-h-11 px-2 py-1 rounded-md border border-control-border font-label text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-50"
                 >
-                  <Icon size={14} />
-                  {label}
+                  <FolderOpen size={12} />
+                  {browsing ? "Choosing" : "Browse"}
                 </button>
-              );
-            })}
-            {launchers.length === 0 && (
-              <p className="min-h-11 px-2 py-1 font-body text-base sm:text-sm text-on-surface-variant">
-                No launchers available
+              </div>
+            </label>
+            {host && remoteBrowsing && (
+              <RemoteFolderBrowser
+                key={host}
+                host={host}
+                initial={cwd.trim()}
+                onPick={(path) => {
+                  chooseFolder(path);
+                  setRemoteBrowsing(false);
+                }}
+                onClose={() => setRemoteBrowsing(false)}
+              />
+            )}
+            <label className="flex items-center gap-2 px-1 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                data-testid="terminal-worktree"
+                checked={worktree}
+                onChange={(e) => {
+                  setWorktree(e.target.checked);
+                  saveLaunchPref(storage, WORKTREE_KEY, e.target.checked ? "1" : "0");
+                }}
+                className="accent-primary"
+              />
+              <span className="font-body text-xs text-on-surface-variant">
+                New git worktree for agents
+              </span>
+            </label>
+            <div className="space-y-0.5">
+              {launchers.map((kind) => {
+                const { label, icon: Icon } = TERMINAL_KINDS[kind];
+                return (
+                  <button
+                    key={kind}
+                    type="button"
+                    data-testid={`terminal-launch-${kind}`}
+                    disabled={busy}
+                    onClick={() => void launch(kind)}
+                    className="w-full flex items-center gap-2 min-h-11 px-2 py-1.5 rounded-md font-label text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-50"
+                  >
+                    <Icon size={14} />
+                    {label}
+                  </button>
+                );
+              })}
+              {launchers.length === 0 && (
+                <p className="min-h-11 px-2 py-1 font-body text-base sm:text-sm text-on-surface-variant">
+                  No launchers available
+                </p>
+              )}
+            </div>
+            {rows.length > 0 && (
+              <div
+                data-testid="terminal-worktrees"
+                className="border-t border-surface-highest pt-2"
+              >
+                <p className="px-1 pb-1 font-label text-xs text-on-surface-variant">Checkouts</p>
+                <ul className="max-h-56 overflow-y-auto space-y-0.5">
+                  {rows.map((row) => (
+                    <li
+                      key={row.path}
+                      data-testid="terminal-worktree-row"
+                      className="group flex items-center gap-2 px-1 py-1 rounded-md hover:bg-surface"
+                    >
+                      <div className="min-w-0 flex-1" title={row.path}>
+                        <div className="flex items-center gap-1 font-body text-xs text-on-surface">
+                          <GitBranch size={11} className="shrink-0 text-on-surface-variant" />
+                          <span className="truncate">
+                            {row.branch ?? (row.head ? row.head.slice(0, 8) : "detached")}
+                          </span>
+                          {row.main && (
+                            <span className="shrink-0 px-1 rounded-md bg-surface-highest text-on-surface font-label text-xs">
+                              main
+                            </span>
+                          )}
+                          {row.dirty && (
+                            <span className="shrink-0 px-1 rounded-md text-tertiary font-label text-xs">
+                              dirty
+                            </span>
+                          )}
+                          {row.prunable && (
+                            <span className="shrink-0 px-1 rounded-md text-error font-label text-xs">
+                              missing
+                            </span>
+                          )}
+                        </div>
+                        <div className="truncate font-body text-xs text-on-surface-variant">
+                          {cwdTail(row.path)}
+                        </div>
+                      </div>
+                      {!row.prunable &&
+                        launchers.map((kind) => {
+                          const { label, icon: Icon } = TERMINAL_KINDS[kind];
+                          return (
+                            <button
+                              key={kind}
+                              type="button"
+                              data-testid={`terminal-worktree-open-${kind}`}
+                              disabled={busy}
+                              onClick={() => openCheckout(kind, row)}
+                              title={`Open ${label} here`}
+                              aria-label={`Open ${label} in ${row.path}`}
+                              className="shrink-0 min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center p-1 rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-50"
+                            >
+                              <Icon size={12} />
+                            </button>
+                          );
+                        })}
+                      {!row.main && (
+                        <button
+                          type="button"
+                          data-testid="terminal-worktree-remove"
+                          disabled={busy || removeWorktree.isPending}
+                          onClick={() => setRemoval({ worktree: row, step: "confirm" })}
+                          title="Remove worktree"
+                          aria-label={`Remove worktree ${row.path}`}
+                          className="shrink-0 min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center p-1 rounded-md text-on-surface-variant hover:bg-error/15 hover:text-error disabled:opacity-50"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {shownError && (
+              <p role="alert" className="px-1 font-body text-xs text-error break-words">
+                {shownError}
               </p>
             )}
-          </div>
-          {rows.length > 0 && (
-            <div data-testid="terminal-worktrees" className="border-t border-surface-highest pt-2">
-              <p className="px-1 pb-1 font-label text-xs text-on-surface-variant">Checkouts</p>
-              <ul className="max-h-56 overflow-y-auto space-y-0.5">
-                {rows.map((row) => (
-                  <li
-                    key={row.path}
-                    data-testid="terminal-worktree-row"
-                    className="group flex items-center gap-2 px-1 py-1 rounded-md hover:bg-surface"
-                  >
-                    <div className="min-w-0 flex-1" title={row.path}>
-                      <div className="flex items-center gap-1 font-body text-xs text-on-surface">
-                        <GitBranch size={11} className="shrink-0 text-on-surface-variant" />
-                        <span className="truncate">
-                          {row.branch ?? (row.head ? row.head.slice(0, 8) : "detached")}
-                        </span>
-                        {row.main && (
-                          <span className="shrink-0 px-1 rounded-md bg-surface-highest text-on-surface font-label text-xs">
-                            main
-                          </span>
-                        )}
-                        {row.dirty && (
-                          <span className="shrink-0 px-1 rounded-md text-tertiary font-label text-xs">
-                            dirty
-                          </span>
-                        )}
-                        {row.prunable && (
-                          <span className="shrink-0 px-1 rounded-md text-error font-label text-xs">
-                            missing
-                          </span>
-                        )}
-                      </div>
-                      <div className="truncate font-body text-xs text-on-surface-variant">
-                        {cwdTail(row.path)}
-                      </div>
-                    </div>
-                    {!row.prunable &&
-                      launchers.map((kind) => {
-                        const { label, icon: Icon } = TERMINAL_KINDS[kind];
-                        return (
-                          <button
-                            key={kind}
-                            type="button"
-                            data-testid={`terminal-worktree-open-${kind}`}
-                            disabled={busy}
-                            onClick={() => openCheckout(kind, row)}
-                            title={`Open ${label} here`}
-                            aria-label={`Open ${label} in ${row.path}`}
-                            className="shrink-0 min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center p-1 rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-50"
-                          >
-                            <Icon size={12} />
-                          </button>
-                        );
-                      })}
-                    {!row.main && (
-                      <button
-                        type="button"
-                        data-testid="terminal-worktree-remove"
-                        disabled={busy || removeWorktree.isPending}
-                        onClick={() => setRemoval({ worktree: row, step: "confirm" })}
-                        title="Remove worktree"
-                        aria-label={`Remove worktree ${row.path}`}
-                        className="shrink-0 min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center p-1 rounded-md text-on-surface-variant hover:bg-error/15 hover:text-error disabled:opacity-50"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {shownError && (
-            <p role="alert" className="px-1 font-body text-xs text-error break-words">
-              {shownError}
-            </p>
-          )}
-        </div>
-      )}
-      <ConfirmDialog
-        open={removal !== null}
-        onCancel={() => setRemoval(null)}
-        onConfirm={confirmRemove}
-        isPending={removeWorktree.isPending}
-        title={removal?.step === "dirty" ? "Discard uncommitted changes?" : "Remove worktree?"}
-        description={
-          removal?.step === "dirty"
-            ? `${removal.worktree.path} has uncommitted changes. Removing it deletes them for good.`
-            : `Deletes the folder ${removal?.worktree.path ?? ""}. The branch ${removal?.worktree.branch ?? ""} is kept.`
-        }
-        confirmLabel={removal?.step === "dirty" ? "Discard and remove" : "Remove"}
-      />
-    </div>
+          </MenuSurface>
+        )}
+        <ConfirmDialog
+          open={removal !== null}
+          onCancel={() => setRemoval(null)}
+          onConfirm={confirmRemove}
+          isPending={removeWorktree.isPending}
+          title={removal?.step === "dirty" ? "Discard uncommitted changes?" : "Remove worktree?"}
+          description={
+            removal?.step === "dirty"
+              ? `${removal.worktree.path} has uncommitted changes. Removing it deletes them for good.`
+              : `Deletes the folder ${removal?.worktree.path ?? ""}. The branch ${removal?.worktree.branch ?? ""} is kept.`
+          }
+          confirmLabel={removal?.step === "dirty" ? "Discard and remove" : "Remove"}
+        />
+      </div>
+    </DialogPrimitive.Root>
   );
 }

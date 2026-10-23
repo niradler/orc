@@ -8,6 +8,17 @@ const timestamps = {
   updated_at: integer("updated_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
 };
 
+export const chat_threads = sqliteTable(
+  "chat_threads",
+  {
+    id: text("id").primaryKey(),
+    title: text("title").notNull(),
+    updated_at: integer("updated_at").notNull(),
+    data: text("data").notNull(),
+  },
+  (t) => [index("chat_threads_updated_idx").on(t.updated_at)],
+);
+
 export const projects = sqliteTable(
   "projects",
   {

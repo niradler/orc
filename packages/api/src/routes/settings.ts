@@ -1,4 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
+import { ChatSettingsSchema } from "@orc/core/chat";
 import { loadConfig, updateGlobalConfig } from "@orc/core/config";
 import { createRouter } from "../lib/router.js";
 
@@ -7,6 +8,7 @@ const PreferencesSchema = z
   .object({
     theme: z.enum(["dark", "light"]).optional(),
     terminal_font: z.string().trim().max(200).optional(),
+    chat: ChatSettingsSchema.optional(),
   })
   .strict();
 const response = {

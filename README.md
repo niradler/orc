@@ -124,6 +124,38 @@ orc task list
 
 Open `http://localhost:7700` to use the web dashboard - task board, kanban, flow runs, jobs, memories, sessions, knowledge, and a live chat panel. The same server hosts both the REST API and the prebuilt React SPA, so there is no separate command to run for the UI.
 
+Chat uses the shared agent runtime: Claude through its SDK, Codex through its native
+CLI, and other agents through ACPX. Choose a model from the composer; configure
+model choices, conversation instructions, the ORC MCP connection and automatic
+actions in **Settings → Chat**. Defaults are stored in `preferences.chat` in ORC's
+JSON configuration and apply to new conversations on every device. The model
+dialog shows the current conversation's setup. Claude appends the instructions
+to its coding system prompt; Codex and ACPX receive them as turn instructions.
+Agent and workspace instructions may also apply.
+
+Automatic actions default off: Claude can request approval in chat, Codex uses a
+read-only sandbox, and ACPX follows its agent's native permission policy. Enabling
+automatic actions lets Claude bypass permission prompts and Codex write inside
+its workspace; ORC rules remain enforced. The ORC MCP option adds an authenticated
+connection for Claude and Codex without exposing credentials to the browser.
+Host configuration can include additional MCP servers; choosing host configuration
+does not disable those servers. Other ACPX agents require host configuration.
+
+Use the history icon to continue a saved chat or an ended Claude/Codex coding
+session. Synced sessions use the existing verified repository/commit handoff;
+provide missing checkout details before importing. Native history stays with the
+agent, while chat displays up to 100 recent imported turns. An active source session
+must end before chat resumes it. Resume failures never trigger a fresh session.
+New chats use the API working directory locally or the selected SSH host's home;
+resumed chats retain their execution host and folder. New conversation keeps the
+previous chat in history.
+
+Responses show provider-supplied text, collapsible thinking summaries and tool
+input/results as they arrive, with a responding indicator during quiet periods.
+Some providers emit complete blocks rather than individual tokens. Conversation
+messages and activity are saved in the ORC database. Full-screen mode preserves
+the conversation; phones and tablets use a full-screen chat sheet automatically.
+
 > [!TIP]
 > The database is created automatically at `~/.orc/orc.db` on first run. No setup needed.
 

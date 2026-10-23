@@ -14,7 +14,7 @@
     },
     "packages/agent-runtime": {
       "name": "@orc/agent-runtime",
-      "version": "0.1.38",
+      "version": "0.1.39",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.3.220",
         "@orc/core": "workspace:*",
@@ -26,7 +26,7 @@
     },
     "packages/api": {
       "name": "@orc/api",
-      "version": "0.1.38",
+      "version": "0.1.39",
       "dependencies": {
         "@hono/swagger-ui": "^0.6.1",
         "@hono/zod-openapi": "^1.5.1",
@@ -44,10 +44,13 @@
         "hono": "^4.13.13",
         "zod": "^4.4.3",
       },
+      "devDependencies": {
+        "@orc/sdk": "workspace:*",
+      },
     },
     "packages/cli": {
       "name": "orc-ai",
-      "version": "0.1.38",
+      "version": "0.1.39",
       "bin": {
         "orc": "dist/index.js",
       },
@@ -79,7 +82,7 @@
     },
     "packages/core": {
       "name": "@orc/core",
-      "version": "0.1.38",
+      "version": "0.1.39",
       "dependencies": {
         "ajv": "^8.18.0",
         "re2js": "2.8.6",
@@ -89,7 +92,7 @@
     },
     "packages/db": {
       "name": "@orc/db",
-      "version": "0.1.38",
+      "version": "0.1.39",
       "dependencies": {
         "@orc/core": "workspace:*",
         "drizzle-orm": "^0.45.2",
@@ -100,7 +103,7 @@
     },
     "packages/desktop": {
       "name": "@orc/desktop",
-      "version": "0.1.38",
+      "version": "0.1.39",
       "devDependencies": {
         "electron": "44.5.1",
         "electron-builder": "^26.15.3",
@@ -108,7 +111,7 @@
     },
     "packages/gateway": {
       "name": "@orc/gateway",
-      "version": "0.1.38",
+      "version": "0.1.39",
       "dependencies": {
         "@orc/agent-runtime": "workspace:*",
         "@orc/core": "workspace:*",
@@ -121,7 +124,7 @@
     },
     "packages/knowledge": {
       "name": "@orc/knowledge",
-      "version": "0.1.38",
+      "version": "0.1.39",
       "dependencies": {
         "@orc/core": "workspace:*",
         "@orc/db": "workspace:*",
@@ -139,7 +142,7 @@
     },
     "packages/mcp": {
       "name": "@orc/mcp",
-      "version": "0.1.38",
+      "version": "0.1.39",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.32.1",
         "@orc/core": "workspace:*",
@@ -156,7 +159,7 @@
     },
     "packages/runner": {
       "name": "@orc/runner",
-      "version": "0.1.38",
+      "version": "0.1.39",
       "dependencies": {
         "@orc/agent-runtime": "workspace:*",
         "@orc/core": "workspace:*",
@@ -169,7 +172,7 @@
     },
     "packages/sdk": {
       "name": "@orc/sdk",
-      "version": "0.1.38",
+      "version": "0.1.39",
       "dependencies": {
         "@orc/core": "workspace:*",
       },
@@ -179,7 +182,7 @@
     },
     "packages/task-service": {
       "name": "@orc/task-service",
-      "version": "0.1.38",
+      "version": "0.1.39",
       "dependencies": {
         "@orc/core": "workspace:*",
         "@orc/db": "workspace:*",
@@ -189,7 +192,7 @@
     },
     "packages/web": {
       "name": "@orc/web",
-      "version": "0.1.38",
+      "version": "0.1.39",
       "dependencies": {
         "@assistant-ui/react": "^0.15.28",
         "@codemirror/commands": "^6.11.1",
@@ -244,7 +247,7 @@
         "autoprefixer": "^10.5.4",
         "postcss": "^8.5.23",
         "tailwindcss": "^3.4.19",
-        "vite": "^6.4.3",
+        "vite": "^6.4.5",
       },
     },
   },
@@ -257,6 +260,7 @@
   },
   "overrides": {
     "@modelcontextprotocol/sdk": "1.32.1",
+    "dompurify": "3.4.17",
     "ip-address": "10.7.3",
     "js-yaml": "4.3.2",
     "react": "19.2.8",
@@ -1233,7 +1237,7 @@
 
     "dmg-builder": ["dmg-builder@26.15.3", "", { "dependencies": { "app-builder-lib": "26.15.3", "builder-util": "26.15.3", "fs-extra": "^10.1.0", "js-yaml": "^4.1.0" } }, "sha512-O3zJUFUYHJKgzPqioHxfxzBzlSC1eXCSr79gMSBKBP5AgjjpmrydMsMLotEg9fAJF36vdUncb+4ndRNxoPdlSQ=="],
 
-    "dompurify": ["dompurify@3.4.16", "", { "optionalDependencies": { "@types/trusted-types": "^2.0.7" } }, "sha512-sqo+pNp3qRhCIpbgRi1y8Tgk27Bo2Ry7w0dC1NBeNTdZChWjz9Xb/KOoZbRP/R6pQZ80Qw8YhXw13hWWBbMRnQ=="],
+    "dompurify": ["dompurify@3.4.17", "", { "optionalDependencies": { "@types/trusted-types": "^2.0.7" } }, "sha512-B/pSlYVHQ58kqISD/yDjuJ1yfzI34m1gF4lAod2bwSRhiN4K5Cl3H8Af7hqB2PmTL911tdEudnnXn5FnhRoz0w=="],
 
     "dotenv": ["dotenv@16.6.1", "", {}, "sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow=="],
 
@@ -2135,7 +2139,7 @@
 
     "vfile-message": ["vfile-message@4.0.3", "", { "dependencies": { "@types/unist": "^3.0.0", "unist-util-stringify-position": "^4.0.0" } }, "sha512-QTHzsGd1EhbZs4AsQ20JX1rC3cOlt/IWJruk893DfLRr57lcnOeMaWG4K0JrRta4mIJZKth2Au3mM3u03/JWKw=="],
 
-    "vite": ["vite@6.4.3", "", { "dependencies": { "esbuild": "^0.25.0", "fdir": "^6.4.4", "picomatch": "^4.0.2", "postcss": "^8.5.3", "rollup": "^4.34.9", "tinyglobby": "^0.2.13" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^18.0.0 || ^20.0.0 || >=22.0.0", "jiti": ">=1.21.0", "less": "*", "lightningcss": "^1.21.0", "sass": "*", "sass-embedded": "*", "stylus": "*", "sugarss": "*", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "jiti", "less", "lightningcss", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-NTKlcQjlAK7MlQoyb6LgaqHc8sso/pVyUJYWMws3jg21uTJw/LddqIFPcPqP6PzpgbIcZyKI85sFE4HBrQDA8A=="],
+    "vite": ["vite@6.4.5", "", { "dependencies": { "esbuild": "^0.25.0", "fdir": "^6.4.4", "picomatch": "^4.0.2", "postcss": "^8.5.3", "rollup": "^4.34.9", "tinyglobby": "^0.2.13" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^18.0.0 || ^20.0.0 || >=22.0.0", "jiti": ">=1.21.0", "less": "*", "lightningcss": "^1.21.0", "sass": "*", "sass-embedded": "*", "stylus": "*", "sugarss": "*", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "jiti", "less", "lightningcss", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-4enwjFfi4IwtEh0w+jPzpLVOFQiPHmmzPxcHXQOyEur47o6u0jE573DmGpjA+7irXoMLYRZD5ZaFUEneS3abPg=="],
 
     "w3c-keyname": ["w3c-keyname@2.2.8", "", {}, "sha512-dpojBhNsCNN7T82Tm7k26A6G9ML3NkhDsnw9n/eoxSRlVBB4CEtIQ/KTCLI2Fwf3ataSXRhYFkQi3SlnFwPvPQ=="],
 

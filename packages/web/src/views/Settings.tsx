@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle, Save } from "lucide-react";
 import { useState } from "react";
 import { api, getApiUrl } from "@/api/client";
+import { ChatSettingsForm } from "@/components/ChatSettingsForm";
 import { KnowledgeSettings } from "@/components/kb/KnowledgeSettings";
 import { ServerSettings } from "@/components/ServerSettings";
 import { SshHostSettings } from "@/components/SshHostSettings";
@@ -155,6 +156,8 @@ export default function Settings() {
 
         <SshHostSettings />
         <ServerSettings />
+
+        <ChatSettingsForm />
 
         <KnowledgeSettings />
 

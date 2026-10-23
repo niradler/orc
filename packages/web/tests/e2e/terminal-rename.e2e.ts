@@ -23,12 +23,12 @@ for (const width of [1440, 390]) {
     await page.goto(`/terminals/${terminal.id}?project=all`);
     await expect(page.getByTestId("terminal-viewport")).toBeVisible();
     await expect.poll(() => sockets).toBe(1);
-    await page.getByTestId("terminal-actions").click();
+    await page.getByTestId(width < 1024 ? "terminal-options" : "terminal-actions").click();
     await page.getByTestId("terminal-rename").click();
     await page.getByTestId("terminal-rename-input").fill("Cancelled name");
     await page.getByTestId("terminal-rename-cancel").click();
     await expect(page.getByTestId("terminal-name")).toHaveText(terminal.name);
-    await page.getByTestId("terminal-actions").click();
+    await page.getByTestId(width < 1024 ? "terminal-options" : "terminal-actions").click();
     await page.getByTestId("terminal-rename").click();
     await page.getByTestId("terminal-rename-input").fill("   ");
     await expect(page.getByTestId("terminal-rename-save")).toBeDisabled();
@@ -52,7 +52,7 @@ for (const width of [1440, 390]) {
     );
     expect(updated.pid).toBe(terminal.pid);
     expect(updated.status).toBe("running");
-    await page.getByTestId("terminal-actions").click();
+    await page.getByTestId(width < 1024 ? "terminal-options" : "terminal-actions").click();
     await page.getByTestId("terminal-rename").click();
     await page.route(`**/api/terminals/${terminal.id}`, async (route) => {
       if (route.request().method() === "PATCH")

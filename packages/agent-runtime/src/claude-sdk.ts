@@ -203,7 +203,7 @@ class ClaudeSDKSession implements AgentSession {
                 mcpServers: buildOrcMcpServers(this.host, this.opts.mcpAlwaysLoad),
                 allowedTools: [...this.opts.toolAllowlist, ORC_TOOLS_RULE],
               }
-            : this.opts.ruleGuard
+            : this.opts.ruleGuard || this.opts.orcMcp
               ? { mcpServers: buildOrcMcpServers(this.host, this.opts.mcpAlwaysLoad) }
               : {}),
           systemPrompt: {
@@ -280,6 +280,23 @@ class ClaudeSDKSession implements AgentSession {
           continue;
         }
 
+        if (msg.type === "user" && Array.isArray(msg.message.content)) {
+          for (const block of msg.message.content) {
+            if (block.type === "tool_result")
+              this.push({
+                type: "tool_result",
+                data: {
+                  toolUseId: block.tool_use_id,
+                  content:
+                    typeof block.content === "string"
+                      ? block.content
+                      : JSON.stringify(block.content ?? ""),
+                  isError: block.is_error ?? false,
+                },
+              });
+          }
+        }
+
         if (msg.type === "result") {
           this.runtimeSessionId = msg.session_id;
           if (msg.is_error) {
@@ -337,7 +354,13 @@ class ClaudeSDKSession implements AgentSession {
     return !this.done;
   }
 
+  getRuntimeSessionId(): string | undefined {
+    return this.runtimeSessionId;
+  }
+
   async close(): Promise<void> {
+    for (const resolve of this.permissionResolvers.values()) resolve("denied");
+    this.permissionResolvers.clear();
     this.abortController?.abort();
     this.abortController = null;
     this.done = true;
@@ -379,8 +402,8 @@ function createClaudeSDKBackend(): AgentBackend {
     name: "claude",
     profileCapabilities: { model: true, toolAllowlist: true },
 
-    async preflight() {
-      const host = resolveExecHost();
+    async preflight(opts = {}) {
+      const host = sessionExecHost(opts);
       if (host.kind === "ssh") return sshPreflight(host);
       try {
         await import("@anthropic-ai/claude-agent-sdk");

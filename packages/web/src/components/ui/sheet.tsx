@@ -35,8 +35,8 @@ const SheetContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed z-50 flex flex-col bg-surface-high border-l border-surface-highest shadow-lg",
-        "inset-y-0 h-full w-[480px] max-w-[90vw]",
+        "viewport-sheet fixed z-50 flex flex-col bg-surface-high border-l border-surface-highest shadow-lg",
+        "w-[480px] max-w-full sm:max-w-[90vw]",
         "data-[state=open]:animate-in data-[state=closed]:animate-out",
         side === "right"
           ? "right-0 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right"
@@ -91,7 +91,15 @@ function SheetDescription({ className, ...props }: React.HTMLAttributes<HTMLPara
 }
 
 function SheetBody({ className, ...props }: React.ComponentPropsWithRef<"div">) {
-  return <div className={cn("flex-1 overflow-y-auto px-4 sm:px-6 py-4", className)} {...props} />;
+  return (
+    <div
+      className={cn(
+        "min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 sm:px-6 py-4",
+        className,
+      )}
+      {...props}
+    />
+  );
 }
 
 function SheetFooter({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

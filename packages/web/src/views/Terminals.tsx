@@ -1,3 +1,4 @@
+import { MoreHorizontal } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { CreateTerminalInput, Terminal } from "@/api/client";
@@ -6,13 +7,14 @@ import { ErrorState } from "@/components/ErrorState";
 import { ResumeActions } from "@/components/ResumeActions";
 import { NewTerminalMenu } from "@/components/terminals/NewTerminalMenu";
 import { RenameTerminal } from "@/components/terminals/RenameTerminal";
-import { TerminalActions } from "@/components/terminals/TerminalActions";
 import { TerminalCheckout } from "@/components/terminals/TerminalCheckout";
 import { TerminalList } from "@/components/terminals/TerminalList";
 import { TerminalSelect } from "@/components/terminals/TerminalSelect";
+import { TerminalTouchControls } from "@/components/terminals/TerminalTouchControls";
 import { TerminalWorkspace } from "@/components/terminals/TerminalWorkspace";
 import { WorktreeRegistry } from "@/components/terminals/WorktreeRegistry";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
@@ -41,19 +43,22 @@ function TerminalViewport({ terminalId }: { terminalId: string }) {
   }, [terminalId, attach, detach]);
 
   return (
-    <div
-      ref={ref}
-      data-testid="terminal-viewport"
-      className="relative flex-1 min-h-0 min-w-0 bg-black"
-    >
-      {engineError && (
-        <p
-          role="alert"
-          className="absolute inset-0 flex items-center justify-center p-4 bg-surface text-error font-label text-xs text-center"
-        >
-          Terminal renderer failed to load: {engineError}
-        </p>
-      )}
+    <div className="flex flex-1 min-h-0 min-w-0 flex-col">
+      <div
+        ref={ref}
+        data-testid="terminal-viewport"
+        className="relative flex-1 min-h-0 min-w-0 bg-black"
+      >
+        {engineError && (
+          <p
+            role="alert"
+            className="absolute inset-0 flex items-center justify-center p-4 bg-surface text-error font-label text-xs text-center"
+          >
+            Terminal renderer failed to load: {engineError}
+          </p>
+        )}
+      </div>
+      <TerminalTouchControls terminalId={terminalId} />
     </div>
   );
 }
@@ -134,7 +139,7 @@ export default function Terminals() {
   const navigate = useNavigate();
   const { terminals, info, isLoading, error, refetch, lastActiveId, connectionOf, create, remove } =
     useTerminals();
-  const isDesktop = useBreakpoint("md");
+  const isDesktop = useBreakpoint("lg");
   const { data: ssh } = useSsh();
   const sidebar = usePanelWidth({
     storageKey: "orc_terminal_sidebar_width",
@@ -144,6 +149,8 @@ export default function Terminals() {
   });
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const optionsButtonRef = useRef<HTMLButtonElement>(null);
   const [launchHost, setLaunchHost] = useState<string | null | undefined>();
   useEffect(() => {
     if (params.get("new") !== "1") return;
@@ -314,6 +321,8 @@ export default function Terminals() {
   }
 
   const selected = terminalId ? terminals.find((t) => t.id === terminalId) : undefined;
+  const mobileTerminalId = params.get("paneTerminal") ?? terminalId;
+  const mobileTerminal = terminals.find((terminal) => terminal.id === mobileTerminalId);
   const newMenu = (
     <NewTerminalMenu
       key={launchHost === undefined ? "default" : (launchHost ?? "local")}
@@ -324,6 +333,7 @@ export default function Terminals() {
       pending={creating}
       error={createError}
       onCreate={handleCreate}
+      compact={!isDesktop}
     />
   );
 
@@ -366,43 +376,50 @@ export default function Terminals() {
           />
         </aside>
       )}
-
       <section className="flex-1 min-w-0 min-h-0 flex flex-col">
         {!isDesktop && (
-          <>
-            <div className="shrink-0 flex items-center gap-2 p-2 border-b border-surface-highest">
-              <TerminalSelect
-                aria-label="Terminal"
-                value={selected?.id ?? ""}
-                onChange={(event) => {
-                  const next = new URLSearchParams(params);
-                  next.delete("file");
-                  next.delete("session");
-                  if (next.has("view")) next.set("paneTerminal", event.target.value);
-                  navigate({
-                    pathname: `/terminals/${event.target.value}`,
-                    search: next.toString(),
-                  });
-                }}
-                disabled={terminals.length === 0}
-                className="flex-1 min-w-0 bg-background border border-control-border text-on-surface font-label text-base sm:text-sm min-h-11 px-2 py-2 rounded-md"
-              >
-                {terminals.length === 0 && <option value="">No terminals</option>}
-                {terminals.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </TerminalSelect>
-              <div className="shrink-0 w-32">{newMenu}</div>
-            </div>
-            <WorktreeRegistry compact />
-          </>
+          <div className="shrink-0 flex items-center gap-2 px-2 py-1 border-b border-surface-highest">
+            <TerminalSelect
+              aria-label="Terminal"
+              value={mobileTerminal?.id ?? ""}
+              onChange={(event) => {
+                const next = new URLSearchParams(params);
+                next.delete("file");
+                next.delete("session");
+                if (next.has("view")) next.set("paneTerminal", event.target.value);
+                navigate({
+                  pathname: `/terminals/${event.target.value}`,
+                  search: next.toString(),
+                });
+              }}
+              disabled={terminals.length === 0}
+              className="flex-1 min-w-0 bg-background border border-control-border text-on-surface font-label text-base sm:text-sm min-h-11 px-2 py-2 rounded-md"
+            >
+              {terminals.length === 0 && <option value="">No terminals</option>}
+              {terminals.length > 0 && !mobileTerminal && <option value="">Choose terminal</option>}
+              {terminals.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </TerminalSelect>
+            <div className="shrink-0">{newMenu}</div>
+            <Button
+              variant="ghost"
+              size="icon"
+              data-testid="terminal-options"
+              ref={optionsButtonRef}
+              aria-label="Terminal options"
+              onClick={() => setOptionsOpen(true)}
+            >
+              <MoreHorizontal size={18} />
+            </Button>
+          </div>
         )}
 
         {selected ? (
           <>
-            <header className="shrink-0 flex flex-wrap items-center gap-1 sm:gap-3 px-3 py-2 sm:py-3 border-b border-outline-variant bg-background min-w-0">
+            <header className="hidden lg:flex shrink-0 flex-wrap items-center gap-3 px-3 py-3 border-b border-outline-variant bg-background min-w-0">
               <span
                 className={cn(
                   "h-2 w-2 shrink-0 rounded-full",
@@ -434,16 +451,7 @@ export default function Terminals() {
                   <TerminalCheckout key={selected.id} terminal={selected} />
                 </div>
               </div>
-              {!isDesktop && (
-                <TerminalActions
-                  terminal={selected}
-                  onRename={setRenaming}
-                  onDuplicate={(terminal) => void duplicateTerminal(terminal)}
-                  onClose={requestClose}
-                  canDuplicate={canDuplicate(selected)}
-                  pending={creating}
-                />
-              )}
+
               {actionError && (
                 <span role="alert" className="w-full font-body text-sm text-error break-words">
                   {actionError}
@@ -453,6 +461,11 @@ export default function Terminals() {
                 <SessionLinks liveSessionId={selected.live_session_id} />
               )}
             </header>
+            {!isDesktop && actionError && (
+              <p role="alert" className="p-2 text-sm text-error break-words">
+                {actionError}
+              </p>
+            )}
             <TerminalWorkspace
               selected={selected}
               terminals={terminals}
@@ -488,7 +501,68 @@ export default function Terminals() {
           </Centered>
         )}
       </section>
-
+      <Sheet open={optionsOpen && !isDesktop} onOpenChange={setOptionsOpen}>
+        <SheetContent
+          aria-describedby={undefined}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            optionsButtonRef.current?.focus();
+          }}
+        >
+          <SheetHeader>
+            <SheetTitle>Terminal options</SheetTitle>
+          </SheetHeader>
+          <SheetBody className="space-y-4">
+            {mobileTerminal && (
+              <div className="space-y-2 text-sm">
+                <p className="break-words font-medium">{mobileTerminal.name}</p>
+                <p className="break-all text-on-surface-variant">{mobileTerminal.cwd}</p>
+                <p>{terminalStatus(mobileTerminal, connectionOf(mobileTerminal.id))}</p>
+                {mobileTerminal.live_session_id && (
+                  <SessionLinks liveSessionId={mobileTerminal.live_session_id} />
+                )}
+                <TerminalCheckout key={mobileTerminal.id} terminal={mobileTerminal} />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    data-testid="terminal-rename"
+                    onClick={() => {
+                      setOptionsOpen(false);
+                      setRenaming(mobileTerminal);
+                    }}
+                  >
+                    Rename
+                  </Button>
+                  <Button
+                    variant="outline"
+                    data-testid="terminal-duplicate"
+                    disabled={creating || !canDuplicate(mobileTerminal)}
+                    onClick={() => {
+                      setOptionsOpen(false);
+                      void duplicateTerminal(mobileTerminal);
+                    }}
+                  >
+                    Duplicate tab
+                  </Button>
+                </div>
+                <Button
+                  variant="outline"
+                  data-testid="terminal-close-selected"
+                  onClick={() => {
+                    setOptionsOpen(false);
+                    requestClose(mobileTerminal);
+                  }}
+                  aria-label={`Close ${mobileTerminal.name}`}
+                  className="text-error"
+                >
+                  Close terminal
+                </Button>
+              </div>
+            )}
+            <WorktreeRegistry compact />
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
       {renaming && (
         <RenameTerminal key={renaming.id} terminal={renaming} onClose={() => setRenaming(null)} />
       )}

@@ -211,3 +211,31 @@ describe("parseAcpxLine", () => {
     expect(parseAcpxLine(line)).toBeNull();
   });
 });
+
+it("preserves ACP thought chunks, array text and structured failed tool output", () => {
+  const event = (update: unknown) =>
+    parseAcpxLine(JSON.stringify({ method: "session/update", params: { update } }));
+  expect(
+    event({
+      sessionUpdate: "agent_thought_chunk",
+      content: { type: "text", text: "Provider thought" },
+    }),
+  ).toEqual({ type: "thinking", data: "Provider thought" });
+  expect(
+    event({
+      sessionUpdate: "agent_message_chunk",
+      content: [{ content: { type: "text", text: "First " } }, { type: "text", text: "second" }],
+    }),
+  ).toEqual({ type: "text", data: "First second" });
+  expect(
+    event({
+      sessionUpdate: "tool_call_update",
+      status: "failed",
+      toolCallId: "failed-call",
+      rawOutput: { error: "Denied" },
+    }),
+  ).toEqual({
+    type: "tool_result",
+    data: { toolUseId: "failed-call", content: '{"error":"Denied"}', isError: true },
+  });
+});
