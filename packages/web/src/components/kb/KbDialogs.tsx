@@ -118,7 +118,7 @@ function Shell({
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent
-        className={`bg-surface border-outline-variant ${size === "xl" ? "w-[calc(100%_-_1rem)] max-w-4xl" : wide ? "max-w-3xl" : "max-w-md"} max-h-[90vh] overflow-y-auto`}
+        className={`bg-surface border-outline-variant ${size === "xl" ? "w-[calc(100%_-_1rem)] max-w-4xl" : wide ? "max-w-3xl" : "max-w-md"}`}
       >
         <DialogHeader>
           <DialogTitle className="text-base text-on-surface">{title}</DialogTitle>

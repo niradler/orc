@@ -148,7 +148,7 @@ function WorkspaceTree(props: TreeProps) {
                   : node.terminalId,
             });
           }}
-          className="min-h-11 sm:min-h-8 rounded-md border border-control-border bg-background text-base sm:text-sm p-1.5 min-w-0"
+          className="flex-1 lg:flex-none min-h-11 sm:min-h-8 rounded-md border border-control-border bg-background text-base sm:text-sm p-1.5 min-w-0"
         >
           <option value="terminal">Terminal</option>
           <option value="git">Git</option>
@@ -159,7 +159,7 @@ function WorkspaceTree(props: TreeProps) {
           aria-label="Pane terminal or checkout"
           value={terminal?.id ?? ""}
           onChange={(event) => setPane({ terminalId: event.target.value || null })}
-          className="flex-1 min-w-0 min-h-11 sm:min-h-8 rounded-md border border-control-border bg-background text-base sm:text-sm p-1.5"
+          className="hidden lg:block flex-1 min-w-0 min-h-11 sm:min-h-8 rounded-md border border-control-border bg-background text-base sm:text-sm p-1.5"
         >
           <option value="">Choose terminal</option>
           {terminals.map((terminal) => (
@@ -225,7 +225,7 @@ function WorkspaceTree(props: TreeProps) {
 }
 
 export function TerminalWorkspace(props: WorkspaceProps) {
-  const desktop = useBreakpoint("md");
+  const desktop = useBreakpoint("lg");
   const [params, setParams] = useSearchParams();
   const [layout, setLayout] = useState<Layout>(() => {
     try {
@@ -314,7 +314,7 @@ export function TerminalWorkspace(props: WorkspaceProps) {
         <nav
           aria-label="Workspace panes"
           data-testid="mobile-workspace-panes"
-          className="flex shrink-0 gap-1 overflow-x-auto border-b border-outline-variant bg-background p-2"
+          className="flex shrink-0 gap-1 overflow-x-auto border-b border-outline-variant bg-background px-2 py-1"
         >
           {panes.map((pane, index) => (
             <button

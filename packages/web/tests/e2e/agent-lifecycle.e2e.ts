@@ -92,5 +92,16 @@ test("registered agents share idle visibility, transcripts, task links and termi
       updatedAt: Date.now(),
     });
   await apiPost(request, "/sessions/live/sync", {});
+  for (const backend of agents) {
+    await page.getByTestId("agent-filter").selectOption(backend);
+    await expect(
+      page
+        .locator(`[data-testid="live-session-row"][data-session-id="${prefix}-${backend}"]`)
+        .getByTestId("live-status"),
+    ).toHaveText("ended");
+  }
+  await page.getByTestId("show-ended").click();
+  await expect(page.getByTestId("show-ended")).not.toBeChecked();
+  await expect(page).toHaveURL(/ended=0/);
   await expect(page.getByTestId("live-session-row")).toHaveCount(0);
 });

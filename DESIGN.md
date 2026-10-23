@@ -307,6 +307,26 @@ Support 320px and 390px widths without page overflow; local table/board scrollin
 must be intentional and discoverable. Maintain 44px touch targets even when the
 visible icon or label is compact.
 
+Touch sizing follows the input device as well as viewport width, including tablets.
+Keep input text at 16px on touch devices. Respect safe-area insets and the visual
+viewport when software keyboards open; dialogs and composers must remain reachable.
+Opening chat on a phone should focus the sheet without opening the keyboard.
+
+Below 1024px, terminal workspaces show one selected pane and preserve the desktop
+split layout. Put terminal details, close and worktree management in the options
+sheet, and expose Esc, Tab, Ctrl+C and arrow keys for touch keyboards. Keep the
+shortcut strip locally scrollable; it must not widen the workspace.
+
+Below 1280px, chat occupies a full-screen sheet instead of squeezing the workspace.
+Larger screens offer a resizable panel and a full-screen icon. Keep the same
+conversation and stream while switching presentation. Use one compact header and
+composer; activity indicators must not move or obscure Send/Stop.
+
+On narrow screens, Knowledge Browse is a modal with trapped focus and a visible
+close action. Restore focus to its trigger when dismissed; selecting a document
+closes it. Document details use the shared sheet. Validate phone portrait and
+landscape, tablet and desktop, in both themes and Chromium/WebKit.
+
 ## Elevation & Depth
 
 Sidebar, header and main canvas must share the same base background in each

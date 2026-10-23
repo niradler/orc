@@ -15,6 +15,7 @@ import { WorkspaceSidebar as Sidebar } from "@/components/WorkspaceSidebar";
 import { ChatProvider } from "@/hooks/useChat";
 import { BREAKPOINTS } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
+import { useVisualViewport } from "@/hooks/useVisualViewport";
 import { TerminalsProvider } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 
@@ -77,6 +78,7 @@ function KnowledgeRedirect() {
 }
 
 export default function App() {
+  useVisualViewport();
   const [savedProjectId, setSavedProjectId] = useState<string>(() => {
     try {
       return localStorage.getItem(STORAGE_KEY) ?? "all";
@@ -87,10 +89,11 @@ export default function App() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const projectId = searchParams.get("project") ?? savedProjectId;
-  const chatRequested = searchParams.get("chat") === "open";
-  function setChatVisible(open: boolean): void {
+  const chatFullscreen = searchParams.get("chat") === "full";
+  const chatRequested = searchParams.get("chat") === "open" || chatFullscreen;
+  function setChatVisible(open: boolean, fullscreen = false): void {
     const next = new URLSearchParams(window.location.search);
-    if (open) next.set("chat", "open");
+    if (open) next.set("chat", fullscreen ? "full" : "open");
     else next.delete("chat");
     if (next.toString() === new URLSearchParams(window.location.search).toString()) return;
     navigate({ search: next.toString(), hash: window.location.hash });
@@ -115,18 +118,24 @@ export default function App() {
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const navButtonRef = useRef<HTMLButtonElement>(null);
   const chatButtonRef = useRef<HTMLButtonElement>(null);
+  const chatDialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const desktop = window.matchMedia(`(min-width: ${BREAKPOINTS.md}px)`);
+    const desktop = window.matchMedia(`(min-width: ${BREAKPOINTS.xl}px)`);
+    const navDesktop = window.matchMedia(`(min-width: ${BREAKPOINTS.md}px)`);
     const syncResponsiveChat = () => {
-      if (desktop.matches) setMobileNavOpen(false);
-      setMobileChatOpen(chatRequested && !desktop.matches);
-      setChatOpen(chatRequested && desktop.matches);
+      if (navDesktop.matches) setMobileNavOpen(false);
+      setMobileChatOpen(chatRequested && (!desktop.matches || chatFullscreen));
+      setChatOpen(chatRequested && desktop.matches && !chatFullscreen);
     };
     syncResponsiveChat();
     desktop.addEventListener("change", syncResponsiveChat);
-    return () => desktop.removeEventListener("change", syncResponsiveChat);
-  }, [chatRequested]);
+    navDesktop.addEventListener("change", syncResponsiveChat);
+    return () => {
+      desktop.removeEventListener("change", syncResponsiveChat);
+      navDesktop.removeEventListener("change", syncResponsiveChat);
+    };
+  }, [chatRequested, chatFullscreen]);
 
   const { pathname } = useLocation();
   // Workspaces whose columns own their scroll fill the main area without page padding.
@@ -171,9 +180,10 @@ export default function App() {
   return (
     <TerminalsProvider>
       <ChatProvider>
-        <div className="h-dvh bg-background flex flex-col overflow-hidden">
-          {/* Mobile top bar - only rendered under md; also gated by `md:hidden` in the
-          component itself so the CSS-driven layout works even before JS hydration. */}
+        <div
+          data-testid="app-viewport"
+          className="app-viewport bg-background flex flex-col overflow-hidden"
+        >
           <div className="flex-1 min-h-0 flex">
             {/* Sidebar: visible on md+. On mobile we instead render a Dialog drawer below. */}
             <div className="hidden md:flex">
@@ -261,9 +271,12 @@ export default function App() {
               </main>
             </div>
 
-            {/* Chat rail/panel: visible on md+. Mobile uses the FAB + sheet below. */}
-            <div className={cn("hidden md:flex", !chatOpen && "md:hidden")}>
-              <ChatPanel open={chatOpen} onToggle={() => setChatVisible(false)} />
+            <div className={cn("hidden xl:flex", !chatOpen && "xl:hidden")}>
+              <ChatPanel
+                open={chatOpen}
+                onToggle={() => setChatVisible(false)}
+                onToggleFullscreen={() => setChatVisible(true, true)}
+              />
             </div>
           </div>
 
@@ -278,7 +291,7 @@ export default function App() {
                   if (window.innerWidth < BREAKPOINTS.md) navButtonRef.current?.focus();
                   else chatButtonRef.current?.focus();
                 }}
-                className="md:hidden fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-background border-r border-surface-highest shadow-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
+                className="viewport-sheet md:hidden fixed left-0 z-50 w-72 max-w-[85vw] bg-background border-r border-surface-highest shadow-xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left"
               >
                 <Dialog.Title className="sr-only">Navigation</Dialog.Title>
                 <Dialog.Description className="sr-only">
@@ -297,16 +310,24 @@ export default function App() {
           </Dialog.Root>
 
           {/* Mobile chat sheet (full-screen on mobile). */}
-          <Dialog.Root open={mobileChatOpen} onOpenChange={setChatVisible}>
+          <Dialog.Root
+            open={mobileChatOpen}
+            onOpenChange={(open) => setChatVisible(open, chatFullscreen)}
+          >
             <Dialog.Portal>
-              <Dialog.Overlay className="md:hidden fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+              <Dialog.Overlay className="fixed inset-0 z-50 bg-black/70 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
               <Dialog.Content
+                ref={chatDialogRef}
                 data-testid="mobile-chat-sheet"
                 onCloseAutoFocus={(event) => {
                   event.preventDefault();
                   if (!chatRequested) chatButtonRef.current?.focus();
                 }}
-                className="md:hidden fixed inset-0 z-50 flex flex-col data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom"
+                className="viewport-sheet fixed inset-x-0 z-50 flex flex-col data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom"
+                onOpenAutoFocus={(event) => {
+                  event.preventDefault();
+                  chatDialogRef.current?.focus();
+                }}
               >
                 <Dialog.Title className="sr-only">Chat</Dialog.Title>
                 <Dialog.Description className="sr-only">
@@ -317,6 +338,8 @@ export default function App() {
                   onToggle={() => setChatVisible(false)}
                   embedded
                   onClose={() => setChatVisible(false)}
+                  fullscreen={chatFullscreen}
+                  onToggleFullscreen={() => setChatVisible(true, !chatFullscreen)}
                 />
               </Dialog.Content>
             </Dialog.Portal>

@@ -57,6 +57,7 @@
     color: rgb(var(--foreground));
     font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
     -webkit-font-smoothing: antialiased;
+    overscroll-behavior: none;
   }
 
   ::-webkit-scrollbar {
@@ -98,12 +99,43 @@
   }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 767px), (any-pointer: coarse) {
   html:root button,
   html:root [role="button"],
   html:root [role="combobox"] {
     min-height: 44px;
     min-width: 44px;
+  }
+
+  html:root a[href] {
+    min-height: 44px;
+  }
+
+  html:root input:not([type="checkbox"]):not([type="radio"]),
+  html:root textarea,
+  html:root select {
+    font-size: 16px;
+  }
+}
+
+@layer components {
+  .app-viewport {
+    height: var(--app-height, 100dvh);
+    margin-top: var(--app-top, 0px);
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+  }
+
+  .viewport-sheet {
+    top: var(--app-top, 0px);
+    bottom: auto;
+    height: var(--app-height, 100dvh);
+    padding-top: env(safe-area-inset-top);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
   }
 }
 

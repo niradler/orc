@@ -46,6 +46,8 @@ interface TerminalsContextValue {
   remove: (id: string) => Promise<void>;
   attach: (id: string, container: HTMLElement) => Promise<void>;
   detach: (id: string) => void;
+  sendInput: (id: string, data: string) => void;
+  focus: (id: string) => void;
 }
 
 const TerminalsContext = createContext<TerminalsContextValue | null>(null);
@@ -201,6 +203,21 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const connectionOf = useCallback((id: string) => connections[id], [connections]);
+  const sendInput = useCallback((id: string, data: string) => {
+    const runtime = runtimes.current.get(id);
+    if (!runtime || runtime.replaying || runtime.socket?.readyState !== WebSocket.OPEN) return;
+    const input =
+      data.startsWith("\u001b[") &&
+      data.length === 3 &&
+      "ABCD".includes(data[2] ?? "") &&
+      runtime.term.getMode(1)
+        ? data.replace("[", "O")
+        : data;
+    runtime.socket.send(new TextEncoder().encode(input));
+  }, []);
+  const focus = useCallback((id: string) => {
+    runtimes.current.get(id)?.term.focus();
+  }, []);
 
   const { refetch: refetchList } = query;
   const refetch = useCallback(() => {
@@ -223,6 +240,8 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
       remove,
       attach,
       detach,
+      sendInput,
+      focus,
     }),
     [
       terminals,
@@ -239,6 +258,8 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
       remove,
       attach,
       detach,
+      sendInput,
+      focus,
     ],
   );
 
