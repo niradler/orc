@@ -6,7 +6,7 @@ import { expect } from "@playwright/test";
 import { API_SECRET, apiGet, apiPost } from "./_helpers";
 import { test } from "./_terminal-fixture";
 
-test("renderer startup preserves an already opened terminal actions menu", async ({
+test("renderer startup preserves actions opened immediately after terminal focus", async ({
   page,
   request,
 }) => {
@@ -15,31 +15,30 @@ test("renderer startup preserves an already opened terminal actions menu", async
     host: null,
   });
   await page.addInitScript(() => {
-    const compile = WebAssembly.compile.bind(WebAssembly);
-    WebAssembly.compile = async (...args) => {
-      document.documentElement.dataset.rendererWaiting = "true";
-      await new Promise<void>((resolve) =>
-        window.addEventListener("release-test-renderer", () => resolve(), { once: true }),
-      );
-      return compile(...args);
-    };
+    document.addEventListener("focusin", (event) => {
+      if (
+        !(event.target instanceof HTMLElement) ||
+        !event.target.matches('[role="textbox"][aria-label="Terminal input"]') ||
+        document.documentElement.dataset.startupMenuOpened
+      )
+        return;
+      document.documentElement.dataset.startupMenuOpened = "true";
+      queueMicrotask(() => {
+        const actions = document.querySelector<HTMLButtonElement>(
+          '[data-testid="terminal-actions"]',
+        );
+        actions?.focus();
+        actions?.click();
+      });
+    });
   });
   await page.addInitScript(
     (secret) =>
       localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
     API_SECRET,
   );
-  try {
-    await page.goto(`/terminals/${terminal.id}?project=all`);
-    await page.waitForFunction(() => document.documentElement.dataset.rendererWaiting === "true");
-    await page.getByTestId("terminal-actions").click();
-    await expect(page.getByTestId("terminal-actions-menu")).toBeVisible();
-  } finally {
-    await page.evaluate(() => window.dispatchEvent(new Event("release-test-renderer")));
-  }
-  await expect(
-    page.getByTestId("terminal-viewport").getByRole("textbox", { name: "Terminal input" }).last(),
-  ).toBeVisible();
+  await page.goto(`/terminals/${terminal.id}?project=all`);
+  await expect(page.locator("html")).toHaveAttribute("data-startup-menu-opened", "true");
   await page.evaluate(
     () =>
       new Promise<void>((resolve) =>
@@ -49,6 +48,58 @@ test("renderer startup preserves an already opened terminal actions menu", async
   await expect(page.getByTestId("terminal-actions-menu")).toBeVisible();
   await expect(page.getByTestId("terminal-rename")).toBeFocused();
 });
+
+for (const stage of ["open menu", "focused trigger"] as const) {
+  test(`renderer startup preserves terminal actions: ${stage}`, async ({ page, request }) => {
+    const terminal = await apiPost<{ id: string }>(request, "/terminals", {
+      kind: "shell",
+      host: null,
+    });
+    await page.addInitScript(() => {
+      const compile = WebAssembly.compile.bind(WebAssembly);
+      WebAssembly.compile = async (...args) => {
+        document.documentElement.dataset.rendererWaiting = "true";
+        await new Promise<void>((resolve) =>
+          window.addEventListener("release-test-renderer", () => resolve(), { once: true }),
+        );
+        return compile(...args);
+      };
+    });
+    await page.addInitScript(
+      (secret) =>
+        localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+      API_SECRET,
+    );
+    try {
+      await page.goto(`/terminals/${terminal.id}?project=all`);
+      await page.waitForFunction(() => document.documentElement.dataset.rendererWaiting === "true");
+      if (stage === "open menu") {
+        await page.getByTestId("terminal-actions").click();
+        await expect(page.getByTestId("terminal-actions-menu")).toBeVisible();
+      } else {
+        await page.getByTestId("terminal-actions").focus();
+        await expect(page.getByTestId("terminal-actions-menu")).toHaveCount(0);
+      }
+    } finally {
+      await page.evaluate(() => window.dispatchEvent(new Event("release-test-renderer")));
+    }
+    await expect(
+      page.getByTestId("terminal-viewport").getByRole("textbox", { name: "Terminal input" }).last(),
+    ).toBeVisible();
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    if (stage === "focused trigger") {
+      await expect(page.getByTestId("terminal-actions")).toBeFocused();
+      await page.getByTestId("terminal-actions").click();
+    }
+    await expect(page.getByTestId("terminal-actions-menu")).toBeVisible();
+    await expect(page.getByTestId("terminal-rename")).toBeFocused();
+  });
+}
 
 test("should show current PR CI states and hide unavailable CI", async ({ page, request }) => {
   const repo = mkdtempSync(join(tmpdir(), "orc-ci-states-"));

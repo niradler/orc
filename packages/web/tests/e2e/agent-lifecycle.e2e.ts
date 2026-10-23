@@ -48,6 +48,10 @@ test("registered agents share idle visibility, transcripts, task links and termi
     title: `${prefix} task`,
   });
   await gotoView(page, "sessions");
+  // This lifecycle assertion concerns active sessions; archive browsing can show ended rows.
+  const showEnded = page.getByTestId("show-ended");
+  if (await showEnded.isChecked()) await showEnded.click();
+  await expect(page.getByTestId("show-ended")).not.toBeChecked();
   for (const backend of agents) {
     await page.getByTestId("agent-filter").selectOption(backend);
     const row = page.locator(

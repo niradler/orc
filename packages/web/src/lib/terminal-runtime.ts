@@ -261,9 +261,10 @@ export function mountRuntime(runtime: TerminalRuntime, container: HTMLElement, f
     focus && !focusedBeforeMount?.closest('[role="dialog"], [data-radix-popper-content-wrapper]');
   container.appendChild(runtime.element);
   if (!runtime.opened) {
-    // Ghostty's open() also calls focus(), including a deferred second focus.
+    // Ghostty's focus() schedules a second, unguarded focus. Startup owns focus below
+    // so opening a menu immediately after mount cannot be interrupted by that timer.
     const originalFocus = runtime.term.focus;
-    if (!shouldFocus) runtime.term.focus = () => {};
+    runtime.term.focus = () => {};
     try {
       runtime.term.open(runtime.element);
     } finally {
@@ -276,7 +277,8 @@ export function mountRuntime(runtime: TerminalRuntime, container: HTMLElement, f
     if (runtime.disposed || runtime.element.parentElement !== container) return;
     runtime.fit.fit();
     // Loading the renderer must not dismiss a menu or interrupt a newer interaction.
-    if (shouldFocus && document.activeElement === focusedBeforeMount) runtime.term.focus();
+    if (shouldFocus && document.activeElement === focusedBeforeMount)
+      runtime.element.focus({ preventScroll: true });
   });
 }
 
