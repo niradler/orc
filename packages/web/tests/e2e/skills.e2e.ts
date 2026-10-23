@@ -182,7 +182,7 @@ Playwright test skill auto-created by e2e suite.`;
     ).toBeVisible();
     await expect
       .poll(async () => {
-        const sources = await rows.locator("td:nth-child(3)").allTextContents();
+        const sources = await rows.getByTestId("skill-source-cell").allTextContents();
         return sources.length > 0 && sources.every((source) => source.trim() === "user");
       })
       .toBe(true);
