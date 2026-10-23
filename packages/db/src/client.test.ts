@@ -3,10 +3,80 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { stopChangeTracking } from "./changes.js";
 import { createDb, getSqlite } from "./client.js";
 import * as schema from "./schema.js";
 
 describe("createDb", () => {
+  test("repairs legacy task search duplicates and missing entries across repeated opens", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "orc-task-search-")), "legacy.db");
+    const legacy = getSqlite(createDb(path));
+    legacy.exec(`
+      INSERT INTO tasks(id,title,body,tags) VALUES
+        ('first','quantum fixture','searchable details','science'),
+        ('second','another fixture',NULL,NULL);
+      INSERT INTO tasks_fts(id,title,body,tags)
+        SELECT id,title,COALESCE(body,''),COALESCE(tags,'') FROM tasks;
+      INSERT INTO tasks_fts(id,title,body,tags)
+        SELECT id,title,COALESCE(body,''),COALESCE(tags,'') FROM tasks;
+      DELETE FROM tasks_fts WHERE id='second';
+    `);
+    const original = legacy.query("SELECT * FROM tasks ORDER BY id").all();
+    stopChangeTracking(legacy);
+    legacy.close();
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const reopened = getSqlite(createDb(path));
+      try {
+        expect(reopened.query("SELECT * FROM tasks ORDER BY id").all()).toEqual(original);
+        expect(
+          reopened.query("SELECT id,title,body,tags FROM tasks_fts ORDER BY id").all(),
+        ).toEqual([
+          { id: "first", title: "quantum fixture", body: "searchable details", tags: "science" },
+          { id: "second", title: "another fixture", body: "", tags: "" },
+        ]);
+        expect(
+          reopened
+            .query(
+              "SELECT t.id FROM tasks_fts f JOIN tasks t ON t.id=f.id WHERE f.tasks_fts MATCH ?",
+            )
+            .all("quantum"),
+        ).toEqual([{ id: "first" }]);
+        expect(reopened.query("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
+      } finally {
+        stopChangeTracking(reopened);
+        reopened.close();
+      }
+    }
+  });
+
+  test("keeps task search triggers synchronized after reopening", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "orc-task-search-triggers-")), "tasks.db");
+    const first = getSqlite(createDb(path));
+    first.exec("INSERT INTO tasks(id,title) VALUES ('task','originalword')");
+    stopChangeTracking(first);
+    first.close();
+    const reopened = getSqlite(createDb(path));
+    const matches = (term: string) =>
+      reopened.query("SELECT id FROM tasks_fts WHERE tasks_fts MATCH ?").all(term);
+    try {
+      expect(matches("originalword")).toEqual([{ id: "task" }]);
+      reopened.exec(
+        "UPDATE tasks SET title='replacementword',body='bodyword',tags='tagword' WHERE id='task'",
+      );
+      expect(matches("originalword")).toEqual([]);
+      for (const term of ["replacementword", "bodyword", "tagword"])
+        expect(matches(term)).toEqual([{ id: "task" }]);
+      reopened.exec("DELETE FROM tasks WHERE id='task'");
+      expect(matches("replacementword")).toEqual([]);
+      reopened.exec("INSERT INTO tasks(id,title) VALUES ('task','reinsertedword')");
+      expect(matches("reinsertedword")).toEqual([{ id: "task" }]);
+    } finally {
+      stopChangeTracking(reopened);
+      reopened.close();
+    }
+  });
+
   test("should migrate an existing project database without losing data and reopen idempotently", () => {
     const path = join(mkdtempSync(join(tmpdir(), "orc-project-remote-")), "legacy.db");
     const legacy = new Database(path);
