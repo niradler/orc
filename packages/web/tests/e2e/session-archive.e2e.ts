@@ -24,6 +24,28 @@ const nativeContent = (agent: "claude" | "codex", id: string, cwd: string, text:
     ? `${JSON.stringify({ type: "session_meta", payload: { id, cwd, source: "cli" } })}\n${JSON.stringify({ type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text }] } })}\n`
     : `${JSON.stringify({ type: "user", sessionId: id, cwd, uuid: randomUUID(), timestamp: new Date().toISOString(), message: { role: "user", content: text } })}\n`;
 
+test("HTTP MCP sync and script URLs retain the hosted TLS proxy origin", async ({ request }) => {
+  const name = tid("archive-proxy");
+  await apiPost(request, "/projects", { name });
+  const headers = { ...AUTH_HEADERS, Host: "orc.example.com", "X-Forwarded-Proto": "https" };
+  for (const [tool, args, key] of [
+    ["session_sync", { projects: [name] }, "sync_url"],
+    [
+      "skill_read",
+      { name: "orc-platform", project: name, ref: "scripts/sync-sessions.py", download: true },
+      "download_url",
+    ],
+  ] as const) {
+    const response = await request.post(`${API_BASE}/mcp/tool`, {
+      headers,
+      data: { name: tool, args },
+    });
+    expect(response.ok()).toBe(true);
+    const body = (await response.json()) as { result: string };
+    expect(new URL(JSON.parse(body.result)[key]).origin).toBe("https://orc.example.com");
+  }
+});
+
 test("all Claude histories map across projects, preserve partial successes and skip duplicate files", async ({
   request,
 }) => {

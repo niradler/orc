@@ -63,6 +63,23 @@ afterEach(async () => {
 });
 
 describe("session archive storage and identities", () => {
+  test("TLS proxy grants retain the request host and HTTPS scheme", async () => {
+    const response = await app.request("http://orc.example.com/api/sessions/archive/sync", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-secret",
+        "Content-Type": "application/json",
+        "X-Forwarded-Proto": "https",
+        "X-Forwarded-Host": "attacker.example",
+      },
+      body: JSON.stringify({ projects: ["Project A"] }),
+    });
+    expect(response.status).toBe(200);
+    const grant = (await response.json()) as { sync_url: string };
+    expect(new URL(grant.sync_url).origin).toBe("https://orc.example.com");
+    expect(new URL(grant.sync_url).pathname).toMatch(/^\/api\/session-sync\/[A-Za-z0-9_-]{43}$/);
+  });
+
   test("requires authentication and a valid existing project", async () => {
     expect((await app.request("/api/sessions/archive", { headers: {} })).status).toBe(401);
     const missing = { ...upload(), project: undefined };

@@ -12,6 +12,7 @@ import { SessionHandoffInputSchema } from "@orc/core/session-handoff";
 import { getSqlite } from "@orc/db/client";
 import type { MiddlewareHandler } from "hono";
 import { getHandoffService, handoffDto } from "../handoffs/service.js";
+import { clientOrigin } from "../lib/client-origin.js";
 import { createRouter } from "../lib/router.js";
 import { getSessionArchive } from "../sessions/archive.js";
 import { indexDiscoveredSessions } from "../sessions/archive-local.js";
@@ -88,7 +89,7 @@ app.openapi(
   }),
   (c) => {
     c.header("Cache-Control", "no-store");
-    return c.json(mintSessionSync(c.req.url, c.req.valid("json").projects));
+    return c.json(mintSessionSync(clientOrigin(c.req.raw), c.req.valid("json").projects));
   },
 );
 

@@ -754,10 +754,17 @@ export async function executeTool(
   args: unknown,
   options: ToolOptions = {},
 ): Promise<string> {
-  if (name === "session_sync")
-    return JSON.stringify(
-      await orcApi("POST", "/sessions/archive/sync", { body: SessionSyncInputSchema.parse(args) }),
-    );
+  if (name === "session_sync") {
+    const grant = await orcApi<{ sync_url: string }>("POST", "/sessions/archive/sync", {
+      body: SessionSyncInputSchema.parse(args),
+    });
+    if (options.publicApiBaseUrl)
+      grant.sync_url = new URL(
+        new URL(grant.sync_url).pathname,
+        options.publicApiBaseUrl,
+      ).toString();
+    return JSON.stringify(grant);
+  }
   if (name === "session_search") {
     const input = ArchiveSearchSchema.omit({ project_id: true })
       .extend({ project: projectParam })

@@ -19,6 +19,9 @@ Archival creates neither a native agent process nor a worktree.
    one-hour sync grant with covered projects. Pass the result to the helper via
    `--grant-stdin` or a private JSON file with `--grant-file`; do not print its URL,
    put it in argv/history or commit the grant file. The main API secret is not needed.
+   For hosted ORC behind a TLS proxy, preserve the external `Host` and set
+   `X-Forwarded-Proto: https`; grants and signed script downloads then use the
+   externally reachable HTTPS origin. Do not expose the internal API port publicly.
    For a single project, use
    its readable name and the local cwd. For an all-agent/history request, discover
    remote projects and use their configured Git remote identities or a small

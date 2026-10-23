@@ -3,6 +3,7 @@ import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
 import { createMcpServer, type McpMode, parseMcpMode } from "@orc/mcp";
 import { Hono } from "hono";
+import { clientOrigin } from "../lib/client-origin.js";
 import { bearerAuth } from "../middleware/auth.js";
 import { skillDownloads } from "../skill-downloads.js";
 
@@ -27,7 +28,7 @@ app.all("/mcp", async (c) => {
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : "Invalid mode" }, 400);
   }
-  const origin = new URL(c.req.url).origin;
+  const origin = clientOrigin(c.req.raw);
   const server = createMcpServer({
     publicApiBaseUrl: origin,
     mode,
