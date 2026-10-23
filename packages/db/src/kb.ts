@@ -193,6 +193,18 @@ export function installKnowledgeBases(sqlite: Database): void {
       created_at INTEGER NOT NULL
     );
   `);
+  // Existing revisions keep the original segmentation, including after an index rebuild.
+  sqlite
+    .transaction(() => {
+      const columns = sqlite.query("PRAGMA table_info(kb_document_revisions)").all() as {
+        name: string;
+      }[];
+      if (!columns.some((c) => c.name === "chunk_version"))
+        sqlite.exec(
+          "ALTER TABLE kb_document_revisions ADD COLUMN chunk_version INTEGER NOT NULL DEFAULT 1",
+        );
+    })
+    .immediate();
 }
 
 /** Project deletion must refuse while the project still owns KBs (no silent re-scoping). */

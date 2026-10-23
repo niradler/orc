@@ -15,13 +15,15 @@ import type {
 } from "@orc/core/session-archive";
 import { ArchiveUploadSchema } from "@orc/core/session-archive";
 import { getSqlite } from "@orc/db/client";
+import { splitPassageText } from "@orc/knowledge/chunker";
+import { embedPendingBatch } from "@orc/knowledge/embedding-batch";
 import { createEmbeddingProvider, type EmbeddingProvider } from "@orc/knowledge/embeddings";
-import { embeddingInput, IndexDb } from "@orc/knowledge/index-db";
-import { encodeVector } from "@orc/knowledge/vector";
+import { IndexDb } from "@orc/knowledge/index-db";
 import { parseTranscriptContent, type TranscriptTurn } from "./transcript.js";
 
 type Row = Omit<ArchiveSession, "metadata"> & { metadata: string };
 type Revision = {
+  chunk_version: number;
   revision: number;
   content_hash: string;
   file_hashes: string;
@@ -101,7 +103,8 @@ function turnText(turn: TranscriptTurn): string {
     .join("\n");
 }
 
-async function chunksOf(upload: ArchiveUpload, key: string) {
+async function chunksOf(upload: ArchiveUpload, key: string, version: number) {
+  if (version !== 1 && version !== 2) throw new Error("Unsupported passage chunking version");
   const chunks: { ordinal: number; heading_path: string[]; locator: null; text: string }[] = [];
   for (const file of [...upload.bundle.files].sort((a, b) => a.path.localeCompare(b.path))) {
     const turns = await parseTranscriptContent(
@@ -112,12 +115,18 @@ async function chunksOf(upload: ArchiveUpload, key: string) {
     );
     for (const turn of turns) {
       const text = turnText(turn);
-      for (let at = 0; at < text.length; at += 1600)
+      const passages =
+        version === 1
+          ? Array.from({ length: Math.ceil(text.length / 1600) }, (_, i) =>
+              text.slice(i * 1600, (i + 1) * 1600),
+            )
+          : splitPassageText(text);
+      for (const passage of passages)
         chunks.push({
           ordinal: chunks.length,
           heading_path: [`turn:${turn.index}`, turn.role, file.path],
           locator: null,
-          text: text.slice(at, at + 1600),
+          text: passage,
         });
     }
   }
@@ -153,9 +162,9 @@ export class SessionArchive {
       options.config ?? loadConfig,
       options.embedder,
     );
-    const indexed = index.documentChunkCounts();
+    const indexed = index.documentRevisions();
     for (const row of service.db.query<Row, []>("SELECT * FROM session_archives").all())
-      if (!indexed.has(row.id))
+      if (indexed.get(row.id) !== row.revision)
         service.db.run("UPDATE session_archives SET index_revision = 0 WHERE id = ?", [row.id]);
     service.timer = setInterval(() => service.kick(), 30_000);
     service.timer.unref();
@@ -197,7 +206,7 @@ export class SessionArchive {
   history(id: string) {
     this.get(id);
     return this.db
-      .query<Omit<Revision, "blob" | "file_hashes">, [string]>(
+      .query<Omit<Revision, "blob" | "file_hashes" | "chunk_version">, [string]>(
         "SELECT revision, content_hash, conflict, created_at FROM session_archive_revisions WHERE session_id = ? ORDER BY revision DESC",
       )
       .all(id);
@@ -278,7 +287,7 @@ export class SessionArchive {
           if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
         }
         this.db.run(
-          "INSERT INTO session_archive_revisions (session_id, revision, content_hash, file_hashes, blob, conflict, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO session_archive_revisions (session_id, revision, content_hash, file_hashes, blob, conflict, created_at, chunk_version) VALUES (?, ?, ?, ?, ?, ?, ?, 2)",
           [id, revision, digest, JSON.stringify(files), blob, conflict ? 1 : 0, now],
         );
       }
@@ -356,6 +365,7 @@ export class SessionArchive {
         const chunks = await chunksOf(
           this.bundle(row.id, row.revision),
           `${row.id}@${row.revision}`,
+          this.revision(row.id, row.revision).chunk_version,
         );
         if (this.get(row.id).revision !== row.revision) continue;
         this.index.replaceDocument({
@@ -385,34 +395,8 @@ export class SessionArchive {
     if (!provider || this.stopped) return;
     for (let batch = 0; batch < 16 && !this.stopped; batch++) {
       if (this.provider()?.profile !== provider.profile) return;
-      const rows = this.index.pendingEmbeddings(provider.profile, provider.batchSize);
-      if (!rows.length) return;
-      const cached = rows.filter((r) => this.index.cachedEmbedding(provider.profile, r.input_hash));
-      this.index.putVectors(
-        provider.profile,
-        cached.map((r) => ({
-          chunk_id: r.id,
-          hash: r.input_hash,
-          vector: this.index.cachedEmbedding(provider.profile, r.input_hash) as Uint8Array,
-        })),
-      );
-      const fresh = rows.filter((r) => !this.index.cachedEmbedding(provider.profile, r.input_hash));
-      if (!fresh.length) continue;
       try {
-        const vectors = await provider.embed(fresh.map(embeddingInput), "document");
-        if (
-          vectors.length !== fresh.length ||
-          vectors.some((v) => !v.length || v.some((n) => !Number.isFinite(n)))
-        )
-          throw new Error("Invalid vectors");
-        this.index.putVectors(
-          provider.profile,
-          fresh.map((r, i) => ({
-            chunk_id: r.id,
-            hash: r.input_hash,
-            vector: encodeVector(vectors[i] ?? []),
-          })),
-        );
+        if (!(await embedPendingBatch(this.index, provider))) return;
         this.db.run(
           "UPDATE session_archives SET embedding_error = NULL WHERE embedding_error LIKE 'Embedding provider unavailable%'",
         );
@@ -550,7 +534,13 @@ export class SessionArchive {
   }
 
   async citation(id: string, revision: number, ordinal: number) {
-    const chunk = (await chunksOf(this.bundle(id, revision), `${id}@${revision}`))[ordinal];
+    const chunk = (
+      await chunksOf(
+        this.bundle(id, revision),
+        `${id}@${revision}`,
+        this.revision(id, revision).chunk_version,
+      )
+    )[ordinal];
     if (!chunk) throw new NotFoundError("Session passage", String(ordinal));
     return {
       citation: `session:${id}@${revision}#${ordinal}`,

@@ -310,10 +310,6 @@ function setupDb(sqlite: Database): void {
         VALUES (new.id, COALESCE(new.title, ''), COALESCE(new.body, ''), COALESCE(new.tags, ''));
     END;
 
-    INSERT OR IGNORE INTO tasks_fts(id, title, body, tags)
-      SELECT id, COALESCE(title, ''), COALESCE(body, ''), COALESCE(tags, '')
-      FROM tasks;
-
     CREATE TABLE IF NOT EXISTS session_events (
       id         TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
@@ -438,6 +434,22 @@ function setupDb(sqlite: Database): void {
       }
     }
   }
+
+  // FTS5 has no unique constraint on id: INSERT OR IGNORE appended another
+  // copy on every open. Repair existing copies and backfill only missing tasks.
+  // Serialize the repair/backfill with task writers and other initializers.
+  sqlite
+    .transaction(() => {
+      sqlite.exec(`
+      DELETE FROM tasks_fts
+        WHERE rowid NOT IN (SELECT MIN(rowid) FROM tasks_fts GROUP BY id);
+      INSERT INTO tasks_fts(id, title, body, tags)
+        SELECT id, COALESCE(title, ''), COALESCE(body, ''), COALESCE(tags, '')
+        FROM tasks
+        WHERE id NOT IN (SELECT id FROM tasks_fts WHERE id IS NOT NULL);
+    `);
+    })
+    .immediate();
 
   installReusableWebhooks(sqlite);
 

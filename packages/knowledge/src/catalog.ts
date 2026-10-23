@@ -55,6 +55,7 @@ export type DocRow = {
 };
 
 export type RevisionRow = {
+  chunk_version: number;
   document_id: string;
   revision: number;
   title: string;

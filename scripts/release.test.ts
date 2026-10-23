@@ -117,6 +117,8 @@ describe("release safety", () => {
       ORC_API_SECRET: "test-secret",
     };
     expect(desktopLaunchEnv(source)).toEqual({ PATH: "tools", ORC_API_SECRET: "test-secret" });
+    expect(desktopLaunchEnv({ PATH: "tools", ORC_API_SECRET: "" })).toEqual({ PATH: "tools" });
+    expect(desktopLaunchEnv({ orc_api_secret: "", HOME: "user" })).toEqual({ HOME: "user" });
     expect(source.ORC_API_PORT).toBe("7711");
     expect(desktopLaunchEnv({ orc_api_port: "7711", HOME: "user" })).toEqual({ HOME: "user" });
   });

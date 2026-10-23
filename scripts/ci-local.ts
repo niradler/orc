@@ -7,7 +7,7 @@
  */
 
 import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
 const steps: Array<[string, string[]]> = [
@@ -26,6 +26,16 @@ const root = resolve(import.meta.dir, "..");
 // throwaway repos would inherit them and run git against the real repo, so drop them all.
 const env = Object.fromEntries(
   Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith("GIT_")),
+);
+// Preserve the installed browser before test HOME/LOCALAPPDATA are isolated.
+// Otherwise run-e2e resolves Chromium under the empty temporary CI home.
+env.PLAYWRIGHT_BROWSERS_PATH ??= join(
+  process.platform === "win32"
+    ? (env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"))
+    : process.platform === "darwin"
+      ? join(homedir(), "Library", "Caches")
+      : (env.XDG_CACHE_HOME ?? join(homedir(), ".cache")),
+  "ms-playwright",
 );
 const started = performance.now();
 function cleanupTestHome(path: string): void {

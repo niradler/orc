@@ -12,7 +12,13 @@ export function desktopLaunchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     "ORC_WEB_DIST",
   ]);
   return Object.fromEntries(
-    Object.entries(env).filter(([key]) => !developmentVariables.has(key.toUpperCase())),
+    Object.entries(env).filter(([key, value]) => {
+      const name = key.toUpperCase();
+      // Bun loads the repository's empty dev secret into this process. Forwarding
+      // it would override the installed stored secret and silently disable auth.
+      // Keep nonempty env secrets for installations intentionally configured that way.
+      return !developmentVariables.has(name) && !(name === "ORC_API_SECRET" && value === "");
+    }),
   );
 }
 

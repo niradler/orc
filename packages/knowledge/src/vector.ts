@@ -49,7 +49,26 @@ export async function loadVectorBackend(
   };
 }
 
+/** Reject invalid coordinates before float32 storage or distance calculation. */
+export function validateVector(v: ArrayLike<number>, dimensions?: number): void {
+  if (!v.length || (dimensions !== undefined && v.length !== dimensions))
+    throw new Error("Embedding vector dimensions do not match");
+  let norm = 0;
+  for (let i = 0; i < v.length; i++) {
+    const coordinate = v[i];
+    if (
+      typeof coordinate !== "number" ||
+      !Number.isFinite(coordinate) ||
+      !Number.isFinite(Math.fround(coordinate))
+    )
+      throw new Error("Embedding vector contains an invalid coordinate");
+    norm += Math.fround(coordinate) ** 2;
+  }
+  if (!norm) throw new Error("Embedding vector has zero magnitude");
+}
+
 export const encodeVector = (v: ArrayLike<number>) => {
+  validateVector(v);
   const f = Float32Array.from(v);
   return new Uint8Array(f.buffer, f.byteOffset, f.byteLength);
 };
@@ -58,16 +77,21 @@ export const decodeVector = (blob: Uint8Array) =>
   new Float32Array(blob.buffer.slice(blob.byteOffset, blob.byteOffset + blob.byteLength));
 
 export function cosineDistance(a: Float32Array, b: Float32Array): number {
+  if (!a.length || a.length !== b.length)
+    throw new Error("Embedding vector dimensions do not match");
   let dot = 0;
   let na = 0;
   let nb = 0;
-  const n = Math.min(a.length, b.length);
+  const n = a.length;
   for (let i = 0; i < n; i++) {
     const x = a[i] ?? 0;
     const y = b[i] ?? 0;
+    if (!Number.isFinite(x) || !Number.isFinite(y))
+      throw new Error("Embedding vector contains an invalid coordinate");
     dot += x * y;
     na += x * x;
     nb += y * y;
   }
-  return na && nb ? 1 - dot / Math.sqrt(na * nb) : 1;
+  if (!na || !nb) throw new Error("Embedding vector has zero magnitude");
+  return Math.max(0, Math.min(2, 1 - dot / Math.sqrt(na * nb)));
 }

@@ -59,6 +59,10 @@ bun build            # build all packages
 
 ## Dev Environment
 
+For releases or installation upgrades, read [docs/releases.md](docs/releases.md),
+including its operator protocol, and the latest `.claude/docs/releases.md`
+handoff before running publication or deployment commands.
+
 All packages load `../../.env` via `bun --env-file ../../.env` in their `dev` scripts. Create `.env` at the repo root:
 
 ```env

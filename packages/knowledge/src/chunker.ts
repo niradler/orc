@@ -1,4 +1,5 @@
 import type { ParsedBlock } from "@orc/core/kb";
+import { chunkBlocks as legacyChunks } from "./chunker-v1.js";
 
 export type Chunk = {
   ordinal: number;
@@ -10,62 +11,78 @@ export type Chunk = {
 export const CHUNK_TARGET_CHARS = 1600;
 export const CHUNK_MAX_CHARS = 2400;
 
-/** chars/4 is close enough for budgeting English and code; it overestimates Hebrew slightly. */
+/** Display estimate only. Language, code and model tokenizers can differ substantially. */
 export const estimateTokens = (text: string) => Math.ceil(text.length / 4);
 
-const blockText = (b: ParsedBlock) => {
-  if (b.kind === "heading") return `${"#".repeat(b.level ?? 1)} ${b.text}`;
-  if (b.kind === "list_item") return `- ${b.text}`;
-  if (b.kind === "code") return `\`\`\`\n${b.text}\n\`\`\``;
-  if (b.kind === "table" && b.rows?.length)
-    return b.rows.map((r) => `| ${r.join(" | ")} |`).join("\n");
-  return b.text;
-};
-
-/** Splits an oversized block; tables repeat their header row so every piece stays readable. */
-function splitBlock(b: ParsedBlock): ParsedBlock[] {
-  const text = blockText(b);
-  if (text.length <= CHUNK_MAX_CHARS) return [b];
-  if (b.kind === "table" && b.rows && b.rows.length > 2) {
-    const [head, ...body] = b.rows;
-    if (!head) return [b];
-    const pieces: ParsedBlock[] = [];
-    let rows: string[][] = [];
-    let size = 0;
-    for (const row of body) {
-      const len = row.join(" | ").length + 4;
-      if (rows.length && size + len > CHUNK_TARGET_CHARS) {
-        pieces.push({ ...b, rows: [head, ...rows], text: "" });
-        rows = [];
-        size = 0;
-      }
-      rows.push(row);
-      size += len;
-    }
-    if (rows.length) pieces.push({ ...b, rows: [head, ...rows], text: "" });
-    return pieces.map((p) => ({ ...p, text: (p.rows ?? []).map((r) => r.join(" | ")).join("\n") }));
-  }
+/** Prefer sentence/line/word boundaries; never split a surrogate pair. */
+export function splitPassageText(text: string, max = CHUNK_TARGET_CHARS): string[] {
+  if (!Number.isInteger(max) || max < 2) throw new Error("Invalid passage size");
   const parts: string[] = [];
-  const units = b.text.split(b.kind === "code" ? /(?<=\n)/ : /(?<=[.!?。])\s+|\n+/);
-  let cur = "";
-  for (const unit of units) {
-    if (cur && cur.length + unit.length + 1 > CHUNK_TARGET_CHARS) {
-      parts.push(cur);
-      cur = "";
+  let at = 0;
+  while (at < text.length) {
+    let end = Math.min(text.length, at + max);
+    if (end < text.length) {
+      const section = text.slice(at, end);
+      const sentences = [...section.matchAll(/(?:[.!?。][ \t]+|\n+)/g)];
+      const sentence = sentences.at(-1);
+      const last =
+        sentence && sentence.index + sentence[0].length >= max / 2
+          ? sentence
+          : [...section.matchAll(/[ \t]+/g)].at(-1);
+      if (last && last.index + last[0].length >= max / 2) end = at + last.index + last[0].length;
+      const previous = text.charCodeAt(end - 1);
+      const next = text.charCodeAt(end);
+      if (previous >= 0xd800 && previous <= 0xdbff && next >= 0xdc00 && next <= 0xdfff) end--;
     }
-    if (unit.length > CHUNK_MAX_CHARS) {
-      for (let i = 0; i < unit.length; i += CHUNK_TARGET_CHARS)
-        parts.push(unit.slice(i, i + CHUNK_TARGET_CHARS));
-      continue;
-    }
-    cur = cur ? `${cur}${b.kind === "code" ? "" : " "}${unit}` : unit;
+    parts.push(text.slice(at, end));
+    at = end;
   }
-  if (cur) parts.push(cur);
-  return parts.map((text) => ({ ...b, text }));
+  return parts;
 }
 
-/** Heading-aware packing: a new section starts a new chunk once the current one is substantial. */
-export function chunkBlocks(blocks: ParsedBlock[]): Chunk[] {
+function render(block: ParsedBlock): string {
+  if (block.kind === "heading") return `${"#".repeat(block.level ?? 1)} ${block.text}`;
+  if (block.kind === "list_item") return `- ${block.text}`;
+  if (block.kind === "code") return `\`\`\`\n${block.text}\n\`\`\``;
+  if (block.kind === "table" && block.rows?.length)
+    return block.rows.map((row) => `| ${row.join(" | ")} |`).join("\n");
+  return block.text;
+}
+
+function pieces(block: ParsedBlock): string[] {
+  const text = render(block);
+  if (text.length <= CHUNK_MAX_CHARS) return text ? [text] : [];
+  if (block.kind === "code")
+    return splitPassageText(block.text, CHUNK_TARGET_CHARS - 8).map(
+      (part) => `\`\`\`\n${part}\n\`\`\``,
+    );
+  if (block.kind === "table" && block.rows?.length) {
+    const rows = block.rows.map((row) => `| ${row.join(" | ")} |`);
+    const header = rows[0] ?? "";
+    // A huge header cannot be repeated safely. Retain all characters as plain fragments.
+    if (header.length > CHUNK_TARGET_CHARS / 2) return splitPassageText(text);
+    const result: string[] = [];
+    let current = header;
+    const budget = CHUNK_TARGET_CHARS - header.length - 1;
+    for (const row of rows.slice(1)) {
+      for (const part of splitPassageText(row, budget)) {
+        if (current.length + part.length + 1 > CHUNK_TARGET_CHARS && current !== header) {
+          result.push(current);
+          current = header;
+        }
+        current += `\n${part}`;
+      }
+    }
+    if (current) result.push(current);
+    return result;
+  }
+  return splitPassageText(text);
+}
+
+/** Revision metadata owns the version: rebuilding an old index must not move citations. */
+export function chunkBlocks(blocks: ParsedBlock[], version = 2): Chunk[] {
+  if (version === 1) return legacyChunks(blocks);
+  if (version !== 2) throw new Error("Unsupported passage chunking version");
   const chunks: Chunk[] = [];
   let parts: string[] = [];
   let size = 0;
@@ -82,18 +99,18 @@ export function chunkBlocks(blocks: ParsedBlock[]): Chunk[] {
     size = 0;
     first = undefined;
   };
-  for (const block of blocks.flatMap(splitBlock)) {
-    const text = blockText(block);
-    const sectionBreak = block.kind === "heading" && (block.level ?? 1) <= 3 && size >= 400;
-    const pageBreak =
-      first?.locator?.page !== undefined &&
-      block.locator?.page !== first.locator.page &&
-      size >= CHUNK_TARGET_CHARS / 2;
-    if (sectionBreak || pageBreak || (size && size + text.length > CHUNK_MAX_CHARS)) emit();
-    first ??= block;
-    parts.push(text);
-    size += text.length + 2;
-    if (size >= CHUNK_TARGET_CHARS && block.kind !== "heading") emit();
+  for (const block of blocks) {
+    for (const text of pieces(block)) {
+      const differentSource =
+        first &&
+        (JSON.stringify(first.heading_path) !== JSON.stringify(block.heading_path) ||
+          JSON.stringify(first.locator ?? null) !== JSON.stringify(block.locator ?? null));
+      if (differentSource || (parts.length && size + 2 + text.length > CHUNK_MAX_CHARS)) emit();
+      first ??= block;
+      size += (parts.length ? 2 : 0) + text.length;
+      parts.push(text);
+      if (size >= CHUNK_TARGET_CHARS && block.kind !== "heading") emit();
+    }
   }
   emit();
   return chunks;

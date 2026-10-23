@@ -1,6 +1,6 @@
 {
   "name": "@orc/knowledge",
-  "version": "0.1.39",
+  "version": "0.1.40",
   "type": "module",
   "main": "src/index.ts",
   "exports": {
@@ -8,6 +8,8 @@
     "./worker": "./src/parsers/worker.ts",
     "./index-db": "./src/index-db.ts",
     "./embeddings": "./src/embeddings.ts",
+    "./embedding-batch": "./src/embedding-batch.ts",
+    "./chunker": "./src/chunker.ts",
     "./vector": "./src/vector.ts"
   },
   "scripts": {

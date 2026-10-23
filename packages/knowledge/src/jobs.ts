@@ -3,12 +3,13 @@ import { ulid } from "@orc/core/ids";
 import type { DocRow, JobKind, JobRow } from "./catalog.js";
 import { chunkBlocks } from "./chunker.js";
 import { documentText } from "./content.js";
+import { embedPendingBatch } from "./embedding-batch.js";
 import { EmbeddingError } from "./embeddings.js";
 import type { Engine } from "./engine.js";
-import { embeddingInput, inputHash } from "./index-db.js";
+import { inputHash } from "./index-db.js";
 import { setDocumentLinks } from "./links.js";
 import { ParserUnavailableError, runParser, selectParser } from "./parsers/registry.js";
-import { decodeVector, encodeVector } from "./vector.js";
+import { decodeVector } from "./vector.js";
 
 const MAX_ATTEMPTS = 3;
 /** Idle re-check so jobs queued by another process (e.g. a stdio MCP server) are picked up. */
@@ -225,7 +226,10 @@ export class JobRunner {
       return;
     }
     if (!text) throw new PermanentJobError("Document content is unavailable");
-    const chunks = chunkBlocks(text.blocks);
+    const chunks = chunkBlocks(
+      text.blocks,
+      this.e.catalog.revision(doc.id, doc.revision)?.chunk_version ?? 1,
+    );
     this.e.idx.replaceDocument({
       document_id: doc.id,
       kb_id: doc.kb_id,
@@ -248,43 +252,37 @@ export class JobRunner {
   }
 
   private async embed(doc: DocRow) {
-    const embedder = this.e.embedder();
-    if (!embedder) {
-      this.e.db.run(
-        "UPDATE kb_documents SET index_state = 'lexical_ready' WHERE id = ? AND revision = ?",
-        [doc.id, doc.revision],
-      );
+    for (;;) {
+      if (this.e.catalog.doc(doc.id)?.revision !== doc.revision) return;
+      const embedder = this.e.embedder();
+      if (!embedder) {
+        this.e.db.run(
+          "UPDATE kb_documents SET index_state = 'lexical_ready' WHERE id = ? AND revision = ?",
+          [doc.id, doc.revision],
+        );
+        return;
+      }
+      let count: number;
+      try {
+        count = await embedPendingBatch(this.e.idx, embedder, doc.id);
+      } catch (error) {
+        // Credentials/timeouts can change without changing the vector space. The
+        // service caches provider objects per full config, so retry with the new one.
+        if (this.e.embedder() !== embedder) continue;
+        throw error;
+      }
+      // Settings may change while awaiting the provider. Drain the active profile before
+      // marking ready; reconcile cannot enqueue another job while this one owns the lease.
+      if (this.e.embedder()?.profile !== embedder.profile) continue;
+      if (this.e.catalog.doc(doc.id)?.revision !== doc.revision) return;
+      if (count) continue;
+      if (this.e.idx.fullyEmbedded(embedder.profile, doc.id))
+        this.e.db.run(
+          "UPDATE kb_documents SET index_state = 'semantic_ready' WHERE id = ? AND revision = ?",
+          [doc.id, doc.revision],
+        );
       return;
     }
-    for (;;) {
-      const pending = this.e.idx.pendingEmbeddings(embedder.profile, embedder.batchSize, doc.id);
-      if (!pending.length) break;
-      const rows: { chunk_id: number; hash: string; vector: Uint8Array }[] = [];
-      const missing: { chunk_id: number; hash: string; text: string }[] = [];
-      for (const c of pending) {
-        const cached = this.e.idx.cachedEmbedding(embedder.profile, c.input_hash);
-        if (cached) rows.push({ chunk_id: c.id, hash: c.input_hash, vector: cached });
-        else missing.push({ chunk_id: c.id, hash: c.input_hash, text: embeddingInput(c) });
-      }
-      if (missing.length) {
-        const vectors = await embedder.embed(
-          missing.map((m) => m.text),
-          "document",
-        );
-        missing.forEach((m, i) => {
-          rows.push({ chunk_id: m.chunk_id, hash: m.hash, vector: encodeVector(vectors[i] ?? []) });
-        });
-      }
-      this.e.idx.putVectors(embedder.profile, rows);
-      // A newer revision replaced the chunks mid-flight; its own embed job takes over.
-      if (this.e.catalog.doc(doc.id)?.revision !== doc.revision) return;
-      if (rows.length < pending.length) break;
-    }
-    if (this.e.idx.fullyEmbedded(embedder.profile, doc.id))
-      this.e.db.run(
-        "UPDATE kb_documents SET index_state = 'semantic_ready' WHERE id = ? AND revision = ?",
-        [doc.id, doc.revision],
-      );
   }
 }
 
