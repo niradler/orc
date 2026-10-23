@@ -26,6 +26,7 @@
     "clean": "bun run --filter '*' clean"
   },
   "overrides": {
+    "body-parser": "2.4.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "@modelcontextprotocol/sdk": "1.32.1",
