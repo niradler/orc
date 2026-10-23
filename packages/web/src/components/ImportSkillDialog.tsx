@@ -93,8 +93,7 @@ export function ImportSkillDialog({ onClose }: { onClose: () => void }) {
           <p className="text-xs text-outline">
             GitHub repositories, owner/repo, skill-folder URLs and skills.sh links. Private
             repositories use gh login on the execution host (local or SSH), or ORC_GITHUB_TOKEN on
-            the ORC server. Downloads run on the ORC server, which needs DNS and HTTPS access to
-            GitHub. Supporting files are included.
+            the ORC server. Supporting files are included.
           </p>
           <Button type="submit" data-testid="skill-discover" disabled={busy || !source.trim()}>
             {discover.isPending ? "Discovering…" : "Discover skills"}

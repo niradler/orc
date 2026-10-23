@@ -7,17 +7,6 @@ import {
 } from "./skill-import.js";
 import { mergeSkillFiles } from "./skill-sync.js";
 
-test("should explain server networking when a GitHub download cannot connect", async () => {
-  const remote = spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("DNS failed"));
-  try {
-    await expect(resolveCommit("acme/skills", "HEAD")).rejects.toThrow(
-      "check DNS and HTTPS access from the ORC server or container",
-    );
-  } finally {
-    remote.mockRestore();
-  }
-});
-
 test("should authenticate private commit, tree and binary file requests without following redirects", async () => {
   const commit = "a".repeat(40);
   const requests: string[] = [];

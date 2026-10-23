@@ -190,8 +190,8 @@ export default function Skills({ projectId }: { projectId: string }) {
         .
       </p>
       <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
-        Listed skills appear when agents list or search skills in this ORC installation. Hidden
-        built-ins can still be read by name and used by flows. Edited overrides stay listed.
+        Built-in visibility applies to agent discovery across this installation. Hidden skills
+        remain readable by name and available to flows. Authored overrides stay visible.
       </p>
       {(visibility.error || setVisibility.error) && (
         <p role="alert" className="text-destructive text-xs mb-2">
@@ -322,7 +322,7 @@ export default function Skills({ projectId }: { projectId: string }) {
                 <TableHead className="font-label text-sm  text-muted-foreground w-24">
                   Source
                 </TableHead>
-                <TableHead className="text-xs text-muted-foreground">Listed for agents</TableHead>
+                <TableHead className="text-xs text-muted-foreground">Agent discovery</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -387,11 +387,11 @@ export default function Skills({ projectId }: { projectId: string }) {
                           setVisibility.mutate([...hidden]);
                         }}
                       >
-                        {skill.discovery_hidden ? "Hidden — show" : "Listed — hide"}
+                        {skill.discovery_hidden ? "Hidden — show" : "Visible — hide"}
                       </button>
                     ) : (
                       <span className="text-xs text-muted-foreground">
-                        {skill.mutation ? "Listed (edited override)" : "Listed"}
+                        {skill.mutation ? "Visible (override)" : "Visible"}
                       </span>
                     )}
                   </TableCell>

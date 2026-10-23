@@ -117,9 +117,7 @@ async function readRemote(
       },
     });
   } catch {
-    throw new ValidationError(
-      "GitHub request failed or timed out; check DNS and HTTPS access from the ORC server or container. SSH is used to read gh credentials; downloads run on the ORC server.",
-    );
+    throw new ValidationError("GitHub request failed or timed out; try again");
   }
   if (!response.ok) {
     await response.body?.cancel();
