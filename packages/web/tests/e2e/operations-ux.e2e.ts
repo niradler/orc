@@ -47,9 +47,19 @@ for (const theme of ["dark", "light"] as const) {
       await gotoView(page, "dashboard");
       await selectProject(page, project.id);
       await expect(page.getByTestId("view-title")).toHaveText("Activity");
-      await expect(
-        page.locator('[data-stat-label="Active jobs"] [data-testid="stat-card-value"]'),
-      ).toHaveText("1");
+      // Project bootstrap can also create an enabled Learnings digest job.
+      await expect
+        .poll(async () => {
+          const { jobs } = await apiGet<{ jobs: { enabled: boolean }[] }>(
+            request,
+            `/jobs?project_id=${project.id}`,
+          );
+          const displayed = await page
+            .locator('[data-stat-label="Active jobs"] [data-testid="stat-card-value"]')
+            .textContent();
+          return Number(displayed) - jobs.filter((item) => item.enabled).length;
+        })
+        .toBe(0);
       await expect(
         page.locator('[data-stat-label="Memories"] [data-testid="stat-card-value"]'),
       ).toHaveText("1");

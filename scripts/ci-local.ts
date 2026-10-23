@@ -40,7 +40,16 @@ for (const [name, command] of steps) {
   const testHome = testStep ? mkdtempSync(join(tmpdir(), "orc-ci-home-")) : undefined;
   let exitCode: number;
   try {
-    const childEnv = testHome ? { ...env, HOME: testHome, USERPROFILE: testHome } : env;
+    const childEnv = testHome
+      ? {
+          ...env,
+          HOME: testHome,
+          USERPROFILE: testHome,
+          APPDATA: join(testHome, "AppData", "Roaming"),
+          LOCALAPPDATA: join(testHome, "AppData", "Local"),
+          XDG_CONFIG_HOME: join(testHome, ".config"),
+        }
+      : env;
     const result = Bun.spawnSync(command, {
       cwd: root,
       env: childEnv,

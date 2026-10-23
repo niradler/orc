@@ -126,8 +126,11 @@ export function terminalHost(id: string): {
 let picking = false;
 
 // One native dialog at a time: a second click while one is open would stack hidden dialogs.
-export async function pickFolderOnce(initial: string | undefined): Promise<string | null> {
-  if (resolveExecHost().kind === "ssh")
+export async function pickFolderOnce(
+  initial: string | undefined,
+  host: ExecHost = resolveExecHost(),
+): Promise<string | null> {
+  if (host.kind === "ssh")
     throw new ValidationError(
       "An SSH host is selected, so folders live on that host. Browse its folders instead of the native dialog.",
     );

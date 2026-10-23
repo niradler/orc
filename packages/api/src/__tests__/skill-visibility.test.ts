@@ -110,7 +110,7 @@ test("should persist discovery visibility without changing reads, flows, user sk
   expect(catalog.skills.some((skill: { name: string }) => skill.name === "orc-sdlc")).toBe(false);
   expect(catalog.skills.some((skill: { name: string }) => skill.name === name)).toBe(true);
   expect(listSkills().some((skill) => skill.name === "orc-sdlc")).toBe(false);
-  expect(await executeTool("skill_list", { scope: "global" })).not.toContain("orc-sdlc");
+  expect(await executeTool("skill_list", { scope: "global" })).not.toMatch(/^orc-sdlc\s/m);
   expect(await executeTool("skill_read", { name: "orc-sdlc", scope: "global" })).toContain(
     "# orc-sdlc",
   );
@@ -125,8 +125,8 @@ test("should persist discovery visibility without changing reads, flows, user sk
   updateGlobalConfig((config) => {
     config.skills = { hidden_builtins: ["orc-platform"] };
   });
-  expect(await executeTool("skill_list", { scope: "global" })).toContain("orc-sdlc");
-  expect(await executeTool("skill_list", { scope: "global" })).not.toContain("orc-platform");
+  expect(await executeTool("skill_list", { scope: "global" })).toMatch(/^orc-sdlc\s/m);
+  expect(await executeTool("skill_list", { scope: "global" })).not.toMatch(/^orc-platform\s/m);
 });
 
 test("should preserve global and project authored overrides during hide-all", async () => {

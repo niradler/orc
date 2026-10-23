@@ -74,7 +74,7 @@
   }
 }
 
-@container (min-width: 560px) {
+@container (min-width: 460px) {
   .file-panel-body[data-preview="true"] {
     flex-direction: row;
   }

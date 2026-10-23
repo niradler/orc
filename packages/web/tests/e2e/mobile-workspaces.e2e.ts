@@ -191,7 +191,12 @@ for (const theme of ["dark", "light"] as const) {
         expect(gesture.deltas).toEqual([-60]);
         expect(gesture.sameFocus).toBe(true);
         const pane = page.getByTestId("workspace-pane").filter({ visible: true });
-        await pane.getByTestId("pane-split-horizontal").tap();
+        if (await pane.getByTestId("pane-split-horizontal").isVisible()) {
+          await pane.getByTestId("pane-split-horizontal").tap();
+        } else {
+          await pane.getByTestId("pane-actions").tap();
+          await pane.getByTestId("pane-action-split-horizontal").tap();
+        }
         await expect(page.getByTestId("mobile-workspace-pane")).toHaveCount(2);
         await expect(page.getByTestId("workspace-pane").filter({ visible: true })).toHaveCount(1);
         await page.getByTestId("mobile-workspace-pane").first().tap();

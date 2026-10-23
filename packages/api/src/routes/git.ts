@@ -1,11 +1,16 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
-import { hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
+import { type ExecHost, hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
 import { knownWorktrees, worktreeDeps } from "../git/registry.js";
 import { listWorktrees, removeWorktree, samePath, trackedWorktrees } from "../git/worktrees.js";
 import { createRouter } from "../lib/router.js";
 import { observeCheckout } from "../realtime/sources.js";
+import {
+  selectedTerminalHost,
+  TerminalHostQuerySchema,
+  TerminalHostSchema,
+} from "../terminals/host.js";
 import { requireTerminals } from "../terminals/service.js";
 
 const app = createRouter();
@@ -32,7 +37,7 @@ const listRoute = createRoute({
   path: "/git/worktrees",
   tags: ["Git"],
   summary: "List the checkouts of the git repo that contains a folder",
-  request: { query: z.object({ cwd: z.string().min(1) }) },
+  request: { query: z.object({ cwd: z.string().min(1), host: TerminalHostQuerySchema }) },
   responses: {
     200: {
       description: "Worktrees; root is null when the folder is not in a git repo",
@@ -59,6 +64,7 @@ const removeRoute = createRoute({
         "application/json": {
           schema: z.object({
             cwd: z.string().min(1),
+            host: TerminalHostSchema.optional(),
             path: z.string().min(1),
             force: z.boolean().optional(),
             delete_branch: z.boolean().optional(),
@@ -73,30 +79,34 @@ const removeRoute = createRoute({
 });
 
 // These run git in folders on the API machine, so they sit behind the same gate as terminals.
-async function checkedFolder(cwd: string): Promise<string> {
-  if (!(await hostIsDirectory(resolveExecHost(), cwd)))
-    throw new ValidationError(`Not a directory: ${cwd}`);
+async function checkedFolder(cwd: string, host: ExecHost = resolveExecHost()): Promise<string> {
+  if (!(await hostIsDirectory(host, cwd))) throw new ValidationError(`Not a directory: ${cwd}`);
   return cwd;
 }
 
 app.openapi(listRoute, async (c) => {
-  requireTerminals(loadConfig());
-  const cwd = await checkedFolder(c.req.valid("query").cwd);
-  observeCheckout(resolveExecHost(), cwd);
-  return c.json(await listWorktrees(cwd, worktreeDeps()), 200);
+  const config = loadConfig();
+  requireTerminals(config);
+  const query = c.req.valid("query");
+  const host = selectedTerminalHost(config, query.host === "" ? null : query.host);
+  const cwd = await checkedFolder(query.cwd, host);
+  observeCheckout(host, cwd);
+  return c.json(await listWorktrees(cwd, worktreeDeps(host)), 200);
 });
 
 app.openapi(removeRoute, async (c) => {
-  requireTerminals(loadConfig());
+  const config = loadConfig();
+  requireTerminals(config);
   const body = c.req.valid("json");
+  const host = selectedTerminalHost(config, body.host);
   await removeWorktree(
     {
-      cwd: await checkedFolder(body.cwd),
+      cwd: await checkedFolder(body.cwd, host),
       path: body.path,
       force: body.force,
       delete_branch: body.delete_branch,
     },
-    worktreeDeps(),
+    worktreeDeps(host),
   );
   return c.body(null, 204);
 });

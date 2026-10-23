@@ -45,6 +45,15 @@ afterAll(() => {
 });
 
 describe("terminal git panel", () => {
+  test("should distinguish a checkout without a GitHub remote from missing authentication", async () => {
+    const response = await req(app, "GET", `/terminals/${terminalId}/git/github`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      unavailable_reason: "no_remote",
+      items: [],
+      errors: [],
+    });
+  });
   test("should read status and worktrees without refreshing the index", async () => {
     const checkout = mkdtempSync(join(tmpdir(), "orc-index-read-"));
     for (const args of [

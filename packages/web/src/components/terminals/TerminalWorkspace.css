@@ -1,0 +1,33 @@
+.terminal-workspace-pane {
+  container-type: inline-size;
+}
+
+.pane-checkout-context,
+.pane-task-context,
+.pane-pr-context {
+  display: none;
+}
+
+@container (max-width: 399px) {
+  .pane-view-label {
+    display: none;
+  }
+}
+
+@container (min-width: 480px) {
+  .pane-checkout-context {
+    display: block;
+  }
+}
+
+@container (min-width: 720px) {
+  .pane-task-context {
+    display: inline-flex;
+  }
+}
+
+@container (min-width: 900px) {
+  .pane-pr-context {
+    display: inline-flex;
+  }
+}

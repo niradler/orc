@@ -8,6 +8,31 @@ import {
 } from "../../src/lib/resource-events";
 
 describe("resource events", () => {
+  test("should keep health idle for unrelated resource changes and refresh explicit health changes", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY } },
+    });
+    let reads = 0;
+    const observer = new QueryObserver(client, {
+      queryKey: ["health"],
+      queryFn: async () => {
+        reads++;
+        return { status: "ok", version: "test" };
+      },
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    try {
+      await observer.refetch();
+      const baseline = reads;
+      await invalidateResources(client, ["tasks", "sessions", "jobs", "projects", "memories"]);
+      expect(reads).toBe(baseline);
+      await invalidateResources(client, ["health"]);
+      expect(reads).toBe(baseline + 1);
+    } finally {
+      unsubscribe();
+      client.clear();
+    }
+  });
   test("should refresh read counters without re-reading skill content", async () => {
     const client = new QueryClient();
     client.setQueryData(["skills"], []);
