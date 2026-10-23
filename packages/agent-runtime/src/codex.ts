@@ -77,6 +77,31 @@ function buildCodexEnv(): Record<string, string> {
   return env;
 }
 
+async function hasConfiguredOrcMcp(
+  host: ExecHost,
+  command: string[],
+  cwd: string,
+): Promise<boolean> {
+  const result = await hostExec(host, [...command, "mcp", "list", "--json"], {
+    cwd,
+    timeoutMs: 15_000,
+  });
+  if (result.code !== 0 || result.stdout.length > 1_000_000)
+    throw new Error("Codex MCP configuration could not be read.");
+  let servers: unknown;
+  try {
+    servers = JSON.parse(result.stdout);
+  } catch {
+    throw new Error("Codex returned an invalid MCP configuration listing.");
+  }
+  if (!Array.isArray(servers))
+    throw new Error("Codex returned an invalid MCP configuration listing.");
+  return servers.some(
+    (server: unknown) =>
+      server !== null && typeof server === "object" && "name" in server && server.name === "orc",
+  );
+}
+
 type StreamState = { hasReceivedResult: boolean };
 
 export class CodexSession implements AgentSession {
@@ -114,7 +139,8 @@ export class CodexSession implements AgentSession {
     const mcp = opts.orcMcp === false ? null : buildOrcMcpServer(this.host);
     const env = buildCodexEnv();
     if (mcp?.headers?.Authorization) env.ORC_CODEX_MCP_TOKEN = mcp.headers.Authorization.slice(7);
-    const args = [...(await this.launcher(this.host)), "exec"];
+    const command = await this.launcher(this.host);
+    const args = [...command, "exec"];
     if (opts.runtimeSessionId) args.push("resume", opts.runtimeSessionId);
     args.push("--json", "--skip-git-repo-check", "-c", 'approval_policy="never"');
     args.push(
@@ -125,7 +151,9 @@ export class CodexSession implements AgentSession {
     // entry retains its command and makes the transport configuration invalid.
     const mcpKey = `mcp_servers.orc_runtime_${this.id}`;
     if (mcp) {
-      args.push("-c", "mcp_servers.orc.enabled=false");
+      // Disabling a missing entry creates a transport-less server and Codex rejects it.
+      if (await hasConfiguredOrcMcp(this.host, command, this.cwd))
+        args.push("-c", "mcp_servers.orc.enabled=false");
       args.push("-c", `${mcpKey}.url=${JSON.stringify(mcp.url)}`);
       args.push("-c", `${mcpKey}.required=true`);
       if (opts.autoApprove) args.push("-c", `${mcpKey}.default_tools_approval_mode="approve"`);
@@ -141,6 +169,7 @@ export class CodexSession implements AgentSession {
       stdout: "pipe",
       stderr: "pipe",
       env,
+      passEnv: ["ORC_CODEX_MCP_TOKEN"],
     });
     this.proc = handle.proc;
     this.killProc = handle.kill;
