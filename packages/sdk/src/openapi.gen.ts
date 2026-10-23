@@ -7700,6 +7700,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/terminals/{id}/git/pulls/{number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the current branch PR, changed files and review discussion */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    number: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Pull request review */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PullReview"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/terminals/{id}/git/pulls/{number}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send an explicit general, inline or reply comment to the current branch PR */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    number: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PullCommentInput"];
+                };
+            };
+            responses: {
+                /** @description Comment posted */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description PR changed or closed; draft retained */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/terminals/{id}/files": {
         parameters: {
             query?: never;
@@ -9392,6 +9479,99 @@ export interface components {
             upstream_gone?: boolean;
             stale?: boolean;
             active_terminal?: string | null;
+        };
+        PullReview: {
+            repo: string;
+            number: number;
+            title: string;
+            body: string;
+            state: string;
+            /** Format: uri */
+            url: string;
+            author: string;
+            head: string;
+            branch: string;
+            base: string;
+            changed_files: number;
+            files: {
+                filename: string;
+                previous_filename?: string;
+                status: string;
+                additions: number;
+                deletions: number;
+                patch?: string;
+                patch_truncated: boolean;
+            }[];
+            comments: {
+                id: number;
+                body: string | null;
+                user: {
+                    login: string;
+                } | null;
+                /** Format: uri */
+                html_url: string;
+                created_at: string;
+                path?: string;
+                line?: number | null;
+                original_line?: number | null;
+                side?: string;
+                in_reply_to_id?: number;
+                state?: string;
+            }[];
+            discussion: {
+                id: number;
+                body: string | null;
+                user: {
+                    login: string;
+                } | null;
+                /** Format: uri */
+                html_url: string;
+                created_at: string;
+                path?: string;
+                line?: number | null;
+                original_line?: number | null;
+                side?: string;
+                in_reply_to_id?: number;
+                state?: string;
+            }[];
+            reviews: {
+                id: number;
+                body: string | null;
+                user: {
+                    login: string;
+                } | null;
+                /** Format: uri */
+                html_url: string;
+                created_at: string;
+                path?: string;
+                line?: number | null;
+                original_line?: number | null;
+                side?: string;
+                in_reply_to_id?: number;
+                state?: string;
+            }[];
+            truncated: boolean;
+        };
+        PullCommentInput: {
+            /** @enum {string} */
+            kind: "discussion";
+            head: string;
+            body: string;
+        } | {
+            /** @enum {string} */
+            kind: "inline";
+            head: string;
+            body: string;
+            path: string;
+            line: number;
+            /** @enum {string} */
+            side: "LEFT" | "RIGHT";
+        } | {
+            /** @enum {string} */
+            kind: "reply";
+            head: string;
+            body: string;
+            comment_id: number;
         };
     };
     responses: never;

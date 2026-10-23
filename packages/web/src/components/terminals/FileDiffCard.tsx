@@ -38,7 +38,9 @@ function DiffSection({
     queryFn: () => api.git.diff(terminalId, staged, path),
     enabled: visible,
   });
-  const lines = diff.data?.diff ? diffLines(diff.data.diff) : [];
+  const lines = diff.data?.diff
+    ? diffLines(diff.data.diff).filter((line) => line.kind !== "meta")
+    : [];
   return (
     <div
       ref={ref}
@@ -169,7 +171,7 @@ export function FileDiffCard({
           data-testid="git-diff-file-toggle"
           aria-expanded={open}
           onClick={toggle}
-          className="flex-1 min-w-0 flex items-center gap-2 text-left p-3 hover:bg-surface"
+          className="flex-1 min-w-0 min-h-11 sm:min-h-9 flex items-center gap-2 text-left px-2 py-2 hover:bg-surface"
         >
           {open ? (
             <ChevronDown size={16} className="shrink-0" />
@@ -185,7 +187,7 @@ export function FileDiffCard({
             className="shrink-0 text-xs text-on-surface-variant text-right"
           >
             {label}
-            <br />
+            {" · "}
             {conflict
               ? "Resolve then stage"
               : staged

@@ -3,6 +3,7 @@ import {
   CircleCheck,
   CircleDashed,
   CircleX,
+  ExternalLink,
   GitPullRequest,
   ListTodo,
   LoaderCircle,
@@ -20,8 +21,8 @@ function samePath(left: string | null | undefined, right: string): boolean {
   return normalize(left) === normalize(right);
 }
 
-export function TerminalPaneLinks({ terminal }: { terminal: Terminal }) {
-  const [params] = useSearchParams();
+export function TerminalPaneLinks({ terminal, paneId }: { terminal: Terminal; paneId: string }) {
+  const [params, setParams] = useSearchParams();
   const tasks = useTasks();
   const status = useQuery({
     queryKey: ["git", terminal.id, "status"],
@@ -81,13 +82,44 @@ export function TerminalPaneLinks({ terminal }: { terminal: Terminal }) {
           <a
             data-testid="pane-linked-pr"
             href={pull.url}
+            onClick={(event) => {
+              if (
+                event.ctrlKey ||
+                event.metaKey ||
+                event.shiftKey ||
+                event.altKey ||
+                github.data?.auth === "none"
+              )
+                return;
+              event.preventDefault();
+              setParams((current) => {
+                const next = new URLSearchParams(current);
+                next.set("view", "git");
+                next.set("pane", paneId);
+                next.set("paneTerminal", terminal.id);
+                next.set("pr", String(pull.number));
+                next.delete("file");
+                return next;
+              });
+            }}
             target="_blank"
             rel="noopener noreferrer"
             title={`PR #${pull.number}: ${pull.title} (${pull.state})`}
-            aria-label={`Open PR #${pull.number}: ${pull.title}`}
+            aria-label={`Review PR #${pull.number}: ${pull.title}`}
             className={`inline-flex shrink-0 ${linkClass}`}
           >
             <GitPullRequest size={13} />#{pull.number}
+          </a>
+          <a
+            href={pull.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="pane-pr-browser"
+            aria-label="Open PR in browser"
+            title="Open PR in browser"
+            className={`inline-flex ${linkClass}`}
+          >
+            <ExternalLink size={12} />
           </a>
           {github.data?.auth !== "none" &&
             pull.ci &&

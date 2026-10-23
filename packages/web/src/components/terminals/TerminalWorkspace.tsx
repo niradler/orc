@@ -201,10 +201,12 @@ function WorkspaceTree(props: TreeProps) {
         <div className="flex-1 min-w-0 flex items-center gap-3 overflow-hidden px-1">
           {terminal && (
             <>
-              <div className="pane-checkout-context min-w-0 max-w-72">
-                <TerminalCheckout terminal={terminal} paneId={node.id} />
-              </div>
-              <TerminalPaneLinks terminal={terminal} />
+              {node.kind !== "git" && (
+                <div className="pane-checkout-context min-w-0 max-w-72">
+                  <TerminalCheckout terminal={terminal} paneId={node.id} />
+                </div>
+              )}
+              <TerminalPaneLinks terminal={terminal} paneId={node.id} />
             </>
           )}
         </div>

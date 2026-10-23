@@ -44,6 +44,8 @@ import type {
   LocalSkillAgentListing,
   LocalSkillImportItem,
   LocalSkillImportResult,
+  PullCommentInput,
+  PullReview,
   RestartResponse,
   ScopeQuery,
   SkillChange,
@@ -58,6 +60,8 @@ import type {
 export type {
   LocalSkill,
   LocalSkillAgentListing,
+  PullCommentInput,
+  PullReview,
   SkillDiscovery,
   SkillImportInput,
   SkillImportOrigin,
@@ -1072,6 +1076,10 @@ export const api = {
       }),
     checkoutGithub: (id: string) =>
       req<GithubFeed>("GET", `/terminals/${encodeURIComponent(id)}/git/github`),
+    pullReview: (id: string, number: number) =>
+      req<PullReview>("GET", `/terminals/${encodeURIComponent(id)}/git/pulls/${number}`),
+    postPullComment: (id: string, number: number, body: PullCommentInput) =>
+      req<null>("POST", `/terminals/${encodeURIComponent(id)}/git/pulls/${number}/comments`, body),
     saveFile: (id: string, path: string, content: string, original: string) =>
       req<null>("PUT", `/terminals/${encodeURIComponent(id)}/files`, {
         path,

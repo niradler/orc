@@ -4,6 +4,9 @@ export type { JobAction, WebhookSubscription } from "@orc/core/job-actions";
 
 import type { components } from "./openapi.gen.js";
 
+export type PullReview = components["schemas"]["PullReview"];
+export type PullCommentInput = components["schemas"]["PullCommentInput"];
+
 export type { ScopeQuery } from "@orc/core/scope";
 export type { SkillUpdate } from "@orc/core/skill-update";
 export type AuditEntry = components["schemas"]["AuditEntry"];

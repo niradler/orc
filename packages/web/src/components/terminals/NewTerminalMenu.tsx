@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { FolderOpen, GitBranch, Plus, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   ApiError,
   api,
@@ -22,6 +22,7 @@ import {
   WORKTREE_KEY,
 } from "@/lib/terminal-launch";
 import { cn } from "@/lib/utils";
+import { TerminalSelect } from "./TerminalSelect";
 
 interface NewTerminalMenuProps {
   open: boolean;
@@ -63,6 +64,7 @@ export function NewTerminalMenu({
   onCreate,
   className,
 }: NewTerminalMenuProps) {
+  const hostSelectId = useId();
   const [prefs] = useState(() => readLaunchPrefs(storage));
   const [host, setHost] = useState<string | null>(defaultHost);
   const [cwd, setCwd] = useState(defaultHost ? "" : prefs.cwd);
@@ -238,16 +240,20 @@ export function NewTerminalMenu({
           role="dialog"
           aria-label="New terminal"
           data-testid="terminal-launch-menu"
-          className="absolute right-0 md:left-0 md:right-auto top-full mt-1 z-30 w-[22rem] max-w-[calc(100vw-2rem)] bg-surface-high border border-outline-variant rounded-lg shadow-xl p-3 space-y-3 max-h-[70dvh] overflow-y-auto"
+          className="terminal-launch-controls absolute right-0 md:left-0 md:right-auto top-full mt-1 z-30 w-[22rem] max-w-[calc(100vw-2rem)] bg-surface-high border border-outline-variant rounded-lg shadow-xl p-3 space-y-3 max-h-[70dvh] overflow-y-auto"
         >
-          <label className="flex items-center gap-2 font-label text-xs text-on-surface-variant">
+          <label
+            htmlFor={hostSelectId}
+            className="flex items-center gap-2 font-label text-xs text-on-surface-variant"
+          >
             Host
-            <select
+            <TerminalSelect
+              id={hostSelectId}
               data-testid="terminal-host-select"
               value={host ?? ""}
               onChange={(event) => chooseHost(event.target.value || null)}
               disabled={pending || browsing}
-              className="min-w-0 flex-1 min-h-11 rounded-md border border-control-border bg-background px-2 text-on-surface focus:outline-none focus:ring-2 focus:ring-focus"
+              className=""
             >
               <option value="">Local</option>
               {[...new Set([...(ssh?.hosts ?? []), ...(ssh?.host ? [ssh.host] : [])])].map(
@@ -257,7 +263,7 @@ export function NewTerminalMenu({
                   </option>
                 ),
               )}
-            </select>
+            </TerminalSelect>
           </label>
           <label className="block">
             <span className="font-label text-xs text-on-surface-variant">
@@ -279,7 +285,7 @@ export function NewTerminalMenu({
                 onChange={(e) => chooseFolder(e.target.value)}
                 placeholder="~ (home folder)"
                 spellCheck={false}
-                className="min-w-0 flex-1 bg-background border border-control-border rounded-md min-h-11 px-2 py-1 font-body text-base sm:text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-focus"
+                className="terminal-field flex-1"
               />
               <button
                 type="button"

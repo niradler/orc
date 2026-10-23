@@ -6,6 +6,13 @@ import { ulid } from "@orc/core/ids";
 import { checkoutFiles, saveCheckoutFile } from "../git/files.js";
 import { checkoutGithubFeed, GithubCiSchema } from "../git/github.js";
 import { commitStaged, gitDiff, gitStatus, stageFiles, switchBranch } from "../git/panel.js";
+import {
+  PullCommentInputSchema,
+  PullReviewSchema,
+  postPullComment,
+  readPullReview,
+  terminalPullContext,
+} from "../git/pull-review.js";
 import { worktreeDeps } from "../git/registry.js";
 import { trackedWorktrees } from "../git/worktrees.js";
 import { createRouter } from "../lib/router.js";
@@ -34,6 +41,51 @@ const FileSchema = z.object({
   working: z.string(),
   original: z.string().nullable(),
 });
+const pullParams = params.extend({ number: z.coerce.number().int().positive() });
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/terminals/{id}/git/pulls/{number}",
+    tags: ["GitHub"],
+    summary: "Read the current branch PR, changed files and review discussion",
+    request: { params: pullParams },
+    responses: {
+      200: {
+        description: "Pull request review",
+        content: { "application/json": { schema: PullReviewSchema } },
+      },
+    },
+  }),
+  async (c) => {
+    const { id, number } = c.req.valid("param");
+    const { host, cwd } = folder(id);
+    const { repo, branch, deps } = await terminalPullContext(host, cwd);
+    return c.json(await readPullReview(repo, branch, number, deps), 200);
+  },
+);
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/terminals/{id}/git/pulls/{number}/comments",
+    tags: ["GitHub"],
+    summary: "Send an explicit general, inline or reply comment to the current branch PR",
+    request: {
+      params: pullParams,
+      body: { required: true, content: { "application/json": { schema: PullCommentInputSchema } } },
+    },
+    responses: {
+      204: { description: "Comment posted" },
+      409: { description: "PR changed or closed; draft retained" },
+    },
+  }),
+  async (c) => {
+    const { id, number } = c.req.valid("param");
+    const { host, cwd } = folder(id);
+    const { repo, branch, deps } = await terminalPullContext(host, cwd);
+    await postPullComment(repo, branch, number, c.req.valid("json"), deps);
+    return c.body(null, 204);
+  },
+);
 app.openapi(
   createRoute({
     method: "put",

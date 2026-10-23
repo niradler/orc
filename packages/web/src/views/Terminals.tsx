@@ -9,6 +9,7 @@ import { RenameTerminal } from "@/components/terminals/RenameTerminal";
 import { TerminalActions } from "@/components/terminals/TerminalActions";
 import { TerminalCheckout } from "@/components/terminals/TerminalCheckout";
 import { TerminalList } from "@/components/terminals/TerminalList";
+import { TerminalSelect } from "@/components/terminals/TerminalSelect";
 import { TerminalWorkspace } from "@/components/terminals/TerminalWorkspace";
 import { WorktreeRegistry } from "@/components/terminals/WorktreeRegistry";
 import { Button } from "@/components/ui/button";
@@ -370,7 +371,7 @@ export default function Terminals() {
         {!isDesktop && (
           <>
             <div className="shrink-0 flex items-center gap-2 p-2 border-b border-surface-highest">
-              <select
+              <TerminalSelect
                 aria-label="Terminal"
                 value={selected?.id ?? ""}
                 onChange={(event) => {
@@ -392,7 +393,7 @@ export default function Terminals() {
                     {t.name}
                   </option>
                 ))}
-              </select>
+              </TerminalSelect>
               <div className="shrink-0 w-32">{newMenu}</div>
             </div>
             <WorktreeRegistry compact />
@@ -429,7 +430,7 @@ export default function Terminals() {
                   )}
                   <span> · {terminalStatus(selected, connectionOf(selected.id))}</span>
                 </div>
-                <div className="md:hidden">
+                <div className={params.get("view") === "git" ? "hidden" : "md:hidden"}>
                   <TerminalCheckout key={selected.id} terminal={selected} />
                 </div>
               </div>
