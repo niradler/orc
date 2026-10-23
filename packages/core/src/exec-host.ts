@@ -1,9 +1,12 @@
 import { Database } from "bun:sqlite";
+import { randomUUID } from "node:crypto";
 import {
+  closeSync,
   type Dirent,
   existsSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   statSync,
@@ -726,21 +729,34 @@ export async function hostExec(
         ? ["env", ...Object.entries(opts.env).map(([k, v]) => `${k}=${v}`), ...argv]
         : argv;
       const remainingTimeoutMs = commandTimeLeft(host.alias, deadline);
-      const result = await collect(
-        Bun.spawn(
-          sshArgv(host, remoteCommand(withEnv, { cwd: opts.cwd, login: opts.login }), {
-            shared: true,
-          }),
+      const diagnosticsPath = join(sshDir(), `command-${randomUUID()}.log`);
+      closeSync(openSync(diagnosticsPath, "wx", 0o600));
+      let result: ExecResult;
+      let diagnostics: string;
+      try {
+        const command = sshArgv(
+          host,
+          remoteCommand(withEnv, { cwd: opts.cwd, login: opts.login }),
           {
+            shared: true,
+          },
+        );
+        command.splice(1, 0, "-E", diagnosticsPath);
+        result = await collect(
+          Bun.spawn(command, {
             env: process.env,
             stdin: input,
             stdout: "pipe",
             stderr: "pipe",
             ...(remainingTimeoutMs !== undefined ? { timeout: remainingTimeoutMs } : {}),
-          },
-        ),
-      );
-      if (result.code === 255 && isSshTransportFailure(result.stderr)) {
+          }),
+        );
+        diagnostics = readFileSync(diagnosticsPath, "utf8");
+      } finally {
+        unlinkSync(diagnosticsPath);
+      }
+      if (diagnostics) result.stderr = `${diagnostics}${result.stderr}`;
+      if (result.code === 255 && isSshTransportFailure(diagnostics)) {
         logger.warn("SSH transport failed", { alias: host.alias, attempt });
         if (masterGenerations.get(host.alias) === generation) await closeSshMaster(host.alias);
       }
@@ -750,7 +766,7 @@ export async function hostExec(
         result.code === 255 &&
         result.stdout.length === 0 &&
         /(?:^kex_exchange_identification:|^mux_client_hello_exchange:|^Connection closed by UNKNOWN port 65535\r?$)/im.test(
-          result.stderr,
+          diagnostics,
         )
       ) {
         if (attempt < SSH_ATTEMPTS) {

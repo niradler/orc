@@ -10,9 +10,12 @@ async function sshScenario(body: string): Promise<void> {
   writeFileSync(
     fake,
     `#!${process.execPath}
-import { appendFileSync, existsSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, statSync, writeFileSync } from "node:fs";
 const root = process.env.HOME;
 const args = process.argv.slice(2);
+const diagnosticsPath = args.includes("-E") ? args[args.indexOf("-E") + 1] : null;
+if (diagnosticsPath && (statSync(diagnosticsPath).mode & 0o777) !== 0o600) throw new Error("SSH diagnostics are not private");
+const transportError = (text) => diagnosticsPath ? appendFileSync(diagnosticsPath, text + "\\n") : console.error(text);
 const state = root + "/master";
 const log = (event) => appendFileSync(root + "/events", event + "\\n");
 if (args.includes("-O")) {
@@ -47,16 +50,16 @@ if (command.includes("handshake-once")) {
   log("handshake-attempt");
   if (!existsSync(root + "/handshake-failed")) {
     writeFileSync(root + "/handshake-failed", "");
-    console.error("Connection closed by UNKNOWN port 65535"); process.exit(255);
+    transportError("Connection closed by UNKNOWN port 65535"); process.exit(255);
   }
   log("executed"); process.exit(0);
 }
 if (command.includes("handshake-always")) {
   log("handshake-attempt");
-  console.error("kex_exchange_identification: Connection closed by remote host"); process.exit(255);
+  transportError("kex_exchange_identification: Connection closed by remote host"); process.exit(255);
 }
 if (existsSync(root + "/fail-file-check") && (command.includes("test -f") || command.includes("test -d"))) {
-  console.error("Connection reset by peer");
+  transportError("Connection reset by peer");
   process.exit(255);
 }
 if (command.includes("gate-command")) {
@@ -68,7 +71,7 @@ if (command.includes("failure-fast") || command.includes("failure-slow")) {
   const kind = command.includes("failure-fast") ? "fast" : "slow";
   log(kind + "-start");
   while (!existsSync(root + "/release-" + kind)) await Bun.sleep(5);
-  console.error("mux_client_request_session: read from master failed");
+  transportError("mux_client_request_session: read from master failed");
   process.exit(255);
 }
 if (command.includes("queued-command")) { log("queued-ran"); process.exit(0); }
@@ -244,6 +247,30 @@ expect((await hostExec(host, ["handshake-always"])).code).toBe(255);
 expect(events().trim().split("\\n").filter(e => e === "handshake-attempt")).toHaveLength(3);
 await expect(hostExec(host, ["handshake-always"], { timeoutMs: 100 })).rejects.toThrow("timed out");
 expect(events().trim().split("\\n").filter(e => e === "handshake-attempt")).toHaveLength(4);
+await retireSshMaster(host.alias);
+`),
+  20_000,
+);
+
+test(
+  "should never replay remote commands that emit SSH-like stderr",
+  () =>
+    sshScenario(`
+for (const diagnostic of [
+  "kex_exchange_identification: Connection closed by remote host",
+  "Connection closed by UNKNOWN port 65535",
+  "mux_client_hello_exchange: read packet failed",
+]) {
+  const marker = process.env.HOME + "/side-effects-" + diagnostic.split(":")[0].split(" ")[0];
+  const result = await hostExec(host, ["/bin/sh", "-c",
+    'printf x >> "$1"; printf "%s\\\\n" "$2" >&2; exit 255', "sh", marker, diagnostic], { login: false });
+  expect(result.code).toBe(255);
+  expect(result.stderr).toContain(diagnostic);
+  expect(readFileSync(marker, "utf8")).toBe("x");
+}
+const { readdirSync } = await import("node:fs");
+expect(readdirSync(process.env.HOME + "/.orc/ssh").filter(name => name.startsWith("command-"))).toEqual([]);
+expect(events().trim().split("\\n").filter(event => event === "master")).toHaveLength(1);
 await retireSshMaster(host.alias);
 `),
   20_000,
