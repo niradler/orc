@@ -25,6 +25,7 @@ one recipe does not require a chain of tiny reads.
 | KB intake/search/edit, parsers, embeddings, README/Markdown and living Learnings digests | [Knowledge and documentation](references/knowledge.md) |
 | Projects, tasks/flows, jobs, gateway, status, tags and audit | [Work and operations](references/work.md) |
 | Session continuity/handoff, terminals, chat, SSH execution, Git/GitHub | [Sessions and execution](references/execution.md) |
+| Archive local coding sessions on remote ORC, incremental sync/deduplication, session retrieval design | [Session archive and search](references/session-archive.md) |
 | Deterministic rules, hooks and enforcement capabilities | [Rules](references/rules.md) |
 | Author/import/edit skills, agent profiles and packages | [Reusable definitions](references/packages.md) |
 
