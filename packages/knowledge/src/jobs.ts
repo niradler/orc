@@ -266,7 +266,9 @@ export class JobRunner {
       try {
         count = await embedPendingBatch(this.e.idx, embedder, doc.id);
       } catch (error) {
-        if (this.e.embedder()?.profile !== embedder.profile) continue;
+        // Credentials/timeouts can change without changing the vector space. The
+        // service caches provider objects per full config, so retry with the new one.
+        if (this.e.embedder() !== embedder) continue;
         throw error;
       }
       // Settings may change while awaiting the provider. Drain the active profile before

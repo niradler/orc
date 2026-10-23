@@ -374,9 +374,13 @@ describe("jobs", () => {
     svc.reconcile();
     expect(svc.engine.idx.documentChunks(doc.id)).toEqual([]);
   });
-  test.each([false, true])(
-    "changing embedding profile during an in-flight job finishes the new active profile (old failure: %s)",
-    async (fail) => {
+  test.each([
+    { fail: false, sameProfile: false },
+    { fail: true, sameProfile: false },
+    { fail: true, sameProfile: true },
+  ])(
+    "changing embedding settings during an in-flight job finishes active work (old failure: $fail, same profile: $sameProfile)",
+    async ({ fail, sameProfile }) => {
       let release: (() => void) | undefined;
       let started: (() => void) | undefined;
       const began = new Promise<void>((resolve) => {
@@ -392,7 +396,7 @@ describe("jobs", () => {
         if (fail) throw new Error("Old endpoint unavailable");
         return texts.map(() => [1, 0]);
       };
-      const next = { ...fakeEmbedder(), profile: "new-active-profile" };
+      const next = { ...fakeEmbedder(), profile: sameProfile ? old.profile : "new-active-profile" };
       let active: EmbeddingProvider = old;
       svc.engine.embedder = () => active;
       const kb = svc.createKb(human(), { name: "Profile race", project_id: null });
