@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { ChatSettingsSchema } from "@orc/core/chat";
 import { parseChatConfig, parseChatEvent } from "../../src/hooks/chat-contract";
 
 describe("chat preferences", () => {
   test("first visit uses Codex and saved valid selections remain authoritative", () => {
-    expect(parseChatConfig(null)).toEqual({ agent: "codex", autoApprove: true });
-    expect(parseChatConfig('{"agent":"claude","autoApprove":false}')).toEqual({
-      agent: "claude",
-      autoApprove: false,
-    });
+    expect(parseChatConfig(null)).toEqual(ChatSettingsSchema.parse({}));
+    expect(parseChatConfig('{"agent":"claude","autoApprove":false}')).toEqual(
+      ChatSettingsSchema.parse({ agent: "claude", autoApprove: false }),
+    );
     expect(parseChatConfig('{"agent":"custom-agent","autoApprove":true}').agent).toBe(
       "custom-agent",
     );
@@ -21,7 +21,7 @@ describe("chat preferences", () => {
       '{"agent":"--help","autoApprove":true}',
       '{"agent":"claude","autoApprove":"false"}',
     ]) {
-      expect(parseChatConfig(raw)).toEqual({ agent: "codex", autoApprove: true });
+      expect(parseChatConfig(raw)).toEqual(ChatSettingsSchema.parse({}));
     }
   });
 });

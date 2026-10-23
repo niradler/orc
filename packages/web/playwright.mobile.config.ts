@@ -3,7 +3,7 @@ import config from "./playwright.config";
 
 export default defineConfig({
   ...config,
-  testMatch: /mobile-workspaces\.e2e\.ts$/,
+  testMatch: /(mobile-workspaces|chat-workspace)\.e2e\.ts$/,
   projects: [
     {
       name: "chromium",

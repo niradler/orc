@@ -80,3 +80,40 @@ test("should patch one setting while preserving the other", async () => {
   });
   expect(await result.json()).toEqual({ theme: "dark", terminal_font: "Test Mono" });
 });
+
+test("should persist validated chat defaults without exposing server credentials", async () => {
+  const chat = {
+    agent: "claude",
+    model: "fixture-model",
+    system: "Test operator instructions",
+    autoApprove: false,
+    mcp: "orc",
+    models: [{ agent: "claude", id: "fixture-model" }],
+  };
+  const saved = await app.request("/api/settings", {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ chat }),
+  });
+  expect(saved.status).toBe(200);
+  resetConfig();
+  const result = await app.request("/api/settings", { headers });
+  const text = await result.text();
+  expect(JSON.parse(text).chat).toEqual(chat);
+  expect(text).not.toContain("private-server-secret");
+  for (const patch of [
+    { ...chat, api_key: "secret" },
+    { ...chat, model: "--help" },
+    { ...chat, models: [{ agent: "claude", id: "bad\nmodel" }] },
+  ]) {
+    expect(
+      (
+        await app.request("/api/settings", {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ chat: patch }),
+        })
+      ).status,
+    ).toBe(400);
+  }
+});

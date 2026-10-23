@@ -1,367 +1,472 @@
+import { createRoute, z } from "@hono/zod-openapi";
+import { type AgentSession, createBackend, type SessionOpts } from "@orc/agent-runtime";
 import {
-  type AcpxResolution,
-  acpxMissingMessage,
-  pickUsableBackend,
-  probeBackend,
-  resolveAcpx,
-} from "@orc/agent-runtime";
+  appendChatActivity,
+  type ChatEvent,
+  type ChatMessage,
+  ChatModelSchema,
+  ChatSettingsSchema,
+  type ChatThread,
+  ChatThreadSchema,
+} from "@orc/core/chat";
 import { loadConfig } from "@orc/core/config";
-import { type HostProcess, hostHome, hostSpawn, resolveExecHost } from "@orc/core/exec-host";
+import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
+import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
-import { getSqlite } from "@orc/db/client";
+import { ChatStore } from "@orc/db/chat";
+import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
-import { Hono } from "hono";
+import { gateway_sessions } from "@orc/db/schema";
+import { and, eq } from "drizzle-orm";
 import { streamSSE } from "hono/streaming";
+import { getHandoffService } from "../handoffs/service.js";
+import { createRouter } from "../lib/router.js";
+import { LIVE_CHAT_ID } from "../session-watcher.js";
+import { chatHistory } from "../sessions/chat-history.js";
+import { MAX_TRANSCRIPT_BYTES, readTranscriptBytes } from "../sessions/transcript.js";
 
 const logger = createLogger("api:chat");
-
-// Keep the SSE socket active so a long-but-quiet agent run isn't reaped by the
-// server idle timeout, and cap total stream lifetime so an abandoned client +
-// hung backend can't pin a socket/child process indefinitely.
-const KEEPALIVE_MS = 25_000;
-const CHAT_STREAM_MAX_MS = 15 * 60_000;
-
-type ChatMessage = { role: "user" | "assistant" | "system"; content: string };
-
-type ChatRequestBody = {
-  messages: ChatMessage[];
-  agent?: string;
-  system?: string;
-  autoApprove?: boolean;
+const app = createRouter();
+const id = z.string().uuid();
+const response = {
+  200: {
+    description: "Chat conversation",
+    content: { "application/json": { schema: ChatThreadSchema } },
+  },
 };
+const store = () => new ChatStore(getSqlite());
+const runs = new Map<
+  string,
+  { session: AgentSession | null; permissions: Set<string>; threadId: string; key: string }
+>();
+const active = new Set<string>();
+const params = z.object({ id });
 
-type AcpxJsonRpc = {
-  jsonrpc?: string;
-  id?: number;
-  method?: string;
-  result?: { stopReason?: string };
-  error?: { message?: string };
-  params?: {
-    update?: {
-      sessionUpdate?: string;
-      content?:
-        | { type?: string; text?: string }
-        | Array<{ type?: string; content?: { type?: string; text?: string } }>;
-    };
-  };
-};
-
-function buildMockReply(messages: ChatMessage[]): string {
-  const lastUser = [...messages].reverse().find((message) => message.role === "user");
-  const content = lastUser?.content.trim() ?? "";
-  const exactReply = content.match(/Reply with exactly:\s*([^.?!\n]+)[.?!]?/i);
-  return exactReply?.[1]?.trim() || content || "ok";
+function requireThread(id: string): ChatThread {
+  const thread = store().get(id);
+  if (!thread) throw new NotFoundError("Chat", id);
+  return thread;
 }
 
-function parseTextFromLine(line: string): string | null {
-  let msg: AcpxJsonRpc;
-  try {
-    msg = JSON.parse(line) as AcpxJsonRpc;
-  } catch {
-    return null;
-  }
-  if (msg.error) return `[Error] ${msg.error.message ?? "Unknown error"}`;
-  if (msg.method === "session/update" && msg.params?.update) {
-    const u = msg.params.update;
-    if (u.sessionUpdate === "agent_message_chunk" && u.content) {
-      if (!Array.isArray(u.content)) {
-        if (u.content.type === "text" && u.content.text) return u.content.text;
-      } else {
-        const texts: string[] = [];
-        for (const item of u.content) {
-          if (item.content?.type === "text" && item.content.text) texts.push(item.content.text);
-        }
-        if (texts.length > 0) return texts.join("");
-      }
-    }
-  }
-  return null;
-}
-
-function buildPrompt(
-  messages: Array<{ role: string; content: string }>,
-  systemPrompt?: string,
-): string {
-  const parts: string[] = [];
-  if (systemPrompt) {
-    parts.push(`<system>\n${systemPrompt}\n</system>\n`);
-  }
-  for (const msg of messages) {
-    if (msg.role === "user") parts.push(`<user>\n${msg.content}\n</user>\n`);
-    else if (msg.role === "assistant") parts.push(`<assistant>\n${msg.content}\n</assistant>\n`);
-  }
-  return parts.join("\n");
-}
-
-async function readLines(
-  readable: ReadableStream<Uint8Array>,
-  onLine: (line: string) => void,
-): Promise<void> {
-  const reader = readable.getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split("\n");
-      buf = lines.pop() ?? "";
-      for (const line of lines) {
-        if (line.trim()) onLine(line);
-      }
-    }
-    if (buf.trim()) onLine(buf);
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-const app = new Hono();
-
-app.post("/chat/stream", async (c) => {
-  let body: ChatRequestBody;
-  try {
-    body = (await c.req.json()) as ChatRequestBody;
-  } catch {
-    return c.json({ error: "invalid JSON body" }, 400);
-  }
-  const messages = body.messages;
-  if (!messages || !Array.isArray(messages) || messages.length === 0) {
-    return c.json({ error: "messages array is required and must not be empty" }, 400);
-  }
-  if (messages.length > 200) {
-    return c.json({ error: "messages array too large (max 200)" }, 400);
-  }
-  const totalLen = messages.reduce((n, m) => n + (m?.content?.length ?? 0), 0);
-  if (totalLen > 500_000) {
-    return c.json({ error: "messages content too large (max 500k chars)" }, 400);
-  }
-
-  const agent = body.agent ?? "claude";
-  // Whitelist-style validation - `agent` is passed as an argv element to acpx,
-  // so a value like "--help" or "-v" would be interpreted as a flag. Reject
-  // anything that isn't a plain identifier.
-  if (!/^[a-z][a-z0-9-]{0,31}$/i.test(agent)) {
-    return c.json({ error: "invalid agent name" }, 400);
-  }
-  const systemPrompt = body.system;
-  const autoApprove = body.autoApprove ?? true;
-
-  if (process.env.ORC_E2E_CHAT_MOCK === "1") {
-    const text = buildMockReply(messages);
-    return streamSSE(c, async (s) => {
-      await s.writeSSE({ data: JSON.stringify({ type: "open" }) });
-      await Bun.sleep(75);
-      await s.writeSSE({ data: JSON.stringify({ type: "text", text }) });
-      await Bun.sleep(75);
-      await s.writeSSE({ data: JSON.stringify({ type: "done" }) });
-    });
-  }
-
-  const prompt = buildPrompt(messages, systemPrompt);
-
-  // Prefer the in-process backend when the requested agent is one orc ships
-  // natively: it spawns no external binary, so a fresh `npm i -g orc-ai` can
-  // chat immediately. acpx is what makes *other* agents (gemini, codex, …)
-  // reachable, so it stays the path for anything else.
+async function newThread(agent?: string, model?: string, sourceId?: string): Promise<ChatThread> {
+  const config = ChatSettingsSchema.parse(loadConfig().preferences.chat ?? {});
+  if (agent) config.agent = agent;
+  if (model !== undefined) config.model = model;
   const host = resolveExecHost();
-  const nativeBackend = agent === "claude" ? await pickUsableBackend(["claude"]) : null;
-  if (host.kind === "ssh" && agent === "claude" && !nativeBackend) {
-    const claudeProbe = await probeBackend("claude");
-    return c.json({ error: claudeProbe.error ?? `claude is not usable on ${host.alias}` }, 503);
+  const thread: ChatThread = {
+    id: crypto.randomUUID(),
+    title: "New chat",
+    config,
+    backend: config.agent === "codex" ? "codex-cli" : config.agent === "claude" ? "claude" : "acpx",
+    runtimeId: null,
+    cwd: host.kind === "ssh" ? await hostHome(host) : process.cwd(),
+    host: host.kind === "ssh" ? host.alias : null,
+    sourceId: sourceId ?? null,
+    messages: [],
+    updatedAt: Date.now(),
+  };
+  if (sourceId) {
+    const source = await getDb().query.gateway_sessions.findFirst({
+      where: and(eq(gateway_sessions.id, sourceId), eq(gateway_sessions.chat_id, LIVE_CHAT_ID)),
+    });
+    if (!source) throw new NotFoundError("Session", sourceId);
+    if (!["claude", "codex"].includes(source.backend))
+      throw new ValidationError(
+        "Chat resume currently supports Claude and Codex. Use Terminals to resume other agents.",
+      );
+    if (
+      !source.runtime_session_id ||
+      !/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(source.runtime_session_id) ||
+      !source.cwd
+    )
+      throw new ValidationError("Session has no valid native session identity or working folder.");
+    if (source.status === "running" || source.status === "idle")
+      throw new ConflictError("End the original agent session before resuming it in chat.");
+    await getHandoffService().verifyResume(source.id);
+    const runtime = hostRuntime(execHostFor(source.execution_host ?? null));
+    if (!(await runtime.isDirectory(source.cwd)))
+      throw new ValidationError("The session working folder is unavailable on its execution host.");
+    thread.config.agent = source.backend;
+    thread.config.model = model ?? source.model ?? "";
+    thread.backend = source.backend === "codex" ? "codex-cli" : "claude";
+    thread.runtimeId = source.runtime_session_id;
+    thread.cwd = source.cwd;
+    thread.host = source.execution_host ?? null;
+    thread.title = source.title ?? "Resumed session";
+    if (source.transcript_path && (await runtime.isFile(source.transcript_path))) {
+      const bytes = await runtime.readFile(source.transcript_path, MAX_TRANSCRIPT_BYTES);
+      let transcript = await readTranscriptBytes(
+        bytes,
+        source.backend,
+        `${thread.host ?? "local"}:${source.transcript_path}`,
+        { offset: 0, limit: 200 },
+      );
+      if (transcript.total > 100)
+        transcript = await readTranscriptBytes(
+          bytes,
+          source.backend,
+          `${thread.host ?? "local"}:${source.transcript_path}`,
+          { offset: transcript.total - 100, limit: 100 },
+        );
+      thread.messages = chatHistory(transcript.turns, source.backend);
+    }
   }
-  let cwd: string;
-  let acpx: AcpxResolution | null = null;
-  try {
-    cwd = host.kind === "ssh" ? await hostHome(host) : process.cwd();
-    if (!nativeBackend) acpx = await resolveAcpx(host);
-  } catch (err) {
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
-  }
-  const protectedWorkspace =
-    loadConfig().rules.enabled && new RuleStore(getSqlite()).active(cwd).length > 0;
-  if (protectedWorkspace && !nativeBackend)
-    return c.json(
-      {
-        error:
-          "Protected workspace requires the Claude SDK rule adapter; CLI/remote chat fallback is refused",
-      },
-      503,
-    );
-  if (!acpx) {
-    // agentapi last: it is a service, so it only answers if someone set it up.
-    const fallbackBackend = nativeBackend ?? (await pickUsableBackend(["agentapi"]));
-    if (!fallbackBackend) {
-      const claudeProbe = await probeBackend("claude");
-      return c.json(
-        {
-          error:
-            `No agent backend can run "${agent}". ${acpxMissingMessage(host)}` +
-            (claudeProbe.error ? ` Built-in claude backend: ${claudeProbe.error}` : ""),
+  return thread;
+}
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/chat/threads",
+    tags: ["Chat"],
+    responses: {
+      200: {
+        description: "Recent chats",
+        content: {
+          "application/json": {
+            schema: z.object({
+              threads: z.array(z.object({ id, title: z.string(), updatedAt: z.number() })),
+            }),
+          },
         },
+      },
+    },
+  }),
+  (c) => c.json({ threads: store().list() }),
+);
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/chat/threads/{id}",
+    tags: ["Chat"],
+    request: { params },
+    responses: response,
+  }),
+  (c) => c.json(requireThread(c.req.valid("param").id)),
+);
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/chat/threads",
+    tags: ["Chat"],
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({ sourceSessionId: z.string().min(1).max(256) }).strict(),
+          },
+        },
+      },
+    },
+    responses: response,
+  }),
+  async (c) => {
+    const source = c.req.valid("json").sourceSessionId;
+    const thread = await newThread(undefined, undefined, source);
+    store().save(thread);
+    return c.json(thread);
+  },
+);
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/chat/runs/{id}/permission",
+    tags: ["Chat"],
+    request: {
+      params,
+      body: {
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                requestId: z.string().min(1).max(256),
+                decision: z.enum(["approved", "denied"]),
+              })
+              .strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Permission resolved",
+        content: { "application/json": { schema: z.object({ ok: z.boolean() }) } },
+      },
+    },
+  }),
+  (c) => {
+    const run = runs.get(c.req.valid("param").id);
+    const { requestId, decision } = c.req.valid("json");
+    if (!run?.session || !run.permissions.delete(requestId))
+      throw new ConflictError("This permission request is no longer pending.");
+    run.session.respondPermission(requestId, decision);
+    return c.json({ ok: true });
+  },
+);
+
+const requestSchema = z
+  .object({
+    messages: z
+      .array(
+        z
+          .object({
+            role: z.enum(["user", "assistant", "system"]),
+            content: z.string().max(500000),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(200),
+    agent: z
+      .string()
+      .regex(/^[a-z][a-z0-9-]{0,31}$/i)
+      .optional(),
+    model: ChatModelSchema.optional(),
+    threadId: id.optional(),
+    // Retained for older clients; server settings own the effective prompt and permissions.
+    system: z.string().max(20000).optional(),
+    autoApprove: z.boolean().optional(),
+  })
+  .strict()
+  .refine(
+    (body) => body.messages.reduce((sum, message) => sum + message.content.length, 0) <= 500000,
+    "messages content too large (max 500k chars)",
+  );
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/chat/stream",
+    tags: ["Chat"],
+    request: { body: { content: { "application/json": { schema: requestSchema } } } },
+    responses: {
+      200: {
+        description: "Chat events, activity, permissions and conversation identity",
+        content: { "text/event-stream": { schema: z.string() } },
+      },
+    },
+  }),
+  async (c) => {
+    const body = c.req.valid("json");
+    const thread = body.threadId
+      ? requireThread(body.threadId)
+      : await newThread(body.agent, body.model);
+    if (body.threadId && body.agent && body.agent !== thread.config.agent)
+      throw new ValidationError("Start a new chat to change agents.");
+    if (body.threadId && thread.messages.length && !thread.runtimeId)
+      throw new ConflictError(
+        "The previous turn did not establish a resumable session. Start a new chat.",
+      );
+    if (body.model !== undefined) thread.config.model = body.model;
+    if (
+      thread.backend !== "claude" &&
+      loadConfig().rules.enabled &&
+      new RuleStore(getSqlite()).active(thread.cwd).length > 0
+    )
+      throw new OrcError(
+        "Protected workspace requires the Claude SDK rule adapter; CLI/remote chat fallback is refused",
+        "CHAT_RULE_ADAPTER",
         503,
       );
-    }
-    logger.debug("chat via in-process backend", {
-      backend: fallbackBackend.name,
-      agent,
-    });
-    return streamSSE(c, async (s) => {
-      await s.writeSSE({ data: JSON.stringify({ type: "open" }) });
-      let session: Awaited<ReturnType<typeof fallbackBackend.startSession>> | null = null;
-      const keepalive = setInterval(() => {
-        void s.writeSSE({ data: JSON.stringify({ type: "ping" }) }).catch(() => {});
-      }, KEEPALIVE_MS);
-      const maxTimer = setTimeout(() => {
-        logger.warn("chat stream exceeded max duration; closing");
-        void session?.close().catch(() => {});
-      }, CHAT_STREAM_MAX_MS);
-      s.onAbort(() => void session?.close().catch(() => {}));
-      try {
-        session = await fallbackBackend.startSession({ cwd, autoApprove });
-        await session.send(prompt);
-        for await (const event of session.events()) {
-          if (event.type === "text") {
-            await s.writeSSE({
-              data: JSON.stringify({ type: "text", text: event.data }),
-            });
-          } else if (event.type === "error") {
-            await s.writeSSE({
-              data: JSON.stringify({ type: "error", message: event.data }),
-            });
-          } else if (event.type === "result") {
-            break;
-          }
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        await s.writeSSE({ data: JSON.stringify({ type: "error", message }) });
-      } finally {
-        clearInterval(keepalive);
-        clearTimeout(maxTimer);
-        await session?.close().catch(() => {});
-      }
-      await s.writeSSE({ data: JSON.stringify({ type: "done" }) });
-    });
-  }
-
-  // `resolveAcpx()` already returns a spawn-ready command: a bare binary, or
-  // an interpreter plus acpx's cli.js (which is what the Windows `.cmd` shim and
-  // a bundled install both need).
-  return streamSSE(c, async (s) => {
-    const args = [
-      ...acpx.cmd,
-      "--format",
-      "json",
-      ...(autoApprove ? ["--approve-all"] : []),
-      agent,
-      "exec",
-      "-f",
-      "-",
-    ];
-
-    logger.debug("spawning acpx", { agent, autoApprove, source: acpx.source });
-
-    let handle: HostProcess;
-    try {
-      handle = await hostSpawn(host, args, {
-        ...(host.kind === "ssh" ? { cwd } : {}),
-        stdin: "pipe",
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      await s.writeSSE({ data: JSON.stringify({ type: "error", message }) });
-      await s.writeSSE({ data: JSON.stringify({ type: "done" }) });
-      return;
-    }
-    const proc = handle.proc;
-
-    let aborted = false;
-    const cleanup = () => {
-      if (aborted) return;
-      aborted = true;
-      handle.kill();
+    const input = [...body.messages]
+      .reverse()
+      .find((message) => message.role === "user")
+      ?.content.trim();
+    if (!input) throw new ValidationError("A user message is required.");
+    if (thread.messages.length >= 200)
+      throw new ValidationError("This chat reached its message limit. Start a new chat.");
+    if (JSON.stringify(thread.messages).length > 5000000)
+      throw new ValidationError("This chat reached its history size limit. Start a new chat.");
+    const key = thread.runtimeId
+      ? `${thread.host ?? "local"}:${thread.backend}:${thread.runtimeId}`
+      : thread.id;
+    if (active.has(key) || [...runs.values()].some((run) => run.threadId === thread.id))
+      throw new ConflictError("This session is already responding.");
+    if (runs.size >= 4)
+      throw new ConflictError("All chat workers are busy. Try again when a response finishes.");
+    const mock = process.env.ORC_E2E_CHAT_MOCK === "1";
+    if (!mock && thread.backend === "acpx" && thread.config.mcp === "orc")
+      throw new ValidationError(
+        "The ORC MCP connection is supported by Claude and Codex. Select host configuration in Settings to use other agents.",
+      );
+    const backend = createBackend(thread.backend);
+    active.add(key);
+    const runId = crypto.randomUUID();
+    const run = {
+      session: null as AgentSession | null,
+      permissions: new Set<string>(),
+      threadId: thread.id,
+      key,
     };
-    s.onAbort(cleanup);
-    c.req.raw.signal.addEventListener("abort", cleanup);
-
-    // Keepalive keeps the socket active; max-duration backstop guarantees the
-    // child + readers are reaped even if the client vanished without an abort
-    // (half-open socket) and acpx never closes its stdout.
-    const keepalive = setInterval(() => {
-      if (aborted) return;
-      void s.writeSSE({ data: JSON.stringify({ type: "ping" }) }).catch(() => {});
-    }, KEEPALIVE_MS);
-    const maxTimer = setTimeout(() => {
-      logger.warn("chat stream exceeded max duration; killing acpx");
-      cleanup();
-    }, CHAT_STREAM_MAX_MS);
-
-    // Drain stderr into server logs so failures are visible (not silently hung).
-    const stderrTask = readLines(proc.stderr as ReadableStream<Uint8Array>, (line) => {
-      logger.debug("acpx stderr", { line });
-    }).catch(() => undefined);
-
-    // Write the prompt and await the write before closing stdin, otherwise the
-    // Bun stdin pipe can be closed before bytes are flushed.
+    runs.set(runId, run);
     try {
-      const bytes = new TextEncoder().encode(prompt);
-      // Bun's stdin is a FileSink - use its write/flush/end API directly.
-      const sink = proc.stdin as unknown as {
-        write: (chunk: Uint8Array | string) => number | Promise<number>;
-        end: () => void | Promise<void>;
-        flush?: () => void | Promise<void>;
+      if (!mock) {
+        const check = await backend.preflight({ executionHost: thread.host });
+        if (!check.ok) throw new ValidationError(check.error ?? "This agent is unavailable.");
+      }
+    } catch (error) {
+      active.delete(key);
+      runs.delete(runId);
+      throw error;
+    }
+    thread.messages.push({
+      id: crypto.randomUUID(),
+      role: "user",
+      content: input,
+      timestamp: Date.now(),
+    });
+    if (thread.title === "New chat") thread.title = input.slice(0, 100);
+    const assistant: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content: "",
+      timestamp: Date.now(),
+      agent: thread.config.agent,
+      activity: [],
+    };
+    thread.updatedAt = Date.now();
+    try {
+      store().save(thread);
+    } catch (error) {
+      active.delete(key);
+      runs.delete(runId);
+      throw error;
+    }
+    return streamSSE(c, async (s) => {
+      let stopped = false;
+      const close = () => {
+        stopped = true;
+        void run.session?.close().catch(() => {});
       };
-      await Promise.resolve(sink.write(bytes));
-      if (sink.flush) await Promise.resolve(sink.flush());
-      await Promise.resolve(sink.end());
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "stdin write failed";
-      logger.error("stdin error", { message });
-      await s.writeSSE({ data: JSON.stringify({ type: "error", message }) });
-      cleanup();
-      clearInterval(keepalive);
-      clearTimeout(maxTimer);
-      await s.writeSSE({ data: JSON.stringify({ type: "done" }) });
-      return;
-    }
-
-    // Send an opening ping immediately so the client knows the stream is alive
-    // (proxies won't buffer; user sees activity before acpx produces text).
-    await s.writeSSE({ data: JSON.stringify({ type: "open" }) });
-
-    try {
-      await readLines(proc.stdout as ReadableStream<Uint8Array>, (line) => {
-        const text = parseTextFromLine(line);
-        if (text !== null) {
-          void s.writeSSE({ data: JSON.stringify({ type: "text", text }) });
+      s.onAbort(close);
+      c.req.raw.signal.addEventListener("abort", close, { once: true });
+      if (c.req.raw.signal.aborted) close();
+      const ping = setInterval(() => {
+        void s.writeSSE({ data: JSON.stringify({ type: "ping" }) }).catch(close);
+      }, 25000);
+      const timer = setTimeout(close, 15 * 60000);
+      const emit = async (event: ChatEvent) => {
+        if (event.type === "text") assistant.content += event.text;
+        assistant.activity = appendChatActivity(assistant.activity ?? [], event);
+        await s.writeSSE({ data: JSON.stringify(event) });
+      };
+      try {
+        await emit({ type: "thread", thread, runId });
+        if (mock) {
+          await Bun.sleep(75);
+          if (!stopped)
+            await emit({
+              type: "text",
+              text: input.match(/Reply with exactly:\s*([^.?!\n]+)[.?!]?/i)?.[1]?.trim() || input,
+            });
+          await Bun.sleep(75);
+          thread.runtimeId ??= `mock-${thread.id}`;
+        } else {
+          const opts: SessionOpts = {
+            cwd: thread.cwd,
+            executionHost: thread.host,
+            autoApprove: thread.config.autoApprove,
+            model: thread.config.model || undefined,
+            systemPromptAppend: thread.config.system,
+            orcMcp: thread.config.mcp === "orc",
+            mcpAlwaysLoad: true,
+            acpxAgent: thread.config.agent,
+          };
+          if (thread.sourceId) await getHandoffService().verifyResume(thread.sourceId);
+          run.session = thread.runtimeId
+            ? await backend.resumeSession(thread.runtimeId, opts)
+            : await backend.startSession(opts);
+          if (stopped) return;
+          const prompt =
+            thread.backend === "acpx"
+              ? [thread.config.system, input].filter(Boolean).join("\n\n")
+              : input;
+          await run.session.send(prompt);
+          let receivedResult = false;
+          let outputBytes = 0;
+          for await (const event of run.session.events()) {
+            if (stopped) break;
+            outputBytes += JSON.stringify(event).length;
+            if (outputBytes > 2000000) throw new Error("Response exceeded the chat output limit.");
+            if (event.type === "result") {
+              if (
+                event.data.runtimeSessionId &&
+                !/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(event.data.runtimeSessionId)
+              )
+                throw new Error("The agent returned an invalid session identity.");
+              if (
+                thread.runtimeId &&
+                event.data.runtimeSessionId &&
+                thread.runtimeId !== event.data.runtimeSessionId
+              )
+                throw new Error(
+                  "The agent returned a different session instead of resuming this conversation. The original session identity was kept.",
+                );
+              thread.runtimeId = event.data.runtimeSessionId ?? thread.runtimeId;
+              if (thread.sourceId) await getHandoffService().markResumed(thread.sourceId);
+              receivedResult = true;
+              break;
+            }
+            if (
+              event.type === "text" ||
+              event.type === "thinking" ||
+              event.type === "system_status"
+            )
+              await emit({ type: event.type, text: event.data });
+            else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
+            else if (event.type === "permission_request") {
+              run.permissions.add(event.data.requestId);
+              await emit(event);
+            } else if (event.type === "error") await emit({ type: "error", message: event.data });
+          }
+          if (!receivedResult && !stopped)
+            await emit({
+              type: "error",
+              message:
+                "The agent ended before completing the turn. Start a new chat if the session cannot be resumed.",
+            });
+          if (receivedResult && !thread.runtimeId)
+            await emit({
+              type: "error",
+              message:
+                "The agent returned no session identity; this conversation cannot continue safely.",
+            });
         }
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown streaming error";
-      console.error("[chat] stdout read error:", message);
-      await s.writeSSE({ data: JSON.stringify({ type: "error", message }) });
-    } finally {
-      clearInterval(keepalive);
-      clearTimeout(maxTimer);
-    }
-
-    await stderrTask;
-    const exitCode = await proc.exited;
-    if (exitCode !== 0 && !aborted) {
-      await s.writeSSE({
-        data: JSON.stringify({
-          type: "error",
-          message: `acpx exited with code ${exitCode}`,
-        }),
-      });
-    }
-
-    await s.writeSSE({ data: JSON.stringify({ type: "done" }) });
-  });
-});
+      } catch (error) {
+        logger.error("Chat turn failed", { error, runId });
+        if (!stopped)
+          await emit({
+            type: "error",
+            message:
+              error instanceof Error ? error.message : "The agent could not complete the response.",
+          }).catch(() => {});
+      } finally {
+        clearInterval(ping);
+        clearTimeout(timer);
+        c.req.raw.signal.removeEventListener("abort", close);
+        await run.session?.close().catch(() => {});
+        if (assistant.content || assistant.activity?.length) thread.messages.push(assistant);
+        thread.updatedAt = Date.now();
+        try {
+          store().save(thread);
+        } catch (error) {
+          logger.error("Chat history could not be saved", { error, runId });
+          if (!stopped)
+            await s
+              .writeSSE({
+                data: JSON.stringify({
+                  type: "error",
+                  message: "This response could not be saved. Start a new chat before continuing.",
+                }),
+              })
+              .catch(() => {});
+        } finally {
+          active.delete(key);
+          runs.delete(runId);
+        }
+        await s.writeSSE({ data: JSON.stringify({ type: "done" }) }).catch(() => {});
+      }
+    });
+  },
+);
 
 export { app as chatRouter };

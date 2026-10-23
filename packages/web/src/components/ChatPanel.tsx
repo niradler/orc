@@ -6,11 +6,13 @@ import {
   Maximize2,
   MessageSquare,
   Minimize2,
+  Plus,
   Square,
-  Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useRef } from "react";
+import { ChatActivityList } from "@/components/ChatActivityList";
+import { ChatModelPicker, ChatSessionPicker } from "@/components/ChatControls";
 import { Markdown } from "@/components/Markdown";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
@@ -26,7 +28,11 @@ interface ChatPanelProps {
 }
 const iconButton =
   "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-40";
-const textParts = { Text: ({ text }: { text: string }) => <Markdown>{text}</Markdown> };
+const textParts = {
+  Text: ({ text }: { text: string }) => (
+    <Markdown fallback={<p className="whitespace-pre-wrap break-words">{text}</p>}>{text}</Markdown>
+  ),
+};
 
 export function ChatPanel({
   open,
@@ -36,7 +42,19 @@ export function ChatPanel({
   fullscreen = false,
   onToggleFullscreen,
 }: ChatPanelProps) {
-  const { messages, streaming, streamingAgent, error, config, setConfig, clear } = useChat();
+  const {
+    messages,
+    streaming,
+    streamingAgent,
+    error,
+    config,
+    setConfig,
+    clear,
+    ready,
+    thread,
+    permission,
+    respondPermission,
+  } = useChat();
   const input = useRef<HTMLTextAreaElement>(null);
   const panel = usePanelWidth({
     storageKey: "orc_chat_panel_width",
@@ -88,7 +106,8 @@ export function ChatPanel({
               data-testid="chat-agent-select"
               aria-label="Chat agent"
               value={config.agent}
-              onChange={(event) => setConfig({ ...config, agent: event.target.value })}
+              disabled={streaming || !!thread || !ready}
+              onChange={(event) => setConfig({ ...config, agent: event.target.value, model: "" })}
               className="min-w-0 flex-1 min-h-11 rounded-md border border-control-border bg-background px-2 text-base sm:text-sm text-on-surface disabled:opacity-50"
             >
               {agents.map((agent) => (
@@ -99,6 +118,7 @@ export function ChatPanel({
             </select>
           </label>
           <div className="flex items-center">
+            <ChatSessionPicker />
             {onToggleFullscreen && (
               <button
                 type="button"
@@ -122,6 +142,12 @@ export function ChatPanel({
           </div>
         </div>
       </header>
+      {thread?.sourceId && (
+        <p className="shrink-0 px-4 pt-3 text-xs text-on-surface-variant">
+          Resumed native session. Up to 100 recent transcript turns are shown; the agent retains its
+          native history.
+        </p>
+      )}
       <ThreadPrimitive.Viewport
         data-testid="chat-messages"
         className="relative flex-1 min-h-0 overflow-y-auto px-4 py-5"
@@ -155,6 +181,7 @@ export function ChatPanel({
                     : "Assistant"}
               </div>
               <div data-testid="chat-message-content" className="min-w-0 break-words">
+                <ChatActivityList value={message.metadata.custom.activity} />
                 <MessagePrimitive.Parts components={textParts} />
               </div>
             </MessagePrimitive.Root>
@@ -180,6 +207,35 @@ export function ChatPanel({
           {error}
         </div>
       )}
+      {permission && (
+        <div
+          data-testid="chat-permission"
+          className="shrink-0 max-h-52 overflow-auto border-t border-outline-variant px-4 py-3 text-sm"
+        >
+          <p className="font-medium">Allow {permission.tool}?</p>
+          <pre className="my-2 max-h-20 overflow-auto whitespace-pre-wrap break-words text-xs">
+            {permission.command}
+          </pre>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              data-testid="chat-permission-deny"
+              className="min-h-11 rounded-md border border-control-border px-3"
+              onClick={() => void respondPermission("denied")}
+            >
+              Deny
+            </button>
+            <button
+              type="button"
+              data-testid="chat-permission-allow"
+              className="min-h-11 rounded-md bg-primary px-3 text-primary-foreground"
+              onClick={() => void respondPermission("approved")}
+            >
+              Allow once
+            </button>
+          </div>
+        </div>
+      )}
       <div className="mx-auto w-full max-w-3xl shrink-0 px-3 pt-2 pb-3">
         <ThreadPrimitive.ScrollToBottom
           aria-label="Scroll to latest response"
@@ -194,7 +250,7 @@ export function ChatPanel({
             data-testid="chat-input"
             aria-label="Message your agent"
             placeholder="Message your agent…"
-            disabled={streaming}
+            disabled={streaming || !ready}
             submitMode="enter"
             unstable_insertNewlineOnTouchEnter
             rows={2}
@@ -205,15 +261,13 @@ export function ChatPanel({
               type="button"
               data-testid="chat-clear-button"
               onClick={clear}
-              aria-label="Clear conversation"
-              title="Clear conversation"
+              aria-label="New conversation"
+              title="New conversation"
               className={iconButton}
             >
-              <Trash2 size={16} />
+              <Plus size={16} />
             </button>
-            <span className="hidden sm:block flex-1 px-2 text-xs text-on-surface-variant">
-              Shift + Enter for a new line
-            </span>
+            <ChatModelPicker />
             {streaming ? (
               <ComposerPrimitive.Cancel
                 data-testid="chat-cancel-button"

@@ -19,6 +19,8 @@ export type SessionOpts = {
   agentProfile?: string | undefined;
   toolAllowlist?: string[] | undefined;
   mcpAlwaysLoad?: boolean | undefined;
+  /** Explicit ORC connection for chat. Undefined preserves the backend default. */
+  orcMcp?: boolean | undefined;
 };
 
 export type ImageAttachment = {
@@ -80,7 +82,7 @@ export interface AgentBackend {
   readonly profileCapabilities?: { model: boolean; toolAllowlist: boolean };
   startSession(opts: SessionOpts): Promise<AgentSession>;
   resumeSession(runtimeSessionId: string, opts: SessionOpts): Promise<AgentSession>;
-  preflight(): Promise<{ ok: boolean; error?: string }>;
+  preflight(opts?: Pick<SessionOpts, "executionHost">): Promise<{ ok: boolean; error?: string }>;
   stop(): Promise<void>;
   /**
    * Optional: describe what this backend needs and what it resolved to.

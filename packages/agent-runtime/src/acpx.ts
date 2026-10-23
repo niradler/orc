@@ -44,13 +44,13 @@ type AcpxUpdate = {
   sessionUpdate?: string;
   content?:
     | { type?: string; text?: string }
-    | Array<{ type?: string; content?: { type?: string; text?: string } }>;
+    | Array<{ type?: string; text?: string; content?: { type?: string; text?: string } }>;
   toolCallId?: string;
   title?: string;
   kind?: string;
   status?: string;
   rawInput?: unknown;
-  rawOutput?: string;
+  rawOutput?: unknown;
   _meta?: {
     claudeCode?: {
       toolName?: string;
@@ -83,17 +83,23 @@ export function parseAcpxLine(line: string): AgentEvent | null {
   const update = msg.params.update;
   const sessionUpdate = update.sessionUpdate;
 
-  if (sessionUpdate === "agent_message_chunk") {
+  if (sessionUpdate === "agent_message_chunk" || sessionUpdate === "agent_thought_chunk") {
     const content = update.content;
-    if (content && !Array.isArray(content)) {
-      if (content.type === "text" && content.text) {
-        return { type: "text", data: content.text };
-      }
-      if (content.type === "thinking" && content.text) {
-        return { type: "thinking", data: content.text };
-      }
-    }
-    return null;
+    const blocks = Array.isArray(content)
+      ? content.map((block) => block?.content ?? block)
+      : [content];
+    const type =
+      sessionUpdate === "agent_thought_chunk" || blocks[0]?.type === "thinking"
+        ? "thinking"
+        : "text";
+    const text = blocks
+      .filter(
+        (block) =>
+          (block?.type === "text" || block?.type === "thinking") && typeof block.text === "string",
+      )
+      .map((block) => block?.text ?? "")
+      .join("");
+    return text ? { type, data: text } : null;
   }
 
   if (sessionUpdate === "tool_call") {
@@ -111,15 +117,19 @@ export function parseAcpxLine(line: string): AgentEvent | null {
     };
   }
 
-  if (sessionUpdate === "tool_call_update" && update.status === "completed") {
+  if (
+    sessionUpdate === "tool_call_update" &&
+    (update.status === "completed" || update.status === "failed")
+  ) {
     const toolResponse = update._meta?.claudeCode?.toolResponse;
     const output = update.rawOutput ?? toolResponse?.stdout ?? "";
-    const isError = toolResponse?.stderr ? toolResponse.stderr.length > 0 : false;
+    const isError =
+      update.status === "failed" || (toolResponse?.stderr ? toolResponse.stderr.length > 0 : false);
     return {
       type: "tool_result",
       data: {
         toolUseId: update.toolCallId ?? "",
-        content: output,
+        content: typeof output === "string" ? output : JSON.stringify(output),
         isError,
       },
     };
@@ -443,8 +453,8 @@ function createAcpxBackend(): AgentBackend {
     name: "acpx",
     profileCapabilities: { model: true, toolAllowlist: false },
 
-    async preflight() {
-      const host = resolveExecHost();
+    async preflight(opts = {}) {
+      const host = sessionExecHost(opts);
       let resolved: AcpxResolution | null;
       try {
         resolved = await resolveAcpx(host);

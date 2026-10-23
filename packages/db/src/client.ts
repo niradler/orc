@@ -5,6 +5,7 @@ import { loadConfig } from "@orc/core/config";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { installAudit } from "./audit.js";
 import { installChangeTracking, stopChangeTracking } from "./changes.js";
+import { installChat } from "./chat.js";
 import { installKnowledgeBases } from "./kb.js";
 import { installMemories } from "./memories.js";
 import { installReusableWebhooks } from "./reusable-webhooks.js";
@@ -510,6 +511,7 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   )`);
   dropRetiredTables(sqlite);
   installAudit(sqlite);
+  installChat(sqlite);
   installKnowledgeBases(sqlite);
   installSessionArchive(sqlite);
   installSkillHistory(sqlite);

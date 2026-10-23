@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
+import { ChatSettingsSchema } from "./chat.js";
 import { userHome } from "./home.js";
 import { decryptSecret } from "./secrets.js";
 
@@ -64,6 +65,7 @@ export const OrcConfigSchema = z.object({
     .object({
       theme: z.enum(["dark", "light"]).optional(),
       terminal_font: z.string().max(200).optional(),
+      chat: ChatSettingsSchema.optional(),
     })
     .default({}),
   skills: z

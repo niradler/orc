@@ -191,6 +191,322 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Recent chats */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            threads: {
+                                /** Format: uuid */
+                                id: string;
+                                title: string;
+                                updatedAt: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        sourceSessionId: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Chat conversation */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            title: string;
+                            config: {
+                                /** @default codex */
+                                agent: string;
+                                /** @default  */
+                                model: string;
+                                /** @default [] */
+                                models: {
+                                    agent: string;
+                                    id: string;
+                                }[];
+                                /** @default You are an AI assistant integrated into the ORC orchestration hub. Help users manage tasks, review agent activity, and answer questions about the system. Use ORC tools for current workspace facts. Ask before destructive actions or publishing. */
+                                system: string;
+                                /** @default false */
+                                autoApprove: boolean;
+                                /**
+                                 * @default orc
+                                 * @enum {string}
+                                 */
+                                mcp: "orc" | "native";
+                            };
+                            cwd: string;
+                            host: string | null;
+                            runtimeId: string | null;
+                            backend: string;
+                            sourceId: string | null;
+                            messages: {
+                                id: string;
+                                /** @enum {string} */
+                                role: "user" | "assistant";
+                                content: string;
+                                timestamp: number;
+                                agent?: string;
+                                activity?: ({
+                                    /** @enum {string} */
+                                    type: "thinking";
+                                    id: string;
+                                    text: string;
+                                } | {
+                                    /** @enum {string} */
+                                    type: "tool";
+                                    id: string;
+                                    name: string;
+                                    input: string;
+                                    result?: string;
+                                    isError?: boolean;
+                                } | {
+                                    /** @enum {string} */
+                                    type: "status";
+                                    id: string;
+                                    text: string;
+                                })[];
+                            }[];
+                            updatedAt: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/threads/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Chat conversation */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            title: string;
+                            config: {
+                                /** @default codex */
+                                agent: string;
+                                /** @default  */
+                                model: string;
+                                /** @default [] */
+                                models: {
+                                    agent: string;
+                                    id: string;
+                                }[];
+                                /** @default You are an AI assistant integrated into the ORC orchestration hub. Help users manage tasks, review agent activity, and answer questions about the system. Use ORC tools for current workspace facts. Ask before destructive actions or publishing. */
+                                system: string;
+                                /** @default false */
+                                autoApprove: boolean;
+                                /**
+                                 * @default orc
+                                 * @enum {string}
+                                 */
+                                mcp: "orc" | "native";
+                            };
+                            cwd: string;
+                            host: string | null;
+                            runtimeId: string | null;
+                            backend: string;
+                            sourceId: string | null;
+                            messages: {
+                                id: string;
+                                /** @enum {string} */
+                                role: "user" | "assistant";
+                                content: string;
+                                timestamp: number;
+                                agent?: string;
+                                activity?: ({
+                                    /** @enum {string} */
+                                    type: "thinking";
+                                    id: string;
+                                    text: string;
+                                } | {
+                                    /** @enum {string} */
+                                    type: "tool";
+                                    id: string;
+                                    name: string;
+                                    input: string;
+                                    result?: string;
+                                    isError?: boolean;
+                                } | {
+                                    /** @enum {string} */
+                                    type: "status";
+                                    id: string;
+                                    text: string;
+                                })[];
+                            }[];
+                            updatedAt: number;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/runs/{id}/permission": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        requestId: string;
+                        /** @enum {string} */
+                        decision: "approved" | "denied";
+                    };
+                };
+            };
+            responses: {
+                /** @description Permission resolved */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            ok: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        messages: {
+                            /** @enum {string} */
+                            role: "user" | "assistant" | "system";
+                            content: string;
+                        }[];
+                        agent?: string;
+                        model?: string;
+                        /** Format: uuid */
+                        threadId?: string;
+                        system?: string;
+                        autoApprove?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Chat events, activity, permissions and conversation identity */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/event-stream": string;
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -254,6 +570,26 @@ export interface paths {
                             /** @enum {string} */
                             theme?: "dark" | "light";
                             terminal_font?: string;
+                            chat?: {
+                                /** @default codex */
+                                agent: string;
+                                /** @default  */
+                                model: string;
+                                /** @default [] */
+                                models: {
+                                    agent: string;
+                                    id: string;
+                                }[];
+                                /** @default You are an AI assistant integrated into the ORC orchestration hub. Help users manage tasks, review agent activity, and answer questions about the system. Use ORC tools for current workspace facts. Ask before destructive actions or publishing. */
+                                system: string;
+                                /** @default false */
+                                autoApprove: boolean;
+                                /**
+                                 * @default orc
+                                 * @enum {string}
+                                 */
+                                mcp: "orc" | "native";
+                            };
                         };
                     };
                 };
@@ -278,6 +614,26 @@ export interface paths {
                         /** @enum {string} */
                         theme?: "dark" | "light";
                         terminal_font?: string;
+                        chat?: {
+                            /** @default codex */
+                            agent?: string;
+                            /** @default  */
+                            model?: string;
+                            /** @default [] */
+                            models?: {
+                                agent: string;
+                                id: string;
+                            }[];
+                            /** @default You are an AI assistant integrated into the ORC orchestration hub. Help users manage tasks, review agent activity, and answer questions about the system. Use ORC tools for current workspace facts. Ask before destructive actions or publishing. */
+                            system?: string;
+                            /** @default false */
+                            autoApprove?: boolean;
+                            /**
+                             * @default orc
+                             * @enum {string}
+                             */
+                            mcp?: "orc" | "native";
+                        };
                     };
                 };
             };
@@ -292,6 +648,26 @@ export interface paths {
                             /** @enum {string} */
                             theme?: "dark" | "light";
                             terminal_font?: string;
+                            chat?: {
+                                /** @default codex */
+                                agent: string;
+                                /** @default  */
+                                model: string;
+                                /** @default [] */
+                                models: {
+                                    agent: string;
+                                    id: string;
+                                }[];
+                                /** @default You are an AI assistant integrated into the ORC orchestration hub. Help users manage tasks, review agent activity, and answer questions about the system. Use ORC tools for current workspace facts. Ask before destructive actions or publishing. */
+                                system: string;
+                                /** @default false */
+                                autoApprove: boolean;
+                                /**
+                                 * @default orc
+                                 * @enum {string}
+                                 */
+                                mcp: "orc" | "native";
+                            };
                         };
                     };
                 };

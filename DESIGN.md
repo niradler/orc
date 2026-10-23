@@ -322,6 +322,15 @@ Larger screens offer a resizable panel and a full-screen icon. Keep the same
 conversation and stream while switching presentation. Use one compact header and
 composer; activity indicators must not move or obscure Send/Stop.
 
+Put the model choice in the composer and conversation history in the header.
+Keep provider thinking and tool input/results collapsed by default, with native
+details/summary keyboard and touch interaction. Show real provider events only;
+use the responding indicator while a provider is quiet. Preserve activity with
+the conversation and show permission decisions separately from tool results.
+Settings owns new-chat defaults; the chat model dialog shows the conversation's
+actual instructions, tools connection, permissions and execution folder. Changing
+agents starts a new conversation; changing models affects the next turn.
+
 On narrow screens, Knowledge Browse is a modal with trapped focus and a visible
 close action. Restore focus to its trigger when dismissed; selecting a document
 closes it. Document details use the shared sheet. Validate phone portrait and

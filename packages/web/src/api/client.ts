@@ -1,3 +1,4 @@
+import type { ChatThread } from "@orc/core/chat";
 import type {
   KbComment,
   KbCommentClose,
@@ -507,6 +508,15 @@ async function req<T>(
 // ---- API client ----
 
 export const api = {
+  chat: {
+    list: () =>
+      req<{ threads: { id: string; title: string; updatedAt: number }[] }>("GET", "/chat/threads"),
+    get: (id: string) => req<ChatThread>("GET", `/chat/threads/${id}`),
+    resume: (sourceSessionId: string) =>
+      req<ChatThread>("POST", "/chat/threads", { sourceSessionId }),
+    permission: (runId: string, requestId: string, decision: "approved" | "denied") =>
+      req<{ ok: boolean }>("POST", `/chat/runs/${runId}/permission`, { requestId, decision }),
+  },
   settings: {
     get: () => req<WorkspacePreferences>("GET", "/settings"),
     save: (preferences: WorkspacePreferences) =>

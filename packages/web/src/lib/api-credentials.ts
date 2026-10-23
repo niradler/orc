@@ -1,3 +1,5 @@
+import type { ChatSettings } from "@orc/core/chat";
+
 const STORAGE_PREFIX = "orc_api_secret:";
 export const API_ACCESS_CHANGED = "orc-api-access-changed";
 let current: { url: string; secret: string } | undefined;
@@ -44,7 +46,11 @@ export function forgetApiSecret(apiUrl: string): void {
   }
 }
 
-export type WorkspacePreferences = { theme?: "dark" | "light"; terminal_font?: string };
+export type WorkspacePreferences = {
+  theme?: "dark" | "light";
+  terminal_font?: string;
+  chat?: ChatSettings;
+};
 
 export async function checkApiAccess(
   apiUrl: string,

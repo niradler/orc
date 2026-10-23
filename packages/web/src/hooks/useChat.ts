@@ -5,6 +5,13 @@ import {
   useExternalStoreRuntime,
 } from "@assistant-ui/react";
 import {
+  appendChatActivity,
+  type ChatActivity,
+  type ChatMessage,
+  ChatSettingsSchema,
+  type ChatThread,
+} from "@orc/core/chat";
+import {
   createContext,
   createElement,
   type ReactNode,
@@ -15,52 +22,58 @@ import {
   useRef,
   useState,
 } from "react";
-import { getApiSecret, getApiUrl } from "@/api/client";
+import { api, getApiSecret, getApiUrl } from "@/api/client";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
-import {
-  CHAT_CONFIG_KEY,
-  type ChatConfig,
-  DEFAULT_CONFIG,
-  parseChatConfig,
-  parseChatEvent,
-} from "./chat-contract";
+import { type ChatConfig, DEFAULT_CONFIG, parseChatEvent } from "./chat-contract";
 
-export type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: number;
-  agent?: string;
-};
-const DEFAULT_SYSTEM =
-  "You are an AI assistant integrated into the ORC orchestration hub. Help users manage tasks, review agent activity, and answer questions about the system.";
+export type { ChatMessage } from "@orc/core/chat";
 
 function useChatController() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [streamText, setStreamText] = useState("");
+  const [activity, setActivity] = useState<ChatActivity[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [config, setConfig] = useState<ChatConfig>(() => {
-    try {
-      return parseChatConfig(localStorage.getItem(CHAT_CONFIG_KEY));
-    } catch {
-      return DEFAULT_CONFIG;
-    }
-  });
+  const [config, setConfig] = useState<ChatConfig>(DEFAULT_CONFIG);
+  const [ready, setReady] = useState(false);
+  const [thread, setThread] = useState<ChatThread | null>(null);
+  const [permission, setPermission] = useState<{
+    requestId: string;
+    tool: string;
+    command: string;
+  } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const partial = useRef("");
+  const activities = useRef<ChatActivity[]>([]);
   const assistantId = useRef("");
+  const runId = useRef("");
   const respondingAgent = useRef(config.agent);
   const history = useRef(messages);
   history.current = messages;
-  useEffect(() => {
+  const currentThread = useRef(thread);
+  currentThread.current = thread;
+  const defaults = useRef(DEFAULT_CONFIG);
+
+  const loadSettings = useCallback(async () => {
     try {
-      localStorage.setItem(CHAT_CONFIG_KEY, JSON.stringify(config));
-    } catch {
-      /* Session preferences still work without storage. */
+      const preferences = await api.settings.get();
+      const saved = ChatSettingsSchema.parse(preferences.chat ?? {});
+      defaults.current = saved;
+      if (!currentThread.current) setConfig(saved);
+      setReady(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Chat settings could not be loaded.");
     }
-  }, [config]);
+  }, []);
+  useEffect(() => {
+    void loadSettings();
+    const changed = () => {
+      void loadSettings();
+    };
+    window.addEventListener("orc-chat-settings-changed", changed);
+    return () => window.removeEventListener("orc-chat-settings-changed", changed);
+  }, [loadSettings]);
   useEffect(
     () => () => {
       generation.current++;
@@ -70,18 +83,19 @@ function useChatController() {
   );
 
   const finishPartial = useCallback(() => {
-    if (!partial.current) return;
+    if (!partial.current && !activities.current.length) return;
     const message: ChatMessage = {
       id: assistantId.current,
       role: "assistant",
       content: partial.current,
+      activity: activities.current,
       timestamp: Date.now(),
       agent: respondingAgent.current,
     };
     partial.current = "";
+    activities.current = [];
     setMessages((current) => [...current, message]);
   }, []);
-
   const cancel = useCallback(() => {
     generation.current++;
     abortRef.current?.abort();
@@ -89,11 +103,29 @@ function useChatController() {
     finishPartial();
     setStreaming(false);
     setStreamText("");
+    setActivity([]);
+    setPermission(null);
   }, [finishPartial]);
+  const openThread = useCallback((next: ChatThread) => {
+    if (abortRef.current) return;
+    setThread(next);
+    history.current = next.messages;
+    setMessages(next.messages);
+    setConfig(next.config);
+    setError(null);
+  }, []);
+  const clear = useCallback(() => {
+    cancel();
+    history.current = [];
+    setMessages([]);
+    setThread(null);
+    setConfig(defaults.current);
+    setError(null);
+  }, [cancel]);
 
   const send = useCallback(
     async (input: string) => {
-      if (abortRef.current || !input.trim()) return;
+      if (!ready || abortRef.current || !input.trim()) return;
       const userMessage: ChatMessage = {
         id: crypto.randomUUID(),
         role: "user",
@@ -109,6 +141,8 @@ function useChatController() {
       assistantId.current = crypto.randomUUID();
       respondingAgent.current = config.agent;
       partial.current = "";
+      activities.current = [];
+      setActivity([]);
       setStreamText("");
       setError(null);
       setStreaming(true);
@@ -116,10 +150,19 @@ function useChatController() {
       const apply = (line: string) => {
         if (generation.current !== currentGeneration) return;
         const event = parseChatEvent(line);
-        if (event?.type === "text") {
+        if (!event) return;
+        if (event.type === "text") {
           partial.current += event.text;
           setStreamText(partial.current);
-        } else if (event?.type === "error") setError(event.message);
+        } else if (event.type === "error") setError(event.message);
+        else if (event.type === "thread") {
+          setThread(event.thread);
+          runId.current = event.runId;
+        } else if (event.type === "permission_request") setPermission(event.data);
+        else {
+          activities.current = appendChatActivity(activities.current, event);
+          setActivity(activities.current);
+        }
       };
       try {
         const secret = getApiSecret();
@@ -130,21 +173,21 @@ function useChatController() {
             ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
           },
           body: JSON.stringify({
-            messages: requestMessages.map(({ role, content }) => ({ role, content })),
+            messages: [{ role: "user", content: userMessage.content }],
             agent: config.agent,
-            system: DEFAULT_SYSTEM,
-            autoApprove: config.autoApprove,
+            model: config.model,
+            ...(thread ? { threadId: thread.id } : {}),
           }),
           signal: controller.signal,
         });
         if (response.status === 401) window.dispatchEvent(new Event(API_ACCESS_CHANGED));
         if (!response.ok) {
           const body: unknown = await response.json().catch(() => null);
-          const message =
+          throw new Error(
             body && typeof body === "object" && "error" in body && typeof body.error === "string"
               ? body.error
-              : `Chat request failed (HTTP ${response.status}).`;
-          throw new Error(message);
+              : `Chat request failed (HTTP ${response.status}).`,
+          );
         }
         if (!response.body) throw new Error("The agent returned no response stream.");
         reader = response.body.getReader();
@@ -172,25 +215,38 @@ function useChatController() {
           finishPartial();
           setStreaming(false);
           setStreamText("");
+          setActivity([]);
+          setPermission(null);
         }
       }
     },
-    [config, finishPartial],
+    [config, ready, thread, finishPartial],
   );
-
-  const clear = useCallback(() => {
-    cancel();
-    history.current = [];
-    setMessages([]);
-    setError(null);
-  }, [cancel]);
+  const respondPermission = useCallback(
+    async (decision: "approved" | "denied") => {
+      if (!permission) return;
+      try {
+        await api.chat.permission(runId.current, permission.requestId, decision);
+        setPermission((current) => (current?.requestId === permission.requestId ? null : current));
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Permission could not be sent.");
+      }
+    },
+    [permission],
+  );
   return {
     messages,
     streaming,
     streamText,
+    activity,
     error,
     config,
     setConfig,
+    ready,
+    thread,
+    openThread,
+    permission,
+    respondPermission,
     send,
     cancel,
     clear,
@@ -198,7 +254,6 @@ function useChatController() {
     streamingAgent: respondingAgent.current,
   };
 }
-
 const ChatContext = createContext<ReturnType<typeof useChatController> | null>(null);
 export function ChatProvider({ children }: { children: ReactNode }) {
   const chat = useChatController();
@@ -208,7 +263,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       role: message.role,
       content: [{ type: "text", text: message.content }],
       createdAt: new Date(message.timestamp),
-      metadata: { custom: { agent: message.agent } },
+      metadata: { custom: { agent: message.agent, activity: message.activity } },
     }));
     if (chat.streaming)
       history.push({
@@ -216,20 +271,28 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         role: "assistant",
         content: [{ type: "text", text: chat.streamText }],
         status: { type: "running" },
-        metadata: { custom: { agent: chat.streamingAgent } },
+        metadata: { custom: { agent: chat.streamingAgent, activity: chat.activity } },
       });
     return history;
-  }, [chat.messages, chat.streaming, chat.streamingId, chat.streamingAgent, chat.streamText]);
+  }, [
+    chat.messages,
+    chat.streaming,
+    chat.streamingId,
+    chat.streamingAgent,
+    chat.streamText,
+    chat.activity,
+  ]);
   const runtime = useExternalStoreRuntime({
     messages,
     convertMessage: (message: ThreadMessageLike) => message,
     isRunning: chat.streaming,
     onNew: async (message: AppendMessage) => {
-      const text = message.content
-        .filter((part) => part.type === "text")
-        .map((part) => part.text)
-        .join("\n");
-      await chat.send(text);
+      await chat.send(
+        message.content
+          .filter((part) => part.type === "text")
+          .map((part) => part.text)
+          .join("\n"),
+      );
     },
     onCancel: async () => chat.cancel(),
   });
