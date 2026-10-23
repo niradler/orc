@@ -152,9 +152,13 @@ export default function Terminals() {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const optionsButtonRef = useRef<HTMLButtonElement>(null);
   const [launchHost, setLaunchHost] = useState<string | null | undefined>();
+  const handleMenuOpenChange = useCallback((open: boolean) => {
+    if (open) setLaunchHost(undefined);
+    setMenuOpen(open);
+  }, []);
   useEffect(() => {
     if (params.get("new") !== "1") return;
-    if (params.has("terminalHost")) setLaunchHost(params.get("terminalHost") || null);
+    setLaunchHost(params.has("terminalHost") ? params.get("terminalHost") || null : undefined);
     setMenuOpen(true);
     const next = new URLSearchParams(params);
     next.delete("new");
@@ -323,13 +327,14 @@ export default function Terminals() {
   const selected = terminalId ? terminals.find((t) => t.id === terminalId) : undefined;
   const mobileTerminalId = params.get("paneTerminal") ?? terminalId;
   const mobileTerminal = terminals.find((terminal) => terminal.id === mobileTerminalId);
+  const defaultLaunchHost = launchHost === undefined ? (ssh?.host ?? null) : launchHost;
   const newMenu = (
     <NewTerminalMenu
-      key={launchHost === undefined ? "default" : (launchHost ?? "local")}
+      key={defaultLaunchHost ?? "local"}
       open={menuOpen}
-      onOpenChange={setMenuOpen}
-      launchers={info.launchers}
-      host={launchHost === undefined ? info.host : launchHost}
+      onOpenChange={handleMenuOpenChange}
+      launchers={defaultLaunchHost === info.host ? info.launchers : []}
+      host={defaultLaunchHost}
       pending={creating}
       error={createError}
       onCreate={handleCreate}
@@ -338,7 +343,7 @@ export default function Terminals() {
   );
 
   return (
-    <div className="flex h-full w-full min-h-0 bg-background">
+    <div className="terminal-workspace-page flex h-full w-full min-h-0 bg-background">
       {isDesktop && (
         <aside
           data-testid="terminal-sidebar"

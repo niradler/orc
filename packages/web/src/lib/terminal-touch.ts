@@ -1,30 +1,60 @@
-export function attachTerminalTouchScroll(element: HTMLElement): void {
+interface TerminalTouchZoom {
+  getFontSize: () => number;
+  setFontSize: (size: number) => void;
+}
+
+export function attachTerminalTouchScroll(element: HTMLElement, zoom?: TerminalTouchZoom): void {
   let gesture: { id: number; startY: number; y: number; moved: boolean } | null = null;
+  let pinch: { distance: number; size: number } | null = null;
+  let consumed = false;
+  const distance = (touches: TouchList) => {
+    const first = touches[0];
+    const second = touches[1];
+    return first && second
+      ? Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY)
+      : 0;
+  };
   element.addEventListener(
     "touchstart",
     (event) => {
-      const touch = event.touches.length === 1 ? event.touches[0] : undefined;
+      if (event.touches.length >= 2) {
+        gesture = null;
+        consumed = true;
+        const span = distance(event.touches);
+        pinch =
+          event.touches.length === 2 && zoom && span > 0
+            ? { distance: span, size: zoom.getFontSize() }
+            : null;
+        event.preventDefault();
+        return;
+      }
+      const touch = !consumed && event.touches.length === 1 ? event.touches[0] : undefined;
       gesture = touch
         ? { id: touch.identifier, startY: touch.clientY, y: touch.clientY, moved: false }
         : null;
     },
-    { passive: true },
+    { passive: false },
   );
   element.addEventListener(
     "touchmove",
     (event) => {
+      if (pinch && zoom && event.touches.length === 2) {
+        event.preventDefault();
+        zoom.setFontSize((pinch.size * distance(event.touches)) / pinch.distance);
+        return;
+      }
       if (!gesture || event.touches.length !== 1) {
-        gesture = null;
+        if (consumed) event.preventDefault();
         return;
       }
       const touch = Array.from(event.touches).find((touch) => touch.identifier === gesture?.id);
-      if (!touch) return;
-      if (!gesture.moved && Math.abs(touch.clientY - gesture.startY) < 6) return;
+      if (!touch || (!gesture.moved && Math.abs(touch.clientY - gesture.startY) < 6)) return;
       const canvas = element.querySelector("canvas");
       if (!canvas) return;
       const deltaY = gesture.y - touch.clientY;
       gesture.y = touch.clientY;
       gesture.moved = true;
+      consumed = true;
       event.preventDefault();
       canvas.dispatchEvent(
         new WheelEvent("wheel", {
@@ -41,11 +71,14 @@ export function attachTerminalTouchScroll(element: HTMLElement): void {
   element.addEventListener(
     "touchend",
     (event) => {
-      if (gesture?.moved) {
+      if (consumed) {
         event.preventDefault();
         event.stopPropagation();
       }
       gesture = null;
+      pinch = null;
+      // Keep suppressing taps until every finger in a pinch/pan has been lifted.
+      if (event.touches.length === 0) consumed = false;
     },
     { capture: true, passive: false },
   );
@@ -53,6 +86,8 @@ export function attachTerminalTouchScroll(element: HTMLElement): void {
     "touchcancel",
     () => {
       gesture = null;
+      pinch = null;
+      consumed = false;
     },
     { passive: true },
   );

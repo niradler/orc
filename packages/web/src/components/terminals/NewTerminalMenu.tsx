@@ -77,9 +77,7 @@ export function NewTerminalMenu({
   const [localError, setLocalError] = useState<string | null>(null);
   const [removal, setRemoval] = useState<Removal | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const folders = useRef(
-    new Map<string | null, string>([[defaultHost, defaultHost ? "" : prefs.cwd]]),
-  );
+  const folders = useRef(new Map<string | null, string>([[null, prefs.cwd]]));
   const { data: ssh, error: hostsError } = useSsh();
   const remoteSupported = !host || ssh?.supported === true;
   const {

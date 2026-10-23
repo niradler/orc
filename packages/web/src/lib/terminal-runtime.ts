@@ -1,5 +1,11 @@
 import { FitAddon, Terminal as GhosttyTerminal, type ITheme, init } from "ghostty-web";
 import { api, terminalSocketUrl } from "@/api/client";
+import {
+  clampTerminalFontSize,
+  TERMINAL_FONT_SIZE_KEY,
+  terminalFontSize,
+} from "@/lib/terminal-font-size";
+import { attachTerminalTextInput } from "@/lib/terminal-input";
 import { isMacPlatform, resolveTerminalKey } from "@/lib/terminal-keys";
 import { cellAt, cursorMoveKeys, isPlainClick } from "@/lib/terminal-mouse";
 import { writeTerminalOutput } from "@/lib/terminal-output";
@@ -31,6 +37,7 @@ export interface TerminalRuntime {
   attempts: number;
   retryTimer: ReturnType<typeof setTimeout> | null;
   resizeTimer: ReturnType<typeof setTimeout> | null;
+  onFontSizeChange?: (size: number) => void;
 }
 
 export const TERMINAL_THEME: ITheme = {
@@ -137,14 +144,19 @@ function scheduleResize(runtime: TerminalRuntime): void {
   runtime.resizeTimer = setTimeout(() => sendResize(runtime), RESIZE_SETTLE_MS);
 }
 
-export function createRuntime(id: string): TerminalRuntime {
+export function createRuntime(
+  id: string,
+  onFontSizeChange?: (size: number) => void,
+): TerminalRuntime {
   const element = document.createElement("div");
   element.className = "absolute inset-0 overflow-hidden outline-none";
   element.style.padding = "8px";
   element.style.backgroundColor = TERMINAL_THEME.background ?? "";
+  element.dataset.testid = "terminal-surface";
+  element.style.touchAction = "none";
 
   const term = new GhosttyTerminal({
-    fontSize: 13,
+    fontSize: terminalFontSize(),
     fontFamily: terminalFontFamily(),
     cursorBlink: true,
     scrollback: 10_000,
@@ -169,6 +181,7 @@ export function createRuntime(id: string): TerminalRuntime {
     attempts: 0,
     retryTimer: null,
     resizeTimer: null,
+    ...(onFontSizeChange ? { onFontSizeChange } : {}),
   };
 
   // Keystrokes go out as binary frames; text frames are reserved for control messages.
@@ -187,7 +200,7 @@ export function createRuntime(id: string): TerminalRuntime {
     if (action === "pass") return false;
     if (action === "copy" || action === "copy-and-clear") {
       const text = term.getSelection();
-      if (text) void copyText(text).then(() => term.focus());
+      if (text) void copyText(text).then(() => focusRuntime(runtime));
       if (action === "copy-and-clear") term.clearSelection();
     }
     if (action === "select-all") term.selectAll();
@@ -195,9 +208,35 @@ export function createRuntime(id: string): TerminalRuntime {
   });
 
   attachClickToMove(runtime, encoder);
-  attachTerminalTouchScroll(element);
+  attachTerminalTouchScroll(element, {
+    getFontSize: () => term.options.fontSize,
+    setFontSize: (size) => setRuntimeFontSize(runtime, size),
+  });
+  element.dataset.fontSize = String(term.options.fontSize);
+  element.dataset.scrollOffset = "0";
+  term.onScroll((offset) => {
+    element.dataset.scrollOffset = String(offset);
+  });
+  onFontSizeChange?.(term.options.fontSize);
 
   return runtime;
+}
+
+export function focusRuntime(runtime: TerminalRuntime): void {
+  const input = runtime.element.querySelector("textarea");
+  (input ?? runtime.element).focus({ preventScroll: true });
+}
+
+export function setRuntimeFontSize(runtime: TerminalRuntime, value: number): void {
+  const size = clampTerminalFontSize(value);
+  if (runtime.disposed || runtime.term.options.fontSize === size) return;
+  runtime.term.options.fontSize = size;
+  runtime.element.dataset.fontSize = String(size);
+  if (runtime.opened) runtime.fit.fit();
+  runtime.onFontSizeChange?.(size);
+  try {
+    localStorage.setItem(TERMINAL_FONT_SIZE_KEY, String(size));
+  } catch {}
 }
 
 // Application cursor keys (DECCKM) change the arrow sequences a shell expects.
@@ -269,6 +308,7 @@ export function mountRuntime(runtime: TerminalRuntime, container: HTMLElement, f
     runtime.term.focus = () => {};
     try {
       runtime.term.open(runtime.element);
+      attachTerminalTextInput(runtime.element, (data) => runtime.term.input(data, true));
     } finally {
       runtime.term.focus = originalFocus;
     }

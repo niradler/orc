@@ -1,4 +1,4 @@
-import type { ChatThread } from "@orc/core/chat";
+import type { ChatHistoryPage, ChatModels, ChatThread } from "@orc/core/chat";
 import type {
   KbComment,
   KbCommentClose,
@@ -516,9 +516,13 @@ async function req<T>(
 
 export const api = {
   chat: {
+    models: (agent: string, threadId?: string) =>
+      req<ChatModels>("GET", "/chat/models", undefined, { agent, threadId }),
     list: () =>
       req<{ threads: { id: string; title: string; updatedAt: number }[] }>("GET", "/chat/threads"),
     get: (id: string) => req<ChatThread>("GET", `/chat/threads/${id}`),
+    history: (id: string, before: number) =>
+      req<ChatHistoryPage>("GET", `/chat/threads/${id}/history`, undefined, { before }),
     resume: (sourceSessionId: string) =>
       req<ChatThread>("POST", "/chat/threads", { sourceSessionId }),
     permission: (runId: string, requestId: string, decision: "approved" | "denied") =>

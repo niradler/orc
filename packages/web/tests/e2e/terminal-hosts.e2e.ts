@@ -5,6 +5,82 @@ import { API_SECRET, apiGet, apiPost } from "./_helpers";
 import { test } from "./_terminal-fixture";
 
 for (const width of [1440, 390]) {
+  test(`new terminal defaults to Settings SSH host at ${width}px`, async ({ page, request }) => {
+    const terminal = await apiPost<{ id: string }>(request, "/terminals", {
+      kind: "shell",
+      host: null,
+    });
+    let configuredHost: string | null = "build-box";
+    let launches = 0;
+    await page.route("**/api/ssh", (route) =>
+      route.fulfill({
+        json: {
+          host: configuredHost,
+          hosts: ["build-box", "gpu-box"],
+          supported: true,
+          unsupported_reason: null,
+          locked: false,
+          remote_port: null,
+          secret_set: true,
+        },
+      }),
+    );
+    await page.route(/\/api\/terminals(?:\?.*)?$/, async (route) => {
+      const host = new URL(route.request().url()).searchParams.get("host");
+      if (route.request().method() === "POST") {
+        launches++;
+        expect(route.request().postDataJSON()).toMatchObject({ host: "build-box", kind: "shell" });
+        return route.fulfill({ status: 400, json: { error: "Captured remote launch" } });
+      }
+      if (host)
+        return route.fulfill({
+          json: {
+            enabled: true,
+            ready: true,
+            reason: null,
+            host,
+            launchers: ["shell"],
+            terminals: [],
+          },
+        });
+      return route.continue();
+    });
+    await page.addInitScript((secret) => {
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
+      localStorage.setItem("orc_terminal_cwd", "local-only-folder");
+    }, API_SECRET);
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/terminals/${terminal.id}?project=all`);
+    await page.getByTestId("terminal-new").click();
+    await expect(page.getByTestId("terminal-host-select")).toHaveValue("build-box");
+    await expect(page.getByTestId("terminal-cwd")).toHaveValue("");
+    await page.getByTestId("terminal-launch-shell").click();
+    await expect.poll(() => launches).toBe(1);
+    await page.getByTestId("terminal-host-select").selectOption("");
+    await expect(page.getByTestId("terminal-cwd")).toHaveValue("local-only-folder");
+    await expect(page.getByTestId("terminal-launch-shell")).toBeEnabled();
+    // Reload reads the current Settings selection rather than a stale Local default.
+    configuredHost = "gpu-box";
+    await page.reload();
+    await page.getByTestId("terminal-new").click();
+    await expect(page.getByTestId("terminal-host-select")).toHaveValue("gpu-box");
+    configuredHost = null;
+    await page.reload();
+    await page.getByTestId("terminal-new").click();
+    await expect(page.getByTestId("terminal-host-select")).toHaveValue("");
+    await expect(page.getByTestId("terminal-cwd")).toHaveValue("local-only-folder");
+    await page.goto(`/terminals/${terminal.id}?project=all&new=1&terminalHost=gpu-box`);
+    await expect(page.getByTestId("terminal-host-select")).toHaveValue("gpu-box");
+    await page.getByTestId("terminal-cwd").press("Escape");
+    await page.getByTestId("terminal-new").click();
+    await expect(page.getByTestId("terminal-host-select")).toHaveValue("");
+    expect((await apiGet<{ status: string }>(request, `/terminals/${terminal.id}`)).status).toBe(
+      "running",
+    );
+  });
+}
+
+for (const width of [1440, 390]) {
   test(`should select a host, scope folder browsing and preserve local sessions at ${width}px`, async ({
     page,
     request,

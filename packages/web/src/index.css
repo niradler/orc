@@ -140,6 +140,27 @@
 }
 
 @layer utilities {
+  html[data-compact-viewport="true"]:has(.terminal-workspace-page) .workspace-header {
+    display: none;
+  }
+  html[data-compact-viewport="true"] .chat-header-controls {
+    display: none;
+  }
+  html[data-compact-viewport="true"] .chat-header {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+  html[data-compact-viewport="true"] .chat-composer-footer {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+  html[data-compact-viewport="true"] .chat-composer-box {
+    padding: 4px;
+  }
+  html[data-compact-viewport="true"] .chat-composer-input {
+    max-height: 48px;
+  }
+
   .terminal-glow {
     text-shadow: 0 0 8px rgba(120, 176, 255, 0.4);
   }

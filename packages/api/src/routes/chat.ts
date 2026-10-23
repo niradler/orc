@@ -1,10 +1,19 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { type AgentSession, createBackend, type SessionOpts } from "@orc/agent-runtime";
+import {
+  type AgentSession,
+  createBackend,
+  discoverAgentModels,
+  type SessionOpts,
+} from "@orc/agent-runtime";
 import {
   appendChatActivity,
+  CHAT_HISTORY_PAGE_SIZE,
   type ChatEvent,
+  ChatHistoryPageSchema,
   type ChatMessage,
   ChatModelSchema,
+  type ChatModels,
+  ChatModelsSchema,
   ChatSettingsSchema,
   type ChatThread,
   ChatThreadSchema,
@@ -41,12 +50,76 @@ const runs = new Map<
 >();
 const active = new Set<string>();
 const params = z.object({ id });
+const modelCatalogs = new Map<string, { at: number; result: Promise<ChatModels> }>();
+let modelRequests = 0;
 
 function requireThread(id: string): ChatThread {
   const thread = store().get(id);
   if (!thread) throw new NotFoundError("Chat", id);
   return thread;
 }
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/chat/models",
+    tags: ["Chat"],
+    request: {
+      query: z
+        .object({ agent: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/i), threadId: id.optional() })
+        .strict(),
+    },
+    responses: {
+      200: {
+        description: "Models reported by the selected coding agent",
+        content: { "application/json": { schema: ChatModelsSchema } },
+      },
+    },
+  }),
+  async (c) => {
+    const { agent, threadId } = c.req.valid("query");
+    const thread = threadId ? requireThread(threadId) : null;
+    if (thread && thread.config.agent !== agent)
+      throw new ValidationError("The agent does not match this conversation.");
+    if (agent !== "codex" && agent !== "claude")
+      return c.json({ models: [], warning: "Choose a saved model or enter a custom model ID." });
+    const host = thread ? execHostFor(thread.host) : resolveExecHost();
+    const cwd = thread?.cwd ?? (host.kind === "ssh" ? await hostHome(host) : process.cwd());
+    const key = JSON.stringify([agent, host.kind === "ssh" ? host.alias : null, cwd]);
+    const cached = modelCatalogs.get(key);
+    if (cached && Date.now() - cached.at < 120_000) return c.json(await cached.result);
+    if (modelRequests >= 2)
+      return c.json({
+        models: [],
+        warning: "Model discovery is busy. Saved and custom models are still available.",
+      });
+    modelRequests++;
+    const result = discoverAgentModels(agent, host, cwd)
+      .then(
+        (models): ChatModels => ({
+          models,
+          warning: models.length
+            ? null
+            : "No models were reported. Choose a saved or custom model.",
+        }),
+      )
+      .catch(
+        (): ChatModels => ({
+          models: [],
+          warning: "Models could not be loaded from this agent. Choose a saved or custom model.",
+        }),
+      )
+      .finally(() => {
+        modelRequests--;
+      });
+    if (modelCatalogs.size >= 32) {
+      const oldest = modelCatalogs.keys().next().value;
+      if (oldest !== undefined) modelCatalogs.delete(oldest);
+    }
+    modelCatalogs.set(key, { at: Date.now(), result });
+    return c.json(await result);
+  },
+);
 
 async function newThread(agent?: string, model?: string, sourceId?: string): Promise<ChatThread> {
   const config = ChatSettingsSchema.parse(loadConfig().preferences.chat ?? {});
@@ -99,16 +172,18 @@ async function newThread(agent?: string, model?: string, sourceId?: string): Pro
         bytes,
         source.backend,
         `${thread.host ?? "local"}:${source.transcript_path}`,
-        { offset: 0, limit: 200 },
+        { offset: 0, limit: CHAT_HISTORY_PAGE_SIZE },
       );
-      if (transcript.total > 100)
+      if (transcript.total > CHAT_HISTORY_PAGE_SIZE)
         transcript = await readTranscriptBytes(
           bytes,
           source.backend,
           `${thread.host ?? "local"}:${source.transcript_path}`,
-          { offset: transcript.total - 100, limit: 100 },
+          { offset: transcript.total - CHAT_HISTORY_PAGE_SIZE, limit: CHAT_HISTORY_PAGE_SIZE },
         );
       thread.messages = chatHistory(transcript.turns, source.backend);
+      thread.importedMessages = thread.messages.length;
+      thread.historyBefore = transcript.offset > 0 ? transcript.offset : null;
     }
   }
   return thread;
@@ -143,6 +218,61 @@ app.openapi(
     responses: response,
   }),
   (c) => c.json(requireThread(c.req.valid("param").id)),
+);
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/chat/threads/{id}/history",
+    tags: ["Chat"],
+    request: {
+      params,
+      query: z.object({ before: z.coerce.number().int().positive().max(2147483647) }),
+    },
+    responses: {
+      200: {
+        description: "Older native transcript messages",
+        content: { "application/json": { schema: ChatHistoryPageSchema } },
+      },
+    },
+  }),
+  async (c) => {
+    const thread = requireThread(c.req.valid("param").id);
+    const { before } = c.req.valid("query");
+    if (!thread.sourceId || before > (thread.historyBefore ?? 0))
+      throw new ValidationError("No older history is available at this position.");
+    const source = await getDb().query.gateway_sessions.findFirst({
+      where: and(
+        eq(gateway_sessions.id, thread.sourceId),
+        eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
+      ),
+    });
+    if (
+      !source?.transcript_path ||
+      source.backend !== thread.config.agent ||
+      source.runtime_session_id !== thread.runtimeId ||
+      (source.execution_host ?? null) !== thread.host
+    )
+      throw new NotFoundError("Native transcript", thread.sourceId);
+    const runtime = hostRuntime(execHostFor(thread.host));
+    if (!(await runtime.isFile(source.transcript_path)))
+      throw new NotFoundError("Native transcript", thread.sourceId);
+    const bytes = await runtime.readFile(source.transcript_path, MAX_TRANSCRIPT_BYTES);
+    const offset = Math.max(0, before - CHAT_HISTORY_PAGE_SIZE);
+    const page = await readTranscriptBytes(
+      bytes,
+      source.backend,
+      `${thread.host ?? "local"}:${source.transcript_path}`,
+      { offset, limit: before - offset },
+    );
+    if (page.total < before)
+      throw new ConflictError(
+        "The native transcript changed. Reopen the session to load its history.",
+      );
+    return c.json({
+      messages: chatHistory(page.turns, source.backend),
+      before: offset > 0 ? offset : null,
+    });
+  },
 );
 app.openapi(
   createRoute({
@@ -272,9 +402,7 @@ app.openapi(
       .find((message) => message.role === "user")
       ?.content.trim();
     if (!input) throw new ValidationError("A user message is required.");
-    if (thread.messages.length >= 200)
-      throw new ValidationError("This chat reached its message limit. Start a new chat.");
-    if (JSON.stringify(thread.messages).length > 5000000)
+    if (JSON.stringify(thread.messages.slice(thread.importedMessages ?? 0)).length > 5000000)
       throw new ValidationError("This chat reached its history size limit. Start a new chat.");
     const key = thread.runtimeId
       ? `${thread.host ?? "local"}:${thread.backend}:${thread.runtimeId}`
