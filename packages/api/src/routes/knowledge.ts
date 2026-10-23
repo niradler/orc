@@ -24,6 +24,8 @@ import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { withKbJobHooks } from "../kb-jobs.js";
 import { createRouter } from "../lib/router.js";
+import { getSessionArchive } from "../sessions/archive.js";
+import { indexSessionsWhenEnabled } from "../sessions/archive-local.js";
 
 const app = createRouter();
 // The process serving these routes is the one that schedules and runs digest jobs.
@@ -789,6 +791,7 @@ const EmbeddingSettingsSchema = z
 
 const KbSettingsSchema = z
   .object({
+    session_embeddings: z.boolean(),
     parser: z.string().min(1).max(40),
     docling_enabled: z.boolean(),
     parser_timeout_secs: z.number().int().min(5).max(3600),
@@ -804,6 +807,7 @@ function publicSettings() {
   const { api_key, ...embedding } = k.embedding;
   return {
     root: k.root,
+    session_embeddings: k.session_embeddings,
     parser: k.parser,
     docling_enabled: k.docling_enabled,
     parser_timeout_secs: k.parser_timeout_secs,
@@ -863,6 +867,10 @@ app.openapi(
     // Queue embeddings for a changed profile and retry work that a setting may now unblock.
     service.reconcile();
     service.engine.kick();
+    if (patch.session_embeddings !== undefined || patch.embedding) {
+      (await getSessionArchive()).kick();
+      indexSessionsWhenEnabled();
+    }
     return c.json(publicSettings());
   },
 );

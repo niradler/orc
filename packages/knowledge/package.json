@@ -1,11 +1,14 @@
 {
   "name": "@orc/knowledge",
-  "version": "0.1.37",
+  "version": "0.1.38",
   "type": "module",
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./worker": "./src/parsers/worker.ts"
+    "./worker": "./src/parsers/worker.ts",
+    "./index-db": "./src/index-db.ts",
+    "./embeddings": "./src/embeddings.ts",
+    "./vector": "./src/vector.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

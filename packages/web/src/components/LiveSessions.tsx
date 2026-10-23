@@ -32,7 +32,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
   const desktop = useBreakpoint("sm");
   const [params, setParams] = useSearchParams();
   const agent = params.get("agent") ?? "";
-  const showEnded = params.get("ended") === "1";
+  const showEnded = params.get("ended") !== "0";
   const query = params.get("q") ?? "";
   const order = params.get("order") === "asc" ? "asc" : "desc";
   const openId = params.get("session");
@@ -166,7 +166,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                 type="checkbox"
                 data-testid="show-ended"
                 checked={showEnded}
-                onChange={(e) => setParam("ended", e.target.checked ? "1" : null)}
+                onChange={(e) => setParam("ended", e.target.checked ? "1" : "0")}
               />
               Show ended
             </label>

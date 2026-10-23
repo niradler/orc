@@ -10,6 +10,7 @@ import {
   readPackage,
   readPackageFile,
 } from "@orc/core/package-service";
+import { ArchiveSearchSchema, SessionSyncInputSchema } from "@orc/core/session-archive";
 import { SessionHandoffInputSchema, SessionHandoffUploadSchema } from "@orc/core/session-handoff";
 import { type SkillDownload, SkillDownloadSchema } from "@orc/core/skill-download";
 import {
@@ -131,6 +132,32 @@ export const toolDefinitions = [
     description:
       "Move a Claude Code or Codex session to ORC. FIRST commit and push the intended changes within the user's Git authorization. Report the pushed repository, branch and exact commit SHA, project name, source cwd and native session ID. Returns a single-use upload URL for native session files. Upload through HTTP; then use Sessions → Open in terminal. See orc-platform references/execution.md.",
     inputSchema: SessionHandoffInputSchema,
+  },
+  {
+    name: "session_search",
+    description:
+      "Search archived and indexed coding-session passages. Returns bounded evidence with session:<id>@<revision>#<ordinal> citations, not entire histories. Optional embeddings use Settings; keyword search remains available. Sync local files with the trusted orc-platform scripts/sync-sessions.py, following references/session-archive.md.",
+    inputSchema: ArchiveSearchSchema.omit({ project_id: true }).extend({ project: projectParam }),
+  },
+  {
+    name: "session_sync",
+    description:
+      "Request a one-hour, project-scoped upload capability for local Claude/Codex session sync. Use when the user asks to upload local project/all-agent histories to ORC. Pass projects for that requested scope; omit for all existing projects. Download trusted orc-platform scripts/sync-sessions.py via skill_read download:true and run according to references/session-archive.md and --help. Pass returned grant privately via --grant-stdin/--grant-file, never URL/token argv or printed output. This only authorizes archival upload/deduplication, not transcript reads or terminal launch.",
+    inputSchema: SessionSyncInputSchema,
+  },
+  {
+    name: "session_read",
+    description:
+      "Read a cited archived-session passage, or a bounded page of conversation turns. Pin the revision from session_search for stable evidence after more messages arrive.",
+    inputSchema: z
+      .object({
+        id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+        revision: z.number().int().min(1).optional(),
+        ordinal: z.number().int().min(0).optional(),
+        offset: z.number().int().min(0).default(0),
+        limit: z.number().int().min(1).max(100).default(30),
+      })
+      .strict(),
   },
   {
     name: "memory_list",
@@ -727,6 +754,57 @@ export async function executeTool(
   args: unknown,
   options: ToolOptions = {},
 ): Promise<string> {
+  if (name === "session_sync") {
+    const grant = await orcApi<{ sync_url: string }>("POST", "/sessions/archive/sync", {
+      body: SessionSyncInputSchema.parse(args),
+    });
+    if (options.publicApiBaseUrl)
+      grant.sync_url = new URL(
+        new URL(grant.sync_url).pathname,
+        options.publicApiBaseUrl,
+      ).toString();
+    return JSON.stringify(grant);
+  }
+  if (name === "session_search") {
+    const input = ArchiveSearchSchema.omit({ project_id: true })
+      .extend({ project: projectParam })
+      .parse(args);
+    const project = resolveProjectId(input.project);
+    const params = new URLSearchParams({
+      q: input.q,
+      mode: input.mode,
+      limit: String(input.limit),
+      offset: String(input.offset),
+      ...(project ? { project_id: project.id } : {}),
+      ...(input.agent ? { agent: input.agent } : {}),
+    });
+    return JSON.stringify(await orcApi("GET", `/sessions/archive?${params}`));
+  }
+  if (name === "session_read") {
+    const input = z
+      .object({
+        id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+        revision: z.number().int().min(1).optional(),
+        ordinal: z.number().int().min(0).optional(),
+        offset: z.number().int().min(0).default(0),
+        limit: z.number().int().min(1).max(100).default(30),
+      })
+      .parse(args);
+    if (input.ordinal !== undefined && input.revision === undefined)
+      throw new ValidationError("Passage reads require the cited revision");
+    const params = new URLSearchParams({
+      ...(input.revision ? { revision: String(input.revision) } : {}),
+      ...(input.ordinal !== undefined
+        ? { ordinal: String(input.ordinal) }
+        : { offset: String(input.offset), limit: String(input.limit) }),
+    });
+    return JSON.stringify(
+      await orcApi(
+        "GET",
+        `/sessions/archive/${input.id}/${input.ordinal !== undefined ? "passage" : "transcript"}?${params}`,
+      ),
+    );
+  }
   if (isKbTool(name)) {
     const input = args as Record<string, unknown>;
     const project = typeof input.project === "string" ? input.project : undefined;

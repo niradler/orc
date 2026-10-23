@@ -11,6 +11,7 @@ import { withKbJobHooks } from "./kb-jobs.js";
 import { registerRestartHandler, runShutdownHooks } from "./lifecycle.js";
 import { createApp } from "./server.js";
 import { startSessionWatcher } from "./session-watcher.js";
+import { closeSessionArchive } from "./sessions/archive.js";
 import { shutdownTerminals } from "./terminals/service.js";
 import {
   handleTerminalUpgrade,
@@ -66,7 +67,10 @@ async function shutdown(signal: string, exitCode = 0) {
   shutdownTerminals();
   await runShutdownHooks();
   try {
-    await closeKnowledgeService();
+    const results = await Promise.allSettled([closeKnowledgeService(), closeSessionArchive()]);
+    for (const result of results)
+      if (result.status === "rejected")
+        logger.error("Error stopping indexed storage", result.reason);
   } catch (err) {
     logger.error("Error stopping knowledge service", err);
   }

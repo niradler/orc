@@ -7,6 +7,7 @@ import { globalConfigPath, loadConfig, resetConfig } from "@orc/core/config";
 import { getDb } from "@orc/db/client";
 import { closeKnowledgeService, getKnowledgeService } from "@orc/knowledge";
 import type { createApp } from "../server.js";
+import { closeSessionArchive } from "../sessions/archive.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 const ENV = ["ORC_KNOWLEDGE_ROOT", "HOME", "USERPROFILE"] as const;
@@ -49,6 +50,7 @@ beforeAll(() => {
 });
 
 afterAll(async () => {
+  await closeSessionArchive();
   await closeKnowledgeService();
   teardownTestApp();
   for (const k of ENV)

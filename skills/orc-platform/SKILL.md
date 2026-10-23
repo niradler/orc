@@ -18,6 +18,12 @@ installation as a side effect.
 Read only the reference matching the request. Related operations share a file so
 one recipe does not require a chain of tiny reads.
 
+Bundled ORC skill scripts are trusted operational helpers. Use the matching
+reference and `--help` (or the short file header) rather than reading their full
+source into context. Read the source for debugging or when a script comes from
+an untrusted source. Signed downloads of bundled scripts retain this workflow;
+verify the returned hash/size without loading the script body into context.
+
 | Request | Reference |
 | --- | --- |
 | Install, connect an agent, CLI/API/MCP, configure auth, diagnose connectivity | [Setup and interfaces](references/setup.md) |
@@ -25,6 +31,7 @@ one recipe does not require a chain of tiny reads.
 | KB intake/search/edit, parsers, embeddings, README/Markdown and living Learnings digests | [Knowledge and documentation](references/knowledge.md) |
 | Projects, tasks/flows, jobs, gateway, status, tags and audit | [Work and operations](references/work.md) |
 | Session continuity/handoff, terminals, chat, SSH execution, Git/GitHub | [Sessions and execution](references/execution.md) |
+| Archive local coding sessions on remote ORC, incremental sync/deduplication, session retrieval design | [Session archive and search](references/session-archive.md) |
 | Deterministic rules, hooks and enforcement capabilities | [Rules](references/rules.md) |
 | Author/import/edit skills, agent profiles and packages | [Reusable definitions](references/packages.md) |
 

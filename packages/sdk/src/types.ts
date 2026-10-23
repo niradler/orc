@@ -1,6 +1,12 @@
 import type { JobAction, WebhookSubscription } from "@orc/core/job-actions";
 
 export type { JobAction, WebhookSubscription } from "@orc/core/job-actions";
+export type {
+  ArchiveSearchResult,
+  ArchiveSession,
+  ArchiveUpload,
+  ArchiveUploadInput,
+} from "@orc/core/session-archive";
 
 import type { components } from "./openapi.gen.js";
 

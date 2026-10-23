@@ -1,6 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { ValidationError } from "@orc/core/errors";
 import { executeTool, toolDefinitions } from "@orc/mcp/tools";
+import { clientOrigin } from "../lib/client-origin.js";
 import { createRouter } from "../lib/router.js";
 import { skillDownloads } from "../skill-downloads.js";
 
@@ -47,9 +48,9 @@ app.openapi(mcpToolRoute, async (c) => {
   if (!parsed.success) throw new ValidationError(`Invalid args: ${parsed.error.message}`);
 
   const result = await executeTool(name as Parameters<typeof executeTool>[0], parsed.data, {
-    publicApiBaseUrl: new URL(c.req.url).origin,
+    publicApiBaseUrl: clientOrigin(c.req.raw),
     skillDownload: (skill, ref, projectId) =>
-      skillDownloads.mint(skill, ref, projectId, new URL(c.req.url).origin),
+      skillDownloads.mint(skill, ref, projectId, clientOrigin(c.req.raw)),
   });
   return c.json({ result });
 });

@@ -39,6 +39,11 @@ import type { RuleTemplate } from "@orc/core/rule-catalog";
 import type { RuleEventCapability, RuleHookBackend } from "@orc/core/rule-events";
 import type { RuleDecision, RuleEvent, RulePolicy, RuleRevision } from "@orc/core/rule-types";
 import type {
+  ArchiveSearchResult,
+  ArchiveSession,
+  ArchiveUploadInput,
+} from "@orc/core/session-archive";
+import type {
   SessionHandoff,
   SessionHandoffInput,
   SessionHandoffUpload,
@@ -609,6 +614,44 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     sessions: {
+      archiveSync: (projects?: string[]) =>
+        c<{
+          sync_url: string;
+          expires_at: string;
+          projects: { id: string; name: string; git_remote_url: string | null }[];
+        }>("POST", "/sessions/archive/sync", { projects }),
+      archiveSearch: (params: {
+        q?: string;
+        project_id?: string;
+        offset?: number;
+        limit?: number;
+        agent?: string;
+      }) => c<ArchiveSearchResult>("GET", "/sessions/archive", undefined, params),
+      archiveUpload: (input: ArchiveUploadInput) =>
+        c<{ session: ArchiveSession; outcome: string }>("POST", "/sessions/archive/upload", input),
+      archiveIndex: (project_id?: string) =>
+        c<{ indexed: number; failed: number; skipped: number }>("POST", "/sessions/archive/index", {
+          project_id,
+        }),
+      archiveRead: (id: string, params?: { revision?: number; offset?: number; limit?: number }) =>
+        c<TranscriptPage>("GET", `/sessions/archive/${e(id)}/transcript`, undefined, params),
+      archivePassage: (id: string, revision: number, ordinal: number) =>
+        c<{ citation: string; text: string; turn: number }>(
+          "GET",
+          `/sessions/archive/${e(id)}/passage`,
+          undefined,
+          { revision, ordinal },
+        ),
+      archiveResume: (
+        id: string,
+        input: {
+          revision?: number;
+          repository?: string;
+          branch?: string;
+          commit?: string;
+          subdirectory?: string;
+        },
+      ) => c<SessionHandoff>("POST", `/sessions/archive/${e(id)}/resume`, input),
       list: (params?: {
         agent?: string;
         job_run_id?: string;

@@ -177,6 +177,7 @@ export const OrcConfigSchema = z.object({
         .min(1024)
         .default(100 * 1024 * 1024),
       usage_retention_days: z.number().int().min(1).max(3650).default(180),
+      session_embeddings: z.boolean().default(false),
       embedding: z
         .object({
           provider: z.enum(["none", "ollama", "openai"]).default("none"),
@@ -198,6 +199,7 @@ export const OrcConfigSchema = z.object({
       docling_enabled: true,
       max_upload_bytes: 100 * 1024 * 1024,
       usage_retention_days: 180,
+      session_embeddings: false,
       embedding: { provider: "none", batch_size: 32, timeout_secs: 60 },
     }),
 

@@ -301,7 +301,7 @@ function pairToolCalls(turns: TranscriptTurn[]): TranscriptTurn[] {
 const PARSE_CACHE_SIZE = 4;
 const parseCache = new Map<string, { stamp: string; turns: TranscriptTurn[] }>();
 
-async function parseTranscriptContent(
+export async function parseTranscriptContent(
   content: string,
   backend: string,
   cacheKey: string,

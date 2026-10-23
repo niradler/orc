@@ -4,6 +4,9 @@ Sources: [Live sessions](https://github.com/niradler/orc/blob/master/docs/live-s
 
 ## Session continuity
 
+For bulk/offline local history sync, use [session-archive.md](session-archive.md).
+It stores histories without running agents; the handoff below moves active work.
+
 Use the supplied ORC session ID. At meaningful milestones record decisions, failures,
 artifact/commit references and next action with `session_event`; avoid per-line
 noise. `session_snapshot` preserves compact context; after compaction use
@@ -63,7 +66,10 @@ an ORC event snapshot. Parent sessions are required for Codex child-agent histor
    `${CODEX_HOME:-~/.codex}/sessions/YYYY/MM/DD/rollout-*-<session-id>.jsonl`
    or an explicitly selected archive. Use the actual parent native session.
 5. Confirm `status: ready`, destination cwd and `live_session_id`, then use
-   **Sessions → Open in terminal**. Upload acceptance alone does not prove readiness.
+   **Sessions → Open in terminal**. If the user requested move-and-continue, finish
+   the launch through `POST /api/terminals` with the agent kind and live_session_id
+   and verify the running terminal/cwd/host. Do not leave the user at Ready.
+   Upload acceptance alone does not prove readiness or continuation.
 
 Inspect `GET /api/session-handoffs/<id>` on failure. After correcting a preparation
 failure, retry `POST /api/session-handoffs/<id>/prepare` using normal auth. A consumed
