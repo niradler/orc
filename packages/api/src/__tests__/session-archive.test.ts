@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, renameSync } from "node:fs";
+import { mkdtempSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OrcConfigSchema } from "@orc/core/config";
@@ -8,6 +8,8 @@ import { ArchiveSearchSchema, type ArchiveUpload } from "@orc/core/session-archi
 import { getSqlite } from "@orc/db/client";
 import type { EmbeddingProvider } from "@orc/knowledge/embeddings";
 import { closeSessionArchive, getSessionArchive, SessionArchive } from "../sessions/archive.js";
+import { indexDiscoveredSessions } from "../sessions/archive-local.js";
+import { LIVE_CHAT_ID } from "../sessions/common.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof setupTestApp>;
@@ -63,6 +65,25 @@ afterEach(async () => {
 });
 
 describe("session archive storage and identities", () => {
+  test("simultaneous indexing scans each requested project and coalesces only identical scopes", async () => {
+    for (const project of ["pa", "pb"]) {
+      const id = randomUUID();
+      const path = join(root, `${project}.jsonl`);
+      writeFileSync(path, `${meta.replaceAll(native, id)}\n${message("A local transcript")}\n`);
+      getSqlite().run(
+        "INSERT INTO gateway_sessions (id, chat_id, backend, mode, runtime_session_id, transcript_path, project_id) VALUES (?, ?, 'codex', 'direct', ?, ?, ?)",
+        [id, LIVE_CHAT_ID, id, path, project],
+      );
+    }
+    const a = indexDiscoveredSessions("pa");
+    expect(indexDiscoveredSessions("pa")).toBe(a);
+    const b = indexDiscoveredSessions("pb");
+    const results = await Promise.all([a, b]);
+    expect(results.map((r) => r.indexed)).toEqual([1, 1]);
+    expect(
+      getSqlite().query("SELECT project_id FROM session_archives ORDER BY project_id").all(),
+    ).toEqual([{ project_id: "pa" }, { project_id: "pb" }]);
+  });
   test("TLS proxy grants retain the request host and HTTPS scheme", async () => {
     const response = await app.request("http://orc.example.com/api/sessions/archive/sync", {
       method: "POST",
@@ -228,6 +249,80 @@ describe("session archive storage and identities", () => {
 });
 
 describe("session retrieval", () => {
+  test("large ranked candidate sets load without exceeding SQLite parameter limits", async () => {
+    const created = await svc.ingest(upload());
+    await svc.idle();
+    const chunk = svc.index.documentChunks(created.session.id)[0];
+    if (!chunk) throw new Error("Expected an indexed passage");
+    const candidates = [...Array.from({ length: 300303 }, (_, n) => -n - 1), chunk.id, chunk.id];
+    expect(svc.index.getChunks(candidates).map((c) => c.id)).toEqual([chunk.id]);
+  });
+  test.each(["lexical", "semantic", "semantic-fallback"] as const)(
+    "%s search pages distinct sessions when one history has many matching turns",
+    async (variant) => {
+      const mode = variant === "semantic-fallback" ? "semantic" : variant;
+      await svc.close();
+      config.knowledge.session_embeddings = true;
+      const provider: EmbeddingProvider = {
+        provider: "ollama",
+        model: "fixture",
+        profile: "fixture-8",
+        batchSize: 256,
+        async embed(texts) {
+          return texts.map(() => [1, 0, 0, 0, 0, 0, 0, 0]);
+        },
+      };
+      svc = await SessionArchive.open({
+        db: getSqlite(),
+        root: join(root, "distinct"),
+        config: () => config,
+        embedder: () => provider,
+      });
+      const ids: string[] = [];
+      for (const turns of [120, 1, 1]) {
+        const id = randomUUID();
+        const entry = upload();
+        entry.session_id = id;
+        entry.title = "Conversation";
+        const content = [
+          meta.replaceAll(native, id),
+          ...Array.from({ length: turns }, (_, n) =>
+            JSON.stringify({
+              type: "response_item",
+              payload: {
+                type: "message",
+                role: n % 2 ? "assistant" : "user",
+                content: [
+                  {
+                    type: n % 2 ? "output_text" : "input_text",
+                    text:
+                      turns === 120
+                        ? "needle"
+                        : "needle with many other unrelated words and tokens",
+                  },
+                ],
+              },
+            }),
+          ),
+        ].join("\n");
+        entry.bundle.files = [{ path: "session.jsonl", content }];
+        ids.push((await svc.ingest(entry)).session.id);
+      }
+      await svc.idle();
+      if (variant === "semantic-fallback") svc.index.backend = "exact-scan";
+      const all = await svc.search(search("needle", { mode, project_id: "pa", limit: 20 }));
+      expect(all.sessions.map((s) => s.id).sort()).toEqual([...ids].sort());
+      expect(all.sessions.every((s) => s.passages.length <= 3)).toBe(true);
+      const expanded = await svc.search(search("needle tokens", { mode: "lexical" }));
+      expect(expanded.sessions.map((s) => s.id).sort()).toEqual([...ids].sort());
+      expect(expanded.sessions.every((s) => s.passages.length <= 3)).toBe(true);
+      const first = await svc.search(search("needle", { mode, limit: 1 }));
+      const second = await svc.search(search("needle", { mode, limit: 1, offset: 1 }));
+      const third = await svc.search(search("needle", { mode, limit: 1, offset: 2 }));
+      expect(new Set([first, second, third].map((p) => p.sessions[0]?.id)).size).toBe(3);
+      expect([first, second, third].map((p) => p.has_more)).toEqual([true, true, false]);
+    },
+  );
   test("browsing remains paged beyond ten thousand archived sessions", async () => {
     const insert = getSqlite().query(
       "INSERT INTO session_archives (id,project_id,source_id,agent,native_id,title,metadata,revision,content_hash,index_revision,created_at,updated_at) VALUES (?,'pa','scale','codex',?,'Scale fixture','{\"subdirectory\":\"\"}',1,'fixture',1,'2026-01-01T00:00:00Z','2026-01-01T00:00:00Z')",

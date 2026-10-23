@@ -14,6 +14,15 @@ import {
 
 const INDEX_SCHEMA_VERSION = 2;
 
+function rankedChunksSql(query: string, metric: "score" | "distance", perDocument?: number) {
+  if (!perDocument) return `${query} ORDER BY ${metric}, id LIMIT ?`;
+  return `WITH candidates AS MATERIALIZED (${query}), ranked AS (
+    SELECT id, document_id, ${metric}, row_number() OVER (
+      PARTITION BY document_id ORDER BY ${metric}, id
+    ) AS position FROM candidates
+  ) SELECT id, document_id, ${metric} FROM ranked WHERE position <= ? ORDER BY ${metric}, id LIMIT ?`;
+}
+
 export type IndexedChunk = {
   id: number;
   document_id: string;
@@ -204,11 +213,16 @@ export class IndexDb {
   }
 
   getChunks(ids: number[]): IndexedChunk[] {
-    if (!ids.length) return [];
-    const rows = this.db
-      .query(`SELECT * FROM chunks WHERE id IN (${ids.map(() => "?").join(",")})`)
-      .all(...ids) as (ChunkRow & { input_hash?: string })[];
-    return rows.map(({ input_hash: _, ...r }) => toChunk(r));
+    const unique = [...new Set(ids)];
+    const chunks: IndexedChunk[] = [];
+    for (let offset = 0; offset < unique.length; offset += 500) {
+      const batch = unique.slice(offset, offset + 500);
+      const rows = this.db
+        .query(`SELECT * FROM chunks WHERE id IN (${batch.map(() => "?").join(",")})`)
+        .all(...batch) as (ChunkRow & { input_hash?: string })[];
+      chunks.push(...rows.map(({ input_hash: _, ...r }) => toChunk(r)));
+    }
+    return chunks;
   }
 
   documentChunks(documentId: string): IndexedChunk[] {
@@ -235,56 +249,106 @@ export class IndexDb {
   }
 
   /** BM25 over title/headings/labels/text; AND first, widened to OR when AND is too narrow. */
-  lexical(query: string, f: ChunkFilter, limit: number): { id: number; score: number }[] {
+  lexical(
+    query: string,
+    f: ChunkFilter,
+    limit: number,
+    perDocument?: number,
+  ): { id: number; score: number }[] {
     if (!f.kb_ids.length) return [];
     const filter = this.filterSql(f, "c");
     const run = (q: string) =>
       this.db
         .query(
-          `SELECT c.id, bm25(chunks_fts, 4.0, 2.0, 2.0, 1.0) AS score
+          rankedChunksSql(
+            `SELECT c.id, c.document_id, bm25(chunks_fts, 4.0, 2.0, 2.0, 1.0) AS score
            FROM chunks_fts JOIN chunks c ON c.id = chunks_fts.rowid
-           WHERE chunks_fts MATCH ? AND ${filter.sql}
-           ORDER BY score LIMIT ?`,
+           WHERE chunks_fts MATCH ? AND ${filter.sql}`,
+            "score",
+            perDocument,
+          ),
         )
-        .all(q, ...filter.params, limit) as { id: number; score: number }[];
+        .all(q, ...filter.params, ...(perDocument ? [perDocument] : []), limit) as {
+        id: number;
+        document_id: string;
+        score: number;
+      }[];
+    const cap = (hits: ReturnType<typeof run>) => {
+      const counts = new Map<string, number>();
+      return hits
+        .filter((hit) => {
+          if (!perDocument) return true;
+          const count = counts.get(hit.document_id) ?? 0;
+          counts.set(hit.document_id, count + 1);
+          return count < perDocument;
+        })
+        .slice(0, limit)
+        .map(({ id, score }) => ({ id, score }));
+    };
     const and = ftsQuery(query, "AND");
     if (!and) return [];
     const hits = run(and);
-    if (hits.length >= Math.min(limit, 5)) return hits;
+    if (hits.length >= Math.min(limit, 5)) return cap(hits);
     const or = ftsQuery(query, "OR");
-    if (!or || or === and) return hits;
+    if (!or || or === and) return cap(hits);
     const seen = new Set(hits.map((h) => h.id));
-    return [...hits, ...run(or).filter((h) => !seen.has(h.id))].slice(0, limit);
+    return cap([...hits, ...run(or).filter((h) => !seen.has(h.id))]);
   }
 
   /** Exact cosine KNN over the eligible rows (filters apply before ranking, not after). */
-  semantic(vector: number[], profile: string, f: ChunkFilter, limit: number) {
+  semantic(vector: number[], profile: string, f: ChunkFilter, limit: number, perDocument?: number) {
     if (!f.kb_ids.length) return [];
     const filter = this.filterSql(f, "c");
     if (this.backend === "sqlite-vec") {
-      return this.db
+      const rows = this.db
         .query(
-          `SELECT v.chunk_id AS id, vec_distance_cosine(v.embedding, ?) AS distance
+          rankedChunksSql(
+            `SELECT v.chunk_id AS id, c.document_id, vec_distance_cosine(v.embedding, ?) AS distance
            FROM chunk_vectors v JOIN chunks c ON c.id = v.chunk_id
-           WHERE v.profile = ? AND ${filter.sql}
-           ORDER BY distance LIMIT ?`,
+           WHERE v.profile = ? AND ${filter.sql}`,
+            "distance",
+            perDocument,
+          ),
         )
-        .all(encodeVector(vector), profile, ...filter.params, limit) as {
+        .all(
+          encodeVector(vector),
+          profile,
+          ...filter.params,
+          ...(perDocument ? [perDocument] : []),
+          limit,
+        ) as {
         id: number;
         distance: number;
       }[];
+      return rows.map(({ id, distance }) => ({ id, distance }));
     }
     const q = Float32Array.from(vector);
     const rows = this.db
       .query(
-        `SELECT v.chunk_id AS id, v.embedding FROM chunk_vectors v JOIN chunks c ON c.id = v.chunk_id
+        `SELECT v.chunk_id AS id, c.document_id, v.embedding FROM chunk_vectors v JOIN chunks c ON c.id = v.chunk_id
          WHERE v.profile = ? AND ${filter.sql}`,
       )
-      .all(profile, ...filter.params) as { id: number; embedding: Uint8Array }[];
+      .all(profile, ...filter.params) as {
+      id: number;
+      document_id: string;
+      embedding: Uint8Array;
+    }[];
+    const counts = new Map<string, number>();
     return rows
-      .map((r) => ({ id: r.id, distance: cosineDistance(q, decodeVector(r.embedding)) }))
-      .sort((a, b) => a.distance - b.distance)
-      .slice(0, limit);
+      .map((r) => ({
+        id: r.id,
+        document_id: r.document_id,
+        distance: cosineDistance(q, decodeVector(r.embedding)),
+      }))
+      .sort((a, b) => a.distance - b.distance || a.id - b.id)
+      .filter((row) => {
+        if (!perDocument) return true;
+        const count = counts.get(row.document_id) ?? 0;
+        counts.set(row.document_id, count + 1);
+        return count < perDocument;
+      })
+      .slice(0, limit)
+      .map(({ id, distance }) => ({ id, distance }));
   }
 
   /** Dimensions of the vectors stored for this profile (float32), or null before the first. */

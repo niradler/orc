@@ -4,15 +4,25 @@ import { getSqlite } from "@orc/db/client";
 import { getSessionArchive } from "./archive.js";
 import { LIVE_CHAT_ID } from "./common.js";
 
-let running: Promise<{ indexed: number; failed: number; skipped: number }> | undefined;
+type ScanResult = { indexed: number; failed: number; skipped: number };
+let running = Promise.resolve();
+const pending = new Map<string | undefined, Promise<ScanResult>>();
 const stamps = new Map<string, string>();
 
 export function indexDiscoveredSessions(projectId?: string) {
-  if (running) return running;
-  running = scan(projectId).finally(() => {
-    running = undefined;
-  });
-  return running;
+  const existing = pending.get(projectId);
+  if (existing) return existing;
+  const result = running
+    .then(() => scan(projectId))
+    .finally(() => {
+      pending.delete(projectId);
+    });
+  pending.set(projectId, result);
+  running = result.then(
+    () => {},
+    () => {},
+  );
+  return result;
 }
 
 async function scan(projectId?: string) {

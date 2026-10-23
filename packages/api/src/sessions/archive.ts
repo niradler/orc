@@ -464,12 +464,12 @@ export class SessionArchive {
       ids.forEach((id, i) => {
         scores.set(id, (scores.get(id) ?? 0) + 1 / (60 + i));
       });
-    const count = Math.min(10000, Math.max(100, (req.offset + req.limit + 1) * 3));
+    const count = Math.max(100, (req.offset + req.limit + 1) * 3);
     const provider = this.provider();
     let lexicalAdded = false;
     const addLexical = () => {
       if (!lexicalAdded) {
-        add(this.index.lexical(req.q, filter, count).map((r) => r.id));
+        add(this.index.lexical(req.q, filter, count, 3).map((r) => r.id));
         lexicalAdded = true;
       }
     };
@@ -487,7 +487,7 @@ export class SessionArchive {
         const dimensions = this.index.vectorDimensions(provider.profile);
         if (dimensions && dimensions !== vector.length)
           throw new Error("Embedding dimensions changed");
-        add(this.index.semantic(vector, provider.profile, filter, count).map((r) => r.id));
+        add(this.index.semantic(vector, provider.profile, filter, count, 3).map((r) => r.id));
         mode = req.mode === "semantic" && !pending ? "semantic" : "hybrid";
       } catch {
         degraded = "Embedding search unavailable; showing keyword results";
