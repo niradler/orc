@@ -1,6 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Columns2, ExternalLink, List, MessageSquarePlus, RefreshCw } from "lucide-react";
-import { useRef, useState } from "react";
+import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Columns2, ExternalLink, List, MessageSquarePlus, RefreshCw, X } from "lucide-react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { api, type PullCommentInput, type PullReview } from "@/api/client";
 import { type DiffLine, diffLines, pairDiffLines } from "@/lib/git-diff";
 import { TerminalSelect } from "./TerminalSelect";
@@ -14,6 +14,7 @@ function CommentComposer({
   input,
   label,
   onSent,
+  onClose,
   drafts,
   disabled = false,
 }: {
@@ -22,17 +23,23 @@ function CommentComposer({
   input: PullCommentInput;
   label: string;
   onSent: () => void;
+  onClose: () => void;
   drafts: Map<string, string>;
   disabled?: boolean;
 }) {
   const draftKey =
     input.kind === "inline"
-      ? `inline:${input.path}`
+      ? `inline:${input.path}:${input.side}:${input.line}`
       : input.kind === "reply"
         ? `reply:${input.comment_id}`
         : "discussion";
   const [body, setBody] = useState(() => drafts.get(draftKey) ?? "");
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    textarea.current?.focus();
+  }, []);
   const send = useMutation({
+    mutationKey: ["git", terminalId, "pull", number, "comment"],
     mutationFn: () => api.git.postPullComment(terminalId, number, { ...input, body }),
     onSuccess: () => {
       setBody("");
@@ -41,37 +48,59 @@ function CommentComposer({
     },
     retry: false,
   });
+  const pending =
+    useIsMutating({ mutationKey: ["git", terminalId, "pull", number, "comment"] }) > 0;
   return (
     <form
       className="pr-comment-composer"
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !event.nativeEvent.isComposing && !pending) {
+          event.preventDefault();
+          event.stopPropagation();
+          onClose();
+        }
+      }}
       onSubmit={(event) => {
         event.preventDefault();
-        if (body.trim() && !send.isPending && !disabled) send.mutate();
+        if (body.trim() && !pending && !disabled) send.mutate();
       }}
     >
-      <label>
-        <span>{label}</span>
-        <textarea
-          data-testid="pr-comment-input"
-          className="terminal-field"
-          value={body}
-          maxLength={20_000}
-          onChange={(event) => {
-            setBody(event.target.value);
-            drafts.set(draftKey, event.target.value);
-          }}
-          placeholder="Write a comment…"
-          rows={3}
-        />
-      </label>
+      <div className="pr-composer-heading">
+        <label htmlFor={`pr-draft-${terminalId}-${number}-${draftKey}`}>{label}</label>
+        <button
+          type="button"
+          className="git-icon-button"
+          data-testid="pr-comment-close"
+          aria-label="Close comment editor"
+          title="Close comment editor (draft retained)"
+          disabled={pending}
+          onClick={onClose}
+        >
+          <X size={14} />
+        </button>
+      </div>
+      <textarea
+        ref={textarea}
+        id={`pr-draft-${terminalId}-${number}-${draftKey}`}
+        data-testid="pr-comment-input"
+        className="terminal-field"
+        value={body}
+        maxLength={20_000}
+        onChange={(event) => {
+          setBody(event.target.value);
+          drafts.set(draftKey, event.target.value);
+        }}
+        placeholder="Write a comment…"
+        rows={3}
+        disabled={pending}
+      />
       <div>
-        <span>Posts to GitHub as your authenticated account</span>
         <button
           type="submit"
           data-testid="pr-comment-send"
-          disabled={!body.trim() || send.isPending || disabled}
+          disabled={!body.trim() || pending || disabled}
         >
-          {send.isPending ? "Sending…" : "Send comment"}
+          {pending ? "Sending…" : "Send comment"}
         </button>
       </div>
       {send.error && (
@@ -117,12 +146,19 @@ function ReviewDiff({
   patch,
   split,
   onComment,
+  commentable,
+  inline,
 }: {
   patch: string;
   split: boolean;
-  onComment: (line: number, side: "LEFT" | "RIGHT") => void;
+  onComment: (line: number, side: "LEFT" | "RIGHT", trigger: HTMLButtonElement) => void;
+  commentable: boolean;
+  inline?: { line: number; side: "LEFT" | "RIGHT"; content: ReactNode };
 }) {
   const lines = diffLines(patch).filter((line) => line.kind !== "meta");
+  const matches = (line: DiffLine | null) =>
+    inline && (inline.side === "LEFT" ? line?.old : line?.next) === inline.line;
+  const hasAnchor = inline && lines.some(matches);
   function gutter(line: DiffLine | null, side: "LEFT" | "RIGHT") {
     const number = side === "LEFT" ? line?.old : line?.next;
     if (!number) return <span className="pr-line-number" />;
@@ -133,9 +169,10 @@ function ReviewDiff({
         data-line={number}
         data-side={side}
         className="pr-line-number"
+        disabled={!commentable}
         title={`Comment on ${side === "LEFT" ? "old" : "new"} line ${number}`}
         aria-label={`Comment on ${side === "LEFT" ? "old" : "new"} line ${number}`}
-        onClick={() => onComment(number, side)}
+        onClick={(event) => onComment(number, side, event.currentTarget)}
       >
         {number}
       </button>
@@ -150,17 +187,22 @@ function ReviewDiff({
                 {pair.full.text}
               </div>
             ) : (
-              <div key={pair.id} className="pr-diff-pair">
-                {(["left", "right"] as const).map((side) => {
-                  const line = pair[side];
-                  return (
-                    <div key={side} className={`pr-diff-line pr-line-${line?.kind ?? "empty"}`}>
-                      {gutter(line, side === "left" ? "LEFT" : "RIGHT")}
-                      <code>{line?.text.slice(1) ?? " "}</code>
-                    </div>
-                  );
-                })}
-              </div>
+              <Fragment key={pair.id}>
+                <div className="pr-diff-pair">
+                  {(["left", "right"] as const).map((side) => {
+                    const line = pair[side];
+                    return (
+                      <div key={side} className={`pr-diff-line pr-line-${line?.kind ?? "empty"}`}>
+                        {gutter(line, side === "left" ? "LEFT" : "RIGHT")}
+                        <code>{line?.text.slice(1) ?? " "}</code>
+                      </div>
+                    );
+                  })}
+                </div>
+                {inline && matches(inline.side === "LEFT" ? pair.left : pair.right) && (
+                  <div className="pr-diff-comment-row">{inline.content}</div>
+                )}
+              </Fragment>
             ),
           )
         : lines.map((line) =>
@@ -169,13 +211,26 @@ function ReviewDiff({
                 {line.text}
               </div>
             ) : (
-              <div key={line.id} className={`pr-diff-line pr-line-${line.kind}`}>
-                {gutter(line, "LEFT")}
-                {gutter(line, "RIGHT")}
-                <code>{line.text}</code>
-              </div>
+              <Fragment key={line.id}>
+                <div className={`pr-diff-line pr-line-${line.kind}`}>
+                  {gutter(line, "LEFT")}
+                  {gutter(line, "RIGHT")}
+                  <code>{line.text}</code>
+                </div>
+                {inline && matches(line) && (
+                  <div className="pr-diff-comment-row">{inline.content}</div>
+                )}
+              </Fragment>
             ),
           )}
+      {inline && !hasAnchor && (
+        <div className="pr-diff-comment-row">
+          <p className="pr-review-notice">
+            The selected line is no longer in this diff. Choose a current line to continue.
+          </p>
+          {inline.content}
+        </div>
+      )}
     </div>
   );
 }
@@ -190,6 +245,8 @@ export function PullReviewPanel({
   active: boolean;
 }) {
   const client = useQueryClient();
+  const commentPending =
+    useIsMutating({ mutationKey: ["git", terminalId, "pull", number, "comment"] }) > 0;
   const drafts = useRef(new Map<string, string>());
   const queryKey = ["git", terminalId, "pull", number] as const;
   const review = useQuery({
@@ -205,9 +262,13 @@ export function PullReviewPanel({
   const [split, setSplit] = useState(false);
   const [target, setTarget] = useState<CommentTarget | null>(null);
   const [reply, setReply] = useState<number | null>(null);
+  const [discussionOpen, setDiscussionOpen] = useState(false);
   const [sent, setSent] = useState(false);
   const fileRefs = useRef(new Map<string, HTMLElement>());
   const scroll = useRef<HTMLDivElement>(null);
+  const inlineTrigger = useRef<HTMLButtonElement | null>(null);
+  const replyTrigger = useRef<HTMLButtonElement | null>(null);
+  const discussionTrigger = useRef<HTMLButtonElement>(null);
   const data = review.data;
   const files =
     data?.files.filter((file) =>
@@ -391,6 +452,56 @@ export function PullReviewPanel({
                   const comments = data.comments.filter(
                     (comment) => comment.path === file.filename,
                   );
+                  const inlineEditor =
+                    target?.path === file.filename && data.state === "open" ? (
+                      <div
+                        data-testid="pr-inline-composer"
+                        className="pr-inline-compose"
+                        style={{ display: target.path === file.filename ? undefined : "none" }}
+                      >
+                        <MessageSquarePlus size={14} />
+                        <CommentComposer
+                          drafts={drafts.current}
+                          key={`inline:${target.path}:${target.side}:${target.line}`}
+                          disabled={target.head !== data.head}
+                          terminalId={terminalId}
+                          number={number}
+                          input={{ kind: "inline", ...target, body: "" }}
+                          label={`Comment on ${target.path}, ${target.side === "LEFT" ? "old" : "new"} line ${target.line}`}
+                          onClose={() => {
+                            setTarget(null);
+                            const trigger = inlineTrigger.current?.isConnected
+                              ? inlineTrigger.current
+                              : fileRefs.current
+                                  .get(target.path)
+                                  ?.querySelector<HTMLButtonElement>(
+                                    '[data-testid="pr-comment-line"][data-side="' +
+                                      target.side +
+                                      '"][data-line="' +
+                                      target.line +
+                                      '"]',
+                                  );
+                            trigger?.focus();
+                          }}
+                          onSent={() => {
+                            onSent();
+                            setTarget((current) =>
+                              current?.path === target.path &&
+                              current.side === target.side &&
+                              current.line === target.line
+                                ? null
+                                : current,
+                            );
+                          }}
+                        />
+                        {target.head !== data.head && (
+                          <p role="alert">
+                            The PR has new commits. Select a line in the latest diff before sending
+                            this draft.
+                          </p>
+                        )}
+                      </div>
+                    ) : null;
                   return (
                     <section
                       key={file.filename}
@@ -413,9 +524,23 @@ export function PullReviewPanel({
                       </div>
                       {file.patch ? (
                         <ReviewDiff
+                          inline={
+                            target && inlineEditor
+                              ? { line: target.line, side: target.side, content: inlineEditor }
+                              : undefined
+                          }
                           patch={file.patch}
                           split={split}
-                          onComment={(line, side) => {
+                          commentable={data.state === "open" && !commentPending}
+                          onComment={(line, side, trigger) => {
+                            inlineTrigger.current = trigger;
+                            if (target?.path === file.filename && target.head !== data.head) {
+                              const oldKey = `inline:${target.path}:${target.side}:${target.line}`;
+                              const nextKey = `inline:${file.filename}:${side}:${line}`;
+                              const draft = drafts.current.get(oldKey);
+                              if (draft && !drafts.current.get(nextKey))
+                                drafts.current.set(nextKey, draft);
+                            }
                             setTarget({ path: file.filename, head: data.head, line, side });
                             setSent(false);
                           }}
@@ -430,34 +555,6 @@ export function PullReviewPanel({
                         <p className="pr-review-notice">
                           Patch truncated. Open GitHub for the complete diff.
                         </p>
-                      )}
-                      {target?.path === file.filename && data.state === "open" && (
-                        <div
-                          data-testid="pr-inline-composer"
-                          className="pr-inline-compose"
-                          style={{ display: target.path === file.filename ? undefined : "none" }}
-                        >
-                          <MessageSquarePlus size={14} />
-                          <CommentComposer
-                            drafts={drafts.current}
-                            key={`inline:${target.path}`}
-                            disabled={target.head !== data.head}
-                            terminalId={terminalId}
-                            number={number}
-                            input={{ kind: "inline", ...target, body: "" }}
-                            label={`Comment on ${target.path}, ${target.side === "LEFT" ? "old" : "new"} line ${target.line}`}
-                            onSent={() => {
-                              onSent();
-                              setTarget(null);
-                            }}
-                          />
-                          {target.head !== data.head && (
-                            <p role="alert">
-                              The PR has new commits. Select a line in the latest diff before
-                              sending this draft.
-                            </p>
-                          )}
-                        </div>
                       )}
                       {comments
                         .filter((comment) => !comment.in_reply_to_id)
@@ -477,7 +574,11 @@ export function PullReviewPanel({
                               <button
                                 type="button"
                                 data-testid="pr-reply"
-                                onClick={() => setReply(reply === root.id ? null : root.id)}
+                                disabled={commentPending}
+                                onClick={(event) => {
+                                  replyTrigger.current = event.currentTarget;
+                                  setReply(reply === root.id ? null : root.id);
+                                }}
                               >
                                 Reply
                               </button>
@@ -494,9 +595,13 @@ export function PullReviewPanel({
                                   body: "",
                                 }}
                                 label={`Reply to ${root.user?.login ?? "reviewer"}`}
+                                onClose={() => {
+                                  setReply(null);
+                                  replyTrigger.current?.focus();
+                                }}
                                 onSent={() => {
                                   onSent();
-                                  setReply(null);
+                                  setReply((current) => (current === root.id ? null : current));
                                 }}
                               />
                             )}
@@ -547,14 +652,33 @@ export function PullReviewPanel({
                   )}
                 </section>
               ))}
-            {data.state === "open" && (
+            {data.state === "open" && !discussionOpen && (
+              <button
+                type="button"
+                className="pr-add-comment"
+                data-testid="pr-add-comment"
+                disabled={commentPending}
+                ref={discussionTrigger}
+                onClick={() => setDiscussionOpen(true)}
+              >
+                <MessageSquarePlus size={14} /> Add comment
+              </button>
+            )}
+            {data.state === "open" && discussionOpen && (
               <CommentComposer
                 drafts={drafts.current}
                 terminalId={terminalId}
                 number={number}
                 input={{ kind: "discussion", head: data.head, body: "" }}
                 label="Comment on this PR"
-                onSent={onSent}
+                onClose={() => {
+                  setDiscussionOpen(false);
+                  requestAnimationFrame(() => discussionTrigger.current?.focus());
+                }}
+                onSent={() => {
+                  onSent();
+                  setDiscussionOpen(false);
+                }}
               />
             )}
           </div>

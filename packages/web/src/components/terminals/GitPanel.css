@@ -174,12 +174,10 @@
   color: rgb(var(--muted-foreground));
   white-space: pre;
 }
-.pr-diff-split {
-  min-width: 640px;
-}
 .pr-diff-pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  min-width: 640px;
 }
 .pr-diff-pair > div {
   min-width: 0;
@@ -256,6 +254,7 @@
   resize: vertical;
   line-height: 1.5;
   min-height: 80px;
+  margin-top: 8px;
 }
 .pr-comment-composer > div {
   display: flex;
@@ -264,10 +263,22 @@
   gap: 8px;
   padding-top: 8px;
 }
-.pr-comment-composer > div > span {
+.pr-comment-composer .pr-composer-heading {
+  padding-top: 0;
+  flex-wrap: nowrap;
+}
+.pr-composer-heading label {
   flex: 1;
-  color: rgb(var(--muted-foreground));
-  font-size: 11px;
+}
+.pr-comment-composer > div:last-of-type {
+  justify-content: flex-end;
+}
+.pr-add-comment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  font-size: 12px;
 }
 .pr-comment-composer button[type="submit"] {
   min-height: 32px;
@@ -294,6 +305,15 @@
 .pr-inline-compose > svg {
   margin-top: 16px;
   flex-shrink: 0;
+}
+.pr-diff-comment-row {
+  position: sticky;
+  left: 0;
+  font-family: "IBM Plex Sans", sans-serif;
+  font-size: 13px;
+  line-height: normal;
+  color: rgb(var(--foreground));
+  border-block: 1px solid rgb(var(--border));
 }
 
 @container (max-width: 759px) {

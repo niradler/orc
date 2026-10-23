@@ -63,10 +63,13 @@ for (const [theme, width] of [
     });
     const writes: Record<string, unknown>[] = [];
     let currentHead = head;
+    let currentPatch = filePatch;
     let failSend = true;
     let auth = "gh";
     let binary = false;
     let state = "open";
+    let holdResponse: Promise<void> | null = null;
+    let releaseResponse = () => {};
     await page.route("**/api/terminals/*/git/github", (route) =>
       route.fulfill({
         json: {
@@ -115,7 +118,7 @@ for (const [theme, width] of [
               status: "modified",
               additions: 1,
               deletions: 1,
-              patch: filePatch,
+              patch: currentPatch,
               patch_truncated: false,
             },
             {
@@ -142,7 +145,7 @@ for (const [theme, width] of [
         },
       }),
     );
-    await page.route("**/api/terminals/*/git/pulls/94/comments", (route) => {
+    await page.route("**/api/terminals/*/git/pulls/94/comments", async (route) => {
       const payload = route.request().postDataJSON() as Record<string, unknown>;
       if (failSend) {
         failSend = false;
@@ -152,6 +155,7 @@ for (const [theme, width] of [
         });
       }
       writes.push(payload);
+      if (holdResponse) await holdResponse;
       return route.fulfill({ status: 204 });
     });
     await page.addInitScript(
@@ -233,19 +237,76 @@ for (const [theme, width] of [
       "https://github.com/example/workspace/pull/94",
     );
     expect(writes).toEqual([]);
+    await expect(pr.getByTestId("pr-comment-input")).toHaveCount(0);
+    const line2 = pr
+      .getByTestId("pr-file-diff")
+      .first()
+      .locator('[data-testid="pr-comment-line"][data-side="RIGHT"][data-line="2"]');
+    await line2.hover();
+    await expect(pr.getByTestId("pr-comment-input")).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath("git-pr-review.png") });
-    await pr.locator('[data-testid="pr-comment-line"][data-side="RIGHT"][data-line="2"]').click();
+    await pr
+      .getByTestId("pr-file-diff")
+      .first()
+      .locator('[data-testid="pr-comment-line"][data-side="RIGHT"][data-line="2"]')
+      .click();
     const inline = pr.getByTestId("pr-inline-composer");
+    await expect(inline.getByTestId("pr-comment-input")).toBeFocused();
+    const anchorBox = await line2.boundingBox();
+    const editorBox = await inline.boundingBox();
+    if (!anchorBox || !editorBox) throw new Error("Inline editor has no line anchor");
+    expect(Math.abs(editorBox.y - anchorBox.y - anchorBox.height)).toBeLessThan(4);
     await inline.getByTestId("pr-comment-input").fill("Please trim whitespace before saving.");
+    await pr.getByTestId("pr-layout-split").click();
+    await expect(inline.getByTestId("pr-comment-input")).toHaveValue(
+      "Please trim whitespace before saving.",
+    );
+    await expect(inline.getByTestId("pr-comment-close")).toBeInViewport();
+    await pr.getByTestId("pr-layout-unified").click();
+    await expect(inline.getByTestId("pr-comment-input")).toHaveValue(
+      "Please trim whitespace before saving.",
+    );
+    await page.screenshot({ path: testInfo.outputPath("pr-comment-editor.png") });
+    await inline.getByTestId("pr-comment-close").click();
+    await expect(inline).toHaveCount(0);
+    await expect(line2).toBeFocused();
+    expect(writes).toHaveLength(0);
+    await line2.click();
+    await expect(inline.getByTestId("pr-comment-input")).toHaveValue(
+      "Please trim whitespace before saving.",
+    );
+    await pr
+      .getByTestId("pr-file-diff")
+      .first()
+      .locator('[data-testid="pr-comment-line"][data-side="RIGHT"][data-line="1"]')
+      .click();
+    await expect(inline.getByTestId("pr-comment-input")).toHaveValue("");
+    await inline.getByTestId("pr-comment-input").fill("Separate context-line draft");
+    await page.keyboard.press("Escape");
+    await expect(inline).toHaveCount(0);
+    await line2.click();
+    await expect(inline.getByTestId("pr-comment-input")).toHaveValue(
+      "Please trim whitespace before saving.",
+    );
+    await expect(pr).not.toContainText("Posts to GitHub as your authenticated account");
     await inline.getByTestId("pr-comment-send").click();
     await expect(inline.getByRole("alert")).toContainText("draft is retained");
     await expect(inline.getByTestId("pr-comment-input")).toHaveValue(
       "Please trim whitespace before saving.",
     );
     currentHead = "b".repeat(40);
+    currentPatch = "@@ -40 +40 @@\n-old title\n+new title";
     await pr.getByTestId("pr-refresh").click();
+    await expect(inline.getByTestId("pr-comment-input")).toHaveValue(
+      "Please trim whitespace before saving.",
+    );
+    await expect(pr).toContainText("The selected line is no longer in this diff");
     await expect(inline.getByTestId("pr-comment-send")).toBeDisabled();
-    await pr.locator('[data-testid="pr-comment-line"][data-side="RIGHT"][data-line="2"]').click();
+    await pr
+      .getByTestId("pr-file-diff")
+      .first()
+      .locator('[data-testid="pr-comment-line"][data-side="RIGHT"][data-line="40"]')
+      .click();
     await inline.getByTestId("pr-comment-send").click();
     await expect
       .poll(() => writes)
@@ -254,14 +315,23 @@ for (const [theme, width] of [
         head: currentHead,
         path: "src/session.ts",
         side: "RIGHT",
-        line: 2,
+        line: 40,
         body: "Please trim whitespace before saving.",
       });
     await expect(inline).toHaveCount(0);
     await pr.getByTestId("pr-discussion-tab").click();
     const discussion = pr.getByTestId("pr-discussion-panel");
     await expect(discussion).toContainText("Ready for a UI review.");
+    await expect(discussion.getByTestId("pr-comment-input")).toHaveCount(0);
+    await discussion.getByTestId("pr-add-comment").click();
     await discussion.getByTestId("pr-comment-input").fill("General PR comment draft");
+    await discussion.getByTestId("pr-comment-close").click();
+    await expect(discussion.getByTestId("pr-comment-input")).toHaveCount(0);
+    await expect(discussion.getByTestId("pr-add-comment")).toBeFocused();
+    await discussion.getByTestId("pr-add-comment").click();
+    await expect(discussion.getByTestId("pr-comment-input")).toHaveValue(
+      "General PR comment draft",
+    );
     await local.getByTestId("git-local-mode").click();
     await expect(local.getByTestId("git-commit-message")).toHaveValue(
       "Keep this local commit draft",
@@ -274,11 +344,30 @@ for (const [theme, width] of [
     await expect
       .poll(() => writes)
       .toContainEqual({ kind: "discussion", head: currentHead, body: "General PR comment draft" });
+    await expect(discussion.getByTestId("pr-comment-input")).toHaveCount(0);
     await pr.getByTestId("pr-files-tab").click();
     await pr.getByTestId("pr-reply").click();
     const thread = pr.getByTestId("pr-review-thread");
     await thread.getByTestId("pr-comment-input").fill("Yes, covered in this change.");
+    await thread.getByTestId("pr-comment-close").click();
+    await expect(thread.getByTestId("pr-comment-input")).toHaveCount(0);
+    await pr.getByTestId("pr-reply").click();
+    await expect(thread.getByTestId("pr-comment-input")).toHaveValue(
+      "Yes, covered in this change.",
+    );
+    holdResponse = new Promise<void>((resolve) => {
+      releaseResponse = resolve;
+    });
     await thread.getByTestId("pr-comment-send").click();
+    try {
+      await expect(thread.getByTestId("pr-comment-close")).toBeDisabled();
+      await expect(thread.getByTestId("pr-comment-input")).toBeDisabled();
+      await page.keyboard.press("Escape");
+      await expect(thread.getByTestId("pr-comment-input")).toHaveCount(1);
+    } finally {
+      releaseResponse();
+      holdResponse = null;
+    }
     await expect
       .poll(() => writes)
       .toContainEqual({
@@ -306,6 +395,7 @@ for (const [theme, width] of [
     state = "closed";
     await pr.getByTestId("pr-refresh").click();
     await expect(pr).toContainText("Comments are read-only");
+    await expect(pr.getByTestId("pr-comment-line").first()).toBeDisabled();
     await pr.getByTestId("pr-discussion-tab").click();
     await expect(discussion.getByTestId("pr-comment-input")).toHaveCount(0);
     expect(writes).toHaveLength(3);

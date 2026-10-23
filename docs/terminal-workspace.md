@@ -26,9 +26,9 @@ GitHub access uses `gh` credentials on the terminal's host, with the server's co
 
 When GitHub access and a current-branch PR are available, choose **PR #** in Git or click the pane toolbar PR link. The separate external-link icon opens GitHub in your browser. PR review shows committed PR changes separately from dirty local files.
 
-**Files changed** provides file filtering, unified/split patches and review threads. Scroll continuously through the loaded files, or use the file list/picker to jump to a file. Click a diff line number to write an inline comment, or **Reply** below a thread. **Discussion** shows the description, general comments, review summaries and inline threads; use its comment field for a general PR comment. Sending requires an explicit **Send comment** action and uses the authenticated GitHub account. This view does not approve reviews, request changes or merge PRs.
+**Files changed** provides file filtering, unified/split patches and review threads. Scroll continuously through the loaded files, or use the file list/picker to jump to a file. Click a diff line number to open an editor directly beneath that line, or **Reply** below a thread. Editors stay closed until an explicit action; use the close icon or Escape to dismiss and retain the draft. **Discussion** shows the description, general comments, review summaries and inline threads; choose **Add comment** for a general PR comment. Sending requires an explicit **Send comment** action and uses the authenticated GitHub account. This view does not approve reviews, request changes or merge PRs.
 
-Drafts remain in the current page when switching review views or after a failed send; they do not survive reloading the page. A changed PR head requires refreshing and explicitly selecting a line again before sending an inline draft. After an uncertain network result, check GitHub before retrying. Closed PRs are read-only. Large/partial or binary changes link back to GitHub for complete inspection. Descriptions and comments display as plain text without loading embedded remote images.
+Drafts are kept separately by file, line and side. While a comment is sending, editing and additional sends are disabled until its result arrives. Drafts remain in the current page when switching review views or after a failed send; they do not survive reloading the page. A changed PR head requires refreshing and explicitly selecting a line again before sending an inline draft; if the old line disappears, the draft remains available until you select a current line. After an uncertain network result, check GitHub before retrying. Closed PRs are read-only. Large/partial or binary changes link back to GitHub for complete inspection. Descriptions and comments display as plain text without loading embedded remote images.
 
 ## Local and SSH hosts
 
@@ -60,6 +60,10 @@ The Local changes and PR review screenshots below show the real source checkout 
 [Mobile PR review fixture](screenshots/terminal-workspace/pr-review-mobile.png) · [Light Git fixture](screenshots/terminal-workspace/git-review-light.png)
 
 ![Shared form controls](screenshots/terminal-workspace/shared-form-controls.png)
+
+![Inline comment editor with close action (review fixture)](screenshots/terminal-workspace/pr-comment-editor.png)
+
+[Mobile comment editor fixture](screenshots/terminal-workspace/pr-comment-editor-mobile.png)
 
 ![Compact PR and CI context](screenshots/terminal-workspace/pr-ci.png)
 
