@@ -6,6 +6,253 @@ import { expect } from "@playwright/test";
 import { API_SECRET, apiGet, apiPost } from "./_helpers";
 import { test } from "./_terminal-fixture";
 
+test("should show current PR CI states and hide unavailable CI", async ({ page, request }) => {
+  const repo = mkdtempSync(join(tmpdir(), "orc-ci-states-"));
+  execFileSync("git", ["-C", repo, "init", "-b", "main"], { timeout: 15000, windowsHide: true });
+  const terminal = await apiPost<{ id: string }>(request, "/terminals", {
+    kind: "shell",
+    cwd: repo,
+  });
+  let state: "success" | "failure" | "pending" | null = "success";
+  let auth = "gh";
+  let hasPr = true;
+  await page.route("**/api/terminals/*/git/github", (route) =>
+    route.fulfill({
+      json: {
+        auth,
+        login: "review",
+        errors: [],
+        truncated: false,
+        items: hasPr
+          ? [
+              {
+                repo: "example/workspace",
+                number: 42,
+                title: "CI state fixture",
+                url: "https://github.com/example/workspace/pull/42",
+                kind: "pr",
+                state: "open",
+                branch: "main",
+                assignees: [],
+                task_ids: [],
+                ci: state
+                  ? { state, total: 2, url: "https://github.com/example/workspace/pull/42/checks" }
+                  : null,
+              },
+            ]
+          : [],
+      },
+    }),
+  );
+  await page.addInitScript(
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+    API_SECRET,
+  );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/terminals/${terminal.id}?project=all`);
+  await expect(page.getByTestId("pane-ci-status")).toHaveText("CI passed");
+  state = "failure";
+  await page.reload();
+  await expect(page.getByTestId("pane-ci-status")).toHaveText("CI failed");
+  state = "pending";
+  await page.reload();
+  await expect(page.getByTestId("pane-ci-status")).toHaveText("CI pending");
+  state = null;
+  await page.reload();
+  await expect(page.getByTestId("pane-linked-pr")).toBeVisible();
+  await expect(page.getByTestId("pane-ci-status")).toHaveCount(0);
+  state = "success";
+  auth = "none";
+  await page.reload();
+  await expect(page.getByTestId("pane-linked-pr")).toBeVisible();
+  await expect(page.getByTestId("pane-ci-status")).toHaveCount(0);
+  auth = "gh";
+  hasPr = false;
+  await page.reload();
+  await expect(page.getByTestId("pane-linked-pr")).toHaveCount(0);
+  await expect(page.getByTestId("pane-ci-status")).toHaveCount(0);
+});
+
+test("should keep the terminal picker compact and reveal checkout links only with space", async ({
+  page,
+  request,
+}) => {
+  const repo = mkdtempSync(join(tmpdir(), "orc-pane-context-"));
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-C", repo, ...args], { timeout: 15000, windowsHide: true });
+  git("init", "-b", "main");
+  git("config", "user.email", "test@example.com");
+  git("config", "user.name", "test");
+  writeFileSync(join(repo, "README.md"), "# Workspace\n");
+  git("add", ".");
+  git("commit", "-m", "baseline");
+  const terminal = await apiPost<{ id: string; pid: number }>(request, "/terminals", {
+    kind: "shell",
+    cwd: repo,
+    name: "Workspace review",
+  });
+  const second = await apiPost<{ id: string }>(request, "/terminals", {
+    kind: "shell",
+    cwd: repo,
+    name: "API checks",
+  });
+  await apiPost(request, "/tasks", {
+    title: "Improve session visibility",
+    git_repo: repo,
+    git_worktree: repo,
+    git_branch: "main",
+  });
+  await page.route(`**/api/terminals/*/git/github`, (route) =>
+    route.fulfill({
+      json: {
+        auth: "gh",
+        login: "review",
+        errors: [],
+        truncated: false,
+        items: [
+          {
+            repo: "example/workspace",
+            number: 42,
+            title: "Workspace review",
+            url: "https://github.com/example/workspace/pull/42",
+            kind: "pr",
+            state: "open",
+            branch: "main",
+            assignees: [],
+            task_ids: [],
+            ci: {
+              state: "success",
+              total: 3,
+              url: "https://github.com/example/workspace/pull/42/checks",
+            },
+          },
+        ],
+      },
+    }),
+  );
+  await page.addInitScript(
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+    API_SECRET,
+  );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`/terminals/${terminal.id}?project=all`);
+  await expect(page.getByTestId("pane-linked-task")).toBeVisible();
+  await expect(page.getByTestId("pane-linked-pr")).toBeVisible();
+  await expect(page.getByTestId("pane-ci-status")).toHaveText("CI passed");
+  await expect(page.getByTestId("pane-linked-pr")).toHaveAttribute(
+    "href",
+    "https://github.com/example/workspace/pull/42",
+  );
+  const picker = page.getByTestId("pane-terminal");
+  const pickerBox = await picker.boundingBox();
+  const splitBox = await page.getByTestId("pane-split-horizontal").boundingBox();
+  if (!pickerBox || !splitBox) throw new Error("Missing pane controls");
+  expect(pickerBox.width).toBeLessThanOrEqual(44);
+  expect(splitBox.x - (pickerBox.x + pickerBox.width)).toBeLessThanOrEqual(8);
+  await page.screenshot({ path: "../../output/playwright/terminal-compact-context.png" });
+  await picker.click();
+  await page.locator(`[data-command-id="terminal-${second.id}"]`).click();
+  await expect(picker).toHaveAttribute("data-terminal-id", second.id);
+  await expect(page.getByTestId("terminal-viewport")).toHaveCount(1);
+  const info = await apiGet<{ pid: number; status: string }>(request, `/terminals/${terminal.id}`);
+  expect(info.pid).toBe(terminal.pid);
+  expect(info.status).toBe("running");
+  await page.getByTestId("pane-split-horizontal").click();
+  await expect(page.getByTestId("pane-linked-task").first()).toBeHidden();
+  await expect(page.getByTestId("pane-linked-pr").first()).toBeHidden();
+  await expect(page.getByTestId("pane-ci-status").first()).toBeHidden();
+  await page.setViewportSize({ width: 390, height: 900 });
+  await expect(page.getByTestId("pane-terminal").last()).toBeVisible();
+  await expect(page.getByTestId("pane-actions").last()).toBeVisible();
+  await expect(page.getByTestId("pane-checkout").last()).toBeHidden();
+  await page.screenshot({ path: "../../output/playwright/terminal-compact-mobile.png" });
+});
+
+test("should retain file tabs through view and split changes, focus panes and filter split diffs", async ({
+  page,
+  request,
+}) => {
+  const repo = mkdtempSync(join(tmpdir(), "orc-ui-review-"));
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-C", repo, ...args], { timeout: 15000, windowsHide: true });
+  git("init", "-b", "main");
+  git("config", "user.email", "test@example.com");
+  git("config", "user.name", "test");
+  writeFileSync(join(repo, "a.ts"), "export const a = 1;\n");
+  writeFileSync(join(repo, "b.ts"), "export const b = 1;\n");
+  git("add", ".");
+  git("commit", "-m", "baseline");
+  writeFileSync(join(repo, "a.ts"), "export const a = 2;\n");
+  git("add", "a.ts");
+  writeFileSync(join(repo, "b.ts"), "export const b = 2;\n");
+  const terminal = await apiPost<{ id: string; pid: number }>(request, "/terminals", {
+    kind: "shell",
+    cwd: repo,
+    name: "Review workspace",
+  });
+  await page.addInitScript(
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+    API_SECRET,
+  );
+  await page.goto(`/terminals/${terminal.id}?project=all`);
+  await page.getByTestId("pane-view-files").click();
+  await page.locator('[data-testid="file-entry"][data-path="a.ts"]').click();
+  await page.locator('[data-testid="file-entry"][data-path="b.ts"]').click();
+  await expect(page.getByTestId("file-tab")).toHaveCount(2);
+  await page.getByTestId("pane-view-git").click();
+  await page.getByTestId("pane-view-files").click();
+  await expect(page.getByTestId("file-tab")).toHaveCount(2);
+  await page.getByTestId("pane-split-horizontal").click();
+  const files = page.getByTestId("workspace-pane").filter({ has: page.getByTestId("file-panel") });
+  const changes = page
+    .getByTestId("workspace-pane")
+    .filter({ has: page.getByTestId("terminal-git-panel") });
+  await expect(files.getByTestId("file-tab")).toHaveCount(2);
+  await files.getByTestId("pane-focus").click();
+  await expect(page.getByTestId("workspace-pane").filter({ visible: true })).toHaveCount(1);
+  await files.getByTestId("pane-focus").click();
+  await expect(page.getByTestId("workspace-pane").filter({ visible: true })).toHaveCount(2);
+  await changes.getByTestId("git-file-filter").fill("a.ts");
+  await expect(changes.getByTestId("git-diff-file")).toHaveCount(1);
+  await changes.getByTestId("git-layout-split").click();
+  await expect(changes.getByTestId("git-diff-side-by-side")).toContainText("export const a = 1;");
+  await expect(changes.getByTestId("git-diff-side-by-side")).toContainText("export const a = 2;");
+  await changes.getByTestId("git-change-filter").selectOption("working");
+  await expect(changes.getByTestId("git-filter-empty")).toBeVisible();
+  await changes.getByTestId("git-change-filter").selectOption("staged");
+  await expect(files.getByTestId("file-editor-input")).toContainText("b = 2");
+  await changes.getByTestId("git-layout-unified").click();
+  await page.screenshot({ path: "../../output/playwright/terminal-workspace-review.png" });
+  await changes.getByTestId("pane-focus").click();
+  await changes.getByTestId("git-layout-split").click();
+  await changes.getByTestId("git-checkout-toggle").click();
+  const branchBox = await changes.getByTestId("git-branch-select").boundingBox();
+  const commitBox = await changes.getByTestId("git-commit-message").boundingBox();
+  if (!commitBox) throw new Error("Missing commit message field");
+  expect(commitBox.width).toBeGreaterThan(320);
+  const worktreeBox = await changes.getByTestId("git-worktree-select").boundingBox();
+  const newWorktreeBox = await changes.getByTestId("git-add-worktree").boundingBox();
+  if (!branchBox || !worktreeBox || !newWorktreeBox) throw new Error("Missing checkout controls");
+  expect(branchBox.width).toBeLessThanOrEqual(256);
+  expect(worktreeBox.width).toBeLessThanOrEqual(512);
+  expect(Math.abs(worktreeBox.y - newWorktreeBox.y)).toBeLessThan(2);
+  await expect(changes.getByTestId("git-add-worktree")).toHaveText("New worktree");
+  await page.screenshot({ path: "../../output/playwright/terminal-git-desktop.png" });
+  await changes.getByTestId("git-checkout-toggle").click();
+  await changes.getByTestId("pane-focus").click();
+  await changes.getByTestId("git-open-file").click();
+  await expect(page.getByTestId("file-panel")).toHaveCount(2);
+  const updated = await apiGet<{ pid: number; status: string }>(
+    request,
+    `/terminals/${terminal.id}`,
+  );
+  expect(updated.pid).toBe(terminal.pid);
+  expect(updated.status).toBe("running");
+});
+
 test("multiplexer splits terminal, Git and file panes, resizes and restores them without stopping shells", async ({
   page,
   request,
@@ -80,7 +327,7 @@ test("multiplexer splits terminal, Git and file panes, resizes and restores them
     .getByTestId("file-entry")
     .filter({ hasText: /^nested$/ })
     .click();
-  const example = files.getByTestId("file-entry").filter({ hasText: /^example.ts$/ });
+  const example = files.locator('[data-testid="file-entry"][data-path="src/nested/example.ts"]');
   await example.click();
   await expect(files.getByTestId("file-preview")).toContainText("example = 42");
   await expect(files.getByTestId("file-editor-input")).toBeVisible();
@@ -117,20 +364,24 @@ test("multiplexer splits terminal, Git and file panes, resizes and restores them
   await expect(files.getByTestId("file-preview-close")).toHaveCount(0);
   await files.getByTestId("file-entry").filter({ hasText: "hello.txt" }).click();
   await expect(files.getByTestId("file-preview")).toContainText("workspace preview");
-  await files.getByTestId("pane-view").selectOption("terminal");
+  await files.getByTestId("pane-view-terminal").click();
   await page
     .getByTestId("workspace-pane")
     .filter({ has: page.getByTestId("terminal-viewport") })
     .nth(1)
     .getByTestId("pane-terminal")
-    .selectOption(second.id);
+    .click();
+  await page.locator(`[data-command-id="terminal-${second.id}"]`).click();
   await expect(page.getByTestId("terminal-viewport")).toHaveCount(2);
   await expect(files).toHaveCount(0);
   const terminals = page
     .getByTestId("workspace-pane")
     .filter({ has: page.getByTestId("terminal-viewport") });
-  await expect(terminals.nth(1).getByTestId("pane-terminal")).toHaveValue(second.id);
-  await terminals.nth(1).getByTestId("pane-view").selectOption("files");
+  await expect(terminals.nth(1).getByTestId("pane-terminal")).toHaveAttribute(
+    "data-terminal-id",
+    second.id,
+  );
+  await terminals.nth(1).getByTestId("pane-view-files").click();
   await page.reload();
   await expect(page.getByTestId("workspace-pane")).toHaveCount(3);
   await expect(page.getByTestId("file-panel")).toBeVisible();
@@ -182,11 +433,8 @@ test("should edit, save and reopen text files while preserving drafts and reject
     API_SECRET,
   );
   await page.goto(`/terminals/${terminal.id}`);
-  await page.getByTestId("pane-view").selectOption("files");
-  await page
-    .getByTestId("file-entry")
-    .filter({ hasText: /^example.ts$/ })
-    .click();
+  await page.getByTestId("pane-view-files").click();
+  await page.locator('[data-testid="file-entry"][data-path="example.ts"]').click();
   const input = page.getByTestId("file-editor-input");
   await expect(input).toBeVisible();
   await input.click();
@@ -194,17 +442,11 @@ test("should edit, save and reopen text files while preserving drafts and reject
   await page.keyboard.insertText("export const answer = 7;\n");
   await expect(page.getByTestId("file-save-status")).toHaveText("Unsaved changes");
   page.once("dialog", (dialog) => dialog.dismiss());
-  await page
-    .getByTestId("file-entry")
-    .filter({ hasText: /^other.txt$/ })
-    .click();
+  await page.locator('[data-testid="file-entry"][data-path="other.txt"]').click();
   await expect(input).toContainText("answer = 7");
-  await page.getByTestId("pane-view").selectOption("git");
-  await page.getByTestId("pane-view").selectOption("files");
-  await page
-    .getByTestId("file-entry")
-    .filter({ hasText: /^example.ts$/ })
-    .click();
+  await page.getByTestId("pane-view-git").click();
+  await page.getByTestId("pane-view-files").click();
+  await page.locator('[data-testid="file-entry"][data-path="example.ts"]').click();
   await expect(input).toContainText("answer = 7");
   await expect(page.getByTestId("file-save-status")).toHaveText("Unsaved changes");
   await input.press("ControlOrMeta+s");
@@ -213,10 +455,7 @@ test("should edit, save and reopen text files while preserving drafts and reject
     await apiGet<{ content: string }>(request, `/terminals/${terminal.id}/files?path=example.ts`);
   expect((await readFile()).content).toBe("export const answer = 7;\r\n");
   await page.reload();
-  await page
-    .getByTestId("file-entry")
-    .filter({ hasText: /^example.ts$/ })
-    .click();
+  await page.locator('[data-testid="file-entry"][data-path="example.ts"]').click();
   await expect(input).toContainText("answer = 7");
   await page.getByRole("button", { name: "Word wrap", exact: true }).click();
   await expect(page.getByRole("button", { name: "Word wrap", exact: true })).toHaveAttribute(
@@ -240,10 +479,7 @@ test("should edit, save and reopen text files while preserving drafts and reject
   await page.screenshot({
     path: "../../output/playwright/file-editor-save-reopen.png",
   });
-  await page
-    .getByTestId("file-entry")
-    .filter({ hasText: /^guide.md$/ })
-    .click();
+  await page.locator('[data-testid="file-entry"][data-path="guide.md"]').click();
   await page.getByTestId("markdown-mode-edit").click();
   await input.fill("# Terminal Markdown\nSaved from expanded view.\n");
   await page.getByTestId("markdown-expand").click();

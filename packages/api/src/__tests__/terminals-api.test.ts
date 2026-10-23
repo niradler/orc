@@ -17,7 +17,7 @@ import { bridge_chats, gateway_sessions } from "@orc/db/schema";
 import { z } from "zod";
 import { createApp } from "../server.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
-import { TerminalManager } from "../terminals/manager.js";
+import { type TerminalInfo, TerminalManager } from "../terminals/manager.js";
 import {
   getTerminalManager,
   setTerminalManager,
@@ -128,6 +128,138 @@ afterAll(() => {
   teardownTestApp();
   resetConfig();
   rmSync(root, { recursive: true, force: true });
+});
+
+describe("per-terminal hosts", () => {
+  test("should not inspect another host's recorded session folders in the local checkout registry", async () => {
+    const remoteFolder = "/remote-only/checkout/host-registry-regression";
+    await seedLive("host-registry-regression", { cwd: remoteFolder, execution_host: "other-host" });
+    const response = await req(app, "GET", "/git/registry");
+    expect(response.status).toBe(200);
+    const result = await response.json<{ errors: { cwd: string }[] }>();
+    expect(result.errors.some((error) => error.cwd === remoteFolder)).toBe(false);
+  });
+
+  test("should keep explicit local launches and folder queries local despite the global SSH default", async () => {
+    const previous = process.env.ORC_SSH_HOST;
+    process.env.ORC_SSH_HOST = "unreachable-default-for-host-test";
+    resetConfig();
+    let id: string | undefined;
+    try {
+      const listed = await req(app, "GET", "/terminals?host=");
+      expect(listed.status).toBe(200);
+      expect(await listed.json()).toMatchObject({ ready: true, host: null });
+      if (process.platform === "win32") {
+        const remote = await req(app, "GET", "/terminals?host=unreachable-default-for-host-test");
+        expect(remote.status).toBe(200);
+        expect(await remote.json()).toMatchObject({
+          ready: false,
+          reason: expect.stringContaining("Windows does not support"),
+          launchers: [],
+        });
+      }
+      const browsed = await req(
+        app,
+        "GET",
+        `/terminals/browse?host=&path=${encodeURIComponent(root)}`,
+      );
+      expect(browsed.status).toBe(200);
+      expect(await browsed.json()).toMatchObject({ host: null, path: root });
+      const worktrees = await req(
+        app,
+        "GET",
+        `/git/worktrees?host=&cwd=${encodeURIComponent(root)}`,
+      );
+      expect(worktrees.status).toBe(200);
+      const created = await req(app, "POST", "/terminals", {
+        kind: "shell",
+        host: null,
+        cwd: root,
+      });
+      expect(created.status).toBe(201);
+      const terminal = await created.json<TerminalInfo>();
+      id = terminal.id;
+      expect(terminal.host).toBeNull();
+      expect(terminal.cwd).toBe(root);
+      expect(loadConfig().ssh.host).toBe("unreachable-default-for-host-test");
+    } finally {
+      if (id) getTerminalManager().remove(id);
+      if (previous === undefined) delete process.env.ORC_SSH_HOST;
+      else process.env.ORC_SSH_HOST = previous;
+      resetConfig();
+    }
+  });
+
+  test("should reject malformed and unconfigured host selections before spawning", async () => {
+    const before = ptys.length;
+    for (const host of ["-option", "server;echo injected", "unconfigured-test-host-928391"]) {
+      expect((await req(app, "POST", "/terminals", { kind: "shell", host })).status).toBe(400);
+      expect((await req(app, "GET", `/terminals?host=${encodeURIComponent(host)}`)).status).toBe(
+        400,
+      );
+      expect(
+        (await req(app, "GET", `/terminals/browse?host=${encodeURIComponent(host)}`)).status,
+      ).toBe(400);
+      expect(
+        (
+          await req(
+            app,
+            "GET",
+            `/git/worktrees?host=${encodeURIComponent(host)}&cwd=${encodeURIComponent(root)}`,
+          )
+        ).status,
+      ).toBe(400);
+    }
+    expect(ptys).toHaveLength(before);
+  });
+
+  test("should reject overriding a resumed session's saved host", async () => {
+    const response = await req(app, "POST", "/terminals", {
+      kind: "claude",
+      live_session_id: "host-resume",
+      host: null,
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "A resumed session keeps its own host" });
+  });
+});
+
+describe("terminal rename", () => {
+  test("should rename without restarting and reject invalid or unauthorized updates", async () => {
+    const manager = getTerminalManager();
+    const terminal = manager.create({
+      launch: { kind: "shell", argv: ["shell"], cwd: root, resume: false },
+    });
+    const pty = ptys[ptys.length - 1];
+    if (!pty) throw new Error("Expected a spawned terminal");
+    const path = `/terminals/${terminal.id}`;
+    const response = await req(app, "PATCH", path, { name: "  Friendly session ✨  " });
+    expect(response.status).toBe(200);
+    const renamed = await response.json<TerminalInfo>();
+    expect(renamed).toEqual({ ...terminal, name: "Friendly session ✨" });
+    expect(manager.list().find((item) => item.id === terminal.id)?.name).toBe(
+      "Friendly session ✨",
+    );
+    expect(pty.killed).toBe(0);
+    for (const body of [
+      { name: "  " },
+      { name: "x".repeat(121) },
+      {},
+      { name: 42 },
+      { name: "ok", cwd: root },
+    ]) {
+      expect((await req(app, "PATCH", path, body)).status).toBe(400);
+    }
+    expect(
+      (await req(app, "PATCH", path, { name: "Denied" }, { Authorization: "Bearer invalid" }))
+        .status,
+    ).toBe(401);
+    expect((await req(app, "PATCH", "/terminals/missing", { name: "Missing" })).status).toBe(404);
+    expect(manager.get(terminal.id).name).toBe("Friendly session ✨");
+    manager.stop(terminal.id);
+    await Promise.resolve();
+    expect((await req(app, "PATCH", path, { name: "Finished session" })).status).toBe(200);
+  });
 });
 
 describe("availability", () => {

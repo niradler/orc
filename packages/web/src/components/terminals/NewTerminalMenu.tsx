@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { FolderOpen, GitBranch, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -10,6 +11,7 @@ import {
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { RemoteFolderBrowser } from "@/components/terminals/RemoteFolderBrowser";
 import { useRemoveWorktree, useWorktrees } from "@/hooks/useGit";
+import { useSsh } from "@/hooks/useSsh";
 import { cwdTail, TERMINAL_KINDS } from "@/lib/terminal-kinds";
 import {
   CWD_KEY,
@@ -54,27 +56,53 @@ function useDebounced(value: string, ms: number): string {
 export function NewTerminalMenu({
   open,
   onOpenChange,
-  launchers,
-  host,
+  launchers: defaultLaunchers,
+  host: defaultHost,
   pending,
   error,
   onCreate,
   className,
 }: NewTerminalMenuProps) {
   const [prefs] = useState(() => readLaunchPrefs(storage));
-  const [cwd, setCwd] = useState(prefs.cwd);
+  const [host, setHost] = useState<string | null>(defaultHost);
+  const [cwd, setCwd] = useState(defaultHost ? "" : prefs.cwd);
   const [worktree, setWorktree] = useState(prefs.worktree);
   const [browsing, setBrowsing] = useState(false);
   const [remoteBrowsing, setRemoteBrowsing] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [removal, setRemoval] = useState<Removal | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const folders = useRef(
+    new Map<string | null, string>([[defaultHost, defaultHost ? "" : prefs.cwd]]),
+  );
+  const { data: ssh, error: hostsError } = useSsh();
+  const remoteSupported = !host || ssh?.supported === true;
+  const {
+    data: hostInfo,
+    error: hostError,
+    isFetching: checkingHost,
+  } = useQuery({
+    queryKey: ["terminal-launchers", host],
+    queryFn: () => api.terminals.list(host),
+    enabled: open && remoteSupported,
+    retry: false,
+    staleTime: 30_000,
+  });
+  let launchers: TerminalKind[] = [];
+  if (hostInfo?.ready) launchers = hostInfo.launchers;
+  else if (!hostInfo && host === defaultHost && !hostError && remoteSupported) {
+    launchers = defaultLaunchers;
+  }
 
   const folder = useDebounced(cwd.trim(), 300);
-  const { data: listing } = useWorktrees(open ? folder : "");
+  const folderHost = useDebounced(host ?? "", 300);
+  const { data: listing } = useWorktrees(
+    open && remoteSupported && folderHost === (host ?? "") ? folder : "",
+    host,
+  );
   const removeWorktree = useRemoveWorktree();
   const rows = listing?.root ? listing.worktrees : [];
-  const busy = pending || browsing;
+  const busy = pending || browsing || checkingHost || !remoteSupported;
 
   useEffect(() => {
     // The confirm dialog is portalled outside the menu; clicks in it must not close the menu.
@@ -102,7 +130,17 @@ export function NewTerminalMenu({
 
   const chooseFolder = (path: string) => {
     setCwd(path);
-    saveLaunchPref(storage, CWD_KEY, path);
+    folders.current.set(host, path);
+    if (host === null) saveLaunchPref(storage, CWD_KEY, path);
+  };
+
+  const chooseHost = (alias: string | null) => {
+    folders.current.set(host, cwd);
+    setHost(alias);
+    setCwd(folders.current.get(alias) ?? "");
+    setRemoteBrowsing(false);
+    setLocalError(null);
+    setRemoval(null);
   };
 
   const browse = async (): Promise<string | null> => {
@@ -113,7 +151,7 @@ export function NewTerminalMenu({
     }
     setBrowsing(true);
     try {
-      const { path } = await api.terminals.pickFolder(cwd.trim() || undefined);
+      const { path } = await api.terminals.pickFolder(cwd.trim() || undefined, null);
       if (path) chooseFolder(path);
       return path;
     } catch (e) {
@@ -132,14 +170,14 @@ export function NewTerminalMenu({
       if (!picked) return;
       folderToUse = picked;
     }
-    if (await onCreate(launchRequest(kind, folderToUse, worktree))) {
-      saveLaunchPref(storage, CWD_KEY, folderToUse);
+    if (await onCreate({ ...launchRequest(kind, folderToUse, worktree), host })) {
+      if (host === null) saveLaunchPref(storage, CWD_KEY, folderToUse);
     }
   };
 
   const openCheckout = (kind: TerminalKind, row: Worktree) => {
     setLocalError(null);
-    void onCreate(launchRequest(kind, row.path, false));
+    void onCreate({ ...launchRequest(kind, row.path, false), host });
   };
 
   const remove = async (target: Removal) => {
@@ -151,6 +189,7 @@ export function NewTerminalMenu({
         cwd: main,
         path: target.worktree.path,
         force: target.step === "dirty",
+        host,
       });
       setRemoval(null);
       if (target.worktree.path === folder) chooseFolder(main);
@@ -173,7 +212,13 @@ export function NewTerminalMenu({
     void remove(removal);
   };
 
-  const shownError = localError ?? error;
+  const shownError =
+    localError ??
+    error ??
+    (host && !remoteSupported ? ssh?.unsupported_reason : null) ??
+    hostError?.message ??
+    hostsError?.message ??
+    hostInfo?.reason;
 
   return (
     <div ref={rootRef} className={cn("relative", className)}>
@@ -195,6 +240,25 @@ export function NewTerminalMenu({
           data-testid="terminal-launch-menu"
           className="absolute right-0 md:left-0 md:right-auto top-full mt-1 z-30 w-[22rem] max-w-[calc(100vw-2rem)] bg-surface-high border border-outline-variant rounded-lg shadow-xl p-3 space-y-3 max-h-[70dvh] overflow-y-auto"
         >
+          <label className="flex items-center gap-2 font-label text-xs text-on-surface-variant">
+            Host
+            <select
+              data-testid="terminal-host-select"
+              value={host ?? ""}
+              onChange={(event) => chooseHost(event.target.value || null)}
+              disabled={pending || browsing}
+              className="min-w-0 flex-1 min-h-11 rounded-md border border-control-border bg-background px-2 text-on-surface focus:outline-none focus:ring-2 focus:ring-focus"
+            >
+              <option value="">Local</option>
+              {[...new Set([...(ssh?.hosts ?? []), ...(ssh?.host ? [ssh.host] : [])])].map(
+                (alias) => (
+                  <option key={alias} value={alias}>
+                    {alias}
+                  </option>
+                ),
+              )}
+            </select>
+          </label>
           <label className="block">
             <span className="font-label text-xs text-on-surface-variant">
               Working directory
@@ -232,6 +296,8 @@ export function NewTerminalMenu({
           </label>
           {host && remoteBrowsing && (
             <RemoteFolderBrowser
+              key={host}
+              host={host}
               initial={cwd.trim()}
               onPick={(path) => {
                 chooseFolder(path);

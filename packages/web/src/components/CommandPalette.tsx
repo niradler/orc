@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowUpRight, Command, FileText, Folder, Search, Zap } from "lucide-react";
+import { ArrowUpRight, Command, FileText, Folder, Search, TerminalSquare, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
@@ -9,13 +9,33 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { Input } from "@/components/ui/input";
 import { useProjects } from "@/hooks/useProjects";
 import { commandMatches, searchHitPath } from "@/lib/command-palette";
+import { cwdTail, TERMINAL_KINDS } from "@/lib/terminal-kinds";
+import { TERMINAL_PALETTE_EVENT, type TerminalPaletteRequest } from "@/lib/terminal-palette";
+import { terminalStatus } from "@/lib/terminal-presentation";
+import { useTerminals } from "@/lib/terminals";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { WORKSPACE_SECTIONS, workspaceDestination } from "@/lib/workspace-navigation";
 import { CreateProjectDialog } from "@/views/Projects";
 
-type Entry = { id: string; title: string; detail: string; group: string; run: () => void };
-const FILTERS = ["All", "Actions", "Tasks", "Projects", "Knowledge", "Sessions", "Jobs"] as const;
+type Entry = {
+  id: string;
+  title: string;
+  detail: string;
+  tooltip?: string;
+  group: string;
+  run: () => void;
+};
+const FILTERS = [
+  "All",
+  "Actions",
+  "Terminals",
+  "Tasks",
+  "Projects",
+  "Knowledge",
+  "Sessions",
+  "Jobs",
+] as const;
 type Filter = (typeof FILTERS)[number];
 const GROUPS = {
   task: "Tasks",
@@ -37,6 +57,12 @@ export function CommandPalette({
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
+  const {
+    terminals,
+    connectionOf,
+    error: terminalError,
+    refetch: refetchTerminals,
+  } = useTerminals();
   const { theme, setTheme } = useTheme();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -48,18 +74,49 @@ export function CommandPalette({
   const [taskProject, setTaskProject] = useState<string>();
   const trigger = useRef<HTMLButtonElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
+  const selectedTerminal = useRef(false);
+  const [terminalTarget, setTerminalTarget] = useState<TerminalPaletteRequest | null>(null);
+  const recentTerminals = useRef<string[]>([]);
   const scope = scoped && projectId !== "all" ? projectId : undefined;
   const { data: projects } = useProjects({ status: "active" });
+  const ssh = useQuery({
+    queryKey: ["ssh"],
+    queryFn: () => api.ssh.get(),
+    enabled: open && filter === "Terminals",
+  });
 
   const changeOpen = useCallback((value: boolean) => {
     setOpen(value);
     if (value) {
+      selectedTerminal.current = false;
+      returnFocus.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setTerminalTarget(null);
       setQuery("");
       setDebounced("");
       setActive(0);
       setFilter("All");
     }
   }, []);
+  useEffect(() => {
+    const id = /^\/terminals\/([^/]+)$/.exec(location.pathname)?.[1];
+    if (id)
+      recentTerminals.current = [
+        id,
+        ...recentTerminals.current.filter((item) => item !== id),
+      ].slice(0, 32);
+  }, [location.pathname]);
+  useEffect(() => {
+    const openTerminals = (event: Event) => {
+      const request = (event as CustomEvent<TerminalPaletteRequest>).detail;
+      changeOpen(true);
+      setTerminalTarget(request);
+      setFilter("Terminals");
+    };
+    window.addEventListener(TERMINAL_PALETTE_EVENT, openTerminals);
+    return () => window.removeEventListener(TERMINAL_PALETTE_EVENT, openTerminals);
+  }, [changeOpen]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || event.repeat) return;
@@ -75,15 +132,28 @@ export function CommandPalette({
         changeOpen(!open);
       }
     };
+    const onTerminalKey = (event: KeyboardEvent) => {
+      if (
+        !(event.target instanceof HTMLElement) ||
+        !event.target.closest('[data-testid="terminal-viewport"]')
+      )
+        return;
+      onKey(event);
+      if (event.defaultPrevented) event.stopPropagation();
+    };
+    window.addEventListener("keydown", onTerminalKey, true);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onTerminalKey, true);
+      window.removeEventListener("keydown", onKey);
+    };
   }, [open, changeOpen]);
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(query.trim()), 220);
     return () => window.clearTimeout(timer);
   }, [query]);
 
-  const searching = open && debounced.length >= 2 && filter !== "Actions";
+  const searching = open && debounced.length >= 2 && filter !== "Actions" && filter !== "Terminals";
   const resources = useQuery({
     queryKey: ["palette-search", debounced, scope],
     queryFn: () => api.search(debounced, scope),
@@ -117,6 +187,48 @@ export function CommandPalette({
   const go = (path: string, project = projectId) =>
     navigate(workspaceDestination(path, project, location.search));
   const entries: Entry[] = [];
+  if (filter === "All" || filter === "Terminals") {
+    const recent = recentTerminals.current;
+    const ordered = [...terminals].sort((left, right) => {
+      const rank = (id: string) => (recent.includes(id) ? recent.indexOf(id) : recent.length);
+      return rank(left.id) - rank(right.id) || right.created_at.localeCompare(left.created_at);
+    });
+    for (const terminal of ordered) {
+      const kind = TERMINAL_KINDS[terminal.kind].label;
+      const detail = `${kind} · ${terminal.host ?? "Local"} · ${terminalStatus(terminal, connectionOf(terminal.id))} · ${cwdTail(terminal.cwd) || "Home"}`;
+      if (!commandMatches(terminal.name, `${detail} ${terminal.kind} ${terminal.cwd ?? ""}`, query))
+        continue;
+      entries.push({
+        id: `terminal-${terminal.id}`,
+        title: terminal.name,
+        tooltip: `${terminal.name}\n${terminal.host ?? "Local"}\n${terminal.cwd ?? "Home"}`,
+        detail: `${terminalTarget?.currentId === terminal.id ? "Current · " : ""}${detail}`,
+        group: "Terminals",
+        run: () => {
+          recentTerminals.current = [
+            terminal.id,
+            ...recent.filter((id) => id !== terminal.id),
+          ].slice(0, 32);
+          if (terminalTarget) terminalTarget.select(terminal.id);
+          else go(`/terminals/${encodeURIComponent(terminal.id)}`);
+        },
+      });
+    }
+  }
+  if (filter === "Terminals" && query.trim()) {
+    const hosts: (string | null)[] = [null, ...(ssh.data?.supported ? ssh.data.hosts : [])];
+    for (const host of hosts) {
+      const label = host ?? "Local";
+      if (!commandMatches(label, "new terminal shell host", query)) continue;
+      entries.push({
+        id: `new-terminal-host-${host ?? "local"}`,
+        title: `New terminal on ${label}`,
+        detail: "Choose an agent and folder before launching",
+        group: "Terminals",
+        run: () => go(`/terminals?new=1&terminalHost=${encodeURIComponent(host ?? "")}`),
+      });
+    }
+  }
   const add = (
     id: string,
     title: string,
@@ -252,6 +364,7 @@ export function CommandPalette({
   }
   const groupOrder = [
     "Actions",
+    "Terminals",
     "Tasks",
     "Projects",
     "Knowledge",
@@ -262,6 +375,7 @@ export function CommandPalette({
   entries.sort((a, b) => groupOrder.indexOf(a.group) - groupOrder.indexOf(b.group));
   const selected = Math.min(active, Math.max(0, entries.length - 1));
   const execute = (entry: Entry) => {
+    selectedTerminal.current = entry.id.startsWith("terminal-");
     setOpen(false);
     entry.run();
   };
@@ -271,7 +385,7 @@ export function CommandPalette({
   }, [selected, open]);
   const loading =
     (searching && (resources.isFetching || documents.isFetching || sessions.isFetching)) ||
-    query.trim() !== debounced;
+    (filter !== "Terminals" && query.trim() !== debounced);
 
   return (
     <>
@@ -298,7 +412,22 @@ export function CommandPalette({
           }}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            if (!dialog) trigger.current?.focus();
+            if (selectedTerminal.current) {
+              requestAnimationFrame(() => {
+                const pane = document.querySelector(
+                  '[data-testid="workspace-pane"][data-active="true"]',
+                );
+                const target =
+                  pane?.querySelector<HTMLElement>('[data-testid="terminal-viewport"] textarea') ??
+                  pane?.querySelector<HTMLElement>('[data-testid="pane-terminal"]');
+                target?.focus();
+              });
+              return;
+            }
+            if (!dialog) {
+              if (returnFocus.current?.isConnected) returnFocus.current.focus();
+              else trigger.current?.focus();
+            }
           }}
         >
           <DialogTitle className="sr-only">Search and run commands</DialogTitle>
@@ -311,12 +440,16 @@ export function CommandPalette({
               ref={input}
               data-testid="command-palette-input"
               role="combobox"
-              aria-label="Search anything"
+              aria-label={filter === "Terminals" ? "Find terminal" : "Search anything"}
               aria-expanded="true"
               aria-controls="palette-results"
               aria-autocomplete="list"
               aria-activedescendant={entries.length ? `palette-option-${selected}` : undefined}
-              placeholder="Search anything, or run a command…"
+              placeholder={
+                filter === "Terminals"
+                  ? "Find terminal by name, folder, agent or host…"
+                  : "Search anything, or run a command…"
+              }
               maxLength={200}
               value={query}
               onChange={(event) => {
@@ -367,20 +500,30 @@ export function CommandPalette({
             ))}
           </fieldset>
           <div className="flex items-center justify-between gap-2 px-4 py-2 text-xs text-outline">
-            <span>{scope ? "Current project" : "Across all projects"}</span>
-            {projectId !== "all" && (
-              <button
-                type="button"
-                data-testid="palette-scope"
-                aria-pressed={scoped}
-                className="rounded px-2 py-1 text-on-surface hover:bg-surface-highest"
-                onClick={() => {
-                  setScoped(!scoped);
-                  setActive(0);
-                }}
-              >
-                {scoped ? "Search all projects" : "Only this project"}
-              </button>
+            {filter === "Terminals" ? (
+              <span>
+                {query.trim()
+                  ? "Existing terminals · Enter to switch"
+                  : "Recent terminals · Enter to switch"}
+              </span>
+            ) : (
+              <>
+                <span>{scope ? "Current project" : "Across all projects"}</span>
+                {projectId !== "all" && (
+                  <button
+                    type="button"
+                    data-testid="palette-scope"
+                    aria-pressed={scoped}
+                    className="rounded px-2 py-1 text-on-surface hover:bg-surface-highest"
+                    onClick={() => {
+                      setScoped(!scoped);
+                      setActive(0);
+                    }}
+                  >
+                    {scoped ? "Search all projects" : "Only this project"}
+                  </button>
+                )}
+              </>
             )}
           </div>
           <div
@@ -405,6 +548,7 @@ export function CommandPalette({
                   aria-selected={index === selected}
                   data-testid="palette-result"
                   data-command-id={entry.id}
+                  title={entry.tooltip ?? `${entry.title}\n${entry.detail}`}
                   onPointerMove={() => setActive(index)}
                   onClick={() => execute(entry)}
                   className={cn(
@@ -412,7 +556,9 @@ export function CommandPalette({
                     index === selected ? "bg-surface-highest" : "hover:bg-surface",
                   )}
                 >
-                  {entry.group === "Actions" ? (
+                  {entry.group === "Terminals" ? (
+                    <TerminalSquare className="size-4 shrink-0 text-outline" />
+                  ) : entry.group === "Actions" ? (
                     <Zap className="size-4 shrink-0 text-outline" />
                   ) : entry.group === "Projects" ? (
                     <Folder className="size-4 shrink-0 text-outline" />
@@ -440,11 +586,29 @@ export function CommandPalette({
             {loading
               ? "Searching…"
               : !entries.length
-                ? query.trim().length < 2
-                  ? "Type at least 2 characters to search records."
-                  : "No results. Try a different search or category."
-                : `${entries.length} results`}
+                ? filter === "Terminals"
+                  ? "No matching terminals. Launch one from New terminal."
+                  : query.trim().length < 2
+                    ? "Type at least 2 characters to search records."
+                    : "No results. Try a different search or category."
+                : `${entries.length} ${entries.length === 1 ? "result" : "results"}`}
           </div>
+          {(filter === "Terminals" || filter === "All") && terminalError && (
+            <div
+              role="alert"
+              className="flex items-center justify-between px-4 py-2 text-xs text-error"
+            >
+              Terminal list unavailable.
+              <Button
+                size="sm"
+                variant="ghost"
+                data-testid="palette-terminals-retry"
+                onClick={refetchTerminals}
+              >
+                Retry
+              </Button>
+            </div>
+          )}
           {searching && (resources.isError || documents.isError || sessions.isError) && (
             <div
               role="alert"

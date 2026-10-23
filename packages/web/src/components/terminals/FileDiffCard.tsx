@@ -1,33 +1,40 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, type GitStatus } from "@/api/client";
-import { diffLines } from "@/lib/git-diff";
+import { diffLines, pairDiffLines } from "@/lib/git-diff";
 import { fileChangeState } from "@/lib/git-status";
 
 function DiffSection({
   terminalId,
   path,
   staged,
+  sideBySide,
 }: {
   terminalId: string;
   path: string;
   staged: boolean;
+  sideBySide: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
+  const client = useQueryClient();
+  const queryKey = ["git", terminalId, "diff", staged, path] as const;
+  const [visible, setVisible] = useState(() => client.getQueryData(queryKey) !== undefined);
   useEffect(() => {
+    if (visible) return;
     const element = ref.current;
     if (!element) return;
     const observer = new IntersectionObserver(
-      (entries) => setVisible(entries.some((entry) => entry.isIntersecting)),
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) setVisible(true);
+      },
       { rootMargin: "300px" },
     );
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [visible]);
   const diff = useQuery({
-    queryKey: ["git", terminalId, "diff", staged, path],
+    queryKey,
     queryFn: () => api.git.diff(terminalId, staged, path),
     enabled: visible,
   });
@@ -61,6 +68,43 @@ function DiffSection({
           <p className="p-3 text-on-surface-variant">Loading diff…</p>
         ) : !lines.length ? (
           <p className="p-3 text-on-surface-variant">No text changes in this view.</p>
+        ) : sideBySide ? (
+          <div data-testid="git-diff-side-by-side" className="min-w-[640px]">
+            <div className="grid grid-cols-2 border-b border-outline-variant text-on-surface-variant">
+              <span className="px-3 py-1">Before</span>
+              <span className="border-l border-outline-variant px-3 py-1">After</span>
+            </div>
+            {pairDiffLines(lines).map((pair) =>
+              pair.full ? (
+                <div
+                  key={pair.id}
+                  className="whitespace-pre bg-surface px-3 text-on-surface-variant"
+                >
+                  {pair.full.text || " "}
+                </div>
+              ) : (
+                <div key={pair.id} className="grid grid-cols-2">
+                  {(["left", "right"] as const).map((side) => {
+                    const line = pair[side];
+                    return (
+                      <div
+                        key={side}
+                        data-testid={line ? `git-diff-${line.kind}` : "git-diff-empty"}
+                        className={`flex min-w-0 whitespace-pre ${side === "right" ? "border-l border-outline-variant" : ""} ${line?.kind === "remove" ? "bg-error/10 text-error" : line?.kind === "add" ? "bg-secondary/10 text-secondary" : ""}`}
+                      >
+                        <span className="w-12 shrink-0 pr-2 text-right select-none text-on-surface-variant">
+                          {side === "left" ? line?.old : line?.next}
+                        </span>
+                        <span className="min-w-0 flex-1 whitespace-pre-wrap break-all pr-3">
+                          {line?.text.slice(1) || " "}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              ),
+            )}
+          </div>
         ) : (
           lines.map((line) => (
             <div
@@ -93,6 +137,8 @@ export function FileDiffCard({
   checked,
   select,
   toggle,
+  sideBySide = false,
+  openFile,
 }: {
   terminalId: string;
   file: GitStatus["files"][number];
@@ -100,6 +146,8 @@ export function FileDiffCard({
   checked: boolean;
   select: (checked: boolean) => void;
   toggle: () => void;
+  sideBySide?: boolean;
+  openFile?: ((path: string) => void) | undefined;
 }) {
   const { staged, working, conflict, label } = fileChangeState(file);
   return (
@@ -147,11 +195,31 @@ export function FileDiffCard({
                 : "Unstaged"}
           </span>
         </button>
+        {openFile && (
+          <button
+            type="button"
+            data-testid="git-open-file"
+            onClick={() => openFile(file.path)}
+            className="shrink-0 min-h-11 px-2 text-xs text-primary hover:bg-surface"
+            title={`Open ${file.path} in Files`}
+          >
+            Open file
+          </button>
+        )}
       </div>
       {open && (
         <>
-          {staged && <DiffSection terminalId={terminalId} path={file.path} staged />}
-          {working && <DiffSection terminalId={terminalId} path={file.path} staged={false} />}
+          {staged && (
+            <DiffSection terminalId={terminalId} path={file.path} staged sideBySide={sideBySide} />
+          )}
+          {working && (
+            <DiffSection
+              terminalId={terminalId}
+              path={file.path}
+              staged={false}
+              sideBySide={sideBySide}
+            />
+          )}
         </>
       )}
     </section>

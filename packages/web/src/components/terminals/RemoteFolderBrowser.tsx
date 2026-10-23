@@ -5,15 +5,16 @@ import { api } from "@/api/client";
 
 interface RemoteFolderBrowserProps {
   initial: string;
+  host: string;
   onPick: (path: string) => void;
   onClose: () => void;
 }
 
-export function RemoteFolderBrowser({ initial, onPick, onClose }: RemoteFolderBrowserProps) {
+export function RemoteFolderBrowser({ initial, host, onPick, onClose }: RemoteFolderBrowserProps) {
   const [path, setPath] = useState(initial);
   const { data, error, isFetching } = useQuery({
-    queryKey: ["terminals", "browse", path],
-    queryFn: () => api.terminals.browse(path || undefined),
+    queryKey: ["terminals", "browse", host, path],
+    queryFn: () => api.terminals.browse(path || undefined, host),
     retry: false,
   });
   const join = (name: string) => (data ? `${data.path.replace(/\/$/, "")}/${name}` : name);

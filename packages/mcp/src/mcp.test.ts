@@ -235,7 +235,9 @@ describe("MCP skill tools", () => {
     expect(await executeTool("skill_read", { name: "missing-skill-xyz" })).toContain(
       "Skill not found",
     );
-    expect(await executeTool("skill_list", { q: "missing-skill-xyz" })).toBe("No skills found.");
+    const listing = await executeTool("skill_list", { q: "missing-skill-xyz" });
+    // Diagnostics about installed skills follow the catalog and do not represent search hits.
+    expect(listing.split("\n")[0]).toBe("No skills found.");
   });
 });
 

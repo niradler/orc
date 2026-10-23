@@ -11,14 +11,15 @@ import {
   type WorktreeListing,
 } from "./worktrees.js";
 
-const recentFolders = new Set<string>();
+const recentFolders = new Map<string, { cwd: string; host: string | null }>();
 
-export function rememberTerminalFolder(cwd: string | null): void {
+export function rememberTerminalFolder(cwd: string | null, host: string | null = null): void {
   if (!cwd) return;
-  recentFolders.delete(cwd);
-  recentFolders.add(cwd);
+  const key = JSON.stringify([host, cwd]);
+  recentFolders.delete(key);
+  recentFolders.set(key, { cwd, host });
   if (recentFolders.size > 100) {
-    const oldest = recentFolders.values().next().value;
+    const oldest = recentFolders.keys().next().value;
     if (oldest) recentFolders.delete(oldest);
   }
 }
@@ -58,8 +59,12 @@ export async function knownWorktrees(projectId?: string): Promise<{
     ? projects.filter((project) => project.id === projectId).map((project) => project.scope)
     : [
         ...projects.map((project) => project.scope),
-        ...live.map((session) => session.cwd),
-        ...recentFolders,
+        ...live
+          .filter((session) => (session.execution_host ?? null) === alias)
+          .map((session) => session.cwd),
+        ...[...recentFolders.values()]
+          .filter((folder) => folder.host === alias)
+          .map((folder) => folder.cwd),
         ...getTerminalManager()
           .list()
           .filter((terminal) => terminal.host === alias)

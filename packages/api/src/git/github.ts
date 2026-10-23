@@ -23,7 +23,14 @@ export interface GithubItem {
   branch: string | null;
   assignees: string[];
   task_ids: string[];
+  ci?: GithubCi | null;
 }
+export const GithubCiSchema = z.object({
+  state: z.enum(["success", "failure", "pending", "none"]),
+  total: z.number().int().nonnegative(),
+  url: z.string().url(),
+});
+export type GithubCi = z.infer<typeof GithubCiSchema>;
 export interface GithubRepo {
   name: string;
   branches: string[];
@@ -35,6 +42,7 @@ export interface GithubFeed {
   items: GithubItem[];
   errors: { repo: string; error: string }[];
   truncated: boolean;
+  unavailable_reason?: "no_remote" | "detached_head";
 }
 
 const IssueSchema = z.object({
@@ -49,6 +57,10 @@ const PullSchema = IssueSchema.extend({
   body: z.string().nullable().optional(),
   head: z.object({
     ref: z.string(),
+    sha: z
+      .string()
+      .regex(/^[a-f0-9]{40,64}$/i)
+      .optional(),
     repo: z.object({ full_name: z.string() }).nullable(),
   }),
 });
@@ -90,10 +102,68 @@ async function githubGet(path: string, token: string, deps: GithubDeps): Promise
   return response.json();
 }
 
+export async function readGithubCi(
+  repo: string,
+  sha: string,
+  pullUrl: string,
+  token: string,
+  deps: GithubDeps,
+): Promise<GithubCi | null> {
+  const checkSchema = z.object({ status: z.string(), conclusion: z.string().nullable() });
+  const batchSchema = z.object({
+    total_count: z.number().int().nonnegative(),
+    check_runs: z.array(checkSchema),
+  });
+  const statusSchema = z.object({
+    state: z.enum(["success", "pending", "failure", "error"]),
+    total_count: z.number().int().nonnegative(),
+  });
+  try {
+    const base = `/repos/${repo}/commits/${encodeURIComponent(sha)}`;
+    const [first, status] = await Promise.all([
+      githubGet(`${base}/check-runs?filter=latest&per_page=100&page=1`, token, deps).then((data) =>
+        batchSchema.parse(data),
+      ),
+      githubGet(`${base}/status`, token, deps).then((data) => statusSchema.parse(data)),
+    ]);
+    const runs = [...first.check_runs];
+    if (first.total_count > 500) return null;
+    for (let page = 2; runs.length < first.total_count && page <= 5; page++) {
+      const batch = batchSchema.parse(
+        await githubGet(`${base}/check-runs?filter=latest&per_page=100&page=${page}`, token, deps),
+      );
+      if (!batch.check_runs.length) return null;
+      runs.push(...batch.check_runs);
+    }
+    if (runs.length < first.total_count) return null;
+    const total = runs.length + status.total_count;
+    let state: GithubCi["state"] = total ? "success" : "none";
+    const successful = new Set(["success", "neutral", "skipped"]);
+    if (
+      runs.some((run) => run.status !== "completed" || run.conclusion === null) ||
+      (status.total_count > 0 && status.state === "pending")
+    )
+      state = "pending";
+    if (
+      runs.some(
+        (run) =>
+          run.status === "completed" && run.conclusion !== null && !successful.has(run.conclusion),
+      ) ||
+      (status.total_count > 0 && (status.state === "failure" || status.state === "error"))
+    )
+      state = "failure";
+    return { state, total, url: `${pullUrl}/checks` };
+  } catch {
+    // Missing permissions or incomplete data must never look like passing CI.
+    return null;
+  }
+}
+
 export async function fetchGithubFeed(
   repos: GithubRepo[],
   filter: "relevant" | "assigned" | "branches" | "all",
   deps: GithubDeps,
+  includeCi = false,
 ): Promise<GithubFeed> {
   const auth = await githubAuth(deps);
   const feed: GithubFeed = {
@@ -192,6 +262,10 @@ export async function fetchGithubFeed(
           (filter === "relevant" && !assigned && !current && !linked)
         )
           continue;
+        const ci =
+          includeCi && pull.head.sha
+            ? await readGithubCi(repo.name, pull.head.sha, pull.html_url, auth.token, deps)
+            : undefined;
         feed.items.push({
           repo: repo.name,
           number: pull.number,
@@ -202,6 +276,7 @@ export async function fetchGithubFeed(
           branch: pull.head.ref,
           assignees: pull.assignees.map((person) => person.login),
           task_ids: [],
+          ...(ci === undefined ? {} : { ci }),
         });
       }
     } catch (error) {
@@ -276,10 +351,16 @@ export async function checkoutGithubFeed(host: ExecHost, cwd: string): Promise<G
       items: [],
       errors: [],
       truncated: false,
+      unavailable_reason: !name ? "no_remote" : "detached_head",
     };
-  return fetchGithubFeed([{ name, branches: [status.branch], linked: [] }], "branches", {
-    run: gitRunner(host),
-    fetch,
-    token: loadConfig().github.token,
-  });
+  return fetchGithubFeed(
+    [{ name, branches: [status.branch], linked: [] }],
+    "branches",
+    {
+      run: gitRunner(host),
+      fetch,
+      token: loadConfig().github.token,
+    },
+    true,
+  );
 }

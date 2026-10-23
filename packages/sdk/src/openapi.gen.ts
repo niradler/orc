@@ -7203,7 +7203,9 @@ export interface paths {
         /** List terminals and whether this server can start them */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    host?: "" | string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -7242,6 +7244,8 @@ export interface paths {
                     "application/json": {
                         /** @enum {string} */
                         kind?: "shell" | "claude" | "codex" | "cursor" | "gemini" | "copilot";
+                        /** @description SSH config alias, or null for Local. Omit to use the configured default. */
+                        host?: string | null;
                         cwd?: string;
                         name?: string;
                         live_session_id?: string;
@@ -7316,6 +7320,7 @@ export interface paths {
                 content: {
                     "application/json": {
                         initial?: string;
+                        host?: string | null;
                     };
                 };
             };
@@ -7351,6 +7356,7 @@ export interface paths {
             parameters: {
                 query?: {
                     path?: string;
+                    host?: "" | string;
                 };
                 header?: never;
                 path?: never;
@@ -7437,7 +7443,35 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        patch?: never;
+        /** Rename a terminal */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        name: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Renamed terminal */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Terminal"];
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/api/terminals/{id}/ticket": {
@@ -7493,6 +7527,7 @@ export interface paths {
             parameters: {
                 query: {
                     cwd: string;
+                    host?: "" | string;
                 };
                 header?: never;
                 path?: never;
@@ -7543,6 +7578,7 @@ export interface paths {
                 content: {
                     "application/json": {
                         cwd: string;
+                        host?: string | null;
                         path: string;
                         force?: boolean;
                         delete_branch?: boolean;
@@ -7820,6 +7856,8 @@ export interface paths {
                         "application/json": {
                             /** @enum {string} */
                             auth: "gh" | "token" | "none";
+                            /** @enum {string} */
+                            unavailable_reason?: "no_remote" | "detached_head";
                             login: string | null;
                             truncated: boolean;
                             errors: {
@@ -7837,6 +7875,13 @@ export interface paths {
                                 branch: string | null;
                                 assignees: string[];
                                 task_ids: string[];
+                                ci?: {
+                                    /** @enum {string} */
+                                    state: "success" | "failure" | "pending" | "none";
+                                    total: number;
+                                    /** Format: uri */
+                                    url: string;
+                                } | null;
                             }[];
                         };
                     };

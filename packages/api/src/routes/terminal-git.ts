@@ -4,7 +4,7 @@ import { ValidationError } from "@orc/core/errors";
 import type { ExecHost } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { checkoutFiles, saveCheckoutFile } from "../git/files.js";
-import { checkoutGithubFeed } from "../git/github.js";
+import { checkoutGithubFeed, GithubCiSchema } from "../git/github.js";
 import { commitStaged, gitDiff, gitStatus, stageFiles, switchBranch } from "../git/panel.js";
 import { worktreeDeps } from "../git/registry.js";
 import { trackedWorktrees } from "../git/worktrees.js";
@@ -147,6 +147,7 @@ app.openapi(
           "application/json": {
             schema: z.object({
               auth: z.enum(["gh", "token", "none"]),
+              unavailable_reason: z.enum(["no_remote", "detached_head"]).optional(),
               login: z.string().nullable(),
               truncated: z.boolean(),
               errors: z.array(z.object({ repo: z.string(), error: z.string() })),
@@ -161,6 +162,7 @@ app.openapi(
                   branch: z.string().nullable(),
                   assignees: z.array(z.string()),
                   task_ids: z.array(z.string()),
+                  ci: GithubCiSchema.nullable().optional(),
                 }),
               ),
             }),

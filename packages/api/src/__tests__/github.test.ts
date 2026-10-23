@@ -2,7 +2,13 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { loadConfig, OrcConfigSchema, resetConfig } from "@orc/core/config";
 import { z } from "zod";
-import { fetchGithubFeed, type GithubDeps, githubAuth, githubRemote } from "../git/github.js";
+import {
+  fetchGithubFeed,
+  type GithubDeps,
+  githubAuth,
+  githubRemote,
+  readGithubCi,
+} from "../git/github.js";
 import { bearerAuth } from "../middleware/auth.js";
 import { createGithubRouter } from "../routes/github.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
@@ -43,6 +49,141 @@ const deps: GithubDeps = {
   }) as typeof fetch,
 };
 const repos = [{ name: "owner/repo", branches: ["feat/current"], linked: [] }];
+
+describe("PR CI status", () => {
+  const sha = "a".repeat(40);
+  const url = "https://github.com/owner/repo/pull/3";
+  function ciDeps(
+    runs: { status: string; conclusion: string | null }[],
+    state = "pending",
+    statusCount = 0,
+  ): GithubDeps {
+    return {
+      ...deps,
+      fetch: (async (input) =>
+        String(input).includes("/check-runs")
+          ? Response.json({ total_count: runs.length, check_runs: runs })
+          : Response.json({ state, total_count: statusCount })) as typeof fetch,
+    };
+  }
+  test("should combine check runs and legacy statuses without reporting absent checks as passing", async () => {
+    expect((await readGithubCi("owner/repo", sha, url, "test", ciDeps([])))?.state).toBe("none");
+    expect(
+      (
+        await readGithubCi(
+          "owner/repo",
+          sha,
+          url,
+          "test",
+          ciDeps([{ status: "completed", conclusion: "success" }]),
+        )
+      )?.state,
+    ).toBe("success");
+    expect(
+      (
+        await readGithubCi(
+          "owner/repo",
+          sha,
+          url,
+          "test",
+          ciDeps([{ status: "queued", conclusion: null }]),
+        )
+      )?.state,
+    ).toBe("pending");
+    expect(
+      (
+        await readGithubCi(
+          "owner/repo",
+          sha,
+          url,
+          "test",
+          ciDeps([{ status: "completed", conclusion: "failure" }], "pending", 1),
+        )
+      )?.state,
+    ).toBe("failure");
+    expect(
+      (
+        await readGithubCi(
+          "owner/repo",
+          sha,
+          url,
+          "test",
+          ciDeps([{ status: "completed", conclusion: "success" }], "failure", 1),
+        )
+      )?.state,
+    ).toBe("failure");
+    expect(
+      (
+        await readGithubCi(
+          "owner/repo",
+          sha,
+          url,
+          "test",
+          ciDeps(
+            [
+              { status: "completed", conclusion: "neutral" },
+              { status: "completed", conclusion: "skipped" },
+            ],
+            "pending",
+            1,
+          ),
+        )
+      )?.state,
+    ).toBe("pending");
+  });
+  test("should fetch current PR head CI only when requested and keep PR links when checks are inaccessible", async () => {
+    const paths: string[] = [];
+    const fixture = {
+      ...deps,
+      fetch: (async (input) => {
+        const path = String(input);
+        paths.push(path);
+        if (path.endsWith("/user")) return Response.json({ login: "me" });
+        if (path.includes("/pulls?"))
+          return Response.json([{ ...pull, head: { ...pull.head, sha } }]);
+        if (path.includes("/commits/"))
+          return new Response("private upstream diagnostic", { status: 403 });
+        return Response.json([]);
+      }) as typeof fetch,
+    };
+    const feed = await fetchGithubFeed(repos, "branches", fixture, true);
+    expect(feed.items[0]?.ci).toBeNull();
+    expect(feed.items[0]?.url).toBe(url);
+    expect(paths.some((path) => path.includes(`/commits/${sha}/check-runs`))).toBe(true);
+    expect(JSON.stringify(feed)).not.toContain("private upstream diagnostic");
+    paths.length = 0;
+    await fetchGithubFeed(repos, "branches", fixture);
+    expect(paths.some((path) => path.includes("/commits/"))).toBe(false);
+  });
+  test("should paginate checks and refuse incomplete results", async () => {
+    let pages = 0;
+    const fixture = {
+      ...deps,
+      fetch: (async (input) => {
+        if (String(input).endsWith("/status"))
+          return Response.json({ state: "pending", total_count: 0 });
+        pages++;
+        return Response.json({
+          total_count: 101,
+          check_runs:
+            pages === 1
+              ? Array.from({ length: 100 }, () => ({ status: "completed", conclusion: "success" }))
+              : [{ status: "completed", conclusion: "failure" }],
+        });
+      }) as typeof fetch,
+    };
+    expect((await readGithubCi("owner/repo", sha, url, "test", fixture))?.state).toBe("failure");
+    expect(pages).toBe(2);
+    const tooMany = {
+      ...fixture,
+      fetch: (async (_input: string | URL | Request) =>
+        String(_input).endsWith("/status")
+          ? Response.json({ state: "pending", total_count: 0 })
+          : Response.json({ total_count: 501, check_runs: [] })) as typeof fetch,
+    };
+    expect(await readGithubCi("owner/repo", sha, url, "test", tooMany)).toBeNull();
+  });
+});
 
 describe("GitHub authentication and relevant feed", () => {
   test("should accept only canonical GitHub remotes", () => {
