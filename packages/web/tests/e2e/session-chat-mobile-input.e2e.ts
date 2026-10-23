@@ -87,7 +87,7 @@ test("phone keyboard text reaches a real terminal without keydown", async ({
 });
 
 for (const width of [1440, 390]) {
-  test(`Sessions offers chat resume alongside terminal at ${width}px`, async ({
+  test(`Sessions offers chat resume in the terminal dropdown at ${width}px`, async ({
     page,
   }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
@@ -137,12 +137,15 @@ for (const width of [1440, 390]) {
     });
     await gotoView(page, "sessions");
     await expect(page.getByTestId("open-terminal-resume")).toBeVisible();
-    await page.getByTestId("open-chat-resume").click();
+    await expect(page.getByTestId("open-chat-resume")).toHaveCount(0);
+    await page.getByTestId("resume-actions-menu").click();
+    await page.getByTestId("resume-actions-dropdown").getByTestId("open-chat-resume").click();
     await expect(page.getByRole("alert")).toContainText("Session is still active");
     await page.goto(`/sessions?project=all&session=${session.id}`);
     const detail = page.getByTestId("live-session-detail");
     await expect(detail).toBeVisible();
-    await detail.getByTestId("open-chat-resume").click();
+    await detail.getByTestId("resume-actions-menu").click();
+    await page.getByTestId("resume-actions-dropdown").getByTestId("open-chat-resume").click();
     await expect(detail).toBeHidden();
     await expect(page.getByTestId("chat-panel").filter({ visible: true })).toBeVisible();
     await expect(page.getByTestId("chat-message-content").filter({ visible: true })).toContainText(
@@ -155,7 +158,7 @@ for (const width of [1440, 390]) {
 }
 
 test("chat resume refuses active agents and is absent for unsupported agents", async ({ page }) => {
-  const sessions = ["codex", "claude", "gemini"].map((agent) => ({
+  const sessions = ["codex", "claude", "gemini"].map((agent, index) => ({
     id: agent,
     agent,
     session_id: `native-${agent}`,
@@ -163,15 +166,22 @@ test("chat resume refuses active agents and is absent for unsupported agents", a
     cwd: "/fixture",
     status: "idle",
     project_id: null,
-    last_activity_at: Date.now(),
+    last_activity_at: Date.now() - index * 1000,
     tokens_used: null,
   }));
   await page.route("**/api/sessions/live?**", (route) => route.fulfill({ json: { sessions } }));
   await gotoView(page, "sessions");
-  const buttons = page.getByTestId("open-chat-resume");
-  await expect(buttons).toHaveCount(2);
-  for (const button of await buttons.all()) {
-    await expect(button).toBeDisabled();
-    await expect(button).toHaveAttribute("title", /End the original agent/);
+  const menus = page.getByTestId("resume-actions-menu");
+  await expect(menus).toHaveCount(3);
+  for (let index = 0; index < 3; index++) {
+    await menus.nth(index).click();
+    const button = page.getByTestId("resume-actions-dropdown").getByTestId("open-chat-resume");
+    if (index < 2) {
+      await expect(button).toBeDisabled();
+      await expect(button).toHaveAttribute("title", /End the original agent/);
+    } else {
+      await expect(button).toHaveCount(0);
+    }
+    await page.keyboard.press("Escape");
   }
 });
