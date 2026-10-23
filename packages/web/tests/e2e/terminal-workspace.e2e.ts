@@ -6,6 +6,50 @@ import { expect } from "@playwright/test";
 import { API_SECRET, apiGet, apiPost } from "./_helpers";
 import { test } from "./_terminal-fixture";
 
+test("renderer startup preserves an already opened terminal actions menu", async ({
+  page,
+  request,
+}) => {
+  const terminal = await apiPost<{ id: string }>(request, "/terminals", {
+    kind: "shell",
+    host: null,
+  });
+  await page.addInitScript(() => {
+    const compile = WebAssembly.compile.bind(WebAssembly);
+    WebAssembly.compile = async (...args) => {
+      document.documentElement.dataset.rendererWaiting = "true";
+      await new Promise<void>((resolve) =>
+        window.addEventListener("release-test-renderer", () => resolve(), { once: true }),
+      );
+      return compile(...args);
+    };
+  });
+  await page.addInitScript(
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+    API_SECRET,
+  );
+  try {
+    await page.goto(`/terminals/${terminal.id}?project=all`);
+    await page.waitForFunction(() => document.documentElement.dataset.rendererWaiting === "true");
+    await page.getByTestId("terminal-actions").click();
+    await expect(page.getByTestId("terminal-actions-menu")).toBeVisible();
+  } finally {
+    await page.evaluate(() => window.dispatchEvent(new Event("release-test-renderer")));
+  }
+  await expect(
+    page.getByTestId("terminal-viewport").getByRole("textbox", { name: "Terminal input" }).last(),
+  ).toBeVisible();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await expect(page.getByTestId("terminal-actions-menu")).toBeVisible();
+  await expect(page.getByTestId("terminal-rename")).toBeFocused();
+});
+
 test("should show current PR CI states and hide unavailable CI", async ({ page, request }) => {
   const repo = mkdtempSync(join(tmpdir(), "orc-ci-states-"));
   execFileSync("git", ["-C", repo, "init", "-b", "main"], { timeout: 15000, windowsHide: true });

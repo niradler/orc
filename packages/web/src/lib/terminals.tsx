@@ -194,6 +194,7 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
   const attach = useCallback(
     async (id: string, container: HTMLElement): Promise<void> => {
       pendingContainers.current.set(id, container);
+      const focusedBeforeLoad = document.activeElement;
       try {
         await loadGhostty();
         setEngineError(null);
@@ -207,7 +208,7 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
         runtime = createRuntime(id);
         runtimes.current.set(id, runtime);
       }
-      mountRuntime(runtime, container);
+      mountRuntime(runtime, container, document.activeElement === focusedBeforeLoad);
       void connectRuntime(runtime, callbacks);
     },
     [callbacks],
