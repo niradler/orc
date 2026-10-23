@@ -114,6 +114,7 @@ export function projectCommand() {
     .description("Create a new project")
     .option("-d, --description <text>", "Project description")
     .option("--scope <s>", "Project scope")
+    .option("--git-remote-url <url>", "Optional Git repository remote URL (without credentials)")
     .option("--tags <csv>", "Comma-separated tags")
     .action(async (name: string, opts) => {
       if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
@@ -126,6 +127,7 @@ export function projectCommand() {
         name,
         description: opts.description,
         scope: opts.scope,
+        git_remote_url: opts.gitRemoteUrl,
         tags,
       });
       if (error) return console.error("Error:", error);
@@ -178,6 +180,7 @@ export function projectCommand() {
 
       console.log(`${project.name} (${project.status})`);
       if (project.description) console.log(`  ${project.description}`);
+      if (project.git_remote_url) console.log(`  Git remote: ${project.git_remote_url}`);
       console.log();
 
       if (summary) {
@@ -242,8 +245,12 @@ export function projectCommand() {
     .option("-d, --description <text>", "Description")
     .option("--status <s>", "Status (active/paused/archived)")
     .option("--scope <s>", "Scope")
+    .option("--git-remote-url <url>", "Git repository remote URL (without credentials)")
+    .option("--clear-git-remote-url", "Clear the optional Git remote URL")
     .option("--tags <csv>", "Comma-separated tags")
     .action(async (name: string, opts) => {
+      if (opts.clearGitRemoteUrl && opts.gitRemoteUrl !== undefined)
+        throw new Error("Use either --git-remote-url or --clear-git-remote-url");
       const client = createOrcClient();
       const { data: project, error: findErr } = await client.projects.getByName(name);
       if (findErr || !project) return console.error(`Project not found: ${name}`);
@@ -254,6 +261,7 @@ export function projectCommand() {
         description: opts.description,
         status: opts.status,
         scope: opts.scope,
+        git_remote_url: opts.clearGitRemoteUrl ? null : opts.gitRemoteUrl,
         tags,
       });
       if (error) return console.error("Error:", error);

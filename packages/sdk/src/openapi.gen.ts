@@ -214,17 +214,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            /** @enum {string} */
-                            status: "ok";
-                            version: string;
-                            uptime: number;
-                            agent_loop: {
-                                enabled: boolean;
-                                poll_interval_minutes: number;
-                                max_workers: number;
-                            };
-                        };
+                        "application/json": components["schemas"]["HealthResponse"];
                     };
                 };
             };
@@ -307,6 +297,46 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/api/system/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restart ORC and reload server and execution-host state */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description Restart accepted; reconnect when health reports a new instance_id */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RestartResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/mcp/tool": {
@@ -8490,6 +8520,24 @@ export interface components {
             /** @description ANTHROPIC_API_KEY is set where orc runs and will be forwarded */
             api_key_forwarded: boolean;
         };
+        HealthResponse: {
+            /** @enum {string} */
+            status: "ok";
+            version: string;
+            uptime: number;
+            instance_id: string;
+            restart_supported: boolean;
+            agent_loop: {
+                enabled: boolean;
+                poll_interval_minutes: number;
+                max_workers: number;
+            };
+        };
+        RestartResponse: {
+            instance_id: string;
+            /** @enum {boolean} */
+            restarting: true;
+        };
         McpToolResult: {
             result: string;
         };
@@ -8507,6 +8555,7 @@ export interface components {
             /** @enum {string} */
             status: "active" | "archived" | "paused";
             scope: string | null;
+            git_remote_url: string | null;
             tags: string[] | null;
             obsidian_path: string | null;
             max_workers: number | null;
@@ -8524,6 +8573,7 @@ export interface components {
              */
             status: "active" | "archived" | "paused";
             scope?: string;
+            git_remote_url?: string | null;
             tags?: string[];
             obsidian_path?: string;
             max_workers?: number;
@@ -8534,6 +8584,7 @@ export interface components {
             /** @enum {string} */
             status?: "active" | "archived" | "paused";
             scope?: string | null;
+            git_remote_url?: string | null;
             tags?: string[] | null;
             obsidian_path?: string;
             max_workers?: number | null;

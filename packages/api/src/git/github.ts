@@ -1,9 +1,10 @@
 import { loadConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
 import { type ExecHost, resolveExecHost } from "@orc/core/exec-host";
+import { resolveGithubAuth } from "@orc/core/github-auth";
 import { getDb } from "@orc/db/client";
 import { z } from "zod";
-import { type GitResult, gitRunner, runGit } from "../terminals/session-dir.js";
+import { type GitResult, gitRunner } from "../terminals/session-dir.js";
 import { gitStatus } from "./panel.js";
 import { knownWorktrees } from "./registry.js";
 
@@ -63,15 +64,7 @@ export function githubRemote(remote: string): string | null {
 export async function githubAuth(
   deps: GithubDeps,
 ): Promise<{ source: "gh" | "token" | "none"; token?: string }> {
-  try {
-    const result = await deps.run(["gh", "auth", "token", "--hostname", "github.com"]);
-    if (result.code === 0 && result.stdout.trim())
-      return { source: "gh", token: result.stdout.trim() };
-  } catch {
-    /* CLI not installed; use explicit fallback. */
-  }
-  if (deps.token) return { source: "token", token: deps.token };
-  return { source: "none" };
+  return resolveGithubAuth(deps);
 }
 
 async function githubGet(path: string, token: string, deps: GithubDeps): Promise<unknown> {
@@ -255,7 +248,7 @@ export async function githubFeed(
       repos.set(name, repo);
     }
   const feed = await fetchGithubFeed([...repos.values()], filter, {
-    run: runGit,
+    run: hostGit,
     fetch,
     token: loadConfig().github.token,
   });
@@ -285,7 +278,7 @@ export async function checkoutGithubFeed(host: ExecHost, cwd: string): Promise<G
       truncated: false,
     };
   return fetchGithubFeed([{ name, branches: [status.branch], linked: [] }], "branches", {
-    run: runGit,
+    run: gitRunner(host),
     fetch,
     token: loadConfig().github.token,
   });

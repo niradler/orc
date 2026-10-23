@@ -18,6 +18,7 @@ export const projects = sqliteTable(
       .default("active")
       .notNull(),
     scope: text("scope"),
+    git_remote_url: text("git_remote_url"),
     tags: text("tags", { mode: "json" }).$type<string[]>(),
     obsidian_path: text("obsidian_path"),
     max_workers: integer("max_workers"),

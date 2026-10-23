@@ -44,6 +44,7 @@ import type {
   LocalSkillAgentListing,
   LocalSkillImportItem,
   LocalSkillImportResult,
+  RestartResponse,
   ScopeQuery,
   SkillChange,
   SkillDiscovery,
@@ -465,7 +466,7 @@ async function req<T>(
   path: string,
   body?: unknown,
   query?: Record<string, string | number | boolean | undefined>,
-  opts?: { nullOn404?: boolean },
+  opts?: { nullOn404?: boolean; signal?: AbortSignal | undefined },
 ): Promise<T> {
   let url = `${getApiUrl()}${path}`;
   if (query) {
@@ -483,6 +484,7 @@ async function req<T>(
   const res = await fetch(url, {
     method,
     headers,
+    signal: opts?.signal,
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   if (res.status === 401) window.dispatchEvent(new Event(API_ACCESS_CHANGED));
@@ -544,7 +546,11 @@ export const api = {
       req<RuleRevision>("POST", "/rules/revert", { id, reason }),
   },
   health: {
-    check: () => req<HealthResponse>("GET", "/health"),
+    check: (signal?: AbortSignal) =>
+      req<HealthResponse>("GET", "/health", undefined, undefined, { signal }),
+  },
+  system: {
+    restart: () => req<RestartResponse>("POST", "/system/restart", {}),
   },
 
   tasks: {

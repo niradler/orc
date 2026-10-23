@@ -87,6 +87,7 @@ import type {
   PackageMeta,
   Project,
   ProjectSummary,
+  RestartResponse,
   ResumeFlowInput,
   ScopeQuery,
   Session,
@@ -667,6 +668,9 @@ export function createOrcClient(options?: OrcClientOptions) {
 
     health: {
       check: () => c<HealthResponse>("GET", "/health"),
+    },
+    system: {
+      restart: () => c<RestartResponse>("POST", "/system/restart", {}),
     },
 
     gateway: {

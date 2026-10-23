@@ -227,6 +227,7 @@ export type Project = {
   description: string | null;
   status: ProjectStatus;
   scope: string | null;
+  git_remote_url: string | null;
   tags: string[] | null;
   obsidian_path: string | null;
   max_workers: number | null;
@@ -241,16 +242,8 @@ export type ProjectSummary = {
   jobs: number;
 };
 
-export type HealthResponse = {
-  status: "ok";
-  version: string;
-  uptime: number;
-  agent_loop: {
-    enabled: boolean;
-    poll_interval_minutes: number;
-    max_workers: number;
-  };
-};
+export type HealthResponse = components["schemas"]["HealthResponse"];
+export type RestartResponse = components["schemas"]["RestartResponse"];
 
 export type CreateTaskInput = TaskGitLinks & {
   title: string;
@@ -435,6 +428,7 @@ export type CreateProjectInput = {
   description?: string;
   status?: ProjectStatus;
   scope?: string;
+  git_remote_url?: string | null;
   tags?: string[];
   obsidian_path?: string;
   max_workers?: number;
@@ -445,6 +439,7 @@ export type UpdateProjectInput = {
   description?: string | null;
   status?: ProjectStatus;
   scope?: string | null;
+  git_remote_url?: string | null;
   tags?: string[] | null;
   obsidian_path?: string | null;
   max_workers?: number | null;

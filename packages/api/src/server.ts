@@ -31,6 +31,7 @@ import { sessionsRouter } from "./routes/sessions.js";
 import { settingsRouter } from "./routes/settings.js";
 import { skillsRouter } from "./routes/skills.js";
 import { sshRouter } from "./routes/ssh.js";
+import { systemRouter } from "./routes/system.js";
 import { tagsRouter } from "./routes/tags.js";
 import { taskLinksRouter } from "./routes/task-links.js";
 import { tasksRouter } from "./routes/tasks.js";
@@ -105,6 +106,7 @@ export function createApp() {
   app.route("/api", chatRouter);
   app.route("/api", healthRouter);
   app.route("/api", settingsRouter);
+  app.route("/api", systemRouter);
   app.route("/api", mcpToolRouter);
   app.route("/", mcpRouter);
   app.route("/api", projectsRouter);

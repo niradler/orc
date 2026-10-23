@@ -57,7 +57,7 @@ export function SshHostSettings() {
     port.trim() === "" || (Number.isInteger(portNumber) && portNumber >= 1 && portNumber <= 65535);
   const disabled = ssh.locked || !ssh.supported;
   const claude = backends?.backends.find((backend) => backend.name === "claude");
-  const result = test.data;
+  const result = test.data?.host === alias ? test.data : undefined;
 
   return (
     <section data-testid="ssh-settings">
@@ -95,11 +95,20 @@ export function SshHostSettings() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="bg-surface-highest border-outline-variant max-h-72">
-              <SelectItem value={LOCAL} className="font-label text-sm">
+              <SelectItem
+                value={LOCAL}
+                data-testid="ssh-host-option-local"
+                className="font-label text-sm"
+              >
                 Local (this machine)
               </SelectItem>
               {hosts.map((host) => (
-                <SelectItem key={host} value={host} className="font-label text-sm">
+                <SelectItem
+                  key={host}
+                  value={host}
+                  data-testid={`ssh-host-option-${host}`}
+                  className="font-label text-sm"
+                >
                   {host}
                 </SelectItem>
               ))}

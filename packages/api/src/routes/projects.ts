@@ -11,6 +11,41 @@ import { createRouter } from "../lib/router.js";
 
 const app = createRouter();
 
+function isGitRemoteUrl(value: string): boolean {
+  if (
+    /\s/.test(value) ||
+    Array.from(value).some(
+      (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+    )
+  )
+    return false;
+  if (/^[A-Za-z0-9._-]+@(?:[A-Za-z0-9.-]+|\[[A-Fa-f0-9:]+\]):[^\s?#]+$/.test(value)) return true;
+  try {
+    const url = new URL(value);
+    return (
+      ["https:", "http:", "ssh:", "git:"].includes(url.protocol) &&
+      Boolean(url.hostname) &&
+      !url.password &&
+      !url.search &&
+      !url.hash &&
+      (url.protocol === "ssh:" || !url.username)
+    );
+  } catch {
+    return false;
+  }
+}
+
+const GitRemoteUrlSchema = z
+  .string()
+  .trim()
+  .max(2048)
+  .refine(
+    (value) => !value || isGitRemoteUrl(value),
+    "Enter a Git remote URL without passwords, access tokens, query parameters or fragments",
+  )
+  .transform((value) => value || null)
+  .nullable();
+
 const ProjectSchema = z
   .object({
     id: z.string(),
@@ -18,6 +53,7 @@ const ProjectSchema = z
     description: z.string().nullable(),
     status: z.enum(["active", "archived", "paused"]),
     scope: z.string().nullable(),
+    git_remote_url: z.string().nullable(),
     tags: z.array(z.string()).nullable(),
     obsidian_path: z.string().nullable(),
     max_workers: z.number().int().nullable(),
@@ -36,6 +72,7 @@ const CreateProjectSchema = z
     description: z.string().optional(),
     status: z.enum(["active", "archived", "paused"]).optional().default("active"),
     scope: z.string().optional(),
+    git_remote_url: GitRemoteUrlSchema.optional(),
     tags: z.array(z.string()).optional(),
     obsidian_path: z.string().optional(),
     max_workers: z.number().int().min(1).optional(),
@@ -53,6 +90,7 @@ const UpdateProjectSchema = z
     description: z.string().nullable().optional(),
     status: z.enum(["active", "archived", "paused"]).optional(),
     scope: z.string().nullable().optional(),
+    git_remote_url: GitRemoteUrlSchema.optional(),
     tags: z.array(z.string()).nullable().optional(),
     obsidian_path: z.string().optional(),
     max_workers: z.number().int().min(1).nullable().optional(),
@@ -186,6 +224,7 @@ function toDto(p: typeof projects.$inferSelect) {
   return {
     ...p,
     max_workers: p.max_workers ?? null,
+    git_remote_url: p.git_remote_url ?? null,
     created_at: p.created_at.toISOString(),
     updated_at: p.updated_at.toISOString(),
   };
@@ -305,6 +344,7 @@ app.openapi(createRoute_, async (c) => {
     description: body.description,
     status: body.status,
     scope: body.scope,
+    git_remote_url: body.git_remote_url,
     tags: body.tags,
     obsidian_path: body.obsidian_path,
     max_workers: body.max_workers,
@@ -336,6 +376,7 @@ app.openapi(updateRoute, async (c) => {
       ...(body.description !== undefined ? { description: body.description } : {}),
       ...(body.status !== undefined ? { status: body.status } : {}),
       ...(body.scope !== undefined ? { scope: body.scope } : {}),
+      ...(body.git_remote_url !== undefined ? { git_remote_url: body.git_remote_url } : {}),
       ...(body.tags !== undefined ? { tags: body.tags } : {}),
       ...(body.obsidian_path !== undefined ? { obsidian_path: body.obsidian_path } : {}),
       ...(body.max_workers !== undefined ? { max_workers: body.max_workers } : {}),

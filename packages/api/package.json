@@ -4,6 +4,7 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./lifecycle": "./src/lifecycle.ts",
     ".": "./src/index.ts",
     "./server": "./src/server.ts"
   },

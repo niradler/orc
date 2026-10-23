@@ -13,6 +13,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { ProjectPicker } from "@/components/ProjectPicker";
 import { Button } from "@/components/ui/button";
 import { useHealth } from "@/hooks/useHealth";
+import { useSsh } from "@/hooks/useSsh";
 import { useTerminals } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 import {
@@ -48,6 +49,13 @@ export function WorkspaceSidebar({
   const navigate = useNavigate();
   const { pathname, search } = useLocation();
   const { data: health, isError } = useHealth();
+  const { data: ssh } = useSsh();
+  const host = ssh ? (ssh.host ?? "local") : null;
+  const connectionStatus = isError
+    ? "Offline"
+    : health
+      ? `Connected${host ? ` (${host})` : ""}`
+      : "Connecting…";
   const { terminals } = useTerminals();
   const running = terminals.filter((terminal) => terminal.status === "running").length;
   const rail = collapsed && !embedded;
@@ -103,14 +111,18 @@ export function WorkspaceSidebar({
       </nav>
       <div className="mt-4 flex items-center justify-between gap-2 border-t border-border px-2 pt-3">
         {!rail && (
-          <span className="flex min-w-0 items-center gap-2 text-xs text-outline">
+          <span
+            className="flex min-w-0 items-center gap-2 text-xs text-outline"
+            title={host ? `Execution host: ${host}` : connectionStatus}
+            data-testid="workspace-connection-status"
+          >
             <span
               className={cn(
                 "size-1.5 shrink-0 rounded-full",
                 isError ? "bg-error" : "bg-secondary",
               )}
             />
-            {isError ? "Offline" : health ? "Connected" : "Connecting…"}
+            <span className="truncate">{connectionStatus}</span>
           </span>
         )}
         {!embedded && (

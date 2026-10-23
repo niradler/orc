@@ -13,6 +13,7 @@ async function cli(
   ...args: string[]
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = Bun.spawn(["bun", CLI, "--port", String(port), "--secret", SECRET, ...args], {
+    timeout: 15000,
     env: {
       ...process.env,
       ORC_API_PORT: String(port),
@@ -43,6 +44,48 @@ afterAll(() => {
   delete process.env.ORC_DB_PATH;
   delete process.env.ORC_API_SECRET;
   resetConfig();
+});
+
+describe("CLI - optional project Git remote", () => {
+  test("should create, show, update and explicitly clear the remote URL", async () => {
+    const name = "cli-git-remote-project";
+    const created = await cli(
+      "--json",
+      "project",
+      "add",
+      name,
+      "--git-remote-url",
+      "https://github.com/acme/project.git",
+    );
+    expect(created.exitCode).toBe(0);
+    expect(JSON.parse(created.stdout).git_remote_url).toBe("https://github.com/acme/project.git");
+    const updated = await cli(
+      "--json",
+      "project",
+      "update",
+      name,
+      "--git-remote-url",
+      "git@github.com:acme/project.git",
+    );
+    expect(updated.exitCode).toBe(0);
+    expect(JSON.parse(updated.stdout).git_remote_url).toBe("git@github.com:acme/project.git");
+    const shown = await cli("project", "show", name);
+    expect(shown.stdout).toContain("Git remote: git@github.com:acme/project.git");
+    const conflict = await cli(
+      "project",
+      "update",
+      name,
+      "--git-remote-url",
+      "https://github.com/acme/project.git",
+      "--clear-git-remote-url",
+    );
+    expect(conflict.exitCode).toBe(1);
+    const cleared = await cli("--json", "project", "update", name, "--clear-git-remote-url");
+    expect(cleared.exitCode).toBe(0);
+    expect(JSON.parse(cleared.stdout).git_remote_url).toBeNull();
+    const reopened = await cli("--json", "project", "show", name);
+    expect(JSON.parse(reopened.stdout).project.git_remote_url).toBeNull();
+  });
 });
 
 describe("CLI - task commands", () => {

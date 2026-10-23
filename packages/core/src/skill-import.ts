@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join, posix } from "node:path";
 import { z } from "zod";
 import { ConflictError, ValidationError } from "./errors.js";
+import { resolveGithubAuth } from "./github-auth.js";
 import {
   encodeSkillFile,
   MAX_SKILL_BUNDLE_BYTES,
@@ -98,13 +99,22 @@ export function parseSkillRepository(source: string): SkillRepository {
   return { repository, ref, path, ...(skill ? { skill } : {}) };
 }
 
-async function readRemote(url: string, maximum: number): Promise<Buffer> {
+async function readRemote(
+  url: string,
+  maximum: number,
+  token?: string,
+  accept = "application/vnd.github+json",
+): Promise<Buffer> {
   let response: Response;
   try {
     response = await fetch(url, {
       redirect: "error",
       signal: AbortSignal.timeout(15000),
-      headers: { "User-Agent": "orc-skill-import" },
+      headers: {
+        "User-Agent": "orc-skill-import",
+        Accept: accept,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     });
   } catch {
     throw new ValidationError("GitHub request failed or timed out; try again");
@@ -113,7 +123,11 @@ async function readRemote(url: string, maximum: number): Promise<Buffer> {
     await response.body?.cancel();
     if (response.status === 404)
       throw new ValidationError(
-        "GitHub repository, ref or file not found; public repositories are supported",
+        "GitHub repository, ref or file not found; for private repositories, sign in with gh on the execution host (local or SSH) or set ORC_GITHUB_TOKEN on the ORC server with repository access",
+      );
+    if (response.status === 401)
+      throw new ValidationError(
+        "GitHub authentication failed; refresh gh auth on the execution host (local or SSH), or ORC_GITHUB_TOKEN on the ORC server",
       );
     if (response.status === 403 || response.status === 429)
       throw new ValidationError("GitHub rate limit reached; try again later");
@@ -146,19 +160,29 @@ function githubUrl(repository: string, route: string): string {
   return `https://api.github.com/repos/${repository}/${route}`;
 }
 
-export async function resolveCommit(repository: string, ref: string): Promise<string> {
+export async function resolveCommit(
+  repository: string,
+  ref: string,
+  token?: string,
+): Promise<string> {
   const bytes = await readRemote(
     githubUrl(repository, `commits/${encodeURIComponent(ref)}`),
     2 * 1024 * 1024,
+    token,
   );
   return z.object({ sha: z.string().regex(/^[a-f0-9]{40}$/) }).parse(JSON.parse(bytes.toString()))
     .sha;
 }
 
-export async function readTree(repository: string, commit: string): Promise<TreeEntry[]> {
+export async function readTree(
+  repository: string,
+  commit: string,
+  token?: string,
+): Promise<TreeEntry[]> {
   const bytes = await readRemote(
     githubUrl(repository, `git/trees/${commit}?recursive=1`),
     12 * 1024 * 1024,
+    token,
   );
   const parsed = TreeSchema.parse(JSON.parse(bytes.toString()));
   if (parsed.truncated) throw new ValidationError("Repository tree is too large to import safely");
@@ -169,11 +193,17 @@ export async function readRepositoryFile(
   repository: string,
   commit: string,
   path: string,
+  token?: string,
 ): Promise<Buffer> {
   validateSkillPath(path);
+  const encodedPath = path.split("/").map(encodeURIComponent).join("/");
   return readRemote(
-    `https://raw.githubusercontent.com/${repository}/${commit}/${path.split("/").map(encodeURIComponent).join("/")}`,
+    token
+      ? githubUrl(repository, `contents/${encodedPath}?ref=${encodeURIComponent(commit)}`)
+      : `https://raw.githubusercontent.com/${repository}/${commit}/${encodedPath}`,
     MAX_SKILL_FILE_BYTES,
+    token,
+    "application/vnd.github.raw+json",
   );
 }
 
@@ -196,8 +226,9 @@ function entryPaths(tree: TreeEntry[], source: SkillRepository): string[] {
 
 export async function discoverRepositorySkills(source: string): Promise<SkillDiscovery> {
   const origin = parseSkillRepository(source);
-  const commit = await resolveCommit(origin.repository, origin.ref);
-  const tree = await readTree(origin.repository, commit);
+  const { token } = await resolveGithubAuth();
+  const commit = await resolveCommit(origin.repository, origin.ref, token);
+  const tree = await readTree(origin.repository, commit, token);
   const paths = entryPaths(tree, origin);
   if (paths.length > 128)
     throw new ValidationError("More than 128 skills found; use a GitHub subfolder link");
@@ -208,7 +239,7 @@ export async function discoverRepositorySkills(source: string): Promise<SkillDis
   const issues: SkillDiscovery["issues"] = [];
   for (const entry of paths) {
     try {
-      const bytes = await readRepositoryFile(origin.repository, commit, entry);
+      const bytes = await readRepositoryFile(origin.repository, commit, entry, token);
       const content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
       const { frontmatter } = parseFrontmatter(content);
       if (origin.skill && frontmatter.name !== origin.skill) continue;
@@ -233,6 +264,7 @@ export async function downloadRepositorySkill(
   commit: string,
   path: string,
   tree: TreeEntry[],
+  token?: string,
 ): Promise<{ name: string; content: string; files: Record<string, string> }> {
   const prefix = path ? `${path}/` : "";
   const entries = tree.filter((entry) => entry.path.startsWith(prefix) && entry.type !== "tree");
@@ -248,7 +280,7 @@ export async function downloadRepositorySkill(
       throw new ValidationError(`Symlinks and submodules cannot be imported: ${relative}`);
     if ((entry.size ?? 0) > MAX_SKILL_FILE_BYTES)
       throw new ValidationError(`Skill file exceeds 8 MiB: ${relative}`);
-    const bytes = await readRepositoryFile(repository, commit, entry.path);
+    const bytes = await readRepositoryFile(repository, commit, entry.path, token);
     total += bytes.length;
     if (total > MAX_SKILL_BUNDLE_BYTES) throw new ValidationError("Skill bundle exceeds 16 MiB");
     files[relative] = bytes.toString("base64");
@@ -318,7 +350,8 @@ export async function importRepositorySkills(input: SkillImportInput): Promise<S
     new Set(input.paths).size !== input.paths.length
   )
     throw new ValidationError("Select 1-16 unique skill folders");
-  const tree = await readTree(origin.repository, input.commit);
+  const { token } = await resolveGithubAuth();
+  const tree = await readTree(origin.repository, input.commit, token);
   const allowed = new Set(
     entryPaths(tree, origin).map((entry) =>
       posix.dirname(entry) === "." ? "" : posix.dirname(entry),
@@ -333,7 +366,13 @@ export async function importRepositorySkills(input: SkillImportInput): Promise<S
     if (path) validateSkillPath(path);
     if (!allowed.has(path))
       throw new ValidationError("Selected skill is outside the source folder");
-    const bundle = await downloadRepositorySkill(origin.repository, input.commit, path, tree);
+    const bundle = await downloadRepositorySkill(
+      origin.repository,
+      input.commit,
+      path,
+      tree,
+      token,
+    );
     total += Object.values(bundle.files).reduce(
       (size, content) => size + Buffer.byteLength(content, "base64"),
       0,
@@ -375,10 +414,11 @@ export async function importRepositorySkills(input: SkillImportInput): Promise<S
 export async function fetchSkillUpdate(
   origin: SkillImportOrigin,
 ): Promise<{ commit: string; name: string; content: string; files: Record<string, string> }> {
-  const commit = await resolveCommit(origin.repository, origin.ref);
-  const tree = await readTree(origin.repository, commit);
+  const { token } = await resolveGithubAuth();
+  const commit = await resolveCommit(origin.repository, origin.ref, token);
+  const tree = await readTree(origin.repository, commit, token);
   return {
     commit,
-    ...(await downloadRepositorySkill(origin.repository, commit, origin.path, tree)),
+    ...(await downloadRepositorySkill(origin.repository, commit, origin.path, tree, token)),
   };
 }
