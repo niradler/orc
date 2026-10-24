@@ -4,6 +4,7 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./human-requests": "./src/human-requests.ts",
     "./chat": "./src/chat.ts",
     ".": "./src/index.ts",
     "./schema": "./src/schema.ts",

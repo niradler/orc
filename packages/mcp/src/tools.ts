@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { createAgent, discoverAgents, readAgent } from "@orc/core/agent-service";
 import { loadConfig } from "@orc/core/config";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
+import { HumanRequestInputSchema, HumanRequestSchema } from "@orc/core/human-requests";
 import { shortId, ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import {
@@ -91,6 +92,16 @@ const skillRevertParams = skillHistoryParams.extend({
   expected_change_id: z.string().min(1),
   reason: z.string().trim().min(1).max(2000),
 });
+const humanCreateParams = HumanRequestInputSchema.safeExtend({ project: projectParam });
+const humanGetParams = z
+  .object({
+    id: z.string().min(1).max(128),
+    wait_seconds: z.number().int().min(0).max(30).default(0),
+  })
+  .strict();
+const humanAckParams = z
+  .object({ id: z.string().min(1).max(128), version: z.number().int().positive() })
+  .strict();
 const digestCompleteParams = z
   .object({
     token: z.string().uuid(),
@@ -99,6 +110,24 @@ const digestCompleteParams = z
   })
   .strict();
 export const toolDefinitions = [
+  {
+    name: "human_request",
+    description:
+      "Create a durable question or ordinary approval in Attention needed. This never executes a command or grants OS privileges. Retain the returned id and poll human_request_get; deliver the response only to the requesting workflow.",
+    inputSchema: humanCreateParams,
+  },
+  {
+    name: "human_request_get",
+    description:
+      "Read the state and answer of a human request created by this workflow. Pending means wait; cancelled/expired means do not execute an unapproved action.",
+    inputSchema: humanGetParams,
+  },
+  {
+    name: "human_request_acknowledge",
+    description:
+      "After consuming the answer in your originating workflow, acknowledge its exact answered version. Cancelled, expired, unavailable, or denied requests never authorize execution. This does not execute anything.",
+    inputSchema: humanAckParams,
+  },
   {
     name: "skill_update",
     description:
@@ -797,6 +826,49 @@ export async function executeTool(
   args: unknown,
   options: ToolOptions = {},
 ): Promise<string> {
+  if (name === "human_request") {
+    const { project, ...input } = humanCreateParams.parse(args);
+    const scope = project
+      ? resolveProjectId(project)?.id
+      : (input.project_id ?? options.projectScopes?.[0]?.id ?? resolveProjectId()?.id ?? null);
+    if (
+      options.projectScopes &&
+      (!scope || !options.projectScopes.some((item) => item.id === scope))
+    )
+      throw new ValidationError("Human request is outside the selected MCP projects");
+    if (options.agentSessionId && options.agentSessionId !== input.origin.session_id)
+      throw new ValidationError("Human request must belong to the calling agent session");
+    return JSON.stringify(
+      await orcApi("POST", "/human-requests", { body: { ...input, project_id: scope } }),
+    );
+  }
+  if (name === "human_request_get" || name === "human_request_acknowledge") {
+    const input =
+      name === "human_request_get" ? humanGetParams.parse(args) : humanAckParams.parse(args);
+    const path = `/human-requests/${encodeURIComponent(input.id)}`;
+    const read = async () => {
+      const request = HumanRequestSchema.parse(await orcApi("GET", path));
+      if (
+        options.projectScopes &&
+        !options.projectScopes.some((item) => item.id === request.input.project_id)
+      )
+        throw new ValidationError("Human request is outside the selected MCP projects");
+      if (options.agentSessionId && options.agentSessionId !== request.input.origin.session_id)
+        throw new ValidationError("Human request belongs to another agent session");
+      return request;
+    };
+    let request = await read();
+    if ("version" in input)
+      return JSON.stringify(
+        await orcApi("POST", `${path}/acknowledge`, { body: { version: input.version } }),
+      );
+    const deadline = Date.now() + input.wait_seconds * 1000;
+    while (request.status === "pending" && Date.now() < deadline) {
+      await Bun.sleep(Math.min(500, deadline - Date.now()));
+      request = await read();
+    }
+    return JSON.stringify(request);
+  }
   if (name === "session_sync") {
     const grant = await orcApi<{ sync_url: string }>("POST", "/sessions/archive/sync", {
       body: SessionSyncInputSchema.parse(args),

@@ -7,6 +7,7 @@ export type SessionRuleGuard = {
   evaluateCommand?: (event: RuleEvent) => RuleDecision;
   context: string;
   builtinActions?: boolean;
+  humanWaitSeconds?: number;
 };
 
 export async function sessionRules(backend: string, opts: SessionOpts): Promise<SessionOpts> {
@@ -28,6 +29,19 @@ export async function sessionRules(backend: string, opts: SessionOpts): Promise<
       ),
     );
   if (backend !== "claude" && !policies.length) return opts;
+  if (
+    backend === "codex-cli" &&
+    policies.every((policy) =>
+      policy.policy?.rules.every(
+        (rule) =>
+          !rule.enabled ||
+          (rule.scope.agents !== "all" && !rule.scope.agents.includes("codex")) ||
+          (rule.scope.events.every((event) => event.startsWith("runtime:")) &&
+            rule.target.type === "ask_user"),
+      ),
+    )
+  )
+    return { ...opts, interactive: true };
   if (backend !== "claude")
     throw new Error(
       `Backend ${backend} has no verified ORC rule interception; use claude or a separately validated native hook`,
@@ -35,6 +49,15 @@ export async function sessionRules(backend: string, opts: SessionOpts): Promise<
   return {
     ...opts,
     ruleGuard: {
+      humanWaitSeconds: Math.max(
+        0,
+        ...policies.flatMap(
+          (policy) =>
+            policy.policy?.rules.map((rule) =>
+              rule.enabled && rule.target.type === "ask_user" ? rule.target.expires_in_seconds : 0,
+            ) ?? [],
+        ),
+      ),
       builtinActions: opts.ruleBuiltinActions !== false,
       context: `ORC rules active: ${policies.map((p) => p.id).join(", ")}. Pre-tool rules apply regardless of automatic permissions.`,
       evaluate: (event, validation) =>

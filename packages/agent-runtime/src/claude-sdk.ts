@@ -6,6 +6,7 @@ import {
   type SpawnedProcess,
   type SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
+import { ChatAnswersSchema, type ChatQuestion, ChatQuestionSchema } from "@orc/core/chat";
 import { ChatAgentOptionsSchema, type ClaudeChatOptions } from "@orc/core/chat-options";
 import {
   type ExecHost,
@@ -18,7 +19,10 @@ import {
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
+import { getSqlite } from "@orc/db/client";
+import { HumanRequestStore } from "@orc/db/human-requests";
 import { resolveClaudeSdkLaunch } from "./claude-executable.js";
+import { elicitationForm } from "./elicitation.js";
 import { sessionExecHost } from "./execution-host.js";
 import { buildOrcMcpServers, ORC_TOOL_PREFIX, ORC_TOOLS_RULE } from "./orc-mcp.js";
 import { registerBackend } from "./registry.js";
@@ -138,10 +142,16 @@ class ClaudeSDKSession implements AgentSession {
   readonly id = ulid();
 
   private runtimeSessionId: string | undefined;
+  private humanWaitCount = 0;
+  private readonly humanReceipts = new Map<string, { id: string; version: number }[]>();
   private done = false;
   private readonly eventQueue: AgentEvent[] = [];
   private resolveNext: (() => void) | null = null;
   private readonly permissionResolvers = new Map<string, (result: PermissionResult) => void>();
+  private readonly questionResolvers = new Map<
+    string,
+    { question: ChatQuestion; resolve: (answers: Record<string, string[]> | null) => void }
+  >();
   private abortController: AbortController | null = null;
   private readonly opts: SessionOpts;
   private readonly host: ExecHost;
@@ -156,6 +166,29 @@ class ClaudeSDKSession implements AgentSession {
     this.eventQueue.push(event);
     this.resolveNext?.();
     this.resolveNext = null;
+  }
+
+  private async waitForQuestion(
+    question: ChatQuestion,
+    signal: AbortSignal,
+  ): Promise<Record<string, string[]> | null> {
+    let cancel = () => {};
+    try {
+      return await new Promise<Record<string, string[]> | null>((resolve) => {
+        const requestId = question.requestId;
+        cancel = () => {
+          this.questionResolvers.delete(requestId);
+          this.push({ type: "request_resolved", data: { requestId } });
+          resolve(null);
+        };
+        this.questionResolvers.set(requestId, { question, resolve });
+        signal.addEventListener("abort", cancel, { once: true });
+        if (signal.aborted) cancel();
+        else this.push({ type: "question_request", data: question });
+      });
+    } finally {
+      signal.removeEventListener("abort", cancel);
+    }
   }
 
   async send(prompt: string): Promise<void> {
@@ -189,7 +222,17 @@ class ClaudeSDKSession implements AgentSession {
       });
 
       const rulesHook = this.opts.ruleGuard
-        ? createRulesHook(this.opts.ruleGuard, this.opts.cwd, (event) => this.push(event))
+        ? createRulesHook(
+            this.opts.ruleGuard,
+            this.opts.cwd,
+            (event) => this.push(event),
+            (waiting) => {
+              this.humanWaitCount = Math.max(0, this.humanWaitCount + (waiting ? 1 : -1));
+            },
+            (id, receipts) => {
+              this.humanReceipts.set(id, receipts);
+            },
+          )
         : undefined;
       const startupContext = this.opts.ruleGuard
         ? await sessionStartRuleContext(
@@ -216,7 +259,15 @@ class ClaudeSDKSession implements AgentSession {
                     (event) =>
                       event !== "SessionStart" &&
                       RULE_EVENT_ADAPTERS.claude.some((entry) => entry.native === event),
-                  ).map((event) => [event, [{ hooks: [rulesHook], timeout: 10 }]]),
+                  ).map((event) => [
+                    event,
+                    [
+                      {
+                        hooks: [rulesHook],
+                        timeout: Math.max(10, (this.opts.ruleGuard?.humanWaitSeconds ?? 0) + 15),
+                      },
+                    ],
+                  ]),
                 ),
               }
             : {}),
@@ -245,7 +296,25 @@ class ClaudeSDKSession implements AgentSession {
               .join("\n\n"),
           },
           ...(this.abortController ? { abortController: this.abortController } : {}),
-          canUseTool: async (toolName, input) => {
+          onElicitation: async (request, { signal }) => {
+            const requestId = ulid();
+            try {
+              const form = elicitationForm(requestId, request);
+              const result = await this.waitForQuestion(form.question, signal);
+              return result
+                ? { action: "accept", content: form.content(result) }
+                : { action: "cancel" };
+            } catch {
+              this.push({
+                type: "system_status",
+                data: "MCP form declined: secret, URL authentication, or unsupported input requires the native client",
+              });
+              return { action: "cancel" };
+            }
+          },
+          canUseTool: async (toolName, input, options) => {
+            const signal =
+              options?.signal ?? this.abortController?.signal ?? new AbortController().signal;
             if (this.opts.toolAllowlist !== undefined && toolName.startsWith(ORC_TOOL_PREFIX)) {
               return { behavior: "allow", updatedInput: input };
             }
@@ -258,18 +327,72 @@ class ClaudeSDKSession implements AgentSession {
                 message: "Tool is outside the agent profile whitelist",
               };
             }
+            const requestId = ulid();
+            if (signal.aborted) return { behavior: "deny", message: "Request cancelled" };
+            if (toolName === "AskUserQuestion") {
+              const source = input.questions;
+              if (!Array.isArray(source))
+                return { behavior: "deny", message: "Unsupported question format" };
+              const question = ChatQuestionSchema.parse({
+                requestId,
+                questions: source.map((value, index) => {
+                  const entry = value as Record<string, unknown>;
+                  return {
+                    id: `q-${index}`,
+                    header: entry.header ?? "Question",
+                    question: entry.question,
+                    multiSelect: entry.multiSelect,
+                    options: entry.options ?? null,
+                  };
+                }),
+              });
+              if (
+                new Set(question.questions.map((entry) => entry.question)).size !==
+                question.questions.length
+              )
+                return {
+                  behavior: "deny",
+                  message: "Duplicate question text cannot be answered unambiguously",
+                };
+              const result = await this.waitForQuestion(question, signal);
+              if (!result) return { behavior: "deny", message: "Question cancelled" };
+              return {
+                behavior: "allow",
+                updatedInput: {
+                  ...input,
+                  answers: Object.fromEntries(
+                    question.questions.map((entry) => [
+                      entry.question,
+                      result[entry.id]?.join(", ") ?? "",
+                    ]),
+                  ),
+                },
+              };
+            }
             if (this.opts.toolAllowlist !== undefined && this.opts.autoApprove)
               return { behavior: "allow", updatedInput: input };
-            const requestId = ulid();
             const command = JSON.stringify(input);
             logger.info("canUseTool called", { toolName, requestId });
             this.push({
               type: "permission_request",
-              data: { requestId, tool: toolName, command },
+              data: { requestId, tool: toolName, command, input, cwd: this.opts.cwd },
             });
-            const result = await new Promise<PermissionResult>((resolve) => {
-              this.permissionResolvers.set(requestId, resolve);
-            });
+            let cancel = () => {};
+            let result: PermissionResult;
+            try {
+              result = await new Promise<PermissionResult>((resolve) => {
+                cancel = () => {
+                  this.permissionResolvers.delete(requestId);
+                  this.push({ type: "request_resolved", data: { requestId } });
+                  resolve("denied");
+                };
+                this.permissionResolvers.set(requestId, resolve);
+                signal.addEventListener("abort", cancel, { once: true });
+                if (signal.aborted) cancel();
+              });
+            } finally {
+              signal.removeEventListener("abort", cancel);
+            }
             if (result === "approved" || result === "session") {
               return { behavior: "allow", updatedInput: input };
             }
@@ -308,6 +431,18 @@ class ClaudeSDKSession implements AgentSession {
 
         if (msg.type === "user" && Array.isArray(msg.message.content)) {
           for (const block of msg.message.content) {
+            if (block.type === "tool_result") {
+              const receipts = this.humanReceipts.get(block.tool_use_id);
+              if (receipts) {
+                const store = new HumanRequestStore(getSqlite());
+                for (const receipt of receipts) {
+                  const request = store.get(receipt.id);
+                  if (request.status === "answered" && request.version === receipt.version)
+                    store.acknowledge(receipt.id, receipt.version);
+                }
+                this.humanReceipts.delete(block.tool_use_id);
+              }
+            }
             if (block.type === "tool_result")
               this.push({
                 type: "tool_result",
@@ -357,10 +492,26 @@ class ClaudeSDKSession implements AgentSession {
 
   respondPermission(requestId: string, result: PermissionResult): void {
     const resolver = this.permissionResolvers.get(requestId);
-    if (resolver) {
-      this.permissionResolvers.delete(requestId);
-      resolver(result);
-    }
+    if (!resolver) throw new Error("This approval is no longer pending");
+    this.permissionResolvers.delete(requestId);
+    resolver(result);
+    this.push({ type: "request_resolved", data: { requestId } });
+  }
+
+  respondQuestion(requestId: string, answers: Record<string, string[]>): void {
+    const pending = this.questionResolvers.get(requestId);
+    if (!pending) throw new Error("This question is no longer pending");
+    const parsed = ChatAnswersSchema.parse(answers);
+    if (
+      Object.keys(parsed).length !== pending.question.questions.length ||
+      pending.question.questions.some(
+        (question) => !parsed[question.id]?.some((answer) => answer.trim()),
+      )
+    )
+      throw new Error("Answer every question before continuing");
+    this.questionResolvers.delete(requestId);
+    pending.resolve(parsed);
+    this.push({ type: "request_resolved", data: { requestId } });
   }
 
   async *events(): AsyncIterable<AgentEvent> {
@@ -385,6 +536,16 @@ class ClaudeSDKSession implements AgentSession {
   }
 
   async close(): Promise<void> {
+    this.humanWaitCount = 0;
+    const store = this.humanReceipts.size ? new HumanRequestStore(getSqlite()) : null;
+    for (const receipts of this.humanReceipts.values())
+      for (const receipt of receipts) {
+        const request = store?.get(receipt.id);
+        if (request?.status === "answered") store?.unavailable(request.id, request.version);
+      }
+    this.humanReceipts.clear();
+    for (const pending of this.questionResolvers.values()) pending.resolve(null);
+    this.questionResolvers.clear();
     for (const resolve of this.permissionResolvers.values()) resolve("denied");
     this.permissionResolvers.clear();
     this.abortController?.abort();
@@ -392,6 +553,10 @@ class ClaudeSDKSession implements AgentSession {
     this.done = true;
     this.resolveNext?.();
     this.resolveNext = null;
+  }
+
+  waitingForHuman(): boolean {
+    return this.humanWaitCount > 0;
   }
 }
 

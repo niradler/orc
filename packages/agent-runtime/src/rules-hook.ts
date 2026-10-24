@@ -1,4 +1,5 @@
 import type { HookCallback, SyncHookJSONOutput } from "@anthropic-ai/claude-agent-sdk";
+import { runHumanRuleActions } from "@orc/core/human-request-client";
 import { runRuleBuiltinActions } from "@orc/core/rule-builtin";
 import { processRuleCommand } from "@orc/core/rule-command";
 import { normalizeRuleHook, ruleHookOutput } from "@orc/core/rule-hooks";
@@ -34,8 +35,17 @@ export function createRulesHook(
   guard: SessionRuleGuard,
   cwd: string,
   emit: (event: AgentEvent) => void,
+  onHumanWait?: (waiting: boolean) => void,
+  onHumanResponse?: (toolUseId: string, receipts: { id: string; version: number }[]) => void,
 ): HookCallback {
-  return async (input, toolUseId) => {
+  return async (input, toolUseId, options) => {
+    let waiting = false;
+    const finishWaiting = () => {
+      if (waiting) {
+        waiting = false;
+        onHumanWait?.(false);
+      }
+    };
     try {
       const event = normalizeRuleHook("claude", input.hook_event_name, {
         ...input,
@@ -47,8 +57,17 @@ export function createRulesHook(
         : processRuleCommand(event, guard.evaluate(event), (replacement) =>
             guard.evaluate(replacement, true),
           );
-      const result =
-        guard.builtinActions === false ? decision : await runRuleBuiltinActions(event, decision);
+      if (decision.decision !== "deny" && decision.human_requests?.length) {
+        waiting = true;
+        onHumanWait?.(true);
+      }
+      const result = await runHumanRuleActions(
+        event,
+        guard.builtinActions === false ? decision : await runRuleBuiltinActions(event, decision),
+        options.signal,
+      );
+      finishWaiting();
+      if (result.human_receipts?.length) onHumanResponse?.(event.id, result.human_receipts);
       for (const error of result.action_errors ?? [])
         emit({ type: "system_status", data: `${error.rule_id}: ${error.reason}` });
       if (result?.decision === "deny") {
@@ -60,6 +79,7 @@ export function createRulesHook(
       }
       return ruleHookOutput("claude", event, result) as SyncHookJSONOutput;
     } catch (error) {
+      finishWaiting();
       const reason = `ORC rule evaluation unavailable: ${String(error)}`;
       emit({ type: "system_status", data: reason });
       if (input.hook_event_name === "PreToolUse")

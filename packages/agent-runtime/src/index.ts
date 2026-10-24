@@ -14,6 +14,7 @@ export {
   listRegisteredBackends,
   registerBackend,
 } from "./registry.js";
+export { sessionRules } from "./rules.js";
 export { openAgentSession, pickUsableBackend } from "./session-factory.js";
 export type {
   AgentBackend,

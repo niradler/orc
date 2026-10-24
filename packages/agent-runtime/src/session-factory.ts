@@ -88,6 +88,13 @@ export async function openAgentSession(
       getRuntimeSessionId: () => session.getRuntimeSessionId?.(),
       send: (prompt, images) => session.send(`${context}\n\n${prompt}`, images),
       respondPermission: (requestId, result) => session.respondPermission(requestId, result),
+      ...(session.respondQuestion
+        ? {
+            respondQuestion: (id: string, answers: Record<string, string[]>) =>
+              session.respondQuestion?.(id, answers),
+          }
+        : {}),
+      waitingForHuman: () => session.waitingForHuman?.() === true,
       events: () => session.events(),
       alive: () => session.alive(),
       close: () => session.close(),

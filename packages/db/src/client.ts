@@ -6,6 +6,7 @@ import { drizzle } from "drizzle-orm/bun-sqlite";
 import { installAudit } from "./audit.js";
 import { installChangeTracking, stopChangeTracking } from "./changes.js";
 import { installChat } from "./chat.js";
+import { HumanRequestStore } from "./human-requests.js";
 import { installKnowledgeBases } from "./kb.js";
 import { installMemories } from "./memories.js";
 import { installReusableWebhooks } from "./reusable-webhooks.js";
@@ -529,6 +530,7 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   installSkillHistory(sqlite);
   installMemories(sqlite);
   installRules(sqlite);
+  new HumanRequestStore(sqlite);
 
   installChangeTracking(sqlite, path);
 

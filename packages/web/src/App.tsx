@@ -36,6 +36,7 @@ const Rules = lazy(() => import("@/views/Rules"));
 
 const Sessions = lazy(() => import("@/views/Sessions"));
 const Audit = lazy(() => import("@/views/Audit"));
+const Attention = lazy(() => import("@/views/Attention"));
 
 const Settings = lazy(() => import("@/views/Settings"));
 
@@ -229,6 +230,7 @@ export default function App() {
                     <Routes>
                       <Route path="/" element={<DefaultWorkspaceRedirect />} />
                       <Route path="/activity" element={<Dashboard projectId={projectId} />} />
+                      <Route path="/attention" element={<Attention />} />
                       <Route path="/overview" element={<LegacyActivityRedirect />} />
                       <Route path="/dashboard" element={<LegacyActivityRedirect />} />
                       <Route path="/tasks" element={<Tasks projectId={projectId} />} />

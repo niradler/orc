@@ -17,6 +17,7 @@ import { gatewayRouter } from "./routes/gateway.js";
 import { gitRouter } from "./routes/git.js";
 import { githubRouter } from "./routes/github.js";
 import { healthRouter } from "./routes/health.js";
+import { humanRequestsRouter } from "./routes/human-requests.js";
 import { jobsRouter } from "./routes/jobs.js";
 import { knowledgeRouter } from "./routes/knowledge.js";
 import { mcpRouter } from "./routes/mcp.js";
@@ -106,6 +107,7 @@ export function createApp() {
   app.route("/api", sshRouter);
   app.route("/api", chatRouter);
   app.route("/api", healthRouter);
+  app.route("/api", humanRequestsRouter);
   app.route("/api", settingsRouter);
   app.route("/api", systemRouter);
   app.route("/api", mcpToolRouter);

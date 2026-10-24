@@ -4,6 +4,8 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./human-requests": "./src/human-requests.ts",
+    "./human-request-client": "./src/human-request-client.ts",
     "./chat": "./src/chat.ts",
     "./chat-options": "./src/chat-options.ts",
     "./process-supervisor": "./src/process-supervisor.ts",

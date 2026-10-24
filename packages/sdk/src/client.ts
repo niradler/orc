@@ -1,4 +1,5 @@
 import { loadConfig } from "@orc/core/config";
+import type { HumanRequest, HumanRequestInput, HumanResponse } from "@orc/core/human-requests";
 import type {
   KbCallSource,
   KbComment,
@@ -232,6 +233,17 @@ export function createOrcClient(options?: OrcClientOptions) {
       get: (id: string) => c<SessionHandoff>("GET", `/session-handoffs/${encodeURIComponent(id)}`),
       prepare: (id: string) =>
         c<SessionHandoff>("POST", `/session-handoffs/${encodeURIComponent(id)}/prepare`),
+    },
+    humanRequests: {
+      list: () => c<HumanRequest[]>("GET", "/human-requests"),
+      create: (input: HumanRequestInput) => c<HumanRequest>("POST", "/human-requests", input),
+      get: (id: string) => c<HumanRequest>("GET", `/human-requests/${e(id)}`),
+      respond: (id: string, version: number, response: HumanResponse) =>
+        c<HumanRequest>("POST", `/human-requests/${e(id)}/respond`, { version, response }),
+      acknowledge: (id: string, version: number) =>
+        c<HumanRequest>("POST", `/human-requests/${e(id)}/acknowledge`, { version }),
+      cancel: (id: string, version: number) =>
+        c<HumanRequest>("POST", `/human-requests/${e(id)}/cancel`, { version }),
     },
     rules: {
       catalog: () => c<{ templates: RuleTemplate[] }>("GET", "/rules/catalog"),

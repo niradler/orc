@@ -4,6 +4,7 @@ import { loadConfig } from "@orc/core/config";
 import { ORC_VERSION } from "@orc/core/version";
 import { Command } from "commander";
 import { agentCommand, agentPackageCommand } from "./commands/agent.js";
+import { attentionCommand } from "./commands/attention.js";
 import { daemonCommand, ORC_HOME, ORC_PID, readDaemonPid } from "./commands/daemon.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { flowCommand } from "./commands/flow.js";
@@ -64,6 +65,7 @@ const program = new Command()
   });
 
 program.addCommand(taskCommand());
+program.addCommand(attentionCommand());
 program.addCommand(rulesCommand());
 program.addCommand(projectCommand());
 program.addCommand(memCommand());

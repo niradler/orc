@@ -114,21 +114,28 @@ describe.skipIf(!win)("ensureOnWindowsUserPath", () => {
       expect(userPath().split(";")).toContain(dir);
       expect(ensureOnWindowsUserPath(dir)).toBe(false);
     } finally {
-      const cleaned = userPath()
-        .split(";")
-        .filter((entry) => entry !== dir)
-        .join(";");
       const result = spawnSync(
         "powershell",
         [
           "-NoProfile",
+          "-NonInteractive",
           "-Command",
-          `[Environment]::SetEnvironmentVariable('Path','${cleaned.replaceAll("'", "''")}','User')`,
+          [
+            "$ErrorActionPreference = 'Stop'",
+            `$dir = '${dir.replaceAll("'", "''")}'`,
+            "$key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)",
+            "try {",
+            "$path = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)",
+            "$updated = (($path -split ';') | Where-Object { $_ -ne $dir }) -join ';'",
+            "$key.SetValue('Path', $updated, $key.GetValueKind('Path'))",
+            "} finally { $key.Dispose() }",
+          ].join("\n"),
         ],
         { timeout: 20000, windowsHide: true },
       );
       expect(result.status).toBe(0);
+      expect(userPath().split(";")).not.toContain(dir);
     }
-    // Cleanup retains .NET's full notification; registration itself must be fast.
+    // Cleanup preserves registry value kind and other entries without a blocking desktop broadcast.
   }, 30_000);
 });

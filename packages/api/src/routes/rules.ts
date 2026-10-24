@@ -1,15 +1,22 @@
+import { createHash } from "node:crypto";
 import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
+import { ConflictError, ForbiddenError } from "@orc/core/errors";
+import { resolveExecHost } from "@orc/core/exec-host";
+import { HumanRequestSchema } from "@orc/core/human-requests";
 import { RULE_CATALOG } from "@orc/core/rule-catalog";
 import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
+import { nativeHookQuestions } from "@orc/core/rule-hooks";
 import {
   EventRuleSchema,
+  RuleAskUserSchema,
   RuleCommandProcessorSchema,
   RuleOrcActionSchema,
   RuleScriptSchema,
 } from "@orc/core/rule-types";
 import { RuleEventSchema, RulePolicySchema } from "@orc/core/rules";
 import { getSqlite } from "@orc/db/client";
+import { HumanRequestStore } from "@orc/db/human-requests";
 import { RuleStore } from "@orc/db/rules";
 import { bodyLimit } from "hono/body-limit";
 import { createRouter } from "../lib/router.js";
@@ -18,6 +25,15 @@ import { executeBuiltinRuleAction } from "../rule-builtins.js";
 const app = createRouter();
 app.use("/rules/*", bodyLimit({ maxSize: 1_200_000 }));
 const ResultSchema = z.object({
+  human_requests: z
+    .array(
+      z.object({
+        rule_id: z.string(),
+        revision_id: z.string().optional(),
+        target: RuleAskUserSchema,
+      }),
+    )
+    .optional(),
   orc_actions: z
     .array(
       z.object({
@@ -47,6 +63,106 @@ const RevisionSchema = z.object({
   current: z.boolean(),
 });
 const controls = (): RuleStore => new RuleStore(getSqlite());
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/rules/human-request",
+    tags: ["Rules"],
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                event: RuleEventSchema,
+                revision_id: z.string().min(1).max(128),
+                rule_id: z.string().min(1).max(128),
+                question_index: z.number().int().min(0).max(19).optional(),
+                proposed_input: z.record(z.string(), z.unknown()).optional(),
+              })
+              .strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Durable request for a matching active Ask user rule",
+        content: { "application/json": { schema: HumanRequestSchema } },
+      },
+    },
+  }),
+  (c) => {
+    if (!loadConfig().rules.enabled) throw new ForbiddenError("Rules are disabled");
+    const input = c.req.valid("json");
+    const rules = controls();
+    const revision = rules.active(input.event.cwd).find((entry) => entry.id === input.revision_id);
+    const evaluation = rules.evaluateCommand(input.event);
+    const action = evaluation.human_requests?.find(
+      (entry) => entry.rule_id === input.rule_id && entry.revision_id === input.revision_id,
+    );
+    if (!revision || !action)
+      throw new ConflictError("Ask user rule no longer matches; reload policy");
+    const effectiveInput = evaluation.updated_input ?? input.event.input;
+    if (
+      JSON.stringify(input.proposed_input ?? input.event.input) !== JSON.stringify(effectiveInput)
+    )
+      throw new ConflictError("Proposed action changed before human review");
+    const host = resolveExecHost();
+    const questions = action.target.kind === "question" ? nativeHookQuestions(input.event) : [];
+    const question =
+      input.question_index === undefined ? undefined : questions[input.question_index];
+    if ((questions.length && !question) || (input.question_index !== undefined && !question))
+      throw new ConflictError("Native question index is required and must match the tool input");
+    if (question?.isSecret) throw new ForbiddenError("Secret questions cannot enter the inbox");
+    return c.json(
+      new HumanRequestStore(getSqlite()).create(
+        {
+          origin: {
+            session_id: input.event.session_id,
+            backend: input.event.backend,
+            tool_call_id: input.event.id,
+            request_id: createHash("sha256")
+              .update(
+                JSON.stringify([
+                  input.event.id,
+                  input.rule_id,
+                  input.revision_id,
+                  input.question_index,
+                ]),
+              )
+              .digest("hex"),
+          },
+          project_id: revision.project_id,
+          rule_binding: {
+            revision_id: revision.id,
+            rule_id: input.rule_id,
+            workspace: revision.workspace,
+          },
+          kind: action.target.kind,
+          prompt: question?.question ?? action.target.prompt,
+          choices: question?.options?.map((option) => option.label) ?? action.target.choices,
+          choice_descriptions: Object.fromEntries(
+            question?.options?.map((option) => [option.label, option.description]) ?? [],
+          ),
+          multi_select: question?.multiSelect ?? false,
+          notify: action.target.notify,
+          expires_in_seconds: action.target.expires_in_seconds,
+          action: {
+            tool: input.event.tool ?? input.event.phase,
+            input: effectiveInput,
+            cwd: input.event.cwd,
+            host: host.kind === "ssh" ? host.alias : "local",
+          },
+        },
+        c.req.header("X-ORC-Human-Owner")
+          ? z.string().uuid().parse(c.req.header("X-ORC-Human-Owner"))
+          : undefined,
+      ),
+      200,
+    );
+  },
+);
 app.openapi(
   createRoute({
     method: "post",

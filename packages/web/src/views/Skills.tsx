@@ -413,6 +413,7 @@ export default function Skills({ projectId }: { projectId: string }) {
                   <TableCell className="font-body text-sm font-medium text-on-surface">
                     <button
                       type="button"
+                      data-testid="skill-open"
                       className="min-h-11 text-left hover:text-primary"
                       onClick={(event) => {
                         event.stopPropagation();

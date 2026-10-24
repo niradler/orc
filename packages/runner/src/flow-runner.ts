@@ -1953,7 +1953,11 @@ export async function cleanupStaleFlowSessions(): Promise<number> {
     created_at: number;
   }[];
 
-  for (const session of stale) {
+  const reapable = stale.filter(
+    (session) =>
+      session.created_at < lifetimeCutoff || !liveSessions.get(session.id)?.waitingForHuman?.(),
+  );
+  for (const session of reapable) {
     const reason = session.created_at < lifetimeCutoff ? "max lifetime exceeded" : "idle timeout";
     closeLiveSession(session.id);
     sqlite
@@ -1988,7 +1992,7 @@ export async function cleanupStaleFlowSessions(): Promise<number> {
     logger.warn(`Cleaned up stale ${session.role} session ${session.id} (${reason})`);
   }
 
-  return stale.length;
+  return reapable.length;
 }
 
 // ---------------------------------------------------------------------------

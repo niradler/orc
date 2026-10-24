@@ -217,9 +217,12 @@ test("shows GitHub repositories and sorts groups without losing skill selection"
         },
       }),
     );
+  await page.route("**/api/skills?**", async (route) => {
+    const url = new URL(route.request().url());
+    url.searchParams.set("q", prefix);
+    await route.fulfill({ response: await route.fetch({ url: url.toString() }) });
+  });
   await gotoView(page, "skills");
-  await page.getByTestId("skill-search-input").fill(prefix);
-  await page.getByTestId("skill-search-submit").click();
   const rows = page.getByTestId("skill-row");
   const header = page.getByTestId("skill-repository-header");
   await expect(rows).toHaveCount(4);

@@ -1,9 +1,10 @@
-import { Menu, MessageSquare } from "lucide-react";
+import { Bell, Menu, MessageSquare } from "lucide-react";
 import type { Ref } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { CommandPalette } from "@/components/CommandPalette";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { useHumanRequests } from "@/hooks/useHumanRequests";
 import { useProjects } from "@/hooks/useProjects";
 import { persistTheme, useTheme } from "@/lib/theme";
 import { workspaceDestination, workspacePage, workspaceSection } from "@/lib/workspace-navigation";
@@ -27,6 +28,11 @@ export function WorkspaceHeader({
 }) {
   const { pathname, search } = useLocation();
   const { data: projects } = useProjects({ status: "active" });
+  const { data: humanRequests } = useHumanRequests();
+  const attentionCount =
+    humanRequests?.filter(
+      (request) => request.status === "pending" || request.status === "unavailable",
+    ).length ?? 0;
   const { theme, setTheme, error: themeError } = useTheme();
   const section = workspaceSection(pathname);
   const name =
@@ -59,6 +65,18 @@ export function WorkspaceHeader({
           <span className="mx-2">/</span>
           {workspacePage(pathname)?.label ?? "Projects"}
         </div>
+        <NavLink
+          data-testid="attention-indicator"
+          to={workspaceDestination("/attention", projectId, search)}
+          aria-label={`Attention needed: ${attentionCount} requests`}
+          className={buttonVariants({ variant: attentionCount ? "outline" : "ghost", size: "sm" })}
+        >
+          <Bell size={16} />
+          <span className="hidden sm:inline">Attention</span>
+          {attentionCount > 0 && (
+            <span className="rounded bg-surface-highest px-1.5 text-xs">{attentionCount}</span>
+          )}
+        </NavLink>
         <CommandPalette
           projectId={projectId}
           onProjectChange={onProjectChange}

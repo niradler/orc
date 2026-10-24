@@ -46,7 +46,13 @@ export type AgentEvent =
     }
   | {
       type: "permission_request";
-      data: { requestId: string; tool: string; command: string };
+      data: {
+        requestId: string;
+        tool: string;
+        command: string;
+        input?: Record<string, unknown>;
+        cwd?: string;
+      };
     }
   | {
       type: "result";
@@ -64,6 +70,7 @@ export interface AgentSession {
   respondQuestion?(requestId: string, answers: Record<string, string[]>): void | Promise<void>;
   events(): AsyncIterable<AgentEvent>;
   alive(): boolean;
+  waitingForHuman?(): boolean;
   close(): Promise<void>;
 }
 

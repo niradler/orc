@@ -131,6 +131,9 @@ export function evaluateRules(
     } else if (target.type === "orc_action") {
       result.orc_actions ??= [];
       result.orc_actions.push({ rule_id: rule.id, target });
+    } else if (target.type === "ask_user") {
+      result.human_requests ??= [];
+      result.human_requests.push({ rule_id: rule.id, target });
     } else {
       result.scripts ??= [];
       result.scripts.push({ rule_id: rule.id, target });

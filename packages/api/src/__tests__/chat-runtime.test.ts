@@ -13,6 +13,7 @@ import {
 import { type ChatEvent, ChatHistoryPageSchema, type ChatThread } from "@orc/core/chat";
 import { resetConfig, updateGlobalConfig } from "@orc/core/config";
 import { getDb, getSqlite } from "@orc/db/client";
+import { RuleStore } from "@orc/db/rules";
 import { bridge_chats, gateway_sessions } from "@orc/db/schema";
 import type { createApp } from "../server";
 import { LIVE_CHAT_ID } from "../session-watcher";
@@ -27,6 +28,7 @@ const oldProfile = process.env.USERPROFILE;
 const oldMock = process.env.ORC_E2E_CHAT_MOCK;
 let failResume = false;
 let waitPermission = false;
+let durableHumanWait = false;
 let waitQuestion = false;
 let questionAnswers: Record<string, string[]> | undefined;
 let failBeforeResult = false;
@@ -54,6 +56,7 @@ function session(call: (typeof calls)[number]): AgentSession {
       resolve?.();
     },
     alive: () => true,
+    waitingForHuman: () => durableHumanWait,
     close: async () => {
       closed++;
       resolve?.();
@@ -168,6 +171,55 @@ afterAll(() => {
 });
 
 describe("native chat runtime", () => {
+  test("should admit Codex native pause policies while refusing policies it cannot enforce", async () => {
+    const previous = process.env.ORC_RULES_ENABLED;
+    process.env.ORC_RULES_ENABLED = "true";
+    resetConfig();
+    try {
+      const store = new RuleStore(getSqlite());
+      const policy = {
+        workspace: process.cwd(),
+        project_id: null,
+        rules: [
+          {
+            id: "pause",
+            kind: "event",
+            enabled: true,
+            reason: "Review",
+            scope: { agents: ["codex"], events: ["runtime:permission_request"] },
+            filter: { match: "all", conditions: [] },
+            target: { type: "ask_user", kind: "approval", prompt: "Review" },
+          },
+        ],
+      };
+      const revision = store.activate(policy, null, "Native pause policy");
+      const result = await turn({
+        messages: [{ role: "user", content: "protected native turn" }],
+        agent: "codex",
+      });
+      expect(result.events.some((event) => event.type === "done")).toBe(true);
+      const count = calls.length;
+      store.activate(
+        { ...policy, rules: [{ ...policy.rules[0], target: { type: "block" } }] },
+        revision.id,
+        "Unsupported native policy",
+      );
+      expect(
+        (
+          await request("/chat/stream", {
+            messages: [{ role: "user", content: "unsupported policy" }],
+            agent: "codex",
+          })
+        ).status,
+      ).toBe(503);
+      expect(calls).toHaveLength(count);
+    } finally {
+      if (previous === undefined) delete process.env.ORC_RULES_ENABLED;
+      else process.env.ORC_RULES_ENABLED = previous;
+      resetConfig();
+      calls.length = 0;
+    }
+  });
   test("a failed first turn cannot silently start a fresh agent on follow-up", async () => {
     failBeforeResult = true;
     const failed = await turn({
@@ -654,6 +706,61 @@ describe("native chat runtime", () => {
       messages: [{ role: "user", content: "continue after stopping" }],
     });
     expect(calls[calls.length - 1]?.id).toBe("early-native-fixture");
+  });
+
+  test("should keep an attention-managed human wait alive after browser disconnection", async () => {
+    waitPermission = true;
+    durableHumanWait = true;
+    const controller = new AbortController();
+    const response = await app.request("/api/chat/stream", {
+      method: "POST",
+      headers: AUTH,
+      signal: controller.signal,
+      body: JSON.stringify({ messages: [{ role: "user", content: "durable human wait" }] }),
+    });
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("No stream");
+    try {
+      let text = "";
+      const decoder = new TextDecoder();
+      while (!text.includes('"permission_request"')) {
+        const part = await reader.read();
+        if (part.done) throw new Error("Ended early");
+        text += decoder.decode(part.value);
+      }
+      const opened = text
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => JSON.parse(line.slice(5)))
+        .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+      const previousClosed = closed;
+      controller.abort();
+      expect(closed).toBe(previousClosed);
+      expect(
+        (
+          await request(`/chat/runs/${opened.runId}/permission`, {
+            requestId: "permission-1",
+            decision: "approved",
+          })
+        ).status,
+      ).toBe(200);
+      const deadline = Date.now() + 3000;
+      let saved: ChatThread | undefined;
+      while (Date.now() < deadline) {
+        saved = (await (await request(`/chat/threads/${opened.thread.id}`)).json()) as ChatThread;
+        if (saved.messages.some((message) => message.content === "Hello from the native session"))
+          break;
+        await Bun.sleep(10);
+      }
+      expect(
+        saved?.messages.some((message) => message.content === "Hello from the native session"),
+      ).toBe(true);
+      expect(decision).toBe("approved");
+    } finally {
+      durableHumanWait = false;
+      waitPermission = false;
+      reader.releaseLock();
+    }
   });
 
   test("database failures release workers and report unsaved responses", async () => {

@@ -27,7 +27,10 @@ for (const viewport of [
       ],
     });
     await gotoView(page, "skills");
-    await page.locator(`[data-testid="skill-row"][data-skill-name="${name}"]`).click();
+    await page
+      .locator(`[data-testid="skill-row"][data-skill-name="${name}"]`)
+      .getByTestId("skill-open")
+      .click();
     const preview = page.getByTestId("markdown-preview");
     await expect(preview).toContainText("Readable document");
     await expect(preview.locator("h1")).toHaveCSS("font-size", "24px");
@@ -74,7 +77,10 @@ for (const viewport of [
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("markdown-editor")).toHaveAttribute("data-expanded", "false");
     await page.getByTestId("sheet-close").click();
-    await page.locator(`[data-testid="skill-row"][data-skill-name="${name}"]`).click();
+    await page
+      .locator(`[data-testid="skill-row"][data-skill-name="${name}"]`)
+      .getByTestId("skill-open")
+      .click();
     await expect(page.getByTestId("markdown-preview")).toContainText(
       "Saved through the reusable workspace",
     );
@@ -86,7 +92,10 @@ for (const viewport of [
     await page.getByTestId("document-save").click();
     await expect(page.getByTestId("document-save-status")).toHaveText("Saved");
     await page.getByTestId("sheet-close").click();
-    await page.locator(`[data-testid="skill-row"][data-skill-name="${name}"]`).click();
+    await page
+      .locator(`[data-testid="skill-row"][data-skill-name="${name}"]`)
+      .getByTestId("skill-open")
+      .click();
     await page.locator('[data-testid="skill-file"][data-file-name="references/guide.md"]').click();
     await expect(page.getByTestId("skill-file-content")).toContainText("Saved supporting Markdown");
     await page.getByTestId("markdown-mode-read").click();

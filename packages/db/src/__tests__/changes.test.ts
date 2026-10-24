@@ -5,9 +5,41 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { changes, type ResourceChange } from "@orc/core/changes";
 import { installChangeTracking, stopChangeTracking } from "../changes.js";
+import { HumanRequestStore } from "../human-requests.js";
 import { installKnowledgeBases } from "../kb.js";
 
 describe("database change notifications", () => {
+  test("should publish human request transitions but ignore waiting-owner heartbeats", async () => {
+    const sqlite = new Database(":memory:");
+    let now = 1000;
+    const store = new HumanRequestStore(sqlite, () => now);
+    installChangeTracking(sqlite, ":memory:");
+    const events: ResourceChange[] = [];
+    const unsubscribe = changes.subscribe((event) => events.push(event));
+    try {
+      const request = store.create(
+        {
+          origin: { session_id: "s", backend: "claude", request_id: "q" },
+          kind: "question",
+          prompt: "Choose",
+        },
+        "owner",
+      );
+      await Bun.sleep(50);
+      expect(events).toEqual([{ resources: ["human-requests"] }]);
+      events.length = 0;
+      now += 1000;
+      store.heartbeat(request.id, "owner");
+      await Bun.sleep(50);
+      expect(events).toEqual([]);
+      store.respond(request.id, 1, { kind: "question", answer: "Blue" });
+      await Bun.sleep(50);
+      expect(events).toEqual([{ resources: ["human-requests"] }]);
+    } finally {
+      unsubscribe();
+      sqlite.close();
+    }
+  });
   test("should identify skill counter updates separately from skill content changes", async () => {
     const sqlite = new Database(":memory:");
     sqlite.exec("CREATE TABLE skill_usage(skill_name TEXT, read_count INTEGER)");

@@ -125,6 +125,7 @@ test.describe("Sessions", () => {
     await expect(page.getByTestId("logged-sessions")).toHaveCount(0);
     await expect(page.locator('nav[aria-label="Activity pages"] a')).toHaveText([
       "Activity",
+      "Attention needed",
       "Sessions",
       "Jobs",
       "Webhooks",

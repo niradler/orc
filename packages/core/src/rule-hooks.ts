@@ -1,8 +1,22 @@
 import { createHash, randomUUID } from "node:crypto";
+import { ChatQuestionSchema } from "./chat.js";
 import { RULE_EVENT_ADAPTERS, type RuleHookBackend, ruleEventCapability } from "./rule-events.js";
 import { type RuleDecision, type RuleEvent, RuleEventSchema } from "./rules.js";
 
 export type { RuleHookBackend } from "./rule-events.js";
+export function nativeHookQuestions(event: RuleEvent) {
+  if (event.backend !== "claude" || event.phase !== "pre_tool" || event.tool !== "AskUserQuestion")
+    return [];
+  const source = event.input.questions;
+  if (!Array.isArray(source)) throw new Error("Unsupported native questions");
+  return ChatQuestionSchema.parse({
+    requestId: event.id,
+    questions: source.map((raw, index) => {
+      const value = raw as Record<string, unknown>;
+      return { ...value, id: `q-${index}`, header: value.header ?? "Question" };
+    }),
+  }).questions;
+}
 export function normalizeRuleHook(
   backend: RuleHookBackend,
   event: string,
@@ -78,13 +92,21 @@ export function ruleHookOutput(
     throw new Error("Rule denied an event without blocking support");
   if (context && !capability?.context)
     throw new Error("Rule context cannot be delivered on this event");
-  if (!denied && !context && !updatedInput) return {};
+  if (!denied && !context && !updatedInput && !result.human_approved) return {};
   const native = capability?.native;
+  if (backend === "claude" && native === "PermissionRequest")
+    return {
+      hookSpecificOutput: {
+        hookEventName: native,
+        decision: denied ? { behavior: "deny", message: reason } : { behavior: "allow" },
+      },
+    };
   if (backend === "cursor") {
     if (denied)
       return event.phase === "prompt_submit"
         ? { continue: false }
         : { permission: "deny", user_message: reason, agent_message: reason };
+    if (result.human_approved) return { permission: "allow" };
     return { additional_context: context };
   }
   if (backend === "gemini")
@@ -104,6 +126,7 @@ export function ruleHookOutput(
     hookSpecificOutput: {
       hookEventName: native,
       ...(denied ? { permissionDecision: "deny", permissionDecisionReason: reason } : {}),
+      ...(!denied && result.human_approved ? { permissionDecision: "allow" } : {}),
       ...(context ? { additionalContext: context } : {}),
       ...(updatedInput ? { updatedInput } : {}),
     },

@@ -5,6 +5,7 @@ export const WORKSPACE_SECTIONS = [
     path: "/activity",
     pages: [
       { id: "dashboard", label: "Activity", path: "/activity" },
+      { id: "attention", label: "Attention needed", path: "/attention" },
       { id: "sessions", label: "Sessions", path: "/sessions" },
       { id: "jobs", label: "Jobs", path: "/jobs" },
       { id: "webhooks", label: "Webhooks", path: "/webhooks" },
