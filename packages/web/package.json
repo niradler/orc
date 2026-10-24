@@ -1,6 +1,6 @@
 {
   "name": "@orc/web",
-  "version": "0.1.41",
+  "version": "0.1.42",
   "type": "module",
   "scripts": {
     "dev": "bun --env-file ../../.env vite",
