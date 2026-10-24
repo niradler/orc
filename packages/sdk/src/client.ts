@@ -425,6 +425,10 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     skills: {
+      projects: (name: string) =>
+        c<{ project_ids: string[] }>("GET", `/skills/${e(name)}/projects`),
+      setProjects: (name: string, project_ids: string[]) =>
+        c<{ project_ids: string[] }>("PUT", `/skills/${e(name)}/projects`, { project_ids }),
       download: (name: string, ref: string, scope: ScopeQuery = {}) =>
         c<SkillDownload>("POST", `/skills/${e(name)}/download`, { ref, ...scope }),
       visibility: () => c<SkillVisibility>("GET", "/skills/settings/visibility"),
@@ -472,9 +476,16 @@ export function createOrcClient(options?: OrcClientOptions) {
         reload?: boolean;
         project_id?: string;
         scope?: "global";
+        limit?: number;
+        offset?: number;
+        sort?: "reads" | "recent";
       }) =>
         c<{
           skills: SkillMeta[];
+          total: number;
+          limit: number;
+          offset: number;
+          next_offset: number | null;
           broken: BrokenAgent[];
           warnings: Array<{ path: string; message: string }>;
         }>(
@@ -628,6 +639,7 @@ export function createOrcClient(options?: OrcClientOptions) {
       archiveSearch: (params: {
         q?: string;
         project_id?: string;
+        project_ids?: string;
         offset?: number;
         limit?: number;
         agent?: string;

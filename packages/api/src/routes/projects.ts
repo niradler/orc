@@ -400,6 +400,14 @@ app.openapi(deleteRoute, async (c) => {
   if (!existing) throw new NotFoundError("Project", id);
   // Knowledge bases are scoped deliberately; deleting the project must not silently re-scope them.
   const sqlite = (db as unknown as { $client: Database }).$client;
+  const assignedSkills =
+    sqlite
+      .query<{ count: number }, [string]>(
+        "SELECT count(*) AS count FROM skill_projects WHERE project_id=?",
+      )
+      .get(id)?.count ?? 0;
+  if (assignedSkills > 0)
+    throw new ConflictError(`Project has ${assignedSkills} assigned skills; reassign them first`);
   const kbs = projectKbCount(sqlite, id);
   if (kbs > 0)
     throw new ConflictError(

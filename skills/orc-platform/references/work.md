@@ -9,6 +9,12 @@ Sources: [Task flows](https://github.com/niradler/orc/blob/master/docs/task-flow
 Discover the project with `project_list` or `orc project list`; inspect its folder
 scope and execution host. MCP `project` arguments take readable names. CLI defaults
 to the configured active project; use its explicit project option when appropriate.
+For HTTP MCP, `?project=orc` sets connection-wide defaults, while
+`?projects=orc,project2` combines selected projects' lists/searches and defaults
+new work to the first project. A tool's explicit project can select another
+project from that URL. See [MCP query parameters](setup.md#customize-the-http-mcp-connection)
+for `mode`, validation and examples; connection selection does not change the
+configured active project or relocate existing resources.
 Inspect `task_list`/`task_get` before creating work. Record outcome, acceptance
 criteria, constraints and expected artifacts in the task; keep progress in comments.
 Use dependency-linked batches only for useful separate work units.

@@ -374,6 +374,8 @@ export type {
 export type SkillVisibility = { hidden_builtins: string[]; hidden_skills: string[] };
 
 export type SkillMeta = {
+  project_ids?: string[];
+  score?: number;
   discovery_hidden?: boolean;
   mutation?: { id: string; project_id: string | null; updated_at: number; author: string };
   name: string;

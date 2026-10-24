@@ -835,8 +835,17 @@ export const api = {
       reload?: boolean;
       project_id?: string;
       scope?: "global";
+      limit?: number;
+      offset?: number;
     }) =>
-      req<{ skills: SkillMeta[]; broken: BrokenAgent[] }>(
+      req<{
+        skills: SkillMeta[];
+        broken: BrokenAgent[];
+        total: number;
+        offset: number;
+        limit: number;
+        next_offset: number | null;
+      }>(
         "GET",
         "/skills",
         undefined,

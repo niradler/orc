@@ -31,6 +31,8 @@ export type KbCallContext = {
   actor: KbActor;
   /** Active project for default scope (its KBs + global). */
   project_id?: string | null;
+  /** Selected MCP projects, in priority order. Limits discovery even for scope all. */
+  project_ids?: readonly string[];
 };
 
 export type KbUsageCounts = Record<KbCallSource, Record<KbReadKind, number>>;

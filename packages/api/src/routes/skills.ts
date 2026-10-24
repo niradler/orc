@@ -30,6 +30,76 @@ import { skillDownloads } from "../skill-downloads.js";
 
 const app = createRouter();
 
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/skills/{name}/projects",
+    tags: ["Skills"],
+    summary: "Read skill project assignments; an empty list means global",
+    request: { params: z.object({ name: z.string().min(1).max(100) }) },
+    responses: {
+      200: {
+        description: "Project assignments",
+        content: {
+          "application/json": {
+            schema: z.object({ project_ids: z.array(z.string()) }),
+          },
+        },
+      },
+      404: { description: "Skill not found" },
+    },
+  }),
+  (c) => {
+    const name = c.req.valid("param").name;
+    if (!listSkills({ include_hidden: true }).some((skill) => skill.name === name))
+      throw new NotFoundError("Skill", name);
+    return c.json({ project_ids: new SkillHistory(getSqlite()).projectIds(name) });
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "put",
+    path: "/skills/{name}/projects",
+    tags: ["Skills"],
+    summary: "Replace skill project assignments; an empty list makes the skill global",
+    request: {
+      params: z.object({ name: z.string().min(1).max(100) }),
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: z
+              .object({
+                project_ids: z.array(z.string().min(1).max(200)).max(500),
+              })
+              .strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Project assignments",
+        content: {
+          "application/json": {
+            schema: z.object({ project_ids: z.array(z.string()) }),
+          },
+        },
+      },
+      400: { description: "Invalid assignments" },
+      404: { description: "Skill or project not found" },
+    },
+  }),
+  (c) =>
+    c.json({
+      project_ids: new SkillHistory(getSqlite()).setProjects(
+        c.req.valid("param").name,
+        c.req.valid("json").project_ids,
+      ),
+    }),
+);
+
 const ORC_SOURCE_HEADER = "X-Orc-Source";
 
 app.openapi(
@@ -242,6 +312,11 @@ const SkillRefSchema = z
   .openapi("SkillRef");
 
 const SkillListItemSchema = SkillMetaSchema.extend({
+  project_ids: z.array(z.string()),
+  score: z
+    .number()
+    .optional()
+    .openapi({ description: "Relative search relevance; higher is better" }),
   read_count: z
     .number()
     .int()
@@ -304,13 +379,18 @@ const listRoute = createRoute({
   request: {
     query: z.object({
       ...ScopeQuerySchema.shape,
-      q: z.string().optional().openapi({ description: "Full-text search on name and description" }),
+      q: z
+        .string()
+        .max(500)
+        .optional()
+        .openapi({ description: "Hybrid lexical search; results sorted by relevance" }),
       source: z.enum(["builtin", "user"]).optional(),
       sort: z.enum(["reads", "recent"]).optional().openapi({
         description:
           "reads (default): most read first; recent: last read, updated or created first",
       }),
       limit: z.coerce.number().int().min(1).max(500).optional(),
+      offset: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).optional(),
       reload: z.coerce.boolean().optional().openapi({ description: "Force cache rebuild" }),
       include_hidden: z
         .enum(["true", "false"])
@@ -326,6 +406,9 @@ const listRoute = createRoute({
           schema: z.object({
             skills: z.array(SkillListItemSchema),
             total: z.number().int(),
+            offset: z.number().int(),
+            limit: z.number().int(),
+            next_offset: z.number().int().nullable(),
             broken: z.array(z.object({ path: z.string(), error: z.string() })),
             warnings: z.array(z.object({ path: z.string(), message: z.string() })),
           }),
@@ -730,7 +813,7 @@ app.openapi(
 );
 
 app.openapi(listRoute, (c) => {
-  const { q, source, sort, limit, reload, include_hidden } = c.req.valid("query");
+  const { q, source, sort, limit = 30, offset = 0, reload, include_hidden } = c.req.valid("query");
   const skills = new SkillHistory(getSqlite()).list(resolveScopeProject(c.req.valid("query")), {
     q,
     source: source as SkillSource | undefined,
@@ -739,8 +822,11 @@ app.openapi(listRoute, (c) => {
     include_hidden,
   });
   return c.json({
-    skills: limit === undefined ? skills : skills.slice(0, limit),
+    skills: skills.slice(offset, offset + limit),
     total: skills.length,
+    offset,
+    limit,
+    next_offset: offset + limit < skills.length ? offset + limit : null,
     broken: skillValidationIssues(),
     warnings: skillWarnings(),
   });

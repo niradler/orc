@@ -15,6 +15,13 @@ Call `context` first. Use current tool schemas and installed CLI help as the ope
 contract. Report missing capabilities rather than inventing calls or changing the
 installation as a side effect.
 
+Customize HTTP MCP with `mode=full|meta` and either `project=<name>` or
+`projects=<name1>,<name2>`. Project selection sets defaults across project-aware
+tools, including tasks, memories, jobs, knowledge and skills. Multiple projects
+combine discovery results; their order controls skill instruction priority and
+the default project for new resources. See [MCP query parameters](references/setup.md#customize-the-http-mcp-connection)
+for defaults, examples, validation and tool-level overrides.
+
 Read only the reference matching the request. Related operations share a file so
 one recipe does not require a chain of tiny reads.
 

@@ -1,7 +1,8 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { loadConfig } from "@orc/core/config";
+import { ValidationError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
-import { createMcpServer, type McpMode, parseMcpMode } from "@orc/mcp";
+import { createMcpServer, type McpMode, parseMcpMode, parseMcpProjects } from "@orc/mcp";
 import { Hono } from "hono";
 import { clientOrigin } from "../lib/client-origin.js";
 import { bearerAuth } from "../middleware/auth.js";
@@ -29,9 +30,13 @@ app.all("/mcp", async (c) => {
     return c.json({ error: err instanceof Error ? err.message : "Invalid mode" }, 400);
   }
   const origin = clientOrigin(c.req.raw);
+  if ((c.req.queries("project")?.length ?? 0) > 1 || (c.req.queries("projects")?.length ?? 0) > 1)
+    throw new ValidationError("Pass project/projects only once");
+  const projects = parseMcpProjects(c.req.query("project"), c.req.query("projects"));
   const server = createMcpServer({
     publicApiBaseUrl: origin,
     mode,
+    ...(projects ? { projects } : {}),
     skillDownload: (name, ref, projectId) => skillDownloads.mint(name, ref, projectId, origin),
   });
   const transport = new WebStandardStreamableHTTPServerTransport({});

@@ -60,11 +60,22 @@ export type ScopeInput = Pick<KbSearchRequest, "scope" | "kb_ids">;
 export function scopeKbs(
   e: Engine,
   input: ScopeInput,
-  projectId: string | null | undefined,
+  projectId: string | readonly string[] | null | undefined,
 ): KbRow[] {
   const scope = input.scope ?? "default";
   let rows: KbRow[];
-  if (scope === "all") rows = e.db.query("SELECT * FROM knowledge_bases").all() as KbRow[];
+  if (typeof projectId === "object" && projectId !== null) {
+    const placeholders = projectId.map(() => "?").join(",") || "NULL";
+    const predicate =
+      scope === "global"
+        ? "project_id IS NULL"
+        : scope === "project"
+          ? `project_id IN (${placeholders})`
+          : `(project_id IS NULL OR project_id IN (${placeholders}))`;
+    rows = e.db
+      .query(`SELECT * FROM knowledge_bases WHERE ${predicate}`)
+      .all(...(scope === "global" ? [] : projectId)) as KbRow[];
+  } else if (scope === "all") rows = e.db.query("SELECT * FROM knowledge_bases").all() as KbRow[];
   else if (scope === "global")
     rows = e.db.query("SELECT * FROM knowledge_bases WHERE project_id IS NULL").all() as KbRow[];
   else if (scope === "project")
@@ -95,7 +106,7 @@ export class Searcher {
 
   async search(
     raw: KbSearchRequest,
-    projectId: string | null | undefined,
+    projectId: string | readonly string[] | null | undefined,
   ): Promise<KbSearchResult> {
     const req = KbSearchSchema.parse(raw);
     const t0 = performance.now();
@@ -261,7 +272,7 @@ export class Searcher {
    */
   async evidence(
     raw: KbEvidenceRequest,
-    projectId: string | null | undefined,
+    projectId: string | readonly string[] | null | undefined,
   ): Promise<KbEvidencePack> {
     const req = KbEvidenceSchema.parse(raw);
     const result = await this.search(

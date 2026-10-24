@@ -355,7 +355,7 @@ export class KnowledgeService {
   // --- Knowledge bases -----------------------------------------------------------------------
 
   listKbs(ctx: KbCallContext, scope: KbScope = "default"): KnowledgeBase[] {
-    const rows = scopeKbs(this.engine, { scope }, ctx.project_id);
+    const rows = scopeKbs(this.engine, { scope }, ctx.project_ids ?? ctx.project_id);
     const counts = new Map(
       (
         this.db.query("SELECT kb_id, count(*) AS n FROM kb_documents GROUP BY kb_id").all() as {
@@ -1439,7 +1439,7 @@ export class KnowledgeService {
   // --- Search --------------------------------------------------------------------------------
 
   async search(ctx: KbCallContext, req: KbSearchRequest): Promise<KbSearchResult> {
-    const result = await this.searcher.search(req, ctx.project_id);
+    const result = await this.searcher.search(req, ctx.project_ids ?? ctx.project_id);
     this.usage.record(
       ctx,
       "search_hit",
@@ -1453,7 +1453,7 @@ export class KnowledgeService {
   }
 
   async evidence(ctx: KbCallContext, req: KbEvidenceRequest): Promise<KbEvidencePack> {
-    const pack = await this.searcher.evidence(req, ctx.project_id);
+    const pack = await this.searcher.evidence(req, ctx.project_ids ?? ctx.project_id);
     const kbOf = new Map<string, string>();
     for (const i of pack.items)
       if (!kbOf.has(i.document_id))

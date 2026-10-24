@@ -189,6 +189,22 @@ The web dashboard ships inside the `orc` binary and is served by the API process
 
 `/mcp?mode=meta` serves three meta-tools (`tool_search`, `tool_describe`, `tool_invoke`) instead of the full tool list, which keeps client context small; the model finds a tool, reads its schema, then calls it through `tool_invoke` with the same validation as a direct call. Stdio parity: `orc mcp --mode meta`. Any other `mode` value returns HTTP 400.
 
+Use `/mcp?project=orc` to set connection-wide defaults for project-aware tools,
+including context, tasks, jobs, memories, knowledge and archived-session search.
+Use `/mcp?projects=orc,project2` to select several projects in priority order;
+combine it with `&mode=meta` if desired. Lists/searches combine the selected
+projects before limiting or paginating, and shared global skills/KBs appear once.
+Memories remain project-only. New resources default to the first project; an
+explicit tool `project` (or supported `project_id`) can select another project
+from the connection. ID-targeted operations keep the resource's existing owner.
+Global-only reads remain available where the tool supports `scope: "global"`.
+Unbound connections keep the existing activeProject/config behavior.
+
+Select at most 50 projects. Names are trimmed, validated and deduplicated
+case-insensitively while preserving order; unknown projects reject the request.
+Pass either `project` or `projects`, not both. Explicit tool overrides cannot
+select projects outside the URL. This is resource scoping, not tenant authorization.
+
 Override the served dist directory with `ORC_WEB_DIST=/path/to/web/dist` if you want to host a custom build (e.g. a fork). If no dist is found, the server runs in pure-API mode.
 
 ### Desktop app
@@ -701,6 +717,34 @@ work can execute directly; assigned managed nodes preserve roles and flow contra
 ### Built-in skill templates
 
 Skill templates live in `skills/*/SKILL.md` (built-in) and `~/.orc/skills/` (user-defined). Agents discover them via `skill_list` and load with `skill_read`.
+
+Skills can be assigned to several projects; no assignments means global. Connect
+to `/mcp?project=orc` or `/mcp?projects=orc,project2` to discover and read only
+the selected projects' skills plus global skills. Add `&mode=meta` for meta mode.
+Project names are case-insensitive; unknown projects are rejected. Tool arguments
+can narrow the selection to one project from the URL. Shared skills appear once;
+project-specific instructions use the first applicable override in URL order,
+then global instructions. An explicit tool `project` selects that project's version.
+Named reads, supporting files, compatibility aliases and downloads follow the same
+assignment rule. Project-specific instruction overrides remain independent of assignments.
+MCP `skill_create` inherits the selected project; unscoped creation is global.
+
+Manage assignments with `orc skill projects <name> --set <project-id> <project-id>`;
+use `--global` to clear assignments, or omit flags to inspect them. The API exposes
+authenticated `GET`/`PUT /api/skills/{name}/projects` with `{ "project_ids": [] }`.
+Existing skills remain global until assigned. Reassign skills before deleting a project.
+The project selector controls discovery, not API authentication or tenant authorization.
+
+`skill_list({ q: "code review", limit: 30, offset: 0 })` searches names and
+descriptions with weighted BM25, prefixes, English stemming, phrase matches,
+substrings and bounded typo tolerance. Every term must match; results are sorted
+by descending relevance score, with names breaking ties. Scores are relative
+relevance, not probabilities; no embedding service is required. Without `q`,
+the existing reads/recent sorting applies. MCP responses show `total`, `offset`,
+`limit` and `next_offset`; pass the next offset to fetch another page. API
+`GET /api/skills?q=...&limit=30&offset=0` returns `skills` plus those fields;
+`next_offset: null` means the end. Default page size is 30, maximum 500.
+CLI equivalents are `orc skill list -q "code review" --project-id <id> --limit 30 --offset 0`.
 
 On the **Skills** page, every skill has an **Agent discovery** toggle, including
 built-in, user/imported and modified skills. Visibility applies across the installation

@@ -1,4 +1,4 @@
-import { ValidationError } from "@orc/core/errors";
+import { NotFoundError, ValidationError } from "@orc/core/errors";
 import {
   KB_COMMENT_STATUSES,
   KB_SCOPES,
@@ -19,6 +19,7 @@ import {
   KbDocumentUpdateSchema,
   KbUpdateSchema,
 } from "@orc/core/kb";
+import { getSqlite } from "@orc/db/client";
 import { getKnowledgeService, parseCitation } from "@orc/knowledge";
 import { z } from "zod";
 import { orcApi } from "./api-client.js";
@@ -26,7 +27,9 @@ import { orcApi } from "./api-client.js";
 const projectParam = z
   .string()
   .optional()
-  .describe("Project name. Defaults to activeProject; its KBs plus global ones are searched.");
+  .describe(
+    "Project name. Defaults to the MCP connection's selected projects, otherwise activeProject; global KBs are included.",
+  );
 const sessionParam = z
   .string()
   .optional()
@@ -82,6 +85,7 @@ export const kbToolDefinitions = [
       "citation handle. Whole documents can be long: prefer heading, lines or citation when you know what you " +
       "need. Read numbered lines before a line edit (kb_document action edit).",
     inputSchema: z.object({
+      project: projectParam,
       id: z.string().optional().describe("Document ID"),
       citation: z.string().optional().describe("Citation handle kb:<doc>@<rev>#<n>"),
       heading: z.string().max(300).optional().describe("Return only this section"),
@@ -100,6 +104,7 @@ export const kbToolDefinitions = [
     description:
       "List documents in a knowledge base (title, path, labels, revision, state, reads).",
     inputSchema: z.object({
+      project: projectParam,
       kb_id: z.string(),
       folder: z.string().optional(),
       label: z.string().optional(),
@@ -113,6 +118,7 @@ export const kbToolDefinitions = [
       "document use kb_document action edit instead. Give a note saying why, and derived_from with the " +
       "document IDs a summary was built from so it is flagged when they change.",
     inputSchema: z.object({
+      project: projectParam,
       kb_id: z.string().optional().describe("Knowledge base for a new document"),
       document_id: z.string().optional().describe("Document to replace"),
       expected_revision: z.number().int().min(1).optional(),
@@ -136,7 +142,7 @@ export const kbToolDefinitions = [
     name: "kb_maintenance",
     description:
       "Upkeep queue for a KB: stale derived documents (a source changed), failed files, links to missing documents.",
-    inputSchema: z.object({ kb_id: z.string() }),
+    inputSchema: z.object({ kb_id: z.string(), project: projectParam }),
   },
   {
     name: "kb_manage",
@@ -163,6 +169,7 @@ export const kbToolDefinitions = [
       "shift. update: title, path (move), description or labels. history: revisions. restore: bring back a past " +
       "revision. delete: remove the document. Pass document_id (or its legacy alias id).",
     inputSchema: z.object({
+      project: projectParam,
       action: z.enum(["edit", "update", "history", "restore", "delete"]),
       document_id: z
         .string()
@@ -192,6 +199,7 @@ export const kbToolDefinitions = [
       "the digest handles open comments first. resolve/dismiss close a comment with one reply saying what was " +
       "done or why not (needs a KB that allows mcp).",
     inputSchema: z.object({
+      project: projectParam,
       action: z.enum(["add", "list", "resolve", "dismiss", "reopen"]),
       kb_id: z.string().optional().describe("add, list"),
       document_id: z
@@ -214,6 +222,7 @@ export const kbToolDefinitions = [
       "schedule {type:cron, cron} or {type:manual}, enabled. run: start now. runs: history. delete: remove the " +
       "digest and its job (confirm = the KB's exact name).",
     inputSchema: z.object({
+      project: projectParam,
       action: z.enum(["get", "template", "set", "run", "runs", "delete"]),
       kb_id: z.string().optional().describe("Every action but template"),
       instructions: KbDigestSetSchema.shape.instructions,
@@ -260,9 +269,17 @@ function filters(a: Args) {
 }
 
 /** Compact KB search lines for the general `search` tool. */
-export async function kbSearchLines(query: string, projectId: string | null, limit: number) {
+export async function kbSearchLines(
+  query: string,
+  projectId: string | null,
+  limit: number,
+  projectIds?: readonly string[],
+) {
   const svc = await getKnowledgeService();
-  const result = await svc.search(context(projectId), { query, limit });
+  const result = await svc.search(
+    { ...context(projectId), ...(projectIds ? { project_ids: projectIds } : {}) },
+    { query, limit },
+  );
   return result.hits.map(
     (h) =>
       `  [kb] ${h.document_id} [${h.kb_name}] ${h.title}: ${h.passages[0]?.snippet.replace(/\s+/g, " ").slice(0, 160) ?? ""}`,
@@ -273,9 +290,45 @@ export async function executeKbTool(
   name: KbToolName,
   args: Args,
   projectId: string | null,
+  projectIds?: readonly string[],
 ): Promise<string> {
   const svc = await getKnowledgeService();
-  const ctx = context(projectId, args.session_id as string | undefined);
+  const ctx = {
+    ...context(projectId, args.session_id as string | undefined),
+    ...(projectIds ? { project_ids: projectIds } : {}),
+  };
+  if (projectIds) {
+    const visible = new Set(
+      svc.listKbs(ctx, args.scope === "global" ? "global" : "default").map((kb) => kb.id),
+    );
+    const checkKb = (id: string) => {
+      if (!visible.has(id)) throw new NotFoundError("Knowledge base", id);
+    };
+    if (typeof args.kb_id === "string") checkKb(args.kb_id);
+    if (Array.isArray(args.kb_ids)) for (const id of args.kb_ids) checkKb(id as string);
+    const documentId =
+      typeof args.document_id === "string"
+        ? args.document_id
+        : (name === "kb_read" || name === "kb_document") && typeof args.id === "string"
+          ? args.id
+          : typeof args.citation === "string"
+            ? parseCitation(args.citation)?.document_id
+            : undefined;
+    if (documentId) {
+      const row = getSqlite()
+        .query<{ kb_id: string }, [string]>("SELECT kb_id FROM kb_documents WHERE id=?")
+        .get(documentId);
+      if (!row) throw new NotFoundError("Document", documentId);
+      checkKb(row.kb_id);
+    }
+    if (typeof args.comment_id === "string") {
+      const row = getSqlite()
+        .query<{ kb_id: string }, [string]>("SELECT kb_id FROM kb_comments WHERE id=?")
+        .get(args.comment_id);
+      if (!row) throw new NotFoundError("Comment", args.comment_id);
+      checkKb(row.kb_id);
+    }
+  }
   switch (name) {
     case "kb_list": {
       const kbs = svc.listKbs(ctx, (args.scope as (typeof KB_SCOPES)[number]) ?? "default");

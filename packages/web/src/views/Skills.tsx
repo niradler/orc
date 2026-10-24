@@ -108,6 +108,9 @@ export default function Skills({ projectId }: { projectId: string }) {
   const [importingLocal, setImportingLocal] = useState(false);
   const visibility = useSkillVisibility();
   const setVisibility = useSetSkillVisibility();
+  const pageScope = JSON.stringify([project, query, sourceFilter]);
+  const [page, setPage] = useState({ scope: pageScope, offset: 0 });
+  const offset = page.scope === pageScope ? page.offset : 0;
 
   const {
     data: library,
@@ -119,6 +122,8 @@ export default function Skills({ projectId }: { projectId: string }) {
     q: query || undefined,
     source: sourceFilter === "all" ? undefined : sourceFilter,
     include_hidden: true,
+    limit: 30,
+    offset,
   });
   const skills = library?.skills;
   const queryClient = useQueryClient();
@@ -136,7 +141,7 @@ export default function Skills({ projectId }: { projectId: string }) {
     userSkills.map((skill, index) => [skill.name, origins[index]?.data?.repository]),
   );
   const displayedSkills = [...(skills ?? [])];
-  if (repositorySort !== "default") {
+  if (!query && repositorySort !== "default") {
     displayedSkills.sort((left, right) => {
       const leftRepository = repositoryByName.get(left.name);
       const rightRepository = repositoryByName.get(right.name);
@@ -149,7 +154,7 @@ export default function Skills({ projectId }: { projectId: string }) {
       return left.name.localeCompare(right.name);
     });
   }
-  const selectionScope = JSON.stringify([project, query, sourceFilter]);
+  const selectionScope = JSON.stringify([project, query, sourceFilter, offset]);
   const currentScope = useRef(selectionScope);
   currentScope.current = selectionScope;
   const selection = useListSelection(importedNames, selectionScope);
@@ -492,6 +497,33 @@ export default function Skills({ projectId }: { projectId: string }) {
               ))}
             </TableBody>
           </Table>
+        </div>
+      )}
+
+      {library && library.total > 30 && (
+        <div className="flex items-center justify-end gap-3 mt-4" data-testid="skills-pagination">
+          <span className="text-sm text-muted-foreground" data-testid="skills-page-summary">
+            {offset + 1}–{Math.min(offset + library.skills.length, library.total)} of{" "}
+            {library.total}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="skills-previous"
+            disabled={offset === 0 || isLoading}
+            onClick={() => setPage({ scope: pageScope, offset: Math.max(0, offset - 30) })}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="skills-next"
+            disabled={library.next_offset === null || isLoading}
+            onClick={() => setPage({ scope: pageScope, offset: library.next_offset ?? offset })}
+          >
+            Next
+          </Button>
         </div>
       )}
 

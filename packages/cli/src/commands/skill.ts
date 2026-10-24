@@ -14,6 +14,22 @@ function color(text: string, code: string) {
 export function skillCommand() {
   const cmd = new Command("skill").description("Manage skills");
   cmd
+    .command("projects <name>")
+    .description("Show or replace skill project assignments; no assignments means global")
+    .option("--set <ids...>", "Replace assignments with these project IDs")
+    .option("--global", "Clear assignments and make the skill global")
+    .action(async (name: string, options: { set?: string[]; global?: boolean }) => {
+      if (options.global && options.set) throw new Error("Use either --set or --global");
+      const client = createOrcClient({ source: "cli" });
+      const result =
+        options.global || options.set
+          ? await client.skills.setProjects(name, options.global ? [] : (options.set ?? []))
+          : await client.skills.projects(name);
+      if (result.error || !result.data) throw new Error(JSON.stringify(result.error));
+      if (isJson()) return jsonOut(result.data);
+      console.log(result.data.project_ids.length ? result.data.project_ids.join("\n") : "Global");
+    });
+  cmd
     .command("import <source>")
     .description("Discover or import public GitHub / skills.sh skills")
     .option("--list", "List skills without installing")
@@ -187,6 +203,9 @@ export function skillCommand() {
   cmd
     .command("list")
     .description("List installed skills")
+    .option("--project-id <id>", "Show this project's skills and global skills")
+    .option("--limit <count>", "Page size (1-500)", "30")
+    .option("--offset <count>", "Zero-based page offset", "0")
     .option("-q, --query <q>", "Keyword search")
     .option("--source <source>", "Filter by source (builtin|user)")
     .option("--reload", "Force cache rebuild")
@@ -196,6 +215,9 @@ export function skillCommand() {
         q: opts.query,
         source: opts.source,
         reload: opts.reload,
+        project_id: opts.projectId,
+        limit: Number(opts.limit),
+        offset: Number(opts.offset),
       });
       if (error) return console.error("Error:", error);
       const skills = data?.skills ?? [];
@@ -208,8 +230,12 @@ export function skillCommand() {
         const src = s.source === "user" ? color(" [user]", "36") : "";
         const name = s.name.length > 30 ? `${s.name.slice(0, 29)}…` : s.name;
         const desc = s.description ? ` - ${s.description.slice(0, 50)}` : "";
-        console.log(`  ${name.padEnd(32)}${src}${desc}`);
+        const score = s.score === undefined ? "" : ` [score: ${s.score.toFixed(4)}]`;
+        console.log(`  ${name.padEnd(32)}${src}${score}${desc}`);
       }
+      console.log(
+        `Showing ${skills.length} of ${data?.total ?? 0}; next_offset=${data?.next_offset ?? "null"}`,
+      );
     });
 
   cmd

@@ -112,7 +112,20 @@ export function PackageEditor({
   const [newPath, setNewPath] = useState("");
   const [mcpDraft, setMcpDraft] = useState<string | undefined>(restored.current?.mcpDraft);
   const [mcpError, setMcpError] = useState<string>();
-  const skills = useQuery({ queryKey: ["package-skill-picker"], queryFn: () => api.skills.list() });
+  const skills = useQuery({
+    queryKey: ["package-skill-picker"],
+    queryFn: async () => {
+      const first = await api.skills.list({ limit: 500 });
+      const collected = [...first.skills];
+      let nextOffset = first.next_offset;
+      while (nextOffset !== null) {
+        const page = await api.skills.list({ limit: 500, offset: nextOffset });
+        collected.push(...page.skills);
+        nextOffset = page.next_offset;
+      }
+      return { ...first, skills: collected };
+    },
+  });
   const agents = useQuery({ queryKey: ["agents"], queryFn: api.agents.list });
   const parsed = useMemo(() => {
     try {

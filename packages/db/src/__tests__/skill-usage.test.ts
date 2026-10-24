@@ -22,6 +22,41 @@ function find(projectId: string | null, name: string) {
   return skill;
 }
 
+describe("skill project assignments", () => {
+  test("should default existing skills to global and support several projects", () => {
+    expect(history.visible("orc-sdlc", null)).toBe(true);
+    expect(history.setProjects("orc-sdlc", ["p2", "p1", "p1"])).toEqual(["p1", "p2"]);
+    expect(history.visible("orc-sdlc", null)).toBe(false);
+    expect(history.read("orc-sdlc", null)).toBeNull();
+    expect(history.read("orc-sdlc", "p1")).not.toBeNull();
+    expect(history.read("orc-sdlc", "p2")).not.toBeNull();
+    expect(history.list(null).some((s) => s.name === "orc-sdlc")).toBe(false);
+    expect(history.list("p1").some((s) => s.name === "orc-sdlc")).toBe(true);
+    history.setProjects("orc-sdlc", []);
+    expect(history.visible("orc-sdlc", null)).toBe(true);
+  });
+  test("should hide other projects' refs, aliases, search and instruction history", () => {
+    history.setProjects("orc-platform", ["p2"]);
+    expect(history.read("orc-platform", "p1", "references/work.md")).toBeNull();
+    expect(history.read("orc-memory", "p1")).toBeNull();
+    expect(history.read("orc-memory", "p1", "SKILL.md")).toBeNull();
+    expect(history.list("p1", { q: "gateway" }).some((s) => s.name === "orc-platform")).toBe(false);
+    expect(() => history.history("orc-platform", "p1")).toThrow("not found");
+  });
+  test("should validate all projects atomically and audit assignment changes", () => {
+    history.setProjects("orc-sdlc", ["p1"]);
+    expect(() => history.setProjects("orc-sdlc", ["p2", "missing"])).toThrow();
+    expect(history.projectIds("orc-sdlc")).toEqual(["p1"]);
+    const row = sqlite
+      .query<{ snapshot: string }, []>(
+        "SELECT snapshot FROM audit_log WHERE action='skill.projects_updated'",
+      )
+      .get();
+    expect(JSON.parse(row?.snapshot ?? "{}").project_ids).toEqual(["p1"]);
+    expect(() => history.setProjects("missing-skill", ["p1"])).toThrow();
+  });
+});
+
 describe("SkillHistory usage", () => {
   test("should count entry reads separately from supporting file reads", () => {
     history.recordRead("orc-platform", null, "mcp");

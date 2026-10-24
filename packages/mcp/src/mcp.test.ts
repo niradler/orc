@@ -228,7 +228,7 @@ describe("MCP skill tools", () => {
     const listing = await executeTool("skill_list", { scope: "global", limit: 1 });
     expect(listing.split("\n")[0]).toContain("orc-platform");
     expect(listing).toContain("(2 reads)");
-    expect(listing).toMatch(/Showing 1 of \d+; use q to search or raise limit\./);
+    expect(listing).toMatch(/Showing 1 of \d+; total=\d+, offset=0, limit=1, next_offset=1/);
   });
 
   test("should not count a read of a missing skill", async () => {
