@@ -65,6 +65,7 @@ export function ResumeActions({ session }: { session: LiveSession }) {
   }
 
   async function openChat(): Promise<void> {
+    setMenuOpen(false);
     setChatPending(true);
     setError(null);
     try {
@@ -121,6 +122,23 @@ export function ResumeActions({ session }: { session: LiveSession }) {
                 data-testid="resume-actions-dropdown"
                 className="z-50 w-56 rounded-md border border-border bg-surface-high p-1 shadow-lg"
               >
+                {chatSupported && (
+                  <button
+                    type="button"
+                    data-testid="open-chat-resume"
+                    disabled={pending || chatPending || chat.streaming || chatActive}
+                    title={
+                      chatActive
+                        ? "End the original agent session before resuming it in chat."
+                        : undefined
+                    }
+                    onClick={() => void openChat()}
+                    className={`${ACTION} min-h-11 w-full justify-start border-0`}
+                  >
+                    <MessageSquare size={13} />
+                    {chatPending ? "Resuming…" : "Resume in chat"}
+                  </button>
+                )}
                 <button
                   type="button"
                   data-testid="copy-resume"
@@ -152,21 +170,6 @@ export function ResumeActions({ session }: { session: LiveSession }) {
           </Popover.Root>
         )}
       </fieldset>
-      {chatSupported && (
-        <button
-          type="button"
-          data-testid="open-chat-resume"
-          disabled={pending || chatPending || chat.streaming || chatActive}
-          title={
-            chatActive ? "End the original agent session before resuming it in chat." : undefined
-          }
-          onClick={() => void openChat()}
-          className={`${ACTION} min-h-11`}
-        >
-          <MessageSquare size={13} />
-          {chatPending ? "Resuming…" : "Resume in chat"}
-        </button>
-      )}
       {info && !info.ready && !existing && (
         <p className="text-xs text-outline">
           {info.reason ??
