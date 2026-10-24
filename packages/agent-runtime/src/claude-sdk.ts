@@ -6,6 +6,7 @@ import {
   type SpawnedProcess,
   type SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
+import { ChatAgentOptionsSchema, type ClaudeChatOptions } from "@orc/core/chat-options";
 import {
   type ExecHost,
   hostBinary,
@@ -59,6 +60,22 @@ Run \`orc --help\` to discover available commands.`;
 const SDK_ENV_PASSTHROUGH = /^CLAUDE_(CODE_ENTRYPOINT|AGENT_SDK_VERSION)$/;
 const AUTH_CACHE_TTL_MS = 60_000;
 const authCache = new Map<string, { at: number; loggedIn: boolean | null }>();
+
+export function sdkChatOverrides(
+  source: ClaudeChatOptions,
+): Pick<
+  Options,
+  "maxTurns" | "maxBudgetUsd" | "effort" | "thinking" | "fallbackModel" | "extraArgs"
+> {
+  return {
+    ...(source.maxTurns !== undefined ? { maxTurns: source.maxTurns } : {}),
+    ...(source.maxBudgetUsd !== undefined ? { maxBudgetUsd: source.maxBudgetUsd } : {}),
+    ...(source.effort !== undefined ? { effort: source.effort } : {}),
+    ...(source.thinking !== undefined ? { thinking: source.thinking } : {}),
+    ...(source.fallbackModel !== undefined ? { fallbackModel: source.fallbackModel } : {}),
+    ...(source.extraArgs !== undefined ? { extraArgs: source.extraArgs } : {}),
+  };
+}
 
 export async function hostClaudeLoggedIn(
   host: SshExecHost,
@@ -153,10 +170,18 @@ class ClaudeSDKSession implements AgentSession {
 
   private async driveQuery(prompt: string): Promise<void> {
     try {
+      const supplied = this.opts.chatAgentOptions
+        ? ChatAgentOptionsSchema.parse(this.opts.chatAgentOptions)
+        : undefined;
+      if (supplied && supplied.runtime !== "claude-sdk")
+        throw new Error("Claude requires SDK launch options");
+      const options: ClaudeChatOptions = supplied?.runtime === "claude-sdk" ? supplied.options : {};
       const permissionMode =
         this.opts.toolAllowlist !== undefined
           ? "default"
-          : (this.opts.permissionMode ?? (this.opts.autoApprove ? "bypassPermissions" : "default"));
+          : (options.permissionMode ??
+            this.opts.permissionMode ??
+            (this.opts.autoApprove ? "bypassPermissions" : "default"));
       logger.info("Starting Claude SDK query", {
         permissionMode,
         cwd: this.opts.cwd,
@@ -181,6 +206,7 @@ class ClaudeSDKSession implements AgentSession {
       const q = query({
         prompt,
         options: {
+          ...sdkChatOverrides(options),
           ...launch,
           cwd: this.opts.cwd,
           ...(rulesHook

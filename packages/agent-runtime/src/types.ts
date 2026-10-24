@@ -1,8 +1,12 @@
+import type { ChatQuestion } from "@orc/core/chat";
+import type { ChatAgentOptions } from "@orc/core/chat-options";
 import type { SessionRuleGuard } from "./rules.js";
 
 export type AgentBackendName = "claude" | "acpx" | "a2a" | (string & {});
 
 export type SessionOpts = {
+  chatAgentOptions?: ChatAgentOptions | undefined;
+  interactive?: boolean | undefined;
   ruleBuiltinActions?: boolean;
   /** Undefined follows the currently selected host; null explicitly means local. */
   executionHost?: string | null | undefined;
@@ -31,6 +35,8 @@ export type ImageAttachment = {
 export type PermissionResult = "approved" | "denied" | "session";
 
 export type AgentEvent =
+  | { type: "question_request"; data: ChatQuestion }
+  | { type: "request_resolved"; data: { requestId: string } }
   | { type: "text"; data: string }
   | { type: "thinking"; data: string }
   | { type: "tool_use"; data: { id: string; name: string; input: string } }
@@ -55,6 +61,7 @@ export interface AgentSession {
   getRuntimeSessionId?(): string | undefined;
   send(prompt: string, images?: ImageAttachment[]): Promise<void>;
   respondPermission(requestId: string, result: PermissionResult): void;
+  respondQuestion?(requestId: string, answers: Record<string, string[]>): void | Promise<void>;
   events(): AsyncIterable<AgentEvent>;
   alive(): boolean;
   close(): Promise<void>;

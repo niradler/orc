@@ -4,6 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { History, Settings2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { api } from "@/api/client";
+import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
+import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -345,7 +347,7 @@ export function ChatModelPicker() {
 }
 
 export function ChatConversationInfo() {
-  const { config, thread } = useChat();
+  const { config, setConfig, streaming, thread } = useChat();
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -362,7 +364,7 @@ export function ChatConversationInfo() {
       <DialogContent data-testid="chat-config-dialog" className="w-[calc(100%-1rem)]">
         <DialogTitle>Conversation settings</DialogTitle>
         <DialogDescription>
-          Current conversation setup. Change new-chat defaults in Settings.
+          Permission changes apply to your next message. Change new-chat defaults in Settings.
         </DialogDescription>
         <dl className="space-y-3 text-sm break-words">
           <div>
@@ -381,18 +383,12 @@ export function ChatConversationInfo() {
             </dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">Permissions</dt>
             <dd>
-              {config.autoApprove
-                ? "Automatic agent actions"
-                : config.agent === "codex"
-                  ? "Read-only sandbox"
-                  : config.agent === "claude"
-                    ? "Ask in chat"
-                    : "Agent permission policy"}
+              <ChatPermissionSelect config={config} onChange={setConfig} disabled={streaming} />
             </dd>
           </div>
         </dl>
+        <ChatAgentOptionsEditor key={`${config.agent}:${thread?.id ?? "new"}`} />
         <details className="text-sm">
           <summary className="min-h-11 cursor-pointer py-3">Conversation instructions</summary>
           <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs">

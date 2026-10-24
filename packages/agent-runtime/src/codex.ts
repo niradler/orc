@@ -9,6 +9,7 @@ import {
   resolveExecHost,
 } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
+import { CodexAppSession } from "./codex-app.js";
 import { sessionExecHost } from "./execution-host.js";
 import { endStdin, readLines, writeToStdin } from "./io.js";
 import { buildOrcMcpServer } from "./orc-mcp.js";
@@ -38,13 +39,13 @@ export function resolveCodexLaunch(
   return [node, script];
 }
 
-async function codexCommand(host: ExecHost): Promise<string[]> {
+export async function codexCommand(host: ExecHost): Promise<string[]> {
   const executable = await hostBinary(host, "codex");
   if (!executable) throw new Error("Codex CLI not found on PATH");
   return host.kind === "local" ? resolveCodexLaunch(executable) : [executable];
 }
 
-function buildCodexEnv(): Record<string, string> {
+export function buildCodexEnv(): Record<string, string> {
   const allowed = new Set([
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
@@ -77,7 +78,7 @@ function buildCodexEnv(): Record<string, string> {
   return env;
 }
 
-async function hasConfiguredOrcMcp(
+export async function hasConfiguredOrcMcp(
   host: ExecHost,
   command: string[],
   cwd: string,
@@ -373,11 +374,14 @@ function createCodexBackend(): AgentBackend {
     },
 
     async startSession(opts) {
+      if (opts.interactive) return new CodexAppSession(opts, sessionExecHost(opts));
       const session = new CodexSession(opts, sessionExecHost(opts));
       return session;
     },
 
     async resumeSession(runtimeSessionId, opts) {
+      if (opts.interactive)
+        return new CodexAppSession({ ...opts, runtimeSessionId }, sessionExecHost(opts));
       const session = new CodexSession({ ...opts, runtimeSessionId }, sessionExecHost(opts));
       return session;
     },

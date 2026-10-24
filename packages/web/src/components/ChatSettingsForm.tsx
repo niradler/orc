@@ -1,6 +1,7 @@
 import { type ChatSettings, ChatSettingsSchema } from "@orc/core/chat";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
+import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -136,23 +137,7 @@ export function ChatSettingsForm() {
               require ORC tools.
             </p>
           </div>
-          <label className="flex min-h-11 items-start gap-3 py-2 text-sm">
-            <input
-              data-testid="chat-auto-approve"
-              type="checkbox"
-              checked={config.autoApprove}
-              onChange={(e) => setConfig({ ...config, autoApprove: e.target.checked })}
-              className="mt-1 size-4"
-            />
-            <span>
-              Allow agent actions automatically
-              <span className="mt-1 block text-xs text-muted-foreground">
-                Off: Claude asks in chat; Codex runs with a read-only sandbox; other agents use
-                their native permission policy. On: Claude bypasses permission prompts; Codex can
-                write in its workspace. ORC rules still apply.
-              </span>
-            </span>
-          </label>
+          <ChatPermissionSelect config={config} onChange={setConfig} disabled={pending} />
           <Button data-testid="chat-settings-save" disabled={pending} onClick={() => void save()}>
             {pending ? "Saving…" : "Save chat defaults"}
           </Button>

@@ -5,6 +5,7 @@ import type { CreateTerminalInput, Terminal } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
 import { ResumeActions } from "@/components/ResumeActions";
+import { ContinueInChat } from "@/components/terminals/ContinueInChat";
 import { NewTerminalMenu } from "@/components/terminals/NewTerminalMenu";
 import { RenameTerminal } from "@/components/terminals/RenameTerminal";
 import { TerminalCheckout } from "@/components/terminals/TerminalCheckout";
@@ -462,6 +463,7 @@ export default function Terminals() {
                   {actionError}
                 </span>
               )}
+              <ContinueInChat key={selected.id} terminal={selected} />
               {selected.live_session_id && (
                 <SessionLinks liveSessionId={selected.live_session_id} />
               )}
@@ -523,6 +525,11 @@ export default function Terminals() {
                 <p className="break-words font-medium">{mobileTerminal.name}</p>
                 <p className="break-all text-on-surface-variant">{mobileTerminal.cwd}</p>
                 <p>{terminalStatus(mobileTerminal, connectionOf(mobileTerminal.id))}</p>
+                <ContinueInChat
+                  key={mobileTerminal.id}
+                  terminal={mobileTerminal}
+                  onContinued={() => setOptionsOpen(false)}
+                />
                 {mobileTerminal.live_session_id && (
                   <SessionLinks liveSessionId={mobileTerminal.live_session_id} />
                 )}

@@ -522,12 +522,16 @@ export const api = {
     list: () =>
       req<{ threads: { id: string; title: string; updatedAt: number }[] }>("GET", "/chat/threads"),
     get: (id: string) => req<ChatThread>("GET", `/chat/threads/${id}`),
+    configure: (id: string, agentOptions: ChatThread["config"]["agentOptions"]) =>
+      req<ChatThread>("PATCH", `/chat/threads/${id}/config`, { agentOptions }),
     history: (id: string, before: number) =>
       req<ChatHistoryPage>("GET", `/chat/threads/${id}/history`, undefined, { before }),
     resume: (sourceSessionId: string) =>
       req<ChatThread>("POST", "/chat/threads", { sourceSessionId }),
     permission: (runId: string, requestId: string, decision: "approved" | "denied") =>
       req<{ ok: boolean }>("POST", `/chat/runs/${runId}/permission`, { requestId, decision }),
+    answer: (runId: string, requestId: string, answers: Record<string, string[]>) =>
+      req<{ ok: boolean }>("POST", `/chat/runs/${runId}/answer`, { requestId, answers }),
   },
   settings: {
     get: () => req<WorkspacePreferences>("GET", "/settings"),

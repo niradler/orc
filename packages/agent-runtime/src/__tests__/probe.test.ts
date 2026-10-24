@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { resolveAcpxCli } from "../acpx.js";
 import { listRegisteredBackends, probeBackend, probeBackends } from "../index.js";
 
@@ -13,6 +14,14 @@ afterEach(() => {
 });
 
 describe("resolveAcpxCli", () => {
+  it("should prefer ORC's installed ACPX over an unrelated global CLI", () => {
+    delete process.env.ORC_ACPX_PATH;
+    const resolved = resolveAcpxCli();
+    const bundled = fileURLToPath(import.meta.resolve("acpx/dist/cli.js")).replaceAll("\\", "/");
+    expect(resolved?.source).toBe("bundled");
+    expect(resolved?.path).toBe(bundled);
+  });
+
   it("honours an explicit ORC_ACPX_PATH over PATH lookup", () => {
     const dir = join(tmpdir(), `orc-acpx-probe-${process.pid}`);
     mkdirSync(dir, { recursive: true });

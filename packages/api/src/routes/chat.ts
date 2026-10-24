@@ -8,16 +8,20 @@ import {
 import {
   appendChatActivity,
   CHAT_HISTORY_PAGE_SIZE,
+  ChatAnswersSchema,
   type ChatEvent,
   ChatHistoryPageSchema,
   type ChatMessage,
   ChatModelSchema,
   type ChatModels,
   ChatModelsSchema,
+  ChatPermissionModeSchema,
+  type ChatQuestion,
   ChatSettingsSchema,
   type ChatThread,
   ChatThreadSchema,
 } from "@orc/core/chat";
+import { ChatAgentOptionsMapSchema } from "@orc/core/chat-options";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
@@ -46,7 +50,13 @@ const response = {
 const store = () => new ChatStore(getSqlite());
 const runs = new Map<
   string,
-  { session: AgentSession | null; permissions: Set<string>; threadId: string; key: string }
+  {
+    session: AgentSession | null;
+    permissions: Set<string>;
+    questions: Map<string, ChatQuestion>;
+    threadId: string;
+    key: string;
+  }
 >();
 const active = new Set<string>();
 const params = z.object({ id });
@@ -221,6 +231,37 @@ app.openapi(
 );
 app.openapi(
   createRoute({
+    method: "patch",
+    path: "/chat/threads/{id}/config",
+    tags: ["Chat"],
+    request: {
+      params,
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({ agentOptions: ChatAgentOptionsMapSchema }).strict(),
+          },
+        },
+      },
+    },
+    responses: response,
+  }),
+  (c) => {
+    const thread = requireThread(c.req.valid("param").id);
+    const key = thread.runtimeId
+      ? `${thread.host ?? "local"}:${thread.backend}:${thread.runtimeId}`
+      : thread.id;
+    if (active.has(key) || [...runs.values()].some((run) => run.threadId === thread.id))
+      throw new ConflictError("Wait for the agent to finish before changing launch options.");
+    thread.config.agentOptions = c.req.valid("json").agentOptions;
+    thread.updatedAt = Date.now();
+    store().save(thread);
+    return c.json(thread);
+  },
+);
+
+app.openapi(
+  createRoute({
     method: "get",
     path: "/chat/threads/{id}/history",
     tags: ["Chat"],
@@ -327,9 +368,57 @@ app.openapi(
   (c) => {
     const run = runs.get(c.req.valid("param").id);
     const { requestId, decision } = c.req.valid("json");
-    if (!run?.session || !run.permissions.delete(requestId))
+    if (!run?.session || !run.permissions.has(requestId))
       throw new ConflictError("This permission request is no longer pending.");
     run.session.respondPermission(requestId, decision);
+    run.permissions.delete(requestId);
+    return c.json({ ok: true });
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/chat/runs/{id}/answer",
+    tags: ["Chat"],
+    request: {
+      params,
+      body: {
+        content: {
+          "application/json": {
+            schema: z
+              .object({ requestId: z.string().min(1).max(256), answers: ChatAnswersSchema })
+              .strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Answer delivered to the agent",
+        content: { "application/json": { schema: z.object({ ok: z.boolean() }) } },
+      },
+    },
+  }),
+  async (c) => {
+    const run = runs.get(c.req.valid("param").id);
+    const { requestId, answers } = c.req.valid("json");
+    const question = run?.questions.get(requestId);
+    if (!run?.session?.respondQuestion || !question)
+      throw new ConflictError("This question is no longer pending.");
+    const ids = question.questions.map((question) => question.id);
+    if (
+      Object.keys(answers).length !== ids.length ||
+      ids.some((id) => !answers[id]?.some((answer) => answer.trim()))
+    )
+      throw new ValidationError("Answer every question before continuing.");
+    run.questions.delete(requestId);
+    try {
+      await run.session.respondQuestion(requestId, answers);
+    } catch (error) {
+      run.questions.set(requestId, question);
+      throw error;
+    }
     return c.json({ ok: true });
   },
 );
@@ -356,6 +445,8 @@ const requestSchema = z
     // Retained for older clients; server settings own the effective prompt and permissions.
     system: z.string().max(20000).optional(),
     autoApprove: z.boolean().optional(),
+    permissionMode: ChatPermissionModeSchema.optional(),
+    agentOptions: ChatAgentOptionsMapSchema.optional(),
   })
   .strict()
   .refine(
@@ -409,6 +500,12 @@ app.openapi(
       : thread.id;
     if (active.has(key) || [...runs.values()].some((run) => run.threadId === thread.id))
       throw new ConflictError("This session is already responding.");
+    if (body.agentOptions !== undefined) thread.config.agentOptions = body.agentOptions;
+    if (body.permissionMode !== undefined) {
+      if (!["codex", "claude"].includes(thread.config.agent))
+        throw new ValidationError("Permission modes are supported by Claude and Codex.");
+      thread.config.permissionMode = body.permissionMode;
+    }
     if (runs.size >= 4)
       throw new ConflictError("All chat workers are busy. Try again when a response finishes.");
     const mock = process.env.ORC_E2E_CHAT_MOCK === "1";
@@ -422,6 +519,7 @@ app.openapi(
     const run = {
       session: null as AgentSession | null,
       permissions: new Set<string>(),
+      questions: new Map<string, ChatQuestion>(),
       threadId: thread.id,
       key,
     };
@@ -490,9 +588,14 @@ app.openapi(
           thread.runtimeId ??= `mock-${thread.id}`;
         } else {
           const opts: SessionOpts = {
+            chatAgentOptions: thread.config.agentOptions[thread.config.agent],
+            interactive: true,
             cwd: thread.cwd,
             executionHost: thread.host,
             autoApprove: thread.config.autoApprove,
+            permissionMode: ["claude", "codex"].includes(thread.config.agent)
+              ? thread.config.permissionMode
+              : undefined,
             model: thread.config.model || undefined,
             systemPromptAppend: thread.config.system,
             orcMcp: thread.config.mcp === "orc",
@@ -544,6 +647,13 @@ app.openapi(
             else if (event.type === "permission_request") {
               run.permissions.add(event.data.requestId);
               await emit(event);
+            } else if (event.type === "question_request") {
+              run.questions.set(event.data.requestId, event.data);
+              await emit(event);
+            } else if (event.type === "request_resolved") {
+              run.permissions.delete(event.data.requestId);
+              run.questions.delete(event.data.requestId);
+              await emit({ type: "request_resolved", requestId: event.data.requestId });
             } else if (event.type === "error") await emit({ type: "error", message: event.data });
           }
           if (!receivedResult && !stopped)
@@ -579,6 +689,10 @@ app.openapi(
         thread.updatedAt = Date.now();
         try {
           store().save(thread);
+          if (!stopped)
+            await s
+              .writeSSE({ data: JSON.stringify({ type: "session", runtimeId: thread.runtimeId }) })
+              .catch(close);
         } catch (error) {
           logger.error("Chat history could not be saved", { error, runId });
           if (!stopped)

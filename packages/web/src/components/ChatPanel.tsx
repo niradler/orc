@@ -13,11 +13,13 @@ import {
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { AgentMessageText } from "@/components/AgentMessageText";
 import { ChatActivityList } from "@/components/ChatActivityList";
+import { ChatContinueInTerminal } from "@/components/ChatContinueInTerminal";
 import {
   ChatConversationInfo,
   ChatModelPicker,
   ChatSessionPicker,
 } from "@/components/ChatControls";
+import { ChatQuestionForm } from "@/components/ChatQuestionForm";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { cn } from "@/lib/utils";
@@ -59,6 +61,9 @@ export function ChatPanel({
     loadOlder,
     permission,
     respondPermission,
+    question,
+    respondQuestion,
+    responding,
   } = useChat();
   const input = useRef<HTMLTextAreaElement>(null);
   const viewport = useRef<HTMLDivElement>(null);
@@ -116,6 +121,7 @@ export function ChatPanel({
             <h2 className="text-sm font-medium">Chat</h2>
           </div>
           <div className="flex items-center">
+            <ChatContinueInTerminal key={thread?.id ?? "new"} />
             <ChatConversationInfo />
             <ChatSessionPicker />
             {onToggleFullscreen && (
@@ -243,33 +249,47 @@ export function ChatPanel({
           {error}
         </div>
       )}
-      {permission && (
-        <div
-          data-testid="chat-permission"
-          className="shrink-0 max-h-52 overflow-auto border-t border-outline-variant px-4 py-3 text-sm"
-        >
-          <p className="font-medium">Allow {permission.tool}?</p>
-          <pre className="my-2 max-h-20 overflow-auto whitespace-pre-wrap break-words text-xs">
-            {permission.command}
-          </pre>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              data-testid="chat-permission-deny"
-              className="min-h-11 rounded-md border border-control-border px-3"
-              onClick={() => void respondPermission("denied")}
+      {(permission || question) && (
+        <div className="shrink-0 max-h-[45vh] overflow-auto" data-testid="chat-pending-requests">
+          {permission && (
+            <div
+              data-testid="chat-permission"
+              className="shrink-0 max-h-52 overflow-auto border-t border-outline-variant px-4 py-3 text-sm"
             >
-              Deny
-            </button>
-            <button
-              type="button"
-              data-testid="chat-permission-allow"
-              className="min-h-11 rounded-md bg-primary px-3 text-primary-foreground"
-              onClick={() => void respondPermission("approved")}
-            >
-              Allow once
-            </button>
-          </div>
+              <p className="font-medium">Allow {permission.tool}?</p>
+              <pre className="my-2 max-h-20 overflow-auto whitespace-pre-wrap break-words text-xs">
+                {permission.command}
+              </pre>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  data-testid="chat-permission-deny"
+                  disabled={responding}
+                  className="min-h-11 rounded-md border border-control-border px-3"
+                  onClick={() => void respondPermission("denied")}
+                >
+                  Deny
+                </button>
+                <button
+                  type="button"
+                  data-testid="chat-permission-allow"
+                  disabled={responding}
+                  className="min-h-11 rounded-md bg-primary px-3 text-primary-foreground"
+                  onClick={() => void respondPermission("approved")}
+                >
+                  Allow once
+                </button>
+              </div>
+            </div>
+          )}
+          {question && (
+            <ChatQuestionForm
+              key={question.requestId}
+              request={question}
+              busy={responding}
+              onAnswer={respondQuestion}
+            />
+          )}
         </div>
       )}
       <div className="chat-composer-footer mx-auto w-full max-w-3xl shrink-0 px-3 pt-2 pb-3">

@@ -5,6 +5,11 @@ import { resetConfig } from "@orc/core/config";
 type QueryArgs = {
   prompt: string;
   options: {
+    permissionMode?: string;
+    maxTurns?: number;
+    maxBudgetUsd?: number;
+    effort?: string;
+    extraArgs?: Record<string, string | null>;
     tools?: string[];
     mcpServers?: Record<string, { type: string; url: string; headers?: Record<string, string> }>;
     allowedTools?: string[];
@@ -48,6 +53,37 @@ afterEach(() => {
 });
 
 describe("ORC MCP injection for tool-restricted sessions", () => {
+  test("should pass validated conversation options to the SDK without replacing callbacks", async () => {
+    const session = await createBackend("claude").startSession({
+      cwd: process.cwd(),
+      permissionMode: "default",
+      orcMcp: false,
+      chatAgentOptions: {
+        runtime: "claude-sdk",
+        options: {
+          permissionMode: "bypassPermissions",
+          maxTurns: 12,
+          maxBudgetUsd: 2.5,
+          effort: "high",
+          extraArgs: { verbose: null },
+        },
+      },
+    });
+    try {
+      await session.send("SDK options fixture");
+      await Bun.sleep(20);
+      expect(queries[0]?.options).toMatchObject({
+        permissionMode: "bypassPermissions",
+        maxTurns: 12,
+        maxBudgetUsd: 2.5,
+        effort: "high",
+        extraArgs: { verbose: null },
+      });
+      expect(typeof queries[0]?.options.canUseTool).toBe("function");
+    } finally {
+      await session.close();
+    }
+  });
   test("should build an http mcp server keyed orc with bearer auth", () => {
     expect(buildOrcMcpServers()).toEqual({
       orc: {

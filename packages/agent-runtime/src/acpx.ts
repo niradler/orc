@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { acpxPermissionArgs, ChatAgentOptionsSchema } from "@orc/core/chat-options";
 import {
   type ExecHost,
   hostBinary,
@@ -156,8 +157,8 @@ export type AcpxResolution = {
  *
  * PATH alone was the old rule, which meant a global `orc` install could not use
  * the acpx it depends on: npm links a dependency's bin into the *package's*
- * node_modules/.bin, not the user's PATH. So: an explicit path wins, then PATH,
- * then the copy installed alongside orc.
+ * node_modules/.bin, not the user's PATH. An explicit path wins, followed by the
+ * version installed alongside ORC, then PATH for standalone installations.
  */
 export function resolveAcpxCli(): AcpxResolution | null {
   // Only honour a configured path that is actually there: a stale ORC_ACPX_PATH
@@ -169,14 +170,14 @@ export function resolveAcpxCli(): AcpxResolution | null {
     return { cmd: interpreterFor(path), path, source: "config" };
   }
 
+  const bundled = resolveBundledAcpx();
+  if (bundled) return { cmd: interpreterFor(bundled), path: bundled, source: "bundled" };
+
   const onPath = Bun.which("acpx");
   if (onPath) {
     const path = normalizePath(onPath);
     return { cmd: interpreterFor(path), path, source: "path" };
   }
-
-  const bundled = resolveBundledAcpx();
-  if (bundled) return { cmd: interpreterFor(bundled), path: bundled, source: "bundled" };
 
   return null;
 }
@@ -246,7 +247,7 @@ export const ACPX_MISSING_MESSAGE =
   "acpx CLI not found. Install it with `npm install -g acpx`, or set ORC_ACPX_PATH " +
   "to its location. Agents that do not need acpx (the built-in `claude` backend) still work.";
 
-class AcpxSession implements AgentSession {
+export class AcpxSession implements AgentSession {
   readonly id: string;
 
   private proc: ReturnType<typeof Bun.spawn> | null = null;
@@ -261,6 +262,7 @@ class AcpxSession implements AgentSession {
   private readonly cwd: string;
   private readonly model: string | undefined;
   private readonly autoApprove: boolean;
+  private readonly extraArgs: string[];
   /** Spawn-ready prefix: either [binary] or [interpreter, cli.js]. */
   private readonly acpxCmd: string[];
   private readonly host: ExecHost;
@@ -273,12 +275,35 @@ class AcpxSession implements AgentSession {
     this.cwd = opts.cwd;
     this.model = opts.model;
     this.autoApprove = opts.autoApprove ?? true;
+    const options = opts.chatAgentOptions
+      ? ChatAgentOptionsSchema.parse(opts.chatAgentOptions)
+      : undefined;
+    if (options && options.runtime !== "acpx")
+      throw new Error("ACPX requires ACPX launch arguments");
+    this.extraArgs = options?.runtime === "acpx" ? options.args : [];
     this.acpxCmd = acpxCmd;
   }
 
   async ensureSession(): Promise<void> {
-    // No pre-creation needed - we use `exec` mode which handles session
-    // lifecycle internally per invocation.
+    const result = await hostExec(
+      this.host,
+      [
+        ...this.acpxCmd,
+        "--format",
+        "json",
+        ...this.extraArgs,
+        this.agent,
+        "sessions",
+        "ensure",
+        "--name",
+        this.sessionName,
+      ],
+      { cwd: this.cwd, timeoutMs: 30_000 },
+    );
+    if (result.code !== 0)
+      throw new Error(
+        `ACPX could not prepare this conversation (exit ${result.code}). Check the selected agent and its authentication.`,
+      );
   }
 
   private push(event: AgentEvent): void {
@@ -353,18 +378,19 @@ class AcpxSession implements AgentSession {
       "--format",
       "json",
       ...(this.model ? ["--model", this.model] : []),
-      ...(this.autoApprove ? ["--approve-all"] : []),
+      ...(this.autoApprove && !acpxPermissionArgs(this.extraArgs) ? ["--approve-all"] : []),
+      ...this.extraArgs,
       this.agent,
+      "prompt",
       "-s",
       this.sessionName,
-      "prompt",
       prompt,
     ];
 
     logger.info("Spawning ACPX process", {
       agent: this.agent,
       cwd: this.cwd,
-      cmd: `${args.slice(0, -1).join(" ")} <prompt>`,
+      argumentCount: args.length - 1,
     });
 
     const handle = await hostSpawn(this.host, args, {

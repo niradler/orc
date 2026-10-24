@@ -99,7 +99,7 @@ test("should persist validated chat defaults without exposing server credentials
   resetConfig();
   const result = await app.request("/api/settings", { headers });
   const text = await result.text();
-  expect(JSON.parse(text).chat).toEqual(chat);
+  expect(JSON.parse(text).chat).toEqual({ ...chat, agentOptions: {} });
   expect(text).not.toContain("private-server-secret");
   for (const patch of [
     { ...chat, api_key: "secret" },

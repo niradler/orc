@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { ChatAgentOptionsMapSchema, ChatPermissionModeSchema } from "./chat-options.js";
+
+export { ChatPermissionModeSchema } from "./chat-options.js";
 
 export const CHAT_SYSTEM_PROMPT =
   "You are an AI assistant integrated into the ORC orchestration hub. Help users manage tasks, review agent activity, and answer questions about the system. Use ORC tools for current workspace facts. Ask before destructive actions or publishing.";
@@ -7,6 +10,29 @@ export const ChatModelSchema = z
   .trim()
   .max(200)
   .regex(/^$|^[a-z0-9][a-z0-9._:/@+-]*$/i);
+export const ChatQuestionSchema = z.object({
+  requestId: z.string().min(1).max(256),
+  questions: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(256),
+        header: z.string().max(500),
+        question: z.string().max(20000),
+        isSecret: z.boolean().optional(),
+        options: z
+          .array(z.object({ label: z.string().max(2000), description: z.string().max(5000) }))
+          .max(50)
+          .nullable()
+          .optional(),
+      }),
+    )
+    .min(1)
+    .max(20),
+});
+export type ChatQuestion = z.infer<typeof ChatQuestionSchema>;
+export const ChatAnswersSchema = z
+  .record(z.string().min(1).max(256), z.array(z.string().max(20000)).min(1).max(20))
+  .refine((value) => Object.keys(value).length <= 20, "Too many answers");
 export const ChatSettingsSchema = z
   .object({
     agent: z
@@ -27,6 +53,8 @@ export const ChatSettingsSchema = z
       .default([]),
     system: z.string().max(20000).default(CHAT_SYSTEM_PROMPT),
     autoApprove: z.boolean().default(false),
+    permissionMode: ChatPermissionModeSchema.optional(),
+    agentOptions: ChatAgentOptionsMapSchema.default({}),
     mcp: z.enum(["orc", "native"]).default("orc"),
   })
   .strict();
@@ -95,7 +123,10 @@ export const ChatEventSchema = z.discriminatedUnion("type", [
     type: z.literal("permission_request"),
     data: z.object({ requestId: z.string(), tool: z.string(), command: z.string() }),
   }),
+  z.object({ type: z.literal("question_request"), data: ChatQuestionSchema }),
+  z.object({ type: z.literal("request_resolved"), requestId: z.string() }),
   z.object({ type: z.literal("thread"), thread: ChatThreadSchema, runId: z.string().uuid() }),
+  z.object({ type: z.literal("session"), runtimeId: z.string().nullable() }),
   z.object({
     type: z.literal("error"),
     message: z.string().catch("The agent could not complete the response."),

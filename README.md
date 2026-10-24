@@ -125,26 +125,41 @@ orc task list
 Open `http://localhost:7700` to use the web dashboard - task board, kanban, flow runs, jobs, memories, sessions, knowledge, and a live chat panel. The same server hosts both the REST API and the prebuilt React SPA, so there is no separate command to run for the UI.
 
 Chat uses the shared agent runtime: Claude through its SDK, Codex through its native
-CLI, and other agents through ACPX. Choose a model from the composer; configure
-model choices, conversation instructions, the ORC MCP connection and automatic
+CLI App Server, and other agents through ACPX. Choose a model beside the agent
+at the top of chat; configure model choices, conversation instructions, tools and permission
 actions in **Settings → Chat**. Defaults are stored in `preferences.chat` in ORC's
-JSON configuration and apply to new conversations on every device. The model
-dialog shows the current conversation's setup. Claude appends the instructions
+JSON configuration and apply to new conversations on every device. Conversation
+settings show the current conversation's setup. Claude appends the instructions
 to its coding system prompt; Codex and ACPX receive them as turn instructions.
 Agent and workspace instructions may also apply.
 
-Automatic actions default off: Claude can request approval in chat, Codex uses a
-read-only sandbox, and ACPX follows its agent's native permission policy. Enabling
-automatic actions lets Claude bypass permission prompts and Codex write inside
-its workspace; ORC rules remain enforced. The ORC MCP option adds an authenticated
+Choose **Ask in chat**, **Allow workspace edits**, or **Full access / bypass permissions**
+for Claude and Codex. Codex's Ask mode uses a read-only sandbox with native approval
+and question responses in chat. Full access disables Codex's sandbox and permission
+prompts; workspace and ORC rules still apply. Change permissions for the next message
+in conversation settings, or save defaults under Settings → Chat. ACPX follows its
+agent's native permission policy. Existing automatic-action settings remain compatible.
+The ORC MCP option adds an authenticated
 connection for Claude and Codex without exposing credentials to the browser.
 Host configuration can include additional MCP servers; choosing host configuration
 does not disable those servers. Other ACPX agents require host configuration.
 
+**Conversation settings → Advanced launch options** accepts SDK options for
+Claude or a JSON argument array for ACPX and Codex. For example, Claude accepts
+`{"permissionMode":"bypassPermissions","maxTurns":20,"effort":"high"}`;
+ACPX accepts `["--approve-all","--timeout","120"]`; Codex accepts
+`["-c","model_reasoning_effort=\"high\""]`. Apply saves existing conversations
+immediately and affects the next message. Each agent keeps its own options.
+ORC validates supported options and retains control of the session identity,
+working folder, response transport and hooks. Credentials stay in host configuration;
+available native flags depend on the installed agent version.
+
 Use the history icon to continue a saved chat or an ended Claude/Codex coding
-session. Synced sessions use the existing verified repository/commit handoff;
+session. The terminal's speech-bubble icon continues in chat; chat's terminal icon
+continues in a terminal using the same existing resume flow. On phones the terminal
+action is in Terminal options. Synced sessions use the existing verified repository/commit handoff;
 provide missing checkout details before importing. Native history stays with the
-agent, while chat displays up to 100 recent imported turns. An active source session
+agent, while chat pages through imported history in batches of 500 messages. An active source session
 must end before chat resumes it. Resume failures never trigger a fresh session.
 New chats use the API working directory locally or the selected SSH host's home;
 resumed chats retain their execution host and folder. New conversation keeps the
@@ -384,7 +399,7 @@ Every task runs a **flow graph** (see [Task flows](#task-flows)); `orc-default` 
 | Backend         | Needs                                                                                                        |
 | --------------- | ------------------------------------------------------------------------------------------------------------ |
 | `claude`        | Nothing to install: runs **in-process** via [@anthropic-ai/claude-agent-sdk](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk), which ships with orc. Uses the Claude Code CLI's stored credentials, or `ANTHROPIC_API_KEY`. The default. |
-| `acpx`          | The [ACP CLI](https://github.com/openclaw/acpx) — 14+ agents (Codex, Gemini, Copilot, Kiro, Cursor, …). Installed as an optional dependency, so a normal `npm i -g orc-ai` gets it; orc finds it there even when it is not on your `PATH`. Point `ORC_ACPX_PATH` at a specific copy to override. |
+| `acpx`          | The [ACP CLI](https://github.com/openclaw/acpx) — 14+ agents (Codex, Gemini, Copilot, Kiro, Cursor, …). Installed as an optional dependency, so a normal `npm i -g orc-ai` gets it. ORC prefers that bundled version, then falls back to `PATH`. Point `ORC_ACPX_PATH` at a specific copy to override. |
 | `agentapi`      | A [coder/agentapi](https://github.com/coder/agentapi) server on the host (HTTP+SSE), wrapping any local coding agent. `AGENTAPI_URL` if it is not on the default port. |
 | `a2a`           | A remote [A2A](https://github.com/google/A2A) endpoint, supplied per task/session — nothing local.            |
 | `claude-cli`    | The `claude` binary on `PATH`. The pre-SDK path, kept for when driving the real CLI matters.                  |

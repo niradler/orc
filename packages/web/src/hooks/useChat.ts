@@ -8,9 +8,11 @@ import {
   appendChatActivity,
   type ChatActivity,
   type ChatMessage,
+  type ChatQuestion,
   ChatSettingsSchema,
   type ChatThread,
 } from "@orc/core/chat";
+import type { ChatAgentOptions } from "@orc/core/chat-options";
 import {
   createContext,
   createElement,
@@ -40,11 +42,17 @@ function useChatController() {
   const [historyBefore, setHistoryBefore] = useState<number | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const historyRequest = useRef<symbol | null>(null);
-  const [permission, setPermission] = useState<{
-    requestId: string;
-    tool: string;
-    command: string;
-  } | null>(null);
+  const [permissions, setPermissions] = useState<
+    {
+      requestId: string;
+      tool: string;
+      command: string;
+    }[]
+  >([]);
+  const permission = permissions[0] ?? null;
+  const [questions, setQuestions] = useState<ChatQuestion[]>([]);
+  const question = questions[0] ?? null;
+  const [responding, setResponding] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const partial = useRef("");
@@ -108,7 +116,8 @@ function useChatController() {
     setStreaming(false);
     setStreamText("");
     setActivity([]);
-    setPermission(null);
+    setPermissions([]);
+    setQuestions([]);
   }, [finishPartial]);
   const openThread = useCallback((next: ChatThread) => {
     if (abortRef.current) return;
@@ -191,8 +200,20 @@ function useChatController() {
         else if (event.type === "thread") {
           setThread(event.thread);
           runId.current = event.runId;
-        } else if (event.type === "permission_request") setPermission(event.data);
-        else {
+        } else if (event.type === "session") {
+          setThread((current) => (current ? { ...current, runtimeId: event.runtimeId } : current));
+        } else if (event.type === "permission_request")
+          setPermissions((current) => [...current, event.data]);
+        else if (event.type === "question_request")
+          setQuestions((current) => [...current, event.data]);
+        else if (event.type === "request_resolved") {
+          setPermissions((current) =>
+            current.filter((request) => request.requestId !== event.requestId),
+          );
+          setQuestions((current) =>
+            current.filter((request) => request.requestId !== event.requestId),
+          );
+        } else {
           activities.current = appendChatActivity(activities.current, event);
           setActivity(activities.current);
         }
@@ -209,6 +230,10 @@ function useChatController() {
             messages: [{ role: "user", content: userMessage.content }],
             agent: config.agent,
             model: config.model,
+            agentOptions: config.agentOptions,
+            ...(config.permissionMode && ["claude", "codex"].includes(config.agent)
+              ? { permissionMode: config.permissionMode }
+              : {}),
             ...(thread ? { threadId: thread.id } : {}),
           }),
           signal: controller.signal,
@@ -249,7 +274,8 @@ function useChatController() {
           setStreaming(false);
           setStreamText("");
           setActivity([]);
-          setPermission(null);
+          setPermissions([]);
+          setQuestions([]);
         }
       }
     },
@@ -257,15 +283,52 @@ function useChatController() {
   );
   const respondPermission = useCallback(
     async (decision: "approved" | "denied") => {
-      if (!permission) return;
+      if (!permission || responding) return;
+      setResponding(true);
       try {
         await api.chat.permission(runId.current, permission.requestId, decision);
-        setPermission((current) => (current?.requestId === permission.requestId ? null : current));
+        setPermissions((current) =>
+          current.filter((request) => request.requestId !== permission.requestId),
+        );
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Permission could not be sent.");
+      } finally {
+        setResponding(false);
       }
     },
-    [permission],
+    [permission, responding],
+  );
+  const respondQuestion = useCallback(
+    async (answers: Record<string, string[]>) => {
+      if (!question || responding) return;
+      setResponding(true);
+      try {
+        await api.chat.answer(runId.current, question.requestId, answers);
+        setQuestions((current) =>
+          current.filter((request) => request.requestId !== question.requestId),
+        );
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Answer could not be sent.");
+      } finally {
+        setResponding(false);
+      }
+    },
+    [question, responding],
+  );
+  const applyAgentOptions = useCallback(
+    async (agent: string, options: ChatAgentOptions) => {
+      const target = currentThread.current;
+      const agentOptions = { ...config.agentOptions, [agent]: options };
+      if (target) await api.chat.configure(target.id, agentOptions);
+      if (currentThread.current?.id !== target?.id) return false;
+      setConfig((current) =>
+        current.agent === agent
+          ? { ...current, agentOptions: { ...current.agentOptions, [agent]: options } }
+          : current,
+      );
+      return true;
+    },
+    [config.agentOptions],
   );
   return {
     messages,
@@ -275,6 +338,7 @@ function useChatController() {
     error,
     config,
     setConfig,
+    applyAgentOptions,
     ready,
     thread,
     openThread,
@@ -283,6 +347,9 @@ function useChatController() {
     loadOlder,
     permission,
     respondPermission,
+    question,
+    respondQuestion,
+    responding,
     send,
     cancel,
     clear,

@@ -309,6 +309,46 @@ export interface paths {
                                 system: string;
                                 /** @default false */
                                 autoApprove: boolean;
+                                /** @enum {string} */
+                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /** @default {} */
+                                agentOptions: {
+                                    [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "claude-sdk";
+                                        options: {
+                                            /** @enum {string} */
+                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            maxTurns?: number;
+                                            maxBudgetUsd?: number;
+                                            /** @enum {string} */
+                                            effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                            thinking?: {
+                                                /** @enum {string} */
+                                                type: "adaptive";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "disabled";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "enabled";
+                                                budgetTokens: number;
+                                            };
+                                            fallbackModel?: string;
+                                            extraArgs?: {
+                                                [key: string]: string | null;
+                                            };
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "codex";
+                                        args: string[];
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "acpx";
+                                        args: string[];
+                                    };
+                                };
                                 /**
                                  * @default orc
                                  * @enum {string}
@@ -403,6 +443,46 @@ export interface paths {
                                 system: string;
                                 /** @default false */
                                 autoApprove: boolean;
+                                /** @enum {string} */
+                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /** @default {} */
+                                agentOptions: {
+                                    [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "claude-sdk";
+                                        options: {
+                                            /** @enum {string} */
+                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            maxTurns?: number;
+                                            maxBudgetUsd?: number;
+                                            /** @enum {string} */
+                                            effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                            thinking?: {
+                                                /** @enum {string} */
+                                                type: "adaptive";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "disabled";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "enabled";
+                                                budgetTokens: number;
+                                            };
+                                            fallbackModel?: string;
+                                            extraArgs?: {
+                                                [key: string]: string | null;
+                                            };
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "codex";
+                                        args: string[];
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "acpx";
+                                        args: string[];
+                                    };
+                                };
                                 /**
                                  * @default orc
                                  * @enum {string}
@@ -455,6 +535,184 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/chat/threads/{id}/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        agentOptions: {
+                            [key: string]: {
+                                /** @enum {string} */
+                                runtime: "claude-sdk";
+                                options: {
+                                    /** @enum {string} */
+                                    permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                    maxTurns?: number;
+                                    maxBudgetUsd?: number;
+                                    /** @enum {string} */
+                                    effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                    thinking?: {
+                                        /** @enum {string} */
+                                        type: "adaptive";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "disabled";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "enabled";
+                                        budgetTokens: number;
+                                    };
+                                    fallbackModel?: string;
+                                    extraArgs?: {
+                                        [key: string]: string | null;
+                                    };
+                                };
+                            } | {
+                                /** @enum {string} */
+                                runtime: "codex";
+                                args: string[];
+                            } | {
+                                /** @enum {string} */
+                                runtime: "acpx";
+                                args: string[];
+                            };
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Chat conversation */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            title: string;
+                            config: {
+                                /** @default codex */
+                                agent: string;
+                                /** @default  */
+                                model: string;
+                                /** @default [] */
+                                models: {
+                                    agent: string;
+                                    id: string;
+                                }[];
+                                /** @default You are an AI assistant integrated into the ORC orchestration hub. Help users manage tasks, review agent activity, and answer questions about the system. Use ORC tools for current workspace facts. Ask before destructive actions or publishing. */
+                                system: string;
+                                /** @default false */
+                                autoApprove: boolean;
+                                /** @enum {string} */
+                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /** @default {} */
+                                agentOptions: {
+                                    [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "claude-sdk";
+                                        options: {
+                                            /** @enum {string} */
+                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            maxTurns?: number;
+                                            maxBudgetUsd?: number;
+                                            /** @enum {string} */
+                                            effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                            thinking?: {
+                                                /** @enum {string} */
+                                                type: "adaptive";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "disabled";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "enabled";
+                                                budgetTokens: number;
+                                            };
+                                            fallbackModel?: string;
+                                            extraArgs?: {
+                                                [key: string]: string | null;
+                                            };
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "codex";
+                                        args: string[];
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "acpx";
+                                        args: string[];
+                                    };
+                                };
+                                /**
+                                 * @default orc
+                                 * @enum {string}
+                                 */
+                                mcp: "orc" | "native";
+                            };
+                            cwd: string;
+                            host: string | null;
+                            runtimeId: string | null;
+                            backend: string;
+                            sourceId: string | null;
+                            messages: {
+                                id: string;
+                                /** @enum {string} */
+                                role: "user" | "assistant";
+                                content: string;
+                                timestamp: number;
+                                agent?: string;
+                                activity?: ({
+                                    /** @enum {string} */
+                                    type: "thinking";
+                                    id: string;
+                                    text: string;
+                                } | {
+                                    /** @enum {string} */
+                                    type: "tool";
+                                    id: string;
+                                    name: string;
+                                    input: string;
+                                    result?: string;
+                                    isError?: boolean;
+                                } | {
+                                    /** @enum {string} */
+                                    type: "status";
+                                    id: string;
+                                    text: string;
+                                })[];
+                            }[];
+                            historyBefore?: number | null;
+                            importedMessages?: number;
+                            updatedAt: number;
+                        };
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/api/chat/threads/{id}/history": {
@@ -572,6 +830,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/runs/{id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        requestId: string;
+                        answers: {
+                            [key: string]: string[];
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Answer delivered to the agent */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            ok: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/stream": {
         parameters: {
             query?: never;
@@ -602,6 +908,45 @@ export interface paths {
                         threadId?: string;
                         system?: string;
                         autoApprove?: boolean;
+                        /** @enum {string} */
+                        permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                        agentOptions?: {
+                            [key: string]: {
+                                /** @enum {string} */
+                                runtime: "claude-sdk";
+                                options: {
+                                    /** @enum {string} */
+                                    permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                    maxTurns?: number;
+                                    maxBudgetUsd?: number;
+                                    /** @enum {string} */
+                                    effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                    thinking?: {
+                                        /** @enum {string} */
+                                        type: "adaptive";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "disabled";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "enabled";
+                                        budgetTokens: number;
+                                    };
+                                    fallbackModel?: string;
+                                    extraArgs?: {
+                                        [key: string]: string | null;
+                                    };
+                                };
+                            } | {
+                                /** @enum {string} */
+                                runtime: "codex";
+                                args: string[];
+                            } | {
+                                /** @enum {string} */
+                                runtime: "acpx";
+                                args: string[];
+                            };
+                        };
                     };
                 };
             };
@@ -700,6 +1045,46 @@ export interface paths {
                                 system: string;
                                 /** @default false */
                                 autoApprove: boolean;
+                                /** @enum {string} */
+                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /** @default {} */
+                                agentOptions: {
+                                    [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "claude-sdk";
+                                        options: {
+                                            /** @enum {string} */
+                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            maxTurns?: number;
+                                            maxBudgetUsd?: number;
+                                            /** @enum {string} */
+                                            effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                            thinking?: {
+                                                /** @enum {string} */
+                                                type: "adaptive";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "disabled";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "enabled";
+                                                budgetTokens: number;
+                                            };
+                                            fallbackModel?: string;
+                                            extraArgs?: {
+                                                [key: string]: string | null;
+                                            };
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "codex";
+                                        args: string[];
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "acpx";
+                                        args: string[];
+                                    };
+                                };
                                 /**
                                  * @default orc
                                  * @enum {string}
@@ -744,6 +1129,46 @@ export interface paths {
                             system?: string;
                             /** @default false */
                             autoApprove?: boolean;
+                            /** @enum {string} */
+                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                            /** @default {} */
+                            agentOptions?: {
+                                [key: string]: {
+                                    /** @enum {string} */
+                                    runtime: "claude-sdk";
+                                    options: {
+                                        /** @enum {string} */
+                                        permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                        maxTurns?: number;
+                                        maxBudgetUsd?: number;
+                                        /** @enum {string} */
+                                        effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                        thinking?: {
+                                            /** @enum {string} */
+                                            type: "adaptive";
+                                        } | {
+                                            /** @enum {string} */
+                                            type: "disabled";
+                                        } | {
+                                            /** @enum {string} */
+                                            type: "enabled";
+                                            budgetTokens: number;
+                                        };
+                                        fallbackModel?: string;
+                                        extraArgs?: {
+                                            [key: string]: string | null;
+                                        };
+                                    };
+                                } | {
+                                    /** @enum {string} */
+                                    runtime: "codex";
+                                    args: string[];
+                                } | {
+                                    /** @enum {string} */
+                                    runtime: "acpx";
+                                    args: string[];
+                                };
+                            };
                             /**
                              * @default orc
                              * @enum {string}
@@ -778,6 +1203,46 @@ export interface paths {
                                 system: string;
                                 /** @default false */
                                 autoApprove: boolean;
+                                /** @enum {string} */
+                                permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                /** @default {} */
+                                agentOptions: {
+                                    [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "claude-sdk";
+                                        options: {
+                                            /** @enum {string} */
+                                            permissionMode?: "default" | "acceptEdits" | "bypassPermissions";
+                                            maxTurns?: number;
+                                            maxBudgetUsd?: number;
+                                            /** @enum {string} */
+                                            effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                            thinking?: {
+                                                /** @enum {string} */
+                                                type: "adaptive";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "disabled";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "enabled";
+                                                budgetTokens: number;
+                                            };
+                                            fallbackModel?: string;
+                                            extraArgs?: {
+                                                [key: string]: string | null;
+                                            };
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "codex";
+                                        args: string[];
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "acpx";
+                                        args: string[];
+                                    };
+                                };
                                 /**
                                  * @default orc
                                  * @enum {string}

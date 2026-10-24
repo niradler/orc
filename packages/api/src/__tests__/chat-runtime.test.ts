@@ -27,6 +27,8 @@ const oldProfile = process.env.USERPROFILE;
 const oldMock = process.env.ORC_E2E_CHAT_MOCK;
 let failResume = false;
 let waitPermission = false;
+let waitQuestion = false;
+let questionAnswers: Record<string, string[]> | undefined;
 let failBeforeResult = false;
 let resultIdentity: string | undefined;
 let closed = 0;
@@ -47,6 +49,10 @@ function session(call: (typeof calls)[number]): AgentSession {
       decision = value;
       resolve?.();
     },
+    respondQuestion: (_id, answers) => {
+      questionAnswers = answers;
+      resolve?.();
+    },
     alive: () => true,
     close: async () => {
       closed++;
@@ -62,6 +68,23 @@ function session(call: (typeof calls)[number]): AgentSession {
         yield {
           type: "permission_request",
           data: { requestId: "permission-1", tool: "context", command: "Read context" },
+        };
+        await permission;
+      }
+      if (waitQuestion) {
+        yield {
+          type: "question_request",
+          data: {
+            requestId: "question-1",
+            questions: [
+              {
+                id: "choice",
+                header: "Choose",
+                question: "Choose a color",
+                options: [{ label: "Blue", description: "Blue color" }],
+              },
+            ],
+          },
         };
         await permission;
       }
@@ -180,10 +203,12 @@ describe("native chat runtime", () => {
       "tool_use",
       "tool_result",
       "text",
+      "session",
       "done",
     ]);
     const opened = result.events[0];
     if (opened?.type !== "thread") throw new Error("No conversation identity");
+    expect(result.events.at(-2)).toMatchObject({ type: "session", runtimeId: "native-fixture" });
     expect(calls[0]?.opts).toMatchObject({
       model: "fixture-selected",
       autoApprove: false,
@@ -215,6 +240,38 @@ describe("native chat runtime", () => {
     ).toHaveLength(4);
     expect(closed).toBeGreaterThanOrEqual(2);
   });
+  test("should save validated per-agent launch options and pass them on resume", async () => {
+    const first = await turn({
+      messages: [{ role: "user", content: "configure this conversation" }],
+    });
+    const opened = first.events[0];
+    if (opened?.type !== "thread") throw new Error("No conversation");
+    const options: ChatThread["config"]["agentOptions"] = {
+      codex: { runtime: "codex", args: ["-c", 'model_reasoning_effort="high"'] },
+      gemini: { runtime: "acpx", args: ["--approve-all"] },
+    };
+    const path = `/api/chat/threads/${opened.thread.id}/config`;
+    const patch = (agentOptions: unknown, auth = true) =>
+      app.request(path, {
+        method: "PATCH",
+        headers: auth ? AUTH : { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentOptions }),
+      });
+    expect((await patch(options, false)).status).toBe(401);
+    expect((await patch({ codex: { runtime: "acpx", args: [] } })).status).toBe(400);
+    expect(
+      (await patch({ codex: { runtime: "codex", args: ["--listen", "ws://other"] } })).status,
+    ).toBe(400);
+    expect((await patch(options)).status).toBe(200);
+    const saved = (await (await request(`/chat/threads/${opened.thread.id}`)).json()) as ChatThread;
+    expect(saved.config.agentOptions).toEqual(options);
+    await turn({
+      threadId: opened.thread.id,
+      messages: [{ role: "user", content: "resume with saved options" }],
+    });
+    expect(calls.at(-1)?.opts.chatAgentOptions).toEqual(options.codex);
+  });
+
   test("model catalog validates auth, agent and conversation scope", async () => {
     expect((await request("/chat/models?agent=gemini", undefined, false)).status).toBe(401);
     expect((await request("/chat/models?agent=--bad")).status).toBe(400);
@@ -422,6 +479,66 @@ describe("native chat runtime", () => {
       ((await (await request(`/chat/threads/${opened.thread.id}`)).json()) as ChatThread).runtimeId,
     ).toBe("native-fixture");
   });
+  test("should validate question replies, reject stale responses and preserve explicit access settings", async () => {
+    waitQuestion = true;
+    const response = await request("/chat/stream", {
+      permissionMode: "bypassPermissions",
+      messages: [{ role: "user", content: "wait for an answer" }],
+    });
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("No stream");
+    try {
+      let text = "";
+      const decoder = new TextDecoder();
+      while (!text.includes('"question_request"')) {
+        const part = await reader.read();
+        if (part.done) throw new Error("Ended before question");
+        text += decoder.decode(part.value);
+      }
+      const opened = text
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => JSON.parse(line.slice(5)))
+        .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+      const path = `/chat/runs/${opened.runId}/answer`;
+      expect(
+        (await request(path, { requestId: "question-1", answers: { choice: ["Blue"] } }, false))
+          .status,
+      ).toBe(401);
+      expect(
+        (await request(path, { requestId: "wrong", answers: { choice: ["Blue"] } })).status,
+      ).toBe(409);
+      expect(
+        (await request(path, { requestId: "question-1", answers: { wrong: ["Blue"] } })).status,
+      ).toBe(400);
+      expect(
+        (await request(path, { requestId: "question-1", answers: { choice: [""] } })).status,
+      ).toBe(400);
+      expect(
+        (await request(path, { requestId: "question-1", answers: { choice: ["Blue"] } })).status,
+      ).toBe(200);
+      while (!(await reader.read()).done) {
+        /* drain resumed turn */
+      }
+      expect(questionAnswers).toEqual({ choice: ["Blue"] });
+      expect(
+        (await request(path, { requestId: "question-1", answers: { choice: ["Blue"] } })).status,
+      ).toBe(409);
+      expect(calls.at(-1)?.opts).toMatchObject({
+        interactive: true,
+        permissionMode: "bypassPermissions",
+      });
+      const saved = (await (
+        await request(`/chat/threads/${opened.thread.id}`)
+      ).json()) as ChatThread;
+      expect(saved.config.permissionMode).toBe("bypassPermissions");
+      expect(JSON.stringify(saved.messages)).not.toContain('"choice"');
+    } finally {
+      waitQuestion = false;
+      reader.releaseLock();
+    }
+  });
+
   test("permission replies unblock the correct run and concurrent sends are refused", async () => {
     waitPermission = true;
     const response = await request("/chat/stream", {
@@ -446,6 +563,15 @@ describe("native chat runtime", () => {
         await request("/chat/stream", {
           threadId: opened.thread.id,
           messages: [{ role: "user", content: "duplicate" }],
+        })
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await app.request(`/api/chat/threads/${opened.thread.id}/config`, {
+          method: "PATCH",
+          headers: AUTH,
+          body: JSON.stringify({ agentOptions: {} }),
         })
       ).status,
     ).toBe(409);
