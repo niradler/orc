@@ -58,6 +58,7 @@ import type {
   SkillSyncInput,
   SkillSyncResult,
   SkillUpdate,
+  SkillVisibility,
 } from "@orc/sdk/types";
 
 export type {
@@ -789,9 +790,9 @@ export const api = {
   },
 
   skills: {
-    visibility: () => req<{ hidden_builtins: string[] }>("GET", "/skills/settings/visibility"),
-    setVisibility: (hidden_builtins: string[]) =>
-      req<{ hidden_builtins: string[] }>("PUT", "/skills/settings/visibility", { hidden_builtins }),
+    visibility: () => req<SkillVisibility>("GET", "/skills/settings/visibility"),
+    setVisibility: (policy: Partial<SkillVisibility>) =>
+      req<SkillVisibility>("PUT", "/skills/settings/visibility", policy),
     updateInstructions: (name: string, input: Omit<SkillUpdate, "skill_name">) =>
       req<SkillFull>("PUT", `/skills/${encodeURIComponent(name)}/instructions`, input),
     history: (name: string, scope: ScopeQuery = {}) =>

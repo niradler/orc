@@ -1,8 +1,18 @@
 import type { ScopeQuery } from "@orc/sdk/types";
-import { useQueryClient } from "@tanstack/react-query";
-import { Download, Plus, Search } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Download,
+  Plus,
+  Search,
+  ToggleLeft,
+  ToggleRight,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { api, type SkillFull, type SkillRefContent, type SkillSource } from "@/api/client";
+import { BulkActionBar } from "@/components/BulkActionBar";
 import { CodeEditor } from "@/components/CodeEditor";
 import { DetailField } from "@/components/DetailField";
 import { DocumentTabs } from "@/components/DocumentTabs";
@@ -36,6 +46,7 @@ import {
 } from "@/components/ui/table";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
+import { useListSelection } from "@/hooks/useListSelection";
 import { useProjectScope } from "@/hooks/useProjectScope";
 import {
   useCreateSkill,
@@ -44,10 +55,19 @@ import {
   useSkills,
   useSkillVisibility,
 } from "@/hooks/useSkills";
+import { applyBulkAction } from "@/lib/bulk-actions";
 import { readPrimitiveFolder } from "@/lib/primitive-files";
 import { useViewParam } from "@/lib/view-params";
 
 type SourceFilter = "all" | "builtin" | "user";
+type RepositorySort = "default" | "asc" | "desc";
+
+const REPOSITORY_SORT_ORDER: Record<RepositorySort, "none" | "ascending" | "descending"> = {
+  default: "none",
+  asc: "ascending",
+  desc: "descending",
+};
+const REPOSITORY_SORT_ICONS = { default: ArrowUpDown, asc: ArrowUp, desc: ArrowDown };
 
 const SOURCE_FILTERS: Array<{ value: SourceFilter; label: string }> = [
   { value: "all", label: "All" },
@@ -71,6 +91,12 @@ export default function Skills({ projectId }: { projectId: string }) {
     "builtin",
     "user",
   ]);
+  const [repositorySort, setRepositorySort] = useViewParam<RepositorySort>(
+    "skillRepositorySort",
+    "default",
+    ["default", "asc", "desc"],
+  );
+  const RepositorySortIcon = REPOSITORY_SORT_ICONS[repositorySort];
   useEffect(() => setSearchInput(query), [query]);
   const {
     selectedId: selectedSkill,
@@ -95,6 +121,64 @@ export default function Skills({ projectId }: { projectId: string }) {
     include_hidden: true,
   });
   const skills = library?.skills;
+  const queryClient = useQueryClient();
+  const userSkills = (skills ?? []).filter((skill) => skill.source === "user");
+  const origins = useQueries({
+    queries: userSkills.map((skill) => ({
+      queryKey: ["skill-origin", skill.name],
+      queryFn: () => api.skills.origin(skill.name),
+    })),
+  });
+  const importedNames = userSkills
+    .filter((_, index) => Boolean(origins[index]?.data))
+    .map((skill) => skill.name);
+  const repositoryByName = new Map(
+    userSkills.map((skill, index) => [skill.name, origins[index]?.data?.repository]),
+  );
+  const displayedSkills = [...(skills ?? [])];
+  if (repositorySort !== "default") {
+    displayedSkills.sort((left, right) => {
+      const leftRepository = repositoryByName.get(left.name);
+      const rightRepository = repositoryByName.get(right.name);
+      if (!leftRepository && rightRepository) return 1;
+      if (leftRepository && !rightRepository) return -1;
+      const compared = (leftRepository ?? "").localeCompare(rightRepository ?? "", undefined, {
+        sensitivity: "base",
+      });
+      if (compared) return repositorySort === "asc" ? compared : -compared;
+      return left.name.localeCompare(right.name);
+    });
+  }
+  const selectionScope = JSON.stringify([project, query, sourceFilter]);
+  const currentScope = useRef(selectionScope);
+  currentScope.current = selectionScope;
+  const selection = useListSelection(importedNames, selectionScope);
+  const bulkSync = useMutation({
+    mutationFn: async ({ names, scope }: { names: string[]; scope: string }) => ({
+      ...(await applyBulkAction(names, async (name) => {
+        const result = await api.skills.sync(name);
+        if (!result.applied)
+          throw new Error(`Conflicts: ${result.conflicts.join(", ")}. Open this skill to review.`);
+      })),
+      scope,
+    }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["skills"] }),
+        queryClient.invalidateQueries({ queryKey: ["skill"] }),
+        queryClient.invalidateQueries({ queryKey: ["skill-origin"] }),
+      ]);
+    },
+  });
+  const bulkResult = bulkSync.data?.scope === selectionScope ? bulkSync.data : undefined;
+  async function syncSelected(): Promise<void> {
+    const result = await bulkSync.mutateAsync({
+      names: selection.selectedIds,
+      scope: selectionScope,
+    });
+    if (result.scope === currentScope.current)
+      selection.select(result.failed.map((item) => item.id));
+  }
 
   if (error) return <ErrorState message={(error as Error).message} onRetry={() => refetch()} />;
 
@@ -146,8 +230,8 @@ export default function Skills({ projectId }: { projectId: string }) {
         .
       </p>
       <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
-        Built-in visibility applies to agent discovery across this installation. Hidden skills
-        remain readable by name and available to flows. Authored overrides stay visible.
+        Visibility applies to agent discovery across this installation. Hidden skills remain
+        readable by name and available to flows. Modified means the skill instructions were edited.
       </p>
       {(visibility.error || setVisibility.error) && (
         <p role="alert" className="text-destructive text-xs mb-2">
@@ -188,6 +272,7 @@ export default function Skills({ projectId }: { projectId: string }) {
             className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
           />
           <Input
+            data-testid="skill-search-input"
             aria-label="Search skills"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
@@ -197,6 +282,7 @@ export default function Skills({ projectId }: { projectId: string }) {
           />
         </div>
         <Button
+          data-testid="skill-search-submit"
           variant="outline"
           size="sm"
           onClick={() => setQuery(searchInput)}
@@ -206,6 +292,52 @@ export default function Skills({ projectId }: { projectId: string }) {
         </Button>
       </div>
 
+      {!!importedNames.length && (
+        <BulkActionBar
+          resourceLabel="GitHub skills"
+          count={selection.selectedIds.length}
+          allSelected={selection.allSelected}
+          someSelected={selection.someSelected}
+          onSelectAll={selection.selectAll}
+          onClear={selection.clear}
+          disabled={bulkSync.isPending || origins.some((origin) => origin.isPending)}
+        >
+          <Button
+            data-testid="skills-bulk-sync"
+            variant="outline"
+            size="sm"
+            disabled={bulkSync.isPending}
+            onClick={() => void syncSelected()}
+          >
+            {bulkSync.isPending ? "Syncing…" : "Sync selected from GitHub"}
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            Local edits are preserved; conflicts require review.
+          </span>
+        </BulkActionBar>
+      )}
+      {origins.some((origin) => origin.error) && (
+        <p role="alert" className="text-sm text-destructive">
+          Could not check GitHub origins: {origins.find((origin) => origin.error)?.error?.message}
+        </p>
+      )}
+      {bulkResult && (
+        <div data-testid="skills-bulk-result" role="status" className="mb-3 text-sm">
+          <p>
+            {bulkResult.succeeded.length} synced; {bulkResult.failed.length} need attention.
+          </p>
+          {bulkResult.failed.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className="block text-left text-destructive underline"
+              onClick={() => openSkillDetail(item.id)}
+            >
+              {item.id}: {item.error}
+            </button>
+          ))}
+        </div>
+      )}
       {isLoading ? (
         <div className="space-y-2">
           {[...Array(5)].map((_, i) => (
@@ -220,6 +352,9 @@ export default function Skills({ projectId }: { projectId: string }) {
           <Table>
             <TableHeader>
               <TableRow className="border-b border-outline-variant hover:bg-transparent">
+                <TableHead className="w-12">
+                  <span className="sr-only">Select GitHub skills</span>
+                </TableHead>
                 <TableHead className="font-label text-sm  text-muted-foreground">Name</TableHead>
                 <TableHead className="font-label text-sm  text-muted-foreground">
                   Description
@@ -227,11 +362,29 @@ export default function Skills({ projectId }: { projectId: string }) {
                 <TableHead className="font-label text-sm  text-muted-foreground w-24">
                   Source
                 </TableHead>
+                <TableHead
+                  data-testid="skill-repository-header"
+                  aria-sort={REPOSITORY_SORT_ORDER[repositorySort]}
+                >
+                  <button
+                    type="button"
+                    data-testid="skill-repository-sort"
+                    className="flex min-h-11 items-center gap-2 text-sm text-muted-foreground hover:text-on-surface"
+                    onClick={() => {
+                      if (repositorySort === "default") setRepositorySort("asc");
+                      else if (repositorySort === "asc") setRepositorySort("desc");
+                      else setRepositorySort("default");
+                    }}
+                    title="Sort by GitHub repository: ascending, descending, then default order"
+                  >
+                    GitHub repository <RepositorySortIcon size={14} aria-hidden="true" />
+                  </button>
+                </TableHead>
                 <TableHead className="text-xs text-muted-foreground">Agent discovery</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(skills ?? []).map((skill) => (
+              {displayedSkills.map((skill) => (
                 <TableRow
                   key={skill.name}
                   data-testid="skill-row"
@@ -239,6 +392,19 @@ export default function Skills({ projectId }: { projectId: string }) {
                   className="border-b border-outline-variant/50 hover:bg-surface-low cursor-pointer"
                   onClick={() => openSkillDetail(skill.name)}
                 >
+                  <TableCell onClick={(event) => event.stopPropagation()}>
+                    {importedNames.includes(skill.name) && (
+                      <input
+                        type="checkbox"
+                        data-testid="skill-select"
+                        aria-label={`Select ${skill.name}`}
+                        checked={selection.selectedIds.includes(skill.name)}
+                        disabled={bulkSync.isPending}
+                        onChange={() => selection.toggle(skill.name)}
+                        className="size-4 accent-primary"
+                      />
+                    )}
+                  </TableCell>
                   <TableCell className="font-body text-sm font-medium text-on-surface">
                     <button
                       type="button"
@@ -250,42 +416,77 @@ export default function Skills({ projectId }: { projectId: string }) {
                     >
                       {skill.name}
                     </button>
-                    {skill.mutation && <span className="ml-2 text-primary text-xs">Mutated</span>}
+                    {skill.mutation && <span className="ml-2 text-primary text-xs">Modified</span>}
                   </TableCell>
                   <TableCell className="font-body text-sm text-muted-foreground max-w-md truncate">
                     {skill.description || "\u2014"}
                   </TableCell>
-                  <TableCell>
+                  <TableCell data-testid="skill-source-cell">
                     <span
                       className={`inline-flex py-0.5 font-label text-sm ${SOURCE_COLORS[skill.source]}`}
                     >
                       {skill.source}
                     </span>
                   </TableCell>
-                  <TableCell onClick={(event) => event.stopPropagation()}>
-                    {skill.source === "builtin" && !skill.mutation ? (
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-label={`${skill.name} visible to agents`}
-                        aria-checked={!skill.discovery_hidden}
-                        data-testid={`skill-visibility-${skill.name}`}
-                        disabled={!visibility.data || setVisibility.isPending}
-                        className="text-xs text-primary disabled:opacity-50"
-                        onClick={() => {
-                          const hidden = new Set(visibility.data?.hidden_builtins ?? []);
-                          if (hidden.has(skill.name)) hidden.delete(skill.name);
-                          else hidden.add(skill.name);
-                          setVisibility.mutate([...hidden]);
-                        }}
+                  <TableCell
+                    data-testid="skill-repository-cell"
+                    onClick={(event) => event.stopPropagation()}
+                    className="max-w-56 truncate text-sm text-muted-foreground"
+                  >
+                    {repositoryByName.get(skill.name) ? (
+                      <a
+                        data-testid="skill-repository-link"
+                        href={`https://github.com/${repositoryByName.get(skill.name)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline"
+                        title={repositoryByName.get(skill.name)}
                       >
-                        {skill.discovery_hidden ? "Hidden — show" : "Visible — hide"}
-                      </button>
+                        {repositoryByName.get(skill.name)}
+                      </a>
                     ) : (
-                      <span className="text-xs text-muted-foreground">
-                        {skill.mutation ? "Visible (override)" : "Visible"}
-                      </span>
+                      "—"
                     )}
+                  </TableCell>
+                  <TableCell onClick={(event) => event.stopPropagation()}>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-label={`${skill.name} visible to agents`}
+                      aria-checked={!skill.discovery_hidden}
+                      data-testid={`skill-visibility-${skill.name}`}
+                      disabled={!visibility.data || setVisibility.isPending}
+                      className="inline-flex min-h-11 items-center gap-2 text-xs text-primary disabled:opacity-50"
+                      title={
+                        skill.discovery_hidden
+                          ? "Show in agent discovery"
+                          : "Hide from agent discovery"
+                      }
+                      onClick={() => {
+                        const hidden = new Set(visibility.data?.hidden_skills ?? []);
+                        const builtins = new Set(visibility.data?.hidden_builtins ?? []);
+                        if (skill.discovery_hidden) {
+                          hidden.delete(skill.name);
+                          builtins.delete(skill.name);
+                        } else hidden.add(skill.name);
+                        setVisibility.mutate({
+                          hidden_skills: [...hidden],
+                          hidden_builtins: [...builtins],
+                        });
+                      }}
+                    >
+                      {skill.discovery_hidden ? (
+                        <ToggleLeft
+                          size={22}
+                          aria-hidden="true"
+                          className="text-muted-foreground"
+                        />
+                      ) : (
+                        <ToggleRight size={22} aria-hidden="true" />
+                      )}
+                      {skill.discovery_hidden ? "Hidden" : "Visible"}
+                      {skill.mutation && " (Modified)"}
+                    </button>
                   </TableCell>
                 </TableRow>
               ))}

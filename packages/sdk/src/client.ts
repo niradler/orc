@@ -106,6 +106,7 @@ import type {
   SkillRefContent,
   SkillSource,
   SkillUpdate,
+  SkillVisibility,
   Task,
   TaskLink,
   TranscriptPage,
@@ -426,9 +427,13 @@ export function createOrcClient(options?: OrcClientOptions) {
     skills: {
       download: (name: string, ref: string, scope: ScopeQuery = {}) =>
         c<SkillDownload>("POST", `/skills/${e(name)}/download`, { ref, ...scope }),
-      visibility: () => c<{ hidden_builtins: string[] }>("GET", "/skills/settings/visibility"),
-      setVisibility: (hidden_builtins: string[]) =>
-        c<{ hidden_builtins: string[] }>("PUT", "/skills/settings/visibility", { hidden_builtins }),
+      visibility: () => c<SkillVisibility>("GET", "/skills/settings/visibility"),
+      setVisibility: (policy: Partial<SkillVisibility> | string[]) =>
+        c<SkillVisibility>(
+          "PUT",
+          "/skills/settings/visibility",
+          Array.isArray(policy) ? { hidden_builtins: policy } : policy,
+        ),
       updateInstructions: (name: string, input: Omit<SkillUpdate, "skill_name">) =>
         c<SkillFull>("PUT", `/skills/${encodeURIComponent(name)}/instructions`, input),
       history: (name: string, scope: ScopeQuery = {}) =>

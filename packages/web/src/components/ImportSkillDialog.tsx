@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "@/api/client";
+import { BulkActionBar } from "@/components/BulkActionBar";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,20 +12,52 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useListSelection } from "@/hooks/useListSelection";
 
 export function ImportSkillDialog({ onClose }: { onClose: () => void }) {
   const [source, setSource] = useState("");
-  const [selected, setSelected] = useState<string[]>([]);
+  const [importedPaths, setImportedPaths] = useState<string[]>([]);
   const queryClient = useQueryClient();
   const discover = useMutation({
     mutationFn: api.skills.discover,
-    onSuccess: () => setSelected([]),
+    onSuccess: () => {
+      selection.clear();
+      setImportedPaths([]);
+    },
   });
+  const selection = useListSelection(
+    (discover.data?.skills ?? [])
+      .filter((skill) => !skill.installed && !importedPaths.includes(skill.path))
+      .map((skill) => skill.path),
+    `${source}:${discover.data?.commit ?? ""}`,
+  );
+  const selected = selection.selectedIds;
   const importing = useMutation({
-    mutationFn: api.skills.import,
-    onSuccess: async () => {
+    mutationFn: async () => {
+      if (!discover.data) throw new Error("Discover skills first");
+      const failed: { path: string; error: string }[] = [];
+      const imported: string[] = [];
+      for (let offset = 0; offset < selected.length; offset += 16) {
+        const paths = selected.slice(offset, offset + 16);
+        try {
+          await api.skills.import({ source: source.trim(), commit: discover.data.commit, paths });
+          imported.push(...paths);
+        } catch (error) {
+          failed.push(
+            ...paths.map((path) => ({
+              path,
+              error: error instanceof Error ? error.message : "Import failed",
+            })),
+          );
+        }
+      }
+      return { imported, failed };
+    },
+    onSuccess: async (result) => {
       await queryClient.invalidateQueries({ queryKey: ["skills"] });
-      onClose();
+      setImportedPaths((paths) => [...paths, ...result.imported]);
+      selection.select(result.failed.map((item) => item.path));
+      if (!result.failed.length) onClose();
     },
   });
   const busy = discover.isPending || importing.isPending;
@@ -51,7 +84,8 @@ export function ImportSkillDialog({ onClose }: { onClose: () => void }) {
               setSource(event.target.value);
               discover.reset();
               importing.reset();
-              setSelected([]);
+              selection.clear();
+              setImportedPaths([]);
             }}
             placeholder="https://github.com/vercel-labs/agent-skills"
             autoFocus
@@ -73,6 +107,19 @@ export function ImportSkillDialog({ onClose }: { onClose: () => void }) {
             {!discover.data.skills.length && (
               <p role="status">No valid skills found in this source.</p>
             )}
+            <BulkActionBar
+              resourceLabel="new skills"
+              count={selected.length}
+              allSelected={selection.allSelected}
+              someSelected={selection.someSelected}
+              onSelectAll={selection.selectAll}
+              onClear={selection.clear}
+              disabled={busy}
+            >
+              <span className="text-xs text-muted-foreground">
+                Imports run in batches of up to 16.
+              </span>
+            </BulkActionBar>
             <div className="max-h-[45vh] overflow-y-auto space-y-2">
               {discover.data.skills.map((skill) => (
                 <label
@@ -85,22 +132,12 @@ export function ImportSkillDialog({ onClose }: { onClose: () => void }) {
                     type="checkbox"
                     data-testid="remote-skill-select"
                     checked={selected.includes(skill.path)}
-                    disabled={
-                      busy ||
-                      skill.installed ||
-                      (!selected.includes(skill.path) && selected.length >= 16)
-                    }
-                    onChange={(event) =>
-                      setSelected(
-                        event.target.checked
-                          ? [...selected, skill.path]
-                          : selected.filter((path) => path !== skill.path),
-                      )
-                    }
+                    disabled={busy || skill.installed || importedPaths.includes(skill.path)}
+                    onChange={() => selection.toggle(skill.path)}
                   />
                   <span className="text-sm">
                     <span className="font-medium">{skill.name}</span>
-                    {skill.installed && (
+                    {(skill.installed || importedPaths.includes(skill.path)) && (
                       <span className="ml-2 text-xs text-outline">Already installed</span>
                     )}
                     <span className="block text-xs text-outline">{skill.description}</span>
@@ -123,6 +160,19 @@ export function ImportSkillDialog({ onClose }: { onClose: () => void }) {
             {(discover.error || importing.error)?.message}
           </p>
         )}
+        {!!importing.data?.failed.length && (
+          <div role="alert" className="text-sm text-destructive">
+            <p>
+              {importing.data.imported.length} imported; {importing.data.failed.length} failed.
+              Failed selections retained for retry.
+            </p>
+            {importing.data.failed.map((item) => (
+              <p key={item.path}>
+                {item.path || "Repository root"}: {item.error}
+              </p>
+            ))}
+          </div>
+        )}
         <DialogFooter>
           <Button variant="ghost" disabled={busy} onClick={onClose}>
             Cancel
@@ -130,14 +180,7 @@ export function ImportSkillDialog({ onClose }: { onClose: () => void }) {
           <Button
             data-testid="skill-import-submit"
             disabled={busy || !discover.data || !selected.length}
-            onClick={() =>
-              discover.data &&
-              importing.mutate({
-                source: source.trim(),
-                commit: discover.data.commit,
-                paths: selected,
-              })
-            }
+            onClick={() => importing.mutate()}
           >
             {importing.isPending
               ? "Importing…"

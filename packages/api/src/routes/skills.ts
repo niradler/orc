@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { hiddenBuiltinSkills, updateGlobalConfig } from "@orc/core/config";
+import { skillVisibility, updateGlobalConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { ScopeQuerySchema } from "@orc/core/scope";
 import { MAX_SKILL_DOWNLOAD_TOKEN_CHARS, SkillDownloadSchema } from "@orc/core/skill-download";
@@ -108,14 +108,21 @@ app.openapi(
 );
 
 const VisibilitySchema = z
-  .object({ hidden_builtins: z.array(z.string().min(1).max(64)).max(512) })
+  .object({
+    hidden_builtins: z.array(z.string().min(1).max(64)).max(512),
+    hidden_skills: z.array(z.string().min(1).max(64)).max(512),
+  })
   .strict();
+const VisibilityUpdateSchema = VisibilitySchema.partial().refine(
+  (policy) => policy.hidden_builtins !== undefined || policy.hidden_skills !== undefined,
+  "Provide hidden_skills or hidden_builtins",
+);
 app.openapi(
   createRoute({
     method: "get",
     path: "/skills/settings/visibility",
     tags: ["Skills"],
-    summary: "Get installation-wide built-in discovery visibility",
+    summary: "Get installation-wide skill discovery visibility",
     responses: {
       200: {
         description: "Visibility policy",
@@ -123,7 +130,7 @@ app.openapi(
       },
     },
   }),
-  (c) => c.json({ hidden_builtins: hiddenBuiltinSkills() }),
+  (c) => c.json(skillVisibility()),
 );
 
 app.openapi(
@@ -131,34 +138,42 @@ app.openapi(
     method: "put",
     path: "/skills/settings/visibility",
     tags: ["Skills"],
-    summary: "Set installation-wide built-in discovery visibility",
+    summary: "Set installation-wide skill discovery visibility",
     request: {
-      body: { required: true, content: { "application/json": { schema: VisibilitySchema } } },
+      body: { required: true, content: { "application/json": { schema: VisibilityUpdateSchema } } },
     },
     responses: {
       200: {
         description: "Saved visibility policy",
         content: { "application/json": { schema: VisibilitySchema } },
       },
-      400: { description: "Only built-in skills can be hidden" },
+      400: { description: "Invalid skill visibility policy" },
     },
   }),
   (c) => {
-    const { hidden_builtins } = c.req.valid("json");
+    const input = c.req.valid("json");
+    const current = skillVisibility();
+    const installed = listSkills({ include_hidden: true });
     const builtins = new Set(
-      listSkills({ source: "builtin", include_hidden: true }).map((skill) => skill.name),
+      installed.filter((skill) => skill.source === "builtin").map((skill) => skill.name),
     );
-    for (const name of hiddenBuiltinSkills()) builtins.add(name);
-    if (hidden_builtins.some((name) => !builtins.has(name)))
+    for (const name of current.hidden_builtins) builtins.add(name);
+    if (input.hidden_builtins?.some((name) => !builtins.has(name)))
       throw new ValidationError("Only installed built-in skills can be hidden");
-    const names = [...new Set(hidden_builtins)].sort();
+    const skills = new Set([...installed.map((skill) => skill.name), ...current.hidden_skills]);
+    if (input.hidden_skills?.some((name) => !skills.has(name)))
+      throw new ValidationError("Only installed skills can be hidden");
+    const policy = {
+      hidden_builtins: [...new Set(input.hidden_builtins ?? current.hidden_builtins)].sort(),
+      hidden_skills: [...new Set(input.hidden_skills ?? current.hidden_skills)].sort(),
+    };
     updateGlobalConfig((raw) => {
       raw.skills = {
         ...(raw.skills as Record<string, unknown> | undefined),
-        hidden_builtins: names,
+        ...policy,
       };
     });
-    return c.json({ hidden_builtins: names });
+    return c.json(policy);
   },
 );
 

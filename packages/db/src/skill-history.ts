@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { statSync } from "node:fs";
+import { skillVisibility } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import {
@@ -154,7 +155,7 @@ export class SkillHistory {
     const { frontmatter } = parseFrontmatter(change.raw);
     return {
       ...skill,
-      discovery_hidden: false,
+      discovery_hidden: skillVisibility().hidden_skills.includes(skill.name),
       description: frontmatter.description,
       mutation: {
         id: change.id,

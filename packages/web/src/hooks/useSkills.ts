@@ -1,4 +1,4 @@
-import type { ScopeQuery } from "@orc/sdk/types";
+import type { ScopeQuery, SkillVisibility } from "@orc/sdk/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type CreateSkillInput } from "@/api/client";
 
@@ -18,7 +18,7 @@ export function useSkillVisibility() {
 export function useSetSkillVisibility() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (names: string[]) => api.skills.setVisibility(names),
+    mutationFn: (policy: Partial<SkillVisibility>) => api.skills.setVisibility(policy),
     onSuccess: (policy) => {
       qc.setQueryData(["skill-visibility"], policy);
       qc.invalidateQueries({ queryKey: ["skills"] });
