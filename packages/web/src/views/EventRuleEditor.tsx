@@ -1,4 +1,8 @@
-import { RULE_EVENT_ADAPTERS, type RuleHookBackend } from "@orc/core/rule-events";
+import {
+  RULE_EVENT_ADAPTERS,
+  type RuleHookBackend,
+  ruleEventCapability,
+} from "@orc/core/rule-events";
 import {
   type EventRule,
   EventRuleSchema,
@@ -79,6 +83,21 @@ export function EventRuleEditor({
       ],
   );
   const [type, setType] = useState(rule?.target.type ?? "block");
+  const [requestKind, setRequestKind] = useState<"question" | "approval">(
+    rule?.target.type === "ask_user" ? rule.target.kind : "approval",
+  );
+  const [requestPrompt, setRequestPrompt] = useState(
+    rule?.target.type === "ask_user" ? rule.target.prompt : "May this agent continue?",
+  );
+  const [requestChoices, setRequestChoices] = useState(
+    rule?.target.type === "ask_user" ? rule.target.choices.join("\n") : "",
+  );
+  const [requestNotify, setRequestNotify] = useState<("telegram" | "slack")[]>(
+    rule?.target.type === "ask_user" ? rule.target.notify : [],
+  );
+  const [requestExpiry, setRequestExpiry] = useState(
+    rule?.target.type === "ask_user" ? rule.target.expires_in_seconds : 86400,
+  );
   const [content, setContent] = useState(
     rule?.target.type === "inject_context" ? rule.target.content : "",
   );
@@ -140,13 +159,14 @@ export function EventRuleEditor({
         (agent) => RULE_EVENT_ADAPTERS[agent]?.map((entry) => `native:${entry.native}`) ?? [],
       ),
     );
+  if (selected.every((agent) => ["claude", "codex"].includes(agent)))
+    catalog.push("runtime:permission_request", "runtime:question_request");
   const supports = (feature: "block" | "context" | "rewrite_command"): boolean =>
     eventNames.every((event) => {
-      const entries = selected.flatMap((agent) =>
-        RULE_EVENT_ADAPTERS[agent].filter(
-          (entry) => entry.event === event || `native:${entry.native}` === event,
-        ),
-      );
+      const entries = selected.flatMap((agent) => {
+        const entry = ruleEventCapability(agent, event);
+        return entry ? [entry] : [];
+      });
       return entries.length > 0 && entries.every((entry) => entry[feature]);
     });
   const save = (): void => {
@@ -183,31 +203,46 @@ export function EventRuleEditor({
           })),
         },
         target:
-          type === "block"
-            ? { type }
-            : type === "inject_context"
-              ? { type, content }
-              : type === "job"
-                ? { type, job_id: jobId }
-                : type === "rewrite_command"
-                  ? {
-                      type,
-                      argv: JSON.parse(processorArgv),
-                      timeout_ms: processorTimeout,
-                      rewrite_exit_codes: JSON.parse(rewriteCodes),
-                      passthrough_exit_codes: JSON.parse(passthroughCodes),
-                    }
-                  : type === "orc_action"
+          type === "ask_user"
+            ? {
+                type,
+                kind: requestKind,
+                prompt: requestPrompt,
+                notify: requestNotify,
+                expires_in_seconds: requestExpiry,
+                choices:
+                  requestKind === "question"
+                    ? requestChoices
+                        .split("\n")
+                        .map((value) => value.trim())
+                        .filter(Boolean)
+                    : [],
+              }
+            : type === "block"
+              ? { type }
+              : type === "inject_context"
+                ? { type, content }
+                : type === "job"
+                  ? { type, job_id: jobId }
+                  : type === "rewrite_command"
                     ? {
                         type,
-                        action: orcAction,
-                        timeout_ms: orcTimeout,
-                        ...(orcAction === "sync_agent_memory"
-                          ? { memory_directory: memoryDirectory }
-                          : {}),
-                        ...(orcAction === "record_event" ? { event_type: eventType } : {}),
+                        argv: JSON.parse(processorArgv),
+                        timeout_ms: processorTimeout,
+                        rewrite_exit_codes: JSON.parse(rewriteCodes),
+                        passthrough_exit_codes: JSON.parse(passthroughCodes),
                       }
-                    : { type, mode, argv: JSON.parse(argv), timeout_ms: timeout },
+                    : type === "orc_action"
+                      ? {
+                          type,
+                          action: orcAction,
+                          timeout_ms: orcTimeout,
+                          ...(orcAction === "sync_agent_memory"
+                            ? { memory_directory: memoryDirectory }
+                            : {}),
+                          ...(orcAction === "record_event" ? { event_type: eventType } : {}),
+                        }
+                      : { type, mode, argv: JSON.parse(argv), timeout_ms: timeout },
       });
       setError("");
       onSave(parsed);
@@ -476,6 +511,9 @@ export function EventRuleEditor({
             {!supports("context") ? " (unavailable for this scope)" : ""}
           </option>
           <option value="job">Run ORC job</option>
+          <option value="ask_user" disabled={!supports("block")}>
+            Ask user
+          </option>
           <option value="script">Run custom script</option>
           <option value="orc_action">Run built-in ORC action</option>
           <option value="rewrite_command" disabled={!supports("rewrite_command")}>
@@ -483,6 +521,82 @@ export function EventRuleEditor({
             {!supports("rewrite_command") ? " (select Claude pre tool)" : ""}
           </option>
         </select>
+        {type === "ask_user" && (
+          <div className="space-y-3">
+            <Label htmlFor="rule-request-kind">Request</Label>
+            <select
+              id="rule-request-kind"
+              data-testid="rule-request-kind"
+              className={selectClass}
+              value={requestKind}
+              onChange={(event) => setRequestKind(event.target.value as "question" | "approval")}
+            >
+              <option value="approval">Approve or deny the proposed action</option>
+              <option value="question" disabled={!supports("context")}>
+                Answer a question
+              </option>
+            </select>
+            <Label htmlFor="rule-request-prompt">Question / approval prompt</Label>
+            <Input
+              id="rule-request-prompt"
+              data-testid="rule-request-prompt"
+              value={requestPrompt}
+              onChange={(event) => setRequestPrompt(event.target.value)}
+            />
+            <Label htmlFor="rule-request-expiry">Wait limit (seconds)</Label>
+            <Input
+              id="rule-request-expiry"
+              data-testid="rule-request-expiry"
+              type="number"
+              min={1}
+              max={604800}
+              value={requestExpiry}
+              onChange={(event) => setRequestExpiry(Number(event.target.value))}
+            />
+            <p className="text-xs text-outline">
+              Expiration never grants approval. An installed native hook's timeout must be longer
+              than this limit.
+            </p>
+            {requestKind === "question" && (
+              <>
+                <Label htmlFor="rule-request-choices">Choices (one per line, optional)</Label>
+                <textarea
+                  id="rule-request-choices"
+                  data-testid="rule-request-choices"
+                  className={selectClass}
+                  value={requestChoices}
+                  onChange={(event) => setRequestChoices(event.target.value)}
+                />
+              </>
+            )}
+            <p className="text-xs text-outline">
+              Waits in Attention needed. Approval lets the agent act with its existing permissions.
+            </p>
+            <div className="flex gap-4 text-sm">
+              {(["telegram", "slack"] as const).map((channel) => (
+                <label key={channel} className="flex gap-2 items-center">
+                  <input
+                    type="checkbox"
+                    data-testid={`rule-notify-${channel}`}
+                    checked={requestNotify.includes(channel)}
+                    onChange={(event) =>
+                      setRequestNotify(
+                        event.target.checked
+                          ? [...requestNotify, channel]
+                          : requestNotify.filter((item) => item !== channel),
+                      )
+                    }
+                  />
+                  Notify {channel === "telegram" ? "Telegram" : "Slack"}
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-outline">
+              Uses authorized gateway chats with the same selected project. Channel replies never
+              grant extra privileges.
+            </p>
+          </div>
+        )}
         {type === "orc_action" && (
           <>
             <Label htmlFor="rule-orc-action">ORC action</Label>

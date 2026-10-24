@@ -19,6 +19,7 @@ export const ChatQuestionSchema = z.object({
         header: z.string().max(500),
         question: z.string().max(20000),
         isSecret: z.boolean().optional(),
+        multiSelect: z.boolean().optional(),
         options: z
           .array(z.object({ label: z.string().max(2000), description: z.string().max(5000) }))
           .max(50)

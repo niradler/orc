@@ -51,6 +51,7 @@ export async function gotoView(
     | "dashboard"
     | "overview"
     | "activity"
+    | "attention"
     | "tasks"
     | "jobs"
     | "memories"

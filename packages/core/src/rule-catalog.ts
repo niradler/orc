@@ -35,6 +35,91 @@ const rtkTarget = {
 
 export const RULE_CATALOG: readonly RuleTemplate[] = [
   template({
+    id: "orc-native-questions",
+    name: "ORC · Agent questions",
+    category: "Guidance",
+    description: "Send Claude and Codex questions and non-secret MCP forms to Attention needed.",
+    configuration:
+      "For ORC-managed Claude/Codex sessions. Native tool choices override template choices. Enable optional channel notifications in the action.",
+    rule: {
+      ...base,
+      id: "orc-native-questions",
+      reason: "Collect the human answer before continuing",
+      scope: { agents: ["claude", "codex"], events: ["runtime:question_request"] },
+      filter: { match: "all", conditions: [] },
+      target: { type: "ask_user", kind: "question", prompt: "Agent question" },
+    },
+  }),
+  template({
+    id: "orc-native-approvals",
+    name: "ORC · Agent tool approvals",
+    category: "Protection",
+    description: "Review native command, file and permission requests in Attention needed.",
+    configuration:
+      "For ORC-managed Claude/Codex sessions. Select default permissions so the agent emits native approvals. Existing agent permissions still apply.",
+    rule: {
+      ...base,
+      id: "orc-native-approvals",
+      reason: "Review the exact proposed action",
+      scope: { agents: ["claude", "codex"], events: ["runtime:permission_request"] },
+      filter: { match: "all", conditions: [] },
+      target: {
+        type: "ask_user",
+        kind: "approval",
+        prompt: "May this agent perform the shown action?",
+      },
+    },
+  }),
+  template({
+    id: "orc-claude-hook-questions",
+    name: "ORC · External Claude questions",
+    category: "Guidance",
+    description:
+      "Collect AskUserQuestion answers from an independently launched Claude through its native command hook.",
+    configuration:
+      "Install Claude PreToolUse hooks with a timeout longer than this request lifetime. Requires an existing ORC CLI/API connection on that machine; no helper installation.",
+    rule: {
+      ...base,
+      id: "orc-claude-hook-questions",
+      reason: "Collect real native question answers",
+      scope: { agents: ["claude"], events: ["pre_tool"] },
+      filter: {
+        match: "all",
+        conditions: [
+          { predicate: { field: "tool", operator: "equals", value: "AskUserQuestion" } },
+        ],
+      },
+      target: {
+        type: "ask_user",
+        kind: "question",
+        prompt: "Agent question",
+        expires_in_seconds: 1800,
+      },
+    },
+  }),
+  template({
+    id: "orc-claude-hook-approvals",
+    name: "ORC · External Claude approvals",
+    category: "Protection",
+    description:
+      "Route an independently launched Claude's permission prompts into Attention needed.",
+    configuration:
+      "Install Claude PermissionRequest hooks with --timeout-seconds 1815. Native permission prompts must be enabled. This does not grant additional OS privileges.",
+    rule: {
+      ...base,
+      id: "orc-claude-hook-approvals",
+      reason: "Review the exact proposed action",
+      scope: { agents: ["claude"], events: ["permission_request"] },
+      filter: { match: "all", conditions: [] },
+      target: {
+        type: "ask_user",
+        kind: "approval",
+        prompt: "May this agent perform the shown action?",
+        expires_in_seconds: 1800,
+      },
+    },
+  }),
+  template({
     id: "orc-load-context",
     name: "ORC · Load project context",
     category: "Guidance",

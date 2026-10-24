@@ -64,6 +64,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
   agents: ["agents", "agent", "agent-packages", "setup-components"],
   flows: ["flows", "flow"],
   rules: ["rules"],
+  "human-requests": ["human-requests"],
   settings: ["settings"],
   ssh: ["ssh", "backends", "terminals", "worktrees", "sessions", "session", "git", "github"],
   terminals: ["terminals", "worktrees"],

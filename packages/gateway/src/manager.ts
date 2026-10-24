@@ -2,6 +2,8 @@ import { loadConfig } from "@orc/core/config";
 import { hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
 import type { GatewayMode } from "@orc/core/types";
+import { getSqlite } from "@orc/db/client";
+import { HumanRequestStore } from "@orc/db/human-requests";
 import { executeJob } from "@orc/runner/executor";
 import { createAdapter } from "./adapter-registry.js";
 import { closeAgentSession, preflightBackends, runAgentTurn } from "./agent-runner.js";
@@ -10,6 +12,7 @@ import { redactSecrets } from "./redact.js";
 import "./agent-runtime/index.js";
 import { apiFindJobByName, apiFindProjectById } from "./api.js";
 import { ensureAgentSession, handleDirectCommand } from "./direct.js";
+import { HumanRequestChannels } from "./human-requests.js";
 import { PermissionManager } from "./permission-manager.js";
 import { PreviewManager } from "./preview-manager.js";
 import { SessionLock } from "./session-lock.js";
@@ -77,6 +80,9 @@ class GatewayManager {
   private readonly adapterStatus = new Map<string, { error?: string }>();
   private readonly pendingSessionApprove = new Set<string>();
   private readonly rateLimiter = new RateLimiter();
+  private attention: HumanRequestChannels | undefined;
+  private attentionTimer: ReturnType<typeof setInterval> | undefined;
+  private attentionBusy = false;
 
   async start(): Promise<void> {
     const config = loadConfig();
@@ -130,9 +136,26 @@ class GatewayManager {
 
     const names = [...this.adapters.keys()].join(", ");
     logger.info(`Gateway started with adapters: ${names || "none"}`);
+    this.attention = new HumanRequestChannels(new HumanRequestStore(getSqlite()));
+    const notify = async () => {
+      if (this.attentionBusy) return;
+      this.attentionBusy = true;
+      try {
+        await this.attention?.notify(this.adapters, await listReviewTargets());
+      } catch {
+        logger.warn("Attention notification scan failed; requests remain in the inbox");
+      } finally {
+        this.attentionBusy = false;
+      }
+    };
+    this.attentionTimer = setInterval(() => {
+      void notify();
+    }, 2000);
+    void notify();
   }
 
   async stop(): Promise<void> {
+    clearInterval(this.attentionTimer);
     this.permissionManager.denyAll();
     await Promise.all([...this.adapters.values()].map((a) => a.stop().catch(() => {})));
     this.adapters.clear();
@@ -203,6 +226,11 @@ class GatewayManager {
     }
 
     let text = message.text.trim();
+    const attentionReply = this.attention?.reply(message);
+    if (attentionReply) {
+      await this.sendText(message, attentionReply);
+      return;
+    }
     const audio = message.attachments?.find((a) => a.kind === "audio");
 
     if (text) {

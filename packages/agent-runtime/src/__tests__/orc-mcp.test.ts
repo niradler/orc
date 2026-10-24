@@ -13,7 +13,15 @@ type QueryArgs = {
     tools?: string[];
     mcpServers?: Record<string, { type: string; url: string; headers?: Record<string, string> }>;
     allowedTools?: string[];
-    canUseTool: (name: string, input: Record<string, unknown>) => Promise<{ behavior: string }>;
+    canUseTool: (
+      name: string,
+      input: Record<string, unknown>,
+      options?: { signal: AbortSignal },
+    ) => Promise<{ behavior: string; updatedInput?: Record<string, unknown> }>;
+    onElicitation?: (
+      request: Record<string, unknown>,
+      options: { signal: AbortSignal },
+    ) => Promise<unknown>;
   };
 };
 
@@ -92,6 +100,93 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
         headers: { Authorization: "Bearer s3cret" },
       },
     });
+  });
+
+  test("should collect real questions before profile auto-approval and invalidate aborted native callbacks", async () => {
+    const session = await createBackend("claude").startSession({
+      cwd: process.cwd(),
+      autoApprove: true,
+      toolAllowlist: ["AskUserQuestion", "Bash"],
+    });
+    try {
+      await session.send("fixture");
+      await Bun.sleep(20);
+      const options = queries[0]?.options;
+      if (!options) throw new Error("No SDK options");
+      const controller = new AbortController();
+      const answering = options.canUseTool(
+        "AskUserQuestion",
+        {
+          questions: [
+            {
+              question: "Which checks?",
+              header: "Checks",
+              multiSelect: true,
+              options: [
+                { label: "Unit", description: "" },
+                { label: "Browser", description: "" },
+              ],
+            },
+          ],
+        },
+        { signal: controller.signal },
+      );
+      let requestId = "";
+      for await (const event of session.events()) {
+        if (event.type === "question_request") {
+          requestId = event.data.requestId;
+          expect(event.data.questions[0]?.multiSelect).toBe(true);
+        }
+      }
+      expect(requestId).not.toBe("");
+      await session.respondQuestion?.(requestId, { "q-0": ["Unit", "Browser"] });
+      expect((await answering).updatedInput).toMatchObject({
+        answers: { "Which checks?": "Unit, Browser" },
+      });
+      const cancelled = options.canUseTool(
+        "AskUserQuestion",
+        { questions: [{ question: "Cancelled?", header: "Cancel", options: null }] },
+        { signal: controller.signal },
+      );
+      for await (const event of session.events())
+        if (event.type === "question_request") requestId = event.data.requestId;
+      controller.abort();
+      expect((await cancelled).behavior).toBe("deny");
+      expect(() => session.respondQuestion?.(requestId, { "q-0": ["late"] })).toThrow(
+        "no longer pending",
+      );
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("should route SDK MCP form requests through the same question callback", async () => {
+    const session = await createBackend("claude").startSession({ cwd: process.cwd() });
+    try {
+      await session.send("fixture");
+      await Bun.sleep(20);
+      const callback = queries[0]?.options.onElicitation;
+      if (!callback) throw new Error("No elicitation callback");
+      const answering = callback(
+        {
+          serverName: "fixture",
+          mode: "form",
+          message: "Enable?",
+          requestedSchema: {
+            type: "object",
+            required: ["enabled"],
+            properties: { enabled: { type: "boolean" } },
+          },
+        },
+        { signal: new AbortController().signal },
+      );
+      for await (const event of session.events())
+        if (event.type === "question_request")
+          await session.respondQuestion?.(event.data.requestId, { enabled: ["false"] });
+      expect(await answering).toEqual({ action: "accept", content: { enabled: false } });
+    } finally {
+      await session.close();
+    }
   });
 
   test("should give the sdk backend the orc mcp server with every orc tool allowed", async () => {

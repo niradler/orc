@@ -4,6 +4,7 @@ import {
   createBackend,
   discoverAgentModels,
   type SessionOpts,
+  sessionRules,
 } from "@orc/agent-runtime";
 import {
   appendChatActivity,
@@ -483,11 +484,17 @@ app.openapi(
       loadConfig().rules.enabled &&
       new RuleStore(getSqlite()).active(thread.cwd).length > 0
     )
-      throw new OrcError(
-        "Protected workspace requires the Claude SDK rule adapter; CLI/remote chat fallback is refused",
-        "CHAT_RULE_ADAPTER",
-        503,
-      );
+      try {
+        await sessionRules(thread.backend, { cwd: thread.cwd, executionHost: thread.host });
+      } catch (error) {
+        throw new OrcError(
+          error instanceof Error
+            ? error.message
+            : "This backend cannot enforce the workspace rules",
+          "CHAT_RULE_ADAPTER",
+          503,
+        );
+      }
     const input = [...body.messages]
       .reverse()
       .find((message) => message.role === "user")
@@ -559,7 +566,12 @@ app.openapi(
     }
     return streamSSE(c, async (s) => {
       let stopped = false;
+      let detached = false;
       const close = () => {
+        if (!stopped && (detached || run.session?.waitingForHuman?.())) {
+          detached = true;
+          return;
+        }
         stopped = true;
         void run.session?.close().catch(() => {});
       };
@@ -567,13 +579,24 @@ app.openapi(
       c.req.raw.signal.addEventListener("abort", close, { once: true });
       if (c.req.raw.signal.aborted) close();
       const ping = setInterval(() => {
+        if (detached) return;
         void s.writeSSE({ data: JSON.stringify({ type: "ping" }) }).catch(close);
       }, 25000);
-      const timer = setTimeout(close, 15 * 60000);
+      const timer = setTimeout(() => {
+        stopped = true;
+        void run.session?.close().catch(() => {});
+      }, 15 * 60000);
       const emit = async (event: ChatEvent) => {
         if (event.type === "text") assistant.content += event.text;
         assistant.activity = appendChatActivity(assistant.activity ?? [], event);
-        await s.writeSSE({ data: JSON.stringify(event) });
+        if (!detached) {
+          try {
+            await s.writeSSE({ data: JSON.stringify(event) });
+          } catch (error) {
+            close();
+            if (!detached) throw error;
+          }
+        }
       };
       try {
         await emit({ type: "thread", thread, runId });

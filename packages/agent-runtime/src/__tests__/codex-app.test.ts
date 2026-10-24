@@ -32,6 +32,7 @@ for await (const line of createInterface({input:process.stdin})) {
    }
  }
 }
+
 `,
   );
   return new CodexAppSession({ cwd, orcMcp: false, ...opts }, { kind: "local" }, async () => [
@@ -39,6 +40,57 @@ for await (const line of createInterface({input:process.stdin})) {
     script,
   ]);
 }
+
+test("should retain exact file changes and deliver a typed MCP form on the same native thread", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-file-form-"));
+  const script = join(cwd, "native.ts");
+  writeFileSync(
+    script,
+    `
+import { createInterface } from 'node:readline';
+const emit = value => console.log(JSON.stringify(value));
+const received = {};
+for await (const line of createInterface({input:process.stdin})) {
+ const m=JSON.parse(line);
+ if(m.method==='initialize') emit({id:m.id,result:{}});
+ else if(m.method==='thread/start') emit({id:m.id,result:{thread:{id:'file-form'}}});
+ else if(m.method==='turn/start') {
+  emit({id:m.id,result:{}});
+  emit({method:'item/started',params:{threadId:'file-form',item:{type:'fileChange',id:'patch',changes:[{path:'a.ts',kind:'update',diff:'+safe change'}]}}});
+  emit({id:'file',method:'item/fileChange/requestApproval',params:{threadId:'file-form',itemId:'patch',grantRoot:'${cwd.replaceAll("\\", "\\\\")}',reason:'Review patch'}});
+  emit({id:'form',method:'mcpServer/elicitation/request',params:{threadId:'file-form',serverName:'fixture',mode:'form',message:'Choose',requestedSchema:{type:'object',required:['enabled'],properties:{enabled:{type:'boolean'}}}}});
+ } else if(m.id==='file' || m.id==='form') {
+  received[m.id]=m.result;
+  if(Object.keys(received).length===2) {
+   emit({method:'item/agentMessage/delta',params:{threadId:'file-form',delta:JSON.stringify(received)}});
+   emit({method:'turn/completed',params:{threadId:'file-form',turn:{status:'completed'}}});
+  }
+ }
+}`,
+  );
+  const session = new CodexAppSession({ cwd, orcMcp: false }, { kind: "local" }, async () => [
+    process.execPath,
+    script,
+  ]);
+  try {
+    await session.send("Review");
+    for await (const event of session.events()) {
+      if (event.type === "permission_request") {
+        expect(JSON.stringify(event.data.input)).toContain("+safe change");
+        session.respondPermission(event.data.requestId, "denied");
+      }
+      if (event.type === "question_request")
+        await session.respondQuestion(event.data.requestId, { enabled: ["true"] });
+      if (event.type === "text")
+        expect(JSON.parse(event.data)).toEqual({
+          file: { decision: "decline" },
+          form: { action: "accept", content: { enabled: true } },
+        });
+    }
+  } finally {
+    await session.close();
+  }
+});
 
 for (const [mode, sandbox, approval] of [
   ["default", "read-only", "on-request"],

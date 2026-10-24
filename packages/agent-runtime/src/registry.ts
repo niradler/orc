@@ -1,3 +1,4 @@
+import { withHumanRequests } from "./human-requests.js";
 import { sessionRules } from "./rules.js";
 import type { AgentBackend, AgentBackendName } from "./types.js";
 
@@ -24,9 +25,18 @@ export function createBackend(name: AgentBackendName): AgentBackend {
     const backend = factory();
     return {
       ...backend,
-      startSession: async (opts) => backend.startSession(await sessionRules(String(name), opts)),
+      startSession: async (opts) =>
+        withHumanRequests(
+          await backend.startSession(await sessionRules(String(name), opts)),
+          String(name),
+          opts,
+        ),
       resumeSession: async (id, opts) =>
-        backend.resumeSession(id, await sessionRules(String(name), opts)),
+        withHumanRequests(
+          await backend.resumeSession(id, await sessionRules(String(name), opts)),
+          String(name),
+          opts,
+        ),
     };
   }
   throw new Error(

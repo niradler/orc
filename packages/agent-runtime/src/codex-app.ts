@@ -3,6 +3,7 @@ import { ChatAgentOptionsSchema } from "@orc/core/chat-options";
 import { type ExecHost, ensureSshMaster, hostSpawn } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { buildCodexEnv, codexCommand, hasConfiguredOrcMcp } from "./codex.js";
+import { elicitationForm } from "./elicitation.js";
 import { endStdin, readLines, writeToStdin } from "./io.js";
 import { buildOrcMcpServer } from "./orc-mcp.js";
 import type { AgentEvent, AgentSession, PermissionResult, SessionOpts } from "./types.js";
@@ -13,6 +14,7 @@ type Pending = {
   question?: ChatQuestion;
   asyncTurnId?: string;
   permissions?: Record<string, unknown>;
+  form?: ReturnType<typeof elicitationForm>;
 };
 function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -30,6 +32,7 @@ export class CodexAppSession implements AgentSession {
   private sequence = 0;
   private completedTurn = false;
   private readonly streamedItems = new Set<string>();
+  private readonly actionItems = new Map<string, Record<string, unknown>>();
   private readonly calls = new Map<
     number,
     { resolve: (value: Record<string, unknown>) => void; reject: (error: Error) => void }
@@ -110,6 +113,13 @@ export class CodexAppSession implements AgentSession {
           type: "permission_request",
           data: {
             requestId,
+            input: {
+              ...params,
+              ...(typeof params.itemId === "string" && this.actionItems.has(params.itemId)
+                ? { item: this.actionItems.get(params.itemId) }
+                : {}),
+            },
+            ...(typeof params.cwd === "string" ? { cwd: params.cwd } : {}),
             tool: permissions
               ? "additional permissions"
               : method.includes("commandExecution")
@@ -126,6 +136,23 @@ export class CodexAppSession implements AgentSession {
               .join("\n"),
           },
         });
+      } else if (method === "mcpServer/elicitation/request") {
+        try {
+          const form = elicitationForm(requestId, params);
+          this.pending.set(requestId, {
+            wireId: message.id,
+            kind: "question",
+            question: form.question,
+            form,
+          });
+          this.push({ type: "question_request", data: form.question });
+        } catch {
+          this.write({ id: message.id, result: { action: "cancel", content: null } });
+          this.push({
+            type: "system_status",
+            data: "MCP form declined: secret, URL authentication, or unsupported input requires the native client",
+          });
+        }
       } else if (method === "item/tool/requestUserInput") {
         const parsed = ChatQuestionSchema.safeParse({ requestId, questions: params.questions });
         if (
@@ -171,6 +198,10 @@ export class CodexAppSession implements AgentSession {
       this.push({ type: "thinking", data: String(params.delta ?? "") });
     } else if (method === "item/started" || method === "item/completed") {
       const item = object(params.item);
+      if (method === "item/started" && typeof item.id === "string")
+        this.actionItems.set(item.id, item);
+      else if (method === "item/completed" && typeof item.id === "string")
+        this.actionItems.delete(item.id);
       if (item.type === "agentMessage" && method === "item/completed") {
         if (!this.streamedItems.has(String(item.id)) && typeof item.text === "string" && item.text)
           this.push({ type: "text", data: item.text });
@@ -261,6 +292,7 @@ export class CodexAppSession implements AgentSession {
     this.done = false;
     this.completedTurn = false;
     this.streamedItems.clear();
+    this.actionItems.clear();
     this.queue.length = 0;
     if (!this.child) {
       if (this.host.kind === "ssh") await ensureSshMaster(this.host);
@@ -397,6 +429,14 @@ export class CodexAppSession implements AgentSession {
       ids.some((id) => !parsed[id]?.some((answer) => answer.trim()))
     )
       throw new Error("Answer every question before continuing.");
+    if (request.form) {
+      this.write({
+        id: request.wireId,
+        result: { action: "accept", content: request.form.content(parsed) },
+      });
+      this.resolved(requestId);
+      return;
+    }
     if (request.asyncTurnId) {
       const input = [
         {

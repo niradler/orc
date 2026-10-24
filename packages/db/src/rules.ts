@@ -349,6 +349,12 @@ export class RuleStore {
           ...result.orc_actions.map((action) => ({ ...action, revision_id: active.id })),
         );
       }
+      if (result.human_requests?.length && !validation) {
+        combined.human_requests ??= [];
+        combined.human_requests.push(
+          ...result.human_requests.map((action) => ({ ...action, revision_id: active.id })),
+        );
+      }
     }
     if (combined.context.reduce((sum, text) => sum + text.length, 0) > 32000)
       throw new ValidationError("Combined rule context exceeds 32000 characters");
@@ -402,11 +408,13 @@ export class RuleStore {
           result.scripts = [];
           result.command_processors = [];
           result.orc_actions = [];
+          result.human_requests = [];
         }
         if (validation) {
           result.jobs = [];
           result.command_processors = [];
           result.orc_actions = [];
+          result.human_requests = [];
           result.scripts = (result.scripts ?? []).filter((script) => script.target.mode === "sync");
         }
         const id = ulid();

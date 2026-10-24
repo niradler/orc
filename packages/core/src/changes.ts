@@ -12,6 +12,7 @@ export const CHANGE_RESOURCES = [
   "agents",
   "flows",
   "rules",
+  "human-requests",
   "settings",
   "ssh",
   "terminals",

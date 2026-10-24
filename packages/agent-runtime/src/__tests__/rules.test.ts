@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
+import { HumanRequestSchema } from "@orc/core/human-requests";
+import { RuleAskUserSchema } from "@orc/core/rule-types";
 import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { sessionRules } from "../rules.js";
@@ -11,6 +13,105 @@ import { createRulesHook, sessionStartRuleContext } from "../rules-hook.js";
 const root = mkdtempSync(join(tmpdir(), "orc-guard-tests-"));
 const originalEnabled = process.env.ORC_RULES_ENABLED;
 const originalDb = process.env.ORC_DB_PATH;
+
+test("should retain parallel human waits when another hook or human response completes", async () => {
+  const oldBase = process.env.ORC_API_BASE;
+  const answered = new Set<string>();
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      const id =
+        request.method === "POST"
+          ? ((await request.json()) as { event: { id: string } }).event.id
+          : (new URL(request.url).pathname.split("/").at(-1) ?? "");
+      const ready = answered.has(id);
+      return Response.json(
+        HumanRequestSchema.parse({
+          id,
+          input: {
+            origin: { session_id: "session", backend: "claude", request_id: id },
+            kind: "approval",
+            prompt: "Review",
+            action: { tool: "Bash", input: { command: "pwd" }, cwd: root, host: "local" },
+          },
+          status: ready ? "answered" : "pending",
+          version: ready ? 2 : 1,
+          response: ready ? { kind: "approval", approved: true } : null,
+          created_at: Date.now(),
+          expires_at: Date.now() + 30000,
+          responded_at: ready ? Date.now() : null,
+          delivered_at: null,
+        }),
+      );
+    },
+  });
+  process.env.ORC_API_BASE = String(server.url).replace(/\/$/, "");
+  let waits = 0;
+  const hook = createRulesHook(
+    {
+      context: "",
+      builtinActions: false,
+      evaluate(event) {
+        return {
+          decision: "abstain",
+          context: [],
+          jobs: [],
+          reasons: [],
+          ...(event.phase === "pre_tool"
+            ? {
+                human_requests: [
+                  {
+                    rule_id: "ask",
+                    revision_id: "revision",
+                    target: RuleAskUserSchema.parse({
+                      type: "ask_user",
+                      kind: "approval",
+                      prompt: "Review",
+                    }),
+                  },
+                ],
+              }
+            : {}),
+        };
+      },
+    },
+    root,
+    () => {},
+    (waiting) => {
+      waits += waiting ? 1 : -1;
+    },
+  );
+  const event = {
+    hook_event_name: "PreToolUse" as const,
+    session_id: "session",
+    transcript_path: "",
+    cwd: root,
+    tool_name: "Bash",
+    tool_input: { command: "pwd" },
+    tool_use_id: "one",
+  };
+  const signal = new AbortController().signal;
+  try {
+    const first = hook(event, "one", { signal });
+    const second = hook({ ...event, tool_use_id: "two" }, "two", { signal });
+    expect(waits).toBe(2);
+    await hook({ ...event, hook_event_name: "PostToolUse", tool_response: "ok" }, "unrelated", {
+      signal,
+    });
+    expect(waits).toBe(2);
+    answered.add("one");
+    await first;
+    expect(waits).toBe(1);
+    answered.add("two");
+    await second;
+    expect(waits).toBe(0);
+  } finally {
+    server.stop(true);
+    if (oldBase === undefined) delete process.env.ORC_API_BASE;
+    else process.env.ORC_API_BASE = oldBase;
+  }
+});
 test("managed startup and resume deliver context before query and fail closed on unavailable rules", async () => {
   for (const source of ["startup", "resume"] as const) {
     expect(

@@ -4,6 +4,19 @@ import { RuleFilterSchema } from "./rule-filters.js";
 
 const identity = z.string().trim().min(1).max(128);
 const base = { id: identity, reason: z.string().trim().min(1).max(1000) };
+export const RuleAskUserSchema = z
+  .object({
+    type: z.literal("ask_user"),
+    kind: z.enum(["question", "approval"]),
+    prompt: z.string().trim().min(1).max(16000),
+    choices: z.array(z.string().trim().min(1).max(1000)).max(20).default([]),
+    expires_in_seconds: z.number().int().min(1).max(604800).default(86400),
+    notify: z
+      .array(z.enum(["telegram", "slack"]))
+      .max(2)
+      .default([]),
+  })
+  .strict();
 export const ORC_RULE_ACTIONS = [
   "load_context",
   "record_event",
@@ -128,6 +141,7 @@ export const EventRuleSchema = z
       RuleScriptSchema,
       RuleCommandProcessorSchema,
       RuleOrcActionSchema,
+      RuleAskUserSchema,
     ]),
   })
   .strict()
@@ -136,6 +150,29 @@ export const EventRuleSchema = z
       rule.scope.agents === "all" ? Object.keys(RULE_EVENT_ADAPTERS) : rule.scope.agents;
     for (const event of rule.scope.events) {
       const capabilities = agents.map((agent) => ruleEventCapability(agent, event));
+      if (rule.target.type === "ask_user") {
+        const target = rule.target;
+        if (
+          (event === "runtime:permission_request" && target.kind !== "approval") ||
+          (event === "runtime:question_request" && target.kind !== "question")
+        )
+          ctx.addIssue({
+            code: "custom",
+            message: "Runtime questions and approvals must use the matching request kind",
+          });
+        if (
+          capabilities.some(
+            (entry) => !entry?.block || (target.kind === "question" && !entry.context),
+          )
+        )
+          ctx.addIssue({
+            code: "custom",
+            message:
+              "Ask user requires a blocking hook and questions require answer delivery on every selected agent",
+          });
+        if (rule.target.kind === "approval" && rule.target.choices.length)
+          ctx.addIssue({ code: "custom", message: "Approval uses approve or deny" });
+      }
       if (rule.target.type === "orc_action") {
         const allowed = {
           load_context: ["session_start"],
@@ -279,6 +316,7 @@ export type EventRule = z.infer<typeof EventRuleSchema>;
 export type RuleScript = z.infer<typeof RuleScriptSchema>;
 export type RuleCommandProcessor = z.infer<typeof RuleCommandProcessorSchema>;
 export type RuleOrcAction = z.infer<typeof RuleOrcActionSchema>;
+export type RuleAskUser = z.infer<typeof RuleAskUserSchema>;
 export type RuleDecision = {
   decision: "abstain" | "deny";
   reasons: { rule_id: string; reason: string }[];
@@ -289,6 +327,9 @@ export type RuleDecision = {
   updated_input?: Record<string, unknown>;
   orc_actions?: { rule_id: string; revision_id?: string; target: RuleOrcAction }[];
   action_errors?: { rule_id: string; reason: string }[];
+  human_requests?: { rule_id: string; revision_id?: string; target: RuleAskUser }[];
+  human_approved?: boolean;
+  human_receipts?: { id: string; version: number }[];
 };
 
 export type RuleRevision = {

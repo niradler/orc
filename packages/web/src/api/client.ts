@@ -1,4 +1,5 @@
 import type { ChatHistoryPage, ChatModels, ChatThread } from "@orc/core/chat";
+import type { HumanRequest, HumanResponse } from "@orc/core/human-requests";
 import type {
   KbComment,
   KbCommentClose,
@@ -516,6 +517,16 @@ async function req<T>(
 // ---- API client ----
 
 export const api = {
+  humanRequests: {
+    list: () => req<HumanRequest[]>("GET", "/human-requests"),
+    respond: (id: string, version: number, response: HumanResponse) =>
+      req<HumanRequest>("POST", `/human-requests/${encodeURIComponent(id)}/respond`, {
+        version,
+        response,
+      }),
+    cancel: (id: string, version: number) =>
+      req<HumanRequest>("POST", `/human-requests/${encodeURIComponent(id)}/cancel`, { version }),
+  },
   chat: {
     models: (agent: string, threadId?: string) =>
       req<ChatModels>("GET", "/chat/models", undefined, { agent, threadId }),

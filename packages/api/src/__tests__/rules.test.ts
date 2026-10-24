@@ -196,7 +196,7 @@ test("protected chat refuses an unverified backend before launching it", async (
       messages: [{ role: "user", content: "A backend must not start" }],
     });
     expect(response.status).toBe(503);
-    expect((await response.json()).error).toContain("fallback is refused");
+    expect((await response.json()).error).toContain("no verified ORC rule interception");
   } finally {
     store.revert(revision.id, "End isolated chat fixture");
     loadConfig({ rules: { enabled: false } });

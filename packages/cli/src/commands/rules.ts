@@ -2,11 +2,13 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { loadConfig } from "@orc/core/config";
+import { runHumanRuleActions } from "@orc/core/human-request-client";
 import { runRuleBuiltinActions } from "@orc/core/rule-builtin";
 import { copyRuleTemplate, RULE_CATALOG } from "@orc/core/rule-catalog";
 import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
 import { normalizeRuleHook, type RuleHookBackend, ruleHookOutput } from "@orc/core/rule-hooks";
 import { getSqlite } from "@orc/db/client";
+import { HumanRequestStore } from "@orc/db/human-requests";
 import { RuleStore } from "@orc/db/rules";
 import { createOrcClient } from "@orc/sdk";
 import { Command } from "commander";
@@ -74,22 +76,29 @@ export function rulesCommand(): Command {
       try {
         if (!Object.hasOwn(RULE_EVENT_ADAPTERS, backend))
           throw new Error("Unsupported hook backend");
-        const decoder = new TextDecoder();
-        let raw = "";
-        let size = 0;
-        for await (const chunk of Bun.stdin.stream()) {
-          size += chunk.byteLength;
-          if (size > 1_100_000) throw new Error("Rule hook input too large");
-          raw += decoder.decode(chunk, { stream: true });
-        }
-        raw += decoder.decode();
+        const raw = readFileSync(0, "utf8");
+        if (Buffer.byteLength(raw) > 1_100_000) throw new Error("Rule hook input too large");
         const normalized = normalizeRuleHook(backend as RuleHookBackend, event, JSON.parse(raw));
+        if (normalized.phase === "post_tool" || normalized.phase === "post_tool_failure")
+          new HumanRequestStore(getSqlite()).acknowledgeToolResults(
+            normalized.session_id,
+            normalized.backend,
+            normalized.id,
+          );
+        if (normalized.phase === "stop")
+          new HumanRequestStore(getSqlite()).acknowledgeDeniedAtStop(
+            normalized.session_id,
+            normalized.backend,
+          );
         const store = new RuleStore(getSqlite());
-        const result = await runRuleBuiltinActions(normalized, store.evaluateCommand(normalized));
+        const result = await runHumanRuleActions(
+          normalized,
+          await runRuleBuiltinActions(normalized, store.evaluateCommand(normalized)),
+        );
         for (const error of result.action_errors ?? [])
           console.error(`${error.rule_id}: ${error.reason}`);
         console.log(JSON.stringify(ruleHookOutput(backend as RuleHookBackend, normalized, result)));
-        if (result.decision === "deny") {
+        if (result.decision === "deny" && normalized.phase !== "permission_request") {
           console.error(
             result.reasons.map((reason) => `${reason.rule_id}: ${reason.reason}`).join("; "),
           );
@@ -97,7 +106,16 @@ export function rulesCommand(): Command {
         }
       } catch (error) {
         console.error(`ORC rule hook blocked: ${String(error)}`);
-        process.exitCode = 2;
+        if (backend === "claude" && event === "PermissionRequest")
+          console.log(
+            JSON.stringify({
+              hookSpecificOutput: {
+                hookEventName: event,
+                decision: { behavior: "deny", message: "ORC human response unavailable" },
+              },
+            }),
+          );
+        else process.exitCode = 2;
       }
     });
   command
@@ -111,11 +129,19 @@ export function rulesCommand(): Command {
       "--events <events>",
       "Comma-separated shared or native event names; defaults to all supported events",
     )
+    .option(
+      "--timeout-seconds <seconds>",
+      "Native command hook timeout; set above the Ask user request lifetime",
+      "10",
+    )
     .description(
       "Merge native hooks into an explicit JSON settings target; existing hooks preserved",
     )
     .action((backend, opts) => {
       if (!Object.hasOwn(RULE_EVENT_ADAPTERS, backend)) throw new Error("Unsupported hook backend");
+      const hookTimeout = Number(opts.timeoutSeconds);
+      if (!Number.isInteger(hookTimeout) || hookTimeout < 1 || hookTimeout > 604815)
+        throw new Error("Hook timeout must be an integer from 1 to 604815 seconds");
       const target = resolve(opts.target);
       let previous = "";
       try {
@@ -216,13 +242,13 @@ export function rulesCommand(): Command {
             ? [
                 ...entries,
                 backend === "cursor"
-                  ? { command: hookCommand, timeout: 10, failClosed: true }
+                  ? { command: hookCommand, timeout: hookTimeout, failClosed: true }
                   : {
                       hooks: [
                         {
                           type: "command",
                           command: hookCommand,
-                          timeout: backend === "gemini" ? 10000 : 10,
+                          timeout: backend === "gemini" ? hookTimeout * 1000 : hookTimeout,
                           ...(backend === "claude" ? { onFailure: "block" } : {}),
                         },
                       ],
@@ -230,8 +256,20 @@ export function rulesCommand(): Command {
               ]
             : entries.map((entry: Record<string, unknown>, index: number) =>
                 index === existing && backend === "cursor"
-                  ? { ...entry, timeout: 10, failClosed: true }
-                  : entry,
+                  ? { ...entry, timeout: hookTimeout, failClosed: true }
+                  : index === existing && Array.isArray(entry.hooks)
+                    ? {
+                        ...entry,
+                        hooks: entry.hooks.map((handler: Record<string, unknown>) =>
+                          handler.command === hookCommand
+                            ? {
+                                ...handler,
+                                timeout: backend === "gemini" ? hookTimeout * 1000 : hookTimeout,
+                              }
+                            : handler,
+                        ),
+                      }
+                    : entry,
               );
       }
       mkdirSync(dirname(target), { recursive: true });

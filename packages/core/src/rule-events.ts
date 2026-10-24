@@ -60,6 +60,7 @@ export const RULE_EVENT_ADAPTERS: Record<RuleHookBackend, RuleEventCapability[]>
     claude,
     [
       "PreToolUse",
+      "PermissionRequest",
       "UserPromptSubmit",
       "UserPromptExpansion",
       "Stop",
@@ -157,6 +158,11 @@ export function ruleEventCapability(
   backend: string,
   event: string,
 ): RuleEventCapability | undefined {
+  if (
+    ["claude", "codex"].includes(backend) &&
+    ["runtime:permission_request", "runtime:question_request"].includes(event)
+  )
+    return { native: "", event, block: true, context: true, rewrite_command: false };
   const capabilities = RULE_EVENT_ADAPTERS[backend as RuleHookBackend];
   return capabilities?.find((entry) => entry.event === event || `native:${entry.native}` === event);
 }

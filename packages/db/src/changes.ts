@@ -46,6 +46,7 @@ const TABLE_RESOURCES: Record<string, ChangeResource> = {
   rule_revisions: "rules",
   rule_decisions: "rules",
   rule_actions: "rules",
+  human_requests: "human-requests",
 };
 const observers = new WeakMap<Database, () => void>();
 
@@ -92,7 +93,14 @@ export function installChangeTracking(sqlite: Database, path: string): void {
       .all()
       .map((column) => column.name)
       .filter(
-        (name) => !["updated_at", "accessed_at", "access_count", "last_accessed_at"].includes(name),
+        (name) =>
+          ![
+            "updated_at",
+            "accessed_at",
+            "access_count",
+            "last_accessed_at",
+            "owner_heartbeat_at",
+          ].includes(name),
       );
     const changed = columns.map((name) => `OLD."${name}" IS NOT NEW."${name}"`).join(" OR ");
     for (const operation of ["INSERT", "UPDATE", "DELETE"]) {

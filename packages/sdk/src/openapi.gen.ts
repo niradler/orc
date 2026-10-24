@@ -1004,6 +1004,666 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/human-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Attention needed: pending requests and undelivered answers */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            input: {
+                                origin: {
+                                    session_id: string;
+                                    backend: string;
+                                    request_id: string;
+                                    tool_call_id?: string;
+                                };
+                                /** @default null */
+                                project_id: string | null;
+                                rule_binding?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                };
+                                rule_bindings?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                }[];
+                                /** @enum {string} */
+                                kind: "question" | "approval";
+                                prompt: string;
+                                /** @default [] */
+                                choices: string[];
+                                /** @default {} */
+                                choice_descriptions: {
+                                    [key: string]: string;
+                                };
+                                /** @default false */
+                                multi_select: boolean;
+                                /** @default [] */
+                                notify: ("telegram" | "slack")[];
+                                action?: {
+                                    tool: string;
+                                    input: {
+                                        [key: string]: unknown;
+                                    };
+                                    cwd: string;
+                                    host: string;
+                                };
+                                /** @default 86400 */
+                                expires_in_seconds: number;
+                            };
+                            /** @enum {string} */
+                            status: "pending" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            /** @default null */
+                            delivery_error: string | null;
+                            version: number;
+                            response: {
+                                /** @enum {string} */
+                                kind: "question";
+                                answer: string;
+                                selected_choices?: string[];
+                            } | {
+                                /** @enum {string} */
+                                kind: "approval";
+                                approved: boolean;
+                            } | unknown;
+                            created_at: number;
+                            expires_at: number;
+                            responded_at: number | null;
+                            delivered_at: number | null;
+                        }[];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        origin: {
+                            session_id: string;
+                            backend: string;
+                            request_id: string;
+                            tool_call_id?: string;
+                        };
+                        /** @default null */
+                        project_id?: string | null;
+                        rule_binding?: {
+                            revision_id: string;
+                            rule_id: string;
+                            workspace: string;
+                        };
+                        rule_bindings?: {
+                            revision_id: string;
+                            rule_id: string;
+                            workspace: string;
+                        }[];
+                        /** @enum {string} */
+                        kind: "question" | "approval";
+                        prompt: string;
+                        /** @default [] */
+                        choices?: string[];
+                        /** @default {} */
+                        choice_descriptions?: {
+                            [key: string]: string;
+                        };
+                        /** @default false */
+                        multi_select?: boolean;
+                        /** @default [] */
+                        notify?: ("telegram" | "slack")[];
+                        action?: {
+                            tool: string;
+                            input: {
+                                [key: string]: unknown;
+                            };
+                            cwd: string;
+                            host: string;
+                        };
+                        /** @default 86400 */
+                        expires_in_seconds?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Human request */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            input: {
+                                origin: {
+                                    session_id: string;
+                                    backend: string;
+                                    request_id: string;
+                                    tool_call_id?: string;
+                                };
+                                /** @default null */
+                                project_id: string | null;
+                                rule_binding?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                };
+                                rule_bindings?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                }[];
+                                /** @enum {string} */
+                                kind: "question" | "approval";
+                                prompt: string;
+                                /** @default [] */
+                                choices: string[];
+                                /** @default {} */
+                                choice_descriptions: {
+                                    [key: string]: string;
+                                };
+                                /** @default false */
+                                multi_select: boolean;
+                                /** @default [] */
+                                notify: ("telegram" | "slack")[];
+                                action?: {
+                                    tool: string;
+                                    input: {
+                                        [key: string]: unknown;
+                                    };
+                                    cwd: string;
+                                    host: string;
+                                };
+                                /** @default 86400 */
+                                expires_in_seconds: number;
+                            };
+                            /** @enum {string} */
+                            status: "pending" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            /** @default null */
+                            delivery_error: string | null;
+                            version: number;
+                            response: {
+                                /** @enum {string} */
+                                kind: "question";
+                                answer: string;
+                                selected_choices?: string[];
+                            } | {
+                                /** @enum {string} */
+                                kind: "approval";
+                                approved: boolean;
+                            } | unknown;
+                            created_at: number;
+                            expires_at: number;
+                            responded_at: number | null;
+                            delivered_at: number | null;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/human-requests/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Human request */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            input: {
+                                origin: {
+                                    session_id: string;
+                                    backend: string;
+                                    request_id: string;
+                                    tool_call_id?: string;
+                                };
+                                /** @default null */
+                                project_id: string | null;
+                                rule_binding?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                };
+                                rule_bindings?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                }[];
+                                /** @enum {string} */
+                                kind: "question" | "approval";
+                                prompt: string;
+                                /** @default [] */
+                                choices: string[];
+                                /** @default {} */
+                                choice_descriptions: {
+                                    [key: string]: string;
+                                };
+                                /** @default false */
+                                multi_select: boolean;
+                                /** @default [] */
+                                notify: ("telegram" | "slack")[];
+                                action?: {
+                                    tool: string;
+                                    input: {
+                                        [key: string]: unknown;
+                                    };
+                                    cwd: string;
+                                    host: string;
+                                };
+                                /** @default 86400 */
+                                expires_in_seconds: number;
+                            };
+                            /** @enum {string} */
+                            status: "pending" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            /** @default null */
+                            delivery_error: string | null;
+                            version: number;
+                            response: {
+                                /** @enum {string} */
+                                kind: "question";
+                                answer: string;
+                                selected_choices?: string[];
+                            } | {
+                                /** @enum {string} */
+                                kind: "approval";
+                                approved: boolean;
+                            } | unknown;
+                            created_at: number;
+                            expires_at: number;
+                            responded_at: number | null;
+                            delivered_at: number | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/human-requests/{id}/respond": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        version: number;
+                        response: {
+                            /** @enum {string} */
+                            kind: "question";
+                            answer: string;
+                            selected_choices?: string[];
+                        } | {
+                            /** @enum {string} */
+                            kind: "approval";
+                            approved: boolean;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Human request */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            input: {
+                                origin: {
+                                    session_id: string;
+                                    backend: string;
+                                    request_id: string;
+                                    tool_call_id?: string;
+                                };
+                                /** @default null */
+                                project_id: string | null;
+                                rule_binding?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                };
+                                rule_bindings?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                }[];
+                                /** @enum {string} */
+                                kind: "question" | "approval";
+                                prompt: string;
+                                /** @default [] */
+                                choices: string[];
+                                /** @default {} */
+                                choice_descriptions: {
+                                    [key: string]: string;
+                                };
+                                /** @default false */
+                                multi_select: boolean;
+                                /** @default [] */
+                                notify: ("telegram" | "slack")[];
+                                action?: {
+                                    tool: string;
+                                    input: {
+                                        [key: string]: unknown;
+                                    };
+                                    cwd: string;
+                                    host: string;
+                                };
+                                /** @default 86400 */
+                                expires_in_seconds: number;
+                            };
+                            /** @enum {string} */
+                            status: "pending" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            /** @default null */
+                            delivery_error: string | null;
+                            version: number;
+                            response: {
+                                /** @enum {string} */
+                                kind: "question";
+                                answer: string;
+                                selected_choices?: string[];
+                            } | {
+                                /** @enum {string} */
+                                kind: "approval";
+                                approved: boolean;
+                            } | unknown;
+                            created_at: number;
+                            expires_at: number;
+                            responded_at: number | null;
+                            delivered_at: number | null;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/human-requests/{id}/acknowledge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        version: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Human request */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            input: {
+                                origin: {
+                                    session_id: string;
+                                    backend: string;
+                                    request_id: string;
+                                    tool_call_id?: string;
+                                };
+                                /** @default null */
+                                project_id: string | null;
+                                rule_binding?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                };
+                                rule_bindings?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                }[];
+                                /** @enum {string} */
+                                kind: "question" | "approval";
+                                prompt: string;
+                                /** @default [] */
+                                choices: string[];
+                                /** @default {} */
+                                choice_descriptions: {
+                                    [key: string]: string;
+                                };
+                                /** @default false */
+                                multi_select: boolean;
+                                /** @default [] */
+                                notify: ("telegram" | "slack")[];
+                                action?: {
+                                    tool: string;
+                                    input: {
+                                        [key: string]: unknown;
+                                    };
+                                    cwd: string;
+                                    host: string;
+                                };
+                                /** @default 86400 */
+                                expires_in_seconds: number;
+                            };
+                            /** @enum {string} */
+                            status: "pending" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            /** @default null */
+                            delivery_error: string | null;
+                            version: number;
+                            response: {
+                                /** @enum {string} */
+                                kind: "question";
+                                answer: string;
+                                selected_choices?: string[];
+                            } | {
+                                /** @enum {string} */
+                                kind: "approval";
+                                approved: boolean;
+                            } | unknown;
+                            created_at: number;
+                            expires_at: number;
+                            responded_at: number | null;
+                            delivered_at: number | null;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/human-requests/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        version: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Human request */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            input: {
+                                origin: {
+                                    session_id: string;
+                                    backend: string;
+                                    request_id: string;
+                                    tool_call_id?: string;
+                                };
+                                /** @default null */
+                                project_id: string | null;
+                                rule_binding?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                };
+                                rule_bindings?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                }[];
+                                /** @enum {string} */
+                                kind: "question" | "approval";
+                                prompt: string;
+                                /** @default [] */
+                                choices: string[];
+                                /** @default {} */
+                                choice_descriptions: {
+                                    [key: string]: string;
+                                };
+                                /** @default false */
+                                multi_select: boolean;
+                                /** @default [] */
+                                notify: ("telegram" | "slack")[];
+                                action?: {
+                                    tool: string;
+                                    input: {
+                                        [key: string]: unknown;
+                                    };
+                                    cwd: string;
+                                    host: string;
+                                };
+                                /** @default 86400 */
+                                expires_in_seconds: number;
+                            };
+                            /** @enum {string} */
+                            status: "pending" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            /** @default null */
+                            delivery_error: string | null;
+                            version: number;
+                            response: {
+                                /** @enum {string} */
+                                kind: "question";
+                                answer: string;
+                                selected_choices?: string[];
+                            } | {
+                                /** @enum {string} */
+                                kind: "approval";
+                                approved: boolean;
+                            } | unknown;
+                            created_at: number;
+                            expires_at: number;
+                            responded_at: number | null;
+                            delivered_at: number | null;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings": {
         parameters: {
             query?: never;
@@ -2676,6 +3336,134 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rules/human-request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        event: {
+                            id: string;
+                            session_id: string;
+                            backend: string;
+                            cwd: string;
+                            phase: string;
+                            native_event?: string;
+                            payload?: {
+                                [key: string]: unknown;
+                            };
+                            tool?: string;
+                            /** @default {} */
+                            input?: {
+                                [key: string]: unknown;
+                            };
+                            /** @default false */
+                            failed?: boolean;
+                        };
+                        revision_id: string;
+                        rule_id: string;
+                        question_index?: number;
+                        proposed_input?: {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Durable request for a matching active Ask user rule */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            input: {
+                                origin: {
+                                    session_id: string;
+                                    backend: string;
+                                    request_id: string;
+                                    tool_call_id?: string;
+                                };
+                                /** @default null */
+                                project_id: string | null;
+                                rule_binding?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                };
+                                rule_bindings?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                }[];
+                                /** @enum {string} */
+                                kind: "question" | "approval";
+                                prompt: string;
+                                /** @default [] */
+                                choices: string[];
+                                /** @default {} */
+                                choice_descriptions: {
+                                    [key: string]: string;
+                                };
+                                /** @default false */
+                                multi_select: boolean;
+                                /** @default [] */
+                                notify: ("telegram" | "slack")[];
+                                action?: {
+                                    tool: string;
+                                    input: {
+                                        [key: string]: unknown;
+                                    };
+                                    cwd: string;
+                                    host: string;
+                                };
+                                /** @default 86400 */
+                                expires_in_seconds: number;
+                            };
+                            /** @enum {string} */
+                            status: "pending" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            /** @default null */
+                            delivery_error: string | null;
+                            version: number;
+                            response: {
+                                /** @enum {string} */
+                                kind: "question";
+                                answer: string;
+                                selected_choices?: string[];
+                            } | {
+                                /** @enum {string} */
+                                kind: "approval";
+                                approved: boolean;
+                            } | unknown;
+                            created_at: number;
+                            expires_at: number;
+                            responded_at: number | null;
+                            delivered_at: number | null;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rules/actions/run": {
         parameters: {
             query?: never;
@@ -2853,6 +3641,18 @@ export interface paths {
                                         memory_directory?: string;
                                         /** @enum {string} */
                                         event_type?: "auto" | "file" | "task" | "rule" | "decision" | "git" | "env" | "error" | "plan" | "intent" | "subagent";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "ask_user";
+                                        /** @enum {string} */
+                                        kind: "question" | "approval";
+                                        prompt: string;
+                                        /** @default [] */
+                                        choices: string[];
+                                        /** @default 86400 */
+                                        expires_in_seconds: number;
+                                        /** @default [] */
+                                        notify: ("telegram" | "slack")[];
                                     };
                                 };
                             }[];
@@ -2987,6 +3787,18 @@ export interface paths {
                                             memory_directory?: string;
                                             /** @enum {string} */
                                             event_type?: "auto" | "file" | "task" | "rule" | "decision" | "git" | "env" | "error" | "plan" | "intent" | "subagent";
+                                        } | {
+                                            /** @enum {string} */
+                                            type: "ask_user";
+                                            /** @enum {string} */
+                                            kind: "question" | "approval";
+                                            prompt: string;
+                                            /** @default [] */
+                                            choices: string[];
+                                            /** @default 86400 */
+                                            expires_in_seconds: number;
+                                            /** @default [] */
+                                            notify: ("telegram" | "slack")[];
                                         };
                                     }[];
                                 } | null;
@@ -3144,6 +3956,18 @@ export interface paths {
                                     memory_directory?: string;
                                     /** @enum {string} */
                                     event_type?: "auto" | "file" | "task" | "rule" | "decision" | "git" | "env" | "error" | "plan" | "intent" | "subagent";
+                                } | {
+                                    /** @enum {string} */
+                                    type: "ask_user";
+                                    /** @enum {string} */
+                                    kind: "question" | "approval";
+                                    prompt: string;
+                                    /** @default [] */
+                                    choices?: string[];
+                                    /** @default 86400 */
+                                    expires_in_seconds?: number;
+                                    /** @default [] */
+                                    notify?: ("telegram" | "slack")[];
                                 };
                             }[];
                         };
@@ -3251,6 +4075,18 @@ export interface paths {
                                         memory_directory?: string;
                                         /** @enum {string} */
                                         event_type?: "auto" | "file" | "task" | "rule" | "decision" | "git" | "env" | "error" | "plan" | "intent" | "subagent";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "ask_user";
+                                        /** @enum {string} */
+                                        kind: "question" | "approval";
+                                        prompt: string;
+                                        /** @default [] */
+                                        choices: string[];
+                                        /** @default 86400 */
+                                        expires_in_seconds: number;
+                                        /** @default [] */
+                                        notify: ("telegram" | "slack")[];
                                     };
                                 }[];
                             } | null;
@@ -3392,6 +4228,18 @@ export interface paths {
                                         memory_directory?: string;
                                         /** @enum {string} */
                                         event_type?: "auto" | "file" | "task" | "rule" | "decision" | "git" | "env" | "error" | "plan" | "intent" | "subagent";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "ask_user";
+                                        /** @enum {string} */
+                                        kind: "question" | "approval";
+                                        prompt: string;
+                                        /** @default [] */
+                                        choices: string[];
+                                        /** @default 86400 */
+                                        expires_in_seconds: number;
+                                        /** @default [] */
+                                        notify: ("telegram" | "slack")[];
                                     };
                                 }[];
                             } | null;
@@ -3456,6 +4304,23 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            human_requests?: {
+                                rule_id: string;
+                                revision_id?: string;
+                                target: {
+                                    /** @enum {string} */
+                                    type: "ask_user";
+                                    /** @enum {string} */
+                                    kind: "question" | "approval";
+                                    prompt: string;
+                                    /** @default [] */
+                                    choices: string[];
+                                    /** @default 86400 */
+                                    expires_in_seconds: number;
+                                    /** @default [] */
+                                    notify: ("telegram" | "slack")[];
+                                };
+                            }[];
                             orc_actions?: {
                                 rule_id: string;
                                 revision_id?: string;
