@@ -411,14 +411,19 @@ export class SessionArchive {
   }
 
   async search(req: ArchiveSearch): Promise<ArchiveSearchResult> {
+    if (req.project_id !== undefined && req.project_ids !== undefined)
+      throw new ValidationError("Use project_id or project_ids, not both");
+    const projectIds = req.project_ids?.split(",").map((id) => id.trim());
     this.kick();
-    const projectFilter =
-      req.project_id === "unassigned"
+    const projectFilter = projectIds
+      ? `AND project_id IN (${projectIds.map(() => "?").join(",") || "NULL"})`
+      : req.project_id === "unassigned"
         ? "AND project_id IS NULL"
         : req.project_id
           ? "AND project_id = ?"
           : "";
-    const args = req.project_id && req.project_id !== "unassigned" ? [req.project_id] : [];
+    const args =
+      projectIds ?? (req.project_id && req.project_id !== "unassigned" ? [req.project_id] : []);
     if (!req.q) {
       const provider = this.provider();
       const rows = this.db

@@ -51,6 +51,7 @@ export type AuditEntry = {
 };
 
 export type AuditQuery = {
+  projectIds?: readonly string[];
   projectId?: string | null | undefined;
   entityType?: string | undefined;
   sessionId?: string | undefined;
@@ -108,7 +109,10 @@ export class AuditLog {
   list(query: AuditQuery = {}): AuditEntry[] {
     const conditions: string[] = [];
     const params: (string | number | null)[] = [];
-    if (query.projectId !== undefined) {
+    if (query.projectIds) {
+      conditions.push(`project_id IN (${query.projectIds.map(() => "?").join(",") || "NULL"})`);
+      params.push(...query.projectIds);
+    } else if (query.projectId !== undefined) {
       conditions.push("project_id IS ?");
       params.push(query.projectId);
     }

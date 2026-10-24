@@ -1645,6 +1645,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/skills/{name}/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read skill project assignments; an empty list means global */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Project assignments */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            project_ids: string[];
+                        };
+                    };
+                };
+                /** @description Skill not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        /** Replace skill project assignments; an empty list makes the skill global */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        project_ids: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Project assignments */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            project_ids: string[];
+                        };
+                    };
+                };
+                /** @description Invalid assignments */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Skill or project not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/skills/{name}/download": {
         parameters: {
             query?: never;
@@ -2440,12 +2531,13 @@ export interface paths {
                 query?: {
                     project_id?: string;
                     scope?: "global";
-                    /** @description Full-text search on name and description */
+                    /** @description Hybrid lexical search; results sorted by relevance */
                     q?: string;
                     source?: "builtin" | "user";
                     /** @description reads (default): most read first; recent: last read, updated or created first */
                     sort?: "reads" | "recent";
                     limit?: number;
+                    offset?: number | null;
                     /** @description Force cache rebuild */
                     reload?: boolean | null;
                     include_hidden?: "true" | "false";
@@ -2465,6 +2557,9 @@ export interface paths {
                         "application/json": {
                             skills: components["schemas"]["SkillListItem"][];
                             total: number;
+                            offset: number;
+                            limit: number;
+                            next_offset: number | null;
                             broken: {
                                 path: string;
                                 error: string;
@@ -7510,6 +7605,7 @@ export interface paths {
                 query?: {
                     q?: string;
                     project_id?: string;
+                    project_ids?: string;
                     agent?: "claude" | "codex";
                     mode?: "auto" | "lexical" | "semantic" | "hybrid";
                     limit?: number;
@@ -10396,6 +10492,9 @@ export interface components {
             error?: string;
         };
         SkillListItem: components["schemas"]["SkillMeta"] & {
+            project_ids: string[];
+            /** @description Relative search relevance; higher is better */
+            score?: number;
             /** @description Agent reads (mcp + cli + api) of the skill entry point */
             read_count: number;
             /** @description Entry-point reads per source; ui is not counted in read_count */

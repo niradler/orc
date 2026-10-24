@@ -208,9 +208,15 @@ export class MemoryStore {
   }
 
   /** Memories of one project, or of every project when projectId is null. */
-  list(projectId: string | null, opts: MemoryListOptions = {}): MemoryListItem[] {
-    const scoped = projectId === null ? "" : "WHERE project_id=?";
-    const params = projectId === null ? [] : [projectId];
+  list(
+    projectId: string | readonly string[] | null,
+    opts: MemoryListOptions = {},
+  ): MemoryListItem[] {
+    const params =
+      projectId === null ? [] : typeof projectId === "string" ? [projectId] : [...projectId];
+    if (projectId !== null && params.length === 0) return [];
+    const scoped =
+      projectId === null ? "" : `WHERE project_id IN (${params.map(() => "?").join(",")})`;
     const rows = this.sqlite
       .query<Omit<Memory, "content">, string[]>(
         `SELECT project_id,name,description,priority,author,session_id,created_at,updated_at FROM memories ${scoped}`,

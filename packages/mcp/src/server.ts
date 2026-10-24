@@ -3,6 +3,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createLogger } from "@orc/core/logger";
 import { z } from "zod";
+import { normalizeMcpProjects, parseMcpProjects, resolveMcpProjects } from "./project-scope.js";
+
+export { parseMcpProjects } from "./project-scope.js";
+
 import {
   isMetaToolName,
   type McpMode,
@@ -39,9 +43,20 @@ export function toolListing() {
 
 export interface McpServerOptions extends ToolOptions {
   mode?: McpMode;
+  project?: string;
+  projects?: string[];
 }
 
-export function createMcpServer({ mode = "full", ...options }: McpServerOptions = {}) {
+export function createMcpServer({
+  mode = "full",
+  project,
+  projects,
+  ...options
+}: McpServerOptions = {}) {
+  if (project !== undefined && projects !== undefined)
+    throw new Error("Use project or projects, not both");
+  const names = projects ? normalizeMcpProjects(projects) : parseMcpProjects(project);
+  const selected = names ? resolveMcpProjects(names) : undefined;
   const server = new Server({ name: "orc", version: "0.0.1" }, { capabilities: { tools: {} } });
 
   // The set of tools this connection serves. Every lookup, listing and meta
@@ -60,7 +75,49 @@ export function createMcpServer({ mode = "full", ...options }: McpServerOptions 
         };
       }
 
-      const parsed = toolDef.inputSchema.safeParse(args ?? {});
+      let scopedArgs = args ?? {};
+      let callProjects = selected;
+      if (selected && typeof scopedArgs === "object" && !Array.isArray(scopedArgs)) {
+        const input = scopedArgs as Record<string, unknown>;
+        const explicit = input.project !== undefined || input.project_id !== undefined;
+        const chosen = selected.find(
+          (candidate) =>
+            (input.project === undefined ||
+              (typeof input.project === "string" &&
+                candidate.name.toLowerCase() === input.project.toLowerCase())) &&
+            (input.project_id === undefined || candidate.id === input.project_id),
+        );
+        if (!chosen)
+          throw new Error(
+            `This MCP connection is scoped to projects ${selected.map((p) => p.name).join(", ")}`,
+          );
+        callProjects = explicit ? [chosen] : selected;
+        scopedArgs =
+          "project" in toolDef.inputSchema.shape
+            ? { ...input, project: chosen.name }
+            : { ...input };
+        if (
+          "project_id" in toolDef.inputSchema.shape &&
+          !("project" in toolDef.inputSchema.shape) &&
+          input.project_id === undefined
+        )
+          scopedArgs = { ...scopedArgs, project_id: chosen.id };
+        if ("projects" in toolDef.inputSchema.shape) {
+          const requested = input.projects;
+          if (
+            requested !== undefined &&
+            (!Array.isArray(requested) ||
+              requested.some(
+                (value) =>
+                  typeof value !== "string" ||
+                  !selected.some((p) => p.name.toLowerCase() === value.toLowerCase()),
+              ))
+          )
+            throw new Error("Projects must be selected in this MCP connection");
+          scopedArgs = { ...scopedArgs, projects: requested ?? selected.map((p) => p.name) };
+        }
+      }
+      const parsed = toolDef.inputSchema.safeParse(scopedArgs);
       if (!parsed.success) {
         return {
           content: [
@@ -73,7 +130,10 @@ export function createMcpServer({ mode = "full", ...options }: McpServerOptions 
         };
       }
 
-      const result = await executeTool(name as ToolName, parsed.data, options);
+      const result = await executeTool(name as ToolName, parsed.data, {
+        ...options,
+        ...(callProjects ? { projectScopes: callProjects } : {}),
+      });
       return { content: [{ type: "text" as const, text: result }] };
     } catch (err) {
       logger.error(`Tool error: ${name}`, err);

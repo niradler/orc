@@ -12,6 +12,28 @@ effective entry instructions and file inventory. Load a supporting file with
 filenames are supported; paths resolve from the skill root, never the repo cwd.
 Reads do not execute scripts. Binary content uses explicit base64 encoding.
 
+Skills can belong to multiple projects; unassigned skills are global. Use
+`/mcp?project=<readable-name>` or `/mcp?projects=orc,project2` to bind the connection
+to selected projects' skills plus global ones. Shared skills appear once, before
+pagination; project instruction overrides follow URL order, then global fallback.
+Pass an explicit tool `project` to select one of the URL's projects. These defaults
+also apply to project-aware context/tasks/jobs/memories/knowledge/session searches;
+new resources use the first project by default. See [MCP query parameters](setup.md#customize-the-http-mcp-connection)
+for `mode=full|meta`, selection limits and connection examples.
+Other projects' skills are unavailable through list, search,
+named/reference reads and downloads. Without a bound URL, pass `project` to select
+scope. Scoped instruction edits do not assign skills to projects.
+Manage assignments with `orc skill projects <name> --set <project-id> ...`, or
+`--global`; authenticated API callers use GET/PUT `/api/skills/{name}/projects`.
+
+`skill_list` lists and searches in pages: `limit` defaults to 30 (maximum 500),
+`offset` defaults to 0, and the response includes `total` and `next_offset`.
+Pass `q` for combined BM25/prefix/stem/phrase/substring/typo search on names and
+descriptions. Search scores sort descending; all query terms must match. Fetch
+the next page using `next_offset`; null means there are no more results.
+MCP skill creation inherits the connection/argument project; with no selected
+project, creation is global. Existing skills remain global until assigned.
+
 To use an original script/asset outside the ORC host, request
 `skill_read({name, ref: "scripts/check.py", download: true, project})`.
 Fetch the returned `download_url` into the intended local file and verify its

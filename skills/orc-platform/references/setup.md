@@ -104,6 +104,68 @@ Reach `context` and other named tools through `tool_invoke` in meta mode.
 Connectors, loaded skills and installed hooks do not establish equal enforcement
 across agent clients. Disclose when MCP is unavailable; never claim a context read ran.
 
+### Customize the HTTP MCP connection
+
+These query parameters customize `<origin>/mcp`; they also work together in meta
+mode. Keep API authentication in the configured Authorization header.
+
+| Parameter | Supported values | Default and effect |
+| --- | --- | --- |
+| `mode` | `full`, `meta` | `full`: lists domain tools directly. `meta`: lists `tool_search`, `tool_describe`, `tool_invoke`; domain operations keep the same validation and scope. |
+| `project` | One readable project name, such as `orc` | Unset: existing tool/config defaults apply. When set, project-aware tools inherit this project. |
+| `projects` | Comma-separated readable names, such as `orc,project2` | Selects multiple projects in priority order. Use instead of `project`. |
+
+Examples, relative to the selected ORC origin:
+
+```text
+/mcp                                  # full tools, existing tool/config defaults
+/mcp?mode=meta                        # meta tools, existing tool/config defaults
+/mcp?project=orc                      # full tools, ORC project defaults
+/mcp?projects=orc,project2             # full tools, both projects
+/mcp?projects=orc,project2&mode=meta   # both projects through meta tools
+```
+
+Use readable names, not project IDs, in the URL; URL-encode spaces and reserved
+characters. Names are trimmed and deduplicated case-insensitively, preserving the
+first occurrence. Select at most 50 projects, with names of 1-200 characters.
+Pass each project parameter once and never pass both `project` and `projects`.
+Malformed selections or an unsupported mode return HTTP 400; any unknown project
+returns 404, rather than silently falling back to another project.
+
+Project selection is connection-wide, rather than a skill-only filter:
+
+- `context`, task/job/memory lists, project discovery, audit and searches combine
+  selected projects before limits or pagination. Archived-session search uses
+  the same selection. Memories remain project-only; same-named memories in
+  different projects remain separate items.
+- Skill discovery includes selected projects' skills plus unassigned global
+  skills, with shared skills appearing once. Reads prefer the first applicable
+  project instruction override in URL order, then global instructions.
+- Knowledge discovery/search/evidence includes selected projects' KBs plus
+  global KBs. On a bound connection, KB `scope: "all"` stays within this selection.
+- New resources default to the first URL project. An explicit tool `project`
+  (or `project_id` when its schema supports it) can choose another selected
+  project. For example, `task_list({})` combines the connection's projects;
+  `task_list({project: "project2"})` narrows to that project. Overrides outside
+  the URL selection are rejected. ID-targeted operations retain the resource's
+  existing owner.
+- Global-only reads remain available where the tool supports `scope: "global"`.
+  Resources without project scoping retain their existing behavior. Without a
+  project query parameter, existing activeProject/tool defaults still apply.
+
+This selection does not grant access or replace API authentication or tenant
+authorization. Do not put secrets in the URL. Pagination/search settings such as
+`limit`, `offset` and `q` belong in tool arguments, not the MCP connection query:
+`skill_list({q: "code review", limit: 25, offset: 0})`. Skills default to 30 per
+page (maximum 500); follow `next_offset` until it is null. Other tools retain
+their own schemas and limits.
+
+For a bridge connection using both parameters:
+
+```sh
+spec call --mcp-http "<orc-base-url>/mcp?projects=orc,project2&mode=meta" tool_invoke --data '{"name":"context","arguments":{}}'
+```
+
 ## Diagnose before changing anything
 
 - Connection refused: verify origin, port, service ownership and process logs.

@@ -3,7 +3,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
 import { getUserSkillsDir, readSkill, reloadCache, type SkillFull } from "@orc/core/skill-service";
-import { createTestDb } from "@orc/db/client";
+import { createTestDb, getSqlite } from "@orc/db/client";
 import { executeTool } from "../tools.js";
 
 const originalActiveProject = process.env.ORC_ACTIVE_PROJECT;
@@ -145,8 +145,11 @@ describe("multi-file skills MCP", () => {
   });
 
   test("should create a bundle, inventory resources and read a script without executing it", async () => {
+    const project = `mcp-bundle-project-${process.pid}`;
+    getSqlite().query("INSERT INTO projects(id,name) VALUES (?,?)").run(project, project);
     const created = await executeTool("skill_create", {
       name,
+      project,
       content: `---\nname: ${name}\ndescription: Bundle\n---\nMain instructions`,
       files: [
         {
@@ -157,18 +160,21 @@ describe("multi-file skills MCP", () => {
       ],
     });
     expect(created).toContain("Created skill");
-    const entry = await executeTool("skill_read", { name });
+    expect(await executeTool("skill_read", { name, scope: "global" })).toContain("Skill not found");
+    const entry = await executeTool("skill_read", { name, project });
     expect(entry).toContain("scripts/run.py");
     expect(entry).toContain("references/deep/guide.md");
     expect(entry).not.toContain("raise RuntimeError");
     const script = await executeTool("skill_read", {
       name,
+      project,
       ref: "scripts/run.py",
     });
     expect(script).toContain("raise RuntimeError");
     expect(
       await executeTool("skill_read", {
         name,
+        project,
         ref: "references/deep/guide.md",
       }),
     ).toContain("Detailed guide");

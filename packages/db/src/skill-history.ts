@@ -12,6 +12,7 @@ import {
   type SkillFull,
   type SkillMeta,
   type SkillRefContent,
+  skillCatalogName,
   validateAuthoredSkillDescription,
 } from "@orc/core/skill-service";
 import { type SkillUpdate, SkillUpdateSchema } from "@orc/core/skill-update";
@@ -27,6 +28,7 @@ import {
   type ReadUsage,
   rankItems,
 } from "./read-usage.js";
+import { scoreSkillMatches } from "./skill-search.js";
 
 export function installSkillHistory(sqlite: Database): void {
   sqlite.exec(`CREATE TABLE IF NOT EXISTS skill_changes (
@@ -43,7 +45,12 @@ export function installSkillHistory(sqlite: Database): void {
     project_key TEXT NOT NULL, skill_name TEXT NOT NULL, ref TEXT NOT NULL DEFAULT '',
     source TEXT NOT NULL, read_count INTEGER NOT NULL DEFAULT 0, last_read_at INTEGER NOT NULL,
     PRIMARY KEY(project_key, skill_name, ref, source)
-  );`);
+  );
+  CREATE TABLE IF NOT EXISTS skill_projects (
+    skill_name TEXT NOT NULL, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE RESTRICT,
+    PRIMARY KEY(skill_name, project_id)
+  );
+  CREATE INDEX IF NOT EXISTS skill_projects_project_idx ON skill_projects(project_id, skill_name);`);
 }
 export type SkillChange = {
   id: string;
@@ -65,7 +72,10 @@ export type SkillMutation = {
 };
 export type EffectiveSkill = SkillFull & { mutation?: SkillMutation };
 export type SkillListSort = ListSort;
-export type SkillListOptions = ListSkillsOpts & { sort?: SkillListSort | undefined };
+export type SkillListOptions = ListSkillsOpts & {
+  sort?: SkillListSort | undefined;
+  projectIds?: readonly string[];
+};
 /** Where a skill read came from; `ui` is a person browsing the web app, the rest are agents. */
 export type SkillReadSource = ReadSource;
 export type SkillReadsBySource = ReadsBySource;
@@ -82,6 +92,8 @@ type SkillUsageRow = {
 };
 export type SkillListItem = SkillMeta &
   SkillUsage & {
+    project_ids: string[];
+    score?: number;
     mutation?: SkillMutation;
     activity_at: number;
   };
@@ -100,13 +112,93 @@ function emptyUsage(): SkillUsage {
 
 export class SkillHistory {
   constructor(private readonly sqlite: Database) {}
+  projectIds(name: string): string[] {
+    return this.sqlite
+      .query<{ project_id: string }, [string]>(
+        "SELECT project_id FROM skill_projects WHERE skill_name=? ORDER BY project_id",
+      )
+      .all(skillCatalogName(name))
+      .map((row) => row.project_id);
+  }
+  setProjects(name: string, projectIds: string[]): string[] {
+    name = skillCatalogName(name);
+    if (!readSkill(name)) throw new NotFoundError("Skill", name);
+    const ids = [...new Set(projectIds)].sort();
+    this.sqlite
+      .transaction(() => {
+        const previous = this.projectIds(name);
+        for (const id of ids) {
+          if (!this.sqlite.query("SELECT id FROM projects WHERE id=?").get(id))
+            throw new NotFoundError("Project", id);
+        }
+        this.sqlite.query("DELETE FROM skill_projects WHERE skill_name=?").run(name);
+        const insert = this.sqlite.prepare(
+          "INSERT INTO skill_projects(skill_name,project_id) VALUES(?,?)",
+        );
+        for (const id of ids) insert.run(name, id);
+        new AuditLog(this.sqlite).record({
+          action: "skill.projects_updated",
+          subject_ids: [name],
+          snapshot: { previous_project_ids: previous, project_ids: ids },
+        });
+      })
+      .immediate();
+    return ids;
+  }
+  visible(name: string, projectId: string | null): boolean {
+    const ids = this.projectIds(name);
+    return ids.length === 0 || (projectId !== null && ids.includes(projectId));
+  }
+  preferredProject(name: string, projectIds: readonly string[]): string | null {
+    const assigned = this.projectIds(name);
+    const eligible = projectIds.filter((id) => assigned.length === 0 || assigned.includes(id));
+    for (const id of eligible) {
+      if (
+        this.sqlite
+          .query("SELECT 1 FROM skill_instructions WHERE project_key=? AND skill_name=?")
+          .get(key(id), name)
+      )
+        return id;
+    }
+    return eligible[0] ?? null;
+  }
   list(projectId: string | null, opts?: SkillListOptions): SkillListItem[] {
-    const usage = this.usage(projectId);
-    let skills = listSkills({ ...opts, q: undefined, include_hidden: true }).map((skill) =>
-      this.withUsage(this.metadata(skill, projectId), usage),
-    );
+    const projectIds = opts?.projectIds ?? (projectId === null ? [] : [projectId]);
+    const usage = this.usage(opts?.projectIds ?? projectId);
+    const assignments = new Map<string, string[]>();
+    for (const row of this.sqlite
+      .query<{ skill_name: string; project_id: string }, []>(
+        "SELECT skill_name, project_id FROM skill_projects ORDER BY project_id",
+      )
+      .all()) {
+      const ids = assignments.get(row.skill_name) ?? [];
+      ids.push(row.project_id);
+      assignments.set(row.skill_name, ids);
+    }
+    let skills = listSkills({ ...opts, q: undefined, include_hidden: true })
+      .filter((skill) => {
+        const ids = assignments.get(skill.name) ?? [];
+        return ids.length === 0 || projectIds.some((id) => ids.includes(id));
+      })
+      .map((skill) => ({
+        ...this.withUsage(
+          this.metadata(
+            skill,
+            opts?.projectIds ? this.preferredProject(skill.name, projectIds) : projectId,
+          ),
+          usage,
+        ),
+        project_ids: assignments.get(skill.name) ?? [],
+      }));
     if (!opts?.include_hidden) skills = skills.filter((skill) => !skill.discovery_hidden);
-    return rankItems(skills, opts?.sort === "recent" ? compareByRecent : compareByReads, opts?.q);
+    if (opts?.q?.trim()) {
+      const scores = scoreSkillMatches(skills, opts.q);
+      return skills
+        .filter((skill) => scores.has(skill.name))
+        .map((skill) => ({ ...skill, score: scores.get(skill.name) as number }))
+        .sort((left, right) => right.score - left.score || left.name.localeCompare(right.name));
+    }
+    return rankItems(skills, opts?.sort === "recent" ? compareByRecent : compareByReads);
   }
   recordRead(name: string, projectId: string | null, source: SkillReadSource, ref?: string): void {
     const file = ref === undefined || ref === "SKILL.md" ? "" : ref;
@@ -116,13 +208,16 @@ export class SkillHistory {
       )
       .run(key(projectId), name, file, source);
   }
-  private usage(projectId: string | null): Map<string, SkillUsage> {
-    const scoped = projectId === null ? "" : "WHERE project_key=?";
+  private usage(projectId: string | readonly string[] | null): Map<string, SkillUsage> {
+    const ids =
+      projectId === null ? [] : typeof projectId === "string" ? [projectId] : [...projectId];
+    const scoped =
+      projectId === null ? "" : `WHERE project_key IN (${ids.map(() => "?").join(",") || "NULL"})`;
     const rows = this.sqlite
       .query<SkillUsageRow, string[]>(
         `SELECT skill_name, source, SUM(CASE WHEN ref='' THEN read_count ELSE 0 END) AS main_reads, SUM(CASE WHEN ref<>'' THEN read_count ELSE 0 END) AS ref_reads, MAX(CASE WHEN ref='' THEN last_read_at END) AS last_main_read_at FROM skill_usage ${scoped} GROUP BY skill_name, source`,
       )
-      .all(...(projectId === null ? [] : [key(projectId)]));
+      .all(...ids.map((id) => key(id)));
     const usage = new Map<string, SkillUsage>();
     for (const row of rows) {
       const stats = usage.get(row.skill_name) ?? emptyUsage();
@@ -135,7 +230,7 @@ export class SkillHistory {
   private withUsage(
     skill: SkillMeta & { mutation?: SkillMutation },
     usage: Map<string, SkillUsage>,
-  ): SkillListItem {
+  ): SkillMeta & SkillUsage & { mutation?: SkillMutation; activity_at: number } {
     const stats = usage.get(skill.name) ?? emptyUsage();
     const activityAt =
       stats.last_read_at ?? skill.mutation?.updated_at ?? fileCreatedAt(skill.path);
@@ -170,6 +265,7 @@ export class SkillHistory {
     projectId: string | null,
     ref?: string,
   ): EffectiveSkill | SkillRefContent | null {
+    if (!this.visible(name, projectId)) return null;
     const base = readSkill(name, ref);
     if (!base) return null;
     const change = this.current(name, projectId);
@@ -203,6 +299,7 @@ export class SkillHistory {
     });
   }
   history(name: string, projectId: string | null): SkillChange[] {
+    if (!this.visible(name, projectId)) throw new NotFoundError("Skill", name);
     const effective = this.current(name, projectId);
     const owner = effective ? effective.project_id : projectId;
     return this.sqlite
@@ -213,6 +310,8 @@ export class SkillHistory {
   }
   update(input: SkillUpdate): EffectiveSkill {
     const page = SkillUpdateSchema.parse(input);
+    if (!this.visible(page.skill_name, page.project_id))
+      throw new NotFoundError("Skill", page.skill_name);
     const parsed = parseFrontmatter(page.content);
     if (parsed.frontmatter.name !== page.skill_name)
       throw new ValidationError("Skill name must stay unchanged");
@@ -251,6 +350,7 @@ export class SkillHistory {
     reason: string,
     author = "human",
   ): EffectiveSkill {
+    if (!this.visible(name, projectId)) throw new NotFoundError("Skill", name);
     return this.sqlite.transaction(() => {
       const latest = this.current(name, projectId);
       if (!latest || latest.id !== expectedChangeId)

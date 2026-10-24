@@ -526,6 +526,12 @@ export function legacySkillNames(name: string): string[] {
     .map(([alias]) => alias);
 }
 
+/** Resolve retired compatibility names to the catalog entry that owns their files. */
+export function skillCatalogName(name: string): string {
+  if (ensureCache().skills.some((skill) => skill.name === name)) return name;
+  return Object.hasOwn(LEGACY_SKILLS, name) ? (LEGACY_SKILLS[name]?.skill ?? name) : name;
+}
+
 function readLegacySkill(name: string, ref?: string): SkillFull | SkillRefContent | null {
   const legacy = Object.hasOwn(LEGACY_SKILLS, name) ? LEGACY_SKILLS[name] : undefined;
   if (!legacy) return null;

@@ -65,6 +65,27 @@ afterEach(async () => {
 });
 
 describe("session archive storage and identities", () => {
+  test("search combines selected projects before ranking and pagination", async () => {
+    getSqlite().run("INSERT INTO projects(id,name) VALUES ('pc','Project C'),('empty','Empty')");
+    for (const [index, project] of ["Project A", "Project B", "Project C"].entries())
+      await svc.ingest({ ...upload(), project, source_id: `scope-source-${index}` });
+    await svc.idle();
+    for (const q of ["", "sunrise"]) {
+      const result = await svc.search(search(q, { project_ids: "pa,pb", limit: 1 }));
+      expect(result.sessions).toHaveLength(1);
+      expect(["pa", "pb"]).toContain(result.sessions[0]?.project_id ?? "");
+      expect(result.has_more).toBe(true);
+      const next = await svc.search(search(q, { project_ids: "pa,pb", limit: 1, offset: 1 }));
+      expect(next.sessions).toHaveLength(1);
+      expect(next.sessions[0]?.id).not.toBe(result.sessions[0]?.id);
+      expect(next.has_more).toBe(false);
+    }
+    expect((await svc.search(search("sunrise", { project_ids: "empty" }))).sessions).toEqual([]);
+    expect(svc.search(search("", { project_ids: "pa,pb", project_id: "pc" }))).rejects.toThrow(
+      "Use project_id or project_ids",
+    );
+    expect(() => search("", { project_ids: "pa," })).toThrow();
+  });
   test("startup repairs stale index revisions even when chunks are present", async () => {
     const first = await svc.ingest(upload());
     await svc.idle();

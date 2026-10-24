@@ -58,6 +58,14 @@ export const ArchiveSearchSchema = z
   .object({
     q: z.string().trim().max(2000).default(""),
     project_id: z.string().max(100).optional(),
+    project_ids: z
+      .string()
+      .max(10000)
+      .refine((value) => {
+        const ids = value.split(",").map((id) => id.trim());
+        return ids.length <= 50 && ids.every((id) => id.length > 0 && id.length <= 100);
+      }, "Use 1-50 comma-separated project IDs of 1-100 characters")
+      .optional(),
     agent: z.enum(["claude", "codex"]).optional(),
     mode: z.enum(["auto", "lexical", "semantic", "hybrid"]).default("auto"),
     limit: z.coerce.number().int().min(1).max(100).default(20),

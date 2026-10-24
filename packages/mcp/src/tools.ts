@@ -18,8 +18,6 @@ import {
   type SkillFileInput,
   type SkillFull,
   type SkillRefContent,
-  skillValidationIssues,
-  skillWarnings,
 } from "@orc/core/skill-service";
 import { SkillUpdateSchema } from "@orc/core/skill-update";
 import type { TaskStatus } from "@orc/core/types";
@@ -39,10 +37,11 @@ import { SkillHistory, type SkillListSort } from "@orc/db/skill-history";
 import { executeJob } from "@orc/runner/executor";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { orcApi } from "./api-client.js";
 import { executeKbTool, isKbTool, kbSearchLines, kbToolDefinitions } from "./kb-tools.js";
+import type { McpProject } from "./project-scope.js";
 
 const logger = createLogger("mcp:tools");
 const SKILL_LIST_LIMIT = 30;
@@ -51,7 +50,9 @@ const MEMORY_LIST_LIMIT = 30;
 const projectParam = z
   .string()
   .optional()
-  .describe("Project name (e.g. 'orc'). Defaults to activeProject from config if not set.");
+  .describe(
+    "Project name (e.g. 'orc'). Overrides connection defaults within its selected projects; otherwise uses activeProject from config.",
+  );
 const memoryNameParam = z.string().min(1).max(64).describe("Memory name, e.g. 'api-port'");
 const memoryPriorityParam = z
   .number()
@@ -137,7 +138,9 @@ export const toolDefinitions = [
     name: "session_search",
     description:
       "Search archived and indexed coding-session passages. Returns bounded evidence with session:<id>@<revision>#<ordinal> citations, not entire histories. Optional embeddings use Settings; keyword search remains available. Sync local files with the trusted orc-platform scripts/sync-sessions.py, following references/session-archive.md.",
-    inputSchema: ArchiveSearchSchema.omit({ project_id: true }).extend({ project: projectParam }),
+    inputSchema: ArchiveSearchSchema.omit({ project_id: true, project_ids: true }).extend({
+      project: projectParam,
+    }),
   },
   {
     name: "session_sync",
@@ -263,6 +266,7 @@ export const toolDefinitions = [
     name: "task_get",
     description: "Fetch current task details by IDs (title, status, progress and body).",
     inputSchema: z.object({
+      project: projectParam,
       ids: z.array(z.string()).min(1).max(10),
     }),
   },
@@ -306,6 +310,7 @@ export const toolDefinitions = [
     description:
       "Update task status, priority, body, or add a comment. Status transitions are validated.",
     inputSchema: z.object({
+      project: projectParam,
       id: z.string(),
       status: z
         .enum([
@@ -398,6 +403,7 @@ export const toolDefinitions = [
     name: "job_run",
     description: "Trigger a job by name.",
     inputSchema: z.object({
+      project: projectParam,
       name: z.string(),
     }),
   },
@@ -405,6 +411,7 @@ export const toolDefinitions = [
     name: "job_status",
     description: "Get run status + exit code + error for a specific run ID.",
     inputSchema: z.object({
+      project: projectParam,
       run_id: z.string(),
     }),
   },
@@ -480,10 +487,22 @@ export const toolDefinitions = [
     name: "skill_list",
     description:
       "List installed skills (built-in + user) with name, description and read count. " +
-      "Defaults to the 30 most-read skills; use q for full-text search across all skills. " +
+      "Defaults to 30 skills per page; use offset for the next page and q for hybrid lexical search sorted by descending relevance score. " +
+      "Only the selected project's skills and global (unassigned) skills are available. " +
       "Hidden built-ins are omitted; named reads and authored overrides remain available.",
     inputSchema: z.object({
-      q: z.string().optional().describe("Full-text search on name and description"),
+      q: z
+        .string()
+        .max(500)
+        .optional()
+        .describe("Search names and descriptions with prefixes, stemming and typo tolerance"),
+      offset: z
+        .number()
+        .int()
+        .min(0)
+        .max(Number.MAX_SAFE_INTEGER)
+        .optional()
+        .describe("Zero-based page offset (default 0)"),
       source: z.enum(["builtin", "user"]).optional().describe("Filter by source"),
       sort: z
         .enum(["reads", "recent"])
@@ -525,9 +544,11 @@ export const toolDefinitions = [
   {
     name: "skill_create",
     description:
-      "Create a user skill folder with SKILL.md and optional Markdown, scripts, templates and assets in ~/.orc/skills/<name>/.",
+      "Create a user skill folder with SKILL.md and optional supporting files. Assigned to the selected project; with no project it is global.",
     inputSchema: z.object({
       name: z.string().describe("Skill name (used as directory name)"),
+      project: projectParam,
+      scope: z.literal("global").optional(),
       content: z.string().describe("Full SKILL.md content including frontmatter"),
       files: z
         .array(
@@ -684,6 +705,7 @@ export const toolDefinitions = [
 export type ToolName = (typeof toolDefinitions)[number]["name"];
 
 export type ToolOptions = {
+  projectScopes?: readonly McpProject[];
   publicApiBaseUrl?: string;
   skillDownload?: (name: string, ref: string, projectId: string | null) => SkillDownload;
   /**
@@ -737,6 +759,27 @@ function resolveScope(input: z.infer<typeof scopeParams>): string | null {
   return input.scope === "global" ? null : (resolveProjectId(input.project)?.id ?? null);
 }
 
+function selectedProjectIds(
+  project: string | undefined,
+  options: ToolOptions,
+): string[] | undefined {
+  if (options.projectScopes) return options.projectScopes.map((item) => item.id);
+  const resolved = resolveProjectId(project);
+  return resolved ? [resolved.id] : undefined;
+}
+
+function resolveSkillScope(
+  input: z.infer<typeof scopeParams>,
+  options: ToolOptions,
+  name: string,
+): string | null {
+  if (input.scope === "global" || !options.projectScopes) return resolveScope(input);
+  return new SkillHistory(getSqlite()).preferredProject(
+    name,
+    options.projectScopes.map((p) => p.id),
+  );
+}
+
 function resolveScopedProject(input: z.infer<typeof scopedProjectParams>): string | null {
   if (input.project_id !== undefined) {
     if (
@@ -766,7 +809,7 @@ export async function executeTool(
     return JSON.stringify(grant);
   }
   if (name === "session_search") {
-    const input = ArchiveSearchSchema.omit({ project_id: true })
+    const input = ArchiveSearchSchema.omit({ project_id: true, project_ids: true })
       .extend({ project: projectParam })
       .parse(args);
     const project = resolveProjectId(input.project);
@@ -775,7 +818,11 @@ export async function executeTool(
       mode: input.mode,
       limit: String(input.limit),
       offset: String(input.offset),
-      ...(project ? { project_id: project.id } : {}),
+      ...(options.projectScopes
+        ? { project_ids: options.projectScopes.map((p) => p.id).join(",") }
+        : project
+          ? { project_id: project.id }
+          : {}),
       ...(input.agent ? { agent: input.agent } : {}),
     });
     return JSON.stringify(await orcApi("GET", `/sessions/archive?${params}`));
@@ -808,7 +855,12 @@ export async function executeTool(
   if (isKbTool(name)) {
     const input = args as Record<string, unknown>;
     const project = typeof input.project === "string" ? input.project : undefined;
-    return executeKbTool(name, input, resolveProjectId(project)?.id ?? null);
+    return executeKbTool(
+      name,
+      input,
+      resolveProjectId(project)?.id ?? null,
+      options.projectScopes?.map((p) => p.id),
+    );
   }
   if (name === "session_handoff") {
     const input = SessionHandoffInputSchema.parse(args);
@@ -857,7 +909,10 @@ export async function executeTool(
     case "skill_history": {
       const input = skillHistoryParams.parse(args);
       return JSON.stringify({
-        changes: new SkillHistory(getSqlite(db)).history(input.name, resolveScope(input)),
+        changes: new SkillHistory(getSqlite(db)).history(
+          input.name,
+          resolveSkillScope(input, options, input.name),
+        ),
       });
     }
     case "skill_revert": {
@@ -884,6 +939,9 @@ export async function executeTool(
       return JSON.stringify({
         entries: new AuditLog(getSqlite(db)).list({
           projectId: resolveScope(input),
+          ...(input.scope !== "global" && options.projectScopes
+            ? { projectIds: options.projectScopes.map((p) => p.id) }
+            : {}),
           entityType: input.entity_type,
           sessionId: input.session_id,
           since: input.since,
@@ -898,19 +956,40 @@ export async function executeTool(
         limit?: number;
         project?: string;
       };
-      const projectId = memoryProject(project);
-      const matched = new MemoryStore(getSqlite(db)).list(projectId, { q, sort });
+      const projectIds = selectedProjectIds(project, options) ?? [memoryProject(project)];
+      const matched = new MemoryStore(getSqlite(db)).list(projectIds, { q, sort });
       const shown = matched.slice(0, limit ?? MEMORY_LIST_LIMIT);
       const more =
         matched.length > shown.length
           ? [`Showing ${shown.length} of ${matched.length}; use q to search or raise limit.`]
           : [];
-      return [shown.map(formatMemoryLine).join("\n") || "No memories found.", ...more].join("\n");
+      return [
+        shown
+          .map((memory) => {
+            const label =
+              projectIds.length > 1
+                ? ` [project: ${options.projectScopes?.find((p) => p.id === memory.project_id)?.name ?? memory.project_id}]`
+                : "";
+            return `${formatMemoryLine(memory)}${label}`;
+          })
+          .join("\n") || "No memories found.",
+        ...more,
+      ].join("\n");
     }
 
     case "memory_read": {
       const { name: memoryName, project } = args as { name: string; project?: string };
-      const memory = new MemoryStore(getSqlite(db)).read(memoryProject(project), memoryName, "mcp");
+      const ids = selectedProjectIds(project, options) ?? [memoryProject(project)];
+      const owner = ids.find((id) =>
+        getSqlite(db)
+          .query("SELECT 1 FROM memories WHERE project_id=? AND name=?")
+          .get(id, memoryName),
+      );
+      const memory = new MemoryStore(getSqlite(db)).read(
+        owner ?? (ids[0] as string),
+        memoryName,
+        "mcp",
+      );
       const priority = memory.priority === null ? "" : ` (priority ${memory.priority})`;
       return `# ${memory.name}${priority}\n${memory.description}\n\n${memory.content}`;
     }
@@ -1000,14 +1079,13 @@ export async function executeTool(
         status?: string;
         limit?: number;
       };
-      const resolved = resolveProjectId(project);
+      const projectIds = selectedProjectIds(project, options);
       const conditions = [];
       if (status) {
         conditions.push(eq(tasks.status, status as "todo"));
       }
-      if (resolved) {
-        conditions.push(eq(tasks.project_id, resolved.id));
-      }
+      if (projectIds) conditions.push(inArray(tasks.project_id, projectIds));
+      if (!status) conditions.push(notInArray(tasks.status, ["done", "cancelled"]));
       const rows = await db.query.tasks.findMany({
         where: conditions.length > 0 ? and(...conditions) : undefined,
         limit: limit ?? 20,
@@ -1020,7 +1098,10 @@ export async function executeTool(
       return filtered
         .map(
           (t) =>
-            `[${t.id}] ${t.status.padEnd(18)} ${t.priority.padEnd(8)} ${t.progress}% ${t.title}`,
+            `[${t.id}] ${t.status.padEnd(18)} ${t.priority.padEnd(8)} ${t.progress}% ${t.title}` +
+            (options.projectScopes && options.projectScopes.length > 1
+              ? ` [project: ${options.projectScopes.find((p) => p.id === t.project_id)?.name}]`
+              : ""),
         )
         .join("\n");
     }
@@ -1028,7 +1109,19 @@ export async function executeTool(
     case "task_get": {
       const { ids } = args as { ids: string[] };
       const rows = await Promise.all(
-        ids.map((id) => db.query.tasks.findFirst({ where: eq(tasks.id, id) })),
+        ids.map((id) =>
+          db.query.tasks.findFirst({
+            where: and(
+              eq(tasks.id, id),
+              options.projectScopes
+                ? inArray(
+                    tasks.project_id,
+                    options.projectScopes.map((p) => p.id),
+                  )
+                : undefined,
+            ),
+          }),
+        ),
       );
       return rows
         .filter(Boolean)
@@ -1093,6 +1186,19 @@ export async function executeTool(
     }
 
     case "task_update": {
+      if (options.projectScopes) {
+        const input = args as { id: string };
+        const row = await db.query.tasks.findFirst({
+          where: and(
+            eq(tasks.id, input.id),
+            inArray(
+              tasks.project_id,
+              options.projectScopes.map((p) => p.id),
+            ),
+          ),
+        });
+        if (!row) throw new NotFoundError("Task", input.id);
+      }
       const { id, status, body, priority, comment, progress, agent_backend, agent_model } =
         args as {
           id: string;
@@ -1139,8 +1245,8 @@ export async function executeTool(
 
     case "job_list": {
       const { limit, project } = args as { limit?: number; project?: string };
-      const resolved = resolveProjectId(project);
-      const conditions = resolved ? [eq(jobs.project_id, resolved.id)] : [];
+      const projectIds = selectedProjectIds(project, options);
+      const conditions = projectIds ? [inArray(jobs.project_id, projectIds)] : [];
       const rows = await db.query.jobs.findMany({
         where: conditions.length > 0 ? and(...conditions) : undefined,
         limit: limit ?? 20,
@@ -1149,14 +1255,20 @@ export async function executeTool(
       return rows
         .map(
           (j) =>
-            `${j.enabled ? "●" : "○"} ${j.name.padEnd(24)} ${j.trigger_type.padEnd(12)} runs:${j.run_count}`,
+            `${j.enabled ? "●" : "○"} ${j.name.padEnd(24)} ${j.trigger_type.padEnd(12)} runs:${j.run_count}` +
+            (options.projectScopes && options.projectScopes.length > 1
+              ? ` [project: ${options.projectScopes.find((p) => p.id === j.project_id)?.name}]`
+              : ""),
         )
         .join("\n");
     }
 
     case "job_run": {
-      const { name } = args as { name: string };
-      const job = await db.query.jobs.findFirst({ where: eq(jobs.name, name) });
+      const { name, project } = args as { name: string; project?: string };
+      const target = resolveProjectId(project);
+      const job = await db.query.jobs.findFirst({
+        where: and(eq(jobs.name, name), target ? eq(jobs.project_id, target.id) : undefined),
+      });
       if (!job) return `Job not found: ${name}`;
       const runId = ulid();
       await db.insert(job_runs).values({
@@ -1176,6 +1288,18 @@ export async function executeTool(
         where: eq(job_runs.id, run_id),
       });
       if (!run) return `Run not found: ${run_id}`;
+      if (options.projectScopes) {
+        const job = await db.query.jobs.findFirst({
+          where: and(
+            eq(jobs.id, run.job_id),
+            inArray(
+              jobs.project_id,
+              options.projectScopes.map((p) => p.id),
+            ),
+          ),
+        });
+        if (!job) return `Run not found: ${run_id}`;
+      }
       return JSON.stringify({
         status: run.status,
         exit_code: run.exit_code,
@@ -1199,9 +1323,12 @@ export async function executeTool(
         : resolveProjectId(input.project);
       const scoped = explicitScope || Boolean(resolved);
       const scopeId = resolved?.id ?? null;
+      const scopeIds = options.projectScopes?.map((p) => p.id);
 
       const taskConditions = [];
-      if (scoped) taskConditions.push(sql`${tasks.project_id} IS ${scopeId}`);
+      if (scopeIds) taskConditions.push(inArray(tasks.project_id, scopeIds));
+      else if (scoped) taskConditions.push(sql`${tasks.project_id} IS ${scopeId}`);
+      taskConditions.push(notInArray(tasks.status, ["done", "cancelled"]));
       const activeTasks = await db.query.tasks.findMany({
         where: taskConditions.length > 0 ? and(...taskConditions) : undefined,
         limit: taskLimit,
@@ -1209,17 +1336,25 @@ export async function executeTool(
       });
       const filtered = activeTasks.filter((t) => !["done", "cancelled"].includes(t.status));
 
-      const projectMemories = scopeId
-        ? new MemoryStore(getSqlite(db)).context(scopeId, memLimit)
-        : [];
+      const projectMemories = scopeIds
+        ? new MemoryStore(getSqlite(db)).list(scopeIds, { sort: "priority" }).slice(0, memLimit)
+        : scopeId
+          ? new MemoryStore(getSqlite(db)).context(scopeId, memLimit)
+          : [];
 
       const lastSession = await db.query.sessions.findFirst({
-        where: scoped ? sql`${sessions.project_id} IS ${scopeId}` : undefined,
+        where: scopeIds
+          ? inArray(sessions.project_id, scopeIds)
+          : scoped
+            ? sql`${sessions.project_id} IS ${scopeId}`
+            : undefined,
         orderBy: [desc(sessions.created_at)],
       });
 
       const lines: string[] = [];
-      if (resolved) {
+      if (options.projectScopes && options.projectScopes.length > 1) {
+        lines.push(`## Projects: ${options.projectScopes.map((p) => p.name).join(", ")}`);
+      } else if (resolved) {
         lines.push(`## Project: ${resolved.name}`);
       } else if (explicitScope) {
         lines.push("## Project: Unassigned");
@@ -1235,7 +1370,11 @@ export async function executeTool(
       if (projectMemories.length === 0) lines.push("  (none)");
       for (const m of projectMemories) {
         const priority = m.priority === null ? "" : ` [p${m.priority}]`;
-        lines.push(`  ${m.name}${priority} - ${m.description}`);
+        const owner =
+          scopeIds && scopeIds.length > 1
+            ? ` [project: ${options.projectScopes?.find((p) => p.id === m.project_id)?.name}]`
+            : "";
+        lines.push(`  ${m.name}${priority}${owner} - ${m.description}`);
       }
 
       if (lastSession?.summary) {
@@ -1247,9 +1386,13 @@ export async function executeTool(
       const activeCount = sqlite
         .query(
           "SELECT COUNT(*) as count FROM gateway_sessions WHERE role = 'worker' AND status = 'running'" +
-            (scoped ? " AND project_id IS ?" : ""),
+            (scopeIds
+              ? ` AND project_id IN (${scopeIds.map(() => "?").join(",")})`
+              : scoped
+                ? " AND project_id IS ?"
+                : ""),
         )
-        .get(...(scoped ? [scopeId] : [])) as { count: number } | null;
+        .get(...(scopeIds ?? (scoped ? [scopeId] : []))) as { count: number } | null;
       if (activeCount && activeCount.count > 0) {
         lines.push(`\n## Agent Loop: ${activeCount.count} active worker(s)`);
       }
@@ -1424,6 +1567,13 @@ export async function executeTool(
       const conditions = status
         ? [eq(projects.status, status as "active" | "archived" | "paused")]
         : [];
+      if (options.projectScopes)
+        conditions.push(
+          inArray(
+            projects.id,
+            options.projectScopes.map((p) => p.id),
+          ),
+        );
       const rows = await db.query.projects.findMany({
         where: conditions.length > 0 ? and(...conditions) : undefined,
         orderBy: (p, { asc }) => [asc(p.name)],
@@ -1540,11 +1690,17 @@ export async function executeTool(
         limit?: number;
       };
       const resolved = resolveProjectId(project);
+      const scopeIds = selectedProjectIds(project, options);
       const lim = limit ?? 10;
       const parts: string[] = [];
       if (!resources || resources.includes("knowledge")) {
         try {
-          const kbLines = await kbSearchLines(query, resolved?.id ?? null, Math.ceil(lim / 2));
+          const kbLines = await kbSearchLines(
+            query,
+            resolved?.id ?? null,
+            Math.ceil(lim / 2),
+            scopeIds,
+          );
           if (kbLines.length > 0) parts.push("## Knowledge", ...kbLines);
         } catch (error) {
           logger.warn("Knowledge search failed", { error });
@@ -1553,7 +1709,7 @@ export async function executeTool(
       }
       if (!resources || resources.includes("memories")) {
         const memResults = new MemoryStore(getSqlite(db))
-          .list(resolved?.id ?? null, { q: query })
+          .list(scopeIds ?? resolved?.id ?? null, { q: query })
           .slice(0, Math.ceil(lim / 2));
         if (memResults.length > 0) {
           // memory_read takes a name plus a project name, so print both.
@@ -1585,17 +1741,17 @@ export async function executeTool(
             const ftsExpr = words.join(" AND ");
             let sql = `SELECT t.id, t.title, t.status FROM tasks_fts f JOIN tasks t ON t.id = f.id WHERE f.tasks_fts MATCH ?`;
             const params: (string | number)[] = [ftsExpr];
-            if (resolved) {
-              sql += " AND t.project_id = ?";
-              params.push(resolved.id);
+            if (scopeIds) {
+              sql += ` AND t.project_id IN (${scopeIds.map(() => "?").join(",")})`;
+              params.push(...scopeIds);
             }
             sql += " ORDER BY rank LIMIT ?";
             params.push(taskLim);
             taskRows = sqlite.query(sql).all(...params) as typeof taskRows;
           } catch {
-            const likeSql = `SELECT id, title, status FROM tasks WHERE (title LIKE ? OR body LIKE ?)${resolved ? " AND project_id = ?" : ""} ORDER BY updated_at DESC LIMIT ?`;
+            const likeSql = `SELECT id, title, status FROM tasks WHERE (title LIKE ? OR body LIKE ?)${scopeIds ? ` AND project_id IN (${scopeIds.map(() => "?").join(",")})` : ""} ORDER BY updated_at DESC LIMIT ?`;
             const likeParams: (string | number)[] = [`%${query}%`, `%${query}%`];
-            if (resolved) likeParams.push(resolved.id);
+            if (scopeIds) likeParams.push(...scopeIds);
             likeParams.push(taskLim);
             taskRows = sqlite.query(likeSql).all(...likeParams) as typeof taskRows;
           }
@@ -1613,11 +1769,21 @@ export async function executeTool(
     }
 
     case "skill_list": {
-      const { q, source, sort, limit, reload, project, scope } = args as {
+      const {
+        q,
+        source,
+        sort,
+        limit,
+        offset = 0,
+        reload,
+        project,
+        scope,
+      } = args as {
         q?: string;
         source?: "builtin" | "user";
         sort?: SkillListSort;
         limit?: number;
+        offset?: number;
         reload?: boolean;
         project?: string;
         scope?: "global";
@@ -1627,25 +1793,26 @@ export async function executeTool(
         source,
         sort,
         reload,
+        ...(scope !== "global" && options.projectScopes
+          ? { projectIds: options.projectScopes.map((p) => p.id) }
+          : {}),
       });
-      const skills = matched.slice(0, limit ?? SKILL_LIST_LIMIT);
-      const issues = [
-        ...skillValidationIssues().map((issue) => `Invalid skill: ${issue.path}: ${issue.error}`),
-        ...skillWarnings().map((w) => `Skill warning: ${w.path}: ${w.message}`),
-      ];
+      const pageSize = limit ?? SKILL_LIST_LIMIT;
+      const skills = matched.slice(offset, offset + pageSize);
       const result = skills
         .map((s) => {
           const src = s.source === "user" ? " [user]" : "";
           const reads = ` (${s.read_count} ${s.read_count === 1 ? "read" : "reads"})`;
           const desc = s.description ? ` - ${s.description.slice(0, 80)}` : "";
-          return `${s.name.padEnd(28)}${src}${reads}${desc}`;
+          const score = s.score === undefined ? "" : ` [score: ${s.score.toFixed(4)}]`;
+          return `${s.name.padEnd(28)}${src}${reads}${score}${desc}`;
         })
         .join("\n");
-      const more =
-        matched.length > skills.length
-          ? [`Showing ${skills.length} of ${matched.length}; use q to search or raise limit.`]
-          : [];
-      return [result || "No skills found.", ...more, ...issues].join("\n");
+      const nextOffset = offset + pageSize < matched.length ? offset + pageSize : null;
+      return [
+        result || "No skills found.",
+        `Showing ${skills.length} of ${matched.length}; total=${matched.length}, offset=${offset}, limit=${pageSize}, next_offset=${nextOffset ?? "null"}`,
+      ].join("\n");
     }
 
     case "skill_read": {
@@ -1663,7 +1830,8 @@ export async function executeTool(
         download?: boolean;
       };
       const skillHistory = new SkillHistory(getSqlite(db));
-      const skillScope = resolveScope({ project, scope });
+      const skillScope = resolveSkillScope({ project, scope }, options, sName);
+      if (!skillHistory.visible(sName, skillScope)) return `Skill not found: ${sName}`;
       if (download) {
         if (!ref) throw new ValidationError("download:true requires a skill-relative ref");
         const result = options.skillDownload
@@ -1703,9 +1871,20 @@ export async function executeTool(
         name: cName,
         content: cContent,
         files,
-      } = args as { name: string; content: string; files?: SkillFileInput[] };
+        project,
+        scope,
+      } = args as {
+        name: string;
+        content: string;
+        files?: SkillFileInput[];
+        project?: string;
+        scope?: "global";
+      };
       try {
+        const projectId = resolveScope({ project, scope });
         const skill = createSkillFs(cName, cContent, files, { authored: true });
+        if (projectId !== null)
+          new SkillHistory(getSqlite(db)).setProjects(skill.name, [projectId]);
         return `Created skill: ${skill.name} at ${skill.path}`;
       } catch (err) {
         return `Error: ${err instanceof Error ? err.message : String(err)}`;

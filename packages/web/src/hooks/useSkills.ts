@@ -3,7 +3,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, type CreateSkillInput } from "@/api/client";
 
 export function useSkills(
-  params?: { q?: string; source?: "builtin" | "user"; include_hidden?: boolean } & ScopeQuery,
+  params?: {
+    q?: string;
+    source?: "builtin" | "user";
+    include_hidden?: boolean;
+    limit?: number;
+    offset?: number;
+  } & ScopeQuery,
 ) {
   return useQuery({
     queryKey: ["skills", params],
