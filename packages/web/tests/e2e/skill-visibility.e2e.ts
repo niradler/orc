@@ -27,8 +27,10 @@ test("built-in visibility saves, reopens, and preserves user skills and named re
     await gotoView(page, "skills");
     const toggle = page.getByTestId("skill-visibility-orc-sdlc");
     await expect(toggle).toHaveAttribute("aria-checked", "true");
+    await expect(toggle).toHaveText("Visible");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await expect(toggle).toHaveText("Hidden");
     await expect
       .poll(async () =>
         (await apiGet<{ skills: { name: string }[] }>(request, "/skills?scope=global")).skills.some(
@@ -38,6 +40,7 @@ test("built-in visibility saves, reopens, and preserves user skills and named re
       .toBe(false);
     await page.reload();
     await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await expect(toggle).toHaveText("Hidden");
     expect(
       (
         await request.get(`${API_BASE}/skills/orc-sdlc?ref=SKILL.md`, { headers: AUTH_HEADERS })
@@ -72,6 +75,7 @@ test("built-in visibility saves, reopens, and preserves user skills and named re
     await page.getByTestId("skill-visibility-orc-platform").click();
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-checked", "true");
+    await expect(toggle).toHaveText("Visible");
     expect(
       (await apiGet<{ hidden_builtins: string[] }>(request, "/skills/settings/visibility"))
         .hidden_builtins,

@@ -1,6 +1,15 @@
 import type { ScopeQuery } from "@orc/sdk/types";
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp, ArrowUpDown, Download, Plus, Search } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  Download,
+  Plus,
+  Search,
+  ToggleLeft,
+  ToggleRight,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api, type SkillFull, type SkillRefContent, type SkillSource } from "@/api/client";
 import { BulkActionBar } from "@/components/BulkActionBar";
@@ -448,7 +457,12 @@ export default function Skills({ projectId }: { projectId: string }) {
                         aria-checked={!skill.discovery_hidden}
                         data-testid={`skill-visibility-${skill.name}`}
                         disabled={!visibility.data || setVisibility.isPending}
-                        className="text-xs text-primary disabled:opacity-50"
+                        className="inline-flex min-h-11 items-center gap-2 text-xs text-primary disabled:opacity-50"
+                        title={
+                          skill.discovery_hidden
+                            ? "Show in agent discovery"
+                            : "Hide from agent discovery"
+                        }
                         onClick={() => {
                           const hidden = new Set(visibility.data?.hidden_builtins ?? []);
                           if (hidden.has(skill.name)) hidden.delete(skill.name);
@@ -456,7 +470,16 @@ export default function Skills({ projectId }: { projectId: string }) {
                           setVisibility.mutate([...hidden]);
                         }}
                       >
-                        {skill.discovery_hidden ? "Hidden — show" : "Visible — hide"}
+                        {skill.discovery_hidden ? (
+                          <ToggleLeft
+                            size={22}
+                            aria-hidden="true"
+                            className="text-muted-foreground"
+                          />
+                        ) : (
+                          <ToggleRight size={22} aria-hidden="true" />
+                        )}
+                        {skill.discovery_hidden ? "Hidden" : "Visible"}
                       </button>
                     ) : (
                       <span className="text-xs text-muted-foreground">
