@@ -687,20 +687,21 @@ work can execute directly; assigned managed nodes preserve roles and flow contra
 
 Skill templates live in `skills/*/SKILL.md` (built-in) and `~/.orc/skills/` (user-defined). Agents discover them via `skill_list` and load with `skill_read`.
 
-On the **Skills** page, each built-in has an **Agent discovery** toggle, plus
-**Hide all built-ins** and **Show all built-ins** controls. Visibility applies
-across the installation and defaults to visible. Hidden built-ins stay on the
-Skills page for management and remain readable by name, including supporting
-files; existing task flows continue to use them. User/imported skills and authored
-global/project instruction overrides of current skills remain discoverable.
+On the **Skills** page, every skill has an **Agent discovery** toggle, including
+built-in, user/imported and modified skills. Visibility applies across the installation
+and defaults to visible. Hidden skills stay on the Skills page for management and
+remain readable by name, including supporting files; existing task flows continue to
+use them. **Modified** means its instructions have an authored global/project edit.
 
-The policy is saved under `skills.hidden_builtins` in `~/.orc/config.json` and
+The policy is saved under `skills.hidden_skills` in `~/.orc/config.json` and
 read afresh for discovery, including by existing MCP processes. `GET /api/skills`
-omits hidden built-ins; `include_hidden=true` returns the management catalog with
+omits hidden skills; `include_hidden=true` returns the management catalog with
 `discovery_hidden` metadata. `GET /api/skills/settings/visibility` reads the policy and
-`PUT /api/skills/settings/visibility` replaces its `hidden_builtins` array using the usual
+`PUT /api/skills/settings/visibility` replaces its `hidden_skills` array using the usual
 API authentication. This installation-wide preference ignores project config.
-New built-ins default to visible until hidden explicitly.
+New skills default to visible until hidden explicitly. Legacy `hidden_builtins` settings
+remain supported with their original built-in-only behavior; modified instructions
+remain discoverable under that legacy setting unless explicitly hidden via `hidden_skills`.
 
 Retired built-in names (such as `orc-coder` and `orc-reviewer`) remain readable
 as compatibility routes for saved tasks, authored overrides and frozen flows, but

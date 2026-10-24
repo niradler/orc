@@ -69,8 +69,11 @@ export const OrcConfigSchema = z.object({
     })
     .default({}),
   skills: z
-    .object({ hidden_builtins: z.array(z.string().min(1).max(64)).max(512).default([]) })
-    .default({ hidden_builtins: [] }),
+    .object({
+      hidden_builtins: z.array(z.string().min(1).max(64)).max(512).default([]),
+      hidden_skills: z.array(z.string().min(1).max(64)).max(512).default([]),
+    })
+    .default({ hidden_builtins: [], hidden_skills: [] }),
   github: z.object({ token: z.string().optional() }).default({}),
   db: z
     .object({
@@ -488,9 +491,13 @@ export function globalConfigPath(): string {
 }
 
 export function hiddenBuiltinSkills(): string[] {
+  return skillVisibility().hidden_builtins;
+}
+
+export function skillVisibility(): OrcConfig["skills"] {
   const path = globalConfigPath();
   const raw = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : {};
-  return OrcConfigSchema.shape.skills.parse(raw.skills).hidden_builtins;
+  return OrcConfigSchema.shape.skills.parse(raw.skills);
 }
 
 export function updateGlobalConfig(mutate: (raw: Record<string, unknown>) => void): OrcConfig {

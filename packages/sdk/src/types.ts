@@ -371,6 +371,8 @@ export type {
   PackageMeta,
 } from "@orc/core/primitive-types";
 
+export type SkillVisibility = { hidden_builtins: string[]; hidden_skills: string[] };
+
 export type SkillMeta = {
   discovery_hidden?: boolean;
   mutation?: { id: string; project_id: string | null; updated_at: number; author: string };

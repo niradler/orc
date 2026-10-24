@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { hiddenBuiltinSkills } from "./config.js";
+import { skillVisibility } from "./config.js";
 import { ValidationError } from "./errors.js";
 import { parseMarkdownFrontmatter } from "./markdown-frontmatter.js";
 import { getPackagesDir } from "./package-paths.js";
@@ -451,10 +451,13 @@ export function listSkills(opts?: ListSkillsOpts): SkillMeta[] {
   const cache = opts?.reload ? reloadCache() : ensureCache();
   let skills = cache.skills;
 
-  const hidden = new Set(hiddenBuiltinSkills());
+  const policy = skillVisibility();
+  const hidden = new Set(policy.hidden_skills);
+  const hiddenBuiltins = new Set(policy.hidden_builtins);
   skills = skills.map((skill) => ({
     ...skill,
-    discovery_hidden: skill.source === "builtin" && hidden.has(skill.name),
+    discovery_hidden:
+      hidden.has(skill.name) || (skill.source === "builtin" && hiddenBuiltins.has(skill.name)),
   }));
   if (!opts?.include_hidden) skills = skills.filter((skill) => !skill.discovery_hidden);
 

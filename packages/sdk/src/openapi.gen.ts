@@ -1322,7 +1322,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get installation-wide built-in discovery visibility */
+        /** Get installation-wide skill discovery visibility */
         get: {
             parameters: {
                 query?: never;
@@ -1340,12 +1340,13 @@ export interface paths {
                     content: {
                         "application/json": {
                             hidden_builtins: string[];
+                            hidden_skills: string[];
                         };
                     };
                 };
             };
         };
-        /** Set installation-wide built-in discovery visibility */
+        /** Set installation-wide skill discovery visibility */
         put: {
             parameters: {
                 query?: never;
@@ -1356,7 +1357,8 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
-                        hidden_builtins: string[];
+                        hidden_builtins?: string[];
+                        hidden_skills?: string[];
                     };
                 };
             };
@@ -1369,10 +1371,11 @@ export interface paths {
                     content: {
                         "application/json": {
                             hidden_builtins: string[];
+                            hidden_skills: string[];
                         };
                     };
                 };
-                /** @description Only built-in skills can be hidden */
+                /** @description Invalid skill visibility policy */
                 400: {
                     headers: {
                         [name: string]: unknown;

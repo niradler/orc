@@ -6,7 +6,7 @@ test("built-in visibility saves, reopens, and preserves user skills and named re
   request,
   browser,
 }) => {
-  const original = await apiGet<{ hidden_builtins: string[] }>(
+  const original = await apiGet<{ hidden_builtins: string[]; hidden_skills: string[] }>(
     request,
     "/skills/settings/visibility",
   );
@@ -15,10 +15,10 @@ test("built-in visibility saves, reopens, and preserves user skills and named re
     name,
     content: `---\nname: ${name}\ndescription: User workflow\n---\nKeep this discoverable.`,
   });
-  const save = async (hidden_builtins: string[]) => {
+  const save = async (hidden_builtins: string[], hidden_skills: string[] = []) => {
     const response = await request.put(`${API_BASE}/skills/settings/visibility`, {
       headers: AUTH_HEADERS,
-      data: { hidden_builtins },
+      data: { hidden_builtins, hidden_skills },
     });
     expect(response.ok()).toBe(true);
   };
@@ -81,6 +81,54 @@ test("built-in visibility saves, reopens, and preserves user skills and named re
         .hidden_builtins,
     ).toEqual([]);
   } finally {
-    await save(original.hidden_builtins);
+    await save(original.hidden_builtins, original.hidden_skills);
   }
+});
+
+test("user and modified skills have persistent visibility toggles", async ({ page, request }) => {
+  const name = tid("pw-all-visible");
+  await apiPost(request, "/skills", {
+    name,
+    content: `---\nname: ${name}\ndescription: User visibility workflow\n---\nOriginal instructions.`,
+  });
+  await gotoView(page, "skills");
+  const toggle = page.getByTestId(`skill-visibility-${name}`);
+  await expect(toggle).toHaveText("Visible");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expect(toggle).toHaveText("Hidden");
+  await page.reload();
+  await expect(toggle).toHaveText("Hidden");
+  const catalog = await apiGet<{ skills: { name: string }[] }>(request, "/skills?scope=global");
+  expect(catalog.skills.some((skill) => skill.name === name)).toBe(false);
+  const raw = await apiGet<{ content: string }>(
+    request,
+    `/skills/${name}?scope=global&ref=SKILL.md`,
+  );
+  expect(raw.content).toContain("Original instructions.");
+  await expect(toggle).toBeEnabled();
+  await toggle.press("Space");
+  await expect(toggle).toHaveText("Visible");
+  const updated = await request.put(`${API_BASE}/skills/${name}/instructions`, {
+    headers: AUTH_HEADERS,
+    data: {
+      project_id: null,
+      content: `${raw.content}\nEdited instructions.`,
+      expected_content: raw.content,
+      reason: "Verify modified skill toggle",
+    },
+  });
+  expect(updated.status()).toBe(200);
+  await page.reload();
+  await expect(toggle).toHaveText("Visible (Modified)");
+  await toggle.click();
+  await expect(toggle).toHaveText("Hidden (Modified)");
+  await page.reload();
+  await expect(toggle).toHaveText("Hidden (Modified)");
+  await page.screenshot({
+    path: "../../output/playwright/skills-all-visibility.png",
+    fullPage: true,
+  });
+  await toggle.click();
+  await expect(toggle).toHaveText("Visible (Modified)");
 });

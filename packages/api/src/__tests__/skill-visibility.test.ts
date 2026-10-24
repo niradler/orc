@@ -208,3 +208,69 @@ test("should retain retired hidden names during edits and fail loudly on corrupt
     writeFileSync(path, saved);
   }
 });
+
+test("should hide user and modified skills across discovery while preserving named reads and legacy policy", async () => {
+  const name = userSkillName;
+  const history = new SkillHistory(getSqlite());
+  const original = history.read(name, null, "SKILL.md") as SkillRefContent;
+  history.update({
+    skill_name: name,
+    project_id: null,
+    content: `${original.content}\nModified globally`,
+    expected_content: original.content,
+    reason: "Verify modified skill visibility",
+  });
+  const project = await (
+    await req(app, "POST", "/projects", { name: `all-skill-visibility-${process.pid}` })
+  ).json();
+  const scoped = history.read(name, project.id, "SKILL.md") as SkillRefContent;
+  history.update({
+    skill_name: name,
+    project_id: project.id,
+    content: `${scoped.content}\nModified for project`,
+    expected_content: scoped.content,
+    reason: "Verify scoped skill visibility",
+  });
+  const flows = await (await req(app, "GET", "/flows")).json();
+  const saved = await req(app, "PUT", "/skills/settings/visibility", {
+    hidden_skills: [name, "orc-sdlc", name],
+  });
+  expect(saved.status).toBe(200);
+  expect((await saved.json()).hidden_skills).toEqual(["orc-sdlc", name].sort());
+  expect(hiddenBuiltinSkills()).toEqual(["orc-sdlc", "retired-builtin"]);
+  const raw = JSON.parse(readFileSync(globalConfigPath(), "utf8"));
+  expect(raw.skills.hidden_skills).toEqual(["orc-sdlc", name].sort());
+  expect(raw.visibility_test_marker).toEqual({ value: "preserved" });
+  expect(listSkills().some((skill) => skill.name === name)).toBe(false);
+  for (const scope of [{ scope: "global" }, { project: project.name }]) {
+    expect(await executeTool("skill_list", scope)).not.toContain(name);
+    expect(await executeTool("skill_read", { ...scope, name })).toContain("Modified globally");
+  }
+  for (const query of ["scope=global", `project_id=${project.id}`]) {
+    const catalog = await (await req(app, "GET", `/skills?${query}`)).json();
+    expect(catalog.skills.some((skill: { name: string }) => skill.name === name)).toBe(false);
+    const managed = await (await req(app, "GET", `/skills?include_hidden=true&${query}`)).json();
+    const skill = managed.skills.find((skill: { name: string }) => skill.name === name);
+    expect(skill.discovery_hidden).toBe(true);
+    expect(skill.mutation).toBeDefined();
+    expect((await req(app, "GET", `/skills/${name}?${query}&ref=SKILL.md`)).status).toBe(200);
+  }
+  expect(await (await req(app, "GET", "/flows")).json()).toEqual(flows);
+  expect(
+    (await req(app, "PUT", "/skills/settings/visibility", { hidden_skills: ["missing"] })).status,
+  ).toBe(400);
+  expect((await req(app, "PUT", "/skills/settings/visibility", {})).status).toBe(400);
+  expect(
+    (
+      await app.request("/api/skills/settings/visibility", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hidden_skills: [] }),
+      })
+    ).status,
+  ).toBe(401);
+  expect((await req(app, "PUT", "/skills/settings/visibility", { hidden_skills: [] })).status).toBe(
+    200,
+  );
+  expect(await executeTool("skill_list", { project: project.name })).toContain(name);
+});

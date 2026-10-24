@@ -230,8 +230,8 @@ export default function Skills({ projectId }: { projectId: string }) {
         .
       </p>
       <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
-        Built-in visibility applies to agent discovery across this installation. Hidden skills
-        remain readable by name and available to flows. Authored overrides stay visible.
+        Visibility applies to agent discovery across this installation. Hidden skills remain
+        readable by name and available to flows. Modified means the skill instructions were edited.
       </p>
       {(visibility.error || setVisibility.error) && (
         <p role="alert" className="text-destructive text-xs mb-2">
@@ -416,7 +416,7 @@ export default function Skills({ projectId }: { projectId: string }) {
                     >
                       {skill.name}
                     </button>
-                    {skill.mutation && <span className="ml-2 text-primary text-xs">Mutated</span>}
+                    {skill.mutation && <span className="ml-2 text-primary text-xs">Modified</span>}
                   </TableCell>
                   <TableCell className="font-body text-sm text-muted-foreground max-w-md truncate">
                     {skill.description || "\u2014"}
@@ -449,43 +449,44 @@ export default function Skills({ projectId }: { projectId: string }) {
                     )}
                   </TableCell>
                   <TableCell onClick={(event) => event.stopPropagation()}>
-                    {skill.source === "builtin" && !skill.mutation ? (
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-label={`${skill.name} visible to agents`}
-                        aria-checked={!skill.discovery_hidden}
-                        data-testid={`skill-visibility-${skill.name}`}
-                        disabled={!visibility.data || setVisibility.isPending}
-                        className="inline-flex min-h-11 items-center gap-2 text-xs text-primary disabled:opacity-50"
-                        title={
-                          skill.discovery_hidden
-                            ? "Show in agent discovery"
-                            : "Hide from agent discovery"
-                        }
-                        onClick={() => {
-                          const hidden = new Set(visibility.data?.hidden_builtins ?? []);
-                          if (hidden.has(skill.name)) hidden.delete(skill.name);
-                          else hidden.add(skill.name);
-                          setVisibility.mutate([...hidden]);
-                        }}
-                      >
-                        {skill.discovery_hidden ? (
-                          <ToggleLeft
-                            size={22}
-                            aria-hidden="true"
-                            className="text-muted-foreground"
-                          />
-                        ) : (
-                          <ToggleRight size={22} aria-hidden="true" />
-                        )}
-                        {skill.discovery_hidden ? "Hidden" : "Visible"}
-                      </button>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">
-                        {skill.mutation ? "Visible (override)" : "Visible"}
-                      </span>
-                    )}
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-label={`${skill.name} visible to agents`}
+                      aria-checked={!skill.discovery_hidden}
+                      data-testid={`skill-visibility-${skill.name}`}
+                      disabled={!visibility.data || setVisibility.isPending}
+                      className="inline-flex min-h-11 items-center gap-2 text-xs text-primary disabled:opacity-50"
+                      title={
+                        skill.discovery_hidden
+                          ? "Show in agent discovery"
+                          : "Hide from agent discovery"
+                      }
+                      onClick={() => {
+                        const hidden = new Set(visibility.data?.hidden_skills ?? []);
+                        const builtins = new Set(visibility.data?.hidden_builtins ?? []);
+                        if (skill.discovery_hidden) {
+                          hidden.delete(skill.name);
+                          builtins.delete(skill.name);
+                        } else hidden.add(skill.name);
+                        setVisibility.mutate({
+                          hidden_skills: [...hidden],
+                          hidden_builtins: [...builtins],
+                        });
+                      }}
+                    >
+                      {skill.discovery_hidden ? (
+                        <ToggleLeft
+                          size={22}
+                          aria-hidden="true"
+                          className="text-muted-foreground"
+                        />
+                      ) : (
+                        <ToggleRight size={22} aria-hidden="true" />
+                      )}
+                      {skill.discovery_hidden ? "Hidden" : "Visible"}
+                      {skill.mutation && " (Modified)"}
+                    </button>
                   </TableCell>
                 </TableRow>
               ))}
