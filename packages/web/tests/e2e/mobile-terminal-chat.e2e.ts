@@ -359,6 +359,92 @@ test("phone keyboard input reaches the shell once, as it is typed", async ({ pag
   expect(typed()).toBe("ls -a\r");
 });
 
+test("one tap on the terminal opens the keyboard and Android enter submits the line", async ({
+  page,
+  request,
+}) => {
+  test.skip(
+    page.context().browser()?.browserType().name() !== "chromium",
+    "Android key events are driven through CDP",
+  );
+  const terminal = await apiPost<{ id: string }>(request, "/terminals", {
+    kind: "shell",
+    host: null,
+  });
+  const sent: string[] = [];
+  let output = "";
+  page.on("websocket", (socket) => {
+    if (!socket.url().includes(`/terminals/${terminal.id}/ws`)) return;
+    socket.on("framesent", ({ payload }) => {
+      if (typeof payload !== "string") sent.push(payload.toString());
+    });
+    socket.on("framereceived", ({ payload }) => {
+      output += payload.toString();
+    });
+  });
+  await gotoView(page, "terminals");
+  await page.goto(`/terminals/${terminal.id}?project=all`);
+  const canvas = page.locator("[data-testid='terminal-surface'] canvas").first();
+  await expect(canvas).toBeVisible();
+  await expect.poll(() => output.length).toBeGreaterThan(0);
+  const input = page.locator("textarea[aria-label='Terminal input']").first();
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("Missing terminal canvas");
+  const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  // The surface's padding and the slack below the last row are outside the canvas; a tap
+  // there must still reach the terminal input, not the surrounding contenteditable root.
+  const surface = await page.getByTestId("terminal-surface").first().boundingBox();
+  if (!surface) throw new Error("Missing terminal surface");
+  await touch(page, [[{ x: center.x, y: surface.y + surface.height - 3 }], []]);
+  await expect(input).toBeFocused();
+  await page.locator("body").evaluate(() => (document.activeElement as HTMLElement).blur());
+  await touch(page, [[center], []]);
+  await expect(input).toBeFocused();
+  await page.waitForTimeout(500);
+  await expect(input).toBeFocused();
+  const typed = () => sent.join("");
+  const cdp = await page.context().newCDPSession(page);
+  // Soft keyboards report Enter and Backspace with an empty code, which ghostty cannot map.
+  const androidKey = async (key: string, keyCode: number, text?: string) => {
+    const event = { key, code: "", windowsVirtualKeyCode: keyCode, nativeVirtualKeyCode: keyCode };
+    await cdp.send("Input.dispatchKeyEvent", {
+      type: "keyDown",
+      ...event,
+      ...(text ? { text, unmodifiedText: text } : {}),
+    });
+    await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", ...event });
+  };
+  try {
+    for (const word of ["e", "ec", "ech", "echo"])
+      await cdp.send("Input.imeSetComposition", {
+        text: word,
+        selectionStart: word.length,
+        selectionEnd: word.length,
+      });
+    await cdp.send("Input.insertText", { text: "echo" });
+    await cdp.send("Input.insertText", { text: " ONE_TAPX" });
+    await androidKey("Backspace", 8);
+    await expect.poll(typed).toBe("echo ONE_TAPX\x7f");
+    await androidKey("Enter", 13, "\r");
+    await expect.poll(typed).toBe("echo ONE_TAPX\x7f\r");
+    await expect.poll(() => output).toContain("ONE_TAP");
+    // The next line starts clean and Enter on an empty prompt still submits.
+    await cdp.send("Input.insertText", { text: "echo SECOND" });
+    await androidKey("Enter", 13, "\r");
+    await androidKey("Enter", 13, "\r");
+    await expect.poll(typed).toBe("echo ONE_TAPX\x7f\recho SECOND\r\r");
+    await expect.poll(() => output).toContain("SECOND");
+    // Backspace with nothing typed on the phone still erases what the shell has.
+    sent.length = 0;
+    await cdp.send("Input.insertText", { text: "ab" });
+    await androidKey("Enter", 13, "\r");
+    await androidKey("Backspace", 8);
+    await expect.poll(typed).toBe("ab\r\x7f");
+  } finally {
+    await cdp.detach();
+  }
+});
+
 test("sticky ctrl from the key bar sends the next typed letter as a control key", async ({
   page,
   request,

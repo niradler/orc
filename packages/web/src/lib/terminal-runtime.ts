@@ -208,6 +208,12 @@ export function createRuntime(
     return true;
   });
 
+  // Ghostty makes its root a focusable contenteditable, and only taps on the canvas focus
+  // the hidden input. A tap on the padding or the slack below the last row focused the root,
+  // which opened the phone keyboard without anything typed reaching the shell.
+  element.addEventListener("focus", (event) => {
+    if (event.target === element) focusRuntime(runtime);
+  });
   attachClickToMove(runtime, encoder);
   attachTerminalTouchScroll(element, {
     getFontSize: () => term.options.fontSize,
@@ -344,8 +350,7 @@ export function mountRuntime(runtime: TerminalRuntime, container: HTMLElement, f
     if (runtime.disposed || runtime.element.parentElement !== container) return;
     runtime.fit.fit();
     // Loading the renderer must not dismiss a menu or interrupt a newer interaction.
-    if (shouldFocus && document.activeElement === focusedBeforeMount)
-      runtime.element.focus({ preventScroll: true });
+    if (shouldFocus && document.activeElement === focusedBeforeMount) focusRuntime(runtime);
   });
 }
 

@@ -18,7 +18,7 @@ test("renderer startup preserves actions opened immediately after terminal focus
     document.addEventListener("focusin", (event) => {
       if (
         !(event.target instanceof HTMLElement) ||
-        !event.target.matches('[role="textbox"][aria-label="Terminal input"]') ||
+        !event.target.matches('[aria-label="Terminal input"]') ||
         document.documentElement.dataset.startupMenuOpened
       )
         return;
