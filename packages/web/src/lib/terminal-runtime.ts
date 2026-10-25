@@ -7,7 +7,14 @@ import {
 } from "@/lib/terminal-font-size";
 import { attachTerminalTextInput, type TerminalTextInput } from "@/lib/terminal-input";
 import { isMacPlatform, resolveTerminalKey } from "@/lib/terminal-keys";
-import { cellAt, cursorMoveKeys, isPlainClick } from "@/lib/terminal-mouse";
+import {
+  cellAt,
+  createWheelSteps,
+  cursorMoveKeys,
+  isPlainClick,
+  wheelReport,
+  wheelTarget,
+} from "@/lib/terminal-mouse";
 import { writeTerminalOutput } from "@/lib/terminal-output";
 import { attachTerminalTouchScroll } from "@/lib/terminal-touch";
 
@@ -215,6 +222,7 @@ export function createRuntime(
     if (event.target === element) focusRuntime(runtime);
   });
   attachClickToMove(runtime, encoder);
+  attachWheelInput(runtime, encoder);
   attachTerminalTouchScroll(element, {
     getFontSize: () => term.options.fontSize,
     setFontSize: (size) => setRuntimeFontSize(runtime, size),
@@ -300,6 +308,52 @@ function attachClickToMove(runtime: TerminalRuntime, encoder: TextEncoder): void
     if (!cell || cell.row !== cursor.cursorY) return;
     const keys = cursorMoveKeys(cursor.cursorX, cell.col, term.getMode(DEC_APPLICATION_CURSOR));
     if (keys) socket.send(encoder.encode(keys));
+  });
+}
+
+const DEC_SGR_MOUSE = 1006;
+const DEC_ALTERNATE_SCROLL = 1007;
+
+// ghostty-web never reports the wheel to a program and, in a full-screen one, sends
+// round(deltaY / 33) arrow keys per event. Codex tracks the mouse and reads arrows as prompt
+// history, and a touch swipe moves a few pixels per event, which rounded to no keys at all.
+function attachWheelInput(runtime: TerminalRuntime, encoder: TextEncoder): void {
+  const { element, term } = runtime;
+  const steps = createWheelSteps();
+  term.attachCustomWheelEventHandler((event) => {
+    const target = wheelTarget({
+      mouseTracking: term.hasMouseTracking(),
+      alternateScreen: term.buffer.active.type === "alternate",
+      alternateScroll: term.getMode(DEC_ALTERNATE_SCROLL),
+    });
+    if (target === "scrollback") return false;
+    const count = steps(event.deltaY, event.deltaMode, term.rows);
+    const socket = runtime.socket;
+    if (count === 0 || !socket || socket.readyState !== WebSocket.OPEN) return true;
+    let step: string;
+    if (target === "arrows") {
+      step = `\x1b${term.getMode(DEC_APPLICATION_CURSOR) ? "O" : "["}${count < 0 ? "A" : "B"}`;
+    } else {
+      const box = element.querySelector("canvas")?.getBoundingClientRect();
+      // A wheel over the padding still belongs to the nearest cell.
+      const cell = box
+        ? cellAt(
+            {
+              left: box.left,
+              top: box.top,
+              width: box.width,
+              height: box.height,
+              cols: term.cols,
+              rows: term.rows,
+            },
+            Math.min(Math.max(event.clientX, box.left), box.right - 1),
+            Math.min(Math.max(event.clientY, box.top), box.bottom - 1),
+          )
+        : null;
+      step = wheelReport(count < 0, cell ?? { col: 0, row: 0 }, term.getMode(DEC_SGR_MOUSE));
+    }
+    if (step) socket.send(encoder.encode(step.repeat(Math.abs(count))));
+    return true;
   });
 }
 

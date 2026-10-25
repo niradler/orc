@@ -18,6 +18,11 @@ const keys = [
   { name: "Arrow right", label: <ArrowRight size={16} />, data: "\u001b[C" },
 ];
 
+const pages = [
+  { name: "Page up", label: "PgUp", direction: -1 },
+  { name: "Page down", label: "PgDn", direction: 1 },
+] as const;
+
 function TouchControlButton({
   onPress,
   disabled,
@@ -69,7 +74,7 @@ function TouchControlButton({
 
 export function TerminalTouchControls({ terminalId }: { terminalId: string }) {
   const touch = useMediaQuery("(any-pointer: coarse)");
-  const { sendInput, armCtrl, focus, connectionOf, terminals, fontSizeOf, setFontSize } =
+  const { sendInput, armCtrl, focus, page, connectionOf, terminals, fontSizeOf, setFontSize } =
     useTerminals();
   const [ctrl, setCtrl] = useState(false);
   useEffect(() => {
@@ -135,6 +140,18 @@ export function TerminalTouchControls({ terminalId }: { terminalId: string }) {
             aria-label={key.name}
             disabled={!enabled}
             onPress={() => sendInput(terminalId, key.data)}
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md px-2 text-xs text-on-surface-variant hover:bg-surface disabled:opacity-40"
+          >
+            {key.label}
+          </TouchControlButton>
+        ))}
+        {pages.map((key) => (
+          <TouchControlButton
+            key={key.name}
+            type="button"
+            aria-label={key.name}
+            disabled={!enabled}
+            onPress={() => page(terminalId, key.direction)}
             className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md px-2 text-xs text-on-surface-variant hover:bg-surface disabled:opacity-40"
           >
             {key.label}

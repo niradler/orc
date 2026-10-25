@@ -1,4 +1,7 @@
-import { devices, expect, type Page } from "@playwright/test";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { devices, expect, type Page, type WebSocketRoute } from "@playwright/test";
 import { apiGet, apiPost, gotoView } from "./_helpers";
 import { test } from "./_terminal-fixture";
 
@@ -474,4 +477,118 @@ test("sticky ctrl from the key bar sends the next typed letter as a control key"
   await expect(ctrl).toHaveAttribute("aria-pressed", "false");
   await page.keyboard.insertText("l");
   await expect.poll(() => sent.join("")).toBe("\fl");
+});
+
+// Stands in for a full-screen program: "tracking" switches on the modes Codex 0.164 does,
+// "alternate" only the alternate screen (less, man), and "lines" fills the scrollback.
+const SCREEN_SCRIPT = `
+const mode = process.argv[2];
+if (mode === "lines") {
+  for (let i = 0; i < 200; i++) console.log("LINE_" + i);
+  process.exit(0);
+}
+const on = mode === "tracking" ? "<ESC>[?1049h<ESC>[?1007l<ESC>[?1000h<ESC>[?1006h" : "<ESC>[?1049h";
+process.stdout.write(on + "SCREEN_READY");
+process.stdin.setRawMode?.(true);
+process.stdin.resume();
+process.stdin.on("data", (data) => {
+  if (!data.includes(3)) return;
+  process.stdout.write("<ESC>[?1006l<ESC>[?1000l<ESC>[?1049l");
+  process.exit(0);
+});
+`;
+
+test("touch swipes scroll full-screen programs and PgUp/PgDn page the terminal", async ({
+  page,
+  request,
+}) => {
+  test.skip(
+    page.context().browser()?.browserType().name() !== "chromium",
+    "Touch gestures are driven through CDP",
+  );
+  const dir = mkdtempSync(join(tmpdir(), "orc-screen-"));
+  const script = join(dir, "screen.js");
+  writeFileSync(script, SCREEN_SCRIPT.replaceAll("<ESC>", "\x1b"));
+  const terminal = await apiPost<{ id: string }>(request, "/terminals", {
+    kind: "shell",
+    host: null,
+  });
+  const sent: string[] = [];
+  let output = "";
+  let toPage: WebSocketRoute | undefined;
+  // Proxied so the test can play program output to the page: Windows ConPTY drops the mouse
+  // mode sequences a program writes, so they never reach the browser through the PTY there.
+  await page.routeWebSocket(`**/terminals/${terminal.id}/ws**`, (ws) => {
+    toPage = ws;
+    const server = ws.connectToServer();
+    ws.onMessage((message) => {
+      if (typeof message !== "string") sent.push(message.toString());
+      server.send(message);
+    });
+    server.onMessage((message) => {
+      output += message.toString();
+      ws.send(message);
+    });
+  });
+  await gotoView(page, "terminals");
+  await page.goto(`/terminals/${terminal.id}?project=all`);
+  const surface = page.getByTestId("terminal-surface").first();
+  const canvas = surface.locator("canvas").first();
+  await expect(canvas).toBeVisible();
+  await expect.poll(() => output.length).toBeGreaterThan(0);
+  const input = page.locator("textarea[aria-label='Terminal input']").first();
+  const run = async (mode: string, ready: string) => {
+    await input.focus();
+    await page.keyboard.type(`bun "${script}" ${mode}`);
+    await page.keyboard.press("Enter");
+    await expect.poll(() => output, { timeout: 15_000 }).toContain(ready);
+  };
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("Missing terminal canvas");
+  const x = box.x + box.width / 2;
+  const top = box.y + box.height / 3;
+  // A slow swipe: 20 finger moves of 5px, each far below one wheel step on its own.
+  const swipe = (direction: 1 | -1) => {
+    const start = direction > 0 ? top : top + 100;
+    return touch(page, [
+      ...Array.from({ length: 21 }, (_, index) => [{ x, y: start + direction * index * 5 }]),
+      [],
+    ]);
+  };
+  const typed = () => sent.join("");
+  const scrollOffset = async () => Number(await surface.getAttribute("data-scroll-offset"));
+
+  // At a shell prompt PgUp/PgDn page the scrollback instead of editing the line.
+  await run("lines", "LINE_199");
+  sent.length = 0;
+  await page.getByRole("button", { name: "Page up" }).tap();
+  await expect.poll(scrollOffset).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Page down" }).tap();
+  await expect.poll(scrollOffset).toBe(0);
+  expect(typed()).toBe("");
+
+  // Codex tracks the mouse: a swipe becomes SGR wheel reports, never history arrows.
+  await run("tracking", "SCREEN_READY");
+  toPage?.send(Buffer.from("\x1b[?1007l\x1b[?1000h\x1b[?1006h"));
+  const reports = () => typed().replace(/;\d+;\d+M/g, ";M");
+  sent.length = 0;
+  await swipe(1);
+  await expect.poll(reports).toBe("\x1b[<64;M".repeat(3));
+  sent.length = 0;
+  await swipe(-1);
+  await expect.poll(reports).toBe("\x1b[<65;M".repeat(3));
+  sent.length = 0;
+  await page.getByRole("button", { name: "Page up" }).tap();
+  await page.getByRole("button", { name: "Page down" }).tap();
+  await expect.poll(typed).toBe("\x1b[5~\x1b[6~");
+  await page.getByRole("button", { name: "Interrupt command" }).tap();
+  toPage?.send(Buffer.from("\x1b[?1006l\x1b[?1000l\x1b[?1007h"));
+
+  // Without tracking, a full-screen program gets arrow keys, as with alternate scroll in xterm.
+  output = "";
+  await run("alternate", "SCREEN_READY");
+  sent.length = 0;
+  await swipe(1);
+  await expect.poll(typed).toBe("\x1b[A".repeat(3));
+  await page.getByRole("button", { name: "Interrupt command" }).tap();
 });

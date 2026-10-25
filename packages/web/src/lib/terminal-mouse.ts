@@ -1,6 +1,6 @@
 // Click-to-move-cursor, as in Warp: a click on the cursor's own row sends the arrow keys that
 // walk the shell's cursor to the clicked column. ghostty-web does not report mouse events to
-// applications, so this is the only mouse input a program ever receives.
+// applications, so this and the wheel reports below are the only mouse input a program receives.
 
 export interface CellGrid {
   /** Pixel box of the rendered cells. */
@@ -59,4 +59,52 @@ export function isPlainClick(state: ClickState): boolean {
     !state.modified &&
     !state.dragged
   );
+}
+
+/** Wheel distance ghostty counts as one step, so a ~100px mouse notch scrolls three. */
+export const WHEEL_STEP_PX = 33;
+const DOM_DELTA_LINE = 1;
+const DOM_DELTA_PAGE = 2;
+
+export type WheelTarget = "report" | "arrows" | "scrollback";
+
+/** Where a wheel goes, as in xterm: reported to a tracking program, arrows in a full-screen one. */
+export function wheelTarget(state: {
+  mouseTracking: boolean;
+  alternateScreen: boolean;
+  alternateScroll: boolean;
+}): WheelTarget {
+  if (state.mouseTracking) return "report";
+  if (state.alternateScreen && state.alternateScroll) return "arrows";
+  return "scrollback";
+}
+
+/** The report for one wheel step over a zero-based cell, in SGR or legacy X10 encoding. */
+export function wheelReport(up: boolean, cell: Cell, sgr: boolean): string {
+  const button = up ? 64 : 65;
+  if (sgr) return `\x1b[<${button};${cell.col + 1};${cell.row + 1}M`;
+  // X10 sends each value as one byte offset by 32, so cells past 223 cannot be reported.
+  if (cell.col > 222 || cell.row > 222) return "";
+  return `\x1b[M${String.fromCharCode(32 + button, 33 + cell.col, 33 + cell.row)}`;
+}
+
+/**
+ * Turns wheel deltas into whole steps. A touch swipe moves a few pixels per event, so the
+ * remainder is carried; reversing direction drops it.
+ */
+export function createWheelSteps(): (deltaY: number, deltaMode: number, rows: number) => number {
+  let pending = 0;
+  return (deltaY, deltaMode, rows) => {
+    const steps =
+      deltaMode === DOM_DELTA_LINE
+        ? deltaY
+        : deltaMode === DOM_DELTA_PAGE
+          ? deltaY * rows
+          : deltaY / WHEEL_STEP_PX;
+    if (Math.sign(steps) !== Math.sign(pending)) pending = 0;
+    pending += steps;
+    const whole = Math.trunc(pending);
+    pending -= whole;
+    return whole;
+  };
 }

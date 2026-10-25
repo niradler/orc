@@ -54,6 +54,8 @@ interface TerminalsContextValue {
   /** Sticky Ctrl from the key bar: the next typed character is sent as its control code. */
   armCtrl: (id: string, onUsed: (() => void) | null) => void;
   focus: (id: string) => void;
+  /** Page Up (-1) or Page Down (1) from the key bar. */
+  page: (id: string, direction: -1 | 1) => void;
   fontSizeOf: (id: string) => number;
   setFontSize: (id: string, size: number) => void;
 }
@@ -258,6 +260,18 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
     const runtime = runtimes.current.get(id);
     if (runtime) focusRuntime(runtime);
   }, []);
+  const page = useCallback(
+    (id: string, direction: -1 | 1) => {
+      const term = runtimes.current.get(id)?.term;
+      if (!term) return;
+      // A full-screen program pages itself. At a shell prompt readline maps the keys to history
+      // search, which would rewrite the line, so they page the terminal's scrollback instead.
+      if (term.buffer.active.type === "alternate" || term.hasMouseTracking())
+        sendInput(id, direction < 0 ? "\u001b[5~" : "\u001b[6~");
+      else term.scrollPages(direction);
+    },
+    [sendInput],
+  );
   const fontSizeOf = useCallback((id: string) => fontSizes[id] ?? terminalFontSize(), [fontSizes]);
   const setFontSize = useCallback((id: string, size: number) => {
     const runtime = runtimes.current.get(id);
@@ -289,6 +303,7 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
       sendInput,
       armCtrl,
       focus,
+      page,
       fontSizeOf,
       setFontSize,
     }),
@@ -311,6 +326,7 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
       sendInput,
       armCtrl,
       focus,
+      page,
       fontSizeOf,
       setFontSize,
     ],

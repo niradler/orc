@@ -12,8 +12,11 @@ import {
 import {
   type ClickState,
   cellAt,
+  createWheelSteps,
   cursorMoveKeys,
   isPlainClick,
+  wheelReport,
+  wheelTarget,
 } from "../../src/lib/terminal-mouse";
 
 const http = { protocol: "http:", host: "localhost:9742" };
@@ -224,5 +227,35 @@ describe("terminal mouse", () => {
     ]) {
       expect(isPlainClick({ ...click, ...override })).toBe(false);
     }
+  });
+
+  test("the wheel is reported to a tracking program, arrows in a full-screen one", () => {
+    const state = { mouseTracking: false, alternateScreen: false, alternateScroll: true };
+    expect(wheelTarget(state)).toBe("scrollback");
+    expect(wheelTarget({ ...state, alternateScreen: true })).toBe("arrows");
+    // Codex enables tracking and turns alternate scroll off; less leaves tracking off.
+    expect(wheelTarget({ ...state, alternateScreen: true, mouseTracking: true })).toBe("report");
+    expect(wheelTarget({ ...state, alternateScreen: true, alternateScroll: false })).toBe(
+      "scrollback",
+    );
+    expect(wheelTarget({ ...state, mouseTracking: true })).toBe("report");
+  });
+
+  test("wheelReport encodes SGR and X10 reports at one-based cells", () => {
+    expect(wheelReport(true, { col: 4, row: 9 }, true)).toBe("\x1b[<64;5;10M");
+    expect(wheelReport(false, { col: 0, row: 0 }, true)).toBe("\x1b[<65;1;1M");
+    expect(wheelReport(true, { col: 4, row: 9 }, false)).toBe("\x1b[M`%*");
+    expect(wheelReport(false, { col: 223, row: 0 }, false)).toBe("");
+  });
+
+  test("wheel steps carry slow swipe remainders and drop them on reversal", () => {
+    const steps = createWheelSteps();
+    // A finger moves a few pixels per event: no single event is a step, together they are.
+    const moves = Array.from({ length: 20 }, () => steps(-5, 0, 24));
+    expect(moves.reduce((sum, value) => sum + value, 0)).toBe(-3);
+    expect(steps(30, 0, 24)).toBe(0);
+    expect(steps(10, 0, 24)).toBe(1);
+    expect(steps(3, 1, 24)).toBe(3);
+    expect(steps(-1, 2, 24)).toBe(-24);
   });
 });
