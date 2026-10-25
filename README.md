@@ -187,7 +187,7 @@ The web dashboard ships inside the `orc` binary and is served by the API process
 | `GET /mcp`                         | MCP server (streamable HTTP)                                                                                                   |
 | `GET /tasks/<id>`, `/knowledge`, … | `index.html` again - a navigation request matching no static file falls back to the SPA shell, so dashboard links are shareable |
 
-`/mcp?mode=meta` serves three meta-tools (`tool_search`, `tool_describe`, `tool_invoke`) instead of the full tool list, which keeps client context small; the model finds a tool, reads its schema, then calls it through `tool_invoke` with the same validation as a direct call. Stdio parity: `orc mcp --mode meta`. Any other `mode` value returns HTTP 400.
+`/mcp?mode=meta` serves three meta-tools (`tool_search`, `tool_describe`, `tool_invoke`) instead of the full tool list, which keeps client context small; the model finds a tool, reads its schema, then calls it through `tool_invoke` with the same validation as a direct call. Stdio `orc mcp` serves meta mode by default; pass `--mode full` for the whole tool list. Any other `mode` value returns HTTP 400.
 
 Use `/mcp?project=orc` to set connection-wide defaults for project-aware tools,
 including context, tasks, jobs, memories, knowledge and archived-session search.
@@ -910,7 +910,7 @@ Runs on port 7700 with auto-generated OpenAPI spec.
 orc daemon start|stop|status     Manage the daemon (API + scheduler + gateway)
 orc daemon install|uninstall     Register/remove auto-start on login/boot
 orc api                          Start the API server only
-orc mcp                          Start the MCP server (stdio)
+orc mcp [--mode meta|full]       Start the MCP server (stdio, meta by default)
 orc home                         Show ~/.orc directory and config
 orc status                       Show API health and counts
 orc doctor                       Check which agent backends are usable here

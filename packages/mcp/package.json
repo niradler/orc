@@ -5,6 +5,8 @@
   "main": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./meta-tools": "./src/meta-tools.ts",
+    "./server": "./src/server.ts",
     "./tools": "./src/tools.ts"
   },
   "scripts": {

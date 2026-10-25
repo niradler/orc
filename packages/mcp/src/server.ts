@@ -160,7 +160,7 @@ export function createMcpServer({
   return server;
 }
 
-export async function startStdioServer(mode: McpMode = "full") {
+export async function startStdioServer(mode: McpMode = "meta") {
   const server = createMcpServer({ agentSessionId: agentSessionFromEnv(), mode });
   const transport = new StdioServerTransport();
   await server.connect(transport);

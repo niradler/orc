@@ -97,8 +97,8 @@ environment. Protocol output belongs on stdout and diagnostics on stderr. For
 HTTP MCP use `<origin>/mcp` and the configured auth header; do not append `/api`
 to that MCP endpoint. Preserve other MCP servers when editing client config.
 
-Full MCP lists domain tools directly. Meta mode (`orc mcp --mode meta` or
-`/mcp?mode=meta`) exposes `tool_search`, `tool_describe`, `tool_invoke`:
+Stdio `orc mcp` defaults to meta mode; pass `--mode full` to list every domain
+tool directly. HTTP `/mcp` defaults to full; `/mcp?mode=meta` matches stdio. Meta mode exposes `tool_search`, `tool_describe`, `tool_invoke`:
 search by intent, describe unknown arguments, then invoke the selected tool.
 Reach `context` and other named tools through `tool_invoke` in meta mode.
 Connectors, loaded skills and installed hooks do not establish equal enforcement

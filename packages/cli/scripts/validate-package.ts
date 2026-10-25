@@ -13,8 +13,9 @@
  *   2. `npm pack`s the real tarball.
  *   3. Installs the tarball into a clean temp project (production install).
  *   4. Asserts the externalized deps resolve from the installed package.
+ *   5. Lists and searches tools over the installed `orc mcp` stdio server.
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -93,10 +94,72 @@ function run(cmd: string, args: string[], cwd: string): { code: number; stdout: 
   return { code: r.status ?? 1, stdout: r.stdout ?? "" };
 }
 
+// Speaks MCP over stdio to `orc mcp`; returns the tools/list names and the tool_search text.
+// The bundled CLI once served an uninitialized tool registry, so listing alone proves little.
+async function probeMcp(entry: string, mode: string): Promise<{ tools: string[]; search: string }> {
+  const child = spawn(process.execPath, [entry, "mcp", "--mode", mode], {
+    stdio: ["pipe", "pipe", "ignore"],
+  });
+  const send = (msg: unknown) => child.stdin.write(`${JSON.stringify(msg)}\n`);
+  const replies = new Map<number, { result?: unknown; error?: { message: string } }>();
+  let buffer = "";
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => {
+    buffer += chunk;
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const msg = JSON.parse(line) as {
+        id?: number;
+        result?: unknown;
+        error?: { message: string };
+      };
+      if (typeof msg.id === "number") replies.set(msg.id, msg);
+    }
+  });
+  send({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "validate", version: "0" },
+    },
+  });
+  send({ jsonrpc: "2.0", method: "notifications/initialized" });
+  send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
+  send({
+    jsonrpc: "2.0",
+    id: 3,
+    method: "tools/call",
+    params: { name: "tool_search", arguments: { query: "create task" } },
+  });
+  const deadline = Date.now() + 30000;
+  try {
+    while (!(replies.has(2) && replies.has(3))) {
+      if (Date.now() > deadline) throw new Error("orc mcp did not answer within 30s");
+      if (child.exitCode !== null) throw new Error(`orc mcp exited with code ${child.exitCode}`);
+      await Bun.sleep(100);
+    }
+  } finally {
+    child.kill();
+  }
+  const list = replies.get(2);
+  if (list?.error) throw new Error(`tools/list failed: ${list.error.message}`);
+  const call = replies.get(3);
+  if (call?.error) throw new Error(`tool_search failed: ${call.error.message}`);
+  const listed = (list?.result as { tools?: { name: string }[] } | undefined)?.tools ?? [];
+  const tools = listed.map((t) => t.name);
+  const search = (call?.result as { content?: { text?: string }[] })?.content?.[0]?.text ?? "";
+  return { tools, search };
+}
+
 console.log("→ Validating orc-ai package\n");
 
 // 1. The bundle must exist and must NOT have inlined the external SDK.
-console.log("[1/3] Static bundle checks");
+console.log("[1/4] Static bundle checks");
 if (!existsSync(DIST_ENTRY)) {
   fail(`${DIST_ENTRY} missing — run \`bun run build\` first`);
 } else {
@@ -112,7 +175,7 @@ if (!existsSync(DIST_ENTRY)) {
 }
 
 // 2. Pack the real tarball.
-console.log("\n[2/3] Packing tarball");
+console.log("\n[2/4] Packing tarball");
 const pack = run("npm", ["pack", "--json"], CLI_DIR);
 if (pack.code !== 0) {
   fail("npm pack failed");
@@ -130,7 +193,7 @@ if (!tarball) {
 }
 
 // 3. Install into a clean temp project and assert externals resolve.
-console.log("\n[3/3] Clean-install resolution checks");
+console.log("\n[3/4] Clean-install resolution checks");
 let tmp = "";
 if (tarball && failures.length === 0) {
   tmp = mkdtempSync(join(tmpdir(), "orc-pkg-validate-"));
@@ -175,6 +238,24 @@ if (tarball && failures.length === 0) {
         } else {
           fail(`${pkg} native binary does NOT resolve from the installed package`);
         }
+      }
+    }
+
+    console.log("\n[4/4] Installed orc mcp (stdio)");
+    if (existsSync(installedEntry)) {
+      try {
+        const meta = await probeMcp(installedEntry, "meta");
+        if (meta.tools.join(",") === "tool_search,tool_describe,tool_invoke")
+          ok("meta mode lists only the meta tools");
+        else fail(`meta mode listed unexpected tools: ${meta.tools.join(", ")}`);
+        if (meta.search.includes("task_create")) ok("tool_search finds task_create");
+        else fail(`tool_search did not find task_create: ${meta.search.slice(0, 200)}`);
+        const full = await probeMcp(installedEntry, "full");
+        if (full.tools.includes("task_create") && !full.tools.includes("tool_search"))
+          ok(`full mode lists ${full.tools.length} domain tools`);
+        else fail(`full mode listed unexpected tools: ${full.tools.slice(0, 10).join(", ")}`);
+      } catch (err) {
+        fail(`orc mcp stdio probe failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   } finally {
