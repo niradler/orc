@@ -7,7 +7,7 @@ import { test } from "./_terminal-fixture";
 
 test.use({ ...devices["Pixel 7"], viewport: { width: 390, height: 844 } });
 
-async function touch(page: Page, points: { x: number; y: number }[][]) {
+async function touch(page: Page, points: { x: number; y: number }[][], holdMs = 0) {
   if (page.context().browser()?.browserType().name() !== "chromium") {
     await page.evaluate((points) => {
       const first = points[0]?.[0];
@@ -40,6 +40,8 @@ async function touch(page: Page, points: { x: number; y: number }[][]) {
         type: index === 0 ? "touchStart" : touches.length ? "touchMove" : "touchEnd",
         touchPoints: touches.map((point, id) => ({ ...point, id })),
       });
+      // A long press: the finger rests after landing.
+      if (index === 0 && holdMs > 0) await new Promise((resolve) => setTimeout(resolve, holdMs));
     }
   } finally {
     await session.detach();
@@ -591,4 +593,86 @@ test("touch swipes scroll full-screen programs and PgUp/PgDn page the terminal",
   await swipe(1);
   await expect.poll(typed).toBe("\x1b[A".repeat(3));
   await page.getByRole("button", { name: "Interrupt command" }).tap();
+});
+
+test("a long press selects terminal text for copying and the text view copies it all", async ({
+  page,
+  request,
+}) => {
+  test.skip(
+    page.context().browser()?.browserType().name() !== "chromium",
+    "Touch gestures are driven through CDP",
+  );
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  const dir = mkdtempSync(join(tmpdir(), "orc-screen-"));
+  const script = join(dir, "screen.js");
+  writeFileSync(script, SCREEN_SCRIPT.replaceAll("<ESC>", "\x1b"));
+  const terminal = await apiPost<{ id: string }>(request, "/terminals", {
+    kind: "shell",
+    host: null,
+  });
+  const sent: string[] = [];
+  let output = "";
+  page.on("websocket", (socket) => {
+    if (!socket.url().includes(`/terminals/${terminal.id}/ws`)) return;
+    socket.on("framesent", ({ payload }) => {
+      if (typeof payload !== "string") sent.push(payload.toString());
+    });
+    socket.on("framereceived", ({ payload }) => {
+      output += payload.toString();
+    });
+  });
+  await gotoView(page, "terminals");
+  await page.goto(`/terminals/${terminal.id}?project=all`);
+  const surface = page.getByTestId("terminal-surface").first();
+  const canvas = surface.locator("canvas").first();
+  await expect(canvas).toBeVisible();
+  await expect.poll(() => output.length).toBeGreaterThan(0);
+  const input = page.locator("textarea[aria-label='Terminal input']").first();
+  await input.focus();
+  await page.keyboard.type(`bun "${script}" lines`);
+  await page.keyboard.press("Enter");
+  await expect.poll(() => output, { timeout: 15_000 }).toContain("LINE_199");
+  // The Windows clipboard turns line feeds into CRLF.
+  const clipboard = async () =>
+    (await page.evaluate(() => navigator.clipboard.readText())).replaceAll("\r\n", "\n");
+  await page.evaluate(() => navigator.clipboard.writeText(""));
+  sent.length = 0;
+
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("Missing terminal canvas");
+  const fontSize = Number(await surface.getAttribute("data-font-size"));
+  const x = box.x + fontSize;
+  const y = box.y + box.height / 3;
+  const rows = 3;
+  await touch(
+    page,
+    [
+      [{ x, y }],
+      ...Array.from({ length: 10 }, (_, index) => [
+        { x: x + index * 10, y: y + ((index + 1) * rows * fontSize * 1.2) / 10 },
+      ]),
+      [],
+    ],
+    700,
+  );
+  const actions = page.getByTestId("terminal-selection-actions");
+  await expect(actions.getByRole("button", { name: "Copy selection" })).toBeVisible();
+  await actions.getByRole("button", { name: "Copy selection" }).tap();
+  await expect(actions.getByRole("status")).toHaveText("Copied");
+  const copied = (await clipboard()).split("\n");
+  expect(copied.length).toBeGreaterThan(2);
+  for (const line of copied.slice(1, -1)) expect(line).toMatch(/^LINE_\d+$/);
+  // The press never reached the shell or moved its cursor.
+  expect(sent.join("")).toBe("");
+  await expect(actions).toBeHidden({ timeout: 3_000 });
+
+  await page.getByRole("button", { name: "Copy terminal text" }).tap();
+  const sheet = page.getByTestId("terminal-text-sheet");
+  await expect(sheet).toContainText("LINE_199");
+  await sheet.getByRole("button", { name: "Copy all" }).tap();
+  await expect(sheet.getByRole("button", { name: "Copied" })).toBeVisible();
+  const all = await clipboard();
+  expect(all).toContain("LINE_0\nLINE_1\n");
+  expect(all).toContain("LINE_199");
 });

@@ -1,4 +1,13 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Keyboard } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  Copy,
+  Keyboard,
+  ScrollText,
+  X,
+} from "lucide-react";
 import { type ComponentProps, useEffect, useRef, useState } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import {
@@ -7,6 +16,7 @@ import {
   MIN_TERMINAL_FONT_SIZE,
 } from "@/lib/terminal-font-size";
 import { useTerminals } from "@/lib/terminals";
+import { TerminalTextSheet } from "./TerminalTextSheet";
 
 const keys = [
   { name: "Escape", label: "Esc", data: "\u001b" },
@@ -74,27 +84,93 @@ function TouchControlButton({
 
 export function TerminalTouchControls({ terminalId }: { terminalId: string }) {
   const touch = useMediaQuery("(any-pointer: coarse)");
-  const { sendInput, armCtrl, focus, page, connectionOf, terminals, fontSizeOf, setFontSize } =
-    useTerminals();
+  const {
+    sendInput,
+    armCtrl,
+    focus,
+    page,
+    watchSelection,
+    copySelection,
+    clearSelection,
+    textOf,
+    connectionOf,
+    terminals,
+    fontSizeOf,
+    setFontSize,
+  } = useTerminals();
   const [ctrl, setCtrl] = useState(false);
+  const [selected, setSelected] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [text, setText] = useState<string | null>(null);
+  const connection = connectionOf(terminalId);
   useEffect(() => {
     setCtrl(false);
     return () => armCtrl(terminalId, null);
   }, [terminalId, armCtrl]);
+  useEffect(() => {
+    // The runtime exists once the terminal connects, so the watch starts again then.
+    if (!touch || !connection) return;
+    return watchSelection(terminalId, setSelected);
+  }, [touch, terminalId, connection, watchSelection]);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
   if (!touch) return null;
   const toggleCtrl = () => {
     armCtrl(terminalId, ctrl ? null : () => setCtrl(false));
     setCtrl(!ctrl);
   };
   const enabled =
-    connectionOf(terminalId) === "connected" &&
+    connection === "connected" &&
     terminals.some((terminal) => terminal.id === terminalId && terminal.status === "running");
   return (
     <fieldset
       data-testid="terminal-touch-controls"
       aria-label="Terminal keyboard shortcuts"
-      className="flex min-w-0 w-full shrink-0 gap-1 border-t border-outline-variant bg-background px-2 py-1"
+      className="relative flex min-w-0 w-full shrink-0 gap-1 border-t border-outline-variant bg-background px-2 py-1"
     >
+      {(selected || copied) && (
+        <div
+          data-testid="terminal-selection-actions"
+          className="absolute bottom-full left-1/2 mb-2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-outline-variant bg-surface-high p-1 shadow-lg"
+        >
+          {selected ? (
+            <>
+              <TouchControlButton
+                type="button"
+                aria-label="Copy selection"
+                onPress={() => {
+                  void copySelection(terminalId).then(() => {
+                    setSelected(false);
+                    setCopied(true);
+                  });
+                }}
+                className="inline-flex min-h-11 items-center gap-2 rounded-full px-4 text-sm text-on-surface hover:bg-surface"
+              >
+                <Copy size={16} />
+                Copy
+              </TouchControlButton>
+              <TouchControlButton
+                type="button"
+                aria-label="Clear selection"
+                onPress={() => {
+                  clearSelection(terminalId);
+                  setSelected(false);
+                }}
+                className="inline-flex size-11 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface"
+              >
+                <X size={16} />
+              </TouchControlButton>
+            </>
+          ) : (
+            <span role="status" className="px-4 py-2 text-sm text-on-surface">
+              Copied
+            </span>
+          )}
+        </div>
+      )}
       <TouchControlButton
         type="button"
         data-testid="terminal-keyboard-show"
@@ -157,6 +233,15 @@ export function TerminalTouchControls({ terminalId }: { terminalId: string }) {
             {key.label}
           </TouchControlButton>
         ))}
+        <TouchControlButton
+          type="button"
+          aria-label="Copy terminal text"
+          title="Open the terminal text to select and copy"
+          onPress={() => setText(textOf(terminalId))}
+          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md px-2 text-on-surface-variant hover:bg-surface"
+        >
+          <ScrollText size={16} />
+        </TouchControlButton>
       </fieldset>
       <fieldset
         className="flex shrink-0 border-l border-outline-variant"
@@ -193,6 +278,7 @@ export function TerminalTouchControls({ terminalId }: { terminalId: string }) {
           A+
         </TouchControlButton>
       </fieldset>
+      {text !== null && <TerminalTextSheet text={text} onClose={() => setText(null)} />}
     </fieldset>
   );
 }

@@ -16,7 +16,7 @@ import {
   wheelTarget,
 } from "@/lib/terminal-mouse";
 import { writeTerminalOutput } from "@/lib/terminal-output";
-import { attachTerminalTouchScroll } from "@/lib/terminal-touch";
+import { attachTerminalTouchScroll, type TerminalTouchSelect } from "@/lib/terminal-touch";
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "exited" | "closed";
 
@@ -121,7 +121,7 @@ export function loadGhostty(): Promise<void> {
   return ghosttyReady;
 }
 
-async function copyText(text: string): Promise<void> {
+export async function copyText(text: string): Promise<void> {
   const written = await navigator.clipboard?.writeText(text).then(
     () => true,
     () => false,
@@ -223,10 +223,17 @@ export function createRuntime(
   });
   attachClickToMove(runtime, encoder);
   attachWheelInput(runtime, encoder);
-  attachTerminalTouchScroll(element, {
-    getFontSize: () => term.options.fontSize,
-    setFontSize: (size) => setRuntimeFontSize(runtime, size),
-  });
+  attachTerminalTouchScroll(
+    element,
+    {
+      getFontSize: () => term.options.fontSize,
+      setFontSize: (size) => setRuntimeFontSize(runtime, size),
+    },
+    touchSelection(runtime),
+  );
+  // iOS would otherwise answer a long press with its own callout and loupe.
+  element.style.setProperty("-webkit-touch-callout", "none");
+  element.style.userSelect = "none";
   element.dataset.fontSize = String(term.options.fontSize);
   element.dataset.scrollOffset = "0";
   term.onScroll((offset) => {
@@ -252,6 +259,105 @@ export function setRuntimeFontSize(runtime: TerminalRuntime, value: number): voi
   try {
     localStorage.setItem(TERMINAL_FONT_SIZE_KEY, String(size));
   } catch {}
+}
+
+// ghostty selects with the mouse only, and its select() places rows by the scroll offset
+// instead of the scrollback length, so a long press replays the mouse gesture on the canvas.
+// ghostty focuses its root on mousedown and its input when the clipboard API is missing, and
+// either would raise the phone keyboard over the selection.
+function touchSelection(runtime: TerminalRuntime): TerminalTouchSelect {
+  const { element, term } = runtime;
+  const mouse = (type: string, x: number, y: number) => {
+    const canvas = element.querySelector("canvas");
+    if (!canvas) return;
+    const input = element.querySelector("textarea");
+    const targets = input ? [element, input] : [element];
+    const focus = targets.map((target) => target.focus);
+    for (const target of targets) target.focus = () => {};
+    try {
+      canvas.dispatchEvent(
+        new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          clientX: x,
+          clientY: y,
+          button: 0,
+          buttons: type === "mouseup" ? 0 : 1,
+          view: window,
+        }),
+      );
+    } finally {
+      targets.forEach((target, index) => {
+        target.focus = focus[index] ?? target.focus;
+      });
+    }
+  };
+  let last = { x: 0, y: 0 };
+  return {
+    begin: (x, y) => {
+      last = { x, y };
+      mouse("mousedown", x, y);
+      // ghostty finds the word on the screen row, which is another line once scrolled back.
+      if (term.viewportY === 0) mouse("dblclick", x, y);
+      navigator.vibrate?.(10);
+    },
+    extend: (x, y) => {
+      last = { x, y };
+      mouse("mousemove", x, y);
+    },
+    end: () => mouse("mouseup", last.x, last.y),
+  };
+}
+
+/** Calls back with whether text is selected each time that may have changed. */
+export function watchSelection(
+  runtime: TerminalRuntime,
+  listener: (selected: boolean) => void,
+): () => void {
+  const { element, term } = runtime;
+  // ghostty clears a selection on a press or an outside click without firing its event.
+  let timer = 0;
+  const check = () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(() => listener(term.hasSelection()));
+  };
+  const subscription = term.onSelectionChange(check);
+  element.addEventListener("mousedown", check);
+  element.addEventListener("touchend", check);
+  document.addEventListener("click", check);
+  check();
+  return () => {
+    clearTimeout(timer);
+    subscription.dispose();
+    element.removeEventListener("mousedown", check);
+    element.removeEventListener("touchend", check);
+    document.removeEventListener("click", check);
+  };
+}
+
+export function copySelection(runtime: TerminalRuntime): Promise<void> {
+  const text = runtime.term.getSelection();
+  runtime.term.clearSelection();
+  return text ? copyText(text) : Promise.resolve();
+}
+
+export function clearSelection(runtime: TerminalRuntime): void {
+  runtime.term.clearSelection();
+}
+
+/** The active screen and its scrollback as plain text, with wrapped rows joined. */
+export function runtimeText(runtime: TerminalRuntime): string {
+  const buffer = runtime.term.buffer.active;
+  const lines: string[] = [];
+  for (let y = 0; y < buffer.length; y++) {
+    const line = buffer.getLine(y);
+    if (!line) continue;
+    const text = line.translateToString(true);
+    if (line.isWrapped && lines.length > 0) lines[lines.length - 1] += text;
+    else lines.push(text);
+  }
+  while (lines.length > 0 && !lines[lines.length - 1]?.trim()) lines.pop();
+  return lines.join("\n");
 }
 
 // Application cursor keys (DECCKM) change the arrow sequences a shell expects.

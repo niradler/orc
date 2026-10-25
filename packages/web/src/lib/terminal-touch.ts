@@ -3,8 +3,35 @@ interface TerminalTouchZoom {
   setFontSize: (size: number) => void;
 }
 
-export function attachTerminalTouchScroll(element: HTMLElement, zoom?: TerminalTouchZoom): void {
-  let gesture: { id: number; startY: number; y: number; moved: boolean } | null = null;
+/** Text selection driven by a long press: begin where it fired, extend with the finger. */
+export interface TerminalTouchSelect {
+  begin: (x: number, y: number) => void;
+  extend: (x: number, y: number) => void;
+  end: () => void;
+}
+
+export const LONG_PRESS_MS = 450;
+
+export function attachTerminalTouchScroll(
+  element: HTMLElement,
+  zoom?: TerminalTouchZoom,
+  select?: TerminalTouchSelect,
+): void {
+  let gesture: {
+    id: number;
+    startY: number;
+    y: number;
+    moved: boolean;
+    selecting: boolean;
+  } | null = null;
+  let pressTimer = 0;
+  const cancelPress = () => {
+    clearTimeout(pressTimer);
+    pressTimer = 0;
+  };
+  const endSelection = () => {
+    if (gesture?.selecting) select?.end();
+  };
   let pinch: { distance: number; size: number } | null = null;
   let consumed = false;
   // A pinch reports many moves per frame and each font change refits the terminal and
@@ -30,7 +57,9 @@ export function attachTerminalTouchScroll(element: HTMLElement, zoom?: TerminalT
   element.addEventListener(
     "touchstart",
     (event) => {
+      cancelPress();
       if (event.touches.length >= 2) {
+        endSelection();
         gesture = null;
         consumed = true;
         const span = distance(event.touches);
@@ -42,9 +71,25 @@ export function attachTerminalTouchScroll(element: HTMLElement, zoom?: TerminalT
         return;
       }
       const touch = !consumed && event.touches.length === 1 ? event.touches[0] : undefined;
-      gesture = touch
-        ? { id: touch.identifier, startY: touch.clientY, y: touch.clientY, moved: false }
+      const pressed = touch
+        ? {
+            id: touch.identifier,
+            startY: touch.clientY,
+            y: touch.clientY,
+            moved: false,
+            selecting: false,
+          }
         : null;
+      gesture = pressed;
+      if (!pressed || !touch || !select) return;
+      const { clientX, clientY } = touch;
+      pressTimer = window.setTimeout(() => {
+        pressTimer = 0;
+        if (gesture !== pressed || pressed.moved) return;
+        pressed.selecting = true;
+        consumed = true;
+        select.begin(clientX, clientY);
+      }, LONG_PRESS_MS);
     },
     { passive: false },
   );
@@ -61,7 +106,14 @@ export function attachTerminalTouchScroll(element: HTMLElement, zoom?: TerminalT
         return;
       }
       const touch = Array.from(event.touches).find((touch) => touch.identifier === gesture?.id);
-      if (!touch || (!gesture.moved && Math.abs(touch.clientY - gesture.startY) < 6)) return;
+      if (!touch) return;
+      if (gesture.selecting) {
+        event.preventDefault();
+        select?.extend(touch.clientX, touch.clientY);
+        return;
+      }
+      if (!gesture.moved && Math.abs(touch.clientY - gesture.startY) < 6) return;
+      cancelPress();
       const canvas = element.querySelector("canvas");
       if (!canvas) return;
       const deltaY = gesture.y - touch.clientY;
@@ -88,6 +140,8 @@ export function attachTerminalTouchScroll(element: HTMLElement, zoom?: TerminalT
         event.preventDefault();
         event.stopPropagation();
       }
+      cancelPress();
+      endSelection();
       gesture = null;
       pinch = null;
       // Keep suppressing taps until every finger in a pinch/pan has been lifted.
@@ -98,10 +152,23 @@ export function attachTerminalTouchScroll(element: HTMLElement, zoom?: TerminalT
   element.addEventListener(
     "touchcancel",
     () => {
+      cancelPress();
+      endSelection();
       gesture = null;
       pinch = null;
       consumed = false;
     },
     { passive: true },
+  );
+  // A long press raises the context menu on Android, and ghostty answers it by focusing its
+  // input under the finger, which opens the keyboard over the selection.
+  element.addEventListener(
+    "contextmenu",
+    (event) => {
+      if (!gesture && !consumed) return;
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    true,
   );
 }
