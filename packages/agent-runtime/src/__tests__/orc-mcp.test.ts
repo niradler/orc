@@ -259,6 +259,30 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
     }
   });
 
+  test("should serve meta tools to open sessions but full tools to allowlisted ones", async () => {
+    const open = await createBackend("claude").startSession({
+      cwd: process.cwd(),
+      orcMcp: true,
+      orcMcpMode: "meta",
+    });
+    const restricted = await createBackend("claude").startSession({
+      cwd: process.cwd(),
+      autoApprove: true,
+      toolAllowlist: ["Read", "mcp__orc__task_update"],
+      orcMcpMode: "meta",
+    });
+    try {
+      await open.send("go");
+      await restricted.send("go");
+      await Bun.sleep(20);
+      expect(queries[0]?.options.mcpServers?.orc?.url).toBe("http://127.0.0.1:7755/mcp?mode=meta");
+      expect(queries[1]?.options.mcpServers?.orc?.url).toBe("http://127.0.0.1:7755/mcp");
+    } finally {
+      await open.close();
+      await restricted.close();
+    }
+  });
+
   test("should keep mcpAlwaysLoad on the orc server for restricted sessions", async () => {
     const session = await createBackend("claude").startSession({
       cwd: process.cwd(),

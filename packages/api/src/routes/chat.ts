@@ -663,6 +663,7 @@ app.openapi(
             model: thread.config.model || undefined,
             systemPromptAppend: thread.config.system,
             orcMcp: thread.config.mcp === "orc",
+            orcMcpMode: "meta",
             mcpAlwaysLoad: true,
             acpxAgent: thread.config.agent,
           };

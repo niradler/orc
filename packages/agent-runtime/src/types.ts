@@ -1,5 +1,6 @@
 import type { ChatQuestion } from "@orc/core/chat";
 import type { ChatAgentOptions } from "@orc/core/chat-options";
+import type { OrcMcpMode } from "./orc-mcp.js";
 import type { SessionRuleGuard } from "./rules.js";
 
 export type AgentBackendName = "claude" | "acpx" | "a2a" | (string & {});
@@ -25,6 +26,8 @@ export type SessionOpts = {
   mcpAlwaysLoad?: boolean | undefined;
   /** Explicit ORC connection for chat. Undefined preserves the backend default. */
   orcMcp?: boolean | undefined;
+  /** Tool surface of that connection; `meta` serves three search/describe/invoke tools. */
+  orcMcpMode?: OrcMcpMode | undefined;
 };
 
 export type ImageAttachment = {

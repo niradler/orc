@@ -17,6 +17,9 @@ export const ORC_TOOL_PREFIX = `mcp__${ORC_MCP_SERVER_NAME}__`;
 // Permission rule matching every tool of the orc server; the served set is chosen by the MCP URL.
 export const ORC_TOOLS_RULE = `mcp__${ORC_MCP_SERVER_NAME}`;
 
+/** Served tool surface: every tool, or meta tools that search, describe and invoke them. */
+export type OrcMcpMode = "full" | "meta";
+
 export type OrcHttpMcpServer = {
   type: "http";
   url: string;
@@ -27,6 +30,7 @@ export type OrcHttpMcpServer = {
 export function buildOrcMcpServer(
   host: ExecHost = resolveExecHost(),
   alwaysLoad = false,
+  mode: OrcMcpMode = "full",
 ): OrcHttpMcpServer {
   let api: { host: string; port: number; secret?: string | undefined };
   try {
@@ -37,10 +41,12 @@ export function buildOrcMcpServer(
     );
   }
   const secret = configuredApiSecret(api.secret);
+  const base =
+    host.kind === "ssh" ? `${orcUrlOnHost(host)}/mcp` : `http://${api.host}:${api.port}/mcp`;
   return {
     type: "http",
     ...(alwaysLoad ? { alwaysLoad: true } : {}),
-    url: host.kind === "ssh" ? `${orcUrlOnHost(host)}/mcp` : `http://${api.host}:${api.port}/mcp`,
+    url: mode === "meta" ? `${base}?mode=meta` : base,
     ...(secret ? { headers: { Authorization: `Bearer ${secret}` } } : {}),
   };
 }
@@ -48,8 +54,9 @@ export function buildOrcMcpServer(
 export function buildOrcMcpServers(
   host: ExecHost = resolveExecHost(),
   alwaysLoad = false,
+  mode: OrcMcpMode = "full",
 ): Record<string, OrcHttpMcpServer> {
-  return { [ORC_MCP_SERVER_NAME]: buildOrcMcpServer(host, alwaysLoad) };
+  return { [ORC_MCP_SERVER_NAME]: buildOrcMcpServer(host, alwaysLoad, mode) };
 }
 
 export type OrcMcpConfigFile = { path: string; cleanup: () => void };

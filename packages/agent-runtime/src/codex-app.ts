@@ -23,6 +23,8 @@ type Pending = {
   permissions?: Record<string, unknown>;
   tool?: string;
   form?: ReturnType<typeof elicitationForm>;
+  /** An MCP tool approval, answered as an elicitation; set when Codex can remember a session grant. */
+  mcpApproval?: { sessionPersist: boolean };
 };
 function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -146,6 +148,48 @@ export class CodexAppSession implements AgentSession {
               params.reason,
               params.grantRoot ? `Write access: ${params.grantRoot}` : undefined,
               permissions ? JSON.stringify(permissions, null, 2) : undefined,
+            ]
+              .filter((value) => typeof value === "string")
+              .join("\n"),
+          },
+        });
+      } else if (
+        method === "mcpServer/elicitation/request" &&
+        object(params._meta).codex_approval_kind === "mcp_tool_call"
+      ) {
+        // Codex asks to approve MCP tool calls as an empty form. Answering it as a form
+        // cancels the call, so it is an approval like any other.
+        const meta = object(params._meta);
+        const server = String(params.serverName ?? "");
+        const call = [...this.actionItems.values()]
+          .reverse()
+          .find(
+            (item) =>
+              item.type === "mcpToolCall" && item.server === server && item.status === "inProgress",
+          );
+        const tool = call?.tool ? `mcp__${server}__${String(call.tool)}` : `mcp__${server}`;
+        this.pending.set(requestId, {
+          wireId: message.id,
+          kind: "permission",
+          tool,
+          mcpApproval: {
+            sessionPersist: Array.isArray(meta.persist) && meta.persist.includes("session"),
+          },
+        });
+        if (permissionModeAllows(this.liveMode, tool)) {
+          this.respondPermission(requestId, "approved");
+          return;
+        }
+        const args = meta.tool_params ?? call?.arguments;
+        this.push({
+          type: "permission_request",
+          data: {
+            requestId,
+            input: { ...params, ...(call ? { item: call } : {}) },
+            tool,
+            command: [
+              params.message,
+              args && Object.keys(object(args)).length ? JSON.stringify(args, null, 2) : undefined,
             ]
               .filter((value) => typeof value === "string")
               .join("\n"),
@@ -330,7 +374,10 @@ export class CodexAppSession implements AgentSession {
       ];
       const mode = this.opts.permissionMode ?? (this.opts.autoApprove ? "acceptEdits" : "default");
       const env = buildCodexEnv();
-      const mcp = this.opts.orcMcp === false ? null : buildOrcMcpServer(this.host);
+      const mcp =
+        this.opts.orcMcp === false
+          ? null
+          : buildOrcMcpServer(this.host, false, this.opts.orcMcpMode);
       if (mcp) {
         if (await hasConfiguredOrcMcp(this.host, command, this.opts.cwd))
           args.push("-c", "mcp_servers.orc.enabled=false");
@@ -421,6 +468,23 @@ export class CodexAppSession implements AgentSession {
   respondPermission(requestId: string, result: PermissionResult): void {
     const request = this.pending.get(requestId);
     if (request?.kind !== "permission") throw new Error("This approval is no longer pending.");
+    if (request.mcpApproval) {
+      this.write({
+        id: request.wireId,
+        result:
+          result === "denied"
+            ? { action: "decline", content: null }
+            : {
+                action: "accept",
+                content: {},
+                ...(result === "session" && request.mcpApproval.sessionPersist
+                  ? { _meta: { persist: "session" } }
+                  : {}),
+              },
+      });
+      this.resolved(requestId);
+      return;
+    }
     this.write({
       id: request.wireId,
       result: request.permissions
