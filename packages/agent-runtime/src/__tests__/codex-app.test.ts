@@ -260,3 +260,63 @@ for await (const line of createInterface({input:process.stdin})) {
     }
   });
 }
+
+test("should approve pending and later prompts that a loosened permission mode allows", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-live-permission-"));
+  const script = join(cwd, "live.ts");
+  writeFileSync(
+    script,
+    `
+import { createInterface } from 'node:readline';
+const emit = value => console.log(JSON.stringify(value));
+let turn = 0; let received = {};
+for await (const line of createInterface({input:process.stdin})) {
+ const m=JSON.parse(line);
+ if(m.method==='initialize') emit({id:m.id,result:{}});
+ else if(m.method==='thread/start') emit({id:m.id,result:{thread:{id:'live-native'}}});
+ else if(m.method==='turn/start') {
+  turn++; received={};
+  emit({id:m.id,result:{turn:{id:'turn-'+turn}}});
+  emit({id:'edit-'+turn,method:'item/fileChange/requestApproval',params:{threadId:'live-native',turnId:'turn-'+turn,itemId:'patch'}});
+  emit({id:'command-'+turn,method:'item/commandExecution/requestApproval',params:{threadId:'live-native',turnId:'turn-'+turn,command:'echo hi'}});
+ } else if(typeof m.id==='string') {
+  received[m.id.split('-')[0]]=m.result;
+  if(Object.keys(received).length===2) {
+   emit({method:'item/agentMessage/delta',params:{threadId:'live-native',delta:JSON.stringify(received)}});
+   emit({method:'turn/completed',params:{threadId:'live-native',turn:{id:'turn-'+turn,status:'completed'}}});
+  }
+ }
+}`,
+  );
+  const session = new CodexAppSession({ cwd, orcMcp: false }, { kind: "local" }, async () => [
+    process.execPath,
+    script,
+  ]);
+  const run = async () => {
+    const prompts: string[] = [];
+    let text = "";
+    for await (const event of session.events()) {
+      if (event.type === "permission_request") {
+        prompts.push(event.data.tool);
+        // Accepting edits answers the pending file change but must not run the command.
+        session.setPermissionMode?.(
+          event.data.tool === "file changes" ? "acceptEdits" : "bypassPermissions",
+        );
+      }
+      if (event.type === "text") text += event.data;
+    }
+    return { prompts, received: JSON.parse(text) };
+  };
+  try {
+    await session.send("Edit and run");
+    const first = await run();
+    expect(first.prompts).toEqual(["file changes", "command"]);
+    expect(first.received.edit).toEqual(first.received.command);
+    await session.send("Again");
+    const second = await run();
+    expect(second.prompts).toEqual([]);
+    expect(second.received).toEqual(first.received);
+  } finally {
+    await session.close();
+  }
+});

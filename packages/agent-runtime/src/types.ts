@@ -61,6 +61,15 @@ export type AgentEvent =
   | { type: "error"; data: string }
   | { type: "system_status"; data: string };
 
+export type LivePermissionMode = "default" | "acceptEdits" | "bypassPermissions";
+
+/** Approval prompts for file edits that `acceptEdits` answers itself. */
+const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit", "file changes"]);
+
+export function permissionModeAllows(mode: LivePermissionMode | undefined, tool: string): boolean {
+  return mode === "bypassPermissions" || (mode === "acceptEdits" && EDIT_TOOLS.has(tool));
+}
+
 export interface AgentSession {
   readonly id: string;
   /** Native identity may be known before a turn completes, including on cancellation. */
@@ -68,6 +77,11 @@ export interface AgentSession {
   send(prompt: string, images?: ImageAttachment[]): Promise<void>;
   respondPermission(requestId: string, result: PermissionResult): void;
   respondQuestion?(requestId: string, answers: Record<string, string[]>): void | Promise<void>;
+  /**
+   * Loosen approvals for the rest of a running turn: prompts the new mode would not ask
+   * for, including ones already pending, are approved. Tightening takes effect next turn.
+   */
+  setPermissionMode?(mode: LivePermissionMode): void;
   events(): AsyncIterable<AgentEvent>;
   alive(): boolean;
   waitingForHuman?(): boolean;

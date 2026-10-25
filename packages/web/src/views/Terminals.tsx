@@ -410,6 +410,7 @@ export default function Terminals() {
               ))}
             </TerminalSelect>
             <div className="shrink-0">{newMenu}</div>
+            {mobileTerminal && <ContinueInChat key={mobileTerminal.id} terminal={mobileTerminal} />}
             <Button
               variant="ghost"
               size="icon"
@@ -525,11 +526,6 @@ export default function Terminals() {
                 <p className="break-words font-medium">{mobileTerminal.name}</p>
                 <p className="break-all text-on-surface-variant">{mobileTerminal.cwd}</p>
                 <p>{terminalStatus(mobileTerminal, connectionOf(mobileTerminal.id))}</p>
-                <ContinueInChat
-                  key={mobileTerminal.id}
-                  terminal={mobileTerminal}
-                  onContinued={() => setOptionsOpen(false)}
-                />
                 {mobileTerminal.live_session_id && (
                   <SessionLinks liveSessionId={mobileTerminal.live_session_id} />
                 )}

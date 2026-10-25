@@ -347,7 +347,7 @@ export function ChatModelPicker() {
 }
 
 export function ChatConversationInfo() {
-  const { config, setConfig, streaming, thread } = useChat();
+  const { config, changePermissions, thread } = useChat();
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -364,7 +364,8 @@ export function ChatConversationInfo() {
       <DialogContent data-testid="chat-config-dialog" className="w-[calc(100%-1rem)]">
         <DialogTitle>Conversation settings</DialogTitle>
         <DialogDescription>
-          Permission changes apply to your next message. Change new-chat defaults in Settings.
+          Loosening permissions applies right away, including to a pending approval. Stricter
+          permissions apply to your next message. Change new-chat defaults in Settings.
         </DialogDescription>
         <dl className="space-y-3 text-sm break-words">
           <div>
@@ -384,7 +385,10 @@ export function ChatConversationInfo() {
           </div>
           <div>
             <dd>
-              <ChatPermissionSelect config={config} onChange={setConfig} disabled={streaming} />
+              <ChatPermissionSelect
+                config={config}
+                onChange={(next) => void changePermissions(next)}
+              />
             </dd>
           </div>
         </dl>

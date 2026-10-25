@@ -27,13 +27,15 @@ import { sessionExecHost } from "./execution-host.js";
 import { buildOrcMcpServers, ORC_TOOL_PREFIX, ORC_TOOLS_RULE } from "./orc-mcp.js";
 import { registerBackend } from "./registry.js";
 import { createRulesHook, sessionStartRuleContext } from "./rules-hook.js";
-import type {
-  AgentBackend,
-  AgentEvent,
-  AgentSession,
-  BackendDescription,
-  PermissionResult,
-  SessionOpts,
+import {
+  type AgentBackend,
+  type AgentEvent,
+  type AgentSession,
+  type BackendDescription,
+  type LivePermissionMode,
+  type PermissionResult,
+  permissionModeAllows,
+  type SessionOpts,
 } from "./types.js";
 
 const logger = createLogger("agent-runtime:claude-sdk");
@@ -147,7 +149,11 @@ class ClaudeSDKSession implements AgentSession {
   private done = false;
   private readonly eventQueue: AgentEvent[] = [];
   private resolveNext: (() => void) | null = null;
-  private readonly permissionResolvers = new Map<string, (result: PermissionResult) => void>();
+  private readonly permissionResolvers = new Map<
+    string,
+    { tool: string; resolve: (result: PermissionResult) => void }
+  >();
+  private liveMode: LivePermissionMode | undefined;
   private readonly questionResolvers = new Map<
     string,
     { question: ChatQuestion; resolve: (answers: Record<string, string[]> | null) => void }
@@ -371,6 +377,8 @@ class ClaudeSDKSession implements AgentSession {
             }
             if (this.opts.toolAllowlist !== undefined && this.opts.autoApprove)
               return { behavior: "allow", updatedInput: input };
+            if (permissionModeAllows(this.liveMode, toolName))
+              return { behavior: "allow", updatedInput: input };
             const command = JSON.stringify(input);
             logger.info("canUseTool called", { toolName, requestId });
             this.push({
@@ -386,7 +394,7 @@ class ClaudeSDKSession implements AgentSession {
                   this.push({ type: "request_resolved", data: { requestId } });
                   resolve("denied");
                 };
-                this.permissionResolvers.set(requestId, resolve);
+                this.permissionResolvers.set(requestId, { tool: toolName, resolve });
                 signal.addEventListener("abort", cancel, { once: true });
                 if (signal.aborted) cancel();
               });
@@ -491,11 +499,17 @@ class ClaudeSDKSession implements AgentSession {
   }
 
   respondPermission(requestId: string, result: PermissionResult): void {
-    const resolver = this.permissionResolvers.get(requestId);
-    if (!resolver) throw new Error("This approval is no longer pending");
+    const pending = this.permissionResolvers.get(requestId);
+    if (!pending) throw new Error("This approval is no longer pending");
     this.permissionResolvers.delete(requestId);
-    resolver(result);
+    pending.resolve(result);
     this.push({ type: "request_resolved", data: { requestId } });
+  }
+
+  setPermissionMode(mode: LivePermissionMode): void {
+    this.liveMode = mode;
+    for (const [requestId, pending] of this.permissionResolvers)
+      if (permissionModeAllows(mode, pending.tool)) this.respondPermission(requestId, "approved");
   }
 
   respondQuestion(requestId: string, answers: Record<string, string[]>): void {
@@ -546,7 +560,7 @@ class ClaudeSDKSession implements AgentSession {
     this.humanReceipts.clear();
     for (const pending of this.questionResolvers.values()) pending.resolve(null);
     this.questionResolvers.clear();
-    for (const resolve of this.permissionResolvers.values()) resolve("denied");
+    for (const pending of this.permissionResolvers.values()) pending.resolve("denied");
     this.permissionResolvers.clear();
     this.abortController?.abort();
     this.abortController = null;

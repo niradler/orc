@@ -51,6 +51,8 @@ interface TerminalsContextValue {
   attach: (id: string, container: HTMLElement) => Promise<void>;
   detach: (id: string) => void;
   sendInput: (id: string, data: string) => void;
+  /** Sticky Ctrl from the key bar: the next typed character is sent as its control code. */
+  armCtrl: (id: string, onUsed: (() => void) | null) => void;
   focus: (id: string) => void;
   fontSizeOf: (id: string) => number;
   setFontSize: (id: string, size: number) => void;
@@ -247,6 +249,10 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
         ? data.replace("[", "O")
         : data;
     runtime.socket.send(new TextEncoder().encode(input));
+    runtime.textInput?.reset();
+  }, []);
+  const armCtrl = useCallback((id: string, onUsed: (() => void) | null) => {
+    runtimes.current.get(id)?.textInput?.armCtrl(onUsed);
   }, []);
   const focus = useCallback((id: string) => {
     const runtime = runtimes.current.get(id);
@@ -281,6 +287,7 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
       attach,
       detach,
       sendInput,
+      armCtrl,
       focus,
       fontSizeOf,
       setFontSize,
@@ -302,6 +309,7 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
       attach,
       detach,
       sendInput,
+      armCtrl,
       focus,
       fontSizeOf,
       setFontSize,

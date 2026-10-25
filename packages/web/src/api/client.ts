@@ -543,6 +543,8 @@ export const api = {
       req<{ ok: boolean }>("POST", `/chat/runs/${runId}/permission`, { requestId, decision }),
     answer: (runId: string, requestId: string, answers: Record<string, string[]>) =>
       req<{ ok: boolean }>("POST", `/chat/runs/${runId}/answer`, { requestId, answers }),
+    permissionMode: (runId: string, mode: NonNullable<ChatThread["config"]["permissionMode"]>) =>
+      req<ChatThread>("POST", `/chat/runs/${runId}/permission-mode`, { mode }),
   },
   settings: {
     get: () => req<WorkspacePreferences>("GET", "/settings"),

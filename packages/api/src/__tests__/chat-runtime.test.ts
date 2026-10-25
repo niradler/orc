@@ -35,6 +35,7 @@ let failBeforeResult = false;
 let resultIdentity: string | undefined;
 let closed = 0;
 let decision: string | undefined;
+let liveMode: string | undefined;
 const AUTH = { Authorization: "Bearer test-secret", "Content-Type": "application/json" };
 function session(call: (typeof calls)[number]): AgentSession {
   let resolve: (() => void) | undefined;
@@ -50,6 +51,13 @@ function session(call: (typeof calls)[number]): AgentSession {
     respondPermission: (_id, value) => {
       decision = value;
       resolve?.();
+    },
+    setPermissionMode: (mode) => {
+      liveMode = mode;
+      if (mode === "bypassPermissions") {
+        decision = "approved";
+        resolve?.();
+      }
     },
     respondQuestion: (_id, answers) => {
       questionAnswers = answers;
@@ -589,6 +597,43 @@ describe("native chat runtime", () => {
       waitQuestion = false;
       reader.releaseLock();
     }
+  });
+
+  test("permissions can be loosened while the agent is responding and are kept", async () => {
+    waitPermission = true;
+    decision = undefined;
+    const response = await request("/chat/stream", {
+      messages: [{ role: "user", content: "wait for approval" }],
+    });
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("No stream");
+    let text = "";
+    const decoder = new TextDecoder();
+    while (!text.includes('"permission_request"')) {
+      const part = await reader.read();
+      if (part.done) throw new Error("Ended before permission");
+      text += decoder.decode(part.value);
+    }
+    const opened = text
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => JSON.parse(line.slice(5)))
+      .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+    const path = `/chat/runs/${opened.runId}/permission-mode`;
+    expect((await request(path, { mode: "yolo" })).status).toBe(400);
+    const changed = await request(path, { mode: "bypassPermissions" });
+    expect(changed.status).toBe(200);
+    expect(((await changed.json()) as ChatThread).config.permissionMode).toBe("bypassPermissions");
+    expect(liveMode).toBe("bypassPermissions");
+    while (!(await reader.read()).done) {
+      /* the pending approval was granted by the new mode */
+    }
+    reader.releaseLock();
+    expect(decision as string | undefined).toBe("approved");
+    const saved = (await (await request(`/chat/threads/${opened.thread.id}`)).json()) as ChatThread;
+    expect(saved.config.permissionMode).toBe("bypassPermissions");
+    expect((await request(path, { mode: "default" })).status).toBe(409);
+    waitPermission = false;
   });
 
   test("permission replies unblock the correct run and concurrent sends are refused", async () => {
