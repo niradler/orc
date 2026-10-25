@@ -132,7 +132,8 @@ export function ChatSettingsForm() {
               <option value="native">Use the agent’s host configuration</option>
             </select>
             <p className="text-xs text-muted-foreground">
-              The ORC connection uses server credentials internally. Host configuration may include
+              The ORC connection uses server credentials internally and serves meta tools that
+              search, describe and invoke every ORC tool on demand. Host configuration may include
               other MCP servers; this setting does not disable them. Protected workspaces may also
               require ORC tools.
             </p>

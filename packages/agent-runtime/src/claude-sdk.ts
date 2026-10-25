@@ -287,7 +287,13 @@ class ClaudeSDKSession implements AgentSession {
                 allowedTools: [...this.opts.toolAllowlist, ORC_TOOLS_RULE],
               }
             : this.opts.ruleGuard || this.opts.orcMcp
-              ? { mcpServers: buildOrcMcpServers(this.host, this.opts.mcpAlwaysLoad) }
+              ? {
+                  mcpServers: buildOrcMcpServers(
+                    this.host,
+                    this.opts.mcpAlwaysLoad,
+                    this.opts.orcMcpMode,
+                  ),
+                }
               : {}),
           systemPrompt: {
             type: "preset",
