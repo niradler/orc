@@ -136,10 +136,15 @@ program
 program
   .command("mcp")
   .description("Start the MCP server (stdio)")
-  .option("--mode <mode>", "tool surface: full (default) or meta (tool_search/describe/invoke)")
+  .option("--mode <mode>", "tool surface: meta (default; tool_search/describe/invoke) or full")
   .action(async (opts: { mode?: string }) => {
-    const { parseMcpMode, startStdioServer } = await import("@orc/mcp");
-    await startStdioServer(parseMcpMode(opts.mode));
+    // Import the modules, not the @orc/mcp barrel: the bundled barrel does not await its
+    // async children, so the tool registry would still be undefined when clients call it.
+    const [{ parseMcpMode }, { startStdioServer }] = await Promise.all([
+      import("@orc/mcp/meta-tools"),
+      import("@orc/mcp/server"),
+    ]);
+    await startStdioServer(parseMcpMode(opts.mode ?? "meta"));
   });
 
 program.parseAsync(process.argv).catch((err: unknown) => {
