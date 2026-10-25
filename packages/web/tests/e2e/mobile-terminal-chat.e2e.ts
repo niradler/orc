@@ -489,6 +489,10 @@ if (mode === "lines") {
   for (let i = 0; i < 200; i++) console.log("LINE_" + i);
   process.exit(0);
 }
+if (mode === "wrap") {
+  console.log("WRAP_" + "x".repeat(300) + "_END");
+  process.exit(0);
+}
 const on = mode === "tracking" ? "<ESC>[?1049h<ESC>[?1007l<ESC>[?1000h<ESC>[?1006h" : "<ESC>[?1049h";
 process.stdout.write(on + "SCREEN_READY");
 process.stdin.setRawMode?.(true);
@@ -595,7 +599,7 @@ test("touch swipes scroll full-screen programs and PgUp/PgDn page the terminal",
   await page.getByRole("button", { name: "Interrupt command" }).tap();
 });
 
-test("a long press selects terminal text for copying and the text view copies it all", async ({
+test("a long press reaches selectable text over the canvas and the text view copies it all", async ({
   page,
   request,
 }) => {
@@ -633,58 +637,116 @@ test("a long press selects terminal text for copying and the text view copies it
   await page.keyboard.type(`bun "${script}" lines`);
   await page.keyboard.press("Enter");
   await expect.poll(() => output, { timeout: 15_000 }).toContain("LINE_199");
+  await page.keyboard.type(`bun "${script}" wrap`);
+  await page.keyboard.press("Enter");
+  await expect
+    .poll(() => output.match(/x+/g)?.join("").length ?? 0, { timeout: 15_000 })
+    .toBeGreaterThanOrEqual(300);
   // The Windows clipboard turns line feeds into CRLF.
   const clipboard = async () =>
     (await page.evaluate(() => navigator.clipboard.readText())).replaceAll("\r\n", "\n");
   await page.evaluate(() => navigator.clipboard.writeText(""));
-  sent.length = 0;
 
   const box = await canvas.boundingBox();
   if (!box) throw new Error("Missing terminal canvas");
-  const fontSize = Number(await surface.getAttribute("data-font-size"));
-  const x = box.x + fontSize;
-  const y = box.y + box.height / 3;
-  const rows = 3;
-  // The phone keyboard is down, as when reading output.
+  const layer = surface.getByTestId("terminal-text-layer");
+  // The rows follow the output once it settles.
+  await expect(layer).toContainText("_END");
   await input.blur();
+  sent.length = 0;
+  await expect(layer).toHaveAttribute("aria-hidden", "true");
+  await expect(layer).toHaveCSS("color", "rgba(0, 0, 0, 0)");
+
+  // Every row sits on its canvas row and every glyph on its cell.
+  const geometry = await layer.evaluate((element, canvasBox) => {
+    const rows = Array.from(element.children) as HTMLElement[];
+    const line = rows.find((row) => /^LINE_\d{3}$/.test(row.textContent ?? ""));
+    const text = line?.firstChild;
+    const range = document.createRange();
+    if (text) range.selectNodeContents(text);
+    const box = element.getBoundingClientRect();
+    return {
+      offset: Math.max(
+        Math.abs(box.x - canvasBox.x),
+        Math.abs(box.y - canvasBox.y),
+        Math.abs(box.width - canvasBox.width),
+        Math.abs(box.height - canvasBox.height),
+      ),
+      rows: rows.length,
+      rowTops: rows.map((row) => row.getBoundingClientRect().top - box.top),
+      textWidth: range.getBoundingClientRect().width,
+      wrapCols: rows.find((row) => row.textContent?.startsWith("WRAP_"))?.textContent?.length ?? 0,
+    };
+  }, box);
+  const termRows = geometry.rows;
+  const cellHeight = box.height / termRows;
+  expect(geometry.offset).toBeLessThan(1);
+  for (const [row, top] of geometry.rowTops.entries())
+    expect(Math.abs(top - row * cellHeight)).toBeLessThan(1);
+  // The output's first wrapped row fills every column.
+  expect(geometry.wrapCols).toBeGreaterThan(10);
+  const cellWidth = box.width / geometry.wrapCols;
+  // "LINE_123" is 8 cells; letter spacing makes the font's advance match the canvas cells.
+  expect(Math.abs(geometry.textWidth - 8 * cellWidth)).toBeLessThan(1.5);
+
+  // A long press on text belongs to the browser: it is not taken over, so the platform's
+  // own selection, handles and Copy toolbar can start, and the hidden input stays unfocused.
+  const lineBox = await layer.evaluate((element) => {
+    const row = Array.from(element.children).find((child) =>
+      /^LINE_\d{3}$/.test(child.textContent ?? ""),
+    );
+    const rect = row?.getBoundingClientRect();
+    return rect ? { x: rect.x, y: rect.y, height: rect.height } : null;
+  });
+  if (!lineBox) throw new Error("Missing a LINE_ row");
+  const press = { x: lineBox.x + cellWidth * 2, y: lineBox.y + lineBox.height / 2 };
   await surface.evaluate((element) => {
-    const events = { cancels: 0, taken: true };
-    element.addEventListener("touchcancel", () => events.cancels++);
-    // A touch the page takes over never starts the browser's own tap or long press.
+    const events = { target: "", prevented: false };
     element.addEventListener("touchstart", (event) => {
-      events.taken = events.taken && event.defaultPrevented;
+      const target = event.target as Element;
+      events.target = target.closest("[data-testid='terminal-text-layer']") ? "layer" : "root";
+      // Read after every listener ran.
+      setTimeout(() => {
+        events.prevented = event.defaultPrevented;
+      });
     });
     (window as unknown as { touchEvents: typeof events }).touchEvents = events;
   });
-  await touch(
-    page,
-    [
-      [{ x, y }],
-      ...Array.from({ length: 10 }, (_, index) => [
-        { x: x + index * 10, y: y + ((index + 1) * rows * fontSize * 1.2) / 10 },
-      ]),
-      [],
-    ],
-    700,
-  );
-  // The browser's own long press would select in the editable root, raise the keyboard and
-  // cancel the touch, leaving the selection impossible to extend.
+  await touch(page, [[press], []], 700);
   expect(
     await page.evaluate(
-      () => (window as unknown as { touchEvents: { cancels: number; taken: boolean } }).touchEvents,
+      () =>
+        (window as unknown as { touchEvents: { target: string; prevented: boolean } }).touchEvents,
     ),
-  ).toEqual({ cancels: 0, taken: true });
+  ).toEqual({ target: "layer", prevented: false });
   await expect(input).not.toBeFocused();
-  const actions = page.getByTestId("terminal-selection-actions");
-  await expect(actions.getByRole("button", { name: "Copy selection" })).toBeVisible();
-  await actions.getByRole("button", { name: "Copy selection" }).tap();
-  await expect(actions.getByRole("status")).toHaveText("Copied");
-  const copied = (await clipboard()).split("\n");
-  expect(copied.length).toBeGreaterThan(2);
-  for (const line of copied.slice(1, -1)) expect(line).toMatch(/^LINE_\d+$/);
-  // The press never reached the shell or moved its cursor.
   expect(sent.join("")).toBe("");
-  await expect(actions).toBeHidden({ timeout: 3_000 });
+
+  // Copy gives the terminal's lines: rows stay rows, and a wrapped line comes back whole.
+  await layer.evaluate((element) => {
+    const rows = Array.from(element.children);
+    const first = rows.findIndex((row) => /^LINE_\d{3}$/.test(row.textContent ?? ""));
+    const range = document.createRange();
+    range.setStart(rows[first] as Node, 0);
+    range.setEnd(element, element.childNodes.length);
+    const selection = document.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    document.execCommand("copy");
+  });
+  const copied = await clipboard();
+  expect(copied).toMatch(/^LINE_\d{3}\nLINE_\d{3}\n/);
+  expect(copied).toContain(`\nWRAP_${"x".repeat(300)}_END\n`);
+
+  // A tap with text selected only dismisses the selection.
+  await touch(page, [[press], []]);
+  expect(await page.evaluate(() => document.getSelection()?.isCollapsed ?? true)).toBe(true);
+  await expect(input).not.toBeFocused();
+  expect(sent.join("")).toBe("");
+
+  // A mouse keeps ghostty's own selection and clicks: the layer stops taking its hits.
+  await page.mouse.move(press.x, press.y);
+  await expect(layer).toHaveCSS("pointer-events", "none");
 
   await page.getByRole("button", { name: "Copy terminal text" }).tap();
   const sheet = page.getByTestId("terminal-text-sheet");

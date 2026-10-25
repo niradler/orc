@@ -16,7 +16,8 @@ import {
   wheelTarget,
 } from "@/lib/terminal-mouse";
 import { writeTerminalOutput } from "@/lib/terminal-output";
-import { attachTerminalTouchScroll, type TerminalTouchSelect } from "@/lib/terminal-touch";
+import { createTerminalTextLayer, type TerminalTextLayer } from "@/lib/terminal-text-layer";
+import { attachTerminalTouchScroll } from "@/lib/terminal-touch";
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "exited" | "closed";
 
@@ -30,7 +31,10 @@ export interface TerminalRuntime {
   id: string;
   term: GhosttyTerminal;
   fit: FitAddon;
+  /** Holds ghostty's editable root and, beside it, the selectable text over its canvas. */
+  frame: HTMLDivElement;
   element: HTMLDivElement;
+  textLayer: TerminalTextLayer;
   socket: WebSocket | null;
   opened: boolean;
   connecting: boolean;
@@ -156,12 +160,17 @@ export function createRuntime(
   id: string,
   onFontSizeChange?: (size: number) => void,
 ): TerminalRuntime {
+  const frame = document.createElement("div");
+  frame.className = "absolute inset-0 overflow-hidden";
+  frame.style.backgroundColor = TERMINAL_THEME.background ?? "";
+  frame.dataset.testid = "terminal-surface";
+  frame.style.touchAction = "none";
   const element = document.createElement("div");
   element.className = "absolute inset-0 overflow-hidden outline-none";
   element.style.padding = "8px";
-  element.style.backgroundColor = TERMINAL_THEME.background ?? "";
-  element.dataset.testid = "terminal-surface";
-  element.style.touchAction = "none";
+  // iOS would otherwise answer a long press outside the text with its own callout and loupe.
+  element.style.setProperty("-webkit-touch-callout", "none");
+  element.style.userSelect = "none";
 
   const term = new GhosttyTerminal({
     fontSize: terminalFontSize(),
@@ -172,12 +181,18 @@ export function createRuntime(
   });
   const fit = new FitAddon();
   term.loadAddon(fit);
+  // ghostty's root is editable, so a long press on it would raise the keyboard. The text sits
+  // beside it instead, where the browser's own selection, handles and toolbar work.
+  const textLayer = createTerminalTextLayer(term, () => element.querySelector("canvas"));
+  frame.append(element, textLayer.element);
 
   const runtime: TerminalRuntime = {
     id,
     term,
     fit,
+    frame,
     element,
+    textLayer,
     socket: null,
     opened: false,
     connecting: false,
@@ -223,22 +238,20 @@ export function createRuntime(
   });
   attachClickToMove(runtime, encoder);
   attachWheelInput(runtime, encoder);
+  attachTextLayer(runtime);
   attachTerminalTouchScroll(
-    element,
+    frame,
     {
       getFontSize: () => term.options.fontSize,
       setFontSize: (size) => setRuntimeFontSize(runtime, size),
     },
-    touchSelection(runtime),
+    textLayer,
     (x, y) => tapRuntime(runtime, x, y),
   );
-  // iOS would otherwise answer a long press with its own callout and loupe.
-  element.style.setProperty("-webkit-touch-callout", "none");
-  element.style.userSelect = "none";
-  element.dataset.fontSize = String(term.options.fontSize);
-  element.dataset.scrollOffset = "0";
+  frame.dataset.fontSize = String(term.options.fontSize);
+  frame.dataset.scrollOffset = "0";
   term.onScroll((offset) => {
-    element.dataset.scrollOffset = String(offset);
+    frame.dataset.scrollOffset = String(offset);
   });
   onFontSizeChange?.(term.options.fontSize);
 
@@ -254,7 +267,7 @@ export function setRuntimeFontSize(runtime: TerminalRuntime, value: number): voi
   const size = clampTerminalFontSize(value);
   if (runtime.disposed || runtime.term.options.fontSize === size) return;
   runtime.term.options.fontSize = size;
-  runtime.element.dataset.fontSize = String(size);
+  runtime.frame.dataset.fontSize = String(size);
   if (runtime.opened) runtime.fit.fit();
   runtime.onFontSizeChange?.(size);
   try {
@@ -262,12 +275,49 @@ export function setRuntimeFontSize(runtime: TerminalRuntime, value: number): voi
   } catch {}
 }
 
-// The touch layer takes over every touch, so the browser emulates no mouse events and
-// focuses nothing; a tap replays what it would have done.
+// The text layer only takes hits from touch: a mouse keeps ghostty's own selection, clicks
+// and wheel. It follows output, scrolling and resizes, so a long press finds the rows on screen.
+function attachTextLayer(runtime: TerminalRuntime): void {
+  const { frame, term, textLayer } = runtime;
+  const layer = textLayer.element;
+  layer.style.pointerEvents = window.matchMedia?.("(pointer: coarse)").matches ? "auto" : "none";
+  frame.addEventListener(
+    "pointermove",
+    (event) => {
+      if (event.pointerType === "mouse") layer.style.pointerEvents = "none";
+    },
+    true,
+  );
+  frame.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (event.pointerType !== "touch" || layer.style.pointerEvents === "auto") return;
+      layer.style.pointerEvents = "auto";
+      textLayer.schedule();
+    },
+    true,
+  );
+  frame.addEventListener("touchstart", () => textLayer.hold(true), {
+    capture: true,
+    passive: true,
+  });
+  const release = (event: TouchEvent) => {
+    if (event.touches.length === 0) textLayer.hold(false);
+  };
+  frame.addEventListener("touchend", release, { capture: true, passive: true });
+  frame.addEventListener("touchcancel", release, { capture: true, passive: true });
+  term.onScroll(() => textLayer.schedule());
+  term.onResize(() => textLayer.schedule());
+}
+
+// A touch outside the text is taken over, so the browser emulates no mouse events and
+// focuses nothing; a tap replays what it would have done on the canvas.
 function tapRuntime(runtime: TerminalRuntime, x: number, y: number): void {
   const { element } = runtime;
-  const hit = document.elementFromPoint(x, y);
-  const target = hit && element.contains(hit) ? hit : element;
+  const canvas = element.querySelector("canvas");
+  const box = canvas?.getBoundingClientRect();
+  const onCanvas = box && x >= box.left && x < box.right && y >= box.top && y < box.bottom;
+  const target = canvas && onCanvas ? canvas : element;
   for (const type of ["mousedown", "mouseup", "click"])
     target.dispatchEvent(
       new MouseEvent(type, {
@@ -282,90 +332,6 @@ function tapRuntime(runtime: TerminalRuntime, x: number, y: number): void {
       }),
     );
   focusRuntime(runtime);
-}
-
-// ghostty selects with the mouse only, and its select() places rows by the scroll offset
-// instead of the scrollback length, so a long press replays the mouse gesture on the canvas.
-// ghostty focuses its root on mousedown and its input when the clipboard API is missing, and
-// either would raise the phone keyboard over the selection.
-function touchSelection(runtime: TerminalRuntime): TerminalTouchSelect {
-  const { element, term } = runtime;
-  const mouse = (type: string, x: number, y: number) => {
-    const canvas = element.querySelector("canvas");
-    if (!canvas) return;
-    const input = element.querySelector("textarea");
-    const targets = input ? [element, input] : [element];
-    const focus = targets.map((target) => target.focus);
-    for (const target of targets) target.focus = () => {};
-    try {
-      canvas.dispatchEvent(
-        new MouseEvent(type, {
-          bubbles: true,
-          cancelable: true,
-          clientX: x,
-          clientY: y,
-          button: 0,
-          buttons: type === "mouseup" ? 0 : 1,
-          view: window,
-        }),
-      );
-    } finally {
-      targets.forEach((target, index) => {
-        target.focus = focus[index] ?? target.focus;
-      });
-    }
-  };
-  let last = { x: 0, y: 0 };
-  return {
-    begin: (x, y) => {
-      last = { x, y };
-      mouse("mousedown", x, y);
-      // ghostty finds the word on the screen row, which is another line once scrolled back.
-      if (term.viewportY === 0) mouse("dblclick", x, y);
-      navigator.vibrate?.(10);
-    },
-    extend: (x, y) => {
-      last = { x, y };
-      mouse("mousemove", x, y);
-    },
-    end: () => mouse("mouseup", last.x, last.y),
-  };
-}
-
-/** Calls back with whether text is selected each time that may have changed. */
-export function watchSelection(
-  runtime: TerminalRuntime,
-  listener: (selected: boolean) => void,
-): () => void {
-  const { element, term } = runtime;
-  // ghostty clears a selection on a press or an outside click without firing its event.
-  let timer = 0;
-  const check = () => {
-    clearTimeout(timer);
-    timer = window.setTimeout(() => listener(term.hasSelection()));
-  };
-  const subscription = term.onSelectionChange(check);
-  element.addEventListener("mousedown", check);
-  element.addEventListener("touchend", check);
-  document.addEventListener("click", check);
-  check();
-  return () => {
-    clearTimeout(timer);
-    subscription.dispose();
-    element.removeEventListener("mousedown", check);
-    element.removeEventListener("touchend", check);
-    document.removeEventListener("click", check);
-  };
-}
-
-export function copySelection(runtime: TerminalRuntime): Promise<void> {
-  const text = runtime.term.getSelection();
-  runtime.term.clearSelection();
-  return text ? copyText(text) : Promise.resolve();
-}
-
-export function clearSelection(runtime: TerminalRuntime): void {
-  runtime.term.clearSelection();
 }
 
 /** The active screen and its scrollback as plain text, with wrapped rows joined. */
@@ -510,7 +476,7 @@ export function mountRuntime(runtime: TerminalRuntime, container: HTMLElement, f
   const focusedBeforeMount = document.activeElement;
   const shouldFocus =
     focus && !focusedBeforeMount?.closest('[role="dialog"], [data-radix-popper-content-wrapper]');
-  container.appendChild(runtime.element);
+  container.appendChild(runtime.frame);
   if (!runtime.opened) {
     // Ghostty's focus() schedules a second, unguarded focus. Startup owns focus below
     // so opening a menu immediately after mount cannot be interrupted by that timer.
@@ -525,20 +491,23 @@ export function mountRuntime(runtime: TerminalRuntime, container: HTMLElement, f
       runtime.term.focus = originalFocus;
     }
     runtime.fit.observeResize();
+    const canvas = runtime.element.querySelector("canvas");
+    if (canvas) new ResizeObserver(() => runtime.textLayer.schedule()).observe(canvas);
     runtime.opened = true;
   } else {
     resumeRendering(runtime.term);
   }
   requestAnimationFrame(() => {
-    if (runtime.disposed || runtime.element.parentElement !== container) return;
+    if (runtime.disposed || runtime.frame.parentElement !== container) return;
     runtime.fit.fit();
+    runtime.textLayer.sync();
     // Loading the renderer must not dismiss a menu or interrupt a newer interaction.
     if (shouldFocus && document.activeElement === focusedBeforeMount) focusRuntime(runtime);
   });
 }
 
 export function unmountRuntime(runtime: TerminalRuntime): void {
-  runtime.element.remove();
+  runtime.frame.remove();
   if (runtime.opened) pauseRendering(runtime.term);
 }
 
@@ -606,6 +575,7 @@ export async function connectRuntime(
       } finally {
         runtime.muteReplies = false;
       }
+      runtime.textLayer.schedule();
       return;
     }
     const control = parseControlFrame(event.data);
@@ -650,5 +620,6 @@ export function disposeRuntime(runtime: TerminalRuntime): void {
   }
   runtime.fit.dispose();
   runtime.term.dispose();
-  runtime.element.remove();
+  runtime.textLayer.dispose();
+  runtime.frame.remove();
 }

@@ -3,19 +3,20 @@ interface TerminalTouchZoom {
   setFontSize: (size: number) => void;
 }
 
-/** Text selection driven by a long press: begin where it fired, extend with the finger. */
-export interface TerminalTouchSelect {
-  begin: (x: number, y: number) => void;
-  extend: (x: number, y: number) => void;
-  end: () => void;
+/** The selectable text over the terminal; a long press on it is the browser's own. */
+export interface TerminalTouchText {
+  element: HTMLElement;
+  selected: () => boolean;
+  clear: () => void;
 }
 
+/** A press held this long is a long press, never a tap. */
 export const LONG_PRESS_MS = 450;
 
 export function attachTerminalTouchScroll(
   element: HTMLElement,
   zoom?: TerminalTouchZoom,
-  select?: TerminalTouchSelect,
+  text?: TerminalTouchText,
   tap?: (x: number, y: number) => void,
 ): void {
   let gesture: {
@@ -23,17 +24,11 @@ export function attachTerminalTouchScroll(
     startX: number;
     startY: number;
     y: number;
+    at: number;
     moved: boolean;
-    selecting: boolean;
+    /** Text was already selected, so this touch dismisses or scrolls instead of selecting. */
+    hadSelection: boolean;
   } | null = null;
-  let pressTimer = 0;
-  const cancelPress = () => {
-    clearTimeout(pressTimer);
-    pressTimer = 0;
-  };
-  const endSelection = () => {
-    if (gesture?.selecting) select?.end();
-  };
   let pinch: { distance: number; size: number } | null = null;
   let consumed = false;
   // A pinch reports many moves per frame and each font change refits the terminal and
@@ -59,9 +54,7 @@ export function attachTerminalTouchScroll(
   element.addEventListener(
     "touchstart",
     (event) => {
-      cancelPress();
       if (event.touches.length >= 2) {
-        endSelection();
         gesture = null;
         consumed = true;
         const span = distance(event.touches);
@@ -72,31 +65,23 @@ export function attachTerminalTouchScroll(
         event.preventDefault();
         return;
       }
-      // The terminal root is editable, so the browser's own long press would select natively,
-      // raise the keyboard and cancel the touch. Taking the touch over stops that, and the
-      // emulated mouse events with it, so a tap is replayed on touchend instead.
-      if (tap) event.preventDefault();
+      // A long press on the text layer is left to the browser, which selects natively. Anywhere
+      // else it would land on ghostty's editable root, select there and raise the keyboard, so
+      // the touch is taken over; that also stops emulated mouse events, so taps are replayed.
+      const target = event.target instanceof Node ? event.target : null;
+      if (tap && !text?.element.contains(target)) event.preventDefault();
       const touch = !consumed && event.touches.length === 1 ? event.touches[0] : undefined;
-      const pressed = touch
+      gesture = touch
         ? {
             id: touch.identifier,
             startX: touch.clientX,
             startY: touch.clientY,
             y: touch.clientY,
+            at: performance.now(),
             moved: false,
-            selecting: false,
+            hadSelection: text?.selected() ?? false,
           }
         : null;
-      gesture = pressed;
-      if (!pressed || !touch || !select) return;
-      const { clientX, clientY } = touch;
-      pressTimer = window.setTimeout(() => {
-        pressTimer = 0;
-        if (gesture !== pressed || pressed.moved) return;
-        pressed.selecting = true;
-        consumed = true;
-        select.begin(clientX, clientY);
-      }, LONG_PRESS_MS);
     },
     { passive: false },
   );
@@ -114,13 +99,11 @@ export function attachTerminalTouchScroll(
       }
       const touch = Array.from(event.touches).find((touch) => touch.identifier === gesture?.id);
       if (!touch) return;
-      if (gesture.selecting) {
-        event.preventDefault();
-        select?.extend(touch.clientX, touch.clientY);
-        return;
-      }
+      // A long press that selected now drags the selection natively.
+      if (!gesture.hadSelection && text?.selected()) return;
       if (!gesture.moved && Math.abs(touch.clientY - gesture.startY) < 6) return;
-      cancelPress();
+      // The selected rows are about to scroll away from the text under them.
+      if (!gesture.moved) text?.clear();
       const canvas = element.querySelector("canvas");
       if (!canvas) return;
       const deltaY = gesture.y - touch.clientY;
@@ -143,14 +126,20 @@ export function attachTerminalTouchScroll(
   element.addEventListener(
     "touchend",
     (event) => {
+      const pressed = gesture;
       if (consumed) {
         event.preventDefault();
         event.stopPropagation();
-      } else if (gesture && !gesture.moved && !gesture.selecting && event.touches.length === 0) {
-        tap?.(gesture.startX, gesture.startY);
+      } else if (pressed && !pressed.moved && event.touches.length === 0) {
+        if (pressed.hadSelection) {
+          // A tap away from a selection only dismisses it.
+          event.preventDefault();
+          text?.clear();
+        } else if (!text?.selected() && performance.now() - pressed.at < LONG_PRESS_MS && tap) {
+          event.preventDefault();
+          tap(pressed.startX, pressed.startY);
+        }
       }
-      cancelPress();
-      endSelection();
       gesture = null;
       pinch = null;
       // Keep suppressing taps until every finger in a pinch/pan has been lifted.
@@ -161,23 +150,10 @@ export function attachTerminalTouchScroll(
   element.addEventListener(
     "touchcancel",
     () => {
-      cancelPress();
-      endSelection();
       gesture = null;
       pinch = null;
       consumed = false;
     },
     { passive: true },
-  );
-  // A long press raises the context menu on Android, and ghostty answers it by focusing its
-  // input under the finger, which opens the keyboard over the selection.
-  element.addEventListener(
-    "contextmenu",
-    (event) => {
-      if (!gesture && !consumed) return;
-      event.preventDefault();
-      event.stopPropagation();
-    },
-    true,
   );
 }

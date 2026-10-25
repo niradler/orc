@@ -20,9 +20,7 @@ import {
 import { terminalFontSize } from "@/lib/terminal-font-size";
 import {
   type ConnectionState,
-  clearSelection as clearRuntimeSelection,
   connectRuntime,
-  copySelection as copyRuntimeSelection,
   createRuntime,
   disposeRuntime,
   focusRuntime,
@@ -33,7 +31,6 @@ import {
   setRuntimeFontSize,
   type TerminalRuntime,
   unmountRuntime,
-  watchSelection as watchRuntimeSelection,
 } from "@/lib/terminal-runtime";
 
 const MAX_EXITED_RETRIES = 2;
@@ -60,9 +57,6 @@ interface TerminalsContextValue {
   focus: (id: string) => void;
   /** Page Up (-1) or Page Down (1) from the key bar. */
   page: (id: string, direction: -1 | 1) => void;
-  watchSelection: (id: string, listener: (selected: boolean) => void) => () => void;
-  copySelection: (id: string) => Promise<void>;
-  clearSelection: (id: string) => void;
   /** The terminal's screen and scrollback as plain text. */
   textOf: (id: string) => string;
   fontSizeOf: (id: string) => number;
@@ -281,18 +275,6 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
     },
     [sendInput],
   );
-  const watchSelection = useCallback((id: string, listener: (selected: boolean) => void) => {
-    const runtime = runtimes.current.get(id);
-    return runtime ? watchRuntimeSelection(runtime, listener) : () => {};
-  }, []);
-  const copySelection = useCallback(async (id: string) => {
-    const runtime = runtimes.current.get(id);
-    if (runtime) await copyRuntimeSelection(runtime);
-  }, []);
-  const clearSelection = useCallback((id: string) => {
-    const runtime = runtimes.current.get(id);
-    if (runtime) clearRuntimeSelection(runtime);
-  }, []);
   const textOf = useCallback((id: string) => {
     const runtime = runtimes.current.get(id);
     return runtime ? runtimeText(runtime) : "";
@@ -329,9 +311,6 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
       armCtrl,
       focus,
       page,
-      watchSelection,
-      copySelection,
-      clearSelection,
       textOf,
       fontSizeOf,
       setFontSize,
@@ -356,9 +335,6 @@ export function TerminalsProvider({ children }: { children: ReactNode }) {
       armCtrl,
       focus,
       page,
-      watchSelection,
-      copySelection,
-      clearSelection,
       textOf,
       fontSizeOf,
       setFontSize,

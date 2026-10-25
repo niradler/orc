@@ -165,6 +165,21 @@
     text-shadow: 0 0 8px rgba(120, 176, 255, 0.4);
   }
 
+  /* Real text over the terminal canvas: invisible, but selectable by touch. */
+  .terminal-text-layer {
+    position: absolute;
+    overflow: hidden;
+    color: transparent;
+    white-space: pre;
+    user-select: text;
+    -webkit-user-select: text;
+    -webkit-touch-callout: default;
+  }
+  .terminal-text-layer ::selection {
+    color: transparent;
+    background: rgb(120 176 255 / 0.4);
+  }
+
   .animate-pulse-subtle {
     animation: pulse-subtle 3s ease-in-out infinite;
   }
