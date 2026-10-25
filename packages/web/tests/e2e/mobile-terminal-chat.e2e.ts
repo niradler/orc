@@ -645,6 +645,17 @@ test("a long press selects terminal text for copying and the text view copies it
   const x = box.x + fontSize;
   const y = box.y + box.height / 3;
   const rows = 3;
+  // The phone keyboard is down, as when reading output.
+  await input.blur();
+  await surface.evaluate((element) => {
+    const events = { cancels: 0, taken: true };
+    element.addEventListener("touchcancel", () => events.cancels++);
+    // A touch the page takes over never starts the browser's own tap or long press.
+    element.addEventListener("touchstart", (event) => {
+      events.taken = events.taken && event.defaultPrevented;
+    });
+    (window as unknown as { touchEvents: typeof events }).touchEvents = events;
+  });
   await touch(
     page,
     [
@@ -656,6 +667,14 @@ test("a long press selects terminal text for copying and the text view copies it
     ],
     700,
   );
+  // The browser's own long press would select in the editable root, raise the keyboard and
+  // cancel the touch, leaving the selection impossible to extend.
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { touchEvents: { cancels: number; taken: boolean } }).touchEvents,
+    ),
+  ).toEqual({ cancels: 0, taken: true });
+  await expect(input).not.toBeFocused();
   const actions = page.getByTestId("terminal-selection-actions");
   await expect(actions.getByRole("button", { name: "Copy selection" })).toBeVisible();
   await actions.getByRole("button", { name: "Copy selection" }).tap();

@@ -16,9 +16,11 @@ export function attachTerminalTouchScroll(
   element: HTMLElement,
   zoom?: TerminalTouchZoom,
   select?: TerminalTouchSelect,
+  tap?: (x: number, y: number) => void,
 ): void {
   let gesture: {
     id: number;
+    startX: number;
     startY: number;
     y: number;
     moved: boolean;
@@ -70,10 +72,15 @@ export function attachTerminalTouchScroll(
         event.preventDefault();
         return;
       }
+      // The terminal root is editable, so the browser's own long press would select natively,
+      // raise the keyboard and cancel the touch. Taking the touch over stops that, and the
+      // emulated mouse events with it, so a tap is replayed on touchend instead.
+      if (tap) event.preventDefault();
       const touch = !consumed && event.touches.length === 1 ? event.touches[0] : undefined;
       const pressed = touch
         ? {
             id: touch.identifier,
+            startX: touch.clientX,
             startY: touch.clientY,
             y: touch.clientY,
             moved: false,
@@ -139,6 +146,8 @@ export function attachTerminalTouchScroll(
       if (consumed) {
         event.preventDefault();
         event.stopPropagation();
+      } else if (gesture && !gesture.moved && !gesture.selecting && event.touches.length === 0) {
+        tap?.(gesture.startX, gesture.startY);
       }
       cancelPress();
       endSelection();

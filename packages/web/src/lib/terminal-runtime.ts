@@ -230,6 +230,7 @@ export function createRuntime(
       setFontSize: (size) => setRuntimeFontSize(runtime, size),
     },
     touchSelection(runtime),
+    (x, y) => tapRuntime(runtime, x, y),
   );
   // iOS would otherwise answer a long press with its own callout and loupe.
   element.style.setProperty("-webkit-touch-callout", "none");
@@ -259,6 +260,28 @@ export function setRuntimeFontSize(runtime: TerminalRuntime, value: number): voi
   try {
     localStorage.setItem(TERMINAL_FONT_SIZE_KEY, String(size));
   } catch {}
+}
+
+// The touch layer takes over every touch, so the browser emulates no mouse events and
+// focuses nothing; a tap replays what it would have done.
+function tapRuntime(runtime: TerminalRuntime, x: number, y: number): void {
+  const { element } = runtime;
+  const hit = document.elementFromPoint(x, y);
+  const target = hit && element.contains(hit) ? hit : element;
+  for (const type of ["mousedown", "mouseup", "click"])
+    target.dispatchEvent(
+      new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y,
+        button: 0,
+        buttons: type === "mousedown" ? 1 : 0,
+        detail: 1,
+        view: window,
+      }),
+    );
+  focusRuntime(runtime);
 }
 
 // ghostty selects with the mouse only, and its select() places rows by the scroll offset
