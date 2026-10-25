@@ -6,7 +6,14 @@ import { buildCodexEnv, codexCommand, hasConfiguredOrcMcp } from "./codex.js";
 import { elicitationForm } from "./elicitation.js";
 import { endStdin, readLines, writeToStdin } from "./io.js";
 import { buildOrcMcpServer } from "./orc-mcp.js";
-import type { AgentEvent, AgentSession, PermissionResult, SessionOpts } from "./types.js";
+import {
+  type AgentEvent,
+  type AgentSession,
+  type LivePermissionMode,
+  type PermissionResult,
+  permissionModeAllows,
+  type SessionOpts,
+} from "./types.js";
 
 type Pending = {
   wireId: string | number;
@@ -14,6 +21,7 @@ type Pending = {
   question?: ChatQuestion;
   asyncTurnId?: string;
   permissions?: Record<string, unknown>;
+  tool?: string;
   form?: ReturnType<typeof elicitationForm>;
 };
 function object(value: unknown): Record<string, unknown> {
@@ -38,6 +46,7 @@ export class CodexAppSession implements AgentSession {
     { resolve: (value: Record<string, unknown>) => void; reject: (error: Error) => void }
   >();
   private readonly pending = new Map<string, Pending>();
+  private liveMode: LivePermissionMode | undefined;
 
   constructor(
     private readonly opts: SessionOpts,
@@ -104,11 +113,21 @@ export class CodexAppSession implements AgentSession {
       ) {
         const permissions =
           method === "item/permissions/requestApproval" ? object(params.permissions) : undefined;
+        const tool = permissions
+          ? "additional permissions"
+          : method.includes("commandExecution")
+            ? "command"
+            : "file changes";
         this.pending.set(requestId, {
           wireId: message.id,
           kind: "permission",
+          tool,
           ...(permissions ? { permissions } : {}),
         });
+        if (permissionModeAllows(this.liveMode, tool)) {
+          this.respondPermission(requestId, "approved");
+          return;
+        }
         this.push({
           type: "permission_request",
           data: {
@@ -120,11 +139,7 @@ export class CodexAppSession implements AgentSession {
                 : {}),
             },
             ...(typeof params.cwd === "string" ? { cwd: params.cwd } : {}),
-            tool: permissions
-              ? "additional permissions"
-              : method.includes("commandExecution")
-                ? "command"
-                : "file changes",
+            tool,
             command: [
               params.command,
               params.cwd ? `Folder: ${params.cwd}` : undefined,
@@ -394,6 +409,13 @@ export class CodexAppSession implements AgentSession {
       threadId: this.runtimeId,
       input: [{ type: "text", text: prompt }],
     });
+  }
+
+  setPermissionMode(mode: LivePermissionMode): void {
+    this.liveMode = mode;
+    for (const [requestId, request] of this.pending)
+      if (request.kind === "permission" && request.tool && permissionModeAllows(mode, request.tool))
+        this.respondPermission(requestId, "approved");
   }
 
   respondPermission(requestId: string, result: PermissionResult): void {

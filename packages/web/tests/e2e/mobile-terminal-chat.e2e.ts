@@ -74,15 +74,8 @@ test("Android terminal keyboard, real swipe scrolling and pinch zoom keep the pr
     process.platform === "win32"
       ? '1..150 | ForEach-Object { "TOUCH_LINE_$_" }'
       : "for i in $(seq 1 150); do echo TOUCH_LINE_$i; done";
-  await input.evaluate((element, text) => {
-    element.dispatchEvent(
-      new InputEvent("beforeinput", {
-        bubbles: true,
-        cancelable: true,
-        inputType: "insertText",
-        data: text,
-      }),
-    );
+  await page.keyboard.insertText(command);
+  await input.evaluate((element) => {
     element.dispatchEvent(
       new InputEvent("beforeinput", {
         bubbles: true,
@@ -90,7 +83,7 @@ test("Android terminal keyboard, real swipe scrolling and pinch zoom keep the pr
         inputType: "insertLineBreak",
       }),
     );
-  }, command);
+  });
   await expect.poll(() => output).toContain("TOUCH_LINE_150");
   await expect.poll(() => sent.join("")).toContain(command);
   const surface = page.getByTestId("terminal-surface");
@@ -306,4 +299,93 @@ test("Android chat keeps a long draft and send control above the software keyboa
     expect((await messages.boundingBox())?.height).toBeGreaterThan(20);
     await expect(input).toHaveValue("A long draft\n".repeat(30));
   }
+});
+
+test("phone keyboard input reaches the shell once, as it is typed", async ({ page, request }) => {
+  test.skip(
+    page.context().browser()?.browserType().name() !== "chromium",
+    "IME composition is driven through CDP",
+  );
+  const terminal = await apiPost<{ id: string }>(request, "/terminals", {
+    kind: "shell",
+    host: null,
+  });
+  const sent: string[] = [];
+  page.on("websocket", (socket) => {
+    if (!socket.url().includes(`/terminals/${terminal.id}/ws`)) return;
+    socket.on("framesent", ({ payload }) => {
+      if (typeof payload !== "string") sent.push(payload.toString());
+    });
+  });
+  await gotoView(page, "terminals");
+  await page.goto(`/terminals/${terminal.id}?project=all`);
+  await page.getByTestId("terminal-keyboard-show").tap();
+  const input = page.locator("textarea[aria-label='Terminal input']").first();
+  await expect(input).toBeFocused();
+  const typed = () => sent.join("");
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    // Gboard: each letter updates the composition, space commits the word.
+    const compose = (text: string) =>
+      cdp.send("Input.imeSetComposition", {
+        text,
+        selectionStart: text.length,
+        selectionEnd: text.length,
+      });
+    await compose("g");
+    await expect.poll(typed).toBe("g");
+    await compose("go");
+    await expect.poll(typed).toBe("go");
+    await cdp.send("Input.insertText", { text: "go" });
+    await cdp.send("Input.insertText", { text: " " });
+    await expect.poll(typed).toBe("go ");
+    // Autocorrect rewrites the word being composed.
+    await compose("teh");
+    await compose("the");
+    await cdp.send("Input.insertText", { text: "the" });
+    await expect.poll(typed).toBe("go teh\x7f\x7fhe");
+    // Backspace mid-word and on an empty line both reach the shell.
+    await page.keyboard.press("Backspace");
+    await expect.poll(typed).toBe("go teh\x7f\x7fhe\x7f");
+  } finally {
+    await cdp.detach();
+  }
+  // A hardware or Bluetooth keyboard types each key exactly once.
+  sent.length = 0;
+  await page.keyboard.type("ls -a");
+  await page.keyboard.press("Enter");
+  await expect.poll(typed).toBe("ls -a\r");
+  await page.waitForTimeout(300);
+  expect(typed()).toBe("ls -a\r");
+});
+
+test("sticky ctrl from the key bar sends the next typed letter as a control key", async ({
+  page,
+  request,
+}) => {
+  const terminal = await apiPost<{ id: string }>(request, "/terminals", {
+    kind: "shell",
+    host: null,
+  });
+  const sent: string[] = [];
+  page.on("websocket", (socket) => {
+    if (!socket.url().includes(`/terminals/${terminal.id}/ws`)) return;
+    socket.on("framesent", ({ payload }) => {
+      if (typeof payload !== "string") sent.push(payload.toString());
+    });
+  });
+  await gotoView(page, "terminals");
+  await page.goto(`/terminals/${terminal.id}?project=all`);
+  await page.getByTestId("terminal-keyboard-show").tap();
+  const input = page.locator("textarea[aria-label='Terminal input']").first();
+  await expect(input).toBeFocused();
+  const ctrl = page.getByTestId("terminal-ctrl");
+  await ctrl.tap();
+  await expect(ctrl).toHaveAttribute("aria-pressed", "true");
+  await expect(input).toBeFocused();
+  await page.keyboard.insertText("l");
+  await expect.poll(() => sent.join("")).toBe("\f");
+  await expect(ctrl).toHaveAttribute("aria-pressed", "false");
+  await page.keyboard.insertText("l");
+  await expect.poll(() => sent.join("")).toBe("\fl");
 });

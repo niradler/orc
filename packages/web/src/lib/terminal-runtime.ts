@@ -5,7 +5,7 @@ import {
   TERMINAL_FONT_SIZE_KEY,
   terminalFontSize,
 } from "@/lib/terminal-font-size";
-import { attachTerminalTextInput } from "@/lib/terminal-input";
+import { attachTerminalTextInput, type TerminalTextInput } from "@/lib/terminal-input";
 import { isMacPlatform, resolveTerminalKey } from "@/lib/terminal-keys";
 import { cellAt, cursorMoveKeys, isPlainClick } from "@/lib/terminal-mouse";
 import { writeTerminalOutput } from "@/lib/terminal-output";
@@ -38,6 +38,7 @@ export interface TerminalRuntime {
   retryTimer: ReturnType<typeof setTimeout> | null;
   resizeTimer: ReturnType<typeof setTimeout> | null;
   onFontSizeChange?: (size: number) => void;
+  textInput?: TerminalTextInput | null;
 }
 
 export const TERMINAL_THEME: ITheme = {
@@ -296,6 +297,26 @@ function attachClickToMove(runtime: TerminalRuntime, encoder: TextEncoder): void
   });
 }
 
+// Ghostty redraws every opened terminal on every animation frame, visible or not. Keeping
+// one loop per terminal ever opened saturated phone CPUs and delayed typed output, so the
+// loop only runs while the terminal is in the page. Output written meanwhile stays dirty
+// in the VT buffer and is drawn when the loop resumes.
+interface RenderLoop {
+  animationFrameId?: number;
+  startRenderLoop?: () => void;
+}
+
+function pauseRendering(term: GhosttyTerminal): void {
+  const loop = term as unknown as RenderLoop;
+  if (loop.animationFrameId !== undefined) cancelAnimationFrame(loop.animationFrameId);
+  loop.animationFrameId = undefined;
+}
+
+function resumeRendering(term: GhosttyTerminal): void {
+  const loop = term as unknown as RenderLoop;
+  if (loop.animationFrameId === undefined) loop.startRenderLoop?.();
+}
+
 export function mountRuntime(runtime: TerminalRuntime, container: HTMLElement, focus = true): void {
   const focusedBeforeMount = document.activeElement;
   const shouldFocus =
@@ -308,12 +329,16 @@ export function mountRuntime(runtime: TerminalRuntime, container: HTMLElement, f
     runtime.term.focus = () => {};
     try {
       runtime.term.open(runtime.element);
-      attachTerminalTextInput(runtime.element, (data) => runtime.term.input(data, true));
+      runtime.textInput = attachTerminalTextInput(runtime.element, (data) =>
+        runtime.term.input(data, true),
+      );
     } finally {
       runtime.term.focus = originalFocus;
     }
     runtime.fit.observeResize();
     runtime.opened = true;
+  } else {
+    resumeRendering(runtime.term);
   }
   requestAnimationFrame(() => {
     if (runtime.disposed || runtime.element.parentElement !== container) return;
@@ -326,6 +351,7 @@ export function mountRuntime(runtime: TerminalRuntime, container: HTMLElement, f
 
 export function unmountRuntime(runtime: TerminalRuntime): void {
   runtime.element.remove();
+  if (runtime.opened) pauseRendering(runtime.term);
 }
 
 function scheduleReconnect(runtime: TerminalRuntime, callbacks: RuntimeCallbacks): void {

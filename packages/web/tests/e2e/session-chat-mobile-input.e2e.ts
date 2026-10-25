@@ -40,47 +40,51 @@ test("phone keyboard text reaches a real terminal without keydown", async ({
     await canvas.tap();
     const input = page.locator("textarea[aria-label='Terminal input']").first();
     await expect(input).toBeFocused();
-    // Android/iOS software keyboards may supply only InputEvents (keyCode 229).
-    await input.evaluate((element) => {
-      for (const [inputType, data] of [
-        ["insertText", "echo MOBILE"],
-        ["insertText", "X"],
-        ["deleteContentBackward", null],
-        ["insertText", "_INPUT_OK"],
-        ["insertLineBreak", null],
-      ] as const) {
-        element.dispatchEvent(
-          new InputEvent("beforeinput", {
-            bubbles: true,
-            cancelable: true,
-            inputType,
-            data,
-          }),
-        );
-      }
+    // Android/iOS software keyboards may supply only InputEvents (keyCode 229): the edit
+    // is announced by beforeinput and then applied natively to the textarea.
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("Input.insertText", { text: "echo MOBILE" });
+    await cdp.send("Input.insertText", { text: "X" });
+    await input.evaluate((element: HTMLTextAreaElement) => {
+      const native = (inputType: string, apply: () => void) => {
+        const before = new InputEvent("beforeinput", {
+          bubbles: true,
+          cancelable: true,
+          inputType,
+        });
+        if (!element.dispatchEvent(before)) return;
+        apply();
+        element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType }));
+      };
+      native("deleteContentBackward", () => {
+        element.value = element.value.slice(0, -1);
+      });
     });
-    await expect.poll(() => sent.join("")).toContain("echo MOBILEX\x7f_INPUT_OK\r");
-    await expect.poll(() => output).toContain("MOBILE_INPUT_OK");
-    // Physical keys still travel once; IME commits remain Ghostty's responsibility.
-    sent.length = 0;
-    await input.press("a");
-    await expect.poll(() => sent.join("")).toBe("a");
-    await input.evaluate((element) => {
-      element.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+    await cdp.send("Input.insertText", { text: "_INPUT_OK" });
+    await input.evaluate((element) =>
       element.dispatchEvent(
         new InputEvent("beforeinput", {
           bubbles: true,
           cancelable: true,
-          isComposing: true,
-          inputType: "insertCompositionText",
-          data: "שלום",
+          inputType: "insertLineBreak",
         }),
-      );
-      element.dispatchEvent(
-        new CompositionEvent("compositionend", { bubbles: true, data: "שלום" }),
-      );
+      ),
+    );
+    await expect.poll(() => sent.join("")).toContain("echo MOBILEX\x7f_INPUT_OK\r");
+    await expect.poll(() => output).toContain("MOBILE_INPUT_OK");
+    // Physical keys and IME commits each travel once.
+    sent.length = 0;
+    await input.press("a");
+    await expect.poll(() => sent.join("")).toBe("a");
+    await cdp.send("Input.imeSetComposition", {
+      text: "שלום",
+      selectionStart: 4,
+      selectionEnd: 4,
     });
+    await cdp.send("Input.insertText", { text: "שלום" });
     await expect.poll(() => sent.join("")).toBe("aשלום");
+    await page.waitForTimeout(300);
+    expect(sent.join("")).toBe("aשלום");
   } finally {
     await context.close();
   }

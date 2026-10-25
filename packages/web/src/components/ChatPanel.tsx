@@ -61,6 +61,7 @@ export function ChatPanel({
     loadOlder,
     permission,
     respondPermission,
+    changePermissions,
     question,
     respondQuestion,
     responding,
@@ -279,6 +280,20 @@ export function ChatPanel({
                 >
                   Allow once
                 </button>
+                {["claude", "codex"].includes(config.agent) && (
+                  <button
+                    type="button"
+                    data-testid="chat-permission-allow-all"
+                    disabled={responding}
+                    title="Switch this conversation to full access / bypass permissions"
+                    className="min-h-11 rounded-md border border-control-border px-3"
+                    onClick={() =>
+                      void changePermissions({ ...config, permissionMode: "bypassPermissions" })
+                    }
+                  >
+                    Allow all
+                  </button>
+                )}
               </div>
             </div>
           )}

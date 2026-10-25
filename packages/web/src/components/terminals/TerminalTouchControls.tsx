@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Keyboard } from "lucide-react";
-import { type ComponentProps, useRef } from "react";
+import { type ComponentProps, useEffect, useRef, useState } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
@@ -69,8 +69,18 @@ function TouchControlButton({
 
 export function TerminalTouchControls({ terminalId }: { terminalId: string }) {
   const touch = useMediaQuery("(any-pointer: coarse)");
-  const { sendInput, focus, connectionOf, terminals, fontSizeOf, setFontSize } = useTerminals();
+  const { sendInput, armCtrl, focus, connectionOf, terminals, fontSizeOf, setFontSize } =
+    useTerminals();
+  const [ctrl, setCtrl] = useState(false);
+  useEffect(() => {
+    setCtrl(false);
+    return () => armCtrl(terminalId, null);
+  }, [terminalId, armCtrl]);
   if (!touch) return null;
+  const toggleCtrl = () => {
+    armCtrl(terminalId, ctrl ? null : () => setCtrl(false));
+    setCtrl(!ctrl);
+  };
   const enabled =
     connectionOf(terminalId) === "connected" &&
     terminals.some((terminal) => terminal.id === terminalId && terminal.status === "running");
@@ -95,7 +105,30 @@ export function TerminalTouchControls({ terminalId }: { terminalId: string }) {
         className="flex min-w-0 flex-1 gap-1 overflow-x-auto overscroll-x-contain"
         aria-label="Swipe for more terminal keys"
       >
-        {keys.map((key) => (
+        {keys.slice(0, 2).map((key) => (
+          <TouchControlButton
+            key={key.name}
+            type="button"
+            aria-label={key.name}
+            disabled={!enabled}
+            onPress={() => sendInput(terminalId, key.data)}
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md px-2 text-xs text-on-surface-variant hover:bg-surface disabled:opacity-40"
+          >
+            {key.label}
+          </TouchControlButton>
+        ))}
+        <TouchControlButton
+          type="button"
+          data-testid="terminal-ctrl"
+          aria-label="Control modifier for the next key"
+          aria-pressed={ctrl}
+          disabled={!enabled}
+          onPress={toggleCtrl}
+          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md px-2 text-xs text-on-surface-variant hover:bg-surface aria-pressed:bg-primary aria-pressed:text-primary-foreground disabled:opacity-40"
+        >
+          Ctrl
+        </TouchControlButton>
+        {keys.slice(2).map((key) => (
           <TouchControlButton
             key={key.name}
             type="button"

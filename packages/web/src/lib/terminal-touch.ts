@@ -7,6 +7,19 @@ export function attachTerminalTouchScroll(element: HTMLElement, zoom?: TerminalT
   let gesture: { id: number; startY: number; y: number; moved: boolean } | null = null;
   let pinch: { distance: number; size: number } | null = null;
   let consumed = false;
+  // A pinch reports many moves per frame and each font change refits the terminal and
+  // resizes the PTY, so only the latest size in a frame is applied.
+  let pendingSize: number | null = null;
+  let sizeFrame = 0;
+  const zoomTo = (size: number) => {
+    pendingSize = size;
+    if (sizeFrame) return;
+    sizeFrame = requestAnimationFrame(() => {
+      sizeFrame = 0;
+      if (pendingSize !== null) zoom?.setFontSize(pendingSize);
+      pendingSize = null;
+    });
+  };
   const distance = (touches: TouchList) => {
     const first = touches[0];
     const second = touches[1];
@@ -40,7 +53,7 @@ export function attachTerminalTouchScroll(element: HTMLElement, zoom?: TerminalT
     (event) => {
       if (pinch && zoom && event.touches.length === 2) {
         event.preventDefault();
-        zoom.setFontSize((pinch.size * distance(event.touches)) / pinch.distance);
+        zoomTo((pinch.size * distance(event.touches)) / pinch.distance);
         return;
       }
       if (!gesture || event.touches.length !== 1) {

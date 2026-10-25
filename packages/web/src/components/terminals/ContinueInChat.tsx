@@ -4,13 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, type Terminal } from "@/api/client";
 import { useChat } from "@/hooks/useChat";
 
-export function ContinueInChat({
-  terminal,
-  onContinued,
-}: {
-  terminal: Terminal;
-  onContinued?: () => void;
-}) {
+export function ContinueInChat({ terminal }: { terminal: Terminal }) {
   const chat = useChat();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -27,7 +21,6 @@ export function ContinueInChat({
       next.delete("session");
       next.set("chat", "open");
       navigate({ search: next.toString() });
-      onContinued?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not continue in chat.");
     } finally {

@@ -184,7 +184,6 @@ for (const width of [390, 1440]) {
     await page.screenshot({ path: testInfo.outputPath(`chat-interactions-${width}.png`) });
     await toTerminal.click();
     await expect(page).toHaveURL(/\/terminals\/icon-terminal/);
-    if (width < 768) await page.getByTestId("terminal-options").click();
     const toChat = page.getByTestId("terminal-continue-chat").filter({ visible: true });
     await expect(toChat).toHaveAttribute("title", "Continue in chat");
     await expect(toChat).toHaveText("");

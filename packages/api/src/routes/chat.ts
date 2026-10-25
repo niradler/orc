@@ -56,6 +56,8 @@ const runs = new Map<
     permissions: Set<string>;
     questions: Map<string, ChatQuestion>;
     threadId: string;
+    /** The streaming turn saves this object when it ends, so live changes must land on it. */
+    thread: ChatThread;
     key: string;
   }
 >();
@@ -380,6 +382,44 @@ app.openapi(
 app.openapi(
   createRoute({
     method: "post",
+    path: "/chat/runs/{id}/permission-mode",
+    tags: ["Chat"],
+    description:
+      "Change permissions while the agent is responding. Prompts the new mode would not ask for, including pending ones, are approved; the mode is kept for later messages.",
+    request: {
+      params,
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({ mode: ChatPermissionModeSchema }).strict(),
+          },
+        },
+      },
+    },
+    responses: response,
+  }),
+  (c) => {
+    const run = runs.get(c.req.valid("param").id);
+    if (!run) throw new ConflictError("This response already finished.");
+    const { mode } = c.req.valid("json");
+    const { thread } = run;
+    if (!["codex", "claude"].includes(thread.config.agent))
+      throw new ValidationError("Permission modes are supported by Claude and Codex.");
+    thread.config.permissionMode = mode;
+    // Explicit SDK launch options take precedence over the conversation mode.
+    const options = thread.config.agentOptions[thread.config.agent];
+    if (options?.runtime === "claude-sdk" && options.options.permissionMode)
+      options.options.permissionMode = mode;
+    thread.updatedAt = Date.now();
+    store().save(thread);
+    run.session?.setPermissionMode?.(mode);
+    return c.json(thread);
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
     path: "/chat/runs/{id}/answer",
     tags: ["Chat"],
     request: {
@@ -528,6 +568,7 @@ app.openapi(
       permissions: new Set<string>(),
       questions: new Map<string, ChatQuestion>(),
       threadId: thread.id,
+      thread,
       key,
     };
     runs.set(runId, run);

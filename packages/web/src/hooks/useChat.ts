@@ -315,6 +315,28 @@ function useChatController() {
     },
     [question, responding],
   );
+  // While the agent is responding the change goes to the live run, which approves prompts
+  // the new mode would not ask for; otherwise it applies to the next message.
+  const changePermissions = useCallback(
+    async (next: ChatConfig) => {
+      setConfig(next);
+      const mode = next.permissionMode;
+      if (!mode || !streaming || !runId.current) return;
+      try {
+        const updated = await api.chat.permissionMode(runId.current, mode);
+        if (currentThread.current?.id !== updated.id) return;
+        setThread(updated);
+        setConfig((current) => ({
+          ...current,
+          permissionMode: updated.config.permissionMode,
+          agentOptions: updated.config.agentOptions,
+        }));
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : "Permissions could not be changed.");
+      }
+    },
+    [streaming],
+  );
   const applyAgentOptions = useCallback(
     async (agent: string, options: ChatAgentOptions) => {
       const target = currentThread.current;
@@ -338,6 +360,7 @@ function useChatController() {
     error,
     config,
     setConfig,
+    changePermissions,
     applyAgentOptions,
     ready,
     thread,
