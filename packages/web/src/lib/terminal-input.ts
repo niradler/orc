@@ -67,7 +67,7 @@ export function attachTerminalTextInput(
   let sent = "";
   let composing = false;
   let staleLine = false;
-  let typedByKey: string | null = null;
+  let lastKeydown: KeyboardEvent | null = null;
   let ctrl: (() => void) | null = null;
 
   const clear = () => {
@@ -105,12 +105,12 @@ export function attachTerminalTextInput(
     // Ghostty cancels every beforeinput on its root; let the textarea edit natively and
     // mirror the result on input instead.
     event.stopPropagation();
-    const keyed = typedByKey;
-    typedByKey = null;
-    if (event.isComposing || composing) return;
-    // Ghostty already typed this character from its keydown; Android keyboards insert it
-    // anyway because they ignore keydown preventDefault.
-    if (keyed !== null && keyed === keyFor(event)) {
+    const keydown = lastKeydown;
+    lastKeydown = null;
+    // Ghostty prevents default exactly when it sends a key, but Android keyboards insert the
+    // character anyway. Soft keyboards report an empty `code`, which ghostty cannot map, so
+    // their Enter and Backspace are left to the textarea.
+    if (keydown?.defaultPrevented && keydown.key === keyFor(event)) {
       event.preventDefault();
       return;
     }
@@ -119,9 +119,10 @@ export function attachTerminalTextInput(
       sync();
       send("\r");
       // A new line starts a new edit; the keyboard must not rewrite the submitted one.
-      clear();
+      reset();
       return;
     }
+    if (event.isComposing || composing) return;
     // An empty textarea has nothing to delete, so no input event would follow.
     if (event.inputType === "deleteContentBackward" && textarea.value === "") {
       event.preventDefault();
@@ -162,7 +163,7 @@ export function attachTerminalTextInput(
       send(code);
       return;
     }
-    typedByKey = plain && (event.key.length === 1 || KEYED_EDITS.has(event.key)) ? event.key : null;
+    lastKeydown = plain && (event.key.length === 1 || KEYED_EDITS.has(event.key)) ? event : null;
   });
   return {
     reset,

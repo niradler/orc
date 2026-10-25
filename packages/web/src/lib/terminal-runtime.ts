@@ -7,8 +7,16 @@ import {
 } from "@/lib/terminal-font-size";
 import { attachTerminalTextInput, type TerminalTextInput } from "@/lib/terminal-input";
 import { isMacPlatform, resolveTerminalKey } from "@/lib/terminal-keys";
-import { cellAt, cursorMoveKeys, isPlainClick } from "@/lib/terminal-mouse";
+import {
+  cellAt,
+  createWheelSteps,
+  cursorMoveKeys,
+  isPlainClick,
+  wheelReport,
+  wheelTarget,
+} from "@/lib/terminal-mouse";
 import { writeTerminalOutput } from "@/lib/terminal-output";
+import { createTerminalTextLayer, type TerminalTextLayer } from "@/lib/terminal-text-layer";
 import { attachTerminalTouchScroll } from "@/lib/terminal-touch";
 
 export type ConnectionState = "connecting" | "connected" | "reconnecting" | "exited" | "closed";
@@ -23,7 +31,10 @@ export interface TerminalRuntime {
   id: string;
   term: GhosttyTerminal;
   fit: FitAddon;
+  /** Holds ghostty's editable root and, beside it, the selectable text over its canvas. */
+  frame: HTMLDivElement;
   element: HTMLDivElement;
+  textLayer: TerminalTextLayer;
   socket: WebSocket | null;
   opened: boolean;
   connecting: boolean;
@@ -114,7 +125,7 @@ export function loadGhostty(): Promise<void> {
   return ghosttyReady;
 }
 
-async function copyText(text: string): Promise<void> {
+export async function copyText(text: string): Promise<void> {
   const written = await navigator.clipboard?.writeText(text).then(
     () => true,
     () => false,
@@ -149,12 +160,17 @@ export function createRuntime(
   id: string,
   onFontSizeChange?: (size: number) => void,
 ): TerminalRuntime {
+  const frame = document.createElement("div");
+  frame.className = "absolute inset-0 overflow-hidden";
+  frame.style.backgroundColor = TERMINAL_THEME.background ?? "";
+  frame.dataset.testid = "terminal-surface";
+  frame.style.touchAction = "none";
   const element = document.createElement("div");
   element.className = "absolute inset-0 overflow-hidden outline-none";
   element.style.padding = "8px";
-  element.style.backgroundColor = TERMINAL_THEME.background ?? "";
-  element.dataset.testid = "terminal-surface";
-  element.style.touchAction = "none";
+  // iOS would otherwise answer a long press outside the text with its own callout and loupe.
+  element.style.setProperty("-webkit-touch-callout", "none");
+  element.style.userSelect = "none";
 
   const term = new GhosttyTerminal({
     fontSize: terminalFontSize(),
@@ -165,12 +181,18 @@ export function createRuntime(
   });
   const fit = new FitAddon();
   term.loadAddon(fit);
+  // ghostty's root is editable, so a long press on it would raise the keyboard. The text sits
+  // beside it instead, where the browser's own selection, handles and toolbar work.
+  const textLayer = createTerminalTextLayer(term, () => element.querySelector("canvas"));
+  frame.append(element, textLayer.element);
 
   const runtime: TerminalRuntime = {
     id,
     term,
     fit,
+    frame,
     element,
+    textLayer,
     socket: null,
     opened: false,
     connecting: false,
@@ -208,15 +230,28 @@ export function createRuntime(
     return true;
   });
 
-  attachClickToMove(runtime, encoder);
-  attachTerminalTouchScroll(element, {
-    getFontSize: () => term.options.fontSize,
-    setFontSize: (size) => setRuntimeFontSize(runtime, size),
+  // Ghostty makes its root a focusable contenteditable, and only taps on the canvas focus
+  // the hidden input. A tap on the padding or the slack below the last row focused the root,
+  // which opened the phone keyboard without anything typed reaching the shell.
+  element.addEventListener("focus", (event) => {
+    if (event.target === element) focusRuntime(runtime);
   });
-  element.dataset.fontSize = String(term.options.fontSize);
-  element.dataset.scrollOffset = "0";
+  attachClickToMove(runtime, encoder);
+  attachWheelInput(runtime, encoder);
+  attachTextLayer(runtime);
+  attachTerminalTouchScroll(
+    frame,
+    {
+      getFontSize: () => term.options.fontSize,
+      setFontSize: (size) => setRuntimeFontSize(runtime, size),
+    },
+    textLayer,
+    (x, y) => tapRuntime(runtime, x, y),
+  );
+  frame.dataset.fontSize = String(term.options.fontSize);
+  frame.dataset.scrollOffset = "0";
   term.onScroll((offset) => {
-    element.dataset.scrollOffset = String(offset);
+    frame.dataset.scrollOffset = String(offset);
   });
   onFontSizeChange?.(term.options.fontSize);
 
@@ -232,12 +267,86 @@ export function setRuntimeFontSize(runtime: TerminalRuntime, value: number): voi
   const size = clampTerminalFontSize(value);
   if (runtime.disposed || runtime.term.options.fontSize === size) return;
   runtime.term.options.fontSize = size;
-  runtime.element.dataset.fontSize = String(size);
+  runtime.frame.dataset.fontSize = String(size);
   if (runtime.opened) runtime.fit.fit();
   runtime.onFontSizeChange?.(size);
   try {
     localStorage.setItem(TERMINAL_FONT_SIZE_KEY, String(size));
   } catch {}
+}
+
+// The text layer only takes hits from touch: a mouse keeps ghostty's own selection, clicks
+// and wheel. It follows output, scrolling and resizes, so a long press finds the rows on screen.
+function attachTextLayer(runtime: TerminalRuntime): void {
+  const { frame, term, textLayer } = runtime;
+  const layer = textLayer.element;
+  layer.style.pointerEvents = window.matchMedia?.("(pointer: coarse)").matches ? "auto" : "none";
+  frame.addEventListener(
+    "pointermove",
+    (event) => {
+      if (event.pointerType === "mouse") layer.style.pointerEvents = "none";
+    },
+    true,
+  );
+  frame.addEventListener(
+    "pointerdown",
+    (event) => {
+      if (event.pointerType !== "touch" || layer.style.pointerEvents === "auto") return;
+      layer.style.pointerEvents = "auto";
+      textLayer.schedule();
+    },
+    true,
+  );
+  frame.addEventListener("touchstart", () => textLayer.hold(true), {
+    capture: true,
+    passive: true,
+  });
+  const release = (event: TouchEvent) => {
+    if (event.touches.length === 0) textLayer.hold(false);
+  };
+  frame.addEventListener("touchend", release, { capture: true, passive: true });
+  frame.addEventListener("touchcancel", release, { capture: true, passive: true });
+  term.onScroll(() => textLayer.schedule());
+  term.onResize(() => textLayer.schedule());
+}
+
+// A touch outside the text is taken over, so the browser emulates no mouse events and
+// focuses nothing; a tap replays what it would have done on the canvas.
+function tapRuntime(runtime: TerminalRuntime, x: number, y: number): void {
+  const { element } = runtime;
+  const canvas = element.querySelector("canvas");
+  const box = canvas?.getBoundingClientRect();
+  const onCanvas = box && x >= box.left && x < box.right && y >= box.top && y < box.bottom;
+  const target = canvas && onCanvas ? canvas : element;
+  for (const type of ["mousedown", "mouseup", "click"])
+    target.dispatchEvent(
+      new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientX: x,
+        clientY: y,
+        button: 0,
+        buttons: type === "mousedown" ? 1 : 0,
+        detail: 1,
+        view: window,
+      }),
+    );
+  focusRuntime(runtime);
+}
+
+/** The active screen and its scrollback as plain text, with wrapped rows joined. */
+export function runtimeText(runtime: TerminalRuntime): string {
+  const buffer = runtime.term.buffer.active;
+  const lines: string[] = [];
+  for (let y = 0; y < buffer.length; y++) {
+    const line = buffer.getLine(y);
+    if (!line) continue;
+    const text = line.translateToString(true);
+    if (line.isWrapped && lines.length > 0) lines[lines.length - 1] += text;
+    else lines.push(text);
+  }
+  while (lines.length > 0 && !lines[lines.length - 1]?.trim()) lines.pop();
+  return lines.join("\n");
 }
 
 // Application cursor keys (DECCKM) change the arrow sequences a shell expects.
@@ -297,6 +406,52 @@ function attachClickToMove(runtime: TerminalRuntime, encoder: TextEncoder): void
   });
 }
 
+const DEC_SGR_MOUSE = 1006;
+const DEC_ALTERNATE_SCROLL = 1007;
+
+// ghostty-web never reports the wheel to a program and, in a full-screen one, sends
+// round(deltaY / 33) arrow keys per event. Codex tracks the mouse and reads arrows as prompt
+// history, and a touch swipe moves a few pixels per event, which rounded to no keys at all.
+function attachWheelInput(runtime: TerminalRuntime, encoder: TextEncoder): void {
+  const { element, term } = runtime;
+  const steps = createWheelSteps();
+  term.attachCustomWheelEventHandler((event) => {
+    const target = wheelTarget({
+      mouseTracking: term.hasMouseTracking(),
+      alternateScreen: term.buffer.active.type === "alternate",
+      alternateScroll: term.getMode(DEC_ALTERNATE_SCROLL),
+    });
+    if (target === "scrollback") return false;
+    const count = steps(event.deltaY, event.deltaMode, term.rows);
+    const socket = runtime.socket;
+    if (count === 0 || !socket || socket.readyState !== WebSocket.OPEN) return true;
+    let step: string;
+    if (target === "arrows") {
+      step = `\x1b${term.getMode(DEC_APPLICATION_CURSOR) ? "O" : "["}${count < 0 ? "A" : "B"}`;
+    } else {
+      const box = element.querySelector("canvas")?.getBoundingClientRect();
+      // A wheel over the padding still belongs to the nearest cell.
+      const cell = box
+        ? cellAt(
+            {
+              left: box.left,
+              top: box.top,
+              width: box.width,
+              height: box.height,
+              cols: term.cols,
+              rows: term.rows,
+            },
+            Math.min(Math.max(event.clientX, box.left), box.right - 1),
+            Math.min(Math.max(event.clientY, box.top), box.bottom - 1),
+          )
+        : null;
+      step = wheelReport(count < 0, cell ?? { col: 0, row: 0 }, term.getMode(DEC_SGR_MOUSE));
+    }
+    if (step) socket.send(encoder.encode(step.repeat(Math.abs(count))));
+    return true;
+  });
+}
+
 // Ghostty redraws every opened terminal on every animation frame, visible or not. Keeping
 // one loop per terminal ever opened saturated phone CPUs and delayed typed output, so the
 // loop only runs while the terminal is in the page. Output written meanwhile stays dirty
@@ -321,7 +476,7 @@ export function mountRuntime(runtime: TerminalRuntime, container: HTMLElement, f
   const focusedBeforeMount = document.activeElement;
   const shouldFocus =
     focus && !focusedBeforeMount?.closest('[role="dialog"], [data-radix-popper-content-wrapper]');
-  container.appendChild(runtime.element);
+  container.appendChild(runtime.frame);
   if (!runtime.opened) {
     // Ghostty's focus() schedules a second, unguarded focus. Startup owns focus below
     // so opening a menu immediately after mount cannot be interrupted by that timer.
@@ -336,21 +491,23 @@ export function mountRuntime(runtime: TerminalRuntime, container: HTMLElement, f
       runtime.term.focus = originalFocus;
     }
     runtime.fit.observeResize();
+    const canvas = runtime.element.querySelector("canvas");
+    if (canvas) new ResizeObserver(() => runtime.textLayer.schedule()).observe(canvas);
     runtime.opened = true;
   } else {
     resumeRendering(runtime.term);
   }
   requestAnimationFrame(() => {
-    if (runtime.disposed || runtime.element.parentElement !== container) return;
+    if (runtime.disposed || runtime.frame.parentElement !== container) return;
     runtime.fit.fit();
+    runtime.textLayer.sync();
     // Loading the renderer must not dismiss a menu or interrupt a newer interaction.
-    if (shouldFocus && document.activeElement === focusedBeforeMount)
-      runtime.element.focus({ preventScroll: true });
+    if (shouldFocus && document.activeElement === focusedBeforeMount) focusRuntime(runtime);
   });
 }
 
 export function unmountRuntime(runtime: TerminalRuntime): void {
-  runtime.element.remove();
+  runtime.frame.remove();
   if (runtime.opened) pauseRendering(runtime.term);
 }
 
@@ -418,6 +575,7 @@ export async function connectRuntime(
       } finally {
         runtime.muteReplies = false;
       }
+      runtime.textLayer.schedule();
       return;
     }
     const control = parseControlFrame(event.data);
@@ -462,5 +620,6 @@ export function disposeRuntime(runtime: TerminalRuntime): void {
   }
   runtime.fit.dispose();
   runtime.term.dispose();
-  runtime.element.remove();
+  runtime.textLayer.dispose();
+  runtime.frame.remove();
 }

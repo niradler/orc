@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Keyboard } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Keyboard, ScrollText } from "lucide-react";
 import { type ComponentProps, useEffect, useRef, useState } from "react";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import {
@@ -7,6 +7,7 @@ import {
   MIN_TERMINAL_FONT_SIZE,
 } from "@/lib/terminal-font-size";
 import { useTerminals } from "@/lib/terminals";
+import { TerminalTextSheet } from "./TerminalTextSheet";
 
 const keys = [
   { name: "Escape", label: "Esc", data: "\u001b" },
@@ -17,6 +18,11 @@ const keys = [
   { name: "Arrow left", label: <ArrowLeft size={16} />, data: "\u001b[D" },
   { name: "Arrow right", label: <ArrowRight size={16} />, data: "\u001b[C" },
 ];
+
+const pages = [
+  { name: "Page up", label: "PgUp", direction: -1 },
+  { name: "Page down", label: "PgDn", direction: 1 },
+] as const;
 
 function TouchControlButton({
   onPress,
@@ -69,9 +75,20 @@ function TouchControlButton({
 
 export function TerminalTouchControls({ terminalId }: { terminalId: string }) {
   const touch = useMediaQuery("(any-pointer: coarse)");
-  const { sendInput, armCtrl, focus, connectionOf, terminals, fontSizeOf, setFontSize } =
-    useTerminals();
+  const {
+    sendInput,
+    armCtrl,
+    focus,
+    page,
+    textOf,
+    connectionOf,
+    terminals,
+    fontSizeOf,
+    setFontSize,
+  } = useTerminals();
   const [ctrl, setCtrl] = useState(false);
+  const [text, setText] = useState<string | null>(null);
+  const connection = connectionOf(terminalId);
   useEffect(() => {
     setCtrl(false);
     return () => armCtrl(terminalId, null);
@@ -82,7 +99,7 @@ export function TerminalTouchControls({ terminalId }: { terminalId: string }) {
     setCtrl(!ctrl);
   };
   const enabled =
-    connectionOf(terminalId) === "connected" &&
+    connection === "connected" &&
     terminals.some((terminal) => terminal.id === terminalId && terminal.status === "running");
   return (
     <fieldset
@@ -140,6 +157,27 @@ export function TerminalTouchControls({ terminalId }: { terminalId: string }) {
             {key.label}
           </TouchControlButton>
         ))}
+        {pages.map((key) => (
+          <TouchControlButton
+            key={key.name}
+            type="button"
+            aria-label={key.name}
+            disabled={!enabled}
+            onPress={() => page(terminalId, key.direction)}
+            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md px-2 text-xs text-on-surface-variant hover:bg-surface disabled:opacity-40"
+          >
+            {key.label}
+          </TouchControlButton>
+        ))}
+        <TouchControlButton
+          type="button"
+          aria-label="Copy terminal text"
+          title="Open the terminal text to select and copy"
+          onPress={() => setText(textOf(terminalId))}
+          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md px-2 text-on-surface-variant hover:bg-surface"
+        >
+          <ScrollText size={16} />
+        </TouchControlButton>
       </fieldset>
       <fieldset
         className="flex shrink-0 border-l border-outline-variant"
@@ -176,6 +214,7 @@ export function TerminalTouchControls({ terminalId }: { terminalId: string }) {
           A+
         </TouchControlButton>
       </fieldset>
+      {text !== null && <TerminalTextSheet text={text} onClose={() => setText(null)} />}
     </fieldset>
   );
 }

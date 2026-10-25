@@ -37,7 +37,8 @@ test("phone keyboard text reaches a real terminal without keydown", async ({
     const canvas = page.locator("canvas").first();
     await expect(canvas).toBeVisible();
     await expect.poll(() => output.length).toBeGreaterThan(0);
-    await canvas.tap();
+    // On a phone the selectable text lies over the canvas, so the tap lands on the surface.
+    await page.getByTestId("terminal-surface").first().tap();
     const input = page.locator("textarea[aria-label='Terminal input']").first();
     await expect(input).toBeFocused();
     // Android/iOS software keyboards may supply only InputEvents (keyCode 229): the edit
