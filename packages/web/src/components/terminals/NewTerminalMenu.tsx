@@ -355,9 +355,7 @@ export function NewTerminalMenu({
                 }}
                 className="accent-primary"
               />
-              <span className="font-body text-xs text-on-surface-variant">
-                New git worktree for agents
-              </span>
+              <span className="font-body text-xs text-on-surface-variant">New git worktree</span>
             </label>
             <div className="space-y-0.5">
               {launchers.map((kind) => {
@@ -393,9 +391,10 @@ export function NewTerminalMenu({
                     <li
                       key={row.path}
                       data-testid="terminal-worktree-row"
-                      className="group flex items-center gap-2 px-1 py-1 rounded-md hover:bg-surface"
+                      className="group flex flex-wrap sm:flex-nowrap items-center gap-x-2 px-1 py-1 rounded-md hover:bg-surface"
                     >
-                      <div className="min-w-0 flex-1" title={row.path}>
+                      {/* On narrow screens the actions wrap below so the branch stays readable. */}
+                      <div className="min-w-0 basis-full sm:basis-auto sm:flex-1" title={row.path}>
                         <div className="flex items-center gap-1 font-body text-xs text-on-surface">
                           <GitBranch size={11} className="shrink-0 text-on-surface-variant" />
                           <span className="truncate">
@@ -421,37 +420,39 @@ export function NewTerminalMenu({
                           {cwdTail(row.path)}
                         </div>
                       </div>
-                      {!row.prunable &&
-                        launchers.map((kind) => {
-                          const { label, icon: Icon } = TERMINAL_KINDS[kind];
-                          return (
-                            <button
-                              key={kind}
-                              type="button"
-                              data-testid={`terminal-worktree-open-${kind}`}
-                              disabled={busy}
-                              onClick={() => openCheckout(kind, row)}
-                              title={`Open ${label} here`}
-                              aria-label={`Open ${label} in ${row.path}`}
-                              className="shrink-0 min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center p-1 rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-50"
-                            >
-                              <Icon size={12} />
-                            </button>
-                          );
-                        })}
-                      {!row.main && (
-                        <button
-                          type="button"
-                          data-testid="terminal-worktree-remove"
-                          disabled={busy || removeWorktree.isPending}
-                          onClick={() => setRemoval({ worktree: row, step: "confirm" })}
-                          title="Remove worktree"
-                          aria-label={`Remove worktree ${row.path}`}
-                          className="shrink-0 min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center p-1 rounded-md text-on-surface-variant hover:bg-error/15 hover:text-error disabled:opacity-50"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      )}
+                      <div className="ml-auto flex shrink-0 items-center">
+                        {!row.prunable &&
+                          launchers.map((kind) => {
+                            const { label, icon: Icon } = TERMINAL_KINDS[kind];
+                            return (
+                              <button
+                                key={kind}
+                                type="button"
+                                data-testid={`terminal-worktree-open-${kind}`}
+                                disabled={busy}
+                                onClick={() => openCheckout(kind, row)}
+                                title={`Open ${label} here`}
+                                aria-label={`Open ${label} in ${row.path}`}
+                                className="shrink-0 min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center p-1 rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-50"
+                              >
+                                <Icon size={12} />
+                              </button>
+                            );
+                          })}
+                        {!row.main && (
+                          <button
+                            type="button"
+                            data-testid="terminal-worktree-remove"
+                            disabled={busy || removeWorktree.isPending}
+                            onClick={() => setRemoval({ worktree: row, step: "confirm" })}
+                            title="Remove worktree"
+                            aria-label={`Remove worktree ${row.path}`}
+                            className="shrink-0 min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center p-1 rounded-md text-on-surface-variant hover:bg-error/15 hover:text-error disabled:opacity-50"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>

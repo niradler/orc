@@ -6,16 +6,63 @@ import {
 } from "@orc/core/chat";
 
 export type ChatConfig = ChatSettings;
-export const CHAT_CONFIG_KEY = "orc_chat_config";
 export const DEFAULT_CONFIG: ChatConfig = ChatSettingsSchema.parse({});
-export function parseChatConfig(raw: string | null): ChatConfig {
+
+/** The agent, model and permissions last picked in this browser, applied to new chats. */
+export const CHAT_PREFERENCES_KEY = "orc_chat_preferences";
+const ChatPreferencesSchema = ChatSettingsSchema.pick({
+  agent: true,
+  model: true,
+  permissionMode: true,
+}).partial();
+export type ChatPreferences = Partial<Pick<ChatConfig, "agent" | "model" | "permissionMode">>;
+export function parseChatPreferences(raw: string | null): ChatPreferences {
   try {
-    const parsed = ChatSettingsSchema.safeParse(JSON.parse(raw ?? "null"));
-    return parsed.success ? parsed.data : DEFAULT_CONFIG;
+    const parsed = ChatPreferencesSchema.safeParse(JSON.parse(raw ?? "null"));
+    return parsed.success ? parsed.data : {};
   } catch {
-    return DEFAULT_CONFIG;
+    return {};
   }
 }
+export function withPreferences(config: ChatConfig, preferences: ChatPreferences): ChatConfig {
+  const next = { ...config, ...preferences };
+  // A model belongs to its agent; drop it when the saved agent no longer matches.
+  if (preferences.agent && preferences.agent !== config.agent && !preferences.model)
+    next.model = "";
+  return next;
+}
+
+/** Conversations open as chat tabs in this browser, restored after a reload. */
+export const CHAT_TABS_KEY = "orc_chat_tabs";
+export interface StoredChatTabs {
+  threads: string[];
+  active: string | null;
+}
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Thread ids are UUIDs; anything else from a link or storage is ignored. */
+export function isChatThreadId(id: string): boolean {
+  return UUID.test(id);
+}
+export function parseChatTabs(raw: string | null): StoredChatTabs {
+  try {
+    const value: unknown = JSON.parse(raw ?? "null");
+    if (!value || typeof value !== "object") return { threads: [], active: null };
+    const { threads, active } = value as Record<string, unknown>;
+    const ids = Array.isArray(threads)
+      ? threads
+          .filter((id): id is string => typeof id === "string" && isChatThreadId(id))
+          .slice(0, 20)
+      : [];
+    return {
+      threads: ids,
+      active: typeof active === "string" && ids.includes(active) ? active : null,
+    };
+  } catch {
+    return { threads: [], active: null };
+  }
+}
+
 export function parseChatEvent(line: string): ChatEvent | null {
   if (!line.startsWith("data:")) return null;
   try {

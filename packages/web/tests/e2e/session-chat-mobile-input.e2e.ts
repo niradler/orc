@@ -162,7 +162,9 @@ for (const width of [1440, 390]) {
   });
 }
 
-test("chat resume refuses active agents and is absent for unsupported agents", async ({ page }) => {
+test("chat resume refuses active agents and is disabled for unsupported agents", async ({
+  page,
+}) => {
   const sessions = ["codex", "claude", "gemini"].map((agent, index) => ({
     id: agent,
     agent,
@@ -181,12 +183,12 @@ test("chat resume refuses active agents and is absent for unsupported agents", a
   for (let index = 0; index < 3; index++) {
     await menus.nth(index).click();
     const button = page.getByTestId("resume-actions-dropdown").getByTestId("open-chat-resume");
-    if (index < 2) {
-      await expect(button).toBeDisabled();
-      await expect(button).toHaveAttribute("title", /End the original agent/);
-    } else {
-      await expect(button).toHaveCount(0);
-    }
+    await expect(button).toHaveText("Continue in chat");
+    await expect(button).toBeDisabled();
+    await expect(button).toHaveAttribute(
+      "title",
+      index < 2 ? /End the original agent/ : /supports Claude and Codex/,
+    );
     await page.keyboard.press("Escape");
   }
 });

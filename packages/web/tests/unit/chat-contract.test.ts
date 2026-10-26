@@ -1,16 +1,26 @@
 import { describe, expect, test } from "bun:test";
 import { ChatSettingsSchema } from "@orc/core/chat";
-import { parseChatConfig, parseChatEvent } from "../../src/hooks/chat-contract";
+import {
+  parseChatEvent,
+  parseChatPreferences,
+  parseChatTabs,
+  withPreferences,
+} from "../../src/hooks/chat-contract";
 
 describe("chat preferences", () => {
-  test("first visit uses Codex and saved valid selections remain authoritative", () => {
-    expect(parseChatConfig(null)).toEqual(ChatSettingsSchema.parse({}));
-    expect(parseChatConfig('{"agent":"claude","autoApprove":false}')).toEqual(
-      ChatSettingsSchema.parse({ agent: "claude", autoApprove: false }),
+  test("saved agent, model and permissions overlay the server defaults", () => {
+    const defaults = ChatSettingsSchema.parse({ agent: "codex", model: "gpt" });
+    expect(parseChatPreferences(null)).toEqual({});
+    const saved = parseChatPreferences(
+      '{"agent":"claude","model":"opus","permissionMode":"bypassPermissions"}',
     );
-    expect(parseChatConfig('{"agent":"custom-agent","autoApprove":true}').agent).toBe(
-      "custom-agent",
-    );
+    expect(withPreferences(defaults, saved)).toMatchObject({
+      agent: "claude",
+      model: "opus",
+      permissionMode: "bypassPermissions",
+    });
+    expect(withPreferences(defaults, { agent: "claude" }).model).toBe("");
+    expect(withPreferences(defaults, { model: "gpt-5" }).model).toBe("gpt-5");
   });
 
   test("malformed storage and invalid input cannot become an agent request", () => {
@@ -18,11 +28,22 @@ describe("chat preferences", () => {
       "broken",
       "null",
       "[]",
-      '{"agent":"--help","autoApprove":true}',
-      '{"agent":"claude","autoApprove":"false"}',
+      '{"agent":"--help"}',
+      '{"permissionMode":"yolo"}',
+      '{"system":"injected"}',
     ]) {
-      expect(parseChatConfig(raw)).toEqual(ChatSettingsSchema.parse({}));
+      expect(parseChatPreferences(raw)).toEqual({});
     }
+  });
+
+  test("open tabs keep only valid conversation ids", () => {
+    const id = "3f0c831c-500d-4ae5-9c83-0d2bc6c431fa";
+    expect(parseChatTabs(JSON.stringify({ threads: [id, "../x", 4], active: id }))).toEqual({
+      threads: [id],
+      active: id,
+    });
+    expect(parseChatTabs(JSON.stringify({ threads: [id], active: "other" })).active).toBeNull();
+    expect(parseChatTabs("broken")).toEqual({ threads: [], active: null });
   });
 });
 

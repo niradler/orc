@@ -32,6 +32,7 @@ import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions } from "@orc/db/schema";
 import { and, eq } from "drizzle-orm";
+import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { getHandoffService } from "../handoffs/service.js";
 import { createRouter } from "../lib/router.js";
@@ -49,18 +50,54 @@ const response = {
   },
 };
 const store = () => new ChatStore(getSqlite());
-const runs = new Map<
-  string,
-  {
-    session: AgentSession | null;
-    permissions: Set<string>;
-    questions: Map<string, ChatQuestion>;
-    threadId: string;
-    /** The streaming turn saves this object when it ends, so live changes must land on it. */
-    thread: ChatThread;
-    key: string;
-  }
->();
+interface ChatRun {
+  session: AgentSession | null;
+  permissions: Set<string>;
+  questions: Map<string, ChatQuestion>;
+  threadId: string;
+  /** The streaming turn saves this object when it ends, so live changes must land on it. */
+  thread: ChatThread;
+  key: string;
+  /** Serialized events of this turn, replayed to every client that attaches. */
+  events: string[];
+  /** Attached clients; `null` marks the end of the turn. */
+  listeners: Set<(data: string | null) => void>;
+  stop: () => void;
+}
+const runs = new Map<string, ChatRun>();
+
+function publish(run: ChatRun, event: ChatEvent): void {
+  const data = JSON.stringify(event);
+  run.events.push(data);
+  for (const listener of run.listeners) listener(data);
+}
+
+// The turn runs independently of its clients: closing a stream only detaches that client.
+function follow(c: Context, run: ChatRun) {
+  return streamSSE(c, async (s) => {
+    let write = Promise.resolve();
+    let end = () => {};
+    const ended = new Promise<void>((resolve) => {
+      end = resolve;
+    });
+    const send = (data: string) => {
+      write = write.then(() => s.writeSSE({ data })).catch(end);
+    };
+    const listener = (data: string | null) => (data === null ? end() : send(data));
+    for (const data of run.events) send(data);
+    run.listeners.add(listener);
+    s.onAbort(end);
+    const ping = setInterval(() => send(JSON.stringify({ type: "ping" })), 25000);
+    await ended;
+    clearInterval(ping);
+    run.listeners.delete(listener);
+    await write;
+  });
+}
+
+function threadRun(threadId: string): [string, ChatRun] | undefined {
+  return [...runs].find(([, run]) => run.threadId === threadId);
+}
 const active = new Set<string>();
 const params = z.object({ id });
 const modelCatalogs = new Map<string, { at: number; result: Promise<ChatModels> }>();
@@ -213,14 +250,21 @@ app.openapi(
         content: {
           "application/json": {
             schema: z.object({
-              threads: z.array(z.object({ id, title: z.string(), updatedAt: z.number() })),
+              threads: z.array(
+                z.object({ id, title: z.string(), updatedAt: z.number(), running: z.boolean() }),
+              ),
             }),
           },
         },
       },
     },
   }),
-  (c) => c.json({ threads: store().list() }),
+  (c) =>
+    c.json({
+      threads: store()
+        .list()
+        .map((thread) => ({ ...thread, running: !!threadRun(thread.id) })),
+    }),
 );
 app.openapi(
   createRoute({
@@ -563,13 +607,25 @@ app.openapi(
     const backend = createBackend(thread.backend);
     active.add(key);
     const runId = crypto.randomUUID();
-    const run = {
-      session: null as AgentSession | null,
-      permissions: new Set<string>(),
-      questions: new Map<string, ChatQuestion>(),
+    let stopped = false;
+    let halt = () => {};
+    const halted = new Promise<void>((resolve) => {
+      halt = resolve;
+    });
+    const run: ChatRun = {
+      session: null,
+      permissions: new Set(),
+      questions: new Map(),
       threadId: thread.id,
       thread,
       key,
+      events: [],
+      listeners: new Set(),
+      stop: () => {
+        stopped = true;
+        halt();
+        void run.session?.close().catch(() => {});
+      },
     };
     runs.set(runId, run);
     try {
@@ -605,44 +661,21 @@ app.openapi(
       runs.delete(runId);
       throw error;
     }
-    return streamSSE(c, async (s) => {
-      let stopped = false;
-      let detached = false;
-      const close = () => {
-        if (!stopped && (detached || run.session?.waitingForHuman?.())) {
-          detached = true;
-          return;
-        }
-        stopped = true;
-        void run.session?.close().catch(() => {});
-      };
-      s.onAbort(close);
-      c.req.raw.signal.addEventListener("abort", close, { once: true });
-      if (c.req.raw.signal.aborted) close();
-      const ping = setInterval(() => {
-        if (detached) return;
-        void s.writeSSE({ data: JSON.stringify({ type: "ping" }) }).catch(close);
-      }, 25000);
-      const timer = setTimeout(() => {
-        stopped = true;
-        void run.session?.close().catch(() => {});
-      }, 15 * 60000);
+    const execute = async () => {
+      const timer = setTimeout(run.stop, 15 * 60000);
       const emit = async (event: ChatEvent) => {
         if (event.type === "text") assistant.content += event.text;
         assistant.activity = appendChatActivity(assistant.activity ?? [], event);
-        if (!detached) {
-          try {
-            await s.writeSSE({ data: JSON.stringify(event) });
-          } catch (error) {
-            close();
-            if (!detached) throw error;
-          }
-        }
+        publish(run, event);
       };
       try {
         await emit({ type: "thread", thread, runId });
         if (mock) {
-          await Bun.sleep(75);
+          // "Respond after 2000ms" holds the mock turn open for background-run tests.
+          await Promise.race([
+            Bun.sleep(Math.min(Number(input.match(/after (\d+)ms/i)?.[1] ?? 75), 10000)),
+            halted,
+          ]);
           if (!stopped)
             await emit({
               type: "text",
@@ -743,9 +776,7 @@ app.openapi(
               error instanceof Error ? error.message : "The agent could not complete the response.",
           }).catch(() => {});
       } finally {
-        clearInterval(ping);
         clearTimeout(timer);
-        c.req.raw.signal.removeEventListener("abort", close);
         const nativeId = run.session?.getRuntimeSessionId?.();
         if (!thread.runtimeId && nativeId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(nativeId))
           thread.runtimeId = nativeId;
@@ -754,28 +785,67 @@ app.openapi(
         thread.updatedAt = Date.now();
         try {
           store().save(thread);
-          if (!stopped)
-            await s
-              .writeSSE({ data: JSON.stringify({ type: "session", runtimeId: thread.runtimeId }) })
-              .catch(close);
+          if (!stopped) publish(run, { type: "session", runtimeId: thread.runtimeId });
         } catch (error) {
           logger.error("Chat history could not be saved", { error, runId });
           if (!stopped)
-            await s
-              .writeSSE({
-                data: JSON.stringify({
-                  type: "error",
-                  message: "This response could not be saved. Start a new chat before continuing.",
-                }),
-              })
-              .catch(() => {});
+            publish(run, {
+              type: "error",
+              message: "This response could not be saved. Start a new chat before continuing.",
+            });
         } finally {
           active.delete(key);
           runs.delete(runId);
+          publish(run, { type: "done" });
+          for (const listener of run.listeners) listener(null);
         }
-        await s.writeSSE({ data: JSON.stringify({ type: "done" }) }).catch(() => {});
       }
-    });
+    };
+    void execute();
+    return follow(c, run);
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/chat/threads/{id}/live",
+    tags: ["Chat"],
+    description:
+      "Attach to the conversation's running turn: replays its events so far, then streams the rest.",
+    request: { params },
+    responses: {
+      200: {
+        description: "Chat events of the running turn",
+        content: { "text/event-stream": { schema: z.string() } },
+      },
+      204: { description: "The conversation is not responding" },
+    },
+  }),
+  (c) => {
+    const found = threadRun(requireThread(c.req.valid("param").id).id);
+    return found ? follow(c, found[1]) : c.body(null, 204);
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/chat/runs/{id}/cancel",
+    tags: ["Chat"],
+    request: { params },
+    responses: {
+      200: {
+        description: "The agent was asked to stop",
+        content: { "application/json": { schema: z.object({ ok: z.boolean() }) } },
+      },
+    },
+  }),
+  (c) => {
+    const run = runs.get(c.req.valid("param").id);
+    if (!run) throw new ConflictError("This response already finished.");
+    run.stop();
+    return c.json({ ok: true });
   },
 );
 

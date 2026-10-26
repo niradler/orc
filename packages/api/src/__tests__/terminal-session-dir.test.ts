@@ -1,8 +1,14 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type GitResult, prepareSessionDirectory } from "../terminals/session-dir.js";
+import { LOCAL_HOST } from "@orc/core/exec-host";
+import {
+  excludeOrcWorktrees,
+  type GitResult,
+  prepareSessionDirectory,
+  REMOTE_EXCLUDE_SCRIPT,
+} from "../terminals/session-dir.js";
 
 function deps(over: Partial<Parameters<typeof prepareSessionDirectory>[1]> = {}) {
   return {
@@ -14,6 +20,7 @@ function deps(over: Partial<Parameters<typeof prepareSessionDirectory>[1]> = {})
       stderr: "",
     }),
     makeDirectory: () => {},
+    excludeWorktrees: () => {},
     newId: () => "abc123",
     ...over,
   };
@@ -55,13 +62,15 @@ describe("prepareSessionDirectory", () => {
     expect(calls.some((args) => args.includes("worktree"))).toBe(false);
   });
 
-  test("a git repo gets a new worktree and branch next to the repo", async () => {
+  test("a git repo gets a new worktree and branch inside the repo's .orc folder", async () => {
     const calls: string[][] = [];
     const made: string[] = [];
+    const excluded: string[] = [];
     const cwd = await prepareSessionDirectory(
       { cwd: "/work/app/src", worktree: true },
       deps({
         makeDirectory: (path) => made.push(path),
+        excludeWorktrees: (root) => excluded.push(root),
         runGit: async (args) => {
           calls.push(args);
           if (args.includes("rev-parse")) {
@@ -71,8 +80,9 @@ describe("prepareSessionDirectory", () => {
         },
       }),
     );
-    expect(cwd).toBe(join("/work", "worktrees", "app", "abc123"));
-    expect(made).toContain(join("/work", "worktrees", "app"));
+    expect(cwd).toBe("/work/app/.orc/worktrees/abc123");
+    expect(made).toContain("/work/app/.orc/worktrees");
+    expect(excluded).toEqual(["/work/app"]);
     expect(calls[1]).toEqual([
       "git",
       "-C",
@@ -142,6 +152,7 @@ describe("prepareSessionDirectory with git", () => {
         home: root,
         runGit,
         makeDirectory: (path) => mkdirSync(path, { recursive: true }),
+        excludeWorktrees: (root) => excludeOrcWorktrees(LOCAL_HOST, root),
         newId: () => "plain01",
       },
     );
@@ -154,16 +165,45 @@ describe("prepareSessionDirectory with git", () => {
         home: root,
         runGit,
         makeDirectory: (path) => mkdirSync(path, { recursive: true }),
+        excludeWorktrees: (root) => excludeOrcWorktrees(LOCAL_HOST, root),
         newId: () => "wt0001",
       },
     );
-    expect(worktree).toBe(join(root, "worktrees", "repo", "wt0001"));
+    expect(worktree).toBe(join(repo, ".orc", "worktrees", "wt0001"));
+    // The nested worktree is excluded, so the main checkout stays clean.
+    const status = Bun.spawn(["git", "status", "--porcelain"], { cwd: repo, stdout: "pipe" });
+    expect((await new Response(status.stdout).text()).trim()).toBe("");
     const branch = Bun.spawn(["git", "branch", "--show-current"], {
       cwd: worktree,
       stdout: "pipe",
       stderr: "pipe",
     });
     expect((await new Response(branch.stdout).text()).trim()).toBe("orc/wt0001");
+  });
+
+  test("the remote exclusion script appends the exclusion once and refuses symlinks", async () => {
+    const root = mkdtempSync(join(tmpdir(), "orc-remote-exclude-"));
+    roots.push(root);
+    const path = join(root, ".git", "info", "exclude");
+    const python = Bun.which("python3") ?? "python";
+    async function runScript(content: string): Promise<number> {
+      const proc = Bun.spawn([python, "-c", REMOTE_EXCLUDE_SCRIPT], {
+        stdin: new TextEncoder().encode(JSON.stringify({ root, path, content })),
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      return proc.exited;
+    }
+    const line = "\n/.orc/worktrees/\n";
+    expect(await runScript(line)).toBe(0);
+    expect(await runScript("")).toBe(0);
+    expect(readFileSync(path, "utf8")).toBe(line);
+    // Remote hosts are POSIX; Windows junctions are not links to Python's islink.
+    if (process.platform !== "win32") {
+      mkdirSync(join(root, "elsewhere"));
+      symlinkSync(join(root, "elsewhere"), join(root, ".orc"));
+      expect(await runScript(line)).toBe(3);
+    }
   });
 
   afterAll(() => {

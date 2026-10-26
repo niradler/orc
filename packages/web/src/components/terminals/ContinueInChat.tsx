@@ -34,7 +34,7 @@ export function ContinueInChat({ terminal }: { terminal: Terminal }) {
         data-testid="terminal-continue-chat"
         aria-label="Continue in chat"
         title="Continue in chat"
-        disabled={pending || chat.streaming || !terminal.live_session_id}
+        disabled={pending || !terminal.live_session_id}
         onClick={() => void open()}
         className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface disabled:opacity-40"
       >

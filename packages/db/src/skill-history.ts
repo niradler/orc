@@ -145,6 +145,16 @@ export class SkillHistory {
       .immediate();
     return ids;
   }
+  /** Drop scoped state for a deleted skill; skill_changes stays as audit history. */
+  forget(name: string): void {
+    this.sqlite
+      .transaction(() => {
+        this.sqlite.query("DELETE FROM skill_projects WHERE skill_name=?").run(name);
+        this.sqlite.query("DELETE FROM skill_instructions WHERE skill_name=?").run(name);
+        new AuditLog(this.sqlite).record({ action: "skill.deleted", subject_ids: [name] });
+      })
+      .immediate();
+  }
   visible(name: string, projectId: string | null): boolean {
     const ids = this.projectIds(name);
     return ids.length === 0 || (projectId !== null && ids.includes(projectId));

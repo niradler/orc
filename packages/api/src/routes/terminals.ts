@@ -401,9 +401,9 @@ app.openapi(createTerminalRoute, async (c) => {
   return c.json(info, 201);
 });
 
-// <parent>/worktrees/<repo>/<ulid> reads as "<repo> <last 6 of the id>" in the terminal list.
+// <repo>/.orc/worktrees/<ulid> reads as "<repo> <last 6 of the id>" in the terminal list.
 function worktreeName(path: string): string {
-  return `${basename(dirname(path))} ${basename(path).slice(-6).toLowerCase()}`;
+  return `${basename(dirname(dirname(dirname(path))))} ${basename(path).slice(-6).toLowerCase()}`;
 }
 
 app.openapi(pickFolderRoute, async (c) => {

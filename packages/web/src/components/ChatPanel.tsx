@@ -38,6 +38,76 @@ const textParts = {
   Text: ({ text }: { text: string }) => <AgentMessageText>{text}</AgentMessageText>,
 };
 
+/** Open conversations; each keeps running while another is shown. */
+function ChatTabs() {
+  const { tabs, activeKey, selectTab, closeTab } = useChat();
+  if (tabs.length < 2 && !tabs[0]?.thread) return null;
+  return (
+    <div
+      role="tablist"
+      aria-label="Open conversations"
+      data-testid="chat-tabs"
+      className="mx-auto mt-1 flex w-full max-w-3xl gap-1 overflow-x-auto"
+    >
+      {tabs.map((tab) => {
+        const active = tab.key === activeKey;
+        const state = tab.streaming
+          ? tab.permissions.length || tab.questions.length
+            ? "waiting"
+            : "running"
+          : tab.attention
+            ? "attention"
+            : "idle";
+        const title = tab.thread?.title || "New conversation";
+        return (
+          <div
+            key={tab.key}
+            data-testid="chat-tab"
+            data-active={active ? "true" : "false"}
+            data-state={state}
+            className={cn(
+              "flex min-w-0 max-w-48 shrink-0 items-center rounded-md border text-xs",
+              active
+                ? "border-control-border bg-surface text-on-surface"
+                : "border-transparent text-on-surface-variant hover:bg-surface",
+            )}
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={active}
+              title={title}
+              onClick={() => selectTab(tab.key)}
+              className="flex min-h-9 min-w-0 items-center gap-1.5 pl-2"
+            >
+              {state === "running" ? (
+                <LoaderCircle size={12} aria-label="Running" className="shrink-0 animate-spin" />
+              ) : state !== "idle" ? (
+                <span
+                  role="img"
+                  aria-label={state === "waiting" ? "Waiting for you" : "New response"}
+                  className="size-2 shrink-0 rounded-full bg-primary"
+                />
+              ) : null}
+              <span className="truncate">{title}</span>
+            </button>
+            <button
+              type="button"
+              data-testid="chat-tab-close"
+              aria-label={`Close ${title}`}
+              title={tab.streaming ? "Close tab; the response keeps running" : "Close tab"}
+              onClick={() => closeTab(tab.key)}
+              className="flex min-h-9 min-w-8 shrink-0 items-center justify-center hover:text-on-surface"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function ChatPanel({
   open,
   onToggle,
@@ -53,7 +123,7 @@ export function ChatPanel({
     error,
     config,
     setConfig,
-    clear,
+    newTab,
     ready,
     thread,
     historyBefore,
@@ -168,6 +238,7 @@ export function ChatPanel({
           </label>
           <ChatModelPicker key={`${thread?.id ?? "new"}:${config.agent}`} />
         </div>
+        <ChatTabs />
       </header>
       <ThreadPrimitive.Viewport
         ref={viewport}
@@ -331,7 +402,7 @@ export function ChatPanel({
             <button
               type="button"
               data-testid="chat-clear-button"
-              onClick={clear}
+              onClick={newTab}
               aria-label="New conversation"
               title="New conversation"
               className={iconButton}

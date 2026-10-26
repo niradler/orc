@@ -1,63 +1,13 @@
-import { appendFile, lstat, mkdir } from "node:fs/promises";
-import { posix, win32 } from "node:path";
 import { ConflictError, ValidationError } from "@orc/core/errors";
-import { type ExecHost, hostExec, hostRuntime } from "@orc/core/exec-host";
+import { type ExecHost, hostRuntime } from "@orc/core/exec-host";
 import type { SessionHandoffRequest } from "@orc/core/session-handoff";
-import { gitError, gitRunner, repoRoot, worktreePath } from "../terminals/session-dir.js";
-
-async function excludeHandoffWorktrees(host: ExecHost, root: string): Promise<void> {
-  const run = gitRunner(host);
-  const paths = host.kind === "ssh" || root.startsWith("/") ? posix : win32;
-  const tracked = await run(["git", "-C", root, "ls-files", "--", ".orc/worktrees"]);
-  if (tracked.code !== 0 || tracked.stdout.trim())
-    throw new ConflictError("The handoff worktree location contains tracked files");
-  const exclusion = await run(["git", "-C", root, "rev-parse", "--git-path", "info/exclude"]);
-  if (exclusion.code !== 0) throw gitError(exclusion, "Could not locate Git worktree exclusions");
-  const path = paths.resolve(root, exclusion.stdout.trim());
-  const content = "\n/.orc/worktrees/\n";
-  if (host.kind === "local") {
-    for (const candidate of [
-      paths.join(root, ".orc"),
-      paths.join(root, ".orc", "worktrees"),
-      path,
-    ]) {
-      const stat = await lstat(candidate).catch((error: NodeJS.ErrnoException) => {
-        if (error.code !== "ENOENT") throw error;
-        return null;
-      });
-      if (stat?.isSymbolicLink())
-        throw new ConflictError("Handoff storage must not redirect through symbolic links");
-    }
-    await mkdir(paths.dirname(path), { recursive: true });
-    const ignored = await run([
-      "git",
-      "-C",
-      root,
-      "check-ignore",
-      "--no-index",
-      ".orc/worktrees/probe",
-    ]);
-    if (ignored.code !== 0) await appendFile(path, content);
-    return;
-  }
-  const result = await hostExec(
-    host,
-    [
-      "python3",
-      "-c",
-      `import json, os, sys
-d = json.load(sys.stdin)
-for path in [os.path.join(d['root'], '.orc'), os.path.join(d['root'], '.orc', 'worktrees'), d['path']]:
-    if os.path.islink(path): sys.exit(3)
-os.makedirs(os.path.dirname(d['path']), exist_ok=True)
-with open(d['path'], 'a', encoding='utf-8') as f: f.write('\\n/.orc/worktrees/\\n')
-`,
-    ],
-    { input: JSON.stringify({ root, path }), timeoutMs: 30_000, login: false },
-  );
-  if (result.code !== 0)
-    throw new ConflictError("Could not safely prepare the handoff worktree location");
-}
+import {
+  excludeOrcWorktrees,
+  gitError,
+  gitRunner,
+  repoRoot,
+  worktreePath,
+} from "../terminals/session-dir.js";
 
 export function repositoryIdentity(value: string): string {
   const url = value.trim().replace(/\\/g, "/");
@@ -114,8 +64,8 @@ export async function prepareHandoffWorktree(
 ): Promise<string> {
   await validateHandoffRepo(host, root, request);
   const run = gitRunner(host);
-  const cwd = worktreePath(root, id, "repo");
-  await excludeHandoffWorktrees(host, root);
+  const cwd = worktreePath(root, id);
+  await excludeOrcWorktrees(host, root);
   const runtime = hostRuntime(host);
   if (await runtime.isDirectory(cwd)) {
     await verifyHandoffWorktree(host, cwd, request.commit);

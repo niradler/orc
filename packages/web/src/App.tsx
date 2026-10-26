@@ -12,7 +12,7 @@ import {
 import { ChatPanel } from "@/components/ChatPanel";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 import { WorkspaceSidebar as Sidebar } from "@/components/WorkspaceSidebar";
-import { ChatProvider } from "@/hooks/useChat";
+import { CHAT_THREAD_PARAM, ChatProvider } from "@/hooks/useChat";
 import { BREAKPOINTS } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
 import { useVisualViewport } from "@/hooks/useVisualViewport";
@@ -95,7 +95,10 @@ export default function App() {
   function setChatVisible(open: boolean, fullscreen = false): void {
     const next = new URLSearchParams(window.location.search);
     if (open) next.set("chat", fullscreen ? "full" : "open");
-    else next.delete("chat");
+    else {
+      next.delete("chat");
+      next.delete(CHAT_THREAD_PARAM);
+    }
     if (next.toString() === new URLSearchParams(window.location.search).toString()) return;
     navigate({ search: next.toString(), hash: window.location.hash });
   }

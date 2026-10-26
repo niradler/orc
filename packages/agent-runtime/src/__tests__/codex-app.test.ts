@@ -305,6 +305,46 @@ for await (const line of createInterface({input:process.stdin})) {
   });
 }
 
+test("should start each agent message in a turn as its own paragraph", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-codex-paragraphs-"));
+  const script = join(cwd, "paragraphs.ts");
+  writeFileSync(
+    script,
+    `
+import { createInterface } from 'node:readline';
+const emit = value => console.log(JSON.stringify(value));
+const delta = (itemId, text) => emit({method:'item/agentMessage/delta',params:{threadId:'paragraphs',itemId,delta:text}});
+for await (const line of createInterface({input:process.stdin})) {
+ const m=JSON.parse(line);
+ if(m.method==='initialize') emit({id:m.id,result:{}});
+ else if(m.method==='thread/start') emit({id:m.id,result:{thread:{id:'paragraphs'}}});
+ else if(m.method==='turn/start') {
+  emit({id:m.id,result:{}});
+  delta('first', 'Here is the '); delta('first', 'prompt.');
+  emit({method:'item/completed',params:{threadId:'paragraphs',item:{type:'commandExecution',id:'cmd'}}});
+  delta('second', '\`\`\`text\\nbody\\n\`\`\`');
+  emit({method:'turn/completed',params:{threadId:'paragraphs',turn:{status:'completed'}}});
+ }
+}`,
+  );
+  const session = new CodexAppSession({ cwd, orcMcp: false }, { kind: "local" }, async () => [
+    process.execPath,
+    script,
+  ]);
+  try {
+    let text = "";
+    for (const prompt of ["One", "Two"]) {
+      text = "";
+      await session.send(prompt);
+      for await (const event of session.events()) if (event.type === "text") text += event.data;
+    }
+    // A later turn starts fresh rather than with a leading break.
+    expect(text).toBe("Here is the prompt.\n\n```text\nbody\n```");
+  } finally {
+    await session.close();
+  }
+});
+
 for (const completeBeforeAnswer of [false, true]) {
   test(`should answer asynchronous questions ${completeBeforeAnswer ? "after turn completion" : "during the active turn"}`, async () => {
     const cwd = mkdtempSync(join(tmpdir(), "orc-async-question-"));

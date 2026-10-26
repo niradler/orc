@@ -28,7 +28,6 @@ const oldProfile = process.env.USERPROFILE;
 const oldMock = process.env.ORC_E2E_CHAT_MOCK;
 let failResume = false;
 let waitPermission = false;
-let durableHumanWait = false;
 let waitQuestion = false;
 let questionAnswers: Record<string, string[]> | undefined;
 let failBeforeResult = false;
@@ -64,7 +63,6 @@ function session(call: (typeof calls)[number]): AgentSession {
       resolve?.();
     },
     alive: () => true,
-    waitingForHuman: () => durableHumanWait,
     close: async () => {
       closed++;
       resolve?.();
@@ -704,14 +702,10 @@ describe("native chat runtime", () => {
     waitPermission = false;
   });
 
-  test("aborting while awaiting permission closes the agent and expires the approval", async () => {
+  test("cancelling while awaiting permission closes the agent and expires the approval", async () => {
     waitPermission = true;
-    const controller = new AbortController();
-    const response = await app.request("/api/chat/stream", {
-      method: "POST",
-      headers: AUTH,
-      signal: controller.signal,
-      body: JSON.stringify({ messages: [{ role: "user", content: "cancel permission wait" }] }),
+    const response = await request("/chat/stream", {
+      messages: [{ role: "user", content: "cancel permission wait" }],
     });
     const reader = response.body?.getReader();
     if (!reader) throw new Error("Missing reader");
@@ -728,10 +722,11 @@ describe("native chat runtime", () => {
       .map((line) => JSON.parse(line.slice(5)))
       .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
     const previousClosed = closed;
-    controller.abort();
+    expect((await request(`/chat/runs/${opened.runId}/cancel`, {})).status).toBe(200);
     while (!(await reader.read()).done) {
       /* wait for finally cleanup */
     }
+    expect((await request(`/chat/runs/${opened.runId}/cancel`, {})).status).toBe(409);
     reader.releaseLock();
     expect(closed).toBeGreaterThan(previousClosed);
     expect(
@@ -753,15 +748,14 @@ describe("native chat runtime", () => {
     expect(calls[calls.length - 1]?.id).toBe("early-native-fixture");
   });
 
-  test("should keep an attention-managed human wait alive after browser disconnection", async () => {
+  test("a turn keeps running after the browser disconnects and can be reattached", async () => {
     waitPermission = true;
-    durableHumanWait = true;
     const controller = new AbortController();
     const response = await app.request("/api/chat/stream", {
       method: "POST",
       headers: AUTH,
       signal: controller.signal,
-      body: JSON.stringify({ messages: [{ role: "user", content: "durable human wait" }] }),
+      body: JSON.stringify({ messages: [{ role: "user", content: "background turn" }] }),
     });
     const reader = response.body?.getReader();
     if (!reader) throw new Error("No stream");
@@ -781,6 +775,21 @@ describe("native chat runtime", () => {
       const previousClosed = closed;
       controller.abort();
       expect(closed).toBe(previousClosed);
+      const listed = (await (await request("/chat/threads")).json()) as {
+        threads: { id: string; running: boolean }[];
+      };
+      expect(listed.threads.find((thread) => thread.id === opened.thread.id)?.running).toBe(true);
+      const live = await request(`/chat/threads/${opened.thread.id}/live`);
+      expect(live.status).toBe(200);
+      const liveReader = live.body?.getReader();
+      if (!liveReader) throw new Error("No live stream");
+      let replay = "";
+      while (!replay.includes('"permission_request"')) {
+        const part = await liveReader.read();
+        if (part.done) throw new Error("Live stream ended early");
+        replay += decoder.decode(part.value);
+      }
+      expect(replay).toContain('"type":"thread"');
       expect(
         (
           await request(`/chat/runs/${opened.runId}/permission`, {
@@ -789,20 +798,22 @@ describe("native chat runtime", () => {
           })
         ).status,
       ).toBe(200);
-      const deadline = Date.now() + 3000;
-      let saved: ChatThread | undefined;
-      while (Date.now() < deadline) {
-        saved = (await (await request(`/chat/threads/${opened.thread.id}`)).json()) as ChatThread;
-        if (saved.messages.some((message) => message.content === "Hello from the native session"))
-          break;
-        await Bun.sleep(10);
+      while (true) {
+        const part = await liveReader.read();
+        if (part.done) break;
+        replay += decoder.decode(part.value);
       }
+      expect(replay).toContain("Hello from the native session");
+      expect(replay).toContain('"type":"done"');
+      const saved = (await (
+        await request(`/chat/threads/${opened.thread.id}`)
+      ).json()) as ChatThread;
       expect(
-        saved?.messages.some((message) => message.content === "Hello from the native session"),
+        saved.messages.some((message) => message.content === "Hello from the native session"),
       ).toBe(true);
       expect(decision).toBe("approved");
+      expect((await request(`/chat/threads/${opened.thread.id}/live`)).status).toBe(204);
     } finally {
-      durableHumanWait = false;
       waitPermission = false;
       reader.releaseLock();
     }

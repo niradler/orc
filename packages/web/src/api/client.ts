@@ -269,6 +269,14 @@ export type Worktree = {
 };
 
 export type WorktreeListing = { root: string | null; worktrees: Worktree[] };
+export type BranchPull = {
+  number: number;
+  title: string;
+  url: string;
+  state: "open" | "closed" | "merged";
+  draft: boolean;
+  head_sha: string | null;
+};
 export type GitStatus = {
   root: string | null;
   branch: string | null;
@@ -531,20 +539,33 @@ export const api = {
     models: (agent: string, threadId?: string) =>
       req<ChatModels>("GET", "/chat/models", undefined, { agent, threadId }),
     list: () =>
-      req<{ threads: { id: string; title: string; updatedAt: number }[] }>("GET", "/chat/threads"),
-    get: (id: string) => req<ChatThread>("GET", `/chat/threads/${id}`),
+      req<{ threads: { id: string; title: string; updatedAt: number; running: boolean }[] }>(
+        "GET",
+        "/chat/threads",
+      ),
+    cancel: (runId: string) =>
+      req<{ ok: boolean }>("POST", `/chat/runs/${encodeURIComponent(runId)}/cancel`),
+    get: (id: string) => req<ChatThread>("GET", `/chat/threads/${encodeURIComponent(id)}`),
     configure: (id: string, agentOptions: ChatThread["config"]["agentOptions"]) =>
-      req<ChatThread>("PATCH", `/chat/threads/${id}/config`, { agentOptions }),
+      req<ChatThread>("PATCH", `/chat/threads/${encodeURIComponent(id)}/config`, { agentOptions }),
     history: (id: string, before: number) =>
-      req<ChatHistoryPage>("GET", `/chat/threads/${id}/history`, undefined, { before }),
+      req<ChatHistoryPage>("GET", `/chat/threads/${encodeURIComponent(id)}/history`, undefined, {
+        before,
+      }),
     resume: (sourceSessionId: string) =>
       req<ChatThread>("POST", "/chat/threads", { sourceSessionId }),
     permission: (runId: string, requestId: string, decision: "approved" | "denied") =>
-      req<{ ok: boolean }>("POST", `/chat/runs/${runId}/permission`, { requestId, decision }),
+      req<{ ok: boolean }>("POST", `/chat/runs/${encodeURIComponent(runId)}/permission`, {
+        requestId,
+        decision,
+      }),
     answer: (runId: string, requestId: string, answers: Record<string, string[]>) =>
-      req<{ ok: boolean }>("POST", `/chat/runs/${runId}/answer`, { requestId, answers }),
+      req<{ ok: boolean }>("POST", `/chat/runs/${encodeURIComponent(runId)}/answer`, {
+        requestId,
+        answers,
+      }),
     permissionMode: (runId: string, mode: NonNullable<ChatThread["config"]["permissionMode"]>) =>
-      req<ChatThread>("POST", `/chat/runs/${runId}/permission-mode`, { mode }),
+      req<ChatThread>("POST", `/chat/runs/${encodeURIComponent(runId)}/permission-mode`, { mode }),
   },
   settings: {
     get: () => req<WorkspacePreferences>("GET", "/settings"),
@@ -837,6 +858,7 @@ export const api = {
     localAgents: () => req<{ agents: LocalSkillAgentListing[] }>("GET", "/skills/local-agents"),
     importLocal: (skills: LocalSkillImportItem[]) =>
       req<LocalSkillImportResult>("POST", "/skills/local-agents/import", { skills }),
+    delete: (name: string) => req<null>("DELETE", `/skills/${encodeURIComponent(name)}`),
     sync: (name: string, input: SkillSyncInput = {}) =>
       req<SkillSyncResult>("POST", `/skills/${encodeURIComponent(name)}/sync`, input),
     editFile: (name: string, input: { path: string; content: string; expectedContent: string }) =>
@@ -1183,6 +1205,12 @@ export const api = {
         repos: WorktreeListing[];
         errors: { cwd: string; error: string }[];
       }>("GET", "/git/registry", undefined, { project_id }),
+    registryPulls: (project_id?: string) =>
+      req<{
+        auth: "gh" | "token" | "none";
+        repos: { root: string; repo: string; pulls: Record<string, BranchPull> }[];
+        errors: { repo: string; error: string }[];
+      }>("GET", "/git/registry/pulls", undefined, { project_id }),
     cleanup: (items: { cwd: string; path: string; delete_branch?: boolean }[]) =>
       req<{
         results: { path: string; removed: boolean; error: string | null }[];

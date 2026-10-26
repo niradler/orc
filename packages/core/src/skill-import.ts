@@ -1,4 +1,12 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, posix } from "node:path";
 import { z } from "zod";
@@ -332,6 +340,12 @@ export function saveSkillImportRecord(name: string, record: SkillImportRecord): 
   const temporary = join(directory, `${name}-${crypto.randomUUID()}.tmp`);
   writeFileSync(temporary, JSON.stringify(record), { mode: 0o600, flag: "wx" });
   renameSync(temporary, join(directory, `${name}.json`));
+}
+
+export function removeSkillImportRecord(name: string): void {
+  validateSkillPath(name);
+  if (name.includes("/")) throw new ValidationError("Invalid skill name");
+  rmSync(join(homedir(), ".orc", "skill-imports", `${name}.json`), { force: true });
 }
 
 export function getSkillImportOrigin(name: string): SkillImportOrigin | null {

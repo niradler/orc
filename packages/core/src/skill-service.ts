@@ -4,12 +4,13 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { skillVisibility } from "./config.js";
-import { ValidationError } from "./errors.js";
+import { skillVisibility, updateGlobalConfig } from "./config.js";
+import { NotFoundError, ValidationError } from "./errors.js";
 import { parseMarkdownFrontmatter } from "./markdown-frontmatter.js";
 import { getPackagesDir } from "./package-paths.js";
 import { parsePluginManifest } from "./plugin-service.js";
@@ -616,4 +617,25 @@ export function createSkill(
     references,
     files: listSkillFiles(skillDir),
   };
+}
+
+/** Delete a skill folder from the user skills directory; built-in and package skills are read-only. */
+export function deleteSkill(name: string): void {
+  validateSkillName(name);
+  const meta = ensureCache().skills.find((skill) => skill.name === name);
+  if (!meta) throw new NotFoundError("Skill", name);
+  const skillDir = join(USER_SKILLS_DIR, name);
+  if (resolve(dirname(meta.path)) !== resolve(skillDir))
+    throw new ValidationError(`Only user skills can be deleted: ${name}`);
+  rmSync(skillDir, { recursive: true, force: true });
+  if (skillVisibility().hidden_skills.includes(name)) {
+    updateGlobalConfig((raw) => {
+      const skills = (raw.skills ?? {}) as { hidden_skills?: string[] };
+      raw.skills = {
+        ...skills,
+        hidden_skills: (skills.hidden_skills ?? []).filter((hidden) => hidden !== name),
+      };
+    });
+  }
+  reloadCache();
 }

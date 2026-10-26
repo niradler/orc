@@ -33,6 +33,8 @@ export interface RemoveWorktreeRequest {
   path: string;
   force?: boolean | undefined;
   delete_branch?: boolean | undefined;
+  // Set only by the server: the branch head GitHub confirmed was merged by a PR.
+  merged_head?: string | undefined;
 }
 
 export interface RemoveWorktreeDeps extends WorktreeDeps {
@@ -137,9 +139,14 @@ export async function removeWorktree(
   if (req.delete_branch) {
     if (!target.branch?.startsWith("orc/"))
       throw new ValidationError("Only merged orc/* branches can be deleted here");
-    const base = await mergeBase(listing.root, deps.runGit);
-    if (!base || !(await branchMerged(listing.root, target.branch, base, deps.runGit)))
-      throw new ConflictError("The branch is not merged into the repository default branch");
+    if (req.merged_head) {
+      if (target.head !== req.merged_head)
+        throw new ConflictError("The branch has new commits since its pull request was merged");
+    } else {
+      const base = await mergeBase(listing.root, deps.runGit);
+      if (!base || !(await branchMerged(listing.root, target.branch, base, deps.runGit)))
+        throw new ConflictError("The branch is not merged into the repository default branch");
+    }
   }
 
   const user = deps.terminalUsing(target.path);
@@ -160,7 +167,13 @@ export async function removeWorktree(
   const result = await deps.runGit(argv);
   if (result.code !== 0) throw gitError(result, "git worktree remove failed");
   if (req.delete_branch && target.branch) {
-    const deleted = await deps.runGit(["git", "-C", main, "branch", "-d", "--", target.branch]);
+    // A squash-merged branch is never an ancestor, so git's -d would always refuse it.
+    // update-ref deletes it only while it still points at the merged commit.
+    const deleted = await deps.runGit(
+      req.merged_head
+        ? ["git", "-C", main, "update-ref", "-d", `refs/heads/${target.branch}`, req.merged_head]
+        : ["git", "-C", main, "branch", "-d", "--", target.branch],
+    );
     if (deleted.code !== 0)
       throw new ConflictError(
         "Worktree removed; git refused safe branch deletion. The branch was kept.",

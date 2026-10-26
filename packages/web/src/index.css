@@ -140,6 +140,10 @@
 }
 
 @layer utilities {
+  /* Fullscreen markdown views live on <body>, which an open modal dialog makes inert. */
+  [data-streamdown$="-fullscreen"] {
+    pointer-events: auto;
+  }
   html[data-compact-viewport="true"]:has(.terminal-workspace-page) .workspace-header {
     display: none;
   }

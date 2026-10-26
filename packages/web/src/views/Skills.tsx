@@ -14,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, type SkillFull, type SkillRefContent, type SkillSource } from "@/api/client";
 import { BulkActionBar } from "@/components/BulkActionBar";
 import { CodeEditor } from "@/components/CodeEditor";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DetailField } from "@/components/DetailField";
 import { DocumentTabs } from "@/components/DocumentTabs";
 import { confirmDocumentClose, DocumentWorkspace } from "@/components/DocumentWorkspace";
@@ -74,6 +75,15 @@ const SOURCE_FILTERS: Array<{ value: SourceFilter; label: string }> = [
   { value: "builtin", label: "Built-in" },
   { value: "user", label: "User" },
 ];
+
+type BulkSkillAction = "sync" | "delete" | "hide" | "show";
+
+const BULK_DONE: Record<BulkSkillAction, string> = {
+  sync: "synced",
+  delete: "deleted",
+  hide: "hidden",
+  show: "shown",
+};
 
 const SOURCE_COLORS: Record<SkillSource, string> = {
   builtin: "text-muted-foreground",
@@ -157,17 +167,56 @@ export default function Skills({ projectId }: { projectId: string }) {
   const selectionScope = JSON.stringify([project, query, sourceFilter, offset]);
   const currentScope = useRef(selectionScope);
   currentScope.current = selectionScope;
-  const selection = useListSelection(importedNames, selectionScope);
-  const bulkSync = useMutation({
-    mutationFn: async ({ names, scope }: { names: string[]; scope: string }) => ({
-      ...(await applyBulkAction(names, async (name) => {
-        const result = await api.skills.sync(name);
-        if (!result.applied)
-          throw new Error(`Conflicts: ${result.conflicts.join(", ")}. Open this skill to review.`);
-      })),
+  const selection = useListSelection(
+    (skills ?? []).map((skill) => skill.name),
+    selectionScope,
+  );
+  const selectedSkills = (skills ?? []).filter((skill) =>
+    selection.selectedIds.includes(skill.name),
+  );
+  const selectedImported = selectedSkills.filter((skill) => importedNames.includes(skill.name));
+  const selectedUser = selectedSkills.filter((skill) => skill.source === "user");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const bulk = useMutation({
+    mutationFn: async ({
+      action,
+      names,
       scope,
-    }),
-    onSuccess: async () => {
+    }: {
+      action: BulkSkillAction;
+      names: string[];
+      scope: string;
+    }) => {
+      if (action === "hide" || action === "show") {
+        const hidden = new Set(visibility.data?.hidden_skills ?? []);
+        const builtins = new Set(visibility.data?.hidden_builtins ?? []);
+        for (const name of names) {
+          if (action === "hide") hidden.add(name);
+          else {
+            hidden.delete(name);
+            builtins.delete(name);
+          }
+        }
+        await setVisibility.mutateAsync({
+          hidden_skills: [...hidden],
+          hidden_builtins: [...builtins],
+        });
+        return { action, scope, succeeded: names, failed: [] };
+      }
+      return {
+        action,
+        scope,
+        ...(await applyBulkAction(names, async (name) => {
+          if (action === "delete") return api.skills.delete(name);
+          const result = await api.skills.sync(name);
+          if (!result.applied)
+            throw new Error(
+              `Conflicts: ${result.conflicts.join(", ")}. Open this skill to review.`,
+            );
+        })),
+      };
+    },
+    onSettled: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["skills"] }),
         queryClient.invalidateQueries({ queryKey: ["skill"] }),
@@ -175,12 +224,9 @@ export default function Skills({ projectId }: { projectId: string }) {
       ]);
     },
   });
-  const bulkResult = bulkSync.data?.scope === selectionScope ? bulkSync.data : undefined;
-  async function syncSelected(): Promise<void> {
-    const result = await bulkSync.mutateAsync({
-      names: selection.selectedIds,
-      scope: selectionScope,
-    });
+  const bulkResult = bulk.data?.scope === selectionScope ? bulk.data : undefined;
+  async function runBulk(action: BulkSkillAction, names: string[]): Promise<void> {
+    const result = await bulk.mutateAsync({ action, names, scope: selectionScope });
     if (result.scope === currentScope.current)
       selection.select(result.failed.map((item) => item.id));
   }
@@ -233,10 +279,6 @@ export default function Skills({ projectId }: { projectId: string }) {
           Agent Skills specification
         </a>
         .
-      </p>
-      <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
-        Visibility applies to agent discovery across this installation. Hidden skills remain
-        readable by name and available to flows. Modified means the skill instructions were edited.
       </p>
       {(visibility.error || setVisibility.error) && (
         <p role="alert" className="text-destructive text-xs mb-2">
@@ -297,30 +339,82 @@ export default function Skills({ projectId }: { projectId: string }) {
         </Button>
       </div>
 
-      {!!importedNames.length && (
+      {!!skills?.length && (
         <BulkActionBar
-          resourceLabel="GitHub skills"
+          resourceLabel="skills"
           count={selection.selectedIds.length}
           allSelected={selection.allSelected}
           someSelected={selection.someSelected}
           onSelectAll={selection.selectAll}
           onClear={selection.clear}
-          disabled={bulkSync.isPending || origins.some((origin) => origin.isPending)}
+          disabled={bulk.isPending}
         >
+          <Button
+            data-testid="skills-bulk-hide"
+            variant="outline"
+            size="sm"
+            disabled={bulk.isPending || !visibility.data}
+            onClick={() => void runBulk("hide", selection.selectedIds)}
+          >
+            Hide
+          </Button>
+          <Button
+            data-testid="skills-bulk-show"
+            variant="outline"
+            size="sm"
+            disabled={bulk.isPending || !visibility.data}
+            onClick={() => void runBulk("show", selection.selectedIds)}
+          >
+            Show
+          </Button>
           <Button
             data-testid="skills-bulk-sync"
             variant="outline"
             size="sm"
-            disabled={bulkSync.isPending}
-            onClick={() => void syncSelected()}
+            title="Local edits are kept; conflicts need review"
+            disabled={
+              bulk.isPending ||
+              !selectedImported.length ||
+              origins.some((origin) => origin.isPending)
+            }
+            onClick={() =>
+              void runBulk(
+                "sync",
+                selectedImported.map((skill) => skill.name),
+              )
+            }
           >
-            {bulkSync.isPending ? "Syncing…" : "Sync selected from GitHub"}
+            {bulk.isPending && bulk.variables?.action === "sync"
+              ? "Syncing…"
+              : `Sync from GitHub${selectedImported.length ? ` (${selectedImported.length})` : ""}`}
           </Button>
-          <span className="text-xs text-muted-foreground">
-            Local edits are preserved; conflicts require review.
-          </span>
+          <Button
+            data-testid="skills-bulk-delete"
+            variant="outline"
+            size="sm"
+            className="text-destructive"
+            title="Built-in skills cannot be deleted"
+            disabled={bulk.isPending || !selectedUser.length}
+            onClick={() => setConfirmingDelete(true)}
+          >
+            {`Delete${selectedUser.length ? ` (${selectedUser.length})` : ""}`}
+          </Button>
         </BulkActionBar>
       )}
+      <ConfirmDialog
+        open={confirmingDelete}
+        title="Delete skills"
+        description={`Delete ${selectedUser.map((skill) => skill.name).join(", ")}? This removes the skill folders and cannot be undone.`}
+        isPending={bulk.isPending}
+        onCancel={() => setConfirmingDelete(false)}
+        onConfirm={() => {
+          setConfirmingDelete(false);
+          void runBulk(
+            "delete",
+            selectedUser.map((skill) => skill.name),
+          );
+        }}
+      />
       {origins.some((origin) => origin.error) && (
         <p role="alert" className="text-sm text-destructive">
           Could not check GitHub origins: {origins.find((origin) => origin.error)?.error?.message}
@@ -329,7 +423,8 @@ export default function Skills({ projectId }: { projectId: string }) {
       {bulkResult && (
         <div data-testid="skills-bulk-result" role="status" className="mb-3 text-sm">
           <p>
-            {bulkResult.succeeded.length} synced; {bulkResult.failed.length} need attention.
+            {bulkResult.succeeded.length} {BULK_DONE[bulkResult.action]}
+            {bulkResult.failed.length ? `; ${bulkResult.failed.length} need attention.` : "."}
           </p>
           {bulkResult.failed.map((item) => (
             <button
@@ -358,7 +453,7 @@ export default function Skills({ projectId }: { projectId: string }) {
             <TableHeader>
               <TableRow className="border-b border-outline-variant hover:bg-transparent">
                 <TableHead className="w-12">
-                  <span className="sr-only">Select GitHub skills</span>
+                  <span className="sr-only">Select skills</span>
                 </TableHead>
                 <TableHead className="font-label text-sm  text-muted-foreground">Name</TableHead>
                 <TableHead className="font-label text-sm  text-muted-foreground">
@@ -398,17 +493,15 @@ export default function Skills({ projectId }: { projectId: string }) {
                   onClick={() => openSkillDetail(skill.name)}
                 >
                   <TableCell onClick={(event) => event.stopPropagation()}>
-                    {importedNames.includes(skill.name) && (
-                      <input
-                        type="checkbox"
-                        data-testid="skill-select"
-                        aria-label={`Select ${skill.name}`}
-                        checked={selection.selectedIds.includes(skill.name)}
-                        disabled={bulkSync.isPending}
-                        onChange={() => selection.toggle(skill.name)}
-                        className="size-4 accent-primary"
-                      />
-                    )}
+                    <input
+                      type="checkbox"
+                      data-testid="skill-select"
+                      aria-label={`Select ${skill.name}`}
+                      checked={selection.selectedIds.includes(skill.name)}
+                      disabled={bulk.isPending}
+                      onChange={() => selection.toggle(skill.name)}
+                      className="size-4 accent-primary"
+                    />
                   </TableCell>
                   <TableCell className="font-body text-sm font-medium text-on-surface">
                     <button
@@ -422,7 +515,11 @@ export default function Skills({ projectId }: { projectId: string }) {
                     >
                       {skill.name}
                     </button>
-                    {skill.mutation && <span className="ml-2 text-primary text-xs">Modified</span>}
+                    {skill.mutation && (
+                      <span className="ml-2 text-primary text-xs" title="Instructions were edited">
+                        Modified
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="font-body text-sm text-muted-foreground max-w-md truncate">
                     {skill.description || "\u2014"}
@@ -465,7 +562,7 @@ export default function Skills({ projectId }: { projectId: string }) {
                       className="inline-flex min-h-11 items-center gap-2 text-xs text-primary disabled:opacity-50"
                       title={
                         skill.discovery_hidden
-                          ? "Show in agent discovery"
+                          ? "Hidden from agent discovery. Still loadable by name and in flows."
                           : "Hide from agent discovery"
                       }
                       onClick={() => {

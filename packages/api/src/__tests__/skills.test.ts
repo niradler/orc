@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { globalConfigPath } from "@orc/core/config";
 import { getUserSkillsDir, readSkill, reloadCache, type SkillFull } from "@orc/core/skill-service";
 import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
@@ -202,6 +203,47 @@ Body`,
   test("rejects empty content", async () => {
     const res = await req(app, "POST", "/skills", { name: "foo", content: "" });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("DELETE /skills/:name", () => {
+  let originalConfig: string | undefined;
+  beforeAll(() => {
+    originalConfig = existsSync(globalConfigPath())
+      ? readFileSync(globalConfigPath(), "utf8")
+      : undefined;
+  });
+  afterAll(() => {
+    if (originalConfig !== undefined) writeFileSync(globalConfigPath(), originalConfig);
+    else if (existsSync(globalConfigPath())) unlinkSync(globalConfigPath());
+  });
+
+  test("deletes a user skill and clears its hidden entry", async () => {
+    const name = "test-api-delete";
+    await req(app, "POST", "/skills", {
+      name,
+      content: `---\nname: ${name}\ndescription: Delete via API test\n---\nBody`,
+    });
+    await req(app, "PUT", "/skills/settings/visibility", { hidden_skills: [name] });
+
+    const res = await req(app, "DELETE", `/skills/${name}`);
+    expect(res.status).toBe(204);
+    expect(existsSync(join(getUserSkillsDir(), name))).toBe(false);
+    expect((await req(app, "GET", `/skills/${name}`)).status).toBe(404);
+    const visibility = (await (await req(app, "GET", "/skills/settings/visibility")).json()) as {
+      hidden_skills: string[];
+    };
+    expect(visibility.hidden_skills).not.toContain(name);
+  });
+
+  test("refuses to delete built-in skills", async () => {
+    const res = await req(app, "DELETE", "/skills/orc-sdlc");
+    expect(res.status).toBe(400);
+    expect(readSkill("orc-sdlc")).not.toBeNull();
+  });
+
+  test("returns 404 for unknown skills", async () => {
+    expect((await req(app, "DELETE", "/skills/no-such-skill")).status).toBe(404);
   });
 });
 

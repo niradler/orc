@@ -24,7 +24,7 @@ import type { Launch, LaunchDeps } from "./launch.js";
 import { TerminalManager } from "./manager.js";
 import { folderPickerLaunch, pickFolder } from "./pick-folder.js";
 import { buildPtyEnv } from "./pty-env.js";
-import { gitRunner, type SessionDirDeps } from "./session-dir.js";
+import { excludeOrcWorktrees, gitRunner, type SessionDirDeps } from "./session-dir.js";
 import { MIN_BUN_VERSION, spawnPty } from "./spawn.js";
 
 export interface Availability {
@@ -97,6 +97,7 @@ export function sessionDirDeps(deps: LaunchDeps, host: ExecHost = LOCAL_HOST): S
     home: deps.home,
     runGit: gitRunner(host),
     makeDirectory: (path) => hostMakeDirectory(host, path),
+    excludeWorktrees: (root) => excludeOrcWorktrees(host, root),
     newId: ulid,
   };
 }
