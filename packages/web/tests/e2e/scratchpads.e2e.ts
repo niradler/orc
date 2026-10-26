@@ -255,6 +255,45 @@ test.describe("Scratchpads", () => {
     }
   });
 
+  test("ORC access refuses paths outside the API, forged requests and discarded-to content", async ({
+    page,
+    request,
+  }) => {
+    const escapes =
+      "<!doctype html><h1 id=out>no access</h1><script>const out = document.getElementById('out');" +
+      "if (window.orc) (async () => { const results = [];" +
+      "for (const path of ['//example.invalid/x', '/../x', 'http://example.invalid/x'])" +
+      "  results.push(await orc.fetch(path).then(() => 'sent', () => 'refused'));" +
+      "let forged = 'ignored';" +
+      "addEventListener('message', (e) => { if (e.data && e.data.id === 999) forged = 'answered'; });" +
+      "parent.postMessage({ type: 'orc:fetch', nonce: 'guess', id: 999, path: '/scratchpads', headers: [] }, '*');" +
+      "await new Promise((done) => setTimeout(done, 500));" +
+      "out.textContent = results.join(',') + ' / ' + forged; })();</script>";
+    const pad = await createPad(request, { kind: "html", content: escapes });
+    try {
+      await openPad(page, pad.id);
+      await page.getByTestId("scratchpad-html-trust").click();
+      await page.getByTestId("confirm-dialog-confirm").click();
+      await expect(preview(page).locator("h1")).toHaveText("refused,refused,refused / ignored");
+
+      // Re-trusting your own draft after an agent edit, then discarding to the agent's version,
+      // must not run that version with access.
+      await page.getByTestId("scratchpad-view-split").click();
+      await page.getByTestId("scratchpad-html-source").fill("<h1>mine</h1>");
+      await apiPatch(request, `/scratchpads/${pad.id}`, { content: "<h1>theirs</h1>" });
+      await expect(page.getByTestId("scratchpad-html-trust")).toBeVisible();
+      await page.getByTestId("scratchpad-html-trust").click();
+      await page.getByTestId("confirm-dialog-confirm").click();
+      const frame = page.getByTestId("scratchpad-html-preview");
+      await expect(frame).toHaveAttribute("data-trusted", "true");
+      await page.getByTestId("scratchpad-discard").click();
+      await expect(preview(page).locator("h1")).toHaveText("theirs");
+      await expect(frame).not.toHaveAttribute("data-trusted");
+    } finally {
+      await apiDelete(request, `/scratchpads/${pad.id}`);
+    }
+  });
+
   test("an agent edit refreshes a clean pad and conflicts with a dirty draft", async ({
     page,
     request,

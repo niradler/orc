@@ -57,8 +57,11 @@ sequences, ER). Use `diagram` when layout matters or the human will draw on it.
 - `pad_update({id, content, if_revision})` replaces the whole file. Always pass the
   revision from your last `pad_get`: the human may have edited it. On a mismatch,
   re-read, merge their change and retry; never drop their edit.
-- Large content: create empty, then `pad_update({id, via:"url"})` and
-  `curl -T file <upload_url>`; read with `pad_get({id, via:"url"})`.
+- Large content: create empty, then `pad_update({id, via:"url", if_revision})` and
+  `curl -T file <upload_url>`; read with `pad_get({id, via:"url"})`. The upload URL
+  only replaces content: change title, tags or project in a separate `pad_update`.
+  A stale `if_revision` is refused when minting, and an upload after someone else's
+  save is refused with 409.
 - CLI: `orc pad ls|show|new <kind> <title> -f file|pull <id> [file]|push <id> <file> -r <rev>|rm`.
   `pull` then `push -r` is the safe edit loop for a local file.
 - Deleting is permanent; delete only pads you created or were told to remove.
@@ -110,10 +113,12 @@ already have, prototypes and calculators.
 
 **With ORC access.** Only the human can grant it, per view, with "Render with ORC
 access". The page stays in the sandbox and gets `window.orc.fetch(path, init)`; the
-dashboard makes each call as that human, so the page never sees the API secret
-(`path` is relative to the API root, e.g. `/tasks?limit=100`; `init` takes `method`,
+dashboard makes each call as that human and does not hand the page the API secret
+(`path` is an API path starting with `/`, e.g. `/tasks?limit=100`; paths that leave
+the API are refused; `init` takes `method`,
 `headers` and a string/Blob/ArrayBuffer `body`; it returns a fetch `Response`). Access
-ends when they go back to the sandbox, leave, or anyone else edits the pad. Write the
+ends when they go back to the sandbox, leave, discard to another author's version,
+or anyone else edits the pad. Links the page navigates to do not get access. Write the
 page so it works both ways:
 
 ```html
