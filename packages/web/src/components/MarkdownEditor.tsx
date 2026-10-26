@@ -4,7 +4,7 @@ import { Markdown } from "@/components/Markdown";
 import { SourceCodeEditor } from "@/components/SourceCodeEditor";
 import { Button } from "@/components/ui/button";
 import { splitMarkdownFrontmatter } from "@/lib/document-display";
-import { isMarkdownFile } from "@/lib/editor-language";
+import { isMarkdownFile } from "@/lib/file-kind";
 import type { WikiLinks } from "@/lib/wiki-links";
 
 type Mode = "read" | "edit" | "split";

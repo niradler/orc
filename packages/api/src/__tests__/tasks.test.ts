@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { getSqlite } from "@orc/db/client";
 import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -285,11 +286,62 @@ describe("Tasks CRUD", () => {
 
       const getRes = await req(app, "GET", `/tasks/${taskId}`);
       expect(getRes.status).toBe(404);
+
+      // Comments are polymorphic (no FK); the delete removes them with the task.
+      const left = getSqlite()
+        .query("SELECT count(*) AS n FROM comments WHERE resource_type='task' AND resource_id=?")
+        .get(taskId);
+      expect(left).toEqual({ n: 0 });
     });
 
     test("returns 404 for non-existent task", async () => {
       const res = await req(app, "DELETE", "/tasks/nonexistent-id");
       expect(res.status).toBe(404);
     });
+  });
+});
+
+describe("POST /tasks/batch", () => {
+  const taskCount = () =>
+    getSqlite().query("SELECT count(*) AS n FROM tasks").get() as { n: number };
+
+  test("creates tasks with dependency and subtask links", async () => {
+    const res = await req(app, "POST", "/tasks/batch", {
+      tasks: [
+        { ref: "a", title: "parent" },
+        { ref: "b", title: "child", subtask_of: "a", depends_on: ["c", "missing"] },
+        { ref: "c", title: "blocker" },
+      ],
+    });
+    expect(res.status).toBe(201);
+    const { created, mapping } = await res.json();
+    expect(created).toBe(3);
+    const links = getSqlite()
+      .query(
+        "SELECT from_task_id AS f, to_task_id AS t, link_type AS k FROM task_links WHERE ? IN (from_task_id, to_task_id) ORDER BY k",
+      )
+      .all(mapping.b);
+    expect(links).toEqual([
+      { f: mapping.c, t: mapping.b, k: "blocks" },
+      { f: mapping.a, t: mapping.b, k: "parent_of" },
+      { f: mapping.b, t: mapping.a, k: "subtask_of" },
+    ]);
+  });
+
+  test("creates nothing when a row fails", async () => {
+    const before = taskCount().n;
+    const res = await req(app, "POST", "/tasks/batch", {
+      project_id: "no-such-project",
+      tasks: [
+        { ref: "x", title: "first" },
+        { ref: "y", title: "second" },
+      ],
+    });
+    expect(res.status).toBe(422);
+    expect((await res.json()) as unknown).toEqual({
+      error: "A referenced record does not exist",
+      code: "REFERENCE_NOT_FOUND",
+    });
+    expect(taskCount().n).toBe(before);
   });
 });

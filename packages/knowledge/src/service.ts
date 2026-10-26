@@ -50,7 +50,8 @@ import {
 } from "@orc/core/kb";
 import { PathValidationError, validateCollectionPath } from "@orc/core/validate";
 import { AuditLog } from "@orc/db/audit";
-import { deleteJobRow, KbDigestStore, kbDigestCommand, kbDigestJobName } from "@orc/db/kb-digest";
+import { KbDigestStore, kbDigestCommand, kbDigestJobName } from "@orc/db/kb-digest";
+import { deleteJob } from "@orc/db/tx";
 import { Cron } from "croner";
 import {
   Catalog,
@@ -466,7 +467,7 @@ export class KnowledgeService {
       this.db.run("DELETE FROM kb_jobs WHERE kb_id = ?", [id]);
       this.db.run("DELETE FROM kb_links WHERE kb_id = ?", [id]);
       this.db.run("DELETE FROM kb_digests WHERE kb_id = ?", [id]);
-      if (jobId) deleteJobRow(this.db, jobId);
+      if (jobId) deleteJob(jobId, this.db);
       this.db.run("DELETE FROM knowledge_bases WHERE id = ?", [id]);
       this.audit(ctx, "kb.deleted", [id], kb.project_id, kb.name);
     })();
@@ -1164,7 +1165,7 @@ export class KnowledgeService {
     if (!row) throw new NotFoundError("Digest", kbId);
     this.db.transaction(() => {
       this.db.run("DELETE FROM kb_digests WHERE kb_id = ?", [kbId]);
-      deleteJobRow(this.db, row.job_id);
+      deleteJob(row.job_id, this.db);
       this.audit(ctx, "kb.digest.deleted", [kbId, row.job_id], kb.project_id);
     })();
     this.jobHooks?.sync(row.job_id);

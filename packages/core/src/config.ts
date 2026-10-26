@@ -435,6 +435,21 @@ export function configuredApiSecret(secret: string | undefined | null): string |
   return value || undefined;
 }
 
+/**
+ * Origin of the local ORC API (no trailing slash or `/api`) for clients on this host.
+ * `ORC_API_BASE` wins (set for agents on remote exec hosts); a wildcard bind address
+ * is dialled on loopback.
+ */
+export function resolveApiBase(config?: Pick<OrcConfig, "api">): string {
+  const env = process.env.ORC_API_BASE?.trim();
+  if (env) return env.replace(/\/+$/, "").replace(/\/api$/, "");
+  const { host, port } = (config ?? loadConfig()).api;
+  // "localhost" is dialled as written: Bun may bind it to ::1 only.
+  const target = ["0.0.0.0", "::", "[::]", ""].includes(host) ? "127.0.0.1" : host;
+  const bracketed = target.includes(":") && !target.startsWith("[") ? `[${target}]` : target;
+  return `http://${bracketed}:${port}`;
+}
+
 let _config: OrcConfig | null = null;
 
 export function loadConfig(overrides?: Partial<OrcConfig>): OrcConfig {

@@ -12,7 +12,7 @@ import {
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { sessionExecHost } from "./execution-host.js";
-import { readLines } from "./io.js";
+import { readProcessOutput } from "./io.js";
 import { registerBackend } from "./registry.js";
 import type {
   AgentBackend,
@@ -257,6 +257,7 @@ export class AcpxSession implements AgentSession {
   private done = false;
   private gotResult = false;
   private stderrBuf = "";
+  private drainOutput: () => Promise<void> = async () => {};
   private readonly agent: string;
   private readonly sessionName: string;
   private readonly cwd: string;
@@ -330,31 +331,28 @@ export class AcpxSession implements AgentSession {
     this.push(event);
   }
 
-  private handleEof(): void {
-    if (!this.gotResult && !this.done) {
-      logger.warn("ACPX stdout closed without a result event — synthesising empty result", {
-        agent: this.agent,
-      });
-      this.push({
-        type: "result",
-        data: { runtimeSessionId: this.sessionName },
-      });
-    }
-    this.done = true;
-    this.resolveNext?.();
-    this.resolveNext = null;
-  }
-
   private async watchExit(): Promise<void> {
-    if (!this.proc) return;
-    const code = await this.proc.exited;
+    const proc = this.proc;
+    if (!proc) return;
+    const drainOutput = this.drainOutput;
+    const code = await proc.exited;
+    // Decide only once both streams are read: stdout can close before the exit code and
+    // the stderr that explains it arrive. A leftover child holding the pipes only delays it briefly.
+    await drainOutput();
     logger.info("ACPX process exited", { agent: this.agent, code });
+    // A follow-up send() may have replaced this process meanwhile; its turn is not ours to end.
+    if (this.proc !== proc) return;
     if (this.done) return;
     if (code !== 0) {
       const detail = this.stderrBuf.trim();
       const msg = `acpx exited with code ${code}${detail ? `: ${detail}` : ""}`;
       logger.error(msg, { agent: this.agent, stderr: detail });
       this.push({ type: "error", data: msg });
+    } else if (!this.gotResult) {
+      logger.warn("ACPX exited without a result event — synthesising empty result", {
+        agent: this.agent,
+      });
+      this.push({ type: "result", data: { runtimeSessionId: this.sessionName } });
     }
     this.done = true;
     this.resolveNext?.();
@@ -407,25 +405,18 @@ export class AcpxSession implements AgentSession {
       pid: this.proc.pid,
     });
 
-    if (this.proc.stdout) {
-      void readLines(this.proc.stdout, (line) => this.handleLine(line))
-        .then(() => this.handleEof())
-        .catch((err) => {
-          logger.error("Error reading ACPX stdout", { err, agent: this.agent });
-          this.push({
-            type: "error",
-            data: `ACPX stream error: ${String(err)}`,
-          });
-          this.handleEof();
-        });
-    }
-
-    if (this.proc.stderr) {
-      void readLines(this.proc.stderr, (line) => {
+    this.drainOutput = readProcessOutput(this.proc, {
+      stdout: (line) => this.handleLine(line),
+      stderr: (line) => {
         logger.debug("ACPX stderr", { agent: this.agent, line });
         this.stderrBuf += `${line}\n`;
-      }).catch(() => {});
-    }
+      },
+      onError: (err, stream) => {
+        logger.error(`Error reading ACPX ${stream}`, { err, agent: this.agent });
+        if (stream === "stdout")
+          this.push({ type: "error", data: `ACPX stream error: ${String(err)}` });
+      },
+    });
 
     void this.watchExit();
   }

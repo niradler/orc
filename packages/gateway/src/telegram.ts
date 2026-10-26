@@ -2,6 +2,7 @@ import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
 import { Bot, type Context, InlineKeyboard, InputFile } from "grammy";
 import { registerAdapter } from "./adapter-registry.js";
+import { createChatQueue } from "./chat-queue.js";
 import type {
   GatewayAdapter,
   IncomingMessage,
@@ -74,8 +75,18 @@ export function createTelegramAdapter(startTime: number): TelegramAdapter {
     return new Uint8Array(await response.arrayBuffer());
   }
 
-  async function dispatch(msg: IncomingMessage): Promise<void> {
+  const logFailure = (err: unknown, chatId: string) =>
+    logger.error("Telegram message handling failed", { err, chatId });
+
+  async function deliver(msg: IncomingMessage): Promise<void> {
     if (listener) await listener(msg);
+  }
+
+  // grammy handles updates one at a time, so awaiting a whole agent turn here would hold
+  // back every other update, including the button click that answers its permission prompt.
+  const enqueue = createChatQueue(logFailure);
+  function dispatch(msg: IncomingMessage): void {
+    void enqueue(msg.chatId, () => deliver(msg));
   }
 
   function makeIncoming(
@@ -135,7 +146,7 @@ export function createTelegramAdapter(startTime: number): TelegramAdapter {
           ctx.message?.text?.split(" ")[0]?.replace(/^\//, "").split("@")[0] ?? "help";
         const argsPart = ctx.message?.text?.split(" ").slice(1).join(" ") ?? "";
         const text = argsPart ? `/${cmdName} ${argsPart}` : `/${cmdName}`;
-        await dispatch(makeIncoming(ctx, text));
+        dispatch(makeIncoming(ctx, text));
       });
 
       bot.on("message", async (ctx: Context) => {
@@ -175,9 +186,7 @@ export function createTelegramAdapter(startTime: number): TelegramAdapter {
         const rawText = ctx.message?.text ?? ctx.message?.caption ?? "";
         if (!rawText && attachments.length === 0) return;
 
-        await dispatch(
-          makeIncoming(ctx, rawText, attachments.length > 0 ? attachments : undefined),
-        );
+        dispatch(makeIncoming(ctx, rawText, attachments.length > 0 ? attachments : undefined));
       });
 
       bot.on("callback_query:data", async (ctx: Context) => {
@@ -195,25 +204,30 @@ export function createTelegramAdapter(startTime: number): TelegramAdapter {
         if (dedup(`cb:${cbId}`)) return;
         const chatId = String(ctx.callbackQuery.message?.chat.id ?? ctx.chat?.id ?? "");
         const platformMessageId = `${chatId}:${ctx.callbackQuery.message?.message_id}`;
-        try {
-          await dispatch({
-            platform: "telegram",
-            chatId,
-            userId: String(ctx.from.id),
-            username: ctx.from.username,
-            displayName:
-              [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ").trim() ||
-              undefined,
-            text: ctx.callbackQuery.data ?? "",
-            platformMessageId,
-          });
-        } catch (err) {
-          logger.error("callback_query dispatch error", { err });
-        }
+        // Not queued behind the chat: a button click may answer the turn that is running.
+        deliver({
+          platform: "telegram",
+          chatId,
+          userId: String(ctx.from.id),
+          username: ctx.from.username,
+          displayName:
+            [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(" ").trim() || undefined,
+          text: ctx.callbackQuery.data ?? "",
+          platformMessageId,
+        }).catch((err) => logFailure(err, chatId));
       });
 
+      bot.catch((err) =>
+        logger.error("Telegram update handler failed", {
+          err: err.error,
+          updateId: err.ctx.update.update_id,
+        }),
+      );
+
       logger.info("Starting Telegram gateway adapter");
-      void bot.start({ allowed_updates: ["message", "callback_query"] });
+      bot
+        .start({ allowed_updates: ["message", "callback_query"] })
+        .catch((err) => logger.error("Telegram polling stopped", { err }));
     },
 
     async stop() {

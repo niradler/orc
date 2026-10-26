@@ -231,19 +231,3 @@ export class KbDigestStore {
     );
   }
 }
-
-/**
- * Deletes a job and its runs. Sessions and bridge rows reference runs without ON DELETE in older
- * databases, so they are detached first.
- */
-export function deleteJobRow(sqlite: Database, jobId: string): void {
-  sqlite.transaction(() => {
-    for (const table of ["sessions", "bridge_messages", "bridge_permissions"])
-      sqlite
-        .query(
-          `UPDATE ${table} SET job_run_id = NULL WHERE job_run_id IN (SELECT id FROM job_runs WHERE job_id = ?)`,
-        )
-        .run(jobId);
-    sqlite.query("DELETE FROM jobs WHERE id = ?").run(jobId);
-  })();
-}

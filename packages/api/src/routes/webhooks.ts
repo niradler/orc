@@ -13,10 +13,12 @@ import {
   webhook_subscriptions,
   webhooks,
 } from "@orc/db/schema";
+import { withTx } from "@orc/db/tx";
 import { executeJob } from "@orc/runner/executor";
 import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { bodyLimit } from "hono/body-limit";
 import { createRouter } from "../lib/router.js";
+import { constraintFailure } from "../lib/sqlite-errors.js";
 
 const logger = createLogger("api:webhooks");
 const MAX_BYTES = 1_000_000;
@@ -197,15 +199,17 @@ export function createWebhooksRouter() {
         created_at: now,
         updated_at: now,
       };
-      await getDb().transaction(async (tx) => {
-        await tx.insert(webhooks).values(row);
+      withTx((tx) => {
+        tx.insert(webhooks).values(row).run();
         if (legacyJob)
-          await tx.insert(webhook_subscriptions).values({
-            webhook_id: row.id,
-            job_id: legacyJob.id,
-            events: row.events,
-            actions: row.actions,
-          });
+          tx.insert(webhook_subscriptions)
+            .values({
+              webhook_id: row.id,
+              job_id: legacyJob.id,
+              events: row.events,
+              actions: row.actions,
+            })
+            .run();
       });
       return c.json({ ...safe(row), secret }, 201);
     },
@@ -408,29 +412,31 @@ export function createWebhookPublicRouter() {
     const executions = targets.map((target) => ({ ...target, runId: ulid() }));
     const runIds = executions.map((target) => target.runId);
     try {
-      await getDb().transaction(async (tx) => {
-        await tx.insert(webhook_deliveries).values(delivery);
+      withTx((tx) => {
+        tx.insert(webhook_deliveries).values(delivery).run();
         for (const target of executions) {
           const runId = target.runId;
-          await tx.insert(job_runs).values({
-            id: runId,
-            job_id: target.job.id,
-            status: "pending",
-            trigger_by: `webhook:${hook.id}`,
-            created_at: now,
-          });
-          await tx
-            .insert(webhook_delivery_runs)
-            .values({ delivery_id: delivery.id, job_id: target.job.id, job_run_id: runId });
+          tx.insert(job_runs)
+            .values({
+              id: runId,
+              job_id: target.job.id,
+              status: "pending",
+              trigger_by: `webhook:${hook.id}`,
+              created_at: now,
+            })
+            .run();
+          tx.insert(webhook_delivery_runs)
+            .values({ delivery_id: delivery.id, job_id: target.job.id, job_run_id: runId })
+            .run();
         }
         if (accepted)
-          await tx
-            .update(webhook_deliveries)
+          tx.update(webhook_deliveries)
             .set({ job_run_id: runIds[0] })
-            .where(eq(webhook_deliveries.id, delivery.id));
+            .where(eq(webhook_deliveries.id, delivery.id))
+            .run();
       });
     } catch (error) {
-      if (String(error).toLowerCase().includes("unique"))
+      if (constraintFailure(error)?.status === 409)
         throw new ConflictError("Webhook delivery already received");
       throw error;
     }

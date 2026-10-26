@@ -8,7 +8,7 @@ import {
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { sessionExecHost } from "./execution-host.js";
-import { endStdin, readLines, writeToStdin } from "./io.js";
+import { endStdin, readProcessOutput, writeToStdin } from "./io.js";
 import { ORC_TOOLS_RULE, type OrcMcpConfigFile, writeOrcMcpConfigFile } from "./orc-mcp.js";
 import { registerBackend } from "./registry.js";
 import type {
@@ -20,7 +20,7 @@ import type {
   SessionOpts,
 } from "./types.js";
 
-const _logger = createLogger("agent-runtime:claude");
+const logger = createLogger("agent-runtime:claude");
 
 const GRACE_TIMEOUT_MS = 8_000;
 const STDERR_RING = 200;
@@ -109,7 +109,7 @@ function contentToText(content: ClaudeStdoutMsg["content"]): string {
   return content.map((c) => c.text ?? c.thinking ?? "").join("");
 }
 
-class ClaudeSession implements AgentSession {
+export class ClaudeSession implements AgentSession {
   readonly id = ulid();
 
   private proc: ReturnType<typeof Bun.spawn> | null = null;
@@ -124,6 +124,7 @@ class ClaudeSession implements AgentSession {
   };
   private readonly permissionResolvers = new Map<string, (result: PermissionResult) => void>();
   private stderrRing: string[] = [];
+  private drainOutput: () => Promise<void> = async () => {};
   private cwd: string;
   private runtimeSessionId: string | undefined;
   private readonly claudePath: string;
@@ -187,20 +188,18 @@ class ClaudeSession implements AgentSession {
     this.proc = handle.proc;
     this.killProc = handle.kill;
 
-    if (this.proc.stdout) {
-      void readLines(this.proc.stdout, (line) => {
+    this.drainOutput = readProcessOutput(this.proc, {
+      stdout: (line) => {
         try {
           this.handleStdoutLine(JSON.parse(line) as ClaudeStdoutMsg);
         } catch {}
-      }).then(() => this.handleEof());
-    }
-
-    if (this.proc.stderr) {
-      void readLines(this.proc.stderr, (line) => {
+      },
+      stderr: (line) => {
         this.stderrRing.push(line);
         if (this.stderrRing.length > STDERR_RING) this.stderrRing.shift();
-      });
-    }
+      },
+      onError: (err, stream) => logger.error(`Error reading Claude ${stream}`, { err }),
+    });
 
     void this.watchExit();
   }
@@ -209,14 +208,6 @@ class ClaudeSession implements AgentSession {
     this.eventQueue.push(event);
     this.resolveNext?.();
     this.resolveNext = null;
-  }
-
-  private handleEof(): void {
-    if (!this.state.hasReceivedResult) {
-      this.done = true;
-      this.resolveNext?.();
-      this.resolveNext = null;
-    }
   }
 
   async start(_opts: SessionOpts): Promise<void> {
@@ -296,10 +287,17 @@ class ClaudeSession implements AgentSession {
   }
 
   private async watchExit(): Promise<void> {
-    if (!this.proc) return;
+    const proc = this.proc;
+    if (!proc) return;
     const config = this.mcpConfig;
-    const code = await this.proc.exited;
+    const drainOutput = this.drainOutput;
+    const code = await proc.exited;
+    // Decide only once both streams are read: stdout can close before the exit code and
+    // the stderr that explains it arrive. A leftover child holding the pipes only delays it briefly.
+    await drainOutput();
     config?.cleanup();
+    // A follow-up send() may have replaced this process meanwhile; its turn is not ours to end.
+    if (this.proc !== proc) return;
     if (this.state.hasReceivedResult || this.done) return;
     const stderr = this.stderrRing.join("\n");
     if (isAuthError(stderr)) {

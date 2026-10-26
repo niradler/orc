@@ -23,7 +23,3 @@ export function editorLanguage(path: string): Extension {
   if (extension === "py") return python();
   return [];
 }
-
-export function isMarkdownFile(path: string): boolean {
-  return /\.(md|markdown|mdx)$/i.test(path);
-}

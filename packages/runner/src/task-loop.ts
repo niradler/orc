@@ -137,22 +137,35 @@ export async function ensureSystemJob(): Promise<string> {
 }
 
 let cycleRunning = false;
+let rerunRequested = false;
+/** Follow-up cycles per call, so triggers raised by the cycle itself cannot spin the loop. */
+const MAX_FOLLOW_UP_CYCLES = 2;
 
 export async function recordedCycle(): Promise<void> {
   if (cycleRunning) {
-    logger.debug("Skipping cycle - another cycle is already running");
+    // A task changed mid-cycle: run again afterwards instead of waiting for the next poll.
+    rerunRequested = true;
+    logger.debug("Cycle already running - another will follow it");
     return;
   }
   cycleRunning = true;
+  try {
+    for (let cycle = 0; cycle <= MAX_FOLLOW_UP_CYCLES; cycle++) {
+      rerunRequested = false;
+      await runRecordedCycle();
+      if (!rerunRequested) break;
+    }
+  } finally {
+    cycleRunning = false;
+  }
+}
 
+async function runRecordedCycle(): Promise<void> {
   const db = getDb();
   const job = await db.query.jobs.findFirst({
     where: eq(jobs.name, SYSTEM_JOB_NAME),
   });
-  if (!job) {
-    cycleRunning = false;
-    return;
-  }
+  if (!job) return;
 
   const runId = ulid();
   const now = new Date();
@@ -192,8 +205,6 @@ export async function recordedCycle(): Promise<void> {
       .update(job_runs)
       .set({ status: "failed", ended_at: new Date(), error_msg: errMsg })
       .where(eq(job_runs.id, runId));
-  } finally {
-    cycleRunning = false;
   }
 }
 

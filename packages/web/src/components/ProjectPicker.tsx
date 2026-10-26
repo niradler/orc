@@ -2,12 +2,12 @@ import * as Popover from "@radix-ui/react-popover";
 import { Check, ChevronsUpDown, Folder, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useProjects } from "@/hooks/useProjects";
 import { workspaceDestination } from "@/lib/workspace-navigation";
-import { CreateProjectDialog } from "@/views/Projects";
 
 export function ProjectPicker({
   projectId,

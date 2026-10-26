@@ -9,9 +9,10 @@ import {
   resolveExecHost,
 } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
+import { createLogger } from "@orc/core/logger";
 import { CodexAppSession } from "./codex-app.js";
 import { sessionExecHost } from "./execution-host.js";
-import { endStdin, readLines, writeToStdin } from "./io.js";
+import { endStdin, readProcessOutput, writeToStdin } from "./io.js";
 import { buildOrcMcpServer } from "./orc-mcp.js";
 import { registerBackend } from "./registry.js";
 import type {
@@ -23,6 +24,7 @@ import type {
   SessionOpts,
 } from "./types.js";
 
+const logger = createLogger("agent-runtime:codex");
 const GRACE_TIMEOUT_MS = 8_000;
 
 export function resolveCodexLaunch(
@@ -121,8 +123,7 @@ export class CodexSession implements AgentSession {
   private readonly cwd: string;
   private readonly host: ExecHost;
   private readonly opts: SessionOpts;
-  private outputDrained: Promise<void> = Promise.resolve();
-  private errorsDrained: Promise<void> = Promise.resolve();
+  private drainOutput: () => Promise<void> = async () => {};
 
   constructor(
     opts: SessionOpts,
@@ -180,20 +181,18 @@ export class CodexSession implements AgentSession {
     );
     endStdin(this.proc.stdin);
 
-    if (this.proc.stdout) {
-      this.outputDrained = readLines(this.proc.stdout, (line) => {
+    this.drainOutput = readProcessOutput(this.proc, {
+      stdout: (line) => {
         try {
           this.handleLine(JSON.parse(line) as Record<string, unknown>);
         } catch {}
-      });
-    }
-
-    if (this.proc.stderr) {
-      this.errorsDrained = readLines(this.proc.stderr, (line) => {
+      },
+      stderr: (line) => {
         this.stderrLines.push(line);
         if (this.stderrLines.length > 100) this.stderrLines.shift();
-      });
-    }
+      },
+      onError: (err, stream) => logger.error(`Error reading Codex ${stream}`, { err }),
+    });
 
     void this.watchExit();
   }
@@ -257,9 +256,13 @@ export class CodexSession implements AgentSession {
   }
 
   private async watchExit(): Promise<void> {
-    if (!this.proc) return;
-    const code = await this.proc.exited;
-    await Promise.all([this.outputDrained, this.errorsDrained]);
+    const proc = this.proc;
+    if (!proc) return;
+    const drainOutput = this.drainOutput;
+    const code = await proc.exited;
+    await drainOutput();
+    // A follow-up send() may have replaced this process meanwhile; its turn is not ours to end.
+    if (this.proc !== proc) return;
     if (code !== 0 && !this.state.hasReceivedResult) {
       const stderr = this.stderrLines.join("\n").trim();
       this.push({

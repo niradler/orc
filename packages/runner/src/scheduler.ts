@@ -1,5 +1,6 @@
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
+import { type LongTimeout, setLongTimeout } from "@orc/core/timers";
 import { checkpointWal, getDb, getSqlite } from "@orc/db/client";
 import { comments, job_runs, jobs } from "@orc/db/schema";
 import { Cron } from "croner";
@@ -11,7 +12,7 @@ import { startWatcher, stopWatcher } from "./watcher.js";
 const logger = createLogger("runner:scheduler");
 
 const activeCrons = new Map<string, Cron>();
-const activeTimers = new Map<string, Timer>();
+const activeTimers = new Map<string, LongTimeout>();
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 let checkpointInterval: ReturnType<typeof setInterval> | null = null;
 let running = false;
@@ -219,27 +220,24 @@ export function scheduleOneShotJob(
 ): void {
   if (runCount > 0) return;
 
-  if (activeTimers.has(jobId)) {
-    clearTimeout(activeTimers.get(jobId));
-    activeTimers.delete(jobId);
-  }
+  activeTimers.get(jobId)?.clear();
+  activeTimers.delete(jobId);
 
   const delayMs = Math.max(0, runAt.getTime() - Date.now());
 
-  const timer = setTimeout(async () => {
+  const timer = setLongTimeout(async () => {
     activeTimers.delete(jobId);
-    const db = getDb();
-    const still = await db.query.jobs.findFirst({
-      where: eq(jobs.id, jobId),
-      columns: { id: true, enabled: true },
-    });
-    if (!still) {
-      logger.warn(`One-shot job ${name} no longer exists, skipping`);
-      return;
-    }
-    if (!still.enabled) return;
-    logger.info(`One-shot trigger: ${name}`);
     try {
+      const still = await getDb().query.jobs.findFirst({
+        where: eq(jobs.id, jobId),
+        columns: { id: true, enabled: true },
+      });
+      if (!still) {
+        logger.warn(`One-shot job ${name} no longer exists, skipping`);
+        return;
+      }
+      if (!still.enabled) return;
+      logger.info(`One-shot trigger: ${name}`);
       await executeJob({ jobId, triggerBy: "one-shot" });
     } catch (err) {
       logger.error(`One-shot job failed: ${name}`, err);
@@ -257,11 +255,8 @@ export function unscheduleJob(jobId: string): void {
     cron.stop();
     activeCrons.delete(jobId);
   }
-  const timer = activeTimers.get(jobId);
-  if (timer) {
-    clearTimeout(timer);
-    activeTimers.delete(jobId);
-  }
+  activeTimers.get(jobId)?.clear();
+  activeTimers.delete(jobId);
   stopWatcher(jobId);
 }
 
@@ -284,7 +279,7 @@ export function stopScheduler(): void {
   running = false;
   for (const [, cron] of activeCrons) cron.stop();
   activeCrons.clear();
-  for (const [, timer] of activeTimers) clearTimeout(timer);
+  for (const [, timer] of activeTimers) timer.clear();
   activeTimers.clear();
   if (cleanupInterval) {
     clearInterval(cleanupInterval);

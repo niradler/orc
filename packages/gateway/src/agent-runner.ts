@@ -2,6 +2,7 @@ import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
 import { openAgentSession } from "./agent-runtime/index.js";
 import type { AgentSession, SessionOpts } from "./agent-runtime/types.js";
+import { escapeHtml } from "./html.js";
 import type { PermissionManager } from "./permission-manager.js";
 import type { PreviewManager } from "./preview-manager.js";
 import { createPermission, updateGatewaySession } from "./store.js";
@@ -190,7 +191,7 @@ async function driveEventLoop(
           ],
         ];
 
-        const permText = `🔑 <b>Permission request</b>\n<b>Tool:</b> ${tool}\n<b>Command:</b> <code>${command.slice(0, 200)}</code>`;
+        const permText = `🔑 <b>Permission request</b>\n<b>Tool:</b> ${escapeHtml(tool)}\n<b>Command:</b> <code>${escapeHtml(command.slice(0, 200))}</code>`;
 
         if ("sendWithButtons" in ctx.adapter) {
           await (ctx.adapter as GatewayAdapter & SupportsInlineButtons).sendWithButtons(

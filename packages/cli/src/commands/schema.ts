@@ -1,14 +1,13 @@
-import { loadConfig } from "@orc/core/config";
+import { loadConfig, resolveApiBase } from "@orc/core/config";
 import { Command } from "commander";
 
 const RESOURCES = ["task", "memory", "job", "project", "prompt", "session"] as const;
 
 function apiBase(): string {
   try {
-    const c = loadConfig();
-    return `http://${c.api.host}:${c.api.port}`;
+    return resolveApiBase();
   } catch {
-    return process.env.ORC_API_BASE ?? "http://127.0.0.1:7700";
+    return "http://127.0.0.1:7700";
   }
 }
 

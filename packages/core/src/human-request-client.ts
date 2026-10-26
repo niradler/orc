@@ -1,4 +1,4 @@
-import { loadConfig } from "./config.js";
+import { loadConfig, resolveApiBase } from "./config.js";
 import { type HumanRequest, HumanRequestSchema } from "./human-requests.js";
 import { nativeHookQuestions } from "./rule-hooks.js";
 import type { RuleDecision, RuleEvent } from "./rule-types.js";
@@ -12,9 +12,7 @@ async function request(
   owner?: string,
 ): Promise<HumanRequest> {
   const config = loadConfig();
-  const base = (process.env.ORC_API_BASE ?? `http://${config.api.host}:${config.api.port}`)
-    .replace(/\/$/, "")
-    .replace(/\/api$/, "");
+  const base = resolveApiBase(config);
   let response: Response;
   try {
     response = await fetch(`${base}/api${path}`, {

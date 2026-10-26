@@ -109,6 +109,9 @@ describe("managed webhooks", () => {
       body,
     });
     expect(duplicate.status).toBe(409);
+    expect(((await duplicate.json()) as { error: string }).error).toBe(
+      "Webhook delivery already received",
+    );
     expect(
       await getDb().query.webhook_deliveries.findMany({
         where: eq(webhook_deliveries.webhook_id, hook.id),
