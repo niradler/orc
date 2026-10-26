@@ -30,7 +30,11 @@ function editTarget(path: string): string {
 }
 
 function controlPath(path: string): boolean {
-  const normalized = path.replaceAll("\\", "/").toLowerCase();
+  // Agents work in <repo>/.orc/worktrees/<id>/, so each worktree is judged as its own root.
+  const normalized = path
+    .replaceAll("\\", "/")
+    .toLowerCase()
+    .replaceAll(/\/\.orc\/worktrees\/[^/]+(?=\/)/g, "");
   return (
     normalized.split("/").includes(".orc") ||
     /(?:^|\/)(?:\.claude\/settings(?:\.local)?\.json|\.cursor\/hooks\.json|\.gemini\/settings\.json|\.codex\/(?:hooks\.json|config\.toml))$/.test(

@@ -51,6 +51,22 @@ test("should keep platform policy storage and hook settings protected through di
       ?.rule_id,
   ).toBe("orc-control-storage");
 });
+test("should let agents edit inside ORC worktrees while keeping their control files protected", () => {
+  const worktree = join(root, ".orc", "worktrees", "wt0001");
+  mkdirSync(worktree, { recursive: true });
+  const decide = (path: string) =>
+    evaluateRules(policy, { ...event("Edit", { file_path: path }), cwd: worktree });
+  expect(decide(join(worktree, "src", "app.ts")).decision).toBe("abstain");
+  expect(decide(join(worktree, "src", "app.ts")).reasons).toEqual([]);
+  for (const path of [
+    join(worktree, ".orc", "config.json"),
+    join(worktree, ".claude", "settings.json"),
+    join(worktree, "..", "..", "config.json"),
+    join(root, ".orc", "worktrees", "stray.json"),
+  ]) {
+    expect(decide(path).reasons[0]?.rule_id).toBe("orc-control-settings");
+  }
+});
 test("should block exactly the selected tool and command text without implying deletion coverage", () => {
   for (const command of ["rm -rf build", "echo 'rm -rf build'"])
     expect(evaluateRules(policy, event("Bash", { command })).decision).toBe("deny");
