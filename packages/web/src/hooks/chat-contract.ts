@@ -66,7 +66,10 @@ export function parseChatTabs(raw: string | null): StoredChatTabs {
 export function parseChatEvent(line: string): ChatEvent | null {
   if (!line.startsWith("data:")) return null;
   try {
-    const event = ChatEventSchema.safeParse(JSON.parse(line.slice(5).trim()));
+    const data: unknown = JSON.parse(line.slice(5).trim());
+    if (data && typeof data === "object" && "type" in data && data.type === "done")
+      return { type: "done" };
+    const event = ChatEventSchema.safeParse(data);
     return event.success ? event.data : null;
   } catch {
     return null;

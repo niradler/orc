@@ -2,6 +2,9 @@
 
 Sources: [Live sessions](https://github.com/niradler/orc/blob/master/docs/live-sessions.md), [Handoff](https://github.com/niradler/orc/blob/master/docs/session-handoff.md).
 
+For dashboard URLs, session ID distinctions, and reading versus resuming links,
+see [Web navigation and links](web.md).
+
 ## Session continuity
 
 For bulk/offline local history sync, use [session-archive.md](session-archive.md).

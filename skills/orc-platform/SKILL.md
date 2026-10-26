@@ -1,6 +1,6 @@
 ---
 name: orc-platform
-description: "Install and use ORC: CLI/API/MCP, auth/settings, projects, tasks/flows, memory, knowledge/KB/digests/embeddings, sessions/handoff, terminals/chat, jobs/gateway, agents/backends/packages, Git/GitHub, SSH, rules/hooks, tags, audit and monitoring, scratchpads (plans, diagrams, interactive pages)."
+description: "Operate ORC: CLI/API/MCP, auth/settings, projects, tasks/flows, memory/KB/digests/embeddings, sessions/handoff, terminals/chat, jobs/gateway, agents/backends/packages, Git/GitHub/SSH, rules/hooks, tags/audit, scratchpads (plans, diagrams, HTML), dashboard links."
 ---
 
 # Operate ORC
@@ -34,6 +34,7 @@ verify the returned hash/size without loading the script body into context.
 | Request | Reference |
 | --- | --- |
 | Install, connect an agent, CLI/API/MCP, configure auth, diagnose connectivity | [Setup and interfaces](references/setup.md) |
+| Build dashboard links, open resources, choose session reading vs. chat/terminal continuation | [Web navigation and links](references/web.md) |
 | Recall, create, correct or undo short facts | [Memory](references/memory.md) |
 | KB intake/search/edit, parsers, embeddings, README/Markdown and living Learnings digests | [Knowledge and documentation](references/knowledge.md) |
 | Scratchpads: plans/docs with mermaid, Excalidraw diagrams, interactive HTML pages with or without ORC access | [Scratchpads](references/scratchpads.md) |

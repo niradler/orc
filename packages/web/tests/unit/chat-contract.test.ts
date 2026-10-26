@@ -64,12 +64,12 @@ describe("chat SSE contract", () => {
     for (const line of [
       ": keepalive",
       'data: {"type":"open"}',
-      'data: {"type":"done"}',
       'data: {"type":"text","text":42}',
       "data: [1]",
       "data: broken",
     ]) {
       expect(parseChatEvent(line)).toBeNull();
     }
+    expect(parseChatEvent('data: {"type":"done"}')).toEqual({ type: "done" });
   });
 });

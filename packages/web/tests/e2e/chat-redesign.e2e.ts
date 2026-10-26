@@ -46,6 +46,17 @@ test("stopping a chunked response preserves partial text and a new send finishes
       let seen = "";
       let spliced = false;
       let open = true;
+      // A completed/cancelled turn now closes its reader at the explicit done marker.
+      // Track that detach so the late-chunk helper only writes to a live stream.
+      Object.assign(window, { cancelledChatDetached: false });
+      init?.signal?.addEventListener(
+        "abort",
+        () => {
+          open = false;
+          Object.assign(window, { cancelledChatDetached: true });
+        },
+        { once: true },
+      );
       const body = response.body?.pipeThrough(
         new TransformStream<Uint8Array, Uint8Array>({
           start(controller) {
@@ -85,6 +96,11 @@ test("stopping a chunked response preserves partial text and a new send finishes
   await page.screenshot({ path: testInfo.outputPath("chat-loading-partial.png") });
   await page.getByTestId("chat-cancel-button").click();
   await expect(page.getByTestId("chat-panel")).toHaveAttribute("data-streaming", "false");
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { cancelledChatDetached: boolean }).cancelledChatDetached,
+    ),
+  ).toBe(true);
   await page.evaluate(() =>
     (window as unknown as { releaseCancelledChat: () => void }).releaseCancelledChat(),
   );

@@ -60,6 +60,8 @@ export interface ChatTab {
   historyBefore: number | null;
   loadingHistory: boolean;
   streaming: boolean;
+  reconnecting: boolean;
+  refreshing: boolean;
   streamText: string;
   activity: ChatActivity[];
   error: string | null;
@@ -81,6 +83,8 @@ function blankTab(config: ChatConfig): ChatTab {
     historyBefore: null,
     loadingHistory: false,
     streaming: false,
+    reconnecting: false,
+    refreshing: false,
     streamText: "",
     activity: [],
     error: null,
@@ -257,6 +261,7 @@ function useChatController() {
               ]
             : tab.messages,
         streaming: false,
+        reconnecting: false,
         streamText: "",
         activity: [],
         permissions: [],
@@ -279,54 +284,128 @@ function useChatController() {
       const stream = { controller: new AbortController(), cancel: false, closed: false };
       streams.current.set(key, stream);
       const current = () => streams.current.get(key) === stream;
-      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+      let connect = open;
+      let retries = 0;
       try {
-        const response = await open(stream.controller.signal);
-        if (response.status === 401) window.dispatchEvent(new Event(API_ACCESS_CHANGED));
-        if (response.status === 204) return false;
-        if (!response.ok) {
-          const body: unknown = await response.json().catch(() => null);
-          throw new Error(
-            body && typeof body === "object" && "error" in body && typeof body.error === "string"
-              ? body.error
-              : `Chat request failed (HTTP ${response.status}).`,
-          );
-        }
-        if (!response.body) throw new Error("The agent returned no response stream.");
-        if (current()) onOpen?.();
-        reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        while (true) {
-          const { done, value } = await reader.read();
-          if (!current()) break;
-          buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-          for (const line of lines) {
-            const event = parseChatEvent(line);
-            if (event) apply(key, event);
+        while (current() && !stream.controller.signal.aborted) {
+          const connection = new AbortController();
+          const signal = AbortSignal.any([stream.controller.signal, connection.signal]);
+          // The server pings every 25s. Recover a silent connection after two missed pings.
+          let idle = setTimeout(() => connection.abort(), 65_000);
+          let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+          try {
+            const response = await connect(signal);
+            if (!current()) return true;
+            if (response.status === 401) window.dispatchEvent(new Event(API_ACCESS_CHANGED));
+            if (response.status === 204) {
+              const tab = find(key);
+              const threadId = tab?.thread?.id;
+              // A snapshot with an unanswered message may predate a just-finished turn.
+              if (
+                threadId &&
+                (retries || tab?.messages[tab.messages.length - 1]?.role === "user")
+              ) {
+                const fresh = await api.chat.get(threadId);
+                if (current())
+                  update(key, () => ({
+                    thread: fresh,
+                    messages: fresh.messages,
+                    historyBefore: fresh.historyBefore ?? null,
+                    streamText: "",
+                    activity: [],
+                    error: null,
+                  }));
+              }
+              return false;
+            }
+            if (!response.ok) {
+              const body: unknown = await response.json().catch(() => null);
+              throw new ApiError(
+                body &&
+                  typeof body === "object" &&
+                  "error" in body &&
+                  typeof body.error === "string"
+                  ? body.error
+                  : `Chat request failed (HTTP ${response.status}).`,
+                response.status,
+                null,
+              );
+            }
+            if (!response.body) throw new Error("The agent returned no response stream.");
+            onOpen?.();
+            update(key, () => ({
+              reconnecting: false,
+              ...(retries
+                ? { streamText: "", activity: [], permissions: [], questions: [], error: null }
+                : {}),
+            }));
+            reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+            let completed = false;
+            const consume = (line: string) => {
+              const event = parseChatEvent(line);
+              if (event?.type === "done") completed = true;
+              else if (event) apply(key, event);
+            };
+            while (current() && !stream.controller.signal.aborted) {
+              const { done, value } = await reader.read();
+              if (!current()) return true;
+              clearTimeout(idle);
+              idle = setTimeout(() => connection.abort(), 65_000);
+              buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() ?? "";
+              for (const line of lines) consume(line);
+              if (done) consume(buffer);
+              if (completed) return true;
+              if (done) throw new Error("The chat connection ended before the reply finished.");
+            }
+          } catch (cause) {
+            if (!current() || stream.controller.signal.aborted) return true;
+            const threadId = find(key)?.thread?.id;
+            if (!threadId || retries >= 3 || (cause instanceof ApiError && cause.status < 500))
+              throw cause;
+            retries++;
+            update(key, () => ({ reconnecting: true }));
+            // Never repeat POST /chat/stream: it may already have started a turn.
+            connect = (signal) =>
+              fetch(`${getApiUrl()}/chat/threads/${encodeURIComponent(threadId)}/live`, {
+                headers: authHeaders(),
+                signal,
+              });
+          } finally {
+            clearTimeout(idle);
+            connection.abort();
+            void reader?.cancel().catch(() => {});
+            reader?.releaseLock();
           }
-          if (done) {
-            const event = parseChatEvent(buffer);
-            if (event) apply(key, event);
-            break;
-          }
+          await new Promise<void>((resolve) => {
+            const done = () => {
+              clearTimeout(timer);
+              stream.controller.signal.removeEventListener("abort", done);
+              resolve();
+            };
+            const timer = setTimeout(done, retries * 1000);
+            stream.controller.signal.addEventListener("abort", done, { once: true });
+            if (stream.controller.signal.aborted) done();
+          });
         }
         return true;
       } catch (cause) {
         if (current() && !stream.controller.signal.aborted)
-          update(key, () => ({ error: message(cause, "The chat connection failed.") }));
+          update(key, () => ({
+            error: `${message(cause, "The chat connection failed.")} Use Refresh to reconnect.`,
+          }));
         return true;
       } finally {
-        reader?.releaseLock();
         if (current()) {
           streams.current.delete(key);
           finish(key);
         }
       }
     },
-    [apply, finish, update],
+    [apply, finish, update, find],
   );
   const attach = useCallback(
     (key: string, threadId: string) =>
@@ -344,10 +423,44 @@ function useChatController() {
             respondingAgent: tab.config.agent,
             streamText: "",
             activity: [],
+            permissions: [],
+            questions: [],
           })),
       ),
     [follow, update],
   );
+
+  const refresh = useCallback(async () => {
+    const key = activeRef.current;
+    const tab = find(key);
+    if (!tab?.thread || tab.refreshing) return;
+    update(key, () => ({ refreshing: true, error: null }));
+    try {
+      const fresh = await api.chat.get(tab.thread.id);
+      if (!find(key)) return;
+      // Detach only this browser's reader; the server keeps the existing turn alive.
+      const previous = streams.current.get(key);
+      streams.current.delete(key);
+      previous?.controller.abort();
+      update(key, () => ({
+        thread: fresh,
+        config: fresh.config,
+        messages: fresh.messages,
+        historyBefore: fresh.historyBefore ?? null,
+        streaming: true,
+        streamText: "",
+        activity: [],
+        permissions: [],
+        questions: [],
+        reconnecting: false,
+      }));
+      void attach(key, fresh.id);
+    } catch (cause) {
+      update(key, () => ({ error: message(cause, "Chat could not be refreshed.") }));
+    } finally {
+      update(key, () => ({ refreshing: false }));
+    }
+  }, [attach, find, update]);
 
   const openThread = useCallback(
     (next: ChatThread, options: { activate?: boolean } = {}) => {
@@ -377,22 +490,7 @@ function useChatController() {
       }
       if (options.activate !== false) activate(key);
       if (existing?.streaming) return;
-      void attach(key, next.id).then(async (live) => {
-        // The question in the snapshot had no reply yet but the turn is gone: it finished in
-        // between, so reload the reply.
-        if (live || next.messages[next.messages.length - 1]?.role !== "user") return;
-        const fresh = await api.chat.get(next.id).catch(() => null);
-        if (fresh)
-          update(key, (tab) =>
-            tab.streaming
-              ? {}
-              : {
-                  thread: fresh,
-                  messages: fresh.messages,
-                  historyBefore: fresh.historyBefore ?? null,
-                },
-          );
-      });
+      void attach(key, next.id);
     },
     [activate, attach, mutate, update, find],
   );
@@ -484,7 +582,7 @@ function useChatController() {
     async (input: string) => {
       const key = activeRef.current;
       const current = find(key);
-      if (!ready || !current || current.streaming || !input.trim()) return;
+      if (!ready || !current || current.streaming || current.refreshing || !input.trim()) return;
       const { config, thread } = current;
       const userMessage: ChatMessage = {
         id: crypto.randomUUID(),
@@ -637,6 +735,9 @@ function useChatController() {
     showThread,
     messages: tab.messages,
     streaming: tab.streaming,
+    reconnecting: tab.reconnecting,
+    refreshing: tab.refreshing,
+    refresh,
     streamText: tab.streamText,
     activity: tab.activity,
     error: tab.error,

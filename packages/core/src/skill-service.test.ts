@@ -389,6 +389,8 @@ describe("listSkills", () => {
       "GitHub",
       "audit",
       "tags",
+      "dashboard",
+      "links",
     ]) {
       expect(listSkills({ source: "builtin", q, reload: true }).map((s) => s.name)).toEqual([
         "orc-platform",
