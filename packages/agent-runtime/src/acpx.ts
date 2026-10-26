@@ -12,7 +12,7 @@ import {
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { sessionExecHost } from "./execution-host.js";
-import { drainStreams, readLines } from "./io.js";
+import { readProcessOutput } from "./io.js";
 import { registerBackend } from "./registry.js";
 import type {
   AgentBackend,
@@ -257,8 +257,7 @@ export class AcpxSession implements AgentSession {
   private done = false;
   private gotResult = false;
   private stderrBuf = "";
-  private outputDrained: Promise<void> = Promise.resolve();
-  private errorsDrained: Promise<void> = Promise.resolve();
+  private drainOutput: () => Promise<void> = async () => {};
   private readonly agent: string;
   private readonly sessionName: string;
   private readonly cwd: string;
@@ -334,10 +333,11 @@ export class AcpxSession implements AgentSession {
 
   private async watchExit(): Promise<void> {
     if (!this.proc) return;
+    const drainOutput = this.drainOutput;
     const code = await this.proc.exited;
     // Decide only once both streams are read: stdout can close before the exit code and
     // the stderr that explains it arrive. A leftover child holding the pipes only delays it briefly.
-    await drainStreams([this.outputDrained, this.errorsDrained]);
+    await drainOutput();
     logger.info("ACPX process exited", { agent: this.agent, code });
     if (this.done) return;
     if (code !== 0) {
@@ -402,24 +402,18 @@ export class AcpxSession implements AgentSession {
       pid: this.proc.pid,
     });
 
-    if (this.proc.stdout) {
-      this.outputDrained = readLines(this.proc.stdout, (line) => this.handleLine(line)).catch(
-        (err) => {
-          logger.error("Error reading ACPX stdout", { err, agent: this.agent });
-          this.push({
-            type: "error",
-            data: `ACPX stream error: ${String(err)}`,
-          });
-        },
-      );
-    }
-
-    if (this.proc.stderr) {
-      this.errorsDrained = readLines(this.proc.stderr, (line) => {
+    this.drainOutput = readProcessOutput(this.proc, {
+      stdout: (line) => this.handleLine(line),
+      stderr: (line) => {
         logger.debug("ACPX stderr", { agent: this.agent, line });
         this.stderrBuf += `${line}\n`;
-      }).catch(() => {});
-    }
+      },
+      onError: (err, stream) => {
+        logger.error(`Error reading ACPX ${stream}`, { err, agent: this.agent });
+        if (stream === "stdout")
+          this.push({ type: "error", data: `ACPX stream error: ${String(err)}` });
+      },
+    });
 
     void this.watchExit();
   }

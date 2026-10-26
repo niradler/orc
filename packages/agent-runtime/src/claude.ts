@@ -8,7 +8,7 @@ import {
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { sessionExecHost } from "./execution-host.js";
-import { drainStreams, endStdin, readLines, writeToStdin } from "./io.js";
+import { endStdin, readProcessOutput, writeToStdin } from "./io.js";
 import { ORC_TOOLS_RULE, type OrcMcpConfigFile, writeOrcMcpConfigFile } from "./orc-mcp.js";
 import { registerBackend } from "./registry.js";
 import type {
@@ -20,7 +20,7 @@ import type {
   SessionOpts,
 } from "./types.js";
 
-const _logger = createLogger("agent-runtime:claude");
+const logger = createLogger("agent-runtime:claude");
 
 const GRACE_TIMEOUT_MS = 8_000;
 const STDERR_RING = 200;
@@ -124,8 +124,7 @@ export class ClaudeSession implements AgentSession {
   };
   private readonly permissionResolvers = new Map<string, (result: PermissionResult) => void>();
   private stderrRing: string[] = [];
-  private outputDrained: Promise<void> = Promise.resolve();
-  private errorsDrained: Promise<void> = Promise.resolve();
+  private drainOutput: () => Promise<void> = async () => {};
   private cwd: string;
   private runtimeSessionId: string | undefined;
   private readonly claudePath: string;
@@ -189,20 +188,18 @@ export class ClaudeSession implements AgentSession {
     this.proc = handle.proc;
     this.killProc = handle.kill;
 
-    if (this.proc.stdout) {
-      this.outputDrained = readLines(this.proc.stdout, (line) => {
+    this.drainOutput = readProcessOutput(this.proc, {
+      stdout: (line) => {
         try {
           this.handleStdoutLine(JSON.parse(line) as ClaudeStdoutMsg);
         } catch {}
-      });
-    }
-
-    if (this.proc.stderr) {
-      this.errorsDrained = readLines(this.proc.stderr, (line) => {
+      },
+      stderr: (line) => {
         this.stderrRing.push(line);
         if (this.stderrRing.length > STDERR_RING) this.stderrRing.shift();
-      });
-    }
+      },
+      onError: (err, stream) => logger.error(`Error reading Claude ${stream}`, { err }),
+    });
 
     void this.watchExit();
   }
@@ -292,10 +289,11 @@ export class ClaudeSession implements AgentSession {
   private async watchExit(): Promise<void> {
     if (!this.proc) return;
     const config = this.mcpConfig;
+    const drainOutput = this.drainOutput;
     const code = await this.proc.exited;
     // Decide only once both streams are read: stdout can close before the exit code and
     // the stderr that explains it arrive. A leftover child holding the pipes only delays it briefly.
-    await drainStreams([this.outputDrained, this.errorsDrained]);
+    await drainOutput();
     config?.cleanup();
     if (this.state.hasReceivedResult || this.done) return;
     const stderr = this.stderrRing.join("\n");

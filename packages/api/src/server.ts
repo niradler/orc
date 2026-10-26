@@ -101,7 +101,7 @@ export function createApp() {
       );
     const constraint = constraintFailure(err);
     if (constraint) {
-      logger.warn(`Constraint violation on ${c.req.method} ${c.req.path}: ${constraint.error}`);
+      logger.warn(`Constraint violation on ${c.req.method} ${c.req.path}: ${constraint.detail}`);
       return c.json({ error: constraint.error, code: constraint.code }, constraint.status);
     }
     logger.error("Unhandled error", err);

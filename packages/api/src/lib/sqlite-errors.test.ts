@@ -19,9 +19,11 @@ function sqliteError(sql: string): unknown {
 
 describe("constraintFailure", () => {
   test("maps unique and primary key violations to 409", () => {
-    expect(constraintFailure(sqliteError("INSERT INTO p VALUES('a')"))).toMatchObject({
+    expect(constraintFailure(sqliteError("INSERT INTO p VALUES('a')"))).toEqual({
       status: 409,
       code: "CONFLICT",
+      error: "A record with this key already exists",
+      detail: "UNIQUE constraint failed: p.id",
     });
   });
 
@@ -32,13 +34,15 @@ describe("constraintFailure", () => {
       status: 422,
       code: "REFERENCE_NOT_FOUND",
       error: "A referenced record does not exist",
+      detail: "FOREIGN KEY constraint failed",
     });
   });
 
   test("maps not-null to 422 and leaves trigger and storage failures as server errors", () => {
-    expect(constraintFailure(sqliteError("INSERT INTO c VALUES('1','a',NULL)"))?.code).toBe(
-      "CONSTRAINT_VIOLATION",
-    );
+    expect(constraintFailure(sqliteError("INSERT INTO c VALUES('1','a',NULL)"))).toMatchObject({
+      code: "CONSTRAINT_VIOLATION",
+      error: "A required field is missing or invalid",
+    });
     expect(constraintFailure(new Error("disk I/O error"))).toBeNull();
     const raised = Object.assign(new Error("fixture"), { code: "SQLITE_CONSTRAINT_TRIGGER" });
     expect(constraintFailure(raised)).toBeNull();

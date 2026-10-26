@@ -338,7 +338,10 @@ describe("POST /tasks/batch", () => {
       ],
     });
     expect(res.status).toBe(422);
-    expect((await res.json()).code).toBe("REFERENCE_NOT_FOUND");
+    expect((await res.json()) as unknown).toEqual({
+      error: "A referenced record does not exist",
+      code: "REFERENCE_NOT_FOUND",
+    });
     expect(taskCount().n).toBe(before);
   });
 });
