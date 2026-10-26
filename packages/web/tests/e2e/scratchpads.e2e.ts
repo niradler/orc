@@ -203,14 +203,16 @@ test.describe("Scratchpads", () => {
     }
   });
 
-  test("rendering with ORC access is opt-in and an agent edit returns to the sandbox", async ({
+  test("rendering with ORC access is opt-in, keeps the secret out and an agent edit revokes it", async ({
     page,
     request,
   }) => {
     const probe = (label: string) =>
       `<!doctype html><h1 id=out>${label}</h1><script>const out = document.getElementById('out');` +
       "if (!window.orc) out.textContent = 'no access';" +
-      "else orc.fetch('/scratchpads?limit=1').then((r) => { out.textContent = 'api ' + r.status; });</script>";
+      "else { let storage = 'storage'; try { localStorage.length; } catch { storage = 'no storage'; }" +
+      "orc.fetch('/scratchpads?limit=1').then(async (r) => { await r.json();" +
+      "out.textContent = 'api ' + r.status + ' / ' + storage; }); }</script>";
     const pad = await createPad(request, { kind: "html", content: probe("v1") });
     try {
       await openPad(page, pad.id);
@@ -222,12 +224,14 @@ test.describe("Scratchpads", () => {
 
       await page.getByTestId("scratchpad-html-trust").click();
       await page.getByTestId("confirm-dialog-confirm").click();
+      // Access goes through the dashboard; the page itself stays in the opaque-origin sandbox.
       const frame = page.getByTestId("scratchpad-html-preview");
-      await expect(frame).not.toHaveAttribute("sandbox");
-      await expect(preview(page).locator("h1")).toHaveText("api 200");
+      await expect(frame).toHaveAttribute("data-trusted", "true");
+      await expect(frame).not.toHaveAttribute("sandbox", /allow-same-origin/);
+      await expect(preview(page).locator("h1")).toHaveText("api 200 / no storage");
 
       await page.getByTestId("scratchpad-html-sandbox").click();
-      await expect(frame).toHaveAttribute("sandbox", /allow-scripts/);
+      await expect(frame).not.toHaveAttribute("data-trusted");
       await expect(preview(page).locator("h1")).toHaveText("no access");
 
       // Saving your own edit keeps access.
@@ -238,13 +242,13 @@ test.describe("Scratchpads", () => {
       await page.getByTestId("scratchpad-save").click();
       await expect(page.getByTestId("scratchpad-save-status")).toHaveText("Saved");
       await expect(page.getByTestId("scratchpad-html-sandbox")).toBeVisible();
-      await expect(preview(page).locator("h1")).toHaveText("api 200");
+      await expect(preview(page).locator("h1")).toHaveText("api 200 / no storage");
 
       // Access was given to the page the human saw, not to what another writer sends next,
       // even one that claims to be the human.
       await apiPatch(request, `/scratchpads/${pad.id}`, { content: probe("v2"), author: "human" });
       await expect(page.getByTestId("scratchpad-html-trust")).toBeVisible();
-      await expect(frame).toHaveAttribute("sandbox", /allow-scripts/);
+      await expect(frame).not.toHaveAttribute("data-trusted");
       await expect(preview(page).locator("h1")).toHaveText("no access");
     } finally {
       await apiDelete(request, `/scratchpads/${pad.id}`);
@@ -284,6 +288,29 @@ test.describe("Scratchpads", () => {
       await page.getByTestId("scratchpad-discard").click();
       await expect(page.getByTestId("scratchpad-save-status")).toHaveText("Saved");
       await expect(preview(page).locator("p")).toHaveText("v3");
+
+      // A rename or tag change does not touch the file, so an open draft still saves.
+      await page.getByTestId("scratchpad-html-source").fill("<p>after rename</p>");
+      await apiPatch(request, `/scratchpads/${pad.id}`, { tags: ["renamed"], author: "pw-agent" });
+      await expect(page.getByTestId("scratchpad-overwrite")).toBeHidden();
+      await page.getByTestId("scratchpad-save").click();
+      await expect(page.getByTestId("scratchpad-save-status")).toHaveText("Saved");
+      expect((await apiGet<Scratchpad>(request, `/scratchpads/${pad.id}`)).content).toBe(
+        "<p>after rename</p>",
+      );
+
+      // A real conflict can also be resolved in favour of the draft.
+      await page.getByTestId("scratchpad-html-source").fill("<p>keep me</p>");
+      await apiPatch(request, `/scratchpads/${pad.id}`, {
+        content: "<p>v4</p>",
+        author: "pw-agent",
+      });
+      await page.getByTestId("scratchpad-overwrite").click();
+      await page.getByTestId("scratchpad-save").click();
+      await expect(page.getByTestId("scratchpad-save-status")).toHaveText("Saved");
+      expect((await apiGet<Scratchpad>(request, `/scratchpads/${pad.id}`)).content).toBe(
+        "<p>keep me</p>",
+      );
     } finally {
       await apiDelete(request, `/scratchpads/${pad.id}`);
     }

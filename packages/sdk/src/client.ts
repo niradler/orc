@@ -448,7 +448,10 @@ export function createOrcClient(options?: OrcClientOptions) {
 
       delete: (id: string) => c<null>("DELETE", `/scratchpads/${encodeURIComponent(id)}`),
 
-      contentUrl: (id: string, input: { mode: "download" | "upload"; author?: string }) =>
+      contentUrl: (
+        id: string,
+        input: { mode: "download" | "upload"; author?: string; if_revision?: number },
+      ) =>
         c<ScratchpadContentUrl>(
           "POST",
           `/scratchpads/${encodeURIComponent(id)}/content-url`,

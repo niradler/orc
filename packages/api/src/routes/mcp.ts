@@ -41,8 +41,13 @@ app.all("/mcp", async (c) => {
     mode,
     ...(projects ? { projects } : {}),
     skillDownload: (name, ref, projectId) => skillDownloads.mint(name, ref, projectId, origin),
-    padContentUrl: (id, mode, author) =>
-      scratchpadContentUrls.mint(new ScratchpadStore(getSqlite()).get(id), mode, origin, author),
+    padContentUrl: (id, mode, author, ifRevision) =>
+      scratchpadContentUrls.mint(
+        new ScratchpadStore(getSqlite()).at(id, ifRevision),
+        mode,
+        origin,
+        author,
+      ),
   });
   const transport = new WebStandardStreamableHTTPServerTransport({});
   // handleRequest returns while the SSE body is still streaming, so the

@@ -20,7 +20,14 @@ export function usePadDraft(pad: Scratchpad) {
   useEffect(() => {
     // After a save the base is ahead of the pad until the refetch lands; following the older pad
     // would flash the previous version.
-    if (pad.revision <= base.revision || current.current !== base.content) return;
+    if (pad.revision <= base.revision) return;
+    // A title, tag or project change bumps the revision without touching the file, so an open
+    // draft still applies on top of it.
+    if (pad.content === base.content) {
+      setBase({ content: pad.content, revision: pad.revision });
+      return;
+    }
+    if (current.current !== base.content) return;
     current.current = pad.content;
     setDraftState(pad.content);
     setBase({ content: pad.content, revision: pad.revision });
@@ -58,6 +65,12 @@ export function usePadDraft(pad: Scratchpad) {
     }
   }
 
+  /** Keep this draft over the other writer's version; the next save replaces theirs. */
+  function overwrite(): void {
+    setBase({ content: pad.content, revision: pad.revision });
+    setError(null);
+  }
+
   function discard(): void {
     current.current = pad.content;
     setDraftState(pad.content);
@@ -74,6 +87,7 @@ export function usePadDraft(pad: Scratchpad) {
     saving,
     error,
     save,
+    overwrite,
     discard,
   };
 }

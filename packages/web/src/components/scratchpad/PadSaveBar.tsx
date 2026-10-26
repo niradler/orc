@@ -14,6 +14,18 @@ export function PadSaveBar({ draft, children }: { draft: PadDraft; children?: Re
         </span>
         {(draft.dirty || draft.saving) && (
           <>
+            {draft.stale && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                data-testid="scratchpad-overwrite"
+                disabled={draft.saving}
+                onClick={draft.overwrite}
+              >
+                Keep mine
+              </Button>
+            )}
             <Button
               type="button"
               size="sm"
@@ -39,12 +51,13 @@ export function PadSaveBar({ draft, children }: { draft: PadDraft; children?: Re
       {draft.error && (
         <p role="alert" className="text-sm text-destructive">
           {draft.error} Your draft has been kept.
+          {draft.stale && " Discard loads their version; Keep mine lets you save over it."}
         </p>
       )}
       {draft.stale && !draft.error && (
         <p role="status" className="text-sm text-outline">
-          This scratchpad changed elsewhere. Your draft is preserved; saving will check for
-          conflicts.
+          This scratchpad changed elsewhere. Your draft is preserved: Discard loads their version;
+          Keep mine lets you save over it.
         </p>
       )}
     </div>

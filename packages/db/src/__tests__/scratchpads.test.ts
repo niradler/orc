@@ -129,12 +129,15 @@ describe("ScratchpadStore", () => {
     expect(store.list({ q: "%_" }).map((pad) => pad.id)).toEqual([c.id]);
   });
 
-  test("should keep a pad when its project is deleted and report missing pads", () => {
-    const pad = store.create({ kind: "doc", title: "Survivor", project_id: "p2" });
+  test("should delete a pad with its project and report missing pads", () => {
+    const pad = store.create({ kind: "doc", title: "Goes with p2", project_id: "p2" });
+    const unassigned = store.create({ kind: "doc", title: "Stays" });
     sqlite.exec("DELETE FROM projects WHERE id='p2'");
-    expect(store.get(pad.id).project_id).toBeNull();
-    store.remove(pad.id);
     expect(() => store.get(pad.id)).toThrow("Scratchpad not found");
-    expect(() => store.remove(pad.id)).toThrow("Scratchpad not found");
+    expect(store.get(unassigned.id).project_id).toBeNull();
+    store.remove(unassigned.id);
+    expect(() => store.get(unassigned.id)).toThrow("Scratchpad not found");
+    expect(() => store.get(pad.id)).toThrow("Scratchpad not found");
+    expect(() => store.remove(unassigned.id)).toThrow("Scratchpad not found");
   });
 });

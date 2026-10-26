@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createAgent, discoverAgents, readAgent } from "@orc/core/agent-service";
 import { loadConfig, resolveApiBase } from "@orc/core/config";
-import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
+import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { HumanRequestInputSchema, HumanRequestSchema } from "@orc/core/human-requests";
 import { shortId, ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
@@ -300,7 +300,7 @@ export const toolDefinitions = [
       "linked to this agent session. Read one with pad_get.",
     inputSchema: z.object({
       kind: z.enum(SCRATCHPAD_KINDS).optional(),
-      project: z.string().optional().describe("Project name; omit for every project"),
+      project: z.string().min(1).optional().describe("Project name; omit for every project"),
       unassigned: z.boolean().optional().describe("Only pads without a project"),
       session: z
         .string()
@@ -337,7 +337,11 @@ export const toolDefinitions = [
       kind: z.enum(SCRATCHPAD_KINDS),
       title: z.string().trim().min(1).max(SCRATCHPAD_TITLE_MAX),
       content: z.string().optional(),
-      project: z.string().optional().describe("Project name; omit for a pad without a project"),
+      project: z
+        .string()
+        .min(1)
+        .optional()
+        .describe("Project name; omit for a pad without a project"),
       tags: z.array(z.string().min(1).max(64)).max(SCRATCHPAD_TAGS_MAX).optional(),
       link_session: z
         .boolean()
@@ -356,7 +360,7 @@ export const toolDefinitions = [
       id: z.string().min(1).max(64),
       title: z.string().trim().min(1).max(SCRATCHPAD_TITLE_MAX).optional(),
       content: z.string().optional(),
-      project: z.string().nullable().optional().describe("Project name, or null to unlink"),
+      project: z.string().min(1).nullable().optional().describe("Project name, or null to unlink"),
       tags: z.array(z.string().min(1).max(64)).max(SCRATCHPAD_TAGS_MAX).optional(),
       if_revision: z.number().int().min(1).optional(),
       via: z.enum(["inline", "url"]).optional().describe("url: return an upload_url instead"),
@@ -825,7 +829,12 @@ export type ToolOptions = {
   publicApiBaseUrl?: string;
   skillDownload?: (name: string, ref: string, projectId: string | null) => SkillDownload;
   /** Mints a scratchpad content URL in-process; stdio MCP asks the API, which holds the key. */
-  padContentUrl?: (id: string, mode: "download" | "upload", author: string) => ScratchpadContentUrl;
+  padContentUrl?: (
+    id: string,
+    mode: "download" | "upload",
+    author: string,
+    ifRevision?: number,
+  ) => ScratchpadContentUrl;
   /**
    * Native session id of the calling agent. Stdio MCP runs inside the agent's process tree and
    * reads it from the environment; HTTP MCP cannot see it, so it stays unset there.
@@ -854,12 +863,14 @@ async function padContentUrl(
   id: string,
   mode: "download" | "upload",
   options: ToolOptions,
+  ifRevision?: number,
 ): Promise<ScratchpadContentUrl> {
   const { author } = memoryWriter(options);
-  if (options.padContentUrl) return options.padContentUrl(id, mode, author);
+  if (options.padContentUrl) return options.padContentUrl(id, mode, author, ifRevision);
+  // The API checks the revision in the same step that mints the URL.
   return ScratchpadContentUrlSchema.parse(
     await orcApi("POST", `/scratchpads/${encodeURIComponent(id)}/content-url`, {
-      body: { mode, author },
+      body: { mode, author, if_revision: ifRevision },
       timeoutMs: 15_000,
     }),
   );
@@ -1375,15 +1386,18 @@ export async function executeTool(
         via?: "inline" | "url";
       };
       const store = new ScratchpadStore(getSqlite(db));
-      const current = scopedPad(store, id, options);
+      scopedPad(store, id, options);
       if (via === "url") {
-        if (fields.content !== undefined)
-          throw new ValidationError("via:'url' uploads the content; do not also pass content");
-        if (fields.if_revision !== undefined && fields.if_revision !== current.revision)
-          throw new ConflictError(
-            `Scratchpad changed: revision ${current.revision} by ${current.author}, expected ${fields.if_revision}`,
+        if (
+          fields.content !== undefined ||
+          fields.title !== undefined ||
+          fields.tags !== undefined ||
+          project !== undefined
+        )
+          throw new ValidationError(
+            "via:'url' only returns an upload URL; update title, tags or project in a separate call",
           );
-        return JSON.stringify(await padContentUrl(id, "upload", options));
+        return JSON.stringify(await padContentUrl(id, "upload", options, fields.if_revision));
       }
       const pad = store.update(id, {
         ...fields,

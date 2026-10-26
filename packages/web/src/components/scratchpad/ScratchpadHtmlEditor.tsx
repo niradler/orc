@@ -14,9 +14,25 @@ type Mode = (typeof MODES)[number];
 const MODE_LABEL: Record<Mode, string> = { preview: "Preview", code: "Code", split: "Split" };
 const PREVIEW_DELAY_MS = 400;
 
-/** What a page rendered with ORC access calls: `orc.fetch("/tasks")` returns a fetch Response. */
-const BRIDGE = "__orcPadFetch";
-const BRIDGE_SCRIPT = `<script>window.orc=Object.freeze({fetch:(path,init)=>window.parent.${BRIDGE}(path,init)});</script>`;
+const SANDBOX =
+  "allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals";
+const FETCH = "orc:fetch";
+const RESULT = "orc:fetch:result";
+
+/**
+ * What a page rendered with ORC access calls: `orc.fetch("/tasks")` returns a fetch Response.
+ * The page stays in the sandbox and asks the dashboard to make each call, so it never sees the
+ * API secret or the dashboard's storage.
+ */
+const BRIDGE_SCRIPT = `<script>(()=>{const pending=new Map();let next=0;
+addEventListener("message",(e)=>{const d=e.data;if(e.source!==parent||!d||d.type!=="${RESULT}")return;
+const p=pending.get(d.id);if(!p)return;pending.delete(d.id);
+if(d.error)p.reject(new Error(d.error));
+else p.resolve(new Response(d.body,{status:d.status,statusText:d.statusText,headers:d.headers}));});
+window.orc=Object.freeze({fetch:(path,init={})=>new Promise((resolve,reject)=>{const id=++next;
+pending.set(id,{resolve,reject});
+parent.postMessage({type:"${FETCH}",id,path:String(path),method:init.method,
+headers:[...new Headers(init.headers)],body:init.body},"*");})});})();</script>`;
 
 /** Puts the bridge first in the page, after any doctype so the page keeps standards mode. */
 function withBridge(html: string): string {
@@ -26,10 +42,63 @@ function withBridge(html: string): string {
     : `${BRIDGE_SCRIPT}${html}`;
 }
 
+type FetchRequest = {
+  type: typeof FETCH;
+  id: number;
+  path: string;
+  method?: string;
+  headers: [string, string][];
+  body?: BodyInit | null;
+};
+
+function isFetchRequest(data: unknown): data is FetchRequest {
+  const d = data as Partial<FetchRequest> | null;
+  return (
+    d?.type === FETCH &&
+    typeof d.id === "number" &&
+    typeof d.path === "string" &&
+    Array.isArray(d.headers)
+  );
+}
+
+/** Answers the frame's `orc.fetch` calls with the dashboard's credentials. */
+async function answer(frame: Window, request: FetchRequest): Promise<void> {
+  try {
+    const res = await apiFetch(request.path, {
+      method: request.method,
+      headers: request.headers,
+      body: request.body ?? null,
+    });
+    const body = await res.arrayBuffer();
+    frame.postMessage(
+      {
+        type: RESULT,
+        id: request.id,
+        status: res.status,
+        statusText: res.statusText,
+        headers: [...res.headers],
+        // Null-body statuses (204, 304) reject any body, even an empty one.
+        body: body.byteLength ? body : null,
+      },
+      "*",
+      body.byteLength ? [body] : [],
+    );
+  } catch (cause) {
+    frame.postMessage(
+      {
+        type: RESULT,
+        id: request.id,
+        error: cause instanceof Error ? cause.message : "Request failed",
+      },
+      "*",
+    );
+  }
+}
+
 /**
- * By default the page runs in an opaque-origin sandbox: scripts work, but it cannot read ORC's
- * storage, call the API with the dashboard's credentials, or navigate the dashboard. With
- * `trusted` it runs unsandboxed as the dashboard and gets `window.orc.fetch` for the API.
+ * The page always runs in an opaque-origin sandbox: scripts work, but it cannot read ORC's
+ * storage or the API secret, or navigate the dashboard. With `trusted` it also gets
+ * `window.orc.fetch`, which the dashboard answers as the signed-in user.
  */
 export function HtmlPreview({
   html,
@@ -40,25 +109,26 @@ export function HtmlPreview({
   title: string;
   trusted?: boolean;
 }) {
+  const frame = useRef<HTMLIFrameElement>(null);
   useEffect(() => {
     if (!trusted) return;
-    (window as unknown as Record<string, unknown>)[BRIDGE] = apiFetch;
-    return () => {
-      delete (window as unknown as Record<string, unknown>)[BRIDGE];
+    const onMessage = (event: MessageEvent) => {
+      const source = frame.current?.contentWindow;
+      if (!source || event.source !== source || !isFetchRequest(event.data)) return;
+      void answer(source, event.data);
     };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
   }, [trusted]);
   return (
     <iframe
+      ref={frame}
       // A new frame, so a page never keeps access it was given before.
       key={trusted ? "trusted" : "sandboxed"}
       data-testid="scratchpad-html-preview"
       data-trusted={trusted || undefined}
       title={`${title} preview`}
-      sandbox={
-        trusted
-          ? undefined
-          : "allow-scripts allow-popups allow-popups-to-escape-sandbox allow-modals"
-      }
+      sandbox={SANDBOX}
       referrerPolicy="no-referrer"
       srcDoc={trusted ? withBridge(html) : html}
       className={`h-[var(--pad-height,70vh)] w-full border bg-white ${trusted ? "border-destructive" : "border-outline-variant"}`}
@@ -153,7 +223,7 @@ export function ScratchpadHtmlEditor({ pad }: { pad: Scratchpad }) {
       <ConfirmDialog
         open={confirming}
         title="Render with ORC access?"
-        description="The page's scripts will run as you, without the sandbox. They can read and change anything in ORC through the API, including starting agents and terminals. Only do this for a page you trust. Access ends when you leave the page or someone else edits it."
+        description="The page's scripts will be able to call the ORC API as you through orc.fetch: read and change anything, including starting agents and terminals. They stay in the sandbox and never see your API secret. Only do this for a page you trust. Access ends when you go back to the sandbox, leave the page, or someone else edits it."
         confirmLabel="Render with access"
         variant="destructive"
         onCancel={() => setConfirming(false)}

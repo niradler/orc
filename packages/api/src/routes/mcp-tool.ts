@@ -54,9 +54,9 @@ app.openapi(mcpToolRoute, async (c) => {
     publicApiBaseUrl: clientOrigin(c.req.raw),
     skillDownload: (skill, ref, projectId) =>
       skillDownloads.mint(skill, ref, projectId, clientOrigin(c.req.raw)),
-    padContentUrl: (id, mode, author) =>
+    padContentUrl: (id, mode, author, ifRevision) =>
       scratchpadContentUrls.mint(
-        new ScratchpadStore(getSqlite()).get(id),
+        new ScratchpadStore(getSqlite()).at(id, ifRevision),
         mode,
         clientOrigin(c.req.raw),
         author,

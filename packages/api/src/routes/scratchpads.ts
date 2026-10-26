@@ -191,6 +191,12 @@ app.openapi(
                   .max(200)
                   .optional()
                   .openapi({ description: "Recorded as the author of an upload" }),
+                if_revision: z
+                  .number()
+                  .int()
+                  .min(1)
+                  .optional()
+                  .openapi({ description: "Refuse with 409 if the pad moved past this revision" }),
               })
               .strict(),
           },
@@ -207,11 +213,12 @@ app.openapi(
         },
       },
       404: { description: "Scratchpad not found" },
+      409: { description: "The pad moved past if_revision" },
     },
   }),
   (c) => {
-    const { mode, author } = c.req.valid("json");
-    const pad = store().get(c.req.valid("param").id);
+    const { mode, author, if_revision } = c.req.valid("json");
+    const pad = store().at(c.req.valid("param").id, if_revision);
     c.header("Cache-Control", "no-store");
     return c.json(
       scratchpadContentUrls.mint(pad, mode, clientOrigin(c.req.raw), author ?? API_AUTHOR),

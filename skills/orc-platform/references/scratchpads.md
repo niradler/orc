@@ -103,16 +103,18 @@ The page is one HTML document. Inline your CSS/JS or load libraries from a CDN w
 pinned version and `integrity` + `crossorigin` attributes.
 
 **Without ORC access (default).** The page runs in a sandboxed frame with an opaque
-origin: scripts, popups and alerts work, but it cannot read ORC's storage, use the
+origin: scripts, forms, popups and alerts work, but it cannot read ORC's storage, use the
 dashboard's credentials or navigate the dashboard. Embed the data it needs in the
 page (a JSON `<script>` block or a JS constant). This is right for charts of data you
 already have, prototypes and calculators.
 
 **With ORC access.** Only the human can grant it, per view, with "Render with ORC
-access". The page then runs unsandboxed and gets `window.orc.fetch(path, init)`, which
-calls the ORC API as that human (`path` is relative to the API root, e.g.
-`/tasks?limit=100`; it returns a fetch `Response`). Access ends when they leave or
-anyone else edits the pad. Write the page so it works both ways:
+access". The page stays in the sandbox and gets `window.orc.fetch(path, init)`; the
+dashboard makes each call as that human, so the page never sees the API secret
+(`path` is relative to the API root, e.g. `/tasks?limit=100`; `init` takes `method`,
+`headers` and a string/Blob/ArrayBuffer `body`; it returns a fetch `Response`). Access
+ends when they go back to the sandbox, leave, or anyone else edits the pad. Write the
+page so it works both ways:
 
 ```html
 <script>

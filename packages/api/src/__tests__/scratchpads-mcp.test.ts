@@ -114,6 +114,9 @@ describe("scratchpad MCP tools", () => {
 
     const refused = await tool("pad_update", { id, via: "url", content: "x" });
     expect(refused.status).toBe(400);
+    for (const field of [{ title: "Renamed" }, { tags: ["x"] }, { project: null }])
+      expect((await tool("pad_update", { id, via: "url", ...field })).status).toBe(400);
+    expect((await tool("pad_update", { id, project: "" })).status).toBe(400);
 
     const upload = JSON.parse(
       (await tool("pad_update", { id, via: "url", if_revision: 1 })).result,

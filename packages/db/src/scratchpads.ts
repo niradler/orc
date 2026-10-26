@@ -24,7 +24,7 @@ export function installScratchpads(sqlite: Database): void {
       kind TEXT NOT NULL,
       title TEXT NOT NULL,
       content TEXT NOT NULL DEFAULT '',
-      project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+      project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
       session_id TEXT,
       tags TEXT,
       author TEXT NOT NULL,
@@ -118,15 +118,21 @@ export class ScratchpadStore {
     return this.get(id);
   }
 
+  /** The pad, or a 409 when it has moved past `ifRevision`. */
+  at(id: string, ifRevision?: number): Scratchpad {
+    const pad = this.get(id);
+    if (ifRevision !== undefined && ifRevision !== pad.revision)
+      throw new ConflictError(
+        `Scratchpad changed: revision ${pad.revision} by ${pad.author}, expected ${ifRevision}`,
+      );
+    return pad;
+  }
+
   /** Every write bumps the revision; `if_revision` turns a stale write into a 409. */
   update(id: string, input: ScratchpadUpdate): Scratchpad {
     this.sqlite
       .transaction(() => {
-        const before = this.get(id);
-        if (input.if_revision !== undefined && input.if_revision !== before.revision)
-          throw new ConflictError(
-            `Scratchpad changed: revision ${before.revision} by ${before.author}, expected ${input.if_revision}`,
-          );
+        const before = this.at(id, input.if_revision);
         if (input.content !== undefined) validateScratchpadContent(before.kind, input.content);
         if (input.project_id) this.requireProject(input.project_id);
         this.sqlite

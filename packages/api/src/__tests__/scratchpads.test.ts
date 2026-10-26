@@ -62,6 +62,11 @@ describe("Scratchpads REST API", () => {
     });
     expect(stale.status).toBe(409);
     expect((await stale.json()).error).toContain("revision 2 by api, expected 1");
+    const staleUrl = await req(app, "POST", `/scratchpads/${pad.id}/content-url`, {
+      mode: "upload",
+      if_revision: 1,
+    });
+    expect(staleUrl.status).toBe(409);
 
     const bad = await req(app, "PATCH", `/scratchpads/${pad.id}`, { content: "graph TD" });
     expect(bad.status).toBe(400);

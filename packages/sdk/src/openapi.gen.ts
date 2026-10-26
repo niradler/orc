@@ -7169,6 +7169,8 @@ export interface paths {
                         mode: "download" | "upload";
                         /** @description Recorded as the author of an upload */
                         author?: string;
+                        /** @description Refuse with 409 if the pad moved past this revision */
+                        if_revision?: number;
                     };
                 };
             };
@@ -7193,6 +7195,13 @@ export interface paths {
                 };
                 /** @description Scratchpad not found */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description The pad moved past if_revision */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };

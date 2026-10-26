@@ -365,7 +365,7 @@ export default function Projects() {
         <ConfirmDialog
           open={Boolean(deleting)}
           title="Delete project"
-          description="This deletes the project and its memories. Its tasks, jobs and sessions are kept without a project. This action cannot be undone."
+          description="This deletes the project, its memories and its scratchpads. Its tasks, jobs and sessions are kept without a project. This action cannot be undone."
           confirmLabel="Delete"
           variant="destructive"
           isPending={deleteProject.isPending}
