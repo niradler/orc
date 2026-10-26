@@ -76,6 +76,28 @@ test("chat preferences picked in the browser survive a reload", async ({ page })
   await expect(page.getByTestId("chat-permission-mode")).toHaveValue("bypassPermissions");
 });
 
+test("refresh and page reload follow a real server-owned turn without starting it twice", async ({
+  page,
+}) => {
+  let posts = 0;
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/api/chat/stream")) posts++;
+  });
+  await page.goto("/tasks?chat=open");
+  const panel = page.getByTestId("chat-panel");
+  const reply = `REFRESH-${Date.now()}`;
+  await panel.getByTestId("chat-input").fill(`Respond after 3500ms. Reply with exactly: ${reply}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(page).toHaveURL(/[?&]chatThread=[0-9a-f-]{36}/);
+  await panel.getByTestId("chat-refresh-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "true");
+  await page.reload();
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+  await expect(panel).toHaveAttribute("data-streaming", "false");
+  await expect(panel.getByTestId("chat-message-content")).toHaveCount(2);
+  expect(posts).toBe(1);
+});
+
 test("stopping a reply before its run is named and closing the tab still stops the run", async ({
   page,
 }) => {

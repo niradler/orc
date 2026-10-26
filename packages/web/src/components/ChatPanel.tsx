@@ -7,6 +7,7 @@ import {
   MessageSquare,
   Minimize2,
   Plus,
+  RefreshCw,
   Square,
   X,
 } from "lucide-react";
@@ -119,6 +120,9 @@ export function ChatPanel({
   const {
     messages,
     streaming,
+    reconnecting,
+    refreshing,
+    refresh,
     streamingAgent,
     error,
     config,
@@ -192,6 +196,20 @@ export function ChatPanel({
             <h2 className="text-sm font-medium">Chat</h2>
           </div>
           <div className="flex items-center">
+            <button
+              type="button"
+              data-testid="chat-refresh-button"
+              onClick={() => void refresh()}
+              disabled={!thread || refreshing}
+              className={iconButton}
+              aria-label="Refresh conversation"
+              title="Refresh conversation"
+            >
+              <RefreshCw
+                size={17}
+                className={refreshing || reconnecting ? "animate-spin" : undefined}
+              />
+            </button>
             <ChatContinueInTerminal key={thread?.id ?? "new"} />
             <ChatConversationInfo />
             <ChatSessionPicker />
@@ -239,6 +257,15 @@ export function ChatPanel({
           <ChatModelPicker key={`${thread?.id ?? "new"}:${config.agent}`} />
         </div>
         <ChatTabs />
+        {reconnecting && (
+          <p
+            role="status"
+            data-testid="chat-reconnecting"
+            className="mx-auto mt-1 w-full max-w-3xl text-xs text-on-surface-variant"
+          >
+            Connection interrupted. Reconnecting…
+          </p>
+        )}
       </header>
       <ThreadPrimitive.Viewport
         ref={viewport}
