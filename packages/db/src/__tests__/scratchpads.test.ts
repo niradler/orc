@@ -69,11 +69,28 @@ describe("ScratchpadStore", () => {
     const pad = store.create({ kind: "doc", title: "Notes", author: "agent" });
     const first = store.update(pad.id, { content: "# One", if_revision: 1, author: "human" });
     expect(first).toMatchObject({ content: "# One", revision: 2, author: "human" });
-    expect(store.update(pad.id, { title: "Renamed" }).revision).toBe(3);
+    expect(store.update(pad.id, { content: "# Two", author: "agent" }).revision).toBe(3);
     expect(() => store.update(pad.id, { content: "# Stale", if_revision: 2 })).toThrow(
-      "revision 3 by human, expected 2",
+      "revision 3 by agent, expected 2",
     );
-    expect(store.get(pad.id).content).toBe("# One");
+    expect(store.get(pad.id).content).toBe("# Two");
+  });
+
+  test("should let a file write through a rename or tag edit made since its revision", () => {
+    const pad = store.create({ kind: "doc", title: "Notes", content: "# One" });
+    store.update(pad.id, { title: "Renamed", author: "agent" });
+    store.update(pad.id, { tags: ["plan"], author: "agent" });
+    expect(store.at(pad.id, 1).revision).toBe(3);
+    const saved = store.update(pad.id, { content: "# Mine", if_revision: 1 });
+    expect(saved).toMatchObject({ content: "# Mine", title: "Renamed", tags: ["plan"] });
+    expect(saved.revision).toBe(4);
+    expect(saved).not.toHaveProperty("content_revision");
+    // A metadata write still needs the latest revision, and the file write is now the base.
+    expect(() => store.update(pad.id, { title: "Old view", if_revision: 3 })).toThrow("expected 3");
+    expect(() => store.update(pad.id, { content: "# Stale", if_revision: 3 })).toThrow(
+      "expected 3",
+    );
+    expect(() => store.at(pad.id, 5)).toThrow("expected 5");
   });
 
   test("should keep unchanged fields and allow clearing project and session links", () => {

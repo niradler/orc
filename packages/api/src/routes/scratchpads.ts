@@ -191,12 +191,9 @@ app.openapi(
                   .max(200)
                   .optional()
                   .openapi({ description: "Recorded as the author of an upload" }),
-                if_revision: z
-                  .number()
-                  .int()
-                  .min(1)
-                  .optional()
-                  .openapi({ description: "Refuse with 409 if the pad moved past this revision" }),
+                if_revision: z.number().int().min(1).optional().openapi({
+                  description: "Refuse with 409 if the file changed since this revision",
+                }),
               })
               .strict(),
           },

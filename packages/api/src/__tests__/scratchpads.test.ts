@@ -54,20 +54,27 @@ describe("Scratchpads REST API", () => {
   });
 
   test("should return 409 for a stale if_revision and 400 for bad diagram content", async () => {
-    const pad = await create({ kind: "diagram", title: "Arch" });
-    await req(app, "PATCH", `/scratchpads/${pad.id}`, { title: "Arch v2" });
-    const stale = await req(app, "PATCH", `/scratchpads/${pad.id}`, {
-      content: pad.content,
-      if_revision: 1,
-    });
-    expect(stale.status).toBe(409);
-    expect((await stale.json()).error).toContain("revision 2 by api, expected 1");
-    const staleUrl = await req(app, "POST", `/scratchpads/${pad.id}/content-url`, {
+    const doc = await create({ kind: "doc", title: "Plan" });
+    await req(app, "PATCH", `/scratchpads/${doc.id}`, { title: "Plan v2" });
+    const renamedUrl = await req(app, "POST", `/scratchpads/${doc.id}/content-url`, {
       mode: "upload",
       if_revision: 1,
     });
+    expect(renamedUrl.status).toBe(200);
+    await req(app, "PATCH", `/scratchpads/${doc.id}`, { content: "# Theirs" });
+    const stale = await req(app, "PATCH", `/scratchpads/${doc.id}`, {
+      content: "# Mine",
+      if_revision: 2,
+    });
+    expect(stale.status).toBe(409);
+    expect((await stale.json()).error).toContain("revision 3 by api, expected 2");
+    const staleUrl = await req(app, "POST", `/scratchpads/${doc.id}/content-url`, {
+      mode: "upload",
+      if_revision: 2,
+    });
     expect(staleUrl.status).toBe(409);
 
+    const pad = await create({ kind: "diagram", title: "Arch" });
     const bad = await req(app, "PATCH", `/scratchpads/${pad.id}`, { content: "graph TD" });
     expect(bad.status).toBe(400);
     const unknownField = await req(app, "PATCH", `/scratchpads/${pad.id}`, { revision: 9 });

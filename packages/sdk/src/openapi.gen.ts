@@ -7169,7 +7169,7 @@ export interface paths {
                         mode: "download" | "upload";
                         /** @description Recorded as the author of an upload */
                         author?: string;
-                        /** @description Refuse with 409 if the pad moved past this revision */
+                        /** @description Refuse with 409 if the file changed since this revision */
                         if_revision?: number;
                     };
                 };
