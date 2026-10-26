@@ -77,6 +77,61 @@ describe("createDb", () => {
     }
   });
 
+  test("replaces the legacy every-update search trigger with a text-only one", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "orc-task-search-legacy-trigger-")), "tasks.db");
+    const legacy = getSqlite(createDb(path));
+    legacy.exec(`DROP TRIGGER tasks_au;
+      CREATE TRIGGER tasks_au AFTER UPDATE ON tasks BEGIN
+        DELETE FROM tasks_fts WHERE id = old.id;
+        INSERT INTO tasks_fts(id, title, body, tags)
+          VALUES (new.id, COALESCE(new.title, ''), COALESCE(new.body, ''), COALESCE(new.tags, ''));
+      END;
+      INSERT INTO tasks(id,title) VALUES ('task','searchword');`);
+    stopChangeTracking(legacy);
+    legacy.close();
+    const reopened = getSqlite(createDb(path));
+    const ftsRowid = () => reopened.query("SELECT rowid FROM tasks_fts WHERE id='task'").get();
+    try {
+      const before = ftsRowid();
+      reopened.exec("UPDATE tasks SET status='doing', progress=50, updated_at=1 WHERE id='task'");
+      expect(ftsRowid()).toEqual(before);
+      reopened.exec("UPDATE tasks SET title='renamedword' WHERE id='task'");
+      expect(
+        reopened.query("SELECT id FROM tasks_fts WHERE tasks_fts MATCH 'renamedword'").all(),
+      ).toEqual([{ id: "task" }]);
+    } finally {
+      stopChangeTracking(reopened);
+      reopened.close();
+    }
+  });
+
+  test("indexes foreign-key children and the task list filters", () => {
+    const sqlite = getSqlite(createDb(":memory:"));
+    try {
+      const plan = (sql: string) =>
+        (sqlite.query(`EXPLAIN QUERY PLAN ${sql}`).all() as { detail: string }[])
+          .map((row) => row.detail)
+          .join(" | ");
+      expect(
+        plan(
+          "SELECT id FROM tasks WHERE project_id='p' AND status='todo' ORDER BY updated_at DESC",
+        ),
+      ).toContain("USING INDEX tasks_project_status_updated_idx");
+      expect(plan("SELECT id FROM sessions WHERE job_run_id='r'")).toContain(
+        "sessions_job_run_idx",
+      );
+      expect(plan("SELECT id FROM bridge_permissions WHERE job_run_id='r'")).toContain(
+        "bridge_permissions_run_idx",
+      );
+      expect(
+        plan("SELECT id FROM gateway_sessions WHERE task_id='t' ORDER BY updated_at DESC"),
+      ).toContain("gateway_sessions_task_idx");
+    } finally {
+      stopChangeTracking(sqlite);
+      sqlite.close();
+    }
+  });
+
   test("should migrate an existing project database without losing data and reopen idempotently", () => {
     const path = join(mkdtempSync(join(tmpdir(), "orc-project-remote-")), "legacy.db");
     const legacy = new Database(path);

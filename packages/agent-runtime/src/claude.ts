@@ -109,7 +109,7 @@ function contentToText(content: ClaudeStdoutMsg["content"]): string {
   return content.map((c) => c.text ?? c.thinking ?? "").join("");
 }
 
-class ClaudeSession implements AgentSession {
+export class ClaudeSession implements AgentSession {
   readonly id = ulid();
 
   private proc: ReturnType<typeof Bun.spawn> | null = null;
@@ -124,6 +124,8 @@ class ClaudeSession implements AgentSession {
   };
   private readonly permissionResolvers = new Map<string, (result: PermissionResult) => void>();
   private stderrRing: string[] = [];
+  private outputDrained: Promise<void> = Promise.resolve();
+  private errorsDrained: Promise<void> = Promise.resolve();
   private cwd: string;
   private runtimeSessionId: string | undefined;
   private readonly claudePath: string;
@@ -188,15 +190,15 @@ class ClaudeSession implements AgentSession {
     this.killProc = handle.kill;
 
     if (this.proc.stdout) {
-      void readLines(this.proc.stdout, (line) => {
+      this.outputDrained = readLines(this.proc.stdout, (line) => {
         try {
           this.handleStdoutLine(JSON.parse(line) as ClaudeStdoutMsg);
         } catch {}
-      }).then(() => this.handleEof());
+      });
     }
 
     if (this.proc.stderr) {
-      void readLines(this.proc.stderr, (line) => {
+      this.errorsDrained = readLines(this.proc.stderr, (line) => {
         this.stderrRing.push(line);
         if (this.stderrRing.length > STDERR_RING) this.stderrRing.shift();
       });
@@ -209,14 +211,6 @@ class ClaudeSession implements AgentSession {
     this.eventQueue.push(event);
     this.resolveNext?.();
     this.resolveNext = null;
-  }
-
-  private handleEof(): void {
-    if (!this.state.hasReceivedResult) {
-      this.done = true;
-      this.resolveNext?.();
-      this.resolveNext = null;
-    }
   }
 
   async start(_opts: SessionOpts): Promise<void> {
@@ -299,6 +293,9 @@ class ClaudeSession implements AgentSession {
     if (!this.proc) return;
     const config = this.mcpConfig;
     const code = await this.proc.exited;
+    // Decide only once both streams are read: stdout can close before the exit code and
+    // the stderr that explains it arrive.
+    await Promise.allSettled([this.outputDrained, this.errorsDrained]);
     config?.cleanup();
     if (this.state.hasReceivedResult || this.done) return;
     const stderr = this.stderrRing.join("\n");

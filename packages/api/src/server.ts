@@ -7,6 +7,7 @@ import { ORC_VERSION } from "@orc/core/version";
 import { HTTPException } from "hono/http-exception";
 import { ZodError, z } from "zod";
 import { createRouter } from "./lib/router.js";
+import { constraintFailure } from "./lib/sqlite-errors.js";
 import { bearerAuth } from "./middleware/auth.js";
 import { auditRouter } from "./routes/audit.js";
 import { backendsRouter } from "./routes/backends.js";
@@ -98,6 +99,11 @@ export function createApp() {
         { error: err.message, code: err.status === 400 ? "VALIDATION_ERROR" : "HTTP_ERROR" },
         err.status,
       );
+    const constraint = constraintFailure(err);
+    if (constraint) {
+      logger.warn(`Constraint violation on ${c.req.method} ${c.req.path}: ${constraint.error}`);
+      return c.json({ error: constraint.error, code: constraint.code }, constraint.status);
+    }
     logger.error("Unhandled error", err);
     return c.json({ error: "Internal server error", code: "INTERNAL_ERROR" }, 500);
   });

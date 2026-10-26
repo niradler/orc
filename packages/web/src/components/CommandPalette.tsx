@@ -3,6 +3,7 @@ import { ArrowUpRight, Command, FileText, Folder, Search, TerminalSquare, Zap } 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
+import { CreateProjectDialog } from "@/components/CreateProjectDialog";
 import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -16,7 +17,6 @@ import { useTerminals } from "@/lib/terminals";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { WORKSPACE_SECTIONS, workspaceDestination } from "@/lib/workspace-navigation";
-import { CreateProjectDialog } from "@/views/Projects";
 
 type Entry = {
   id: string;

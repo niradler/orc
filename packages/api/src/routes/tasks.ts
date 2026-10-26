@@ -8,6 +8,7 @@ import type { TaskStatus } from "@orc/core/types";
 import { AgentBackendSchema, TaskPrioritySchema, TaskStatusSchema } from "@orc/core/types";
 import { getDb, getSqlite } from "@orc/db/client";
 import { comments, task_links, tasks } from "@orc/db/schema";
+import { withTx } from "@orc/db/tx";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 import { and, desc, eq } from "drizzle-orm";
 import { createRouter } from "../lib/router.js";
@@ -569,7 +570,13 @@ app.openapi(deleteRoute, async (c) => {
     logger.warn("halting the task's flow before delete failed", { err }),
   );
 
-  await db.delete(tasks).where(eq(tasks.id, id));
+  withTx((tx) => {
+    // Comments are polymorphic (no FK), so they do not cascade with the task.
+    tx.delete(comments)
+      .where(and(eq(comments.resource_type, "task"), eq(comments.resource_id, id)))
+      .run();
+    tx.delete(tasks).where(eq(tasks.id, id)).run();
+  }, db);
   return new Response(null, { status: 204 });
 });
 
@@ -620,73 +627,55 @@ app.openapi(batchCreateRoute, async (c) => {
   const now = new Date();
   const mapping: Record<string, string> = {};
 
-  const sqlite = getSqlite();
-  sqlite.exec("BEGIN");
-  try {
-    for (const item of items) {
-      const id = ulid();
-      mapping[item.ref] = id;
-      await db.insert(tasks).values({
-        id,
-        title: item.title,
-        body: item.body,
-        project_id,
-        priority: item.priority,
-        author,
-        status: "todo",
-        tags: item.tags,
-        skill_name: item.skill_name,
-        required_review: item.required_review ?? true,
-        agent_backend: item.agent_backend as string | undefined,
-        agent_model: item.agent_model,
-        max_review_rounds: item.max_review_rounds ?? 3,
-        created_at: now,
-        updated_at: now,
-      });
-    }
+  const taskRows = items.map((item) => {
+    const id = ulid();
+    mapping[item.ref] = id;
+    return {
+      id,
+      title: item.title,
+      body: item.body,
+      project_id,
+      priority: item.priority,
+      author,
+      status: "todo" as const,
+      tags: item.tags,
+      skill_name: item.skill_name,
+      required_review: item.required_review ?? true,
+      agent_backend: item.agent_backend as string | undefined,
+      agent_model: item.agent_model,
+      max_review_rounds: item.max_review_rounds ?? 3,
+      created_at: now,
+      updated_at: now,
+    };
+  });
+  const link = (
+    from: string,
+    to: string,
+    link_type: (typeof task_links.$inferInsert)["link_type"],
+  ) => ({
+    id: ulid(),
+    from_task_id: from,
+    to_task_id: to,
+    link_type,
+    created_at: now,
+  });
+  const linkRows = items.flatMap((item) => {
+    const taskId = mapping[item.ref] as string;
+    const blockers = (item.depends_on ?? []).flatMap((dep) => {
+      const blockerId = mapping[dep];
+      return blockerId ? [link(blockerId, taskId, "blocks")] : [];
+    });
+    const parentId = item.subtask_of ? mapping[item.subtask_of] : undefined;
+    const parent = parentId
+      ? [link(taskId, parentId, "subtask_of"), link(parentId, taskId, "parent_of")]
+      : [];
+    return [...blockers, ...parent];
+  });
 
-    for (const item of items) {
-      const taskId = mapping[item.ref] as string;
-
-      if (item.depends_on) {
-        for (const dep of item.depends_on) {
-          const blockerId = mapping[dep];
-          if (!blockerId) continue;
-          await db.insert(task_links).values({
-            id: ulid(),
-            from_task_id: blockerId,
-            to_task_id: taskId,
-            link_type: "blocks",
-            created_at: now,
-          });
-        }
-      }
-
-      if (item.subtask_of) {
-        const parentId = mapping[item.subtask_of];
-        if (parentId) {
-          await db.insert(task_links).values({
-            id: ulid(),
-            from_task_id: taskId,
-            to_task_id: parentId,
-            link_type: "subtask_of",
-            created_at: now,
-          });
-          await db.insert(task_links).values({
-            id: ulid(),
-            from_task_id: parentId,
-            to_task_id: taskId,
-            link_type: "parent_of",
-            created_at: now,
-          });
-        }
-      }
-    }
-    sqlite.exec("COMMIT");
-  } catch (err) {
-    sqlite.exec("ROLLBACK");
-    throw err;
-  }
+  withTx((tx) => {
+    if (taskRows.length) tx.insert(tasks).values(taskRows).run();
+    if (linkRows.length) tx.insert(task_links).values(linkRows).run();
+  }, db);
 
   import("@orc/runner/task-loop")
     .then((m) => m.triggerTaskCheck())

@@ -88,6 +88,31 @@ describe("recordedCycle", () => {
     });
     expect(jobAfter?.run_count).toBe(countBefore + 1);
   });
+
+  const runCount = () =>
+    (getSqlite().query("SELECT count(*) AS n FROM job_runs").get() as { n: number }).n;
+
+  test("keeps running cycles after one fails before it starts", async () => {
+    const sqlite = getSqlite();
+    sqlite.exec(`CREATE TEMP TRIGGER fail_run_insert BEFORE INSERT ON job_runs
+      BEGIN SELECT RAISE(FAIL, 'fixture storage failure'); END`);
+    try {
+      await expect(recordedCycle()).rejects.toThrow();
+    } finally {
+      sqlite.exec("DROP TRIGGER fail_run_insert");
+    }
+    const before = runCount();
+    await recordedCycle();
+    expect(runCount()).toBe(before + 1);
+  });
+
+  test("runs once more when triggered during a cycle", async () => {
+    const before = runCount();
+    const running = recordedCycle();
+    await recordedCycle();
+    await running;
+    expect(runCount()).toBe(before + 2);
+  });
 });
 
 describe("cleanupStaleSessions", () => {

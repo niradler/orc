@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { SkillFileInput } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
-import { isMarkdownFile } from "@/lib/editor-language";
+import { isMarkdownFile } from "@/lib/file-kind";
 import { useViewParam } from "@/lib/view-params";
 
 export function PackageFileTabs({

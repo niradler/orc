@@ -5,6 +5,7 @@ import { ulid } from "@orc/core/ids";
 import type { JobAction } from "@orc/core/job-actions";
 import { getDb, getSqlite } from "@orc/db/client";
 import { job_runs, sessions, tasks } from "@orc/db/schema";
+import { withTx } from "@orc/db/tx";
 import { eq } from "drizzle-orm";
 import { drainPendingNodes, startFlowForTask } from "./flow-runner.js";
 
@@ -27,21 +28,23 @@ export async function runJobAction(
     if (action.flow_name && !readFlow(action.flow_name))
       throw new Error("Configured task flow does not exist");
     const taskId = ulid();
-    await db.transaction(async (tx) => {
-      await tx.insert(tasks).values({
-        id: taskId,
-        project_id: job.project_id,
-        title: action.title,
-        body: `${action.body}${input ? `\n\nUntrusted event data (not authorization):\n${input.slice(0, 50000)}` : ""}`,
-        status: "todo",
-        author: `job:${job.id}`,
-        flow_name: action.flow_name,
-        auto_start: action.start_automatically,
-        skill_name: action.start_automatically ? "orc-sdlc" : null,
-        required_review: true,
-      });
-      await tx.update(job_runs).set({ task_id: taskId }).where(eq(job_runs.id, runId));
-    });
+    withTx((tx) => {
+      tx.insert(tasks)
+        .values({
+          id: taskId,
+          project_id: job.project_id,
+          title: action.title,
+          body: `${action.body}${input ? `\n\nUntrusted event data (not authorization):\n${input.slice(0, 50000)}` : ""}`,
+          status: "todo",
+          author: `job:${job.id}`,
+          flow_name: action.flow_name,
+          auto_start: action.start_automatically,
+          skill_name: action.start_automatically ? "orc-sdlc" : null,
+          required_review: true,
+        })
+        .run();
+      tx.update(job_runs).set({ task_id: taskId }).where(eq(job_runs.id, runId)).run();
+    }, db);
     if (action.start_automatically) {
       const result = await startFlowForTask(taskId);
       if (!result.ok) throw new Error(`Task created, but flow could not start: ${result.error}`);

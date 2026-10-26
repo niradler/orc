@@ -8,7 +8,8 @@ import { Search, WrapText } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CodeEditorProps } from "@/components/CodeEditor";
 import { Markdown } from "@/components/Markdown";
-import { editorLanguage, isMarkdownFile } from "@/lib/editor-language";
+import { editorLanguage } from "@/lib/editor-language";
+import { isMarkdownFile } from "@/lib/file-kind";
 import { useTheme } from "@/lib/theme";
 
 const externalChange = Annotation.define<boolean>();

@@ -22,6 +22,7 @@
     "./session-handoff": "./src/session-handoff.ts",
     "./session-archive": "./src/session-archive.ts",
     "./ids": "./src/ids.ts",
+    "./timers": "./src/timers.ts",
     "./errors": "./src/errors.ts",
     "./version": "./src/version.ts",
     "./skill-service": "./src/skill-service.ts",

@@ -305,11 +305,6 @@ function setupDb(sqlite: Database): void {
       DELETE FROM tasks_fts WHERE id = old.id;
     END;
 
-    CREATE TRIGGER IF NOT EXISTS tasks_au AFTER UPDATE ON tasks BEGIN
-      DELETE FROM tasks_fts WHERE id = old.id;
-      INSERT INTO tasks_fts(id, title, body, tags)
-        VALUES (new.id, COALESCE(new.title, ''), COALESCE(new.body, ''), COALESCE(new.tags, ''));
-    END;
 
     CREATE TABLE IF NOT EXISTS session_events (
       id         TEXT PRIMARY KEY,
@@ -436,6 +431,9 @@ function setupDb(sqlite: Database): void {
     }
   }
 
+  sqlite.exec(INDEXES);
+  syncTaskSearchTrigger(sqlite);
+
   // FTS5 has no unique constraint on id: INSERT OR IGNORE appended another
   // copy on every open. Repair existing copies and backfill only missing tasks.
   // Serialize the repair/backfill with task writers and other initializers.
@@ -460,6 +458,54 @@ function setupDb(sqlite: Database): void {
     sqlite.exec(`INSERT OR IGNORE INTO bridge_chats (id, platform, chat_id, mode, authorized, updated_at, created_at)
       VALUES ('__live-sessions__', 'telegram', '__live-sessions__', 'direct', 0, unixepoch(), unixepoch())`);
   } catch {}
+}
+
+// Foreign-key children and hot list filters. SQLite looks up FK children on every parent
+// delete, so an unindexed child column means a full scan of that table per deleted row.
+const INDEXES = `
+  CREATE INDEX IF NOT EXISTS tasks_project_status_updated_idx ON tasks(project_id, status, updated_at);
+  CREATE INDEX IF NOT EXISTS tasks_status_updated_idx ON tasks(status, updated_at);
+  CREATE INDEX IF NOT EXISTS sessions_project_created_idx ON sessions(project_id, created_at);
+  CREATE INDEX IF NOT EXISTS sessions_job_run_idx ON sessions(job_run_id);
+  CREATE INDEX IF NOT EXISTS gateway_sessions_task_idx ON gateway_sessions(task_id, updated_at);
+  CREATE INDEX IF NOT EXISTS gateway_sessions_activity_idx ON gateway_sessions(chat_id, last_activity_at);
+  CREATE INDEX IF NOT EXISTS gateway_sessions_status_role_idx ON gateway_sessions(status, role);
+  CREATE INDEX IF NOT EXISTS gateway_sessions_project_idx ON gateway_sessions(project_id);
+  CREATE INDEX IF NOT EXISTS job_runs_task_idx ON job_runs(task_id);
+  CREATE INDEX IF NOT EXISTS job_runs_created_idx ON job_runs(created_at);
+  CREATE INDEX IF NOT EXISTS job_runs_status_idx ON job_runs(status);
+  CREATE INDEX IF NOT EXISTS jobs_project_idx ON jobs(project_id);
+  CREATE INDEX IF NOT EXISTS bridge_messages_chat_idx ON bridge_messages(chat_id);
+  CREATE INDEX IF NOT EXISTS bridge_messages_run_idx ON bridge_messages(job_run_id);
+  CREATE INDEX IF NOT EXISTS bridge_messages_gw_idx ON bridge_messages(gateway_session_id);
+  CREATE INDEX IF NOT EXISTS bridge_permissions_gw_idx ON bridge_permissions(gateway_session_id);
+  CREATE INDEX IF NOT EXISTS bridge_permissions_run_idx ON bridge_permissions(job_run_id);
+  CREATE INDEX IF NOT EXISTS flow_node_runs_task_idx ON flow_node_runs(task_id);
+  CREATE INDEX IF NOT EXISTS flow_node_runs_gw_idx ON flow_node_runs(gateway_session_id);
+  CREATE INDEX IF NOT EXISTS webhook_deliveries_run_idx ON webhook_deliveries(job_run_id);
+`;
+
+// Re-index search only when searchable text changes: status, progress and claim updates
+// are constant during agent work. Older databases have an unconditional trigger.
+const TASKS_AU = `CREATE TRIGGER tasks_au AFTER UPDATE OF title, body, tags ON tasks BEGIN
+    DELETE FROM tasks_fts WHERE id = old.id;
+    INSERT INTO tasks_fts(id, title, body, tags)
+      VALUES (new.id, COALESCE(new.title, ''), COALESCE(new.body, ''), COALESCE(new.tags, ''));
+  END`;
+
+function syncTaskSearchTrigger(sqlite: Database): void {
+  const current = sqlite
+    .query<{ sql: string }, []>(
+      "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='tasks_au'",
+    )
+    .get();
+  if (current?.sql === TASKS_AU) return;
+  sqlite
+    .transaction(() => {
+      sqlite.exec("DROP TRIGGER IF EXISTS tasks_au");
+      sqlite.exec(TASKS_AU);
+    })
+    .immediate();
 }
 
 // Tables of the removed wiki and knowledge digest; knowledge bases with digests replaced them.
@@ -522,6 +568,11 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   )`);
+  sqlite.exec(
+    "CREATE INDEX IF NOT EXISTS session_handoffs_live_idx ON session_handoffs(live_session_id)",
+  );
+  // Refreshes planner statistics for the indexes above; cheap when nothing changed.
+  sqlite.exec("PRAGMA optimize=0x10002;");
   dropRetiredTables(sqlite);
   installAudit(sqlite);
   installChat(sqlite);

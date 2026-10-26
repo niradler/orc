@@ -12,6 +12,7 @@ import { redactSecrets } from "./redact.js";
 import "./agent-runtime/index.js";
 import { apiFindJobByName, apiFindProjectById } from "./api.js";
 import { ensureAgentSession, handleDirectCommand } from "./direct.js";
+import { escapeHtml } from "./html.js";
 import { HumanRequestChannels } from "./human-requests.js";
 import { PermissionManager } from "./permission-manager.js";
 import { PreviewManager } from "./preview-manager.js";
@@ -590,7 +591,7 @@ class GatewayManager {
 
   async notifyTaskReview(input: { taskId: string; title: string; summary: string }): Promise<void> {
     const targets = await listReviewTargets();
-    const text = `👀 <b>Review requested</b>\n\n<b>${input.title}</b>\n${input.summary.slice(0, 400)}`;
+    const text = `👀 <b>Review requested</b>\n\n<b>${escapeHtml(input.title)}</b>\n${escapeHtml(input.summary.slice(0, 400))}`;
     const buttons = [
       [
         { label: "✅ Approve", value: `task:approve:${input.taskId}` },

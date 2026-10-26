@@ -257,6 +257,8 @@ export class AcpxSession implements AgentSession {
   private done = false;
   private gotResult = false;
   private stderrBuf = "";
+  private outputDrained: Promise<void> = Promise.resolve();
+  private errorsDrained: Promise<void> = Promise.resolve();
   private readonly agent: string;
   private readonly sessionName: string;
   private readonly cwd: string;
@@ -330,24 +332,12 @@ export class AcpxSession implements AgentSession {
     this.push(event);
   }
 
-  private handleEof(): void {
-    if (!this.gotResult && !this.done) {
-      logger.warn("ACPX stdout closed without a result event — synthesising empty result", {
-        agent: this.agent,
-      });
-      this.push({
-        type: "result",
-        data: { runtimeSessionId: this.sessionName },
-      });
-    }
-    this.done = true;
-    this.resolveNext?.();
-    this.resolveNext = null;
-  }
-
   private async watchExit(): Promise<void> {
     if (!this.proc) return;
     const code = await this.proc.exited;
+    // Decide only once both streams are read: stdout can close before the exit code and
+    // the stderr that explains it arrive.
+    await Promise.allSettled([this.outputDrained, this.errorsDrained]);
     logger.info("ACPX process exited", { agent: this.agent, code });
     if (this.done) return;
     if (code !== 0) {
@@ -355,6 +345,11 @@ export class AcpxSession implements AgentSession {
       const msg = `acpx exited with code ${code}${detail ? `: ${detail}` : ""}`;
       logger.error(msg, { agent: this.agent, stderr: detail });
       this.push({ type: "error", data: msg });
+    } else if (!this.gotResult) {
+      logger.warn("ACPX exited without a result event — synthesising empty result", {
+        agent: this.agent,
+      });
+      this.push({ type: "result", data: { runtimeSessionId: this.sessionName } });
     }
     this.done = true;
     this.resolveNext?.();
@@ -408,20 +403,19 @@ export class AcpxSession implements AgentSession {
     });
 
     if (this.proc.stdout) {
-      void readLines(this.proc.stdout, (line) => this.handleLine(line))
-        .then(() => this.handleEof())
-        .catch((err) => {
+      this.outputDrained = readLines(this.proc.stdout, (line) => this.handleLine(line)).catch(
+        (err) => {
           logger.error("Error reading ACPX stdout", { err, agent: this.agent });
           this.push({
             type: "error",
             data: `ACPX stream error: ${String(err)}`,
           });
-          this.handleEof();
-        });
+        },
+      );
     }
 
     if (this.proc.stderr) {
-      void readLines(this.proc.stderr, (line) => {
+      this.errorsDrained = readLines(this.proc.stderr, (line) => {
         logger.debug("ACPX stderr", { agent: this.agent, line });
         this.stderrBuf += `${line}\n`;
       }).catch(() => {});

@@ -120,3 +120,33 @@ describe("/mem", () => {
     expect(result).toEqual({ text: "Stored memory api-port" });
   });
 });
+
+describe("/task", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  it("escapes task text in the HTML reply", async () => {
+    globalThis.fetch = (async () =>
+      Response.json({
+        tasks: [
+          {
+            id: "01HTASKESCAPE0000000000001",
+            title: "Fix <div> & co",
+            body: "a < b",
+            status: "review",
+            priority: 2,
+            claimed_by: null,
+          },
+        ],
+      })) as unknown as typeof fetch;
+    const result = await handleDirectCommand({
+      chatKey: "test:1",
+      rawText: "/task 0001",
+      currentProjectId: null,
+    });
+    expect(result?.html).toContain("<b>Fix &lt;div&gt; &amp; co</b>");
+    expect(result?.html).toContain("a &lt; b");
+  });
+});

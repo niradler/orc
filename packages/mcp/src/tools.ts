@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createAgent, discoverAgents, readAgent } from "@orc/core/agent-service";
-import { loadConfig } from "@orc/core/config";
+import { loadConfig, resolveApiBase } from "@orc/core/config";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { HumanRequestInputSchema, HumanRequestSchema } from "@orc/core/human-requests";
 import { shortId, ulid } from "@orc/core/ids";
@@ -937,10 +937,7 @@ export async function executeTool(
   if (name === "session_handoff") {
     const input = SessionHandoffInputSchema.parse(args);
     const config = loadConfig();
-    const hostname =
-      config.api.host === "0.0.0.0" || config.api.host === "::" ? "127.0.0.1" : config.api.host;
-    const base = process.env.ORC_API_BASE ?? `http://${hostname}:${config.api.port}`;
-    const response = await fetch(`${base.replace(/\/$/, "")}/api/session-handoffs`, {
+    const response = await fetch(`${resolveApiBase(config)}/api/session-handoffs`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

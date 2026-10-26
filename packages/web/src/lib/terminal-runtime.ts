@@ -48,6 +48,7 @@ export interface TerminalRuntime {
   attempts: number;
   retryTimer: ReturnType<typeof setTimeout> | null;
   resizeTimer: ReturnType<typeof setTimeout> | null;
+  canvasObserver: ResizeObserver | null;
   onFontSizeChange?: (size: number) => void;
   textInput?: TerminalTextInput | null;
 }
@@ -204,6 +205,7 @@ export function createRuntime(
     attempts: 0,
     retryTimer: null,
     resizeTimer: null,
+    canvasObserver: null,
     ...(onFontSizeChange ? { onFontSizeChange } : {}),
   };
 
@@ -492,7 +494,10 @@ export function mountRuntime(runtime: TerminalRuntime, container: HTMLElement, f
     }
     runtime.fit.observeResize();
     const canvas = runtime.element.querySelector("canvas");
-    if (canvas) new ResizeObserver(() => runtime.textLayer.schedule()).observe(canvas);
+    if (canvas) {
+      runtime.canvasObserver = new ResizeObserver(() => runtime.textLayer.schedule());
+      runtime.canvasObserver.observe(canvas);
+    }
     runtime.opened = true;
   } else {
     resumeRendering(runtime.term);
@@ -618,6 +623,8 @@ export function disposeRuntime(runtime: TerminalRuntime): void {
     socket.onclose = null;
     socket.close(1000);
   }
+  runtime.canvasObserver?.disconnect();
+  runtime.canvasObserver = null;
   runtime.fit.dispose();
   runtime.term.dispose();
   runtime.textLayer.dispose();

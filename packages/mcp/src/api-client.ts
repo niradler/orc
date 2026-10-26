@@ -1,11 +1,9 @@
-import { loadConfig } from "@orc/core/config";
+import { loadConfig, resolveApiBase } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
 
 /** Base URL of the local ORC API (the daemon), reachable from MCP processes on this host. */
 export function orcApiBase(): string {
-  const { api } = loadConfig();
-  const hostname = api.host === "0.0.0.0" || api.host === "::" ? "127.0.0.1" : api.host;
-  return (process.env.ORC_API_BASE ?? `http://${hostname}:${api.port}`).replace(/\/$/, "");
+  return resolveApiBase();
 }
 
 /**

@@ -6,6 +6,7 @@ import { getDb } from "@orc/db/client";
 import { detachLegacyKnowledgeCollections, projectKbCount } from "@orc/db/kb";
 import { MemoryStore } from "@orc/db/memories";
 import { bridge_chats, comments, jobs, projects, sessions, tasks } from "@orc/db/schema";
+import { withTx } from "@orc/db/tx";
 import { and, desc, eq } from "drizzle-orm";
 import { createRouter } from "../lib/router.js";
 
@@ -413,16 +414,19 @@ app.openapi(deleteRoute, async (c) => {
     throw new ConflictError(
       `Project has ${kbs} knowledge base${kbs === 1 ? "" : "s"}; delete them first`,
     );
-  await db.transaction(async (tx) => {
-    await tx.update(tasks).set({ project_id: null }).where(eq(tasks.project_id, id));
+  withTx((tx) => {
+    tx.update(tasks).set({ project_id: null }).where(eq(tasks.project_id, id)).run();
     // Memories belong to one project, so they go with it (with their history and reads).
     new MemoryStore(sqlite).removeProject(id);
-    await tx.update(jobs).set({ project_id: null }).where(eq(jobs.project_id, id));
-    await tx.update(sessions).set({ project_id: null }).where(eq(sessions.project_id, id));
-    await tx.update(bridge_chats).set({ project_id: null }).where(eq(bridge_chats.project_id, id));
+    tx.update(jobs).set({ project_id: null }).where(eq(jobs.project_id, id)).run();
+    tx.update(sessions).set({ project_id: null }).where(eq(sessions.project_id, id)).run();
+    tx.update(bridge_chats).set({ project_id: null }).where(eq(bridge_chats.project_id, id)).run();
     detachLegacyKnowledgeCollections(sqlite, id);
-    await tx.delete(projects).where(eq(projects.id, id));
-  });
+    tx.delete(comments)
+      .where(and(eq(comments.resource_type, "project"), eq(comments.resource_id, id)))
+      .run();
+    tx.delete(projects).where(eq(projects.id, id)).run();
+  }, db);
   return new Response(null, { status: 204 });
 });
 

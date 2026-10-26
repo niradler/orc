@@ -16,6 +16,7 @@ import {
   apiRejectTask,
   apiTriggerJob,
 } from "./api.js";
+import { escapeHtml } from "./html.js";
 import {
   assignTaskToSession,
   createGatewaySession,
@@ -66,10 +67,6 @@ function priorityTag(priority: number | null): string {
   return priority === null ? "" : ` [p${priority}]`;
 }
 
-function escapeHtml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
 /** Parses `<name> <description> | <content>` from `/mem add`. */
 export function parseMemAdd(
   args: string,
@@ -82,7 +79,7 @@ export function parseMemAdd(
 }
 
 function helpText(mode: GatewayMode, projectName?: string): string {
-  const projectLine = projectName ? `\n📁 Project: <b>${projectName}</b>` : "";
+  const projectLine = projectName ? `\n📁 Project: <b>${escapeHtml(projectName)}</b>` : "";
   const base = [
     `<b>ORC Gateway Commands</b>${projectLine}`,
     "",
@@ -157,13 +154,13 @@ export async function handleDirectCommand(input: {
     let projectLine = "";
     if (input.currentProjectId) {
       const proj = await apiFindProjectById(input.currentProjectId).catch(() => null);
-      projectLine = proj ? `\n📁 Project: <b>${proj.name}</b>` : "";
+      projectLine = proj ? `\n📁 Project: <b>${escapeHtml(proj.name)}</b>` : "";
     }
     const lines = [
       `<b>ORC Status</b>${projectLine}`,
       "",
-      `Mode: <code>${input.currentMode ?? "direct"}</code>`,
-      `Working dir: <code>${input.currentWorkingDir ?? "(unset)"}</code>`,
+      `Mode: <code>${escapeHtml(input.currentMode ?? "direct")}</code>`,
+      `Working dir: <code>${escapeHtml(input.currentWorkingDir ?? "(unset)")}</code>`,
       "",
       `<b>Tasks</b>: ${activeTasks.slice(0, 5).length} active`,
       `<b>Jobs</b>: ${jobs.slice(0, 5).length} defined`,
@@ -210,7 +207,7 @@ export async function handleDirectCommand(input: {
     for (const row of rows) {
       const claimed = row.claimed_by ? ` [${row.claimed_by}]` : "";
       lines.push(
-        `${taskStatusEmoji(row.status)} ${priorityEmoji(row.priority)} <code>${shortId(row.id)}</code> ${row.title}${claimed}`,
+        `${taskStatusEmoji(row.status)} ${priorityEmoji(row.priority)} <code>${shortId(row.id)}</code> ${escapeHtml(row.title)}${escapeHtml(claimed)}`,
       );
     }
     return { html: lines.join("\n") };
@@ -221,13 +218,13 @@ export async function handleDirectCommand(input: {
     const task = await apiFindTask(argText);
     if (!task) return { text: `Task not found: ${argText}` };
     const lines = [
-      `<b>${task.title}</b>`,
+      `<b>${escapeHtml(task.title)}</b>`,
       `ID: <code>${task.id}</code>`,
       `Status: ${taskStatusEmoji(task.status)} ${task.status}`,
       `Priority: ${priorityEmoji(task.priority)} ${task.priority}`,
     ];
-    if (task.claimed_by) lines.push(`Agent: ${task.claimed_by}`);
-    if (task.body) lines.push("", task.body.slice(0, 500));
+    if (task.claimed_by) lines.push(`Agent: ${escapeHtml(task.claimed_by)}`);
+    if (task.body) lines.push("", escapeHtml(task.body.slice(0, 500)));
     const buttons =
       task.status === "review"
         ? [
@@ -302,7 +299,9 @@ export async function handleDirectCommand(input: {
     const lines = ["<b>Jobs</b>", ""];
     for (const row of rows) {
       const status = row.last_run_at ? "ran" : "never";
-      lines.push(`• <code>${row.name}</code> (${row.trigger_type}) - ${status} × ${row.run_count}`);
+      lines.push(
+        `• <code>${escapeHtml(row.name)}</code> (${row.trigger_type}) - ${status} × ${row.run_count}`,
+      );
     }
     return { html: lines.join("\n") };
   }
@@ -372,7 +371,7 @@ export async function handleDirectCommand(input: {
       lines.push(
         `${marker}${statusEmoji(s.status)} <code>${shortId(s.id)}</code> ${s.backend}${task}`,
       );
-      if (s.cwd) lines.push(`     cwd: <code>${s.cwd}</code>`);
+      if (s.cwd) lines.push(`     cwd: <code>${escapeHtml(s.cwd)}</code>`);
     }
     return { html: lines.join("\n") };
   }
@@ -486,8 +485,8 @@ export async function handleDirectCommand(input: {
     const lines = ["<b>📁 Projects</b> — tap to activate", ""];
     for (const row of rows) {
       const marker = row.id === active ? "▶ " : "  ";
-      const desc = row.description ? ` — ${row.description}` : "";
-      lines.push(`${marker}<code>${row.name}</code>${desc}`);
+      const desc = row.description ? ` — ${escapeHtml(row.description)}` : "";
+      lines.push(`${marker}<code>${escapeHtml(row.name)}</code>${desc}`);
     }
     const btnRows: Array<Array<{ label: string; value: string }>> = [];
     let rowBuf: Array<{ label: string; value: string }> = [];

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { MarkdownEditor, type MarkdownEditorProps } from "@/components/MarkdownEditor";
 import { SourceCodeEditor } from "@/components/SourceCodeEditor";
-import { isMarkdownFile } from "@/lib/editor-language";
+import { isMarkdownFile } from "@/lib/file-kind";
 
 export type CodeEditorProps = {
   path: string;

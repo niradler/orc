@@ -5,7 +5,7 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
-import { isMarkdownFile } from "@/lib/editor-language";
+import { isMarkdownFile } from "@/lib/file-kind";
 
 type Draft = { original: string; content: string };
 const drafts = new Map<string, Draft>();

@@ -1,4 +1,4 @@
-import { loadConfig } from "@orc/core/config";
+import { loadConfig, resolveApiBase } from "@orc/core/config";
 import type { HumanRequest, HumanRequestInput, HumanResponse } from "@orc/core/human-requests";
 import type {
   KbCallSource,
@@ -213,7 +213,7 @@ async function call<T>(
 
 export function createOrcClient(options?: OrcClientOptions) {
   const config = loadConfig();
-  const baseUrl = options?.baseUrl ?? `http://${config.api.host}:${config.api.port}`;
+  const baseUrl = options?.baseUrl ?? resolveApiBase(config);
   const secret = options?.secret ?? config.api.secret;
   const headers = {
     ...identityHeaders(options),

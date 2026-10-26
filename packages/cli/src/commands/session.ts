@@ -1,4 +1,4 @@
-import { configuredApiSecret, loadConfig } from "@orc/core/config";
+import { configuredApiSecret, loadConfig, resolveApiBase } from "@orc/core/config";
 import { shortId } from "@orc/core/ids";
 import { Command } from "commander";
 import { isJson, jsonOut } from "../output.js";
@@ -36,10 +36,9 @@ function formatAgo(iso: string): string {
 
 function apiBase(): string {
   try {
-    const c = loadConfig();
-    return `http://${c.api.host}:${c.api.port}/api`;
+    return `${resolveApiBase()}/api`;
   } catch {
-    return `${process.env.ORC_API_BASE ?? "http://127.0.0.1:7700"}/api`;
+    return "http://127.0.0.1:7700/api";
   }
 }
 
@@ -194,7 +193,7 @@ export function sessionCommand() {
     .option("--agent-version <v>", "Agent version string")
     .action(async (summary: string, opts) => {
       const config = loadConfig();
-      const base = `http://${config.api.host}:${config.api.port}/api`;
+      const base = `${resolveApiBase(config)}/api`;
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };

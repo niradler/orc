@@ -1,7 +1,7 @@
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { configuredApiSecret, loadConfig } from "@orc/core/config";
+import { configuredApiSecret, loadConfig, type OrcConfig, resolveApiBase } from "@orc/core/config";
 import {
   type ExecHost,
   ensureSshMaster,
@@ -32,17 +32,16 @@ export function buildOrcMcpServer(
   alwaysLoad = false,
   mode: OrcMcpMode = "full",
 ): OrcHttpMcpServer {
-  let api: { host: string; port: number; secret?: string | undefined };
+  let config: OrcConfig;
   try {
-    api = loadConfig().api;
+    config = loadConfig();
   } catch (err) {
     throw new Error(
       `Cannot start a tool-restricted agent session: ORC config unavailable, so the ORC MCP server (mcp__orc__*) cannot be injected: ${String(err)}`,
     );
   }
-  const secret = configuredApiSecret(api.secret);
-  const base =
-    host.kind === "ssh" ? `${orcUrlOnHost(host)}/mcp` : `http://${api.host}:${api.port}/mcp`;
+  const secret = configuredApiSecret(config.api.secret);
+  const base = `${host.kind === "ssh" ? orcUrlOnHost(host) : resolveApiBase(config)}/mcp`;
   return {
     type: "http",
     ...(alwaysLoad ? { alwaysLoad: true } : {}),

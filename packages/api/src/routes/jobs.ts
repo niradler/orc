@@ -7,18 +7,12 @@ import { createLogger } from "@orc/core/logger";
 import { JobOverlapSchema, JobStatusSchema, JobTriggerTypeSchema } from "@orc/core/types";
 import { getDb } from "@orc/db/client";
 import { KB_DIGEST_COMMAND_PREFIX, kbDigestKbId } from "@orc/db/kb-digest";
-import {
-  bridge_messages,
-  bridge_permissions,
-  job_run_logs,
-  job_runs,
-  jobs,
-  sessions,
-} from "@orc/db/schema";
+import { job_run_logs, job_runs, jobs } from "@orc/db/schema";
+import { deleteJob, withTx } from "@orc/db/tx";
 import { executeJob } from "@orc/runner/executor";
 import { syncJob, unscheduleJob } from "@orc/runner/scheduler";
 import { Cron } from "croner";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { readJobWebhooks, saveJobWebhooks, validateJobWebhooks } from "../lib/job-webhooks.js";
 import { createRouter } from "../lib/router.js";
 
@@ -368,27 +362,29 @@ app.openapi(createRoute_, async (c) => {
   const now = new Date();
   const id = ulid();
 
-  await db.transaction(async (tx) => {
-    await tx.insert(jobs).values({
-      id,
-      name: body.name,
-      description: body.description,
-      command: action.type === "command" ? action.command : "",
-      action,
-      trigger_type: body.trigger_type,
-      enabled: body.enabled,
-      cron_expr: body.cron_expr,
-      watch_path: body.watch_path,
-      timeout_secs: body.timeout_secs,
-      max_retries: body.max_retries,
-      overlap: body.overlap,
-      notify_on: body.notify_on,
-      env_vars: body.env_vars,
-      working_dir: body.working_dir,
-      project_id: body.project_id,
-      created_at: now,
-      updated_at: now,
-    });
+  withTx((tx) => {
+    tx.insert(jobs)
+      .values({
+        id,
+        name: body.name,
+        description: body.description,
+        command: action.type === "command" ? action.command : "",
+        action,
+        trigger_type: body.trigger_type,
+        enabled: body.enabled,
+        cron_expr: body.cron_expr,
+        watch_path: body.watch_path,
+        timeout_secs: body.timeout_secs,
+        max_retries: body.max_retries,
+        overlap: body.overlap,
+        notify_on: body.notify_on,
+        env_vars: body.env_vars,
+        working_dir: body.working_dir,
+        project_id: body.project_id,
+        created_at: now,
+        updated_at: now,
+      })
+      .run();
 
     saveJobWebhooks(id, bindings);
   });
@@ -430,9 +426,8 @@ app.openapi(updateRoute, async (c) => {
     body.cron_expr !== undefined ? body.cron_expr : (existing.cron_expr ?? undefined);
   assertValidCron(effectiveTrigger, effectiveCron);
 
-  await db.transaction(async (tx) => {
-    await tx
-      .update(jobs)
+  withTx((tx) => {
+    tx.update(jobs)
       .set({
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(body.description !== undefined ? { description: body.description } : {}),
@@ -452,7 +447,8 @@ app.openapi(updateRoute, async (c) => {
         ...(body.project_id !== undefined ? { project_id: body.project_id } : {}),
         updated_at: new Date(),
       })
-      .where(eq(jobs.id, id));
+      .where(eq(jobs.id, id))
+      .run();
 
     if (body.webhooks !== undefined || body.trigger_type !== undefined)
       saveJobWebhooks(id, effectiveTrigger === "webhook" ? bindings : []);
@@ -473,30 +469,7 @@ app.openapi(deleteRoute, async (c) => {
     throw new ValidationError(
       "This job runs a knowledge base digest; remove the digest from the knowledge base instead",
     );
-  const runIds = (
-    await db.select({ id: job_runs.id }).from(job_runs).where(eq(job_runs.job_id, id))
-  ).map((r) => r.id);
-  await db.transaction(async (tx) => {
-    // Deleting the job cascades to its job_runs, but sessions/bridge rows
-    // reference those runs with no ON DELETE action — null them first so the
-    // cascade doesn't trip a FK constraint. (Schema declares "set null" too,
-    // but existing DBs were created before that and can't be altered in place.)
-    if (runIds.length > 0) {
-      await tx
-        .update(sessions)
-        .set({ job_run_id: null })
-        .where(inArray(sessions.job_run_id, runIds));
-      await tx
-        .update(bridge_messages)
-        .set({ job_run_id: null })
-        .where(inArray(bridge_messages.job_run_id, runIds));
-      await tx
-        .update(bridge_permissions)
-        .set({ job_run_id: null })
-        .where(inArray(bridge_permissions.job_run_id, runIds));
-    }
-    await tx.delete(jobs).where(eq(jobs.id, id));
-  });
+  deleteJob(id);
   unscheduleJob(id);
   return new Response(null, { status: 204 });
 });

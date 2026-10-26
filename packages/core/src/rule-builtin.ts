@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { loadConfig } from "./config.js";
+import { loadConfig, resolveApiBase } from "./config.js";
 import type { RuleDecision, RuleEvent } from "./rule-types.js";
 
 export async function runRuleBuiltinActions(
@@ -21,9 +21,7 @@ export async function runRuleBuiltinActions(
     return result;
   }
   const config = loadConfig();
-  const base = (process.env.ORC_API_BASE ?? `http://${config.api.host}:${config.api.port}`)
-    .replace(/\/$/, "")
-    .replace(/\/api$/, "");
+  const base = resolveApiBase(config);
   for (const action of decision.orc_actions) {
     try {
       const response = await fetch(`${base}/api/rules/actions/run`, {
