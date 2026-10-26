@@ -65,7 +65,7 @@ handoff before running publication or deployment commands.
 
 ### Git worktrees
 
-Create every worktree under `.orc/worktrees/<name>` at the repo root (gitignored): `git worktree add .orc/worktrees/<name> ...`. Never place one beside the repo (`../orc-*`), in a temp directory, or in `.worktrees/`, `.claude/worktrees/` or `.claude/checkouts/`. This overrides any skill or tool default. Remove a worktree you created once its work is merged.
+Create worktrees under `.orc/worktrees/<name>` at the repo root (gitignored): `git worktree add .orc/worktrees/<name> ...`. A coding agent's native worktree folder is also fine: `.claude/worktrees/<name>` (Claude Code) or `~/.codex/worktrees/` (Codex). Never place one beside the repo (`../orc-*`), in a temp directory, or in `.worktrees/` or `.claude/checkouts/`. The workspace ORC rule `worktree-add-outside-allowed-folders` enforces this. Remove a worktree you created once its work is merged.
 
 All packages load `../../.env` via `bun --env-file ../../.env` in their `dev` scripts. Create `.env` at the repo root:
 
