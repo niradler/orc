@@ -29,8 +29,13 @@ export function ResumeActions({ session }: { session: LiveSession }) {
   const command = resumeCommand(session);
   const existing = runningTerminalForSession(terminals, session.id);
   const scope = params.get("project") ?? session.project_id;
-  const chatSupported = ["claude", "codex"].includes(session.agent) && !!command && !!session.cwd;
-  const chatActive = session.status === "running" || session.status === "idle";
+  const chatUnavailable = !["claude", "codex"].includes(session.agent)
+    ? "Chat currently supports Claude and Codex sessions."
+    : !command || !session.cwd
+      ? "Session has no native session ID or working folder."
+      : session.status === "running" || session.status === "idle"
+        ? "End the original agent session before resuming it in chat."
+        : undefined;
   useEffect(() => {
     if (!copied) return;
     const timeout = setTimeout(() => setCopied(null), 2000);
@@ -101,44 +106,38 @@ export function ResumeActions({ session }: { session: LiveSession }) {
           <SquareTerminal size={13} />
           {pending ? "Resuming…" : "Resume in terminal"}
         </button>
-        {command && (
-          <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
-            <Popover.Trigger asChild>
+        <Popover.Root open={menuOpen} onOpenChange={setMenuOpen}>
+          <Popover.Trigger asChild>
+            <button
+              type="button"
+              data-testid="resume-actions-menu"
+              aria-label="More session actions"
+              className={`${ACTION} rounded-l-none border-l-0 px-2`}
+            >
+              <ChevronDown size={13} />
+            </button>
+          </Popover.Trigger>
+          <Popover.Portal>
+            <Popover.Content
+              align="end"
+              sideOffset={4}
+              collisionPadding={8}
+              aria-label="Session actions"
+              data-testid="resume-actions-dropdown"
+              className="z-50 w-56 rounded-md border border-border bg-surface-high p-1 shadow-lg"
+            >
               <button
                 type="button"
-                data-testid="resume-actions-menu"
-                aria-label="More session actions"
-                className={`${ACTION} rounded-l-none border-l-0 px-2`}
+                data-testid="open-chat-resume"
+                disabled={pending || chatPending || !!chatUnavailable}
+                title={chatUnavailable}
+                onClick={() => void openChat()}
+                className={`${ACTION} min-h-11 w-full justify-start border-0`}
               >
-                <ChevronDown size={13} />
+                <MessageSquare size={13} />
+                {chatPending ? "Resuming…" : "Continue in chat"}
               </button>
-            </Popover.Trigger>
-            <Popover.Portal>
-              <Popover.Content
-                align="end"
-                sideOffset={4}
-                collisionPadding={8}
-                aria-label="Session actions"
-                data-testid="resume-actions-dropdown"
-                className="z-50 w-56 rounded-md border border-border bg-surface-high p-1 shadow-lg"
-              >
-                {chatSupported && (
-                  <button
-                    type="button"
-                    data-testid="open-chat-resume"
-                    disabled={pending || chatPending || chat.streaming || chatActive}
-                    title={
-                      chatActive
-                        ? "End the original agent session before resuming it in chat."
-                        : undefined
-                    }
-                    onClick={() => void openChat()}
-                    className={`${ACTION} min-h-11 w-full justify-start border-0`}
-                  >
-                    <MessageSquare size={13} />
-                    {chatPending ? "Resuming…" : "Resume in chat"}
-                  </button>
-                )}
+              {command && (
                 <button
                   type="button"
                   data-testid="copy-resume"
@@ -149,26 +148,26 @@ export function ResumeActions({ session }: { session: LiveSession }) {
                   {copied === "Resume command copied" ? <Check size={13} /> : <Copy size={13} />}
                   Copy resume command
                 </button>
-                <button
-                  type="button"
-                  data-testid="copy-terminal-link"
-                  className={`${ACTION} w-full justify-start border-0`}
-                  aria-label="Copy terminal link"
-                  title="Copy terminal link"
-                  onClick={() =>
-                    void copy(
-                      absoluteUrl(scopedSessionPath(sessionTerminalPath(session.id), scope)),
-                      "Terminal link copied",
-                    )
-                  }
-                >
-                  <Link2 size={13} />
-                  Copy terminal link
-                </button>
-              </Popover.Content>
-            </Popover.Portal>
-          </Popover.Root>
-        )}
+              )}
+              <button
+                type="button"
+                data-testid="copy-terminal-link"
+                className={`${ACTION} w-full justify-start border-0`}
+                aria-label="Copy terminal link"
+                title="Copy terminal link"
+                onClick={() =>
+                  void copy(
+                    absoluteUrl(scopedSessionPath(sessionTerminalPath(session.id), scope)),
+                    "Terminal link copied",
+                  )
+                }
+              >
+                <Link2 size={13} />
+                Copy terminal link
+              </button>
+            </Popover.Content>
+          </Popover.Portal>
+        </Popover.Root>
       </fieldset>
       {info && !info.ready && !existing && (
         <p className="text-xs text-outline">

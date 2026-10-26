@@ -31,5 +31,11 @@ test("nested deep links select the specific page and keep primary groups stable"
       "?chat=open&q=other-feature",
     ),
   ).toBe("/knowledge/base?view=collections&project=example&chat=open");
+  expect(workspaceDestination("/tasks", "example", "?chat=open&chatThread=thread-1")).toBe(
+    "/tasks?project=example&chat=open&chatThread=thread-1",
+  );
+  expect(workspaceDestination("/tasks", "example", "?chatThread=thread-1")).toBe(
+    "/tasks?project=example",
+  );
   expect(workspaceSection("/tasks-unrelated")).toBeUndefined();
 });

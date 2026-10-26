@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { LOCAL_HOST } from "@orc/core/exec-host";
 import {
   isInside,
   listWorktrees,
@@ -10,7 +11,7 @@ import {
   samePath,
   WorktreeDirtyError,
 } from "../git/worktrees.js";
-import { prepareSessionDirectory, runGit } from "../terminals/session-dir.js";
+import { excludeOrcWorktrees, prepareSessionDirectory, runGit } from "../terminals/session-dir.js";
 
 describe("parseWorktreeList", () => {
   test("reads main, linked, detached and prunable entries", () => {
@@ -88,6 +89,7 @@ describe("worktrees with git", () => {
         home: root,
         runGit,
         makeDirectory: (path) => mkdirSync(path, { recursive: true }),
+        excludeWorktrees: (root) => excludeOrcWorktrees(LOCAL_HOST, root),
         newId: () => id,
       },
     );
@@ -135,7 +137,7 @@ describe("worktrees with git", () => {
   });
 
   test("a worktree with a running terminal is not removed", async () => {
-    const path = join(root, "worktrees", "repo", "clean1");
+    const path = join(repo, ".orc", "worktrees", "clean1");
     await expect(
       removeWorktree({ cwd: repo, path }, { ...deps, terminalUsing: () => "repo clean1" }),
     ).rejects.toThrow(/Close it first/);
@@ -143,20 +145,43 @@ describe("worktrees with git", () => {
   });
 
   test("a clean worktree is removed and its branch kept", async () => {
-    const path = join(root, "worktrees", "repo", "clean1");
+    const path = join(repo, ".orc", "worktrees", "clean1");
     await removeWorktree({ cwd: repo, path }, deps);
     expect(existsSync(path)).toBe(false);
     expect(await git(["branch", "--list", "orc/clean1"], repo)).toContain("orc/clean1");
   });
 
   test("a dirty worktree needs force", async () => {
-    const path = join(root, "worktrees", "repo", "dirty1");
+    const path = join(repo, ".orc", "worktrees", "dirty1");
     await expect(removeWorktree({ cwd: repo, path }, deps)).rejects.toBeInstanceOf(
       WorktreeDirtyError,
     );
     expect(existsSync(path)).toBe(true);
     await removeWorktree({ cwd: repo, path, force: true }, deps);
     expect(existsSync(path)).toBe(false);
+  });
+
+  test("a squash-merged branch is deleted only when the server verified its merged PR", async () => {
+    const path = await addWorktree("squash1");
+    writeFileSync(join(path, "feature.txt"), "feature\n");
+    await git(["add", "feature.txt"], path);
+    await git(["commit", "-m", "feature"], path);
+    await expect(removeWorktree({ cwd: repo, path, delete_branch: true }, deps)).rejects.toThrow(
+      /not merged/,
+    );
+    expect(existsSync(path)).toBe(true);
+    const merged = (await git(["rev-parse", "HEAD"], path)).trim();
+    writeFileSync(join(path, "later.txt"), "later\n");
+    await git(["add", "later.txt"], path);
+    await git(["commit", "-m", "after merge"], path);
+    await expect(
+      removeWorktree({ cwd: repo, path, delete_branch: true, merged_head: merged }, deps),
+    ).rejects.toThrow(/new commits/);
+    expect(existsSync(path)).toBe(true);
+    await git(["reset", "--hard", merged], path);
+    await removeWorktree({ cwd: repo, path, delete_branch: true, merged_head: merged }, deps);
+    expect(existsSync(path)).toBe(false);
+    expect(await git(["branch", "--list", "orc/squash1"], repo)).toBe("");
   });
 
   afterAll(() => {

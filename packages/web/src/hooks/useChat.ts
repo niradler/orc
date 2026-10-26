@@ -7,6 +7,7 @@ import {
 import {
   appendChatActivity,
   type ChatActivity,
+  type ChatEvent,
   type ChatMessage,
   type ChatQuestion,
   ChatSettingsSchema,
@@ -24,59 +25,165 @@ import {
   useRef,
   useState,
 } from "react";
-import { api, getApiSecret, getApiUrl } from "@/api/client";
+import { useSearchParams } from "react-router-dom";
+import { ApiError, api, getApiSecret, getApiUrl } from "@/api/client";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
-import { type ChatConfig, DEFAULT_CONFIG, parseChatEvent } from "./chat-contract";
+import {
+  CHAT_PREFERENCES_KEY,
+  CHAT_TABS_KEY,
+  type ChatConfig,
+  DEFAULT_CONFIG,
+  isChatThreadId,
+  parseChatEvent,
+  parseChatPreferences,
+  parseChatTabs,
+  withPreferences,
+} from "./chat-contract";
 
 export type { ChatMessage } from "@orc/core/chat";
 
+/** URL parameter naming the open conversation, so a chat link can be shared. */
+export const CHAT_THREAD_PARAM = "chatThread";
+
+interface PendingPermission {
+  requestId: string;
+  tool: string;
+  command: string;
+}
+
+/** One open conversation. Each tab streams on its own, so turns keep running in the background. */
+export interface ChatTab {
+  key: string;
+  thread: ChatThread | null;
+  config: ChatConfig;
+  messages: ChatMessage[];
+  historyBefore: number | null;
+  loadingHistory: boolean;
+  streaming: boolean;
+  streamText: string;
+  activity: ChatActivity[];
+  error: string | null;
+  permissions: PendingPermission[];
+  questions: ChatQuestion[];
+  runId: string;
+  assistantId: string;
+  respondingAgent: string;
+  /** A background turn finished or is waiting for a reply since the tab was last viewed. */
+  attention: boolean;
+}
+
+function blankTab(config: ChatConfig): ChatTab {
+  return {
+    key: crypto.randomUUID(),
+    thread: null,
+    config,
+    messages: [],
+    historyBefore: null,
+    loadingHistory: false,
+    streaming: false,
+    streamText: "",
+    activity: [],
+    error: null,
+    permissions: [],
+    questions: [],
+    runId: "",
+    assistantId: "",
+    respondingAgent: config.agent,
+    attention: false,
+  };
+}
+const isBlank = (tab: ChatTab) => !tab.thread && !tab.messages.length && !tab.streaming;
+
+function readStorage(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function writeStorage(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* storage is a convenience; chats still work without it */
+  }
+}
+function savePreferences(config: ChatConfig): void {
+  writeStorage(
+    CHAT_PREFERENCES_KEY,
+    JSON.stringify({
+      agent: config.agent,
+      model: config.model,
+      ...(config.permissionMode ? { permissionMode: config.permissionMode } : {}),
+    }),
+  );
+}
+function authHeaders(): Record<string, string> {
+  const secret = getApiSecret();
+  return secret ? { Authorization: `Bearer ${secret}` } : {};
+}
+const message = (cause: unknown, fallback: string) =>
+  cause instanceof Error ? cause.message : fallback;
+
 function useChatController() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [streaming, setStreaming] = useState(false);
-  const [streamText, setStreamText] = useState("");
-  const [activity, setActivity] = useState<ChatActivity[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [config, setConfig] = useState<ChatConfig>(DEFAULT_CONFIG);
+  const [initial] = useState(() =>
+    blankTab(
+      withPreferences(DEFAULT_CONFIG, parseChatPreferences(readStorage(CHAT_PREFERENCES_KEY))),
+    ),
+  );
+  const [tabs, setTabs] = useState<ChatTab[]>([initial]);
+  const [activeKey, setActiveKey] = useState(initial.key);
   const [ready, setReady] = useState(false);
-  const [thread, setThread] = useState<ChatThread | null>(null);
-  const [historyBefore, setHistoryBefore] = useState<number | null>(null);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-  const historyRequest = useRef<symbol | null>(null);
-  const [permissions, setPermissions] = useState<
-    {
-      requestId: string;
-      tool: string;
-      command: string;
-    }[]
-  >([]);
-  const permission = permissions[0] ?? null;
-  const [questions, setQuestions] = useState<ChatQuestion[]>([]);
-  const question = questions[0] ?? null;
   const [responding, setResponding] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
-  const generation = useRef(0);
-  const partial = useRef("");
-  const activities = useRef<ChatActivity[]>([]);
-  const assistantId = useRef("");
-  const runId = useRef("");
-  const respondingAgent = useRef(config.agent);
-  const history = useRef(messages);
-  history.current = messages;
-  const currentThread = useRef(thread);
-  currentThread.current = thread;
-  const defaults = useRef(DEFAULT_CONFIG);
+  // Refs hold the latest tabs synchronously, so concurrent streams never update stale copies.
+  const tabsRef = useRef(tabs);
+  const activeRef = useRef(activeKey);
+  // `cancel` waits for the server to name the run; `closed` marks a tab that is gone but
+  // whose stream is kept open only so that pending cancel can still be sent.
+  const streams = useRef(
+    new Map<string, { controller: AbortController; cancel: boolean; closed: boolean }>(),
+  );
+  const defaults = useRef(initial.config);
+
+  const mutate = useCallback((change: (tabs: ChatTab[]) => ChatTab[]) => {
+    tabsRef.current = change(tabsRef.current);
+    setTabs(tabsRef.current);
+  }, []);
+  const update = useCallback(
+    (key: string, change: (tab: ChatTab) => Partial<ChatTab>) =>
+      mutate((current) =>
+        current.map((tab) => (tab.key === key ? { ...tab, ...change(tab) } : tab)),
+      ),
+    [mutate],
+  );
+  const activate = useCallback(
+    (key: string) => {
+      activeRef.current = key;
+      setActiveKey(key);
+      update(key, () => ({ attention: false }));
+    },
+    [update],
+  );
+  const find = useCallback((key: string) => tabsRef.current.find((tab) => tab.key === key), []);
 
   const loadSettings = useCallback(async () => {
     try {
       const preferences = await api.settings.get();
       const saved = ChatSettingsSchema.parse(preferences.chat ?? {});
-      defaults.current = saved;
-      if (!currentThread.current) setConfig(saved);
+      defaults.current = withPreferences(
+        saved,
+        parseChatPreferences(readStorage(CHAT_PREFERENCES_KEY)),
+      );
+      mutate((current) =>
+        current.map((tab) => (isBlank(tab) ? { ...tab, config: defaults.current } : tab)),
+      );
       setReady(true);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Chat settings could not be loaded.");
+      update(activeRef.current, () => ({
+        error: message(cause, "Chat settings could not be loaded."),
+      }));
     }
-  }, []);
+  }, [mutate, update]);
   useEffect(() => {
     void loadSettings();
     const changed = () => {
@@ -87,145 +194,318 @@ function useChatController() {
   }, [loadSettings]);
   useEffect(
     () => () => {
-      generation.current++;
-      historyRequest.current = null;
-      abortRef.current?.abort();
+      for (const stream of streams.current.values()) stream.controller.abort();
+      streams.current.clear();
     },
     [],
   );
 
-  const finishPartial = useCallback(() => {
-    if (!partial.current && !activities.current.length) return;
-    const message: ChatMessage = {
-      id: assistantId.current,
-      role: "assistant",
-      content: partial.current,
-      activity: activities.current,
-      timestamp: Date.now(),
-      agent: respondingAgent.current,
-    };
-    partial.current = "";
-    activities.current = [];
-    setMessages((current) => [...current, message]);
-  }, []);
-  const cancel = useCallback(() => {
-    generation.current++;
-    abortRef.current?.abort();
-    abortRef.current = null;
-    finishPartial();
-    setStreaming(false);
-    setStreamText("");
-    setActivity([]);
-    setPermissions([]);
-    setQuestions([]);
-  }, [finishPartial]);
-  const openThread = useCallback((next: ChatThread) => {
-    if (abortRef.current) return;
-    historyRequest.current = null;
-    setLoadingHistory(false);
-    setHistoryBefore(next.historyBefore ?? null);
-    setThread(next);
-    history.current = next.messages;
-    setMessages(next.messages);
-    setConfig(next.config);
-    setError(null);
-  }, []);
-  const clear = useCallback(() => {
-    cancel();
-    historyRequest.current = null;
-    setLoadingHistory(false);
-    setHistoryBefore(null);
-    history.current = [];
-    setMessages([]);
-    setThread(null);
-    setConfig(defaults.current);
-    setError(null);
-  }, [cancel]);
-
-  const loadOlder = useCallback(async () => {
-    const current = currentThread.current;
-    if (!current || historyBefore === null || historyRequest.current) return;
-    const request = Symbol();
-    historyRequest.current = request;
-    setLoadingHistory(true);
-    setError(null);
-    try {
-      const page = await api.chat.history(current.id, historyBefore);
-      if (historyRequest.current !== request) return;
-      setHistoryBefore(page.before);
-      setMessages((messages) => [...page.messages, ...messages]);
-    } catch (cause) {
-      if (historyRequest.current === request)
-        setError(cause instanceof Error ? cause.message : "Older messages could not be loaded.");
-    } finally {
-      if (historyRequest.current === request) {
-        historyRequest.current = null;
-        setLoadingHistory(false);
+  const apply = useCallback(
+    (key: string, event: ChatEvent) => {
+      const background = key !== activeRef.current;
+      if (event.type === "thread") {
+        const stream = streams.current.get(key);
+        if (stream?.cancel) void api.chat.cancel(event.runId).catch(() => {});
+        if (stream?.closed) {
+          streams.current.delete(key);
+          stream.controller.abort();
+          return;
+        }
+        update(key, () => ({ thread: event.thread, runId: event.runId }));
+      } else if (event.type === "text")
+        update(key, (tab) => ({ streamText: tab.streamText + event.text }));
+      else if (event.type === "error") update(key, () => ({ error: event.message }));
+      else if (event.type === "session")
+        update(key, (tab) => ({
+          thread: tab.thread ? { ...tab.thread, runtimeId: event.runtimeId } : tab.thread,
+        }));
+      else if (event.type === "permission_request")
+        update(key, (tab) => ({
+          permissions: [...tab.permissions, event.data],
+          attention: tab.attention || background,
+        }));
+      else if (event.type === "question_request")
+        update(key, (tab) => ({
+          questions: [...tab.questions, event.data],
+          attention: tab.attention || background,
+        }));
+      else if (event.type === "request_resolved")
+        update(key, (tab) => ({
+          permissions: tab.permissions.filter((request) => request.requestId !== event.requestId),
+          questions: tab.questions.filter((request) => request.requestId !== event.requestId),
+        }));
+      else if (event.type !== "done")
+        update(key, (tab) => ({ activity: appendChatActivity(tab.activity, event) }));
+    },
+    [update],
+  );
+  const finish = useCallback(
+    (key: string) =>
+      update(key, (tab) => ({
+        messages:
+          tab.streamText || tab.activity.length
+            ? [
+                ...tab.messages,
+                {
+                  id: tab.assistantId,
+                  role: "assistant",
+                  content: tab.streamText,
+                  activity: tab.activity,
+                  timestamp: Date.now(),
+                  agent: tab.respondingAgent,
+                },
+              ]
+            : tab.messages,
+        streaming: false,
+        streamText: "",
+        activity: [],
+        permissions: [],
+        questions: [],
+        attention: tab.attention || (tab.streaming && key !== activeRef.current),
+      })),
+    [update],
+  );
+  /**
+   * Reads one turn's events into a tab. Closing the stream detaches; the server keeps the turn.
+   * Resolves false when there was no turn to follow.
+   */
+  const follow = useCallback(
+    async (
+      key: string,
+      open: (signal: AbortSignal) => Promise<Response>,
+      onOpen?: () => void,
+    ): Promise<boolean> => {
+      streams.current.get(key)?.controller.abort();
+      const stream = { controller: new AbortController(), cancel: false, closed: false };
+      streams.current.set(key, stream);
+      const current = () => streams.current.get(key) === stream;
+      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+      try {
+        const response = await open(stream.controller.signal);
+        if (response.status === 401) window.dispatchEvent(new Event(API_ACCESS_CHANGED));
+        if (response.status === 204) return false;
+        if (!response.ok) {
+          const body: unknown = await response.json().catch(() => null);
+          throw new Error(
+            body && typeof body === "object" && "error" in body && typeof body.error === "string"
+              ? body.error
+              : `Chat request failed (HTTP ${response.status}).`,
+          );
+        }
+        if (!response.body) throw new Error("The agent returned no response stream.");
+        if (current()) onOpen?.();
+        reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (!current()) break;
+          buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            const event = parseChatEvent(line);
+            if (event) apply(key, event);
+          }
+          if (done) {
+            const event = parseChatEvent(buffer);
+            if (event) apply(key, event);
+            break;
+          }
+        }
+        return true;
+      } catch (cause) {
+        if (current() && !stream.controller.signal.aborted)
+          update(key, () => ({ error: message(cause, "The chat connection failed.") }));
+        return true;
+      } finally {
+        reader?.releaseLock();
+        if (current()) {
+          streams.current.delete(key);
+          finish(key);
+        }
       }
+    },
+    [apply, finish, update],
+  );
+  const attach = useCallback(
+    (key: string, threadId: string) =>
+      follow(
+        key,
+        (signal) =>
+          fetch(`${getApiUrl()}/chat/threads/${encodeURIComponent(threadId)}/live`, {
+            headers: authHeaders(),
+            signal,
+          }),
+        () =>
+          update(key, (tab) => ({
+            streaming: true,
+            assistantId: crypto.randomUUID(),
+            respondingAgent: tab.config.agent,
+            streamText: "",
+            activity: [],
+          })),
+      ),
+    [follow, update],
+  );
+
+  const openThread = useCallback(
+    (next: ChatThread, options: { activate?: boolean } = {}) => {
+      const existing = tabsRef.current.find((tab) => tab.thread?.id === next.id);
+      const loaded = {
+        thread: next,
+        messages: next.messages,
+        config: next.config,
+        historyBefore: next.historyBefore ?? null,
+        loadingHistory: false,
+        error: null,
+      };
+      let key: string;
+      if (existing) {
+        key = existing.key;
+        if (!existing.streaming) update(key, () => loaded);
+      } else {
+        const active = find(activeRef.current);
+        if (active && isBlank(active) && options.activate !== false) {
+          key = active.key;
+          update(key, () => loaded);
+        } else {
+          const tab = { ...blankTab(next.config), ...loaded };
+          key = tab.key;
+          mutate((current) => [...current, tab]);
+        }
+      }
+      if (options.activate !== false) activate(key);
+      if (existing?.streaming) return;
+      void attach(key, next.id).then(async (live) => {
+        // The question in the snapshot had no reply yet but the turn is gone: it finished in
+        // between, so reload the reply.
+        if (live || next.messages[next.messages.length - 1]?.role !== "user") return;
+        const fresh = await api.chat.get(next.id).catch(() => null);
+        if (fresh)
+          update(key, (tab) =>
+            tab.streaming
+              ? {}
+              : {
+                  thread: fresh,
+                  messages: fresh.messages,
+                  historyBefore: fresh.historyBefore ?? null,
+                },
+          );
+      });
+    },
+    [activate, attach, mutate, update, find],
+  );
+  const showThread = useCallback(
+    async (id: string) => {
+      const open = tabsRef.current.find((tab) => tab.thread?.id === id);
+      if (open) return activate(open.key);
+      openThread(await api.chat.get(id));
+    },
+    [activate, openThread],
+  );
+  const newTab = useCallback(() => {
+    const blank = tabsRef.current.find(isBlank);
+    if (blank) {
+      update(blank.key, () => ({ config: defaults.current, error: null }));
+      return activate(blank.key);
     }
-  }, [historyBefore]);
+    const tab = blankTab(defaults.current);
+    mutate((current) => [...current, tab]);
+    activate(tab.key);
+  }, [activate, mutate, update]);
+  const closeTab = useCallback(
+    (key: string) => {
+      const stream = streams.current.get(key);
+      if (stream?.cancel) stream.closed = true;
+      else {
+        stream?.controller.abort();
+        streams.current.delete(key);
+      }
+      const index = tabsRef.current.findIndex((tab) => tab.key === key);
+      const rest = tabsRef.current.filter((tab) => tab.key !== key);
+      const remaining = rest.length ? rest : [blankTab(defaults.current)];
+      mutate(() => remaining);
+      if (activeRef.current === key)
+        activate((remaining[Math.min(index, remaining.length - 1)] ?? remaining[0]).key);
+    },
+    [activate, mutate],
+  );
+
+  // Reopen this browser's tabs; a shared link's conversation takes focus over the stored one.
+  const [params] = useSearchParams();
+  const linked = useRef(params.get(CHAT_THREAD_PARAM));
+  useEffect(() => {
+    const stored = parseChatTabs(readStorage(CHAT_TABS_KEY));
+    void Promise.allSettled(stored.threads.map((id) => api.chat.get(id))).then((results) => {
+      for (const result of results)
+        if (result.status === "fulfilled")
+          openThread(result.value, {
+            activate: !linked.current && result.value.id === stored.active,
+          });
+    });
+  }, [openThread]);
+  useEffect(() => {
+    const threads = tabs.flatMap((tab) => (tab.thread ? [tab.thread.id] : []));
+    const active = tabs.find((tab) => tab.key === activeKey)?.thread?.id ?? null;
+    writeStorage(CHAT_TABS_KEY, JSON.stringify({ threads, active }));
+  }, [tabs, activeKey]);
+
+  const tab = tabs.find((candidate) => candidate.key === activeKey) ?? tabs[0] ?? initial;
+  const permission = tab.permissions[0] ?? null;
+  const question = tab.questions[0] ?? null;
+
+  const setConfig = useCallback(
+    (next: ChatConfig) => {
+      update(activeRef.current, () => ({ config: next }));
+      savePreferences(next);
+    },
+    [update],
+  );
+  const loadOlder = useCallback(async () => {
+    const key = activeRef.current;
+    const current = find(key);
+    if (!current?.thread || current.historyBefore === null || current.loadingHistory) return;
+    update(key, () => ({ loadingHistory: true, error: null }));
+    try {
+      const page = await api.chat.history(current.thread.id, current.historyBefore);
+      update(key, (tab) => ({
+        historyBefore: page.before,
+        messages: [...page.messages, ...tab.messages],
+      }));
+    } catch (cause) {
+      update(key, () => ({ error: message(cause, "Older messages could not be loaded.") }));
+    } finally {
+      update(key, () => ({ loadingHistory: false }));
+    }
+  }, [update, find]);
 
   const send = useCallback(
     async (input: string) => {
-      if (!ready || abortRef.current || !input.trim()) return;
+      const key = activeRef.current;
+      const current = find(key);
+      if (!ready || !current || current.streaming || !input.trim()) return;
+      const { config, thread } = current;
       const userMessage: ChatMessage = {
         id: crypto.randomUUID(),
         role: "user",
         content: input.trim(),
         timestamp: Date.now(),
       };
-      const requestMessages = [...history.current, userMessage];
-      history.current = requestMessages;
-      setMessages(requestMessages);
-      const controller = new AbortController();
-      const currentGeneration = ++generation.current;
-      abortRef.current = controller;
-      assistantId.current = crypto.randomUUID();
-      respondingAgent.current = config.agent;
-      partial.current = "";
-      activities.current = [];
-      setActivity([]);
-      setStreamText("");
-      setError(null);
-      setStreaming(true);
-      let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
-      const apply = (line: string) => {
-        if (generation.current !== currentGeneration) return;
-        const event = parseChatEvent(line);
-        if (!event) return;
-        if (event.type === "text") {
-          partial.current += event.text;
-          setStreamText(partial.current);
-        } else if (event.type === "error") setError(event.message);
-        else if (event.type === "thread") {
-          setThread(event.thread);
-          runId.current = event.runId;
-        } else if (event.type === "session") {
-          setThread((current) => (current ? { ...current, runtimeId: event.runtimeId } : current));
-        } else if (event.type === "permission_request")
-          setPermissions((current) => [...current, event.data]);
-        else if (event.type === "question_request")
-          setQuestions((current) => [...current, event.data]);
-        else if (event.type === "request_resolved") {
-          setPermissions((current) =>
-            current.filter((request) => request.requestId !== event.requestId),
-          );
-          setQuestions((current) =>
-            current.filter((request) => request.requestId !== event.requestId),
-          );
-        } else {
-          activities.current = appendChatActivity(activities.current, event);
-          setActivity(activities.current);
-        }
-      };
-      try {
-        const secret = getApiSecret();
-        const response = await fetch(`${getApiUrl()}/chat/stream`, {
+      update(key, (tab) => ({
+        messages: [...tab.messages, userMessage],
+        streaming: true,
+        streamText: "",
+        activity: [],
+        error: null,
+        runId: "",
+        assistantId: crypto.randomUUID(),
+        respondingAgent: config.agent,
+      }));
+      await follow(key, (signal) =>
+        fetch(`${getApiUrl()}/chat/stream`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(secret ? { Authorization: `Bearer ${secret}` } : {}),
-          },
+          headers: { "Content-Type": "application/json", ...authHeaders() },
           body: JSON.stringify({
             messages: [{ role: "user", content: userMessage.content }],
             agent: config.agent,
@@ -236,137 +516,139 @@ function useChatController() {
               : {}),
             ...(thread ? { threadId: thread.id } : {}),
           }),
-          signal: controller.signal,
-        });
-        if (response.status === 401) window.dispatchEvent(new Event(API_ACCESS_CHANGED));
-        if (!response.ok) {
-          const body: unknown = await response.json().catch(() => null);
-          throw new Error(
-            body && typeof body === "object" && "error" in body && typeof body.error === "string"
-              ? body.error
-              : `Chat request failed (HTTP ${response.status}).`,
-          );
-        }
-        if (!response.body) throw new Error("The agent returned no response stream.");
-        reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        while (true) {
-          const { done, value } = await reader.read();
-          if (generation.current !== currentGeneration) break;
-          buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-          for (const line of lines) apply(line);
-          if (done) {
-            if (buffer.trim()) apply(buffer);
-            break;
-          }
-        }
-      } catch (cause) {
-        if (generation.current === currentGeneration && !controller.signal.aborted)
-          setError(cause instanceof Error ? cause.message : "The chat connection failed.");
-      } finally {
-        reader?.releaseLock();
-        if (generation.current === currentGeneration) {
-          abortRef.current = null;
-          finishPartial();
-          setStreaming(false);
-          setStreamText("");
-          setActivity([]);
-          setPermissions([]);
-          setQuestions([]);
-        }
-      }
+          signal,
+        }),
+      );
     },
-    [config, ready, thread, finishPartial],
+    [ready, follow, update, find],
   );
+  const cancel = useCallback(() => {
+    const key = activeRef.current;
+    const current = find(key);
+    const stream = streams.current.get(key);
+    if (!current?.streaming) return;
+    if (!current.runId) {
+      // The server has not named the run yet; cancel it as soon as it does.
+      if (stream) stream.cancel = true;
+      return;
+    }
+    void api.chat.cancel(current.runId).catch((cause) => {
+      if (!(cause instanceof ApiError && cause.status === 409))
+        update(key, () => ({ error: message(cause, "The response could not be stopped.") }));
+    });
+  }, [update, find]);
+
   const respondPermission = useCallback(
     async (decision: "approved" | "denied") => {
-      if (!permission || responding) return;
+      const key = activeRef.current;
+      const current = find(key);
+      const pending = current?.permissions[0];
+      if (!current || !pending || responding) return;
       setResponding(true);
       try {
-        await api.chat.permission(runId.current, permission.requestId, decision);
-        setPermissions((current) =>
-          current.filter((request) => request.requestId !== permission.requestId),
-        );
+        await api.chat.permission(current.runId, pending.requestId, decision);
+        update(key, (tab) => ({
+          permissions: tab.permissions.filter((request) => request.requestId !== pending.requestId),
+        }));
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Permission could not be sent.");
+        update(key, () => ({ error: message(cause, "Permission could not be sent.") }));
       } finally {
         setResponding(false);
       }
     },
-    [permission, responding],
+    [responding, update, find],
   );
   const respondQuestion = useCallback(
     async (answers: Record<string, string[]>) => {
-      if (!question || responding) return;
+      const key = activeRef.current;
+      const current = find(key);
+      const pending = current?.questions[0];
+      if (!current || !pending || responding) return;
       setResponding(true);
       try {
-        await api.chat.answer(runId.current, question.requestId, answers);
-        setQuestions((current) =>
-          current.filter((request) => request.requestId !== question.requestId),
-        );
+        await api.chat.answer(current.runId, pending.requestId, answers);
+        update(key, (tab) => ({
+          questions: tab.questions.filter((request) => request.requestId !== pending.requestId),
+        }));
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Answer could not be sent.");
+        update(key, () => ({ error: message(cause, "Answer could not be sent.") }));
       } finally {
         setResponding(false);
       }
     },
-    [question, responding],
+    [responding, update, find],
   );
   // While the agent is responding the change goes to the live run, which approves prompts
   // the new mode would not ask for; otherwise it applies to the next message.
   const changePermissions = useCallback(
     async (next: ChatConfig) => {
+      const key = activeRef.current;
       setConfig(next);
+      const current = find(key);
       const mode = next.permissionMode;
-      if (!mode || !streaming || !runId.current) return;
+      if (!mode || !current?.streaming || !current.runId) return;
       try {
-        const updated = await api.chat.permissionMode(runId.current, mode);
-        if (currentThread.current?.id !== updated.id) return;
-        setThread(updated);
-        setConfig((current) => ({
-          ...current,
-          permissionMode: updated.config.permissionMode,
-          agentOptions: updated.config.agentOptions,
-        }));
+        const updated = await api.chat.permissionMode(current.runId, mode);
+        update(key, (tab) =>
+          tab.thread?.id === updated.id
+            ? {
+                thread: updated,
+                config: {
+                  ...tab.config,
+                  permissionMode: updated.config.permissionMode,
+                  agentOptions: updated.config.agentOptions,
+                },
+              }
+            : {},
+        );
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "Permissions could not be changed.");
+        update(key, () => ({ error: message(cause, "Permissions could not be changed.") }));
       }
     },
-    [streaming],
+    [setConfig, update, find],
   );
   const applyAgentOptions = useCallback(
     async (agent: string, options: ChatAgentOptions) => {
-      const target = currentThread.current;
-      const agentOptions = { ...config.agentOptions, [agent]: options };
-      if (target) await api.chat.configure(target.id, agentOptions);
-      if (currentThread.current?.id !== target?.id) return false;
-      setConfig((current) =>
-        current.agent === agent
-          ? { ...current, agentOptions: { ...current.agentOptions, [agent]: options } }
-          : current,
+      const key = activeRef.current;
+      const current = find(key);
+      if (!current) return false;
+      const agentOptions = { ...current.config.agentOptions, [agent]: options };
+      if (current.thread) await api.chat.configure(current.thread.id, agentOptions);
+      update(key, (tab) =>
+        tab.config.agent === agent
+          ? {
+              config: {
+                ...tab.config,
+                agentOptions: { ...tab.config.agentOptions, [agent]: options },
+              },
+            }
+          : {},
       );
       return true;
     },
-    [config.agentOptions],
+    [update, find],
   );
   return {
-    messages,
-    streaming,
-    streamText,
-    activity,
-    error,
-    config,
+    tabs,
+    activeKey,
+    selectTab: activate,
+    closeTab,
+    newTab,
+    showThread,
+    messages: tab.messages,
+    streaming: tab.streaming,
+    streamText: tab.streamText,
+    activity: tab.activity,
+    error: tab.error,
+    config: tab.config,
     setConfig,
     changePermissions,
     applyAgentOptions,
     ready,
-    thread,
+    thread: tab.thread,
     openThread,
-    historyBefore,
-    loadingHistory,
+    historyBefore: tab.historyBefore,
+    loadingHistory: tab.loadingHistory,
     loadOlder,
     permission,
     respondPermission,
@@ -375,14 +657,48 @@ function useChatController() {
     responding,
     send,
     cancel,
-    clear,
-    streamingId: assistantId.current,
-    streamingAgent: respondingAgent.current,
+    streamingId: tab.assistantId,
+    streamingAgent: tab.respondingAgent,
   };
 }
 const ChatContext = createContext<ReturnType<typeof useChatController> | null>(null);
+
+/** Keeps `?chatThread=` naming the open conversation while chat is shown, and opens linked ones. */
+function useChatLink(chat: ReturnType<typeof useChatController>) {
+  const [params, setParams] = useSearchParams();
+  const param = params.get(CHAT_THREAD_PARAM);
+  const linked = param && isChatThreadId(param) ? param : null;
+  const chatShown = !!params.get("chat");
+  // While a linked conversation loads the link leads; once it has opened (or failed to), the
+  // shown conversation does.
+  const loading = useRef<string | null>(null);
+  const [_settled, setSettled] = useState(0);
+  const { showThread } = chat;
+  const current = chat.thread?.id ?? null;
+  useEffect(() => {
+    if (!linked || linked === loading.current) return;
+    loading.current = linked;
+    showThread(linked)
+      .catch(() => {
+        /* a stale or foreign link leaves the current conversation open */
+      })
+      .finally(() => {
+        loading.current = null;
+        setSettled((count) => count + 1);
+      });
+  }, [linked, showThread]);
+  useEffect(() => {
+    if (!chatShown || loading.current || current === linked) return;
+    const next = new URLSearchParams(window.location.search);
+    if (current) next.set(CHAT_THREAD_PARAM, current);
+    else next.delete(CHAT_THREAD_PARAM);
+    setParams(next, { replace: true });
+  }, [current, chatShown, linked, setParams]);
+}
+
 export function ChatProvider({ children }: { children: ReactNode }) {
   const chat = useChatController();
+  useChatLink(chat);
   const messages = useMemo<ThreadMessageLike[]>(() => {
     const history: ThreadMessageLike[] = chat.messages.map((message) => ({
       id: message.id,

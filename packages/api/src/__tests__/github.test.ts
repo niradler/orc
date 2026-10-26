@@ -1,12 +1,19 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { loadConfig, OrcConfigSchema, resetConfig } from "@orc/core/config";
+import { LOCAL_HOST } from "@orc/core/exec-host";
 import { z } from "zod";
 import {
+  branchPulls,
   fetchGithubFeed,
   type GithubDeps,
   githubAuth,
   githubRemote,
+  mergedByPull,
   readGithubCi,
 } from "../git/github.js";
 import { bearerAuth } from "../middleware/auth.js";
@@ -331,5 +338,96 @@ describe("GitHub API boundary", () => {
     expect(body.auth).toBe("gh");
     expect(body.items.map((item: { number: number }) => item.number)).toEqual([3]);
     expect(raw).not.toContain("gh-test-token");
+  });
+});
+
+describe("worktree branch pull requests", () => {
+  const sha = "b".repeat(40);
+  const base = { ...pull, assignees: [], merged_at: null, draft: false };
+  const pullDeps = (byBranch: Record<string, unknown[]>, seen: string[] = []): GithubDeps => ({
+    token: "token",
+    run: async () => ({ code: 1, stdout: "", stderr: "" }),
+    fetch: (async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      seen.push(url.search);
+      if (url.pathname.endsWith("/user")) return Response.json({ login: "me" });
+      const head = url.searchParams.get("head") ?? "";
+      return Response.json(byBranch[head.slice(head.indexOf(":") + 1)] ?? []);
+    }) as typeof fetch,
+  });
+
+  test("an open PR wins, merged and closed PRs are told apart and fork heads are ignored", async () => {
+    const seen: string[] = [];
+    const merged = {
+      ...base,
+      number: 7,
+      state: "closed",
+      merged_at: "2026-01-01T00:00:00Z",
+      head: { ref: "orc/done", sha, repo: { full_name: "owner/repo" } },
+    };
+    const pulls = await branchPulls(
+      "owner/repo",
+      ["orc/open", "orc/done", "orc/closed", "orc/fork", "orc/none"],
+      "token",
+      pullDeps(
+        {
+          "orc/open": [
+            { ...merged, number: 4, head: { ...merged.head, ref: "orc/open" } },
+            {
+              ...base,
+              number: 5,
+              draft: true,
+              head: { ref: "orc/open", repo: { full_name: "owner/repo" } },
+            },
+          ],
+          "orc/done": [merged],
+          "orc/closed": [
+            {
+              ...base,
+              number: 8,
+              state: "closed",
+              head: { ref: "orc/closed", repo: { full_name: "owner/repo" } },
+            },
+          ],
+          "orc/fork": [
+            { ...base, number: 9, head: { ref: "orc/fork", repo: { full_name: "someone/repo" } } },
+          ],
+        },
+        seen,
+      ),
+    );
+    expect(pulls["orc/open"]).toMatchObject({ number: 5, state: "open", draft: true });
+    expect(pulls["orc/done"]).toMatchObject({ number: 7, state: "merged", head_sha: sha });
+    expect(pulls["orc/closed"]).toMatchObject({ number: 8, state: "closed" });
+    expect(pulls["orc/fork"]).toBeUndefined();
+    expect(pulls["orc/none"]).toBeUndefined();
+    expect(seen).toContain("?state=all&head=owner%3Aorc%2Fdone&per_page=10");
+  });
+
+  test("a merged PR proves a branch merged only while the branch still points at the merged head", async () => {
+    const repo = mkdtempSync(join(tmpdir(), "orc-github-merged-"));
+    try {
+      execFileSync("git", ["init", "-q", repo], { timeout: 15_000 });
+      execFileSync(
+        "git",
+        ["-C", repo, "remote", "add", "origin", "https://github.com/owner/repo.git"],
+        { timeout: 15_000 },
+      );
+      const merged = {
+        ...base,
+        state: "closed",
+        merged_at: "2026-01-01T00:00:00Z",
+        head: { ref: "orc/done", sha, repo: { full_name: "owner/repo" } },
+      };
+      const deps = pullDeps({ "orc/done": [merged] });
+      expect(await mergedByPull(LOCAL_HOST, repo, "orc/done", sha, deps)).toBe(true);
+      expect(await mergedByPull(LOCAL_HOST, repo, "orc/done", "c".repeat(40), deps)).toBe(false);
+      expect(await mergedByPull(LOCAL_HOST, repo, "orc/other", sha, deps)).toBe(false);
+      expect(
+        await mergedByPull(LOCAL_HOST, repo, "orc/done", sha, { ...deps, token: undefined }),
+      ).toBe(false);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
 });

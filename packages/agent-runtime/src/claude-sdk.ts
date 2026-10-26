@@ -417,6 +417,9 @@ class ClaudeSDKSession implements AgentSession {
         },
       });
 
+      // Each text block is its own paragraph; joined bare, text before and after a tool
+      // call runs together and breaks markdown such as a code fence opening mid-line.
+      let wroteText = false;
       for await (const msg of q) {
         if (msg.type === "system" && msg.subtype === "init") {
           this.runtimeSessionId = msg.session_id;
@@ -426,7 +429,8 @@ class ClaudeSDKSession implements AgentSession {
         if (msg.type === "assistant") {
           for (const block of msg.message.content) {
             if (block.type === "text" && block.text) {
-              this.push({ type: "text", data: block.text });
+              this.push({ type: "text", data: wroteText ? `\n\n${block.text}` : block.text });
+              wroteText = true;
             } else if (block.type === "thinking" && "thinking" in block && block.thinking) {
               this.push({ type: "thinking", data: block.thinking as string });
             } else if (block.type === "tool_use") {

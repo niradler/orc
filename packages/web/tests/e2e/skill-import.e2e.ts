@@ -26,7 +26,7 @@ test("imports a real GitHub skill, edits it, reopens it and preserves edits on s
   await page.getByTestId("skill-discover").click();
   const available = page.locator('[data-testid="remote-skill"][data-skill-name="find-skills"]');
   await expect(available).toBeVisible({ timeout: 60000 });
-  await page.getByTestId("select-all-rows").check();
+  await page.getByRole("dialog").getByTestId("select-all-rows").check();
   await expect(available.getByTestId("remote-skill-select")).toBeChecked();
   await page.getByTestId("skill-import-submit").click();
   const row = page.locator('[data-testid="skill-row"][data-skill-name="find-skills"]');
@@ -66,7 +66,7 @@ test("imports a real GitHub skill, edits it, reopens it and preserves edits on s
   await expect(row.getByTestId("skill-select")).toBeVisible();
   await row.getByTestId("skill-select").check();
   await page.getByTestId("skills-bulk-sync").click();
-  await expect(page.getByTestId("skills-bulk-result")).toContainText("1 synced; 0 need attention", {
+  await expect(page.getByTestId("skills-bulk-result")).toContainText("1 synced.", {
     timeout: 60000,
   });
   await row.click();
@@ -128,7 +128,7 @@ test("selects all new skills, imports in bounded batches and retains failed sele
   expect(batches[2]).toEqual(batches[1]);
 });
 
-test("bulk sync selects only GitHub skills and retains conflicts without overriding", async ({
+test("bulk actions sync only GitHub skills, retain conflicts and delete selected skills", async ({
   page,
   request,
 }) => {
@@ -170,9 +170,11 @@ test("bulk sync selects only GitHub skills and retains conflicts without overrid
   await page.getByTestId("skill-search-input").fill(prefix);
   await page.getByTestId("skill-search-submit").click();
   await expect(page.getByTestId("skill-row")).toHaveCount(3);
-  await expect(page.getByTestId("skill-select")).toHaveCount(2);
+  await expect(page.getByTestId("skill-select")).toHaveCount(3);
   await expect(page.getByTestId("select-all-rows")).toBeEnabled();
   await page.getByTestId("select-all-rows").check();
+  await expect(page.getByTestId("skills-bulk-sync")).toHaveText("Sync from GitHub (2)");
+  await expect(page.getByTestId("skills-bulk-delete")).toHaveText("Delete (3)");
   await page.getByTestId("skills-bulk-sync").click();
   await expect(page.getByTestId("skills-bulk-result")).toContainText("1 synced; 1 need attention");
   expect(synced.sort()).toEqual(names.slice(0, 2).sort());
@@ -191,6 +193,11 @@ test("bulk sync selects only GitHub skills and retains conflicts without overrid
   await expect(page.getByTestId("skills-bulk-result")).toHaveCount(0);
   await page.getByTestId("skill-source-all").click();
   await expect(page.getByTestId("skill-select").first()).not.toBeChecked();
+  await page.getByTestId("select-all-rows").check();
+  await page.getByTestId("skills-bulk-delete").click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByTestId("skills-bulk-result")).toContainText("3 deleted.");
+  await expect(page.getByTestId("skill-row")).toHaveCount(0);
 });
 
 test("shows GitHub repositories and sorts groups without losing skill selection", async ({

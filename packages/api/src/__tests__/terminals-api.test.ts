@@ -762,7 +762,7 @@ describe("terminal WebSocket", () => {
 describe("worktree terminals and /git/worktrees", () => {
   const repo = join(root, "wtrepo");
   const plain = join(root, "wtplain");
-  const worktrees = join(root, "worktrees", "wtrepo");
+  const worktrees = join(repo, ".orc", "worktrees");
 
   async function git(args: string[], cwd: string): Promise<string> {
     const proc = Bun.spawn(["git", "-C", cwd, ...args], {

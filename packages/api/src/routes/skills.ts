@@ -8,10 +8,12 @@ import {
   discoverRepositorySkills,
   getSkillImportOrigin,
   importRepositorySkills,
+  removeSkillImportRecord,
 } from "@orc/core/skill-import";
 import { importLocalAgentSkills, listLocalAgentSkills } from "@orc/core/skill-local-import";
 import {
   createSkill,
+  deleteSkill,
   listSkills,
   type SkillFull,
   type SkillRefContent,
@@ -857,5 +859,27 @@ app.openapi(createRoute_, async (c) => {
     throw err;
   }
 });
+
+app.openapi(
+  createRoute({
+    method: "delete",
+    path: "/skills/{name}",
+    tags: ["Skills"],
+    summary: "Delete a user skill and its import record and scoped state",
+    request: { params: z.object({ name: z.string() }) },
+    responses: {
+      204: { description: "Skill deleted" },
+      400: { description: "Built-in and package skills cannot be deleted" },
+      404: { description: "Skill not found" },
+    },
+  }),
+  (c) => {
+    const { name } = c.req.valid("param");
+    deleteSkill(name);
+    removeSkillImportRecord(name);
+    new SkillHistory(getSqlite()).forget(name);
+    return c.body(null, 204);
+  },
+);
 
 export const skillsRouter = app;

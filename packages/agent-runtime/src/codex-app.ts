@@ -42,6 +42,8 @@ export class CodexAppSession implements AgentSession {
   private sequence = 0;
   private completedTurn = false;
   private readonly streamedItems = new Set<string>();
+  /** The message whose text was streamed last; a new message starts a new paragraph. */
+  private textItem: string | undefined;
   private readonly actionItems = new Map<string, Record<string, unknown>>();
   private readonly calls = new Map<
     number,
@@ -251,8 +253,9 @@ export class CodexAppSession implements AgentSession {
       for (const [id, request] of this.pending)
         if (request.wireId === params.requestId) this.resolved(id);
     } else if (method === "item/agentMessage/delta") {
-      this.streamedItems.add(String(params.itemId ?? ""));
-      this.push({ type: "text", data: String(params.delta ?? "") });
+      const itemId = String(params.itemId ?? "");
+      this.streamedItems.add(itemId);
+      this.pushText(itemId, String(params.delta ?? ""));
     } else if (method === "item/reasoning/summaryTextDelta") {
       this.push({ type: "thinking", data: String(params.delta ?? "") });
     } else if (method === "item/started" || method === "item/completed") {
@@ -263,7 +266,7 @@ export class CodexAppSession implements AgentSession {
         this.actionItems.delete(item.id);
       if (item.type === "agentMessage" && method === "item/completed") {
         if (!this.streamedItems.has(String(item.id)) && typeof item.text === "string" && item.text)
-          this.push({ type: "text", data: item.text });
+          this.pushText(String(item.id), item.text);
         if (Array.isArray(item.questions) && item.questions.length) {
           const requestId = crypto.randomUUID();
           const parsed = ChatQuestionSchema.safeParse({
@@ -346,11 +349,18 @@ export class CodexAppSession implements AgentSession {
     }
   }
 
+  private pushText(itemId: string, text: string): void {
+    const separated = this.textItem !== undefined && this.textItem !== itemId;
+    this.textItem = itemId;
+    this.push({ type: "text", data: separated ? `\n\n${text}` : text });
+  }
+
   async send(prompt: string): Promise<void> {
     if (this.child && !this.done) throw new Error("Codex turn is still running.");
     this.done = false;
     this.completedTurn = false;
     this.streamedItems.clear();
+    this.textItem = undefined;
     this.actionItems.clear();
     this.queue.length = 0;
     if (!this.child) {

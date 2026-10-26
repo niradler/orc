@@ -1,7 +1,7 @@
 import { ChatModelSchema } from "@orc/core/chat";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import { useQuery } from "@tanstack/react-query";
-import { History, Settings2 } from "lucide-react";
+import { History, LoaderCircle, Settings2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { api } from "@/api/client";
 import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
@@ -66,7 +66,6 @@ export function ChatSessionPicker() {
         <button
           type="button"
           data-testid="chat-sessions-button"
-          disabled={chat.streaming}
           aria-label="Resume a conversation"
           title="Resume a conversation"
           className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface disabled:opacity-40"
@@ -161,10 +160,19 @@ export function ChatSessionPicker() {
                       data-testid="chat-resume-thread"
                       type="button"
                       disabled={pending}
-                      className="block min-h-11 w-full truncate rounded-md px-3 py-2 text-left text-sm hover:bg-surface"
+                      className="flex min-h-11 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface"
                       onClick={() => void select(() => api.chat.get(t.id))}
                     >
-                      {t.title}
+                      <span className="min-w-0 flex-1 truncate">{t.title}</span>
+                      {t.running && (
+                        <span
+                          data-testid="chat-thread-running"
+                          className="flex shrink-0 items-center gap-1 text-xs text-primary"
+                        >
+                          <LoaderCircle size={12} aria-hidden="true" className="animate-spin" />
+                          Running
+                        </span>
+                      )}
                     </button>
                   ))}
                 {threads.isLoading && (
@@ -242,7 +250,7 @@ export function ChatSessionPicker() {
           variant="outline"
           disabled={pending}
           onClick={() => {
-            chat.clear();
+            chat.newTab();
             setOpen(false);
           }}
         >

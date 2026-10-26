@@ -364,3 +364,117 @@ export async function checkoutGithubFeed(host: ExecHost, cwd: string): Promise<G
     true,
   );
 }
+
+export interface BranchPull {
+  number: number;
+  title: string;
+  url: string;
+  state: "open" | "closed" | "merged";
+  draft: boolean;
+  head_sha: string | null;
+}
+export interface WorktreePulls {
+  auth: "gh" | "token" | "none";
+  repos: { root: string; repo: string; pulls: Record<string, BranchPull> }[];
+  errors: { repo: string; error: string }[];
+}
+const BranchPullSchema = PullSchema.extend({
+  draft: z.boolean().optional(),
+  merged_at: z.string().nullable().optional(),
+});
+const MAX_BRANCHES = 40;
+
+// The newest PR whose head is the branch: an open one wins, otherwise the latest closed/merged.
+export async function branchPulls(
+  repo: string,
+  branches: string[],
+  token: string,
+  deps: GithubDeps,
+): Promise<Record<string, BranchPull>> {
+  const owner = repo.split("/")[0];
+  const found = await Promise.all(
+    branches.slice(0, MAX_BRANCHES).map(async (branch) => {
+      const pulls = z
+        .array(BranchPullSchema)
+        .parse(
+          await githubGet(
+            `/repos/${repo}/pulls?state=all&head=${encodeURIComponent(`${owner}:${branch}`)}&per_page=10`,
+            token,
+            deps,
+          ),
+        )
+        .filter((pull) => pull.head.ref === branch && pull.head.repo?.full_name === repo);
+      const pull = pulls.find((item) => item.state === "open") ?? pulls[0];
+      if (!pull) return null;
+      return [
+        branch,
+        {
+          number: pull.number,
+          title: pull.title,
+          url: pull.html_url,
+          state: pull.merged_at ? "merged" : pull.state === "open" ? "open" : "closed",
+          draft: pull.draft ?? false,
+          head_sha: pull.head.sha ?? null,
+        },
+      ] as const;
+    }),
+  );
+  return Object.fromEntries(found.filter((entry) => entry !== null));
+}
+
+async function originRepo(host: ExecHost, root: string): Promise<string | null> {
+  const remote = await gitRunner(host)(["git", "-C", root, "remote", "get-url", "origin"]);
+  return remote.code === 0 ? githubRemote(remote.stdout) : null;
+}
+
+export async function worktreePulls(
+  projectId: string | undefined,
+  deps: GithubDeps = { run: gitRunner(resolveExecHost()), fetch, token: loadConfig().github.token },
+): Promise<WorktreePulls> {
+  const auth = await githubAuth(deps);
+  const result: WorktreePulls = { auth: auth.source, repos: [], errors: [] };
+  if (!auth.token) return result;
+  const host = resolveExecHost();
+  for (const listing of (await knownWorktrees(projectId)).repos) {
+    if (!listing.root) continue;
+    const repo = await originRepo(host, listing.root);
+    if (!repo) continue;
+    const branches = listing.worktrees.flatMap((tree) =>
+      tree.branch && !tree.main ? [tree.branch] : [],
+    );
+    try {
+      result.repos.push({
+        root: listing.root,
+        repo,
+        pulls: branches.length ? await branchPulls(repo, branches, auth.token, deps) : {},
+      });
+    } catch (error) {
+      result.errors.push({
+        repo,
+        error: error instanceof OrcError ? error.message : "Could not load pull requests",
+      });
+    }
+  }
+  return result;
+}
+
+// Squash and rebase merges never make the branch an ancestor of the default branch, so a
+// merged PR counts only while the local branch still points at the commit GitHub merged.
+export async function mergedByPull(
+  host: ExecHost,
+  root: string,
+  branch: string,
+  head: string | null,
+  deps: GithubDeps = { run: gitRunner(host), fetch, token: loadConfig().github.token },
+): Promise<boolean> {
+  if (!head) return false;
+  const repo = await originRepo(host, root);
+  const auth = await githubAuth(deps);
+  if (!repo || !auth.token) return false;
+  try {
+    const pull = (await branchPulls(repo, [branch], auth.token, deps))[branch];
+    return pull?.state === "merged" && pull.head_sha === head;
+  } catch {
+    return false;
+  }
+}

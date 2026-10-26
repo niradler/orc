@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { expect } from "@playwright/test";
 import { API_SECRET, apiGet, apiPost, tid } from "./_helpers";
 import { test } from "./_terminal-fixture";
@@ -9,6 +9,8 @@ import { test } from "./_terminal-fixture";
 const folder = mkdtempSync(join(tmpdir(), "orc-pw-git-"));
 const repo = join(folder, "repo");
 const checkout = join(folder, "checkout");
+const squash = join(folder, "squash");
+const openPr = join(folder, "open-pr");
 async function git(cwd: string, ...args: string[]): Promise<void> {
   execFileSync("git", ["-C", cwd, ...args], {
     timeout: 15_000,
@@ -24,13 +26,122 @@ test.beforeAll(async () => {
   await git(repo, "add", ".");
   await git(repo, "commit", "-m", "initial");
   await git(repo, "worktree", "add", "-b", "orc/e2e-clean", checkout);
+  await git(repo, "worktree", "add", "-b", "orc/e2e-squash", squash);
+  writeFileSync(join(squash, "squash.txt"), "squashed\n");
+  await git(squash, "add", ".");
+  await git(squash, "commit", "-m", "squash feature");
+  await git(repo, "worktree", "add", "-b", "orc/e2e-open", openPr);
+  writeFileSync(join(openPr, "open.txt"), "in review\n");
+  await git(openPr, "add", ".");
+  await git(openPr, "commit", "-m", "open feature");
 });
 
 test("slice 1 terminal menu, real shell and slice 2 worktree cleanup", async ({
   page,
   request,
-}) => {
+}, testInfo) => {
   await apiPost(request, "/projects", { name: tid("git-e2e"), scope: repo });
+  await page.addInitScript(
+    (secret) =>
+      localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
+    API_SECRET,
+  );
+  const squashHead = execFileSync("git", ["-C", squash, "rev-parse", "HEAD"], {
+    timeout: 15_000,
+    windowsHide: true,
+  })
+    .toString()
+    .trim();
+  // GitHub is not reachable in tests: the matched PRs come from a fixture.
+  await page.route("**/api/git/registry/pulls*", (route) =>
+    route.fulfill({
+      json: {
+        auth: "gh",
+        errors: [],
+        repos: [
+          {
+            root: repo,
+            repo: "owner/repo",
+            pulls: {
+              "orc/e2e-squash": {
+                number: 42,
+                title: "Squashed feature",
+                url: "https://github.com/owner/repo/pull/42",
+                state: "merged",
+                draft: false,
+                head_sha: squashHead,
+              },
+              "orc/e2e-open": {
+                number: 43,
+                title: "Open feature",
+                url: "https://github.com/owner/repo/pull/43",
+                state: "open",
+                draft: false,
+                head_sha: null,
+              },
+            },
+          },
+        ],
+      },
+    }),
+  );
+  await page.goto("/terminals");
+  await page.getByTestId("terminal-new").click();
+  await page.getByTestId("terminal-cwd").fill(repo);
+  await expect(page.getByTestId("terminal-worktree-row")).toHaveCount(4);
+  await expect(page.getByText("New git worktree", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("terminal-browse")).toBeVisible();
+  await page.getByTestId("terminal-worktree").check();
+  await page.getByTestId("terminal-launch-shell").click();
+  await expect(page.getByTestId("terminal-viewport")).toBeVisible();
+
+  await page.getByTestId("worktree-manager-open").click();
+  const manager = page.getByTestId("worktree-manager");
+  const row = manager.getByTestId("registry-worktree").filter({ hasText: "orc/e2e-clean" });
+  const squashed = manager.getByTestId("registry-worktree").filter({ hasText: "orc/e2e-squash" });
+  const open = manager.getByTestId("registry-worktree").filter({ hasText: "orc/e2e-open" });
+  await expect(row).toContainText("merged");
+  await expect(squashed.getByTestId("worktree-pr")).toHaveText(/#42 merged/);
+  await expect(squashed.getByTestId("worktree-pr")).toHaveAttribute(
+    "href",
+    "https://github.com/owner/repo/pull/42",
+  );
+  await expect(squashed).toContainText("squash-merged");
+  await expect(squashed.getByTestId("registry-worktree-select")).toBeEnabled();
+  await expect(open.getByTestId("worktree-pr")).toHaveText(/#43 open/);
+  await expect(open.getByTestId("registry-worktree-select")).toBeDisabled();
+  await page.screenshot({ path: testInfo.outputPath("worktree-manager.png") });
+  // The registry is shared with other specs, so count only this repo's rows.
+  const ours = manager
+    .getByTestId("worktree-repo")
+    .filter({ hasText: basename(folder) })
+    .getByTestId("registry-worktree");
+  await manager.getByTestId("worktree-filter-pr").click();
+  await expect(ours).toHaveCount(2);
+  await manager.getByTestId("worktree-filter-cleanable").click();
+  await expect(ours).toHaveCount(2);
+  await manager.getByTestId("worktree-filter-all").click();
+
+  await row.getByTestId("registry-worktree-select").check();
+  await manager.getByTestId("cleanup-delete-branch").check();
+  await manager.getByTestId("worktree-cleanup").click();
+  await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(manager.getByTestId("cleanup-result")).toContainText("removed");
+  await expect(row).toHaveCount(0);
+
+  // A single worktree is removed from its row; the server keeps refusing unverified squash merges.
+  await open.getByTestId("worktree-remove").click();
+  await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(open).toHaveCount(0);
+  await squashed.getByTestId("registry-worktree-select").check();
+  await manager.getByTestId("worktree-cleanup").click();
+  await page.getByTestId("confirm-dialog-confirm").click();
+  await expect(manager.getByTestId("cleanup-result")).toContainText(/can be bulk cleaned/);
+  await expect(squashed).toHaveCount(1);
+});
+
+test("checkouts and the worktree manager stay readable on a phone", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(
     (secret) =>
       localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret),
@@ -39,20 +150,30 @@ test("slice 1 terminal menu, real shell and slice 2 worktree cleanup", async ({
   await page.goto("/terminals");
   await page.getByTestId("terminal-new").click();
   await page.getByTestId("terminal-cwd").fill(repo);
-  await expect(page.getByTestId("terminal-worktree-row")).toHaveCount(2);
-  await expect(page.getByTestId("terminal-browse")).toBeVisible();
-  await page.getByTestId("terminal-worktree").check();
-  await page.getByTestId("terminal-launch-shell").click();
-  await expect(page.getByTestId("terminal-viewport")).toBeVisible();
-  await page.getByTestId("worktree-registry-toggle").click();
-  const row = page.getByTestId("registry-worktree").filter({ hasText: "orc/e2e-clean" });
-  await expect(row).toContainText("merged");
-  await row.getByTestId("registry-worktree-select").check();
-  await page.getByTestId("cleanup-delete-branch").check();
-  await page.getByTestId("worktree-cleanup").click();
-  await page.getByTestId("confirm-dialog-confirm").click();
-  await expect(page.getByTestId("cleanup-result")).toContainText("removed");
-  await expect(row).toHaveCount(0);
+  const rows = page.getByTestId("terminal-worktree-row");
+  await expect(rows.first()).toBeVisible();
+  for (const row of await rows.all()) {
+    const text = await row.locator("[title]").first().boundingBox();
+    const box = await row.boundingBox();
+    // The branch and path use the full row width; the actions wrap underneath.
+    expect(text?.width ?? 0).toBeGreaterThan((box?.width ?? 0) * 0.8);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  await page.screenshot({ path: testInfo.outputPath("checkouts-phone.png") });
+
+  await page.keyboard.press("Escape");
+  await page.getByTestId("terminal-options").click();
+  await page.getByTestId("worktree-manager-open").click();
+  const manager = page.getByTestId("worktree-manager");
+  await expect(manager.getByTestId("registry-worktree").first()).toBeVisible();
+  for (const row of await manager.getByTestId("registry-worktree").all()) {
+    const label = await row.getByTestId("registry-worktree-label").boundingBox();
+    const rowBox = await row.boundingBox();
+    expect(label?.width ?? 0).toBeGreaterThan((rowBox?.width ?? 0) * 0.8);
+  }
+  const box = await manager.boundingBox();
+  expect((box?.x ?? -1) >= 0 && (box?.x ?? 0) + (box?.width ?? 0) <= 390).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("worktree-manager-phone.png") });
 });
 
 test("slice 3 git panel status, diff, selected staging, commit, branches and task links", async ({

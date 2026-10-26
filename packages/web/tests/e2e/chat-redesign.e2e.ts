@@ -32,45 +32,52 @@ test("stopping a chunked response preserves partial text and a new send finishes
     API_SECRET,
   );
   await page.addInitScript(() => {
+    // Proxy the real run, splicing a partial chunk (split mid UTF-8 character) after the
+    // thread event so the stop below cancels a live server run, not just a local reader.
     const original = window.fetch.bind(window);
     let intercepted = false;
-    window.fetch = (input, init) => {
+    window.fetch = async (input, init) => {
       if (!String(input).endsWith("/chat/stream") || intercepted) return original(input, init);
       intercepted = true;
-      return Promise.resolve(
-        new Response(
-          new ReadableStream<Uint8Array>({
-            start(controller) {
-              const encoder = new TextEncoder();
-              const bytes = encoder.encode('data: {"type":"text","text":"Partial response ✓"}\n\n');
-              const split = bytes.indexOf(0xe2) + 1;
+      const response = await original(input, init);
+      const encoder = new TextEncoder();
+      const bytes = encoder.encode('data: {"type":"text","text":"Partial response ✓"}\n\n');
+      const split = bytes.indexOf(0xe2) + 1;
+      let seen = "";
+      let spliced = false;
+      let open = true;
+      const body = response.body?.pipeThrough(
+        new TransformStream<Uint8Array, Uint8Array>({
+          start(controller) {
+            Object.assign(window, {
+              releaseCancelledChat: () => {
+                if (open)
+                  controller.enqueue(
+                    encoder.encode('data: {"type":"text","text":"STALE-LATE-CHUNK"}\n\n'),
+                  );
+              },
+            });
+          },
+          transform(chunk, controller) {
+            controller.enqueue(chunk);
+            seen += new TextDecoder().decode(chunk);
+            if (!spliced && seen.includes('"type":"thread"')) {
+              spliced = true;
               controller.enqueue(bytes.slice(0, split));
               controller.enqueue(bytes.slice(split));
-              init?.signal?.addEventListener("abort", () =>
-                controller.error(new DOMException("Aborted", "AbortError")),
-              );
-              Object.assign(window, {
-                releaseCancelledChat: () => {
-                  try {
-                    controller.enqueue(
-                      encoder.encode('data: {"type":"text","text":"STALE-LATE-CHUNK"}\n\n'),
-                    );
-                    controller.close();
-                  } catch {
-                    /* Aborted stream correctly refuses late chunks. */
-                  }
-                },
-              });
-            },
-          }),
-          { headers: { "Content-Type": "text/event-stream" } },
-        ),
+            }
+          },
+          flush() {
+            open = false;
+          },
+        }),
       );
+      return new Response(body, { headers: response.headers, status: response.status });
     };
   });
   await page.goto("/tasks");
   await page.getByTestId("chat-open-button").click();
-  await page.getByTestId("chat-input").fill("Start a chunked response");
+  await page.getByTestId("chat-input").fill("Respond after 10000ms with a chunked response");
   await page.getByTestId("chat-send-button").click();
   await expect(page.getByTestId("chat-message-content").last()).toContainText("Partial response ✓");
   await expect(page.getByTestId("chat-agent-select")).toBeDisabled();

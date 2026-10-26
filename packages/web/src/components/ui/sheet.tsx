@@ -1,7 +1,7 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import * as React from "react";
-import { collapseExpandedDocument } from "@/lib/document-display";
+import { collapseExpandedDocument, keepMarkdownFullscreen } from "@/lib/document-display";
 import { cn } from "@/lib/utils";
 
 const Sheet = DialogPrimitive.Root;
@@ -48,6 +48,10 @@ const SheetContent = React.forwardRef<
       data-document-container
       onEscapeKeyDown={(event) => {
         if (!collapseExpandedDocument(event)) props.onEscapeKeyDown?.(event);
+      }}
+      onInteractOutside={(event) => {
+        keepMarkdownFullscreen(event);
+        if (!event.defaultPrevented) props.onInteractOutside?.(event);
       }}
     >
       {children}

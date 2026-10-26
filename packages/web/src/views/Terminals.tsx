@@ -13,7 +13,7 @@ import { TerminalList } from "@/components/terminals/TerminalList";
 import { TerminalSelect } from "@/components/terminals/TerminalSelect";
 import { TerminalTouchControls } from "@/components/terminals/TerminalTouchControls";
 import { TerminalWorkspace } from "@/components/terminals/TerminalWorkspace";
-import { WorktreeRegistry } from "@/components/terminals/WorktreeRegistry";
+import { WorktreeManager } from "@/components/terminals/WorktreeManager";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -329,6 +329,9 @@ export default function Terminals() {
   const mobileTerminalId = params.get("paneTerminal") ?? terminalId;
   const mobileTerminal = terminals.find((terminal) => terminal.id === mobileTerminalId);
   const defaultLaunchHost = launchHost === undefined ? (ssh?.host ?? null) : launchHost;
+  const worktreeManager = (
+    <WorktreeManager launchers={info.launchers} host={info.host} onCreate={handleCreate} />
+  );
   const newMenu = (
     <NewTerminalMenu
       key={defaultLaunchHost ?? "local"}
@@ -352,7 +355,10 @@ export default function Terminals() {
           className="relative shrink-0 flex flex-col min-h-0 border-r border-outline-variant bg-background"
         >
           <div className="shrink-0 p-3">
-            <h2 className="mb-3 text-sm font-medium text-on-surface">Sessions</h2>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-medium text-on-surface">Sessions</h2>
+              {worktreeManager}
+            </div>
             {newMenu}
           </div>
           <TerminalList
@@ -365,7 +371,6 @@ export default function Terminals() {
             canDuplicate={canDuplicate}
             pending={creating}
           />
-          <WorktreeRegistry />
           {/* biome-ignore lint/a11y/useSemanticElements: a draggable splitter has no native element */}
           <div
             role="separator"
@@ -567,7 +572,7 @@ export default function Terminals() {
                 </Button>
               </div>
             )}
-            <WorktreeRegistry compact />
+            <div className="border-t border-surface-highest pt-3">{worktreeManager}</div>
           </SheetBody>
         </SheetContent>
       </Sheet>

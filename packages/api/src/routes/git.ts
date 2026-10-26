@@ -2,6 +2,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
 import { type ExecHost, hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
+import { mergedByPull, worktreePulls } from "../git/github.js";
 import { knownWorktrees, worktreeDeps } from "../git/registry.js";
 import { listWorktrees, removeWorktree, samePath, trackedWorktrees } from "../git/worktrees.js";
 import { createRouter } from "../lib/router.js";
@@ -189,7 +190,8 @@ app.openapi(
   }),
   async (c) => {
     requireTerminals(loadConfig());
-    const deps = worktreeDeps();
+    const host = resolveExecHost();
+    const deps = worktreeDeps(host);
     const results: { path: string; removed: boolean; error: string | null }[] = [];
     for (const item of c.req.valid("json").items) {
       try {
@@ -197,18 +199,23 @@ app.openapi(
         const tree = listing.worktrees.find((tree) =>
           samePath(tree.path, item.path, deps.platform),
         );
-        if (
-          !tree ||
-          tree.main ||
-          tree.dirty ||
-          tree.locked ||
-          tree.active_terminal ||
-          (!tree.merged && !tree.prunable)
-        )
+        if (!tree || tree.main || tree.dirty || tree.locked || tree.active_terminal)
           throw new ValidationError(
             "Only clean, inactive, unlocked merged or missing worktrees can be bulk cleaned",
           );
-        await removeWorktree(item, deps);
+        const prMerged =
+          !tree.merged &&
+          !tree.prunable &&
+          Boolean(tree.branch) &&
+          (await mergedByPull(host, listing.root ?? item.cwd, tree.branch ?? "", tree.head));
+        if (!tree.merged && !tree.prunable && !prMerged)
+          throw new ValidationError(
+            "Only clean, inactive, unlocked merged or missing worktrees can be bulk cleaned",
+          );
+        await removeWorktree(
+          { ...item, merged_head: prMerged ? (tree.head ?? undefined) : undefined },
+          deps,
+        );
         results.push({ path: item.path, removed: true, error: null });
       } catch (error) {
         results.push({
@@ -219,6 +226,48 @@ app.openapi(
       }
     }
     return c.json({ results }, 200);
+  },
+);
+
+const BranchPullSchema = z.object({
+  number: z.number().int(),
+  title: z.string(),
+  url: z.string(),
+  state: z.enum(["open", "closed", "merged"]),
+  draft: z.boolean(),
+  head_sha: z.string().nullable(),
+});
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/git/registry/pulls",
+    tags: ["Git"],
+    summary: "Match the branches of known worktrees to their GitHub pull requests",
+    request: { query: z.object({ project_id: z.string().optional() }) },
+    responses: {
+      200: {
+        description: "Pull requests keyed by branch, per repository",
+        content: {
+          "application/json": {
+            schema: z.object({
+              auth: z.enum(["gh", "token", "none"]),
+              repos: z.array(
+                z.object({
+                  root: z.string(),
+                  repo: z.string(),
+                  pulls: z.record(z.string(), BranchPullSchema),
+                }),
+              ),
+              errors: z.array(z.object({ repo: z.string(), error: z.string() })),
+            }),
+          },
+        },
+      },
+    },
+  }),
+  async (c) => {
+    requireTerminals(loadConfig());
+    return c.json(await worktreePulls(c.req.valid("query").project_id), 200);
   },
 );
 

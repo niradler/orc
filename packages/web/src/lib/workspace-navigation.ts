@@ -61,7 +61,12 @@ export function workspaceDestination(path: string, projectId: string, currentSea
   const [pathname, destinationSearch = ""] = path.split("?", 2);
   const query = new URLSearchParams(destinationSearch);
   query.set("project", projectId);
-  if (new URLSearchParams(currentSearch).get("chat") === "open") query.set("chat", "open");
+  const current = new URLSearchParams(currentSearch);
+  if (current.get("chat") === "open") {
+    query.set("chat", "open");
+    const thread = current.get("chatThread");
+    if (thread) query.set("chatThread", thread);
+  }
   return `${pathname}?${query}`;
 }
 
