@@ -48,6 +48,7 @@
     "./secrets": "./src/secrets.ts",
     "./tags": "./src/tags.ts",
     "./scope": "./src/scope.ts",
+    "./scratchpad": "./src/scratchpad.ts",
     "./skill-update": "./src/skill-update.ts",
     "./validate": "./src/validate.ts",
     "./rules": "./src/rules.ts",

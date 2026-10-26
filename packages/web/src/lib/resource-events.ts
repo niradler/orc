@@ -48,6 +48,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
   webhooks: ["webhooks", "webhook-deliveries", "jobs", "job"],
   projects: ["projects", "project", "project-summary", "palette-search"],
   memories: ["memories", "memory", "memory-history", "project-summary", "palette-search"],
+  scratchpads: ["scratchpads", "scratchpad"],
   knowledge: ["kb", "kb-digest", "palette-documents"],
   skills: [
     "skills",

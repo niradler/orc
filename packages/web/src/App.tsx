@@ -34,6 +34,8 @@ const Projects = lazy(() => import("@/views/Projects"));
 
 const Rules = lazy(() => import("@/views/Rules"));
 
+const Scratchpads = lazy(() => import("@/views/Scratchpads"));
+
 const Sessions = lazy(() => import("@/views/Sessions"));
 const Audit = lazy(() => import("@/views/Audit"));
 const Attention = lazy(() => import("@/views/Attention"));
@@ -269,6 +271,11 @@ export default function App() {
                       <Route path="/packages/agents/:agentId" element={<Agents />} />
                       <Route path="/settings" element={<Settings />} />
                       <Route path="/rules" element={<Rules />} />
+                      <Route path="/scratchpad" element={<Scratchpads projectId={projectId} />} />
+                      <Route
+                        path="/scratchpad/:scratchpadId"
+                        element={<Scratchpads projectId={projectId} />}
+                      />
                       <Route path="*" element={<Navigate to="/activity" replace />} />
                     </Routes>
                   </Suspense>

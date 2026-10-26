@@ -33,6 +33,7 @@ import {
   useKbRevisions,
 } from "@/hooks/useKnowledge";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
+import { saveFile } from "@/lib/save-file";
 import { cn, formatBytes } from "@/lib/utils";
 import { wikiLinkKey } from "@/lib/wiki-links";
 import { KbComments } from "./KbComments";
@@ -51,15 +52,6 @@ const STATE_LABEL: Record<string, string> = {
   semantic_pending: "Embedding",
   semantic_ready: "Semantic search ready",
 };
-
-function saveFile(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 /** Arrow keys, Home and End move between the items of an open menu, as in a native menu. */
 function moveMenuFocus(event: KeyboardEvent<HTMLElement>) {

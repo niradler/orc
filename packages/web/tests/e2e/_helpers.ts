@@ -63,6 +63,7 @@ export async function gotoView(
     | "agents"
     | "terminals"
     | "rules"
+    | "scratchpads"
     | "settings",
 ): Promise<void> {
   if (API_SECRET) {
@@ -73,7 +74,13 @@ export async function gotoView(
     );
   }
   const path =
-    view === "memories" ? "knowledge/memories" : view === "knowledge" ? "knowledge/base" : view;
+    view === "memories"
+      ? "knowledge/memories"
+      : view === "knowledge"
+        ? "knowledge/base"
+        : view === "scratchpads"
+          ? "scratchpad"
+          : view;
   await page.goto(`/${path}`);
 }
 

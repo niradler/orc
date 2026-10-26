@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createAgent, discoverAgents, readAgent } from "@orc/core/agent-service";
 import { loadConfig, resolveApiBase } from "@orc/core/config";
-import { NotFoundError, ValidationError } from "@orc/core/errors";
+import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { HumanRequestInputSchema, HumanRequestSchema } from "@orc/core/human-requests";
 import { shortId, ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
@@ -11,6 +11,16 @@ import {
   readPackage,
   readPackageFile,
 } from "@orc/core/package-service";
+import {
+  SCRATCHPAD_KINDS,
+  SCRATCHPAD_TAGS_MAX,
+  SCRATCHPAD_TITLE_MAX,
+  type Scratchpad,
+  type ScratchpadContentUrl,
+  ScratchpadContentUrlSchema,
+  type ScratchpadKind,
+  type ScratchpadListItem,
+} from "@orc/core/scratchpad";
 import { ArchiveSearchSchema, SessionSyncInputSchema } from "@orc/core/session-archive";
 import { SessionHandoffInputSchema, SessionHandoffUploadSchema } from "@orc/core/session-handoff";
 import { type SkillDownload, SkillDownloadSchema } from "@orc/core/skill-download";
@@ -34,13 +44,14 @@ import {
   MemoryStore,
 } from "@orc/db/memories";
 import { job_runs, jobs, projects, sessions, tasks } from "@orc/db/schema";
+import { ScratchpadStore } from "@orc/db/scratchpads";
 import { SkillHistory, type SkillListSort } from "@orc/db/skill-history";
 import { executeJob } from "@orc/runner/executor";
 import { addTaskComment, updateTaskStatus } from "@orc/task-service";
 
 import { and, desc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import { orcApi } from "./api-client.js";
+import { orcApi, orcApiBase } from "./api-client.js";
 import { executeKbTool, isKbTool, kbSearchLines, kbToolDefinitions } from "./kb-tools.js";
 import type { McpProject } from "./project-scope.js";
 
@@ -279,6 +290,82 @@ export const toolDefinitions = [
       reason: z.string().trim().min(1).max(2000),
       project: projectParam,
     }),
+  },
+  {
+    name: "pad_list",
+    description:
+      "List scratchpads (newest first, without content): working docs (markdown + mermaid), " +
+      "Excalidraw diagrams and HTML pages a human or agent keeps and revisits. Omit project to list " +
+      "every pad; unassigned:true lists pads without a project; session:'current' lists pads " +
+      "linked to this agent session. Read one with pad_get.",
+    inputSchema: z.object({
+      kind: z.enum(SCRATCHPAD_KINDS).optional(),
+      project: z.string().optional().describe("Project name; omit for every project"),
+      unassigned: z.boolean().optional().describe("Only pads without a project"),
+      session: z
+        .string()
+        .optional()
+        .describe("A native session id, or 'current' for this agent session"),
+      tag: z.string().optional(),
+      q: z.string().optional().describe("Search title and content"),
+      limit: z.number().int().min(1).max(500).optional().describe("Max pads (default 50)"),
+    }),
+  },
+  {
+    name: "pad_get",
+    description:
+      "Read a scratchpad: header (kind, revision, link) then the raw file - markdown for doc, " +
+      ".excalidraw JSON for diagram, HTML for html. via:'url' instead returns a short-lived " +
+      "download_url (curl it, no auth needed) for large pads.",
+    inputSchema: z.object({
+      id: z.string().min(1).max(64),
+      via: z.enum(["inline", "url"]).optional().describe("inline (default) or url"),
+    }),
+  },
+  {
+    name: "pad_create",
+    description:
+      "Create a scratchpad. kind doc = markdown (```mermaid blocks render as diagrams), diagram = " +
+      'an .excalidraw file ({"type":"excalidraw","elements":[...]}; omit content for an empty ' +
+      "canvas), html = a standalone page shown in a sandboxed frame; if the human chooses to " +
+      "render it with ORC access, `window.orc.fetch(path, init)` calls the ORC API as them " +
+      "(check `window.orc` and fall back to sample data; pin CDN scripts with integrity). " +
+      "Linked to this agent session " +
+      "by default. Returns the id, revision and a deep link to share with the human. For large " +
+      "content create it empty, then pad_update with via:'url'.",
+    inputSchema: z.object({
+      kind: z.enum(SCRATCHPAD_KINDS),
+      title: z.string().trim().min(1).max(SCRATCHPAD_TITLE_MAX),
+      content: z.string().optional(),
+      project: z.string().optional().describe("Project name; omit for a pad without a project"),
+      tags: z.array(z.string().min(1).max(64)).max(SCRATCHPAD_TAGS_MAX).optional(),
+      link_session: z
+        .boolean()
+        .optional()
+        .describe("Link to this agent session (default true when the session is known)"),
+    }),
+  },
+  {
+    name: "pad_update",
+    description:
+      "Update a scratchpad. Pass if_revision (from pad_get) so a human's concurrent edit is not " +
+      "overwritten; a mismatch fails and you should re-read. content replaces the whole file. " +
+      "project null removes the project link. via:'url' instead returns an upload_url: PUT the raw " +
+      "file to it (curl -T file URL), valid for one write at the current revision.",
+    inputSchema: z.object({
+      id: z.string().min(1).max(64),
+      title: z.string().trim().min(1).max(SCRATCHPAD_TITLE_MAX).optional(),
+      content: z.string().optional(),
+      project: z.string().nullable().optional().describe("Project name, or null to unlink"),
+      tags: z.array(z.string().min(1).max(64)).max(SCRATCHPAD_TAGS_MAX).optional(),
+      if_revision: z.number().int().min(1).optional(),
+      via: z.enum(["inline", "url"]).optional().describe("url: return an upload_url instead"),
+    }),
+  },
+  {
+    name: "pad_delete",
+    description: "Delete a scratchpad. This cannot be undone.",
+    inputSchema: z.object({ id: z.string().min(1).max(64) }),
   },
   {
     name: "task_list",
@@ -737,6 +824,8 @@ export type ToolOptions = {
   projectScopes?: readonly McpProject[];
   publicApiBaseUrl?: string;
   skillDownload?: (name: string, ref: string, projectId: string | null) => SkillDownload;
+  /** Mints a scratchpad content URL in-process; stdio MCP asks the API, which holds the key. */
+  padContentUrl?: (id: string, mode: "download" | "upload", author: string) => ScratchpadContentUrl;
   /**
    * Native session id of the calling agent. Stdio MCP runs inside the agent's process tree and
    * reads it from the environment; HTTP MCP cannot see it, so it stays unset there.
@@ -754,6 +843,72 @@ function memoryWriter(options: ToolOptions): { author: string; session_id: strin
     author: [process.env.ORC_AGENT, process.env.CLAUDE_MODEL].filter(Boolean).join("/") || "agent",
     session_id: options.agentSessionId ?? null,
   };
+}
+
+/** Where the human opens a pad; the API serves the web UI in an installed ORC. */
+function padLink(id: string, options: ToolOptions): string {
+  return new URL(`/scratchpad/${id}`, options.publicApiBaseUrl ?? orcApiBase()).toString();
+}
+
+async function padContentUrl(
+  id: string,
+  mode: "download" | "upload",
+  options: ToolOptions,
+): Promise<ScratchpadContentUrl> {
+  const { author } = memoryWriter(options);
+  if (options.padContentUrl) return options.padContentUrl(id, mode, author);
+  return ScratchpadContentUrlSchema.parse(
+    await orcApi("POST", `/scratchpads/${encodeURIComponent(id)}/content-url`, {
+      body: { mode, author },
+      timeoutMs: 15_000,
+    }),
+  );
+}
+
+function padProjectName(projectId: string | null): string {
+  if (!projectId) return "none";
+  return (
+    getSqlite()
+      .query<{ name: string }, [string]>("SELECT name FROM projects WHERE id=?")
+      .get(projectId)?.name ?? projectId
+  );
+}
+
+function formatPadLine(pad: ScratchpadListItem): string {
+  const tags = pad.tags.length ? ` #${pad.tags.join(" #")}` : "";
+  const updated = new Date(pad.updated_at * 1000).toISOString();
+  return `${pad.id} [${pad.kind}] ${pad.title} - rev ${pad.revision}, ${pad.size_bytes} B, project ${padProjectName(pad.project_id)}, updated ${updated} by ${pad.author}${tags}`;
+}
+
+function padHeader(pad: Scratchpad, options: ToolOptions): string {
+  return [
+    `# ${pad.title}`,
+    `id: ${pad.id} | kind: ${pad.kind} | revision: ${pad.revision} | author: ${pad.author}`,
+    `project: ${padProjectName(pad.project_id)} | session: ${pad.session_id ?? "none"} | tags: ${pad.tags.join(", ") || "none"}`,
+    `link: ${padLink(pad.id, options)}`,
+  ].join("\n");
+}
+
+/**
+ * A project-scoped connection reaches its projects' pads and pads without a project, as pad_list
+ * shows; any other pad is reported as missing.
+ */
+function scopedPad(store: ScratchpadStore, id: string, options: ToolOptions): Scratchpad {
+  const pad = store.get(id);
+  const scopes = options.projectScopes;
+  if (scopes && pad.project_id && !scopes.some((p) => p.id === pad.project_id))
+    throw new NotFoundError("Scratchpad", id);
+  return pad;
+}
+
+/** Resolves a pad's project by name; a scoped connection may only use its own projects. */
+function padProject(project: string, options: ToolOptions): string {
+  const resolved = resolveProjectId(project);
+  if (!resolved) throw new NotFoundError("Project", project);
+  const { id } = resolved;
+  if (options.projectScopes && !options.projectScopes.some((p) => p.id === id))
+    throw new ValidationError(`Project ${project} is outside the selected MCP projects`);
+  return id;
 }
 
 /** Memories belong to a project; there is no global memory. */
@@ -1140,6 +1295,112 @@ export async function executeTool(
         { ...memoryWriter(options), reason: input.reason },
       );
       return memory ? `Reverted memory ${memory.name}` : `Reverted: memory ${input.name} removed`;
+    }
+
+    case "pad_list": {
+      const input = args as {
+        kind?: ScratchpadKind;
+        project?: string;
+        unassigned?: boolean;
+        session?: string;
+        tag?: string;
+        q?: string;
+        limit?: number;
+      };
+      const session =
+        input.session === "current" ? (options.agentSessionId ?? undefined) : input.session;
+      if (input.session === "current" && !session)
+        throw new ValidationError("This agent's session id is unknown; pass a session id");
+      const scopes = options.projectScopes?.map((p) => p.id);
+      const pads = new ScratchpadStore(getSqlite(db))
+        .list({
+          kind: input.kind,
+          project_id: input.unassigned
+            ? null
+            : input.project
+              ? resolveProjectId(input.project)?.id
+              : undefined,
+          session_id: session,
+          tag: input.tag,
+          q: input.q,
+        })
+        // A project-scoped connection sees its projects' pads and pads without a project.
+        .filter((pad) => !scopes || !pad.project_id || scopes.includes(pad.project_id));
+      const shown = pads.slice(0, input.limit ?? 50);
+      return [
+        shown.map(formatPadLine).join("\n") || "No scratchpads found.",
+        ...(pads.length > shown.length
+          ? [`Showing ${shown.length} of ${pads.length}; filter or raise limit.`]
+          : []),
+      ].join("\n");
+    }
+
+    case "pad_get": {
+      const { id, via } = args as { id: string; via?: "inline" | "url" };
+      const pad = scopedPad(new ScratchpadStore(getSqlite(db)), id, options);
+      if (via === "url") return JSON.stringify(await padContentUrl(id, "download", options));
+      return `${padHeader(pad, options)}\n---\n${pad.content}`;
+    }
+
+    case "pad_create": {
+      const input = args as {
+        kind: ScratchpadKind;
+        title: string;
+        content?: string;
+        project?: string;
+        tags?: string[];
+        link_session?: boolean;
+      };
+      const writer = memoryWriter(options);
+      const pad = new ScratchpadStore(getSqlite(db)).create({
+        kind: input.kind,
+        title: input.title,
+        content: input.content,
+        project_id: input.project ? padProject(input.project, options) : null,
+        session_id: input.link_session === false ? null : writer.session_id,
+        tags: input.tags,
+        author: writer.author,
+      });
+      return `Created ${pad.kind} scratchpad ${pad.id} (revision ${pad.revision}): ${padLink(pad.id, options)}`;
+    }
+
+    case "pad_update": {
+      const { id, via, project, ...fields } = args as {
+        id: string;
+        title?: string;
+        content?: string;
+        project?: string | null;
+        tags?: string[];
+        if_revision?: number;
+        via?: "inline" | "url";
+      };
+      const store = new ScratchpadStore(getSqlite(db));
+      const current = scopedPad(store, id, options);
+      if (via === "url") {
+        if (fields.content !== undefined)
+          throw new ValidationError("via:'url' uploads the content; do not also pass content");
+        if (fields.if_revision !== undefined && fields.if_revision !== current.revision)
+          throw new ConflictError(
+            `Scratchpad changed: revision ${current.revision} by ${current.author}, expected ${fields.if_revision}`,
+          );
+        return JSON.stringify(await padContentUrl(id, "upload", options));
+      }
+      const pad = store.update(id, {
+        ...fields,
+        ...(project === undefined
+          ? {}
+          : { project_id: project === null ? null : padProject(project, options) }),
+        author: memoryWriter(options).author,
+      });
+      return `Updated scratchpad ${pad.id} to revision ${pad.revision}: ${padLink(pad.id, options)}`;
+    }
+
+    case "pad_delete": {
+      const { id } = args as { id: string };
+      const store = new ScratchpadStore(getSqlite(db));
+      scopedPad(store, id, options);
+      store.remove(id);
+      return `Deleted scratchpad ${id}`;
     }
 
     case "task_list": {

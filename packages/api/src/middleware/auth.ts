@@ -1,5 +1,6 @@
 import { configuredApiSecret } from "@orc/core/config";
 import { UnauthorizedError } from "@orc/core/errors";
+import { SCRATCHPAD_CONTENT_PATH_PATTERN } from "@orc/core/scratchpad";
 import { SESSION_SYNC_PATH_PATTERN } from "@orc/core/session-archive";
 import { HANDOFF_UPLOAD_PATH_PATTERN } from "@orc/core/session-handoff";
 import { SKILL_DOWNLOAD_PATH_PATTERN } from "@orc/core/skill-download";
@@ -18,6 +19,13 @@ export function bearerAuth(secret: string | undefined): MiddlewareHandler {
     if (c.req.method === "PUT" && HANDOFF_UPLOAD_PATH_PATTERN.test(c.req.path)) return next();
     // This GET validates a signed, expiring, one-file capability in its handler.
     if (c.req.method === "GET" && SKILL_DOWNLOAD_PATH_PATTERN.test(c.req.path)) return next();
+    // This GET/PUT validates a signed, expiring, one-pad capability in its handler; a PUT is
+    // bound to the revision it was minted at, so a replay is a 409.
+    if (
+      (c.req.method === "GET" || c.req.method === "PUT") &&
+      SCRATCHPAD_CONTENT_PATH_PATTERN.test(c.req.path)
+    )
+      return next();
     // Only these upload/manifest/project-discovery routes validate a scoped sync capability.
     if (
       SESSION_SYNC_PATH_PATTERN.test(c.req.path) &&

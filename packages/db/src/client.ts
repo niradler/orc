@@ -12,6 +12,7 @@ import { installMemories } from "./memories.js";
 import { installReusableWebhooks } from "./reusable-webhooks.js";
 import { installRules } from "./rules.js";
 import * as schema from "./schema.js";
+import { installScratchpads } from "./scratchpads.js";
 import { installSessionArchive } from "./session-archive.js";
 import { installSkillHistory } from "./skill-history.js";
 
@@ -581,6 +582,7 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   installSkillHistory(sqlite);
   installMemories(sqlite);
   installRules(sqlite);
+  installScratchpads(sqlite);
   new HumanRequestStore(sqlite);
 
   installChangeTracking(sqlite, path);

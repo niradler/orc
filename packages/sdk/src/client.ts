@@ -97,6 +97,12 @@ import type {
   RestartResponse,
   ResumeFlowInput,
   ScopeQuery,
+  Scratchpad,
+  ScratchpadContentUrl,
+  ScratchpadCreate,
+  ScratchpadKind,
+  ScratchpadListItem,
+  ScratchpadUpdate,
   Session,
   SessionDetail,
   SessionSearchResult,
@@ -414,6 +420,40 @@ export function createOrcClient(options?: OrcClientOptions) {
           project_id,
           ...input,
         }),
+    },
+
+    scratchpads: {
+      list: (params?: {
+        kind?: ScratchpadKind | undefined;
+        project_id?: string | undefined;
+        unassigned?: boolean | undefined;
+        session_id?: string | undefined;
+        tag?: string | undefined;
+        q?: string | undefined;
+        limit?: number | undefined;
+      }) =>
+        c<{ scratchpads: ScratchpadListItem[]; total: number }>(
+          "GET",
+          "/scratchpads",
+          undefined,
+          params as Record<string, string | number | boolean | undefined>,
+        ),
+
+      get: (id: string) => c<Scratchpad>("GET", `/scratchpads/${encodeURIComponent(id)}`),
+
+      create: (input: ScratchpadCreate) => c<Scratchpad>("POST", "/scratchpads", input),
+
+      update: (id: string, input: ScratchpadUpdate) =>
+        c<Scratchpad>("PATCH", `/scratchpads/${encodeURIComponent(id)}`, input),
+
+      delete: (id: string) => c<null>("DELETE", `/scratchpads/${encodeURIComponent(id)}`),
+
+      contentUrl: (id: string, input: { mode: "download" | "upload"; author?: string }) =>
+        c<ScratchpadContentUrl>(
+          "POST",
+          `/scratchpads/${encodeURIComponent(id)}/content-url`,
+          input,
+        ),
     },
 
     jobs: {

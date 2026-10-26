@@ -42,6 +42,7 @@ export const WORKSPACE_SECTIONS = [
       { id: "packages", label: "Packages", path: "/packages" },
       { id: "agents", label: "Agents", path: "/packages/agents" },
       { id: "rules", label: "Rules", path: "/rules" },
+      { id: "scratchpads", label: "Scratchpads", path: "/scratchpad" },
     ],
   },
   {

@@ -1,8 +1,11 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { ValidationError } from "@orc/core/errors";
+import { getSqlite } from "@orc/db/client";
+import { ScratchpadStore } from "@orc/db/scratchpads";
 import { executeTool, toolDefinitions } from "@orc/mcp/tools";
 import { clientOrigin } from "../lib/client-origin.js";
 import { createRouter } from "../lib/router.js";
+import { scratchpadContentUrls } from "../scratchpad-content.js";
 import { skillDownloads } from "../skill-downloads.js";
 
 const app = createRouter();
@@ -51,6 +54,13 @@ app.openapi(mcpToolRoute, async (c) => {
     publicApiBaseUrl: clientOrigin(c.req.raw),
     skillDownload: (skill, ref, projectId) =>
       skillDownloads.mint(skill, ref, projectId, clientOrigin(c.req.raw)),
+    padContentUrl: (id, mode, author) =>
+      scratchpadContentUrls.mint(
+        new ScratchpadStore(getSqlite()).get(id),
+        mode,
+        clientOrigin(c.req.raw),
+        author,
+      ),
   });
   return c.json({ result });
 });

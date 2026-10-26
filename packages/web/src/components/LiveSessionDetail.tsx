@@ -5,6 +5,7 @@ import { AgentMessageText } from "@/components/AgentMessageText";
 import { Markdown } from "@/components/Markdown";
 import { ResumeActions } from "@/components/ResumeActions";
 import { SessionTaskLink } from "@/components/SessionTaskLink";
+import { SessionScratchpads } from "@/components/scratchpad/SessionScratchpads";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveSessions, useTranscript } from "@/hooks/useSessions";
@@ -249,6 +250,7 @@ export function LiveSessionDetail({
               </span>
               <SessionTaskLink session={session} linkTestId="detail-open-task" />
               <ResumeActions session={session} />
+              <SessionScratchpads session={session} />
               <span className="truncate max-w-full text-on-surface-variant">{session.cwd}</span>
             </div>
           )}

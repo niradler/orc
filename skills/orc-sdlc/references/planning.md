@@ -74,6 +74,8 @@ state owner and module responsibilities before implementation. Compare alternati
 only when a consequential choice is unresolved. A focused prototype can settle an
 empirical fork; several competing implementations are not mandatory. Keep sketches
 in the existing plan/handoff; do not add empty production scaffolding by default.
+When the human should review, comment on or reshape a plan, design or diagram, put it
+in an ORC scratchpad and share its link (`orc-platform`, scratchpads reference).
 
 Map each criterion to the relevant implementation step and verification evidence.
 Trace affected public contracts, callers, stored state and version compatibility;

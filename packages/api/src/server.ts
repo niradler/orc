@@ -28,6 +28,7 @@ import { primitivesRouter } from "./routes/primitives.js";
 import { projectsRouter } from "./routes/projects.js";
 import { pushRouter } from "./routes/push.js";
 import { rulesRouter } from "./routes/rules.js";
+import { scratchpadsRouter } from "./routes/scratchpads.js";
 import { searchRouter } from "./routes/search.js";
 import { sessionArchiveRouter } from "./routes/session-archive.js";
 import { sessionHandoffsRouter } from "./routes/session-handoffs.js";
@@ -129,6 +130,7 @@ export function createApp() {
   app.route("/api", tasksRouter);
   app.route("/api", taskLinksRouter);
   app.route("/api", memoriesRouter);
+  app.route("/api", scratchpadsRouter);
   app.route("/api", auditRouter);
   app.route("/api", knowledgeRouter);
   app.route("/api", sessionArchiveRouter);

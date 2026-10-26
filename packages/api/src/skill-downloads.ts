@@ -1,5 +1,5 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { ConflictError, NotFoundError, UnauthorizedError, ValidationError } from "@orc/core/errors";
+import { createHash } from "node:crypto";
+import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import {
   MAX_SKILL_DOWNLOAD_TOKEN_CHARS,
   SKILL_DOWNLOAD_TTL_MS,
@@ -10,6 +10,7 @@ import type { SkillRefContent } from "@orc/core/skill-service";
 import { getSqlite } from "@orc/db/client";
 import { SkillHistory } from "@orc/db/skill-history";
 import { z } from "zod";
+import { TokenSigner } from "./lib/signed-token.js";
 
 const ClaimSchema = z
   .object({
@@ -32,22 +33,22 @@ const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex")
 
 /** Process-local key deliberately invalidates capabilities after an API restart. */
 export class SkillDownloads {
-  private readonly key = randomBytes(32);
-  constructor(private readonly now: () => number = Date.now) {}
+  private readonly signer: TokenSigner<z.infer<typeof ClaimSchema>>;
+  constructor(now: () => number = Date.now) {
+    this.signer = new TokenSigner(ClaimSchema, MAX_SKILL_DOWNLOAD_TOKEN_CHARS, now);
+  }
 
   mint(name: string, ref: string, projectId: string | null, origin: string): SkillDownload {
     const bytes = fileBytes(name, ref, projectId);
-    const claim = ClaimSchema.parse({
+    const claim = {
       name,
       ref,
       project_id: projectId,
       sha256: hash(bytes),
-      expires: this.now() + SKILL_DOWNLOAD_TTL_MS,
-    });
-    const payload = Buffer.from(JSON.stringify(claim)).toString("base64url");
-    const token = `${payload}.${this.sign(payload)}`;
-    if (token.length > MAX_SKILL_DOWNLOAD_TOKEN_CHARS)
-      throw new ValidationError("Skill file scope exceeds the download URL limit");
+      expires: this.signer.expiresAt(SKILL_DOWNLOAD_TTL_MS),
+    };
+    const token = this.signer.sign(claim);
+    if (!token) throw new ValidationError("Skill file scope exceeds the download URL limit");
     return {
       download_url: new URL(`/api/skills/download/${token}`, origin).toString(),
       filename: ref.split("/").at(-1) as string,
@@ -58,30 +59,11 @@ export class SkillDownloads {
   }
 
   read(token: string): { bytes: Buffer; filename: string } {
-    if (token.length > MAX_SKILL_DOWNLOAD_TOKEN_CHARS) throw new UnauthorizedError();
-    const [payload, signature, extra] = token.split(".");
-    if (!payload || !signature || extra !== undefined) throw new UnauthorizedError();
-    const expected = this.sign(payload);
-    if (
-      !/^[A-Za-z0-9_-]{43}$/.test(signature) ||
-      !timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
-    )
-      throw new UnauthorizedError();
-    let claim: z.infer<typeof ClaimSchema>;
-    try {
-      claim = ClaimSchema.parse(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")));
-    } catch {
-      throw new UnauthorizedError();
-    }
-    if (claim.expires <= this.now()) throw new UnauthorizedError();
+    const claim = this.signer.verify(token);
     const bytes = fileBytes(claim.name, claim.ref, claim.project_id);
     if (hash(bytes) !== claim.sha256)
       throw new ConflictError("Skill file changed; request a fresh download URL");
     return { bytes, filename: claim.ref.split("/").at(-1) as string };
-  }
-
-  private sign(payload: string): string {
-    return createHmac("sha256", this.key).update(payload).digest("base64url");
   }
 }
 
