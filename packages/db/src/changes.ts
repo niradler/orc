@@ -47,6 +47,7 @@ const TABLE_RESOURCES: Record<string, ChangeResource> = {
   rule_decisions: "rules",
   rule_actions: "rules",
   human_requests: "human-requests",
+  scratchpads: "scratchpads",
 };
 const observers = new WeakMap<Database, () => void>();
 

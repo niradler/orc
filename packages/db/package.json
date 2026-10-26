@@ -16,6 +16,7 @@
     "./kb": "./src/kb.ts",
     "./kb-digest": "./src/kb-digest.ts",
     "./memories": "./src/memories.ts",
+    "./scratchpads": "./src/scratchpads.ts",
     "./skill-history": "./src/skill-history.ts",
     "./read-usage": "./src/read-usage.ts",
     "./agent-memory": "./src/agent-memory.ts"

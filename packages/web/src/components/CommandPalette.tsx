@@ -271,6 +271,14 @@ export function CommandPalette({
     "launch start agent claude codex",
   );
   add(
+    "new-scratchpad",
+    "New scratchpad",
+    "Start a doc, diagram or HTML page",
+    "Actions",
+    () => go("/scratchpad?new=1"),
+    "create add pad note markdown excalidraw drawing",
+  );
+  add(
     "chat",
     "Open chat",
     "Chat with your configured agent",

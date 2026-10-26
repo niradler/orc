@@ -2,10 +2,13 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { loadConfig } from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
+import { getSqlite } from "@orc/db/client";
+import { ScratchpadStore } from "@orc/db/scratchpads";
 import { createMcpServer, type McpMode, parseMcpMode, parseMcpProjects } from "@orc/mcp";
 import { Hono } from "hono";
 import { clientOrigin } from "../lib/client-origin.js";
 import { bearerAuth } from "../middleware/auth.js";
+import { scratchpadContentUrls } from "../scratchpad-content.js";
 import { skillDownloads } from "../skill-downloads.js";
 
 const logger = createLogger("api:mcp");
@@ -38,6 +41,13 @@ app.all("/mcp", async (c) => {
     mode,
     ...(projects ? { projects } : {}),
     skillDownload: (name, ref, projectId) => skillDownloads.mint(name, ref, projectId, origin),
+    padContentUrl: (id, mode, author, ifRevision) =>
+      scratchpadContentUrls.mint(
+        new ScratchpadStore(getSqlite()).at(id, ifRevision),
+        mode,
+        origin,
+        author,
+      ),
   });
   const transport = new WebStandardStreamableHTTPServerTransport({});
   // handleRequest returns while the SSE body is still streaming, so the

@@ -34,6 +34,7 @@ import type {
 import type { PackageDiscovery } from "@orc/core/primitive-types";
 import type { PushConfig, PushDevice, PushSubscriptionInput, PushTopic } from "@orc/core/push";
 import type { RuleEventCapability } from "@orc/core/rule-events";
+import type { Scratchpad, ScratchpadKind, ScratchpadListItem } from "@orc/core/scratchpad";
 import type { ArchiveSearchResult, ArchiveSession, ArchiveUpload } from "@orc/core/session-archive";
 import type { SessionHandoff } from "@orc/core/session-handoff";
 import {
@@ -482,6 +483,14 @@ function authHeaders(): Record<string, string> {
   return headers;
 }
 
+/** A raw request to the ORC API with the dashboard's credentials; `path` is relative to the API root. */
+export function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  for (const [name, value] of Object.entries(authHeaders()))
+    if (!headers.has(name)) headers.set(name, value);
+  return fetch(`${getApiUrl()}${path.startsWith("/") ? path : `/${path}`}`, { ...init, headers });
+}
+
 async function req<T>(
   method: string,
   path: string,
@@ -522,6 +531,37 @@ async function req<T>(
   }
   return json as T;
 }
+
+// ---- Scratchpads: docs, Excalidraw diagrams and HTML pages kept for later ----
+
+export type ScratchpadListParams = {
+  kind?: ScratchpadKind;
+  project_id?: string;
+  /** "true" lists only pads without a project. */
+  unassigned?: "true";
+  session_id?: string;
+  tag?: string;
+  q?: string;
+  limit?: number;
+};
+
+export type CreateScratchpadInput = {
+  kind: ScratchpadKind;
+  title: string;
+  content?: string;
+  project_id?: string | null;
+  session_id?: string | null;
+  tags?: string[];
+};
+
+export type UpdateScratchpadInput = {
+  title?: string;
+  content?: string;
+  project_id?: string | null;
+  session_id?: string | null;
+  tags?: string[];
+  if_revision?: number;
+};
 
 // ---- API client ----
 
@@ -709,6 +749,22 @@ export const api = {
       ),
     revert: (name: string, input: RevertMemoryInput) =>
       req<{ memory: Memory | null }>("POST", `/memories/${encodeURIComponent(name)}/revert`, input),
+  },
+
+  scratchpads: {
+    list: (params: ScratchpadListParams) =>
+      req<{ scratchpads: ScratchpadListItem[]; total: number }>(
+        "GET",
+        "/scratchpads",
+        undefined,
+        params,
+      ),
+    get: (id: string) => req<Scratchpad>("GET", `/scratchpads/${enc(id)}`),
+    create: (data: CreateScratchpadInput) =>
+      req<Scratchpad>("POST", "/scratchpads", { ...data, author: UI_AUTHOR }),
+    update: (id: string, data: UpdateScratchpadInput) =>
+      req<Scratchpad>("PATCH", `/scratchpads/${enc(id)}`, { ...data, author: UI_AUTHOR }),
+    delete: (id: string) => req<null>("DELETE", `/scratchpads/${enc(id)}`),
   },
 
   jobs: {

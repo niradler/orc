@@ -418,6 +418,7 @@ app.openapi(deleteRoute, async (c) => {
     tx.update(tasks).set({ project_id: null }).where(eq(tasks.project_id, id)).run();
     // Memories belong to one project, so they go with it (with their history and reads).
     new MemoryStore(sqlite).removeProject(id);
+    // Scratchpads go with it too, through their ON DELETE CASCADE foreign key.
     tx.update(jobs).set({ project_id: null }).where(eq(jobs.project_id, id)).run();
     tx.update(sessions).set({ project_id: null }).where(eq(sessions.project_id, id)).run();
     tx.update(bridge_chats).set({ project_id: null }).where(eq(bridge_chats.project_id, id)).run();

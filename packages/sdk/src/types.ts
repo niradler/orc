@@ -14,6 +14,14 @@ export type PullReview = components["schemas"]["PullReview"];
 export type PullCommentInput = components["schemas"]["PullCommentInput"];
 
 export type { ScopeQuery } from "@orc/core/scope";
+export type {
+  Scratchpad,
+  ScratchpadContentUrl,
+  ScratchpadCreate,
+  ScratchpadKind,
+  ScratchpadListItem,
+  ScratchpadUpdate,
+} from "@orc/core/scratchpad";
 export type { SkillUpdate } from "@orc/core/skill-update";
 export type AuditEntry = components["schemas"]["AuditEntry"];
 export type SkillChange = components["schemas"]["SkillChange"];

@@ -23,6 +23,7 @@ export const CHANGE_RESOURCES = [
   "health",
   "github",
   "audit",
+  "scratchpads",
 ] as const;
 
 export type ChangeResource = (typeof CHANGE_RESOURCES)[number];

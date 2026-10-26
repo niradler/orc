@@ -130,6 +130,7 @@ export const task_links = sqliteTable(
 );
 
 // memories, memory_changes and memory_usage are raw SQL owned by MemoryStore (memories.ts).
+// scratchpads is raw SQL owned by ScratchpadStore (scratchpads.ts).
 
 export const jobs = sqliteTable(
   "jobs",

@@ -25,17 +25,13 @@ import { Input } from "@/components/ui/input";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
 import type { PackageInput } from "@/lib/package-draft";
+import { saveFile } from "@/lib/save-file";
 import { useViewParam } from "@/lib/view-params";
 
 type Editable = PackageFull & { revision: string; draftFiles: SkillFileInput[] };
 
 function download(filename: string, bytes: Uint8Array) {
-  const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: "application/zip" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  saveFile(new Blob([new Uint8Array(bytes)], { type: "application/zip" }), filename);
 }
 
 export function LegacyAgentsRedirect() {

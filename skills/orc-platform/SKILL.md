@@ -1,6 +1,6 @@
 ---
 name: orc-platform
-description: "Install and use ORC: CLI/API/MCP, auth/settings, projects, tasks/flows, memory, knowledge/KB/digests/embeddings, sessions/handoff, terminals/chat, jobs/gateway, agents/backends/packages, Git/GitHub, SSH, rules/hooks, tags, audit and monitoring."
+description: "Install and use ORC: CLI/API/MCP, auth/settings, projects, tasks/flows, memory, knowledge/KB/digests/embeddings, sessions/handoff, terminals/chat, jobs/gateway, agents/backends/packages, Git/GitHub, SSH, rules/hooks, tags, audit and monitoring, scratchpads (plans, diagrams, interactive pages)."
 ---
 
 # Operate ORC
@@ -36,6 +36,7 @@ verify the returned hash/size without loading the script body into context.
 | Install, connect an agent, CLI/API/MCP, configure auth, diagnose connectivity | [Setup and interfaces](references/setup.md) |
 | Recall, create, correct or undo short facts | [Memory](references/memory.md) |
 | KB intake/search/edit, parsers, embeddings, README/Markdown and living Learnings digests | [Knowledge and documentation](references/knowledge.md) |
+| Scratchpads: plans/docs with mermaid, Excalidraw diagrams, interactive HTML pages with or without ORC access | [Scratchpads](references/scratchpads.md) |
 | Projects, tasks/flows, jobs, gateway, status, tags and audit | [Work and operations](references/work.md) |
 | Session continuity/handoff, terminals, chat, SSH execution, Git/GitHub | [Sessions and execution](references/execution.md) |
 | Archive local coding sessions on remote ORC, incremental sync/deduplication, session retrieval design | [Session archive and search](references/session-archive.md) |
