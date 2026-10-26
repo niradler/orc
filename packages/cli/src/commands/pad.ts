@@ -176,7 +176,7 @@ export function padCommand() {
   cmd
     .command("push <id> <file>")
     .description("Replace a scratchpad's content with a file")
-    .option("-r, --if-revision <n>", "Refuse if the pad moved past this revision (from pull)")
+    .option("-r, --if-revision <n>", "Refuse if the file changed since this revision (from pull)")
     .action(async (id: string, file: string, opts: { ifRevision?: string }) => {
       const pad = unwrap(
         await createOrcClient({ source: "cli" }).scratchpads.update(id, {

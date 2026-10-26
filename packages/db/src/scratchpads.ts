@@ -13,6 +13,7 @@ import {
 import { normalizeTags } from "@orc/core/tags";
 
 type Row = Omit<Scratchpad, "tags"> & { tags: string | null };
+type Revisions = { revision: number; content_revision: number };
 type ListRow = Omit<ScratchpadListItem, "tags"> & { tags: string | null };
 
 // session_id is the agent's native session id, like memories.session_id: pads come from several
@@ -29,6 +30,7 @@ export function installScratchpads(sqlite: Database): void {
       tags TEXT,
       author TEXT NOT NULL,
       revision INTEGER NOT NULL DEFAULT 1,
+      content_revision INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL DEFAULT (unixepoch()),
       updated_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
@@ -87,7 +89,12 @@ export class ScratchpadStore {
   }
 
   get(id: string): Scratchpad {
-    const row = this.sqlite.query<Row, [string]>("SELECT * FROM scratchpads WHERE id=?").get(id);
+    const row = this.sqlite
+      .query<Row, [string]>(
+        `SELECT id,kind,title,content,project_id,session_id,tags,author,revision,created_at,updated_at
+         FROM scratchpads WHERE id=?`,
+      )
+      .get(id);
     if (!row) throw new NotFoundError("Scratchpad", id);
     return parse(row);
   }
@@ -118,27 +125,36 @@ export class ScratchpadStore {
     return this.get(id);
   }
 
-  /** The pad, or a 409 when it has moved past `ifRevision`. */
+  /**
+   * The pad, or a 409 when its file has changed since `ifRevision`. Title, tag and project edits
+   * leave the file alone, so a revision from before them still holds for the file.
+   */
   at(id: string, ifRevision?: number): Scratchpad {
-    const pad = this.get(id);
-    if (ifRevision !== undefined && ifRevision !== pad.revision)
-      throw new ConflictError(
-        `Scratchpad changed: revision ${pad.revision} by ${pad.author}, expected ${ifRevision}`,
-      );
-    return pad;
+    return this.check(id, ifRevision, "file");
   }
 
-  /** Every write bumps the revision; `if_revision` turns a stale write into a 409. */
+  /**
+   * Every write bumps the revision; `if_revision` turns a stale write into a 409. A write of the
+   * file alone conflicts only with another file change, so a concurrent rename does not refuse it.
+   */
   update(id: string, input: ScratchpadUpdate): Scratchpad {
+    const fileOnly =
+      input.title === undefined &&
+      input.project_id === undefined &&
+      input.session_id === undefined &&
+      input.tags === undefined;
     this.sqlite
       .transaction(() => {
-        const before = this.at(id, input.if_revision);
+        const before = this.check(id, input.if_revision, fileOnly ? "file" : "pad");
         if (input.content !== undefined) validateScratchpadContent(before.kind, input.content);
         if (input.project_id) this.requireProject(input.project_id);
+        const fileChanged = input.content !== undefined && input.content !== before.content;
         this.sqlite
           .query(
             `UPDATE scratchpads SET title=?,content=?,project_id=?,session_id=?,tags=?,author=?,
-               revision=revision+1,updated_at=unixepoch() WHERE id=?`,
+               revision=revision+1,
+               content_revision=CASE WHEN ? THEN revision+1 ELSE content_revision END,
+               updated_at=unixepoch() WHERE id=?`,
           )
           .run(
             input.title?.trim() ?? before.title,
@@ -147,6 +163,7 @@ export class ScratchpadStore {
             input.session_id === undefined ? before.session_id : input.session_id,
             input.tags === undefined ? tagsColumn(before.tags) : tagsColumn(input.tags),
             input.author ?? "human",
+            fileChanged ? 1 : 0,
             id,
           );
       })
@@ -157,6 +174,20 @@ export class ScratchpadStore {
   remove(id: string): void {
     const { changes } = this.sqlite.query("DELETE FROM scratchpads WHERE id=?").run(id);
     if (!changes) throw new NotFoundError("Scratchpad", id);
+  }
+
+  private check(id: string, ifRevision: number | undefined, scope: "file" | "pad"): Scratchpad {
+    const pad = this.get(id);
+    if (ifRevision === undefined) return pad;
+    const revisions = this.sqlite
+      .query<Revisions, [string]>("SELECT revision,content_revision FROM scratchpads WHERE id=?")
+      .get(id) as Revisions;
+    const since = scope === "file" ? revisions.content_revision : revisions.revision;
+    if (ifRevision < since || ifRevision > revisions.revision)
+      throw new ConflictError(
+        `Scratchpad changed: revision ${pad.revision} by ${pad.author}, expected ${ifRevision}`,
+      );
+    return pad;
   }
 
   private requireProject(projectId: string): void {

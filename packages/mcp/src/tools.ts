@@ -353,7 +353,8 @@ export const toolDefinitions = [
     name: "pad_update",
     description:
       "Update a scratchpad. Pass if_revision (from pad_get) so a human's concurrent edit is not " +
-      "overwritten; a mismatch fails and you should re-read. content replaces the whole file. " +
+      "overwritten: it fails if the file changed since then (or, when you also set title, project " +
+      "or tags, if anything changed), and you should re-read. content replaces the whole file. " +
       "project null removes the project link. via:'url' instead returns an upload_url: PUT the raw " +
       "file to it (curl -T file URL), valid for one write at the current revision.",
     inputSchema: z.object({
