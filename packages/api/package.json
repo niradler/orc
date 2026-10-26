@@ -23,17 +23,19 @@
     "@orc/agent-runtime": "workspace:*",
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
-    "@orc/knowledge": "workspace:*",
     "@orc/gateway": "workspace:*",
+    "@orc/knowledge": "workspace:*",
     "@orc/mcp": "workspace:*",
     "@orc/runner": "workspace:*",
     "@orc/task-service": "workspace:*",
     "croner": "^10.0.1",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.13",
+    "web-push": "3.6.7",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@orc/sdk": "workspace:*"
+    "@orc/sdk": "workspace:*",
+    "@types/web-push": "^3.6.4"
   }
 }

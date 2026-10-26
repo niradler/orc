@@ -11,8 +11,10 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { ApiAccessGate } from "./components/ApiAccessGate";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { PushResync } from "./components/PushResync";
 import { ResourceEvents } from "./components/ResourceEvents";
 import "./index.css";
+import { registerServiceWorker } from "./lib/pwa";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,6 +28,8 @@ const queryClient = new QueryClient({
   },
 });
 
+if (import.meta.env.PROD) registerServiceWorker();
+
 const root = document.getElementById("root");
 if (!root) throw new Error("No root element");
 
@@ -36,6 +40,7 @@ createRoot(root).render(
         <BrowserRouter>
           <ApiAccessGate>
             <ResourceEvents />
+            <PushResync />
             <App />
           </ApiAccessGate>
         </BrowserRouter>

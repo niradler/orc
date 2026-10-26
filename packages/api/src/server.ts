@@ -25,6 +25,7 @@ import { mcpToolRouter } from "./routes/mcp-tool.js";
 import { memoriesRouter } from "./routes/memories.js";
 import { primitivesRouter } from "./routes/primitives.js";
 import { projectsRouter } from "./routes/projects.js";
+import { pushRouter } from "./routes/push.js";
 import { rulesRouter } from "./routes/rules.js";
 import { searchRouter } from "./routes/search.js";
 import { sessionArchiveRouter } from "./routes/session-archive.js";
@@ -106,6 +107,7 @@ export function createApp() {
   app.route("/api", eventsRouter);
   app.route("/api", sshRouter);
   app.route("/api", chatRouter);
+  app.route("/api", pushRouter);
   app.route("/api", healthRouter);
   app.route("/api", humanRequestsRouter);
   app.route("/api", settingsRouter);

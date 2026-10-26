@@ -1,8 +1,9 @@
 {
   "mcpServers": {
     "orc": {
-      "type": "http",
-      "url": "http://localhost:7700/mcp"
+      "type": "stdio",
+      "command": "bun",
+      "args": ["--no-env-file", "packages/cli/src/index.ts", "mcp"]
     }
   }
 }

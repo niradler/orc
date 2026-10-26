@@ -27,6 +27,7 @@ import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
+import type { PushMessage } from "@orc/core/push";
 import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
@@ -36,6 +37,7 @@ import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { getHandoffService } from "../handoffs/service.js";
 import { createRouter } from "../lib/router.js";
+import { notify, truncate } from "../push/service.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
 import { chatHistory } from "../sessions/chat-history.js";
 import { MAX_TRANSCRIPT_BYTES, readTranscriptBytes } from "../sessions/transcript.js";
@@ -107,6 +109,15 @@ function requireThread(id: string): ChatThread {
   const thread = store().get(id);
   if (!thread) throw new NotFoundError("Chat", id);
   return thread;
+}
+
+function chatPush(thread: ChatThread, status: string, body: string): PushMessage {
+  return {
+    title: `${status} · ${truncate(thread.title, 120)}`,
+    body,
+    url: `/?chat=open&chatThread=${encodeURIComponent(thread.id)}`,
+    tag: `chat:${thread.id}`,
+  };
 }
 
 app.openapi(
@@ -745,9 +756,14 @@ app.openapi(
             else if (event.type === "permission_request") {
               run.permissions.add(event.data.requestId);
               await emit(event);
+              notify(
+                "chat",
+                chatPush(thread, "Approval needed", "The agent is waiting for your approval."),
+              );
             } else if (event.type === "question_request") {
               run.questions.set(event.data.requestId, event.data);
               await emit(event);
+              notify("chat", chatPush(thread, "Question", "The agent is waiting for your answer."));
             } else if (event.type === "request_resolved") {
               run.permissions.delete(event.data.requestId);
               run.questions.delete(event.data.requestId);
@@ -786,6 +802,8 @@ app.openapi(
         try {
           store().save(thread);
           if (!stopped) publish(run, { type: "session", runtimeId: thread.runtimeId });
+          if (!stopped && assistant.content)
+            notify("chat", chatPush(thread, "Reply ready", truncate(assistant.content, 180)));
         } catch (error) {
           logger.error("Chat history could not be saved", { error, runId });
           if (!stopped)
