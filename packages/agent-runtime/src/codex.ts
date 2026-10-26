@@ -256,10 +256,13 @@ export class CodexSession implements AgentSession {
   }
 
   private async watchExit(): Promise<void> {
-    if (!this.proc) return;
+    const proc = this.proc;
+    if (!proc) return;
     const drainOutput = this.drainOutput;
-    const code = await this.proc.exited;
+    const code = await proc.exited;
     await drainOutput();
+    // A follow-up send() may have replaced this process meanwhile; its turn is not ours to end.
+    if (this.proc !== proc) return;
     if (code !== 0 && !this.state.hasReceivedResult) {
       const stderr = this.stderrLines.join("\n").trim();
       this.push({

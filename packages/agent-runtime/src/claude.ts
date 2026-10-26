@@ -287,14 +287,17 @@ export class ClaudeSession implements AgentSession {
   }
 
   private async watchExit(): Promise<void> {
-    if (!this.proc) return;
+    const proc = this.proc;
+    if (!proc) return;
     const config = this.mcpConfig;
     const drainOutput = this.drainOutput;
-    const code = await this.proc.exited;
+    const code = await proc.exited;
     // Decide only once both streams are read: stdout can close before the exit code and
     // the stderr that explains it arrive. A leftover child holding the pipes only delays it briefly.
     await drainOutput();
     config?.cleanup();
+    // A follow-up send() may have replaced this process meanwhile; its turn is not ours to end.
+    if (this.proc !== proc) return;
     if (this.state.hasReceivedResult || this.done) return;
     const stderr = this.stderrRing.join("\n");
     if (isAuthError(stderr)) {

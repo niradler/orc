@@ -51,3 +51,32 @@ describe("backend exit while a leftover child holds the pipes", () => {
     },
   );
 });
+
+describe("a follow-up prompt sent right after a result", () => {
+  const types = (events: AgentEvent[]) => events.map((event) => event.type);
+
+  test("claude keeps the second turn alive while the first process exits", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "orc-claude-followup-"));
+    const session = new ClaudeSession({ cwd }, process.execPath, { kind: "local" });
+    const first = `console.log(JSON.stringify({type:"result"}));setTimeout(()=>{},3000)`;
+    const second = `setTimeout(()=>{console.log(JSON.stringify({type:"assistant",message:{content:[{type:"text",text:"second"}]}}));console.log(JSON.stringify({type:"result"}))},300)`;
+    expect(types(await collect(session, first))).toEqual(["result"]);
+    const events = await collect(session, second);
+    expect(events).toContainEqual({ type: "text", data: "second" });
+    expect(types(events).at(-1)).toBe("result");
+  });
+
+  test("acpx does not end the second turn with the first process's exit", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "orc-acpx-followup-"));
+    const script = join(cwd, "acpx.ts");
+    // The prompt is the last argument: the first turn answers and lingers until killed.
+    writeFileSync(
+      script,
+      `const result=()=>console.log(JSON.stringify({jsonrpc:"2.0",id:1,result:{stopReason:"end_turn"}}));
+      if(process.argv.at(-1)==="first"){result();setTimeout(()=>{},3000)}else setTimeout(result,300)`,
+    );
+    const session = new AcpxSession({ cwd }, [process.execPath, script], { kind: "local" });
+    expect(types(await collect(session, "first"))).toEqual(["result"]);
+    expect(types(await collect(session, "second"))).toEqual(["result"]);
+  });
+});

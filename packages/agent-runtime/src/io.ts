@@ -56,6 +56,7 @@ export interface ProcessOutputHandlers {
  * Reads a child's stdout and stderr line by line. The returned `drain` waits until both
  * end, but gives up after `timeoutMs` and cancels the readers, so a leftover grandchild
  * holding the pipes can neither stall the caller nor feed lines into a later turn.
+ * Cancelling closes our end, so such a child gets EPIPE if it writes afterwards.
  */
 export function readProcessOutput(
   proc: { stdout?: OutputStream; stderr?: OutputStream },
