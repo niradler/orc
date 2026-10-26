@@ -35,3 +35,19 @@ describe("backend exit after stdout closes", () => {
     expect(events).toEqual([{ type: "error", data: "acpx exited with code 3: backend exploded" }]);
   });
 });
+
+describe("backend exit while a leftover child holds the pipes", () => {
+  test.skipIf(!Bun.which("sh"))(
+    "acpx reports the failure without waiting for the child",
+    async () => {
+      const cwd = mkdtempSync(join(tmpdir(), "orc-acpx-leftover-"));
+      // The trailing `#` swallows the arguments acpx appends; `sleep` keeps stdout/stderr open.
+      const backend = ["sh", "-c", "sleep 6 & echo boom >&2; exit 3; #"];
+      const session = new AcpxSession({ cwd }, backend, { kind: "local" });
+      const started = Date.now();
+      const events = await collect(session, "probe");
+      expect(Date.now() - started).toBeLessThan(4500);
+      expect(events).toEqual([{ type: "error", data: "acpx exited with code 3: boom" }]);
+    },
+  );
+});

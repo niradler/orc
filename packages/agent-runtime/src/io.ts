@@ -35,3 +35,19 @@ export function endStdin(stdin: import("bun").FileSink | number | undefined): vo
   if (!stdin || typeof stdin === "number") return;
   stdin.end();
 }
+
+/** How long an exited process's pipes may stay open, e.g. held by a leftover grandchild. */
+export const STREAM_DRAIN_TIMEOUT_MS = 2000;
+
+/** Waits for a process's output streams to finish, but never longer than the drain timeout. */
+export async function drainStreams(
+  streams: Promise<unknown>[],
+  timeoutMs = STREAM_DRAIN_TIMEOUT_MS,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+  });
+  await Promise.race([Promise.allSettled(streams), timeout]);
+  clearTimeout(timer);
+}

@@ -12,7 +12,7 @@ import {
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { sessionExecHost } from "./execution-host.js";
-import { readLines } from "./io.js";
+import { drainStreams, readLines } from "./io.js";
 import { registerBackend } from "./registry.js";
 import type {
   AgentBackend,
@@ -336,8 +336,8 @@ export class AcpxSession implements AgentSession {
     if (!this.proc) return;
     const code = await this.proc.exited;
     // Decide only once both streams are read: stdout can close before the exit code and
-    // the stderr that explains it arrive.
-    await Promise.allSettled([this.outputDrained, this.errorsDrained]);
+    // the stderr that explains it arrive. A leftover child holding the pipes only delays it briefly.
+    await drainStreams([this.outputDrained, this.errorsDrained]);
     logger.info("ACPX process exited", { agent: this.agent, code });
     if (this.done) return;
     if (code !== 0) {

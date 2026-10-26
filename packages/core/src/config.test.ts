@@ -63,6 +63,8 @@ describe("resolveApiBase", () => {
       expect(resolveApiBase(api("::"))).toBe("http://127.0.0.1:7700");
       expect(resolveApiBase(api("10.0.0.5"))).toBe("http://10.0.0.5:7700");
       expect(resolveApiBase(api("::1"))).toBe("http://[::1]:7700");
+      expect(resolveApiBase(api("[::1]"))).toBe("http://[::1]:7700");
+      expect(resolveApiBase(api("localhost"))).toBe("http://localhost:7700");
     } finally {
       if (previous === undefined) delete process.env.ORC_API_BASE;
       else process.env.ORC_API_BASE = previous;

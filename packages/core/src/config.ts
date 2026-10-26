@@ -444,8 +444,10 @@ export function resolveApiBase(config?: Pick<OrcConfig, "api">): string {
   const env = process.env.ORC_API_BASE?.trim();
   if (env) return env.replace(/\/+$/, "").replace(/\/api$/, "");
   const { host, port } = (config ?? loadConfig()).api;
-  const target = ["0.0.0.0", "::", "", "localhost"].includes(host) ? "127.0.0.1" : host;
-  return `http://${target.includes(":") ? `[${target}]` : target}:${port}`;
+  // "localhost" is dialled as written: Bun may bind it to ::1 only.
+  const target = ["0.0.0.0", "::", "[::]", ""].includes(host) ? "127.0.0.1" : host;
+  const bracketed = target.includes(":") && !target.startsWith("[") ? `[${target}]` : target;
+  return `http://${bracketed}:${port}`;
 }
 
 let _config: OrcConfig | null = null;

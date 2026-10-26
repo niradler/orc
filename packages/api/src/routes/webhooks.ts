@@ -18,6 +18,7 @@ import { executeJob } from "@orc/runner/executor";
 import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { bodyLimit } from "hono/body-limit";
 import { createRouter } from "../lib/router.js";
+import { constraintFailure } from "../lib/sqlite-errors.js";
 
 const logger = createLogger("api:webhooks");
 const MAX_BYTES = 1_000_000;
@@ -435,7 +436,7 @@ export function createWebhookPublicRouter() {
             .run();
       });
     } catch (error) {
-      if (String(error).toLowerCase().includes("unique"))
+      if (constraintFailure(error)?.status === 409)
         throw new ConflictError("Webhook delivery already received");
       throw error;
     }
