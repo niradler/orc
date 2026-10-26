@@ -9,6 +9,7 @@ import {
 } from "@orc/knowledge";
 import { withKbJobHooks } from "./kb-jobs.js";
 import { registerRestartHandler, runShutdownHooks } from "./lifecycle.js";
+import { startAttentionPush } from "./push/service.js";
 import { createApp } from "./server.js";
 import { startSessionWatcher } from "./session-watcher.js";
 import { closeSessionArchive } from "./sessions/archive.js";
@@ -44,6 +45,7 @@ const server = Bun.serve<TerminalSocketData>({
 });
 
 const stopSessionWatcher = startSessionWatcher();
+const stopAttentionPush = startAttentionPush();
 // Recover interrupted knowledge jobs and start folder rescans; failures must not stop the API.
 startKnowledgeMaintenance()
   .then(async () => withKbJobHooks(await getKnowledgeService()).ensureLearningsKbs())
@@ -64,6 +66,7 @@ async function shutdown(signal: string, exitCode = 0) {
   );
   forceExit.unref();
   stopSessionWatcher();
+  stopAttentionPush();
   shutdownTerminals();
   await runShutdownHooks();
   try {

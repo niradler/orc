@@ -36,6 +36,7 @@ import type {
   KnowledgeBase,
 } from "@orc/core/kb";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
+import type { PushConfig, PushDevice, PushSubscriptionInput, PushTopic } from "@orc/core/push";
 import type { RuleTemplate } from "@orc/core/rule-catalog";
 import type { RuleEventCapability, RuleHookBackend } from "@orc/core/rule-events";
 import type { RuleDecision, RuleEvent, RulePolicy, RuleRevision } from "@orc/core/rule-types";
@@ -233,6 +234,20 @@ export function createOrcClient(options?: OrcClientOptions) {
       get: (id: string) => c<SessionHandoff>("GET", `/session-handoffs/${encodeURIComponent(id)}`),
       prepare: (id: string) =>
         c<SessionHandoff>("POST", `/session-handoffs/${encodeURIComponent(id)}/prepare`),
+    },
+    push: {
+      config: () => c<PushConfig>("GET", "/push/config"),
+      devices: () => c<PushDevice[]>("GET", "/push/subscriptions"),
+      subscribe: (input: PushSubscriptionInput) =>
+        c<PushDevice>("POST", "/push/subscriptions", input),
+      updateTopics: (id: string, topics: PushTopic[]) =>
+        c<PushDevice>("PATCH", `/push/subscriptions/${e(id)}`, { topics }),
+      remove: (id: string) => c<void>("DELETE", `/push/subscriptions/${e(id)}`),
+      test: (id: string) =>
+        c<{ sent: number; failed: number; expired: number }>(
+          "POST",
+          `/push/subscriptions/${e(id)}/test`,
+        ),
     },
     humanRequests: {
       list: () => c<HumanRequest[]>("GET", "/human-requests"),

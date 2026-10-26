@@ -32,6 +32,7 @@ import type {
   KnowledgeBase,
 } from "@orc/core/kb";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
+import type { PushConfig, PushDevice, PushSubscriptionInput, PushTopic } from "@orc/core/push";
 import type { RuleEventCapability } from "@orc/core/rule-events";
 import type { ArchiveSearchResult, ArchiveSession, ArchiveUpload } from "@orc/core/session-archive";
 import type { SessionHandoff } from "@orc/core/session-handoff";
@@ -525,6 +526,20 @@ async function req<T>(
 // ---- API client ----
 
 export const api = {
+  push: {
+    config: () => req<PushConfig>("GET", "/push/config"),
+    devices: () => req<PushDevice[]>("GET", "/push/subscriptions"),
+    subscribe: (input: PushSubscriptionInput) =>
+      req<PushDevice>("POST", "/push/subscriptions", input),
+    updateTopics: (id: string, topics: PushTopic[]) =>
+      req<PushDevice>("PATCH", `/push/subscriptions/${encodeURIComponent(id)}`, { topics }),
+    remove: (id: string) => req<void>("DELETE", `/push/subscriptions/${encodeURIComponent(id)}`),
+    test: (id: string) =>
+      req<{ sent: number; failed: number; expired: number }>(
+        "POST",
+        `/push/subscriptions/${encodeURIComponent(id)}/test`,
+      ),
+  },
   humanRequests: {
     list: () => req<HumanRequest[]>("GET", "/human-requests"),
     respond: (id: string, version: number, response: HumanResponse) =>

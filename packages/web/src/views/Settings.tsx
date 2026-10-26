@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api, getApiUrl } from "@/api/client";
 import { ChatSettingsForm } from "@/components/ChatSettingsForm";
 import { KnowledgeSettings } from "@/components/kb/KnowledgeSettings";
+import { NotificationSettings } from "@/components/NotificationSettings";
 import { ServerSettings } from "@/components/ServerSettings";
 import { SshHostSettings } from "@/components/SshHostSettings";
 import { Button } from "@/components/ui/button";
@@ -156,6 +157,7 @@ export default function Settings() {
 
         <SshHostSettings />
         <ServerSettings />
+        <NotificationSettings />
 
         <ChatSettingsForm />
 
