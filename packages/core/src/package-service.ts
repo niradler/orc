@@ -343,6 +343,24 @@ export function updatePackage(
   return readPackage(name) as PackageFull;
 }
 
+/** Remove a catalog entry, retaining the complete bundle alongside prior revisions. */
+export function deletePackage(name: string, expectedRevision: string): void {
+  const current = readPackage(name);
+  if (!current) throw new NotFoundError("Package", name);
+  if (lstatSync(getPackagesDir()).isSymbolicLink() || lstatSync(current.path).isSymbolicLink())
+    throw new ValidationError("Package directory cannot be a symlink");
+  if (packageRevision(current) !== expectedRevision)
+    throw new ConflictError(
+      "Package changed since deletion was requested. Reopen it before deleting.",
+    );
+  const archiveRoot = join(dirname(getPackagesDir()), "package-revisions");
+  if (existsSync(archiveRoot) && lstatSync(archiveRoot).isSymbolicLink())
+    throw new ValidationError("Package revision directory cannot be a symlink");
+  mkdirSync(archiveRoot, { recursive: true });
+  renameSync(current.path, join(archiveRoot, `${name}-deleted-${crypto.randomUUID()}`));
+  reloadCache();
+}
+
 export function packageInstructionsForAgent(agentPath: string): string {
   const packages = listPackages().packages;
   const pkg = packages.find(

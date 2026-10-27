@@ -25,6 +25,7 @@ import {
 } from "@orc/core/package-launch";
 import {
   createPackage,
+  deletePackage,
   listPackages,
   packageRevision,
   packageSkillFiles,
@@ -444,6 +445,36 @@ app.openapi(
   (c) => {
     const pkg = updatePackage(c.req.valid("param").name, c.req.valid("json"));
     return c.json({ ...pkg, revision: packageRevision(pkg) });
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "delete",
+    path: "/agent-packages/{name}",
+    tags: ["Agent packages"],
+    summary: "Delete a package from the shared catalog, preserving installed project copies",
+    request: {
+      params: z.object({ name: z.string().min(1).max(200) }),
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: z.object({ expectedRevision: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      204: { description: "Package deleted from the catalog" },
+      400: { description: "Invalid package name or revision" },
+      404: { description: "Package not found" },
+      409: { description: "Package changed since confirmation was opened" },
+    },
+  }),
+  (c) => {
+    deletePackage(c.req.valid("param").name, c.req.valid("json").expectedRevision);
+    return c.body(null, 204);
   },
 );
 

@@ -20,7 +20,13 @@ import {
 import { PackageImportDialog } from "@/components/PackageImportDialog";
 import { PackageRunDialog } from "@/components/PackageRunDialog";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
@@ -106,6 +112,33 @@ export default function PackageCatalog() {
       openDetail(pkg.name);
     },
   });
+  const [deleting, setDeleting] = useState<{ name: string; revision: string }>();
+  const deletion = useMutation({
+    mutationFn: (pkg: { name: string; revision: string }) =>
+      api.agentPackages.delete(pkg.name, pkg.revision),
+    onSuccess: async (_, pkg) => {
+      setDeleting(undefined);
+      if (selectedId === pkg.name) closeDetail();
+      forgetPackageDraft(pkg.name);
+      setNotice(`${pkg.name} deleted from your catalog.`);
+      await refresh();
+    },
+  });
+  async function requestDelete(name: string) {
+    setBusy(true);
+    setError(undefined);
+    deletion.reset();
+    try {
+      const pkg = (await api.agentPackages.get(name)) as PackageFull & { revision: string };
+      if (!pkg.revision)
+        throw new Error("Package revision is missing; update the API before deleting");
+      setDeleting({ name: pkg.name, revision: pkg.revision });
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not open package deletion.");
+    } finally {
+      setBusy(false);
+    }
+  }
   const resetSave = save.reset;
   useEffect(() => {
     let active = true;
@@ -337,6 +370,16 @@ export default function PackageCatalog() {
               >
                 Edit package
               </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-destructive"
+                data-testid="package-card-delete"
+                disabled={busy || deletion.isPending}
+                onClick={() => void requestDelete(pkg.name)}
+              >
+                Delete package
+              </Button>
             </div>
           </article>
         ))}
@@ -388,6 +431,7 @@ export default function PackageCatalog() {
           onClose={closeDetail}
           onUse={() => openRun(selectedId)}
           onEdit={() => void edit(selectedId)}
+          onDelete={() => void requestDelete(selectedId)}
           onExport={() => void exportArtifact(selectedId)}
           onSource={() => void exportSource(selectedId)}
           busy={busy}
@@ -429,6 +473,47 @@ export default function PackageCatalog() {
             <p role={error ? "alert" : "status"}>{error ?? "Opening package editor…"}</p>
           </DialogContent>
         ) : null}
+      </Dialog>
+      <Dialog
+        open={Boolean(deleting)}
+        onOpenChange={(open) => {
+          if (!open && !deletion.isPending) setDeleting(undefined);
+        }}
+      >
+        <DialogContent data-testid="package-delete-dialog">
+          <DialogHeader>
+            <DialogTitle>Delete package?</DialogTitle>
+            <DialogDescription>
+              Delete {deleting?.name} from your catalog? Copies already installed in project folders
+              will remain.
+            </DialogDescription>
+          </DialogHeader>
+          {deletion.error && (
+            <p role="alert" data-testid="package-delete-error" className="text-sm text-destructive">
+              {deletion.error.message}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              data-testid="package-delete-cancel"
+              disabled={deletion.isPending}
+              onClick={() => setDeleting(undefined)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              data-testid="package-delete-confirm"
+              disabled={deletion.isPending || !deleting}
+              onClick={() => {
+                if (deleting) deletion.mutate(deleting);
+              }}
+            >
+              {deletion.isPending ? "Deleting…" : "Delete package"}
+            </Button>
+          </div>
+        </DialogContent>
       </Dialog>
       {importing && (
         <PackageImportDialog

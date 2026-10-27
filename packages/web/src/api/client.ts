@@ -987,6 +987,8 @@ export const api = {
       req<AgentFull>("PUT", `/agents/${encodeURIComponent(id)}`, input),
   },
   agentPackages: {
+    delete: (name: string, expectedRevision: string) =>
+      req<null>("DELETE", `/agent-packages/${encodeURIComponent(name)}`, { expectedRevision }),
     acquire: (source: string) =>
       req<{ token: string; source: string; packages: PackageDiscovery["packages"] }>(
         "POST",

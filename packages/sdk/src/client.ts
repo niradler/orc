@@ -582,6 +582,8 @@ export function createOrcClient(options?: OrcClientOptions) {
       create: (input: { id: string; content: string }) => c<AgentFull>("POST", "/agents", input),
     },
     agentPackages: {
+      delete: (name: string, expectedRevision: string) =>
+        c<null>("DELETE", `/agent-packages/${encodeURIComponent(name)}`, { expectedRevision }),
       list: () => c<{ packages: PackageMeta[]; broken: BrokenAgent[] }>("GET", "/agent-packages"),
       read: (name: string, ref?: string) =>
         c<PackageFull | SkillRefContent>(

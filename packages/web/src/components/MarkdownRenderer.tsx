@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { defaultRemarkPlugins, Streamdown } from "streamdown";
+import { MarkdownLinkDialog } from "@/components/MarkdownLinkDialog";
 import { imageRendering } from "@/lib/markdown-images";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -108,6 +109,10 @@ export const MarkdownRenderer = memo(function MarkdownRenderer({
     <Streamdown
       mode="static"
       plugins={plugins}
+      linkSafety={{
+        enabled: true,
+        renderModal: (props) => (props.isOpen ? <MarkdownLinkDialog {...props} /> : null),
+      }}
       components={{
         img: MarkdownImage,
         li: MarkdownListItem,
