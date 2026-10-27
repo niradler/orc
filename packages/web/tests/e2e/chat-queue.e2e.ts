@@ -225,3 +225,34 @@ test("closing a conversation cannot dispatch its pending message", async ({ page
   expect(sent).toHaveLength(2);
   expect(sent).not.toContain("NEVER SENT");
 });
+
+test("should retain mobile drafts and pending edits when hiding and reopening chat", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const panel = page.getByTestId("chat-panel").filter({ visible: true });
+  await panel.getByTestId("chat-input").fill("Unsent mobile draft");
+  await panel.getByTestId("chat-close-button").click();
+  await page.getByTestId("chat-open-button").click();
+  await expect(panel.getByTestId("chat-input")).toHaveValue("Unsent mobile draft");
+  await send(panel, "Respond after 1500ms. Reply with exactly: FIRST.");
+  await send(panel, "ORIGINAL");
+  await panel.getByTestId("chat-queued-edit").click();
+  await panel.getByTestId("chat-queued-input").fill("Saved after reopening");
+  await panel.getByTestId("chat-close-button").click();
+  await page.getByTestId("chat-open-button").click();
+  await expect(panel.getByTestId("chat-queued-input")).toHaveValue("Saved after reopening");
+  await panel.getByTestId("chat-queued-save").click();
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(
+    "Saved after reopening",
+  );
+});
+
+test("should keep the composer draft when switching to fullscreen and back", async ({ page }) => {
+  const panel = page.getByTestId("chat-panel").filter({ visible: true });
+  await panel.getByTestId("chat-input").fill("Unsent desktop draft");
+  await panel.getByTestId("chat-fullscreen-button").click();
+  await expect(panel.getByTestId("chat-input")).toHaveValue("Unsent desktop draft");
+  await panel.getByTestId("chat-fullscreen-button").click();
+  await expect(panel.getByTestId("chat-input")).toHaveValue("Unsent desktop draft");
+});

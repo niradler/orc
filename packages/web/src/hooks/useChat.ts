@@ -57,8 +57,10 @@ export interface ChatTab {
   thread: ChatThread | null;
   config: ChatConfig;
   messages: ChatMessage[];
+  draft: string;
   queued: ChatMessage[];
   editingQueuedId: string | null;
+  queuedDraft: string;
   queuePaused: boolean;
   historyBefore: number | null;
   loadingHistory: boolean;
@@ -83,8 +85,10 @@ function blankTab(config: ChatConfig): ChatTab {
     thread: null,
     config,
     messages: [],
+    draft: "",
     queued: [],
     editingQueuedId: null,
+    queuedDraft: "",
     queuePaused: false,
     historyBefore: null,
     loadingHistory: false,
@@ -712,6 +716,10 @@ function useChatController() {
         if (content !== undefined && !content.trim()) return {};
         return {
           editingQueuedId: content === undefined ? id : null,
+          queuedDraft:
+            content === undefined
+              ? (tab.queued.find((entry) => entry.id === id)?.content ?? "")
+              : "",
           queued:
             content === undefined
               ? tab.queued
@@ -721,6 +729,15 @@ function useChatController() {
         };
       });
     },
+    [update],
+  );
+
+  const setDraft = useCallback(
+    (draft: string) => update(activeRef.current, () => ({ draft })),
+    [update],
+  );
+  const setQueuedDraft = useCallback(
+    (queuedDraft: string) => update(activeRef.current, () => ({ queuedDraft })),
     [update],
   );
 
@@ -838,8 +855,12 @@ function useChatController() {
     newTab,
     showThread,
     messages: tab.messages,
+    draft: tab.draft,
+    setDraft,
     queued: tab.queued,
     editingQueuedId: tab.editingQueuedId,
+    queuedDraft: tab.queuedDraft,
+    setQueuedDraft,
     editQueued,
     forceQueued,
     streaming: tab.streaming,

@@ -11,7 +11,7 @@ import {
   Square,
   X,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { AgentMessageText } from "@/components/AgentMessageText";
 import { ChatActivityList } from "@/components/ChatActivityList";
 import { ChatContinueInTerminal } from "@/components/ChatContinueInTerminal";
@@ -139,17 +139,17 @@ export function ChatPanel({
     question,
     respondQuestion,
     responding,
-    activeKey,
+    draft,
+    setDraft,
     queued,
     editingQueuedId,
+    queuedDraft,
+    setQueuedDraft,
     editQueued,
     forceQueued,
     send,
     cancel,
   } = useChat();
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const draft = drafts[activeKey] ?? "";
-  const setDraft = (value: string) => setDrafts((current) => ({ ...current, [activeKey]: value }));
   const submit = () => {
     if (!ready || !draft.trim()) return;
     void send(draft);
@@ -438,6 +438,8 @@ export function ChatPanel({
               key={entry.id}
               content={entry.content}
               editing={editingQueuedId === entry.id}
+              draft={queuedDraft}
+              onDraftChange={setQueuedDraft}
               forceDisabled={refreshing || !!editingQueuedId}
               onEdit={() => editQueued(entry.id)}
               onSave={(content) => editQueued(entry.id, content)}
@@ -527,6 +529,8 @@ export function ChatPanel({
 function QueuedMessage({
   content,
   editing,
+  draft,
+  onDraftChange,
   forceDisabled,
   onEdit,
   onSave,
@@ -535,13 +539,14 @@ function QueuedMessage({
 }: {
   content: string;
   editing: boolean;
+  draft: string;
+  onDraftChange: (draft: string) => void;
   forceDisabled: boolean;
   onEdit: () => void;
   onSave: (content: string) => void;
   onCancel: () => void;
   onForce: () => void;
 }) {
-  const [draft, setDraft] = useState(content);
   return (
     <div data-testid="chat-queued-message" className="mb-2 rounded-md bg-surface px-3 py-2 text-sm">
       <span
@@ -561,7 +566,7 @@ function QueuedMessage({
             data-testid="chat-queued-input"
             aria-label="Edit pending message"
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => onDraftChange(event.target.value)}
             className="my-2 w-full rounded border border-control-border bg-background p-2"
           />
           <button
@@ -590,10 +595,7 @@ function QueuedMessage({
             <button
               type="button"
               data-testid="chat-queued-edit"
-              onClick={() => {
-                setDraft(content);
-                onEdit();
-              }}
+              onClick={onEdit}
               className="min-h-11 px-2"
             >
               Edit
