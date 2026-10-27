@@ -23,7 +23,9 @@ function ObservedSessionCard({ session }: { session: LiveSession }) {
       data-testid={`attention-session-${session.id}`}
       className="rounded-lg border border-border bg-surface p-5 space-y-4"
     >
-      <p className="text-xs text-outline">Question · {session.agent} · Observed session</p>
+      <p className="text-xs text-outline">
+        Question · {session.agent} · {session.host ?? "Local"} · Observed session
+      </p>
       <h2 className="text-base font-medium">{session.name ?? "Coding session"}</h2>
       <p className="text-sm text-outline">
         Waiting for your answer. Answer in the original session.
@@ -121,6 +123,8 @@ function RequestCard({ request }: { request: HumanRequest }) {
       <h2 className="text-base font-medium whitespace-pre-wrap">{request.input.prompt}</h2>
       <p className="text-xs text-outline break-all">
         {request.input.origin.session_title ?? `Session ${request.input.origin.session_id}`}
+        {request.input.origin.execution_host !== undefined &&
+          ` · ${request.input.origin.execution_host ?? "Local"}`}
       </p>
       {request.input.origin.chat_thread_id && (
         <Button
@@ -333,7 +337,8 @@ export default function Attention() {
             className="rounded-lg border border-border bg-surface p-5 space-y-4"
           >
             <p className="text-xs text-outline">
-              {wait.kind === "question" ? "Question" : "Approval"} · {wait.agent} · Chat
+              {wait.kind === "question" ? "Question" : "Approval"} · {wait.agent} ·{" "}
+              {wait.host ?? "Local"} · Chat
             </p>
             <h2 className="text-base font-medium">{wait.title}</h2>
             <p className="text-sm text-outline">Waiting for your response in chat.</p>

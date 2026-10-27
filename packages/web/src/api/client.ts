@@ -601,6 +601,7 @@ export const api = {
           request_key: string;
           kind: "question" | "approval";
           native_session_id: string | null;
+          host: string | null;
         }[];
       }>("GET", "/chat/waiting"),
     models: (agent: string, threadId?: string) =>

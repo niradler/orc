@@ -326,7 +326,7 @@ export function startSessionWatcher(
               schedule();
             }),
           );
-      } else if (!row.pid && row.backend === "codex" && row.execution_host) {
+      } else if (!row.pid && row.backend === "codex") {
         // Advisory locks can be released on process exit without changing any watched file.
         nextExpiration = Math.min(nextExpiration, Date.now() + 30_000);
       } else if (!row.pid && row.status === "running" && row.last_activity_at) {

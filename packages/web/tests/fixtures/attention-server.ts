@@ -14,7 +14,7 @@ Object.assign(process.env, {
   ORC_RULES_ENABLED: "false",
   ORC_E2E_CHAT_MOCK: "",
 });
-const { resetConfig } = await import("../../../core/src/config.js");
+const { resetConfig, loadConfig } = await import("../../../core/src/config.js");
 resetConfig();
 const { createTestDb } = await import("../../../db/src/client.js");
 createTestDb();
@@ -106,6 +106,29 @@ const server = Bun.serve({
   port: 0,
   idleTimeout: 255,
   async fetch(request) {
+    if (new URL(request.url).pathname === "/fixture/other-host" && request.method === "POST") {
+      if (request.headers.get("authorization") !== "Bearer attention-fixture-secret")
+        return new Response("Unauthorized", { status: 401 });
+      const pending = (await request.text()) === "true";
+      const config = loadConfig();
+      const previous = config.ssh.host;
+      config.ssh.host = "fixture-secondary";
+      try {
+        await runSync(
+          [
+            {
+              ...adapter,
+              list: async () =>
+                (await adapter.list()).map((row) => ({ ...row, cwd: null, pendingHuman: pending })),
+            },
+          ],
+          { force: true },
+        );
+      } finally {
+        config.ssh.host = previous;
+      }
+      return new Response("ok");
+    }
     if (new URL(request.url).pathname === "/fixture/observed" && request.method === "POST") {
       if (request.headers.get("authorization") !== "Bearer attention-fixture-secret")
         return new Response("Unauthorized", { status: 401 });

@@ -96,6 +96,7 @@ app.openapi(
                   request_key: z.string(),
                   kind: z.enum(["question", "approval"]),
                   native_session_id: z.string().nullable(),
+                  host: z.string().nullable(),
                 }),
               ),
             }),
@@ -112,6 +113,7 @@ app.openapi(
             thread_id: run.threadId,
             title: run.thread.title,
             agent: run.thread.config.agent,
+            host: run.thread.host,
             native_session_id: run.session?.getRuntimeSessionId?.() ?? run.thread.runtimeId ?? null,
           };
           return [

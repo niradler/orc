@@ -223,6 +223,7 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "question" | "approval";
                                 native_session_id: string | null;
+                                host: string | null;
                             }[];
                         };
                     };
@@ -1596,6 +1597,7 @@ export interface paths {
                                     session_title?: string;
                                     native_session_id?: string;
                                     native_request_key?: string;
+                                    execution_host?: string | null;
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -1678,6 +1680,7 @@ export interface paths {
                             session_title?: string;
                             native_session_id?: string;
                             native_request_key?: string;
+                            execution_host?: string | null;
                         };
                         /** @default null */
                         project_id?: string | null;
@@ -1737,6 +1740,7 @@ export interface paths {
                                     session_title?: string;
                                     native_session_id?: string;
                                     native_request_key?: string;
+                                    execution_host?: string | null;
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -1841,6 +1845,7 @@ export interface paths {
                                     session_title?: string;
                                     native_session_id?: string;
                                     native_request_key?: string;
+                                    execution_host?: string | null;
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -1965,6 +1970,7 @@ export interface paths {
                                     session_title?: string;
                                     native_session_id?: string;
                                     native_request_key?: string;
+                                    execution_host?: string | null;
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -2077,6 +2083,7 @@ export interface paths {
                                     session_title?: string;
                                     native_session_id?: string;
                                     native_request_key?: string;
+                                    execution_host?: string | null;
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -2189,6 +2196,7 @@ export interface paths {
                                     session_title?: string;
                                     native_session_id?: string;
                                     native_request_key?: string;
+                                    execution_host?: string | null;
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -4049,6 +4057,7 @@ export interface paths {
                                     session_title?: string;
                                     native_session_id?: string;
                                     native_request_key?: string;
+                                    execution_host?: string | null;
                                 };
                                 /** @default null */
                                 project_id: string | null;

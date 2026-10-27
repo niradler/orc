@@ -16,6 +16,7 @@ export const HumanRequestInputSchema = z
         session_title: z.string().trim().min(1).max(200).optional(),
         native_session_id: identity.optional(),
         native_request_key: identity.optional(),
+        execution_host: z.string().min(1).max(255).nullable().optional(),
       })
       .strict(),
     project_id: identity.nullable().default(null),

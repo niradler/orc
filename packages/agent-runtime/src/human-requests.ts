@@ -124,6 +124,7 @@ export function withHumanRequests(
             origin: {
               session_id: session.id,
               backend: agent,
+              execution_host: host.kind === "ssh" ? host.alias : null,
               native_request_key: createHash("sha256").update(event.data.requestId).digest("hex"),
               ...(nativeSessionId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(nativeSessionId)
                 ? { native_session_id: nativeSessionId }

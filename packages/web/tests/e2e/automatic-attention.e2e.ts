@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { repoRoot } from "./_helpers";
 
@@ -38,6 +39,7 @@ test.afterAll(() => {
 });
 test.beforeEach(async ({ page, request }) => {
   await request.post(`${base}/fixture/observed`, { headers, data: "false" });
+  await request.post(`${base}/fixture/other-host`, { headers, data: "false" });
   await page.addInitScript(() =>
     localStorage.setItem(
       `orc_api_secret:${new URL("/api", location.href).href}`,
@@ -115,5 +117,30 @@ test("an observed external question disappears when the session continues", asyn
   await expect(card.getByRole("button", { name: "View session" })).toBeVisible();
   await request.post(`${base}/fixture/observed`, { headers, data: "false" });
   await expect(card).toHaveCount(0, { timeout: 20000 });
+  await expect(page.getByTestId("attention-empty")).toBeVisible();
+});
+
+test("a managed notice cannot hide a question with the same native ID on another host", async ({
+  page,
+  request,
+}) => {
+  await page.getByTestId("chat-open-button").click();
+  await page.getByTestId("chat-input").fill("Host-specific approval fixture");
+  await page.getByTestId("chat-input").press("Enter");
+  const card = page.locator('[data-testid^="attention-request-"]');
+  await expect(card).toHaveCount(1);
+  await request.post(`${base}/fixture/other-host`, { headers, data: "true" });
+  await page.reload();
+  await expect(card).toHaveCount(1);
+  await expect(page.locator('[data-testid^="attention-session-"]')).toHaveCount(1);
+  await expect(page.locator('[data-testid^="attention-session-"]')).toContainText(
+    "fixture-secondary",
+  );
+  await page.screenshot({
+    path: join(repoRoot(), ".claude/docs/attention-host-visibility.png"),
+    fullPage: true,
+  });
+  await card.getByTestId("attention-deny").click();
+  await request.post(`${base}/fixture/other-host`, { headers, data: "false" });
   await expect(page.getByTestId("attention-empty")).toBeVisible();
 });

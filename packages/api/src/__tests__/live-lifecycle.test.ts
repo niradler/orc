@@ -25,6 +25,25 @@ afterAll(() => {
 });
 
 describe("native ownership", () => {
+  test("refreshes local ownership and Attention after a silent writer exit", async () => {
+    const child = Bun.spawn(
+      ["bun", join(import.meta.dir, "../../scripts/verify-codex-silent-exit.ts")],
+      {
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 45000,
+      },
+    );
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    expect(stderr).toBe("");
+    expect(code).toBe(0);
+    expect(stdout).toContain("silent local writer exit clears status and Attention");
+  }, 50000);
+
   test("should ignore stale lock files and release every shared probe", () => {
     const path = join(root, "stale.lock");
     writeFileSync(path, "");
