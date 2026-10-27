@@ -4,6 +4,9 @@ import { apiPost, gotoView, tid } from "./_helpers";
 for (const width of [390, 1440]) {
   test(`chat link confirmation responds at ${width}px`, async ({ page, context }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await context.route("https://example.com/chat-link", (route) =>
+      route.fulfill({ contentType: "text/html", body: "<title>Confirmed chat link</title>" }),
+    );
     await page.setViewportSize({ width, height: 900 });
     await gotoView(page, "overview");
     const open = page.getByTestId("chat-open-button");
@@ -25,8 +28,11 @@ for (const width of [390, 1440]) {
     await modal.getByRole("button", { name: "Close", exact: true }).click();
     await expect(modal).toHaveCount(0);
     await link.click();
+    await expect(modal).toBeVisible();
+    await expect(modal.getByRole("button", { name: "Copy link", exact: true })).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(modal).toHaveCount(0);
+    await expect(input).toBeVisible();
     await link.click();
     const popup = page.waitForEvent("popup");
     await modal.getByRole("button", { name: "Open link", exact: true }).click();
