@@ -1,18 +1,29 @@
 import { createHash, randomUUID } from "node:crypto";
 import { loadConfig } from "@orc/core/config";
+import { ConflictError } from "@orc/core/errors";
 import { resolveExecHost } from "@orc/core/exec-host";
 import type { HumanRequest } from "@orc/core/human-requests";
 import type { RuleDecision } from "@orc/core/rule-types";
 import { getSqlite } from "@orc/db/client";
 import { currentHumanRequest, HumanRequestStore } from "@orc/db/human-requests";
 import { RuleStore } from "@orc/db/rules";
-import type { AgentEvent, AgentSession, SessionOpts } from "./types.js";
+import {
+  type AgentEvent,
+  type AgentSession,
+  type PermissionResult,
+  permissionModeAllows,
+  type SessionOpts,
+} from "./types.js";
 
 type Pause = Extract<AgentEvent, { type: "permission_request" | "question_request" }>;
 type Wait = {
   abort: AbortController;
   requests: HumanRequest[];
   responding: boolean;
+  permissionResult?: PermissionResult;
+  questionIds: string[];
+  tool?: string;
+  ruleBound: boolean;
   task: Promise<void>;
 };
 
@@ -21,8 +32,8 @@ export function withHumanRequests(
   backend: string,
   opts: SessionOpts,
 ): AgentSession {
-  const agent = backend === "codex-cli" ? "codex" : backend;
-  if (!loadConfig().rules.enabled || !["claude", "codex"].includes(agent)) return session;
+  const agent =
+    backend === "codex-cli" ? "codex" : backend === "acpx" ? (opts.acpxAgent ?? backend) : backend;
   const store = new HumanRequestStore(getSqlite());
   const owner = randomUUID();
   const waits = new Map<string, Wait>();
@@ -39,10 +50,14 @@ export function withHumanRequests(
   function stopWait(wait: Wait, unavailable: boolean): void {
     wait.abort.abort();
     for (const record of wait.requests) {
-      const current = store.get(record.id);
-      if (current.status === "pending" && !unavailable) store.cancel(current.id, current.version);
-      else if (["pending", "answered"].includes(current.status))
-        store.unavailable(current.id, current.version);
+      try {
+        const current = store.get(record.id);
+        if (current.status === "pending" && !unavailable) store.cancel(current.id, current.version);
+        else if (["pending", "answered"].includes(current.status))
+          store.unavailable(current.id, current.version);
+      } catch (error) {
+        console.error("Could not close human request", error);
+      }
     }
   }
   async function waitForAnswer(record: HumanRequest, wait: Wait): Promise<HumanRequest> {
@@ -99,6 +114,8 @@ export function withHumanRequests(
             ? { kind: "ssh" as const, alias: opts.executionHost }
             : { kind: "local" as const };
       const questions = event.type === "question_request" ? event.data.questions : [null];
+      const occurrence = randomUUID();
+      const nativeSessionId = session.getRuntimeSessionId?.();
       if (questions.some((question) => question?.isSecret))
         throw new Error("Secret input cannot enter the inbox");
       for (const question of questions) {
@@ -107,29 +124,45 @@ export function withHumanRequests(
             origin: {
               session_id: session.id,
               backend: agent,
+              native_request_key: createHash("sha256").update(event.data.requestId).digest("hex"),
+              ...(nativeSessionId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(nativeSessionId)
+                ? { native_session_id: nativeSessionId }
+                : {}),
+              ...(opts.attentionContext
+                ? {
+                    chat_thread_id: opts.attentionContext.chatThreadId,
+                    session_title: opts.attentionContext.sessionTitle,
+                  }
+                : {}),
               request_id: createHash("sha256")
                 .update(
-                  JSON.stringify([event.data.requestId, question?.id ?? "approval", bindings]),
+                  JSON.stringify([
+                    event.data.requestId,
+                    question?.id ?? "approval",
+                    bindings,
+                    occurrence,
+                  ]),
                 )
                 .digest("hex"),
             },
             project_id:
               revisions.find((revision) => revision.id === bindings[0]?.revision_id)?.project_id ??
               null,
-            rule_bindings: bindings,
+            ...(bindings.length ? { rule_bindings: bindings } : {}),
             kind: event.type === "question_request" ? "question" : "approval",
             prompt:
               question?.question ??
-              [...new Set(actions.map((action) => action.target.prompt))].join("\n"),
+              ([...new Set(actions.map((action) => action.target.prompt))].join("\n") ||
+                `Allow ${event.type === "permission_request" ? event.data.tool : "action"}?`),
             choices: question?.options?.map((option) => option.label) ?? [],
             choice_descriptions: Object.fromEntries(
               question?.options?.map((option) => [option.label, option.description]) ?? [],
             ),
             multi_select: question?.multiSelect ?? false,
             notify: [...new Set(actions.flatMap((action) => action.target.notify))],
-            expires_in_seconds: Math.min(
-              ...actions.map((action) => action.target.expires_in_seconds),
-            ),
+            expires_in_seconds: actions.length
+              ? Math.min(...actions.map((action) => action.target.expires_in_seconds))
+              : 86400,
             ...(event.type === "permission_request"
               ? {
                   action: {
@@ -144,6 +177,7 @@ export function withHumanRequests(
           owner,
         );
         wait.requests.push(record);
+        wait.questionIds.push(question?.id ?? "approval");
       }
       const replies = await Promise.all(wait.requests.map((record) => waitForAnswer(record, wait)));
       if (wait.abort.signal.aborted || !session.alive())
@@ -152,7 +186,10 @@ export function withHumanRequests(
       if (event.type === "permission_request") {
         const response = replies[0]?.response;
         if (response?.kind !== "approval") throw new Error("Wrong approval response");
-        session.respondPermission(event.data.requestId, response.approved ? "approved" : "denied");
+        session.respondPermission(
+          event.data.requestId,
+          wait.permissionResult ?? (response.approved ? "approved" : "denied"),
+        );
       } else {
         if (!session.respondQuestion) throw new Error("Native answer delivery unsupported");
         const answers = Object.fromEntries(
@@ -168,9 +205,17 @@ export function withHumanRequests(
         const current = store.get(reply.id);
         if (current.status === "answered") store.acknowledge(current.id, current.version);
       }
+      emit({ type: "request_resolved", data: { requestId: event.data.requestId } });
       emit({ type: "system_status", data: "Human response sent to the originating agent" });
     } catch {
       if (!wait.abort.signal.aborted) {
+        const expected = event.type === "question_request" ? event.data.questions.length : 1;
+        if (!wait.ruleBound && wait.requests.length < expected) {
+          stopWait(wait, false);
+          emit({ type: "system_status", data: "Answer this request in the original chat." });
+          emit(event);
+          return;
+        }
         stopWait(wait, true);
         emit({
           type: "system_status",
@@ -193,7 +238,9 @@ export function withHumanRequests(
       for await (const event of session.events()) {
         if (closed) break;
         if (event.type === "permission_request" || event.type === "question_request") {
-          const decision = decisionFor(event);
+          const decision: RuleDecision = loadConfig().rules.enabled
+            ? decisionFor(event)
+            : { decision: "abstain", reasons: [], context: [], jobs: [] };
           if (decision.decision === "deny") {
             if (event.type === "permission_request")
               session.respondPermission(event.data.requestId, "denied");
@@ -201,16 +248,40 @@ export function withHumanRequests(
             emit({ type: "system_status", data: "Action denied by ORC rule" });
             continue;
           }
-          if (decision.human_requests?.length) {
+          if (!opts.interactive && !decision.human_requests?.length) {
+            emit(event);
+            continue;
+          }
+          if (
+            !decision.human_requests?.length &&
+            event.type === "question_request" &&
+            event.data.questions.some((question) => question.isSecret)
+          ) {
+            emit(event);
+            continue;
+          }
+          {
             const wait: Wait = {
               abort: new AbortController(),
               requests: [],
               responding: false,
+              questionIds: [],
+              ...(event.type === "permission_request" ? { tool: event.data.tool } : {}),
+              ruleBound: !!decision.human_requests?.length,
               task: Promise.resolve(),
             };
             waits.set(event.data.requestId, wait);
             wait.task = answer(event, decision, wait);
-            emit({ type: "system_status", data: "Waiting for you in Attention needed" });
+            if (decision.human_requests?.length)
+              emit({
+                type: "system_status",
+                data: `ORC rule requires your response: ${decision.human_requests.map((action) => action.target.prompt).join("; ")}`,
+              });
+            if (
+              wait.requests.length ===
+              (event.type === "question_request" ? event.data.questions.length : 1)
+            )
+              emit(event);
             continue;
           }
         }
@@ -244,14 +315,70 @@ export function withHumanRequests(
     id: session.id,
     getRuntimeSessionId: () => session.getRuntimeSessionId?.(),
     send: (prompt, images) => session.send(prompt, images),
-    respondPermission: (id, result) => session.respondPermission(id, result),
+    respondPermission: (id, result) => {
+      const wait = waits.get(id);
+      if (!wait) return session.respondPermission(id, result);
+      const record = wait.requests[0];
+      if (!record) throw new Error("Approval is not ready");
+      currentHumanRequest(store, record.id);
+      store.respond(record.id, record.version, { kind: "approval", approved: result !== "denied" });
+      wait.permissionResult = result;
+    },
     ...(session.respondQuestion
       ? {
-          respondQuestion: (id: string, answers: Record<string, string[]>) =>
-            session.respondQuestion?.(id, answers),
+          respondQuestion: (id: string, answers: Record<string, string[]>) => {
+            const wait = waits.get(id);
+            if (!wait) return session.respondQuestion?.(id, answers);
+            store.db
+              .transaction(() => {
+                for (const [index, record] of wait.requests.entries()) {
+                  const values = answers[wait.questionIds[index] ?? ""];
+                  if (!values?.length) throw new Error("Missing question answer");
+                  currentHumanRequest(store, record.id);
+                  store.respond(record.id, record.version, {
+                    kind: "question",
+                    answer: values.join(", "),
+                    ...(values.length > 1 ? { selected_choices: values } : {}),
+                  });
+                }
+              })
+              .immediate();
+          },
         }
       : {}),
     alive: () => session.alive(),
+    ...(session.setPermissionMode
+      ? {
+          setPermissionMode: (mode) => {
+            const affected = [...waits.entries()].filter(
+              ([, wait]) => wait.tool && permissionModeAllows(mode, wait.tool),
+            );
+            if (affected.some(([, wait]) => wait.ruleBound))
+              throw new ConflictError("An ORC rule requires this approval");
+            store.db
+              .transaction(() => {
+                for (const [, wait] of affected) {
+                  for (const record of wait.requests) {
+                    const current = currentHumanRequest(store, record.id);
+                    if (current.status !== "pending")
+                      throw new ConflictError("This approval is no longer pending");
+                  }
+                }
+                for (const [, wait] of affected)
+                  for (const record of wait.requests) {
+                    const current = store.get(record.id);
+                    store.cancel(current.id, current.version);
+                  }
+                session.setPermissionMode?.(mode);
+              })
+              .immediate();
+            for (const [id, wait] of affected) {
+              wait.abort.abort();
+              emit({ type: "request_resolved", data: { requestId: id } });
+            }
+          },
+        }
+      : {}),
     waitingForHuman: () => waits.size > 0 || session.waitingForHuman?.() === true,
     close,
     async *events() {

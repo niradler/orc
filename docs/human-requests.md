@@ -1,10 +1,14 @@
 # Agent questions and approvals
 
-An agent pauses, ORC evaluates its existing Rules, and an **Ask user** action creates
-a durable request in **Activity → Attention needed**. Answer the question or review
+When an interactive managed agent exposes a structured question or approval, ORC automatically
+creates a durable request in **Activity → Attention needed**. Rules can also create
+requests. Answer the question or review
 the exact tool input, folder and host before approving or denying. The response
 goes back to that agent's original pending call. ORC does not execute the command
 or add privileges. Privileged execution and Windows UAC are deferred.
+
+Private questions and prompts that cannot be represented in the inbox show a
+generic notice linking to the original chat. Their contents remain in that chat.
 
 The inbox and its header indicator use ORC's shared SSE resource feed. A periodic
 snapshot also recovers missed events and time-based expiration. Closing or
@@ -14,13 +18,17 @@ chat panel and select its saved conversation.
 
 ## Configure Rules
 
-Enable Rules (`rules.enabled: true` in the existing ORC JSON configuration). In
-Rules, add these catalog templates to the workspace policy:
+Native questions and approvals do not require Rules. To customize when Rules ask
+for review, enable Rules (`rules.enabled: true` in the existing ORC JSON
+configuration) and add these catalog templates to the workspace policy:
 
 - **ORC · Agent questions**: managed Claude/Codex structured questions and supported
   non-secret MCP forms.
 - **ORC · Agent tool approvals**: managed Claude/Codex native permission requests,
   including command, file and additional-permission requests.
+
+Noninteractive job runners retain their immediate-denial policy. A rejected
+prompt does not become an artificial human wait; explicit rule reviews still apply.
 
 Select the Claude SDK backend (`claude`) or native Codex backend (`codex-cli`).
 Use the agent's default permission mode when you want native approval prompts.
@@ -111,6 +119,16 @@ hook alone. Use the proven managed SDK question path or explicit MCP/CLI request
 for that case. An independently running Codex terminal cannot be intercepted by
 ORC's separate app-server session; use explicit MCP requests there. Plain text
 such as “Should I continue?” is not a structured pause event.
+
+The session watcher also detects a live Codex `request_user_input` question from
+its transcript and shows a read-only session notice until the matching answer or
+turn cancellation is recorded. Open its existing ORC terminal when available, or
+view the session and answer in its original interface. The watcher does not infer
+approval prompts from unfinished tools or deliver answers through transcripts.
+Other independent prompts need the explicit MCP/CLI request or qualified native
+hook described above. ACPX handles permissions in its own CLI and does not expose
+a pending interactive approval to ORC's runtime adapter. Secret questions remain
+in the native interface.
 
 ### Cursor Agent
 

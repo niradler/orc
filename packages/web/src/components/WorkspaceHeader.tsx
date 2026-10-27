@@ -4,6 +4,8 @@ import { NavLink, useLocation } from "react-router-dom";
 import { CommandPalette } from "@/components/CommandPalette";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { useAttentionChatWaits } from "@/hooks/useAttentionChatWaits";
+import { useAttentionSessions } from "@/hooks/useAttentionSessions";
 import { useHumanRequests } from "@/hooks/useHumanRequests";
 import { useProjects } from "@/hooks/useProjects";
 import { persistTheme, useTheme } from "@/lib/theme";
@@ -29,10 +31,13 @@ export function WorkspaceHeader({
   const { pathname, search } = useLocation();
   const { data: projects } = useProjects({ status: "active" });
   const { data: humanRequests } = useHumanRequests();
+  const observedSessions = useAttentionSessions();
+  const chatWaits = useAttentionChatWaits();
   const attentionCount =
     humanRequests?.filter(
       (request) => request.status === "pending" || request.status === "unavailable",
     ).length ?? 0;
+  const totalAttention = attentionCount + observedSessions.data.length + chatWaits.data.length;
   const { theme, setTheme, error: themeError } = useTheme();
   const section = workspaceSection(pathname);
   const name =
@@ -68,13 +73,13 @@ export function WorkspaceHeader({
         <NavLink
           data-testid="attention-indicator"
           to={workspaceDestination("/attention", projectId, search)}
-          aria-label={`Attention needed: ${attentionCount} requests`}
-          className={buttonVariants({ variant: attentionCount ? "outline" : "ghost", size: "sm" })}
+          aria-label={`Attention needed: ${totalAttention} requests`}
+          className={buttonVariants({ variant: totalAttention ? "outline" : "ghost", size: "sm" })}
         >
           <Bell size={16} />
           <span className="hidden sm:inline">Attention</span>
-          {attentionCount > 0 && (
-            <span className="rounded bg-surface-highest px-1.5 text-xs">{attentionCount}</span>
+          {totalAttention > 0 && (
+            <span className="rounded bg-surface-highest px-1.5 text-xs">{totalAttention}</span>
           )}
         </NavLink>
         <CommandPalette

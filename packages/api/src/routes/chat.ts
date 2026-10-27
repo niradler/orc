@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createRoute, z } from "@hono/zod-openapi";
 import {
   type AgentSession,
@@ -7,6 +8,7 @@ import {
   sessionRules,
 } from "@orc/agent-runtime";
 import { readAgent, renderAgentInstructions } from "@orc/core/agent-service";
+import { changes } from "@orc/core/changes";
 import {
   appendChatActivity,
   CHAT_HISTORY_PAGE_SIZE,
@@ -43,6 +45,7 @@ import { createRouter } from "../lib/router.js";
 import { notify, truncate } from "../push/service.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
 import { chatHistory } from "../sessions/chat-history.js";
+import { codexWriterOwned } from "../sessions/ownership.js";
 import { MAX_TRANSCRIPT_BYTES, readTranscriptBytes } from "../sessions/transcript.js";
 import { selectedTerminalHost } from "../terminals/host.js";
 
@@ -71,6 +74,63 @@ interface ChatRun {
   stop: () => void;
 }
 const runs = new Map<string, ChatRun>();
+
+const waitingKey = (id: string) => createHash("sha256").update(id).digest("hex");
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/chat/waiting",
+    tags: ["Chat"],
+    responses: {
+      200: {
+        description: "Active chat requests without private question or answer content",
+        content: {
+          "application/json": {
+            schema: z.object({
+              waiting: z.array(
+                z.object({
+                  thread_id: id,
+                  title: z.string(),
+                  agent: z.string(),
+                  request_key: z.string(),
+                  kind: z.enum(["question", "approval"]),
+                  native_session_id: z.string().nullable(),
+                }),
+              ),
+            }),
+          },
+        },
+      },
+    },
+  }),
+  (c) =>
+    c.json(
+      {
+        waiting: [...runs.values()].flatMap((run) => {
+          const base = {
+            thread_id: run.threadId,
+            title: run.thread.title,
+            agent: run.thread.config.agent,
+            native_session_id: run.session?.getRuntimeSessionId?.() ?? run.thread.runtimeId ?? null,
+          };
+          return [
+            ...[...run.permissions].map((id) => ({
+              ...base,
+              request_key: waitingKey(id),
+              kind: "approval" as const,
+            })),
+            ...[...run.questions.keys()].map((id) => ({
+              ...base,
+              request_key: waitingKey(id),
+              kind: "question" as const,
+            })),
+          ];
+        }),
+      },
+      200,
+    ),
+);
 
 function publish(run: ChatRun, event: ChatEvent): void {
   const data = JSON.stringify(event);
@@ -227,6 +287,8 @@ async function newThread(
       throw new ConflictError("End the original agent session before resuming it in chat.");
     await getHandoffService().verifyResume(source.id);
     const runtime = hostRuntime(execHostFor(source.execution_host ?? null));
+    if (source.backend === "codex" && (await codexWriterOwned(runtime, source.runtime_session_id)))
+      throw new ConflictError("End the original agent session before resuming it in chat.");
     if (!(await runtime.isDirectory(source.cwd)))
       throw new ValidationError("The session working folder is unavailable on its execution host.");
     thread.config.agent = source.backend;
@@ -486,6 +548,7 @@ app.openapi(
       throw new ConflictError("This permission request is no longer pending.");
     run.session.respondPermission(requestId, decision);
     run.permissions.delete(requestId);
+    changes.publish("human-requests");
     return c.json({ ok: true });
   },
 );
@@ -516,14 +579,24 @@ app.openapi(
     const { thread } = run;
     if (!["codex", "claude"].includes(thread.config.agent))
       throw new ValidationError("Permission modes are supported by Claude and Codex.");
-    thread.config.permissionMode = mode;
+    const updated: ChatThread = {
+      ...thread,
+      config: structuredClone(thread.config),
+      updatedAt: Date.now(),
+    };
+    updated.config.permissionMode = mode;
     // Explicit SDK launch options take precedence over the conversation mode.
-    const options = thread.config.agentOptions[thread.config.agent];
+    const options = updated.config.agentOptions[updated.config.agent];
     if (options?.runtime === "claude-sdk" && options.options.permissionMode)
       options.options.permissionMode = mode;
-    thread.updatedAt = Date.now();
-    store().save(thread);
-    run.session?.setPermissionMode?.(mode);
+    getSqlite()
+      .transaction(() => {
+        store().save(updated);
+        run.session?.setPermissionMode?.(mode);
+      })
+      .immediate();
+    thread.config = updated.config;
+    thread.updatedAt = updated.updatedAt;
     return c.json(thread);
   },
 );
@@ -571,6 +644,7 @@ app.openapi(
       run.questions.set(requestId, question);
       throw error;
     }
+    changes.publish("human-requests");
     return c.json({ ok: true });
   },
 );
@@ -755,6 +829,7 @@ app.openapi(
             toolAllowlist: thread.toolAllowlist,
             chatAgentOptions: thread.config.agentOptions[thread.config.agent],
             interactive: true,
+            attentionContext: { chatThreadId: thread.id, sessionTitle: thread.title },
             cwd: thread.cwd,
             executionHost: thread.host,
             autoApprove: thread.config.autoApprove,
@@ -768,7 +843,15 @@ app.openapi(
             mcpAlwaysLoad: true,
             acpxAgent: thread.config.agent,
           };
-          if (thread.sourceId) await getHandoffService().verifyResume(thread.sourceId);
+          if (thread.sourceId) {
+            await getHandoffService().verifyResume(thread.sourceId);
+            if (
+              thread.config.agent === "codex" &&
+              thread.runtimeId &&
+              (await codexWriterOwned(hostRuntime(execHostFor(thread.host)), thread.runtimeId))
+            )
+              throw new ConflictError("End the original agent session before resuming it in chat.");
+          }
           run.session = thread.runtimeId
             ? await backend.resumeSession(thread.runtimeId, opts)
             : await backend.startSession(opts);
@@ -812,6 +895,7 @@ app.openapi(
             else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
             else if (event.type === "permission_request") {
               run.permissions.add(event.data.requestId);
+              changes.publish("human-requests");
               await emit(event);
               notify(
                 "chat",
@@ -819,11 +903,13 @@ app.openapi(
               );
             } else if (event.type === "question_request") {
               run.questions.set(event.data.requestId, event.data);
+              changes.publish("human-requests");
               await emit(event);
               notify("chat", chatPush(thread, "Question", "The agent is waiting for your answer."));
             } else if (event.type === "request_resolved") {
               run.permissions.delete(event.data.requestId);
               run.questions.delete(event.data.requestId);
+              changes.publish("human-requests");
               await emit({ type: "request_resolved", requestId: event.data.requestId });
             } else if (event.type === "error") await emit({ type: "error", message: event.data });
           }
@@ -871,6 +957,7 @@ app.openapi(
         } finally {
           active.delete(key);
           runs.delete(runId);
+          changes.publish("human-requests");
           publish(run, { type: "done" });
           for (const listener of run.listeners) listener(null);
         }

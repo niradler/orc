@@ -8,6 +8,7 @@ export type AgentBackendName = "claude" | "acpx" | "a2a" | (string & {});
 export type SessionOpts = {
   chatAgentOptions?: ChatAgentOptions | undefined;
   interactive?: boolean | undefined;
+  attentionContext?: { chatThreadId: string; sessionTitle: string } | undefined;
   ruleBuiltinActions?: boolean;
   /** Undefined follows the currently selected host; null explicitly means local. */
   executionHost?: string | null | undefined;

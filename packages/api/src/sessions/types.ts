@@ -7,6 +7,7 @@ export type SessionRecord = {
   summary?: string | null;
   cwd?: string | null;
   status: SessionStatus;
+  pendingHuman?: boolean;
   pid?: number | null;
   createdAt: Date;
   lastActivityAt: Date;

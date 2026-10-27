@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -29,6 +29,8 @@ const oldMock = process.env.ORC_E2E_CHAT_MOCK;
 let failResume = false;
 let waitPermission = false;
 let waitQuestion = false;
+let secretQuestion = false;
+let manyOptions = false;
 let questionAnswers: Record<string, string[]> | undefined;
 let failBeforeResult = false;
 let resultIdentity: string | undefined;
@@ -90,7 +92,13 @@ function session(call: (typeof calls)[number]): AgentSession {
                 id: "choice",
                 header: "Choose",
                 question: "Choose a color",
-                options: [{ label: "Blue", description: "Blue color" }],
+                ...(secretQuestion ? { isSecret: true } : {}),
+                options: manyOptions
+                  ? Array.from({ length: 21 }, (_, i) => ({
+                      label: `Option ${i}`,
+                      description: "",
+                    }))
+                  : [{ label: "Blue", description: "Blue color" }],
               },
             ],
           },
@@ -490,6 +498,87 @@ describe("native chat runtime", () => {
     expect(calls.length).toBe(count);
     failResume = false;
   });
+
+  test("rejects a stale stopped record when the Codex writer is still owned", async () => {
+    const directory = join(home, ".codex", "thread-writer-locks");
+    mkdirSync(directory, { recursive: true });
+    const lockPath = join(directory, "race-native.lock");
+    writeFileSync(lockPath, "");
+    const command =
+      process.platform === "win32"
+        ? [
+            "powershell.exe",
+            "-NoProfile",
+            "-Command",
+            "$f=[System.IO.File]::Open($env:ORC_TEST_LOCK,'Open','ReadWrite','ReadWrite'); $f.Lock(0,1); [Console]::WriteLine('ready'); [Console]::In.ReadLine() | Out-Null; $f.Unlock(0,1); $f.Dispose()",
+          ]
+        : ["sh", "-c", 'exec 9<"$ORC_TEST_LOCK"; flock -x 9; echo ready; read release'];
+    const child = Bun.spawn(command, {
+      env: { ...process.env, ORC_TEST_LOCK: lockPath },
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 10000,
+    });
+    try {
+      const reader = child.stdout.getReader();
+      const ready = await reader.read();
+      reader.releaseLock();
+      expect(new TextDecoder().decode(ready.value)).toContain("ready");
+      getDb()
+        .insert(bridge_chats)
+        .values({ id: LIVE_CHAT_ID, platform: "telegram", chat_id: "chat-fixture" })
+        .onConflictDoNothing()
+        .run();
+      getDb()
+        .insert(gateway_sessions)
+        .values({
+          id: "source-race",
+          backend: "codex",
+          mode: "direct",
+          status: "stopped",
+          chat_id: LIVE_CHAT_ID,
+          runtime_session_id: "race-native",
+          cwd: home,
+        })
+        .run();
+      expect((await request("/chat/threads", { sourceSessionId: "source-race" })).status).toBe(409);
+    } finally {
+      child.stdin.write("release\n");
+      child.stdin.end();
+      expect(await child.exited).toBe(0);
+    }
+    const preparedResponse = await request("/chat/threads", { sourceSessionId: "source-race" });
+    expect(preparedResponse.status).toBe(200);
+    const prepared = (await preparedResponse.json()) as ChatThread;
+    const resumed = Bun.spawn(command, {
+      env: { ...process.env, ORC_TEST_LOCK: lockPath },
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 10000,
+    });
+    try {
+      const reader = resumed.stdout.getReader();
+      const ready = await reader.read();
+      reader.releaseLock();
+      expect(new TextDecoder().decode(ready.value)).toContain("ready");
+      const count = calls.length;
+      const result = await turn({
+        threadId: prepared.id,
+        messages: [{ role: "user", content: "continue" }],
+      });
+      expect(result.events).toContainEqual({
+        type: "error",
+        message: "End the original agent session before resuming it in chat.",
+      });
+      expect(calls).toHaveLength(count);
+    } finally {
+      resumed.stdin.write("release\n");
+      resumed.stdin.end();
+      expect(await resumed.exited).toBe(0);
+    }
+  });
   test("requires auth, validates shapes and denies unknown conversations and permission requests", async () => {
     for (const [path, body] of [
       ["/chat/threads", undefined],
@@ -559,6 +648,16 @@ describe("native chat runtime", () => {
         .map((line) => JSON.parse(line.slice(5)))
         .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
       const path = `/chat/runs/${opened.runId}/answer`;
+      const inbox = (await (await request("/human-requests")).json()) as {
+        input: { origin: { chat_thread_id?: string; session_title?: string } };
+      }[];
+      expect(
+        inbox.some(
+          (entry) =>
+            entry.input.origin.chat_thread_id === opened.thread.id &&
+            entry.input.origin.session_title === "wait for an answer",
+        ),
+      ).toBe(true);
       expect(
         (await request(path, { requestId: "question-1", answers: { choice: ["Blue"] } }, false))
           .status,
@@ -597,6 +696,72 @@ describe("native chat runtime", () => {
     }
   });
 
+  for (const scenario of ["private", "many options"] as const) {
+    test(`shows a safe chat notice for ${scenario} without blocking the native answer`, async () => {
+      waitQuestion = true;
+      secretQuestion = scenario === "private";
+      manyOptions = scenario === "many options";
+      const response = await request("/chat/stream", {
+        messages: [{ role: "user", content: `question ${scenario}` }],
+      });
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("No stream");
+      try {
+        let text = "";
+        const decoder = new TextDecoder();
+        while (!text.includes('"question_request"')) {
+          const part = await reader.read();
+          if (part.done) throw new Error("Ended before question");
+          text += decoder.decode(part.value);
+        }
+        const opened = text
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => JSON.parse(line.slice(5)))
+          .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+        expect((await request("/chat/waiting", undefined, false)).status).toBe(401);
+        const waiting = (await (await request("/chat/waiting")).json()) as {
+          waiting: { thread_id: string; kind: string }[];
+        };
+        expect(waiting.waiting).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ thread_id: opened.thread.id, kind: "question" }),
+          ]),
+        );
+        expect(JSON.stringify(waiting)).not.toContain("Choose a color");
+        expect(
+          (
+            (await (await request("/human-requests")).json()) as {
+              input: { origin: { chat_thread_id?: string } };
+            }[]
+          ).some(
+            (entry: { input: { origin: { chat_thread_id?: string } } }) =>
+              entry.input.origin.chat_thread_id === opened.thread.id,
+          ),
+        ).toBe(false);
+        expect(
+          (
+            await request(`/chat/runs/${opened.runId}/answer`, {
+              requestId: "question-1",
+              answers: { choice: ["Blue"] },
+            })
+          ).status,
+        ).toBe(200);
+        while (!(await reader.read()).done) {}
+        expect(
+          (
+            (await (await request("/chat/waiting")).json()) as { waiting: { thread_id: string }[] }
+          ).waiting.some((entry: { thread_id: string }) => entry.thread_id === opened.thread.id),
+        ).toBe(false);
+      } finally {
+        waitQuestion = false;
+        secretQuestion = false;
+        manyOptions = false;
+        reader.releaseLock();
+      }
+    });
+  }
+
   test("permissions can be loosened while the agent is responding and are kept", async () => {
     waitPermission = true;
     decision = undefined;
@@ -632,6 +797,54 @@ describe("native chat runtime", () => {
     expect(saved.config.permissionMode).toBe("bypassPermissions");
     expect((await request(path, { mode: "default" })).status).toBe(409);
     waitPermission = false;
+  });
+
+  test("a settings save failure does not loosen a pending permission", async () => {
+    waitPermission = true;
+    liveMode = undefined;
+    const response = await request("/chat/stream", {
+      messages: [{ role: "user", content: "fail-mode-save" }],
+    });
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("No stream");
+    try {
+      let text = "";
+      const decoder = new TextDecoder();
+      while (!text.includes('"permission_request"')) {
+        const part = await reader.read();
+        if (part.done) throw new Error("Ended before permission");
+        text += decoder.decode(part.value);
+      }
+      const opened = text
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => JSON.parse(line.slice(5)))
+        .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+      getSqlite().exec(
+        "CREATE TEMP TRIGGER fail_mode_save BEFORE UPDATE ON chat_threads WHEN NEW.title = 'fail-mode-save' AND json_extract(NEW.data, '$.config.permissionMode') = 'bypassPermissions' BEGIN SELECT RAISE(FAIL, 'fixture mode save failure'); END",
+      );
+      expect(
+        (await request(`/chat/runs/${opened.runId}/permission-mode`, { mode: "bypassPermissions" }))
+          .status,
+      ).toBe(500);
+      expect(liveMode).toBeUndefined();
+      const saved = (await (
+        await request(`/chat/threads/${opened.thread.id}`)
+      ).json()) as ChatThread;
+      expect(saved.config.permissionMode).not.toBe("bypassPermissions");
+      expect(
+        (
+          await request(`/chat/runs/${opened.runId}/permission`, {
+            requestId: "permission-1",
+            decision: "denied",
+          })
+        ).status,
+      ).toBe(200);
+      while (!(await reader.read()).done) {}
+    } finally {
+      waitPermission = false;
+      reader.releaseLock();
+    }
   });
 
   test("permission replies unblock the correct run and concurrent sends are refused", async () => {

@@ -592,6 +592,17 @@ export const api = {
       req<HumanRequest>("POST", `/human-requests/${encodeURIComponent(id)}/cancel`, { version }),
   },
   chat: {
+    waiting: () =>
+      req<{
+        waiting: {
+          thread_id: string;
+          title: string;
+          agent: string;
+          request_key: string;
+          kind: "question" | "approval";
+          native_session_id: string | null;
+        }[];
+      }>("GET", "/chat/waiting"),
     models: (agent: string, threadId?: string) =>
       req<ChatModels>("GET", "/chat/models", undefined, { agent, threadId }),
     list: () =>

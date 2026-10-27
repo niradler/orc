@@ -76,7 +76,7 @@ afterAll(() => {
   resetConfig();
 });
 
-function native(event: AgentEvent) {
+function native(event: AgentEvent, backend = "codex-cli") {
   let interrupt: (event: AgentEvent) => void = () => {};
   const interrupted = new Promise<AgentEvent>((resolve) => {
     interrupt = resolve;
@@ -103,6 +103,9 @@ function native(event: AgentEvent) {
       received.push({ id, value });
       complete();
     },
+    setPermissionMode: (mode) => {
+      received.push({ id: "mode", value: mode });
+    },
     async *events() {
       yield event;
       const next = await Promise.race([response.then(() => null), interrupted]);
@@ -111,7 +114,7 @@ function native(event: AgentEvent) {
     },
   };
   return {
-    session: withHumanRequests(session, "codex-cli", {
+    session: withHumanRequests(session, backend, {
       cwd,
       executionHost: null,
       interactive: true,
@@ -120,6 +123,118 @@ function native(event: AgentEvent) {
     interrupt,
   };
 }
+
+test("automatically exposes a native approval and resolves it from chat", async () => {
+  const { session, received } = native(
+    {
+      type: "permission_request",
+      data: { requestId: "automatic-approval", tool: "command", command: "pwd" },
+    },
+    "claude-cli",
+  );
+  const events: AgentEvent[] = [];
+  const finished = (async () => {
+    for await (const event of session.events()) events.push(event);
+  })();
+  const request = await waitForRequest(session.id);
+  expect(request.input.origin.backend).toBe("claude-cli");
+  expect(events.some((event) => event.type === "permission_request")).toBe(true);
+  session.respondPermission("automatic-approval", "session");
+  expect(() =>
+    new HumanRequestStore(getSqlite()).respond(request.id, 1, {
+      kind: "approval",
+      approved: false,
+    }),
+  ).toThrow();
+  await finished;
+  expect(received).toEqual([{ id: "automatic-approval", value: "session" }]);
+  expect(new HumanRequestStore(getSqlite()).get(request.id).status).toBe("delivered");
+  expect(events.some((event) => event.type === "request_resolved")).toBe(true);
+  await session.close();
+});
+
+test("an Attention answer resolves the corresponding native chat prompt", async () => {
+  const { session, received } = native(
+    {
+      type: "permission_request",
+      data: { requestId: "automatic-inbox", tool: "command", command: "pwd" },
+    },
+    "claude-cli",
+  );
+  const events: AgentEvent[] = [];
+  const finished = (async () => {
+    for await (const event of session.events()) events.push(event);
+  })();
+  const request = await waitForRequest(session.id);
+  new HumanRequestStore(getSqlite()).respond(request.id, 1, { kind: "approval", approved: false });
+  expect(() => session.respondPermission("automatic-inbox", "approved")).toThrow();
+  await finished;
+  expect(received).toEqual([{ id: "automatic-inbox", value: "denied" }]);
+  expect(events.some((event) => event.type === "request_resolved")).toBe(true);
+  await session.close();
+});
+
+test("chat answers all automatic questions and removes their inbox entries", async () => {
+  const { session, received } = native(
+    {
+      type: "question_request",
+      data: {
+        requestId: "automatic-questions",
+        questions: [
+          { id: "first", header: "First", question: "First answer?" },
+          { id: "second", header: "Second", question: "Second answer?" },
+        ],
+      },
+    },
+    "claude-cli",
+  );
+  const events: AgentEvent[] = [];
+  const finished = (async () => {
+    for await (const event of session.events()) events.push(event);
+  })();
+  await waitForRequest(session.id);
+  const records = new HumanRequestStore(getSqlite())
+    .list()
+    .filter((entry) => entry.input.origin.session_id === session.id);
+  expect(records).toHaveLength(2);
+  await session.respondQuestion?.("automatic-questions", { first: ["one"], second: ["two"] });
+  await finished;
+  expect(received).toEqual([
+    { id: "automatic-questions", value: { first: ["one"], second: ["two"] } },
+  ]);
+  expect(records.map((record) => new HumanRequestStore(getSqlite()).get(record.id).status)).toEqual(
+    ["delivered", "delivered"],
+  );
+  expect(events.some((event) => event.type === "request_resolved")).toBe(true);
+  await session.close();
+});
+
+test("secret questions stay in the native channel without being persisted", async () => {
+  const { session, received } = native(
+    {
+      type: "question_request",
+      data: {
+        requestId: "secret",
+        questions: [{ id: "secret", header: "Secret", question: "Secret?", isSecret: true }],
+      },
+    },
+    "claude-cli",
+  );
+  const finished = (async () => {
+    for await (const event of session.events()) {
+      if (event.type === "question_request")
+        await session.respondQuestion?.("secret", { secret: ["value"] });
+    }
+  })();
+  await finished;
+  expect(received).toEqual([{ id: "secret", value: { secret: ["value"] } }]);
+  expect(
+    new HumanRequestStore(getSqlite())
+      .list()
+      .some((entry) => entry.input.origin.session_id === session.id),
+  ).toBe(false);
+  await session.close();
+});
 
 async function waitForRequest(sessionId: string) {
   const deadline = Date.now() + 2000;
@@ -223,6 +338,47 @@ test("should return denial without executing an approval in ORC", async () => {
   await session.close();
 });
 
+test("a rule-triggered approval can also be answered from chat", async () => {
+  const { session, received } = native({
+    type: "permission_request",
+    data: { requestId: "rule-chat", tool: "command", command: "pwd" },
+  });
+  const events: AgentEvent[] = [];
+  const finished = (async () => {
+    for await (const event of session.events()) events.push(event);
+  })();
+  const request = await waitForRequest(session.id);
+  expect(request.input.rule_bindings?.length).toBe(1);
+  expect(events.some((event) => event.type === "permission_request")).toBe(true);
+  expect(
+    events.some((event) => event.type === "system_status" && event.data.includes("Review command")),
+  ).toBe(true);
+  session.respondPermission("rule-chat", "denied");
+  await finished;
+  expect(received).toEqual([{ id: "rule-chat", value: "denied" }]);
+  expect(new HumanRequestStore(getSqlite()).get(request.id).status).toBe("delivered");
+  await session.close();
+});
+
+test("changing permission mode cannot bypass a pending rule approval", async () => {
+  const { session, received } = native({
+    type: "permission_request",
+    data: { requestId: "protected-mode", tool: "command", command: "pwd" },
+  });
+  const finished = (async () => {
+    for await (const _event of session.events()) {
+    }
+  })();
+  const request = await waitForRequest(session.id);
+  expect(() => session.setPermissionMode?.("bypassPermissions")).toThrow("rule requires");
+  expect(new HumanRequestStore(getSqlite()).get(request.id).status).toBe("pending");
+  expect(received).toEqual([]);
+  session.respondPermission("protected-mode", "denied");
+  await finished;
+  expect(received).toEqual([{ id: "protected-mode", value: "denied" }]);
+  await session.close();
+});
+
 test("should cancel a pending native request when its runtime closes", async () => {
   const { session, received } = native({
     type: "permission_request",
@@ -237,4 +393,62 @@ test("should cancel a pending native request when its runtime closes", async () 
   await finished;
   expect(new HumanRequestStore(getSqlite()).get(request.id).status).toBe("cancelled");
   expect(received.every((entry) => entry.value === "denied")).toBe(true);
+});
+
+test("a failed inbox update cannot loosen the native permission mode", async () => {
+  getSqlite().exec(`CREATE TEMP TRIGGER fixture_mode_failure BEFORE UPDATE ON human_requests
+    WHEN NEW.status = 'cancelled' AND json_extract(OLD.payload, '$.action.input.command') = 'fixture mode failure'
+    BEGIN SELECT RAISE(FAIL, 'fixture mode failure'); END`);
+  const { session, received } = native(
+    {
+      type: "permission_request",
+      data: { requestId: "mode-failure", tool: "Bash", command: "fixture mode failure" },
+    },
+    "claude-cli",
+  );
+  const finished = (async () => {
+    for await (const _event of session.events()) {
+    }
+  })();
+  const request = await waitForRequest(session.id);
+  expect(() => session.setPermissionMode?.("bypassPermissions")).toThrow("fixture mode failure");
+  expect(received).toEqual([]);
+  expect(new HumanRequestStore(getSqlite()).get(request.id).status).toBe("pending");
+  session.respondPermission("mode-failure", "denied");
+  await finished;
+  expect(received).toEqual([{ id: "mode-failure", value: "denied" }]);
+  await session.close();
+});
+
+test("a failed partial inbox cleanup leaves an unruled question answerable in chat", async () => {
+  getSqlite().exec(`CREATE TEMP TRIGGER fixture_cleanup_failure BEFORE UPDATE ON human_requests
+    WHEN json_extract(OLD.payload, '$.prompt') = 'Fixture first question'
+    BEGIN SELECT RAISE(FAIL, 'fixture cleanup failure'); END`);
+  const { session, received } = native(
+    {
+      type: "question_request",
+      data: {
+        requestId: "partial-cleanup",
+        questions: [
+          { id: "first", header: "First", question: "Fixture first question", options: [] },
+          {
+            id: "second",
+            header: "Second",
+            question: "Fixture second question",
+            options: Array.from({ length: 21 }, (_, i) => ({
+              label: `Option ${i}`,
+              description: "",
+            })),
+          },
+        ],
+      },
+    },
+    "claude-cli",
+  );
+  for await (const event of session.events()) {
+    if (event.type === "question_request")
+      await session.respondQuestion?.("partial-cleanup", { first: ["a"], second: ["b"] });
+  }
+  expect(received).toEqual([{ id: "partial-cleanup", value: { first: ["a"], second: ["b"] } }]);
+  await session.close();
 });

@@ -12,6 +12,10 @@ export const HumanRequestInputSchema = z
         backend: identity,
         request_id: identity,
         tool_call_id: identity.optional(),
+        chat_thread_id: z.string().uuid().optional(),
+        session_title: z.string().trim().min(1).max(200).optional(),
+        native_session_id: identity.optional(),
+        native_request_key: identity.optional(),
       })
       .strict(),
     project_id: identity.nullable().default(null),

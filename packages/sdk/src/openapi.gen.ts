@@ -191,6 +191,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/waiting": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Active chat requests without private question or answer content */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            waiting: {
+                                /** Format: uuid */
+                                thread_id: string;
+                                title: string;
+                                agent: string;
+                                request_key: string;
+                                /** @enum {string} */
+                                kind: "question" | "approval";
+                                native_session_id: string | null;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/models": {
         parameters: {
             query?: never;
@@ -1545,6 +1591,11 @@ export interface paths {
                                     backend: string;
                                     request_id: string;
                                     tool_call_id?: string;
+                                    /** Format: uuid */
+                                    chat_thread_id?: string;
+                                    session_title?: string;
+                                    native_session_id?: string;
+                                    native_request_key?: string;
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -1622,6 +1673,11 @@ export interface paths {
                             backend: string;
                             request_id: string;
                             tool_call_id?: string;
+                            /** Format: uuid */
+                            chat_thread_id?: string;
+                            session_title?: string;
+                            native_session_id?: string;
+                            native_request_key?: string;
                         };
                         /** @default null */
                         project_id?: string | null;
@@ -1676,6 +1732,11 @@ export interface paths {
                                     backend: string;
                                     request_id: string;
                                     tool_call_id?: string;
+                                    /** Format: uuid */
+                                    chat_thread_id?: string;
+                                    session_title?: string;
+                                    native_session_id?: string;
+                                    native_request_key?: string;
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -1775,6 +1836,11 @@ export interface paths {
                                     backend: string;
                                     request_id: string;
                                     tool_call_id?: string;
+                                    /** Format: uuid */
+                                    chat_thread_id?: string;
+                                    session_title?: string;
+                                    native_session_id?: string;
+                                    native_request_key?: string;
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -1894,6 +1960,11 @@ export interface paths {
                                     backend: string;
                                     request_id: string;
                                     tool_call_id?: string;
+                                    /** Format: uuid */
+                                    chat_thread_id?: string;
+                                    session_title?: string;
+                                    native_session_id?: string;
+                                    native_request_key?: string;
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -2001,6 +2072,11 @@ export interface paths {
                                     backend: string;
                                     request_id: string;
                                     tool_call_id?: string;
+                                    /** Format: uuid */
+                                    chat_thread_id?: string;
+                                    session_title?: string;
+                                    native_session_id?: string;
+                                    native_request_key?: string;
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -2108,6 +2184,11 @@ export interface paths {
                                     backend: string;
                                     request_id: string;
                                     tool_call_id?: string;
+                                    /** Format: uuid */
+                                    chat_thread_id?: string;
+                                    session_title?: string;
+                                    native_session_id?: string;
+                                    native_request_key?: string;
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -3963,6 +4044,11 @@ export interface paths {
                                     backend: string;
                                     request_id: string;
                                     tool_call_id?: string;
+                                    /** Format: uuid */
+                                    chat_thread_id?: string;
+                                    session_title?: string;
+                                    native_session_id?: string;
+                                    native_request_key?: string;
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -12891,6 +12977,8 @@ export interface components {
             pid: number | null;
             /** @enum {string} */
             status: "idle" | "running" | "stopped" | "error";
+            /** @default false */
+            waiting_for_human: boolean;
             project_id: string | null;
             task: {
                 id: string;

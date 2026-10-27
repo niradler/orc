@@ -26,13 +26,18 @@ type QueryArgs = {
 };
 
 const queries: QueryArgs[] = [];
+let queryLifetime: Promise<void> | undefined;
 // mock.module is process-wide, so keep the real exports for other test files.
 const actualSdk = await import("@anthropic-ai/claude-agent-sdk");
 mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   ...actualSdk,
   query: (args: QueryArgs) => {
     queries.push(args);
-    return (async function* () {})();
+    const lifetime = queryLifetime;
+    return (async function* () {
+      if (lifetime) await lifetime;
+      yield* [];
+    })();
   },
 }));
 
@@ -49,6 +54,7 @@ beforeEach(() => {
   process.env.ORC_API_SECRET = "s3cret";
   resetConfig();
   queries.length = 0;
+  queryLifetime = undefined;
 });
 
 afterEach(() => {
@@ -161,6 +167,10 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
   });
 
   test("should route SDK MCP form requests through the same question callback", async () => {
+    let finishQuery = () => {};
+    queryLifetime = new Promise<void>((resolve) => {
+      finishQuery = resolve;
+    });
     const session = await createBackend("claude").startSession({ cwd: process.cwd() });
     try {
       await session.send("fixture");
@@ -179,12 +189,13 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
           },
         },
         { signal: new AbortController().signal },
-      );
+      ).finally(finishQuery);
       for await (const event of session.events())
         if (event.type === "question_request")
           await session.respondQuestion?.(event.data.requestId, { enabled: ["false"] });
       expect(await answering).toEqual({ action: "accept", content: { enabled: false } });
     } finally {
+      finishQuery();
       await session.close();
     }
   });

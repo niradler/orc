@@ -56,6 +56,17 @@ let chain: Promise<unknown> = Promise.resolve();
 let tokenChain: Promise<unknown> = Promise.resolve();
 let synchronized: (() => Promise<void>) | undefined;
 let refreshWatchers: (() => void) | undefined;
+const pendingHuman = new Map<string, Set<string>>();
+
+const pendingKey = (backend: string, host: string | null) => JSON.stringify([backend, host]);
+
+export function sessionWaitingForHuman(
+  backend: string,
+  host: string | null,
+  nativeId: string | null,
+): boolean {
+  return !!nativeId && pendingHuman.get(pendingKey(backend, host))?.has(nativeId) === true;
+}
 
 const serialized = <T>(job: () => Promise<T>): Promise<T> => {
   const next = chain.then(job, job);
@@ -159,11 +170,27 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
   const executionHost = selectedHostAlias();
   try {
     const records = await adapter.list(await loadKnown(adapter.backend, executionHost));
+    const pending = new Set(pendingHuman.get(pendingKey(adapter.backend, executionHost)));
+    let pendingChanged = false;
     for (const r of records) {
       const id = await upsertRecord(r, executionHost);
       if (r.tokens) queueTokens(id, r.tokens);
+      if (r.pendingHuman === true && r.status !== "stopped" && !pending.has(r.externalId)) {
+        pending.add(r.externalId);
+        pendingChanged = true;
+      } else if (
+        (r.pendingHuman === false || r.status === "stopped") &&
+        pending.delete(r.externalId)
+      ) {
+        pendingChanged = true;
+      }
     }
     const seen = records.map((r) => r.externalId);
+    for (const id of pending)
+      if (!seen.includes(id)) {
+        pending.delete(id);
+        pendingChanged = true;
+      }
     await getDb()
       .update(gateway_sessions)
       .set({ status: "stopped", updated_at: new Date() })
@@ -176,6 +203,8 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
           seen.length > 0 ? notInArray(gateway_sessions.runtime_session_id, seen) : undefined,
         ),
       );
+    pendingHuman.set(pendingKey(adapter.backend, executionHost), pending);
+    if (pendingChanged) changes.publish("sessions");
     return { backend: adapter.backend, seen: records.length, ms: Date.now() - started };
   } catch (err) {
     logger.error(`sync failed for ${adapter.backend}`, err);
@@ -297,6 +326,9 @@ export function startSessionWatcher(
               schedule();
             }),
           );
+      } else if (!row.pid && row.backend === "codex" && row.execution_host) {
+        // Advisory locks can be released on process exit without changing any watched file.
+        nextExpiration = Math.min(nextExpiration, Date.now() + 30_000);
       } else if (!row.pid && row.status === "running" && row.last_activity_at) {
         const expires = row.last_activity_at.getTime() + 30_050;
         if (expires > Date.now()) nextExpiration = Math.min(nextExpiration, expires);
@@ -328,6 +360,9 @@ export function startSessionWatcher(
         ".codex/sessions",
         ".codex/state_5.sqlite",
         ".codex/state_5.sqlite-wal",
+        ".codex/thread_history_1.sqlite",
+        ".codex/thread_history_1.sqlite-wal",
+        ".codex/thread-writer-locks",
         ".cursor/projects",
         ".cursor/chats",
         ".gemini/tmp",
@@ -357,6 +392,7 @@ export function startSessionWatcher(
   attach();
   return () => {
     stopped = true;
+    pendingHuman.clear();
     unsubscribe();
     clearTimeout(debounce);
     clearTimeout(expiration);
