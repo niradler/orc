@@ -85,6 +85,7 @@ export async function gotoView(
 }
 
 export async function selectProject(page: Page, id: string): Promise<void> {
+  await page.getByRole("banner").waitFor();
   const mobile = page.getByTestId("mobile-nav-open");
   if ((await mobile.isVisible()) && !(await page.getByTestId("mobile-nav-drawer").isVisible()))
     await mobile.click();
