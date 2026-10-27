@@ -15,6 +15,13 @@ workspaces; they are explicit opt-in runs rather than CI tests.
 | Permission-mode persistence failure | Injecting an inbox cancellation failure showed the native mode had already changed. | Inbox writes happen before the native mode call; the regression verifies no native change on failure. |
 | Headless job denial deferred | The broad package suite found the noninteractive runner's denial never reached the backend. | Automatic brokerage applies to interactive waits; noninteractive immediate-denial behavior and rule-required reviews remain enforced. |
 
+The broad browser run also exposed an unrelated bulk-jobs fixture assumption:
+an asynchronously created knowledge-digest job made a project contain three
+displayed jobs while the test expected exactly two. The corrected test deliberately
+adds an extra unselected job, checks select-all, and then explicitly selects the
+two jobs used by its retry assertions. It verifies the extra job remains unchanged;
+no product behavior or assertion was disabled to obtain a passing result.
+
 ## Real native evidence
 
 Verified on Windows with Bun 1.4.2, Codex CLI 0.162.1, Claude Code 2.1.310 and

@@ -12,6 +12,12 @@ test("should create jobs disabled, toggle inline and retry failed bulk updates w
     command: "echo other",
     trigger_type: "manual",
   });
+  const extra = await apiPost<{ id: string }>(request, "/jobs", {
+    name: tid("unselected-project-job"),
+    command: "echo extra",
+    trigger_type: "manual",
+    project_id: project.id,
+  });
   const first = await apiPost<{ id: string }>(request, "/jobs", {
     name: tid("bulk-first"),
     command: "echo first",
@@ -35,6 +41,11 @@ test("should create jobs disabled, toggle inline and retry failed bulk updates w
   await firstRow.getByTestId("job-toggle-enabled").click();
   await expect(firstRow.getByTestId("job-toggle-enabled")).toHaveAttribute("aria-pressed", "false");
   await page.getByTestId("select-all-rows").check();
+  await expect(firstRow.getByTestId("job-select")).toBeChecked();
+  await expect(secondRow.getByTestId("job-select")).toBeChecked();
+  await page.getByTestId("clear-selection").click();
+  await firstRow.getByTestId("job-select").check();
+  await secondRow.getByTestId("job-select").check();
   await expect(page.getByTestId("bulk-actions")).toContainText("2 selected");
   await page.screenshot({
     path: resolve("../../.claude/docs/jobs-bulk-desktop.png"),
@@ -56,7 +67,8 @@ test("should create jobs disabled, toggle inline and retry failed bulk updates w
   await page.unroute(`**/api/jobs/${second.id}`);
   await page.getByTestId("jobs-bulk-enable").click();
   await expect(secondRow.getByTestId("job-toggle-enabled")).toHaveAttribute("aria-pressed", "true");
-  await page.getByTestId("select-all-rows").check();
+  await firstRow.getByTestId("job-select").check();
+  await secondRow.getByTestId("job-select").check();
   await page.getByTestId("jobs-bulk-disable").click();
   await expect(firstRow.getByTestId("job-toggle-enabled")).toHaveAttribute("aria-pressed", "false");
   await expect(secondRow.getByTestId("job-toggle-enabled")).toHaveAttribute(
@@ -64,6 +76,7 @@ test("should create jobs disabled, toggle inline and retry failed bulk updates w
     "false",
   );
   expect((await apiGet<{ enabled: boolean }>(request, `/jobs/${other.id}`)).enabled).toBe(false);
+  expect((await apiGet<{ enabled: boolean }>(request, `/jobs/${extra.id}`)).enabled).toBe(false);
   await firstRow.getByTestId("job-select").check();
   await page.goto("/jobs?project=all");
   await expect(page.getByTestId("jobs-bulk-enable")).toHaveCount(0);
