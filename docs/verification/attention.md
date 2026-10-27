@@ -33,8 +33,10 @@ native runtimes, without mocked permission callbacks.
 | Managed Codex question answered in Attention | Real structured prompt; authenticated inbox record; pending native transcript visible to the adapter; response delivered; agent emits its completion marker; late answer rejected; notice cleared. |
 | Managed Codex resume in chat | Completed real session becomes stopped; discovered source prepares a chat; native continuation completes with the original session ID. |
 | Managed Codex approval denied in chat | Real native approval; exact pending record; denial reaches agent; delivery acknowledged; notice cleared. No command approved. |
+| Managed Codex approval accepted in Attention | Only the exact harmless print action (including its trusted native PowerShell wrapper) can be approved. Real native tool output is required, followed by delivery and notice dismissal. |
 | Managed Claude question answered in chat | Real AskUserQuestion callback; durable inbox record; chat answer reaches Claude; completion marker and cleanup verified. |
 | Managed Claude approval denied in Attention | Actual Bash permission callback; denial reaches Claude and clears. A harmless Python command is used because simple read-only commands can be allowed without prompting. The existing empty-policy Rules guard isolates user auto-allow settings; no matching rule creates the notice. |
+| Managed Claude approval accepted in chat | Exact harmless Python print action; chat approval delivers to the native callback, successful native tool output is required, and the inbox/chat notices clear. |
 | Managed cancellation | Cancelling a real waiting Codex run cancels the durable request, rejects late answers and removes the chat notice. |
 | Independent Claude native hook | Separate CLI process, source CLI hook and isolated authenticated API. Approval and denial both return to the native tool; PostToolUse or Stop acknowledges delivery; notice disappears. The test requires successful native tool output only for approval, rather than relying on the agent's reply. Only a harmless print command is approved. |
 | Independent Cursor native hook | Separate installed CLI and its actual Shell hook. Approval and denial both round-trip through Attention; lifecycle receipt and dismissal verified. The test checks structured native command stdout only for approval. Only a harmless print command is approved. |
@@ -42,6 +44,8 @@ native runtimes, without mocked permission callbacks.
 The external checks create settings only inside temporary workspaces. They do not
 alter installed agent settings or install hooks into user projects. Provider
 credentials, private transcripts and native session IDs are excluded from this report.
+All automated approval helpers check the exact harmless command before approving;
+an unexpected command fails the verification and is not authorized.
 
 ## Repeatable checks
 

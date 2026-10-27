@@ -39,8 +39,9 @@ async function requests(): Promise<HumanRequest[]> {
   return z.array(HumanRequestSchema).parse(await response.json());
 }
 const quote = (value: string) => `"${value.replaceAll("\\", "/")}"`;
+const decisions = process.argv.includes("--approve-only") ? [true] : [false, true];
 try {
-  for (const approved of [false, true]) {
+  for (const approved of decisions) {
     const cwd = join(root, approved ? "approved" : "denied");
     mkdirSync(cwd);
     new RuleStore(getSqlite()).activate(
@@ -181,6 +182,12 @@ try {
       }
       assert.equal(record.input.origin.backend, agent);
       assert.equal(record.input.action?.tool, agent === "claude" ? "Bash" : "Shell");
+      if (approved)
+        assert.equal(
+          record.input.action?.input.command,
+          agent === "claude" ? `printf ${marker}` : `Write-Output ${marker}`,
+          "Refusing approval for a command outside the exact harmless fixture",
+        );
       const answer = await fetch(`${server.url.origin}/api/human-requests/${record.id}/respond`, {
         method: "POST",
         headers,
@@ -261,8 +268,8 @@ try {
     JSON.stringify({
       result: "passed",
       agent,
-      approvals: 1,
-      denials: 1,
+      approvals: decisions.filter((value) => value).length,
+      denials: decisions.filter((value) => !value).length,
       workspace: "isolated temporary fixture",
       persistentAgentSettingsChanged: false,
     }),

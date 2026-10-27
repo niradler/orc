@@ -44,6 +44,7 @@ const headers = {
   "Content-Type": "application/json",
 };
 const evidence: string[] = [];
+let commandsAuthorized = 0;
 const WaitsSchema = z.object({
   waiting: z.array(z.object({ thread_id: z.string(), host: z.string().nullable() })),
 });
@@ -81,17 +82,19 @@ async function turn(
   kind: "question" | "approval" | "resume",
   via: "chat" | "inbox" | "cancel",
   threadId?: string,
+  approved = false,
 ) {
   const prompt =
     kind === "question"
       ? "Controlled integration test. Do not inspect files, use commands or make edits. Use your structured question tool (request_user_input or AskUserQuestion) to ask Choose a color with options Blue and Green. After the answer, reply exactly PROBE_COMPLETE."
       : kind === "approval"
-        ? `Controlled permission test. Do not inspect or modify files. Invoke the command tool exactly once to request permission for ${agent === "codex" ? "Write-Output ORC_APPROVAL_PROBE, explicitly using sandbox_permissions=require_escalated" : "python -c \"print('ORC_APPROVAL_PROBE')\" with Bash and dangerouslyDisableSandbox=true"}. If denied, do not retry or use other tools; reply exactly PROBE_DENIED.`
+        ? `Controlled permission test. Do not inspect or modify files. Invoke the command tool exactly once to request permission for ${agent === "codex" ? "Write-Output ORC_APPROVAL_PROBE, explicitly using sandbox_permissions=require_escalated" : "python -c \"print('ORC_APPROVAL_PROBE')\" with Bash and dangerouslyDisableSandbox=true"}. If denied, do not retry or use other tools; reply exactly PROBE_DENIED. If it executes, reply exactly PROBE_EXECUTED.`
         : "Controlled continuation test. Do not use tools. Reply exactly PROBE_RESUMED.";
   let runId = "";
   let currentThread = threadId ?? "";
   let seen = 0;
   let text = "";
+  let executed = false;
   let done = false;
   let requestId: string | undefined;
   const timer = setTimeout(() => {
@@ -127,6 +130,12 @@ async function turn(
           currentThread = event.thread.id;
         }
         if (event.type === "text") text += event.text;
+        if (
+          event.type === "tool_result" &&
+          !event.data.isError &&
+          event.data.content.includes("ORC_APPROVAL_PROBE")
+        )
+          executed = true;
         if (event.type === "done") done = true;
         if (event.type === "error" && via !== "cancel") throw new Error(event.message);
         if (event.type !== "question_request" && event.type !== "permission_request") continue;
@@ -143,6 +152,21 @@ async function turn(
         assert.equal(record.input.kind, kind);
         assert(record.input.origin.native_session_id, "Native identity missing");
         requestId = record.id;
+        if (kind === "approval" && approved) {
+          const command = record.input.action?.input.command;
+          const shell = Bun.which("pwsh");
+          const permitted =
+            agent === "codex"
+              ? [
+                  "Write-Output ORC_APPROVAL_PROBE",
+                  ...(shell ? [`"${shell}" -Command 'Write-Output ORC_APPROVAL_PROBE'`] : []),
+                ]
+              : ["python -c \"print('ORC_APPROVAL_PROBE')\""];
+          assert(
+            typeof command === "string" && permitted.includes(command.replaceAll("\\\\", "\\")),
+            "Refusing approval for a command outside the exact harmless fixture",
+          );
+        }
         const waits = WaitsSchema.parse(await (await request("/chat/waiting")).json());
         assert(
           waits.waiting.some((wait: { thread_id: string }) => wait.thread_id === currentThread),
@@ -163,13 +187,13 @@ async function turn(
             version: record.version,
             response:
               kind === "approval"
-                ? { kind: "approval", approved: false }
+                ? { kind: "approval", approved }
                 : { kind: "question", answer: "Blue" },
           });
         else if (event.type === "permission_request")
           await request(`/chat/runs/${runId}/permission`, {
             requestId: event.data.requestId,
-            decision: "denied",
+            decision: approved ? "approved" : "denied",
           });
         else
           await request(`/chat/runs/${runId}/answer`, {
@@ -192,11 +216,15 @@ async function turn(
           kind === "question"
             ? "PROBE_COMPLETE"
             : kind === "approval"
-              ? "PROBE_DENIED"
+              ? approved
+                ? "PROBE_EXECUTED"
+                : "PROBE_DENIED"
               : "PROBE_RESUMED",
         ),
         "Native agent did not confirm continuation",
       );
+    if (kind === "approval")
+      assert.equal(executed, approved, "Native command output did not match its decision");
     if (requestId) {
       await waitUntil(
         async () =>
@@ -221,9 +249,10 @@ async function turn(
     evidence.push(
       kind === "resume"
         ? `${agent}: original native conversation resumed and completed`
-        : `${agent} ${kind} ${via}: pending in Attention, native delivery/cancellation and cleanup verified`,
+        : `${agent} ${kind}${kind === "approval" ? (approved ? " approved" : " denied") : ""} ${via}: pending in Attention, native delivery/cancellation and cleanup verified`,
     );
     console.log(`PASS ${evidence.at(-1)}`);
+    if (kind === "approval" && approved) commandsAuthorized++;
     return ChatThreadSchema.parse(await (await request(`/chat/threads/${currentThread}`)).json());
   } finally {
     clearTimeout(timer);
@@ -263,11 +292,12 @@ try {
     // with no active policy; no matching rule creates the approval notice.
     loadConfig().rules.enabled = agent === "claude";
     await turn(agent, "approval", agent === "codex" ? "chat" : "inbox");
+    await turn(agent, "approval", agent === "codex" ? "inbox" : "chat", undefined, true);
     loadConfig().rules.enabled = false;
   }
   if (agents.includes("codex") && !process.argv.includes("--approval-only"))
     await turn("codex", "question", "cancel");
-  console.log(JSON.stringify({ result: "passed", assertions: evidence, commandsAuthorized: 0 }));
+  console.log(JSON.stringify({ result: "passed", assertions: evidence, commandsAuthorized }));
 } finally {
   closeDb();
 }
