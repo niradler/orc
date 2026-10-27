@@ -6,7 +6,7 @@ import { getDb } from "@orc/db/client";
 import { gateway_sessions, session_handoffs, sessions, tasks } from "@orc/db/schema";
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { createRouter } from "../lib/router.js";
-import { LIVE_CHAT_ID, syncNow } from "../session-watcher.js";
+import { LIVE_CHAT_ID, sessionWaitingForHuman, syncNow } from "../session-watcher.js";
 import { searchSessions } from "../sessions/search.js";
 import { bodyLinkIndex, sessionIdsOfTask } from "../sessions/tasklinks.js";
 import { MAX_TRANSCRIPT_BYTES, readTranscriptBytes } from "../sessions/transcript.js";
@@ -52,6 +52,7 @@ const LiveSessionSchema = z
     host: z.string().nullable(),
     pid: z.number().nullable(),
     status: z.enum(["idle", "running", "stopped", "error"]),
+    waiting_for_human: z.boolean().default(false),
     project_id: z.string().nullable(),
     task: z.object({ id: z.string(), title: z.string(), status: z.string() }).nullable(),
     handoff: z
@@ -331,6 +332,11 @@ async function toLiveDtos(rows: GatewayRow[]) {
       host: r.execution_host ?? null,
       pid: r.pid ?? null,
       status: r.status,
+      waiting_for_human: sessionWaitingForHuman(
+        r.backend,
+        r.execution_host ?? null,
+        r.runtime_session_id ?? null,
+      ),
       project_id: r.project_id ?? null,
       handoff:
         handoff && (handoff.status === "ready" || handoff.status === "resumed")

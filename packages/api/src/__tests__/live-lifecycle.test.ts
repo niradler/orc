@@ -3,13 +3,14 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { type HostRuntime, hostRuntime } from "@orc/core/exec-host";
 import { writeRegistration } from "@orc/core/live-session";
 import { runSync, startSessionWatcher } from "../session-watcher.js";
 import { codexAdapter } from "../sessions/codex.js";
 import { cursorAgentAdapter } from "../sessions/cursor-agent.js";
 import { geminiAdapter } from "../sessions/gemini.js";
 import { withLifecycle } from "../sessions/lifecycle.js";
-import { hasWriter } from "../sessions/ownership.js";
+import { hasWriter, remoteWriters } from "../sessions/ownership.js";
 import { readTranscript } from "../sessions/transcript.js";
 import type { SessionAdapter } from "../sessions/types.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
@@ -24,6 +25,25 @@ afterAll(() => {
 });
 
 describe("native ownership", () => {
+  test("refreshes local ownership and Attention after a silent writer exit", async () => {
+    const child = Bun.spawn(
+      ["bun", join(import.meta.dir, "../../scripts/verify-codex-silent-exit.ts")],
+      {
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 45000,
+      },
+    );
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    expect(stderr).toBe("");
+    expect(code).toBe(0);
+    expect(stdout).toContain("silent local writer exit clears status and Attention");
+  }, 50000);
+
   test("should ignore stale lock files and release every shared probe", () => {
     const path = join(root, "stale.lock");
     writeFileSync(path, "");
@@ -209,6 +229,184 @@ test("should use ownership and turn state for Codex independently of stale file 
   owned = false;
   expect((await adapter.list(new Map()))[0]?.status).toBe("stopped");
   history.close();
+});
+
+test("remote Codex sessions use writer ownership rather than stale in-progress history", async () => {
+  const local = hostRuntime();
+  const runtime: HostRuntime = {
+    ...local,
+    host: {
+      kind: "ssh",
+      alias: "fixture",
+      remotePort: 0,
+      apiTarget: "127.0.0.1:7701",
+      secret: undefined,
+      connectTimeoutSecs: 5,
+    },
+    home: async () => "/home/test",
+    binary: async () => "/usr/bin/python3",
+    isFile: async () => true,
+    isDirectory: async () => true,
+    stat: async () => null,
+    sqliteQuery: async <T extends object>(path: string): Promise<T[]> =>
+      (path.includes("thread_history")
+        ? [
+            { thread_id: "stale", status: "inProgress" },
+            { thread_id: "active", status: "inProgress" },
+            { thread_id: "idle", status: "completed" },
+          ]
+        : ["stale", "active", "idle"].map((id) => ({
+            id,
+            title: id,
+            name: null,
+            cwd: "/work",
+            preview: "",
+            first_user_message: "",
+            tokens_used: 0,
+            rollout_path: `/home/test/${id}.jsonl`,
+            created_at_ms: 1000,
+            created_at: 1,
+            updated_at_ms: 1000,
+            updated_at: 1,
+          }))) as T[],
+    exec: async () => ({
+      code: 0,
+      stdout: JSON.stringify({ stale: false, active: true, idle: true }),
+      stderr: "",
+    }),
+  };
+  const rows = await codexAdapter(undefined, { runtime }).list(new Map());
+  expect(rows.map(({ externalId, status }) => [externalId, status])).toEqual([
+    ["stale", "stopped"],
+    ["active", "running"],
+    ["idle", "idle"],
+  ]);
+  const legacy = await codexAdapter(undefined, {
+    runtime: { ...runtime, isDirectory: async () => false },
+  }).list(new Map());
+  expect(legacy.every((row) => row.status === "stopped")).toBe(true);
+});
+
+test("remote writer inspection fails closed on invalid input or incomplete results", async () => {
+  const runtime = {
+    ...hostRuntime(),
+    binary: async () => "/usr/bin/python3",
+    exec: async () => ({ code: 0, stdout: "{}", stderr: "" }),
+  };
+  await expect(
+    remoteWriters(runtime, "/home/test/.codex/thread-writer-locks", ["../escape"]),
+  ).rejects.toThrow("Invalid Codex session identity");
+  await expect(
+    remoteWriters(runtime, "/home/test/.codex/thread-writer-locks", ["active"]),
+  ).rejects.toThrow("Incomplete remote Codex writer-lock result");
+  await expect(
+    remoteWriters(
+      { ...runtime, exec: async () => ({ code: 1, stdout: "", stderr: "failure" }) },
+      "/home/test/.codex/thread-writer-locks",
+      ["active"],
+    ),
+  ).rejects.toThrow("writer-lock inspection failed");
+});
+
+test("a failed remote writer probe preserves the previously active session", async () => {
+  const now = new Date();
+  await runSync(
+    [
+      {
+        backend: "codex",
+        minIntervalMs: 0,
+        list: async () => [
+          {
+            backend: "codex",
+            externalId: "probe-failure",
+            title: "Active",
+            status: "running",
+            createdAt: now,
+            lastActivityAt: now,
+          },
+        ],
+      },
+    ],
+    { force: true },
+  );
+  const runtime: HostRuntime = {
+    ...hostRuntime(),
+    host: {
+      kind: "ssh",
+      alias: "fixture",
+      remotePort: 0,
+      apiTarget: "",
+      secret: undefined,
+      connectTimeoutSecs: 5,
+    },
+    home: async () => "/home/test",
+    binary: async () => "/usr/bin/python3",
+    isFile: async () => true,
+    isDirectory: async () => true,
+    sqliteQuery: async <T extends object>(path: string): Promise<T[]> =>
+      (path.includes("thread_history")
+        ? [{ thread_id: "probe-failure", status: "inProgress" }]
+        : [
+            {
+              id: "probe-failure",
+              title: "Active",
+              name: null,
+              cwd: "/work",
+              preview: "",
+              first_user_message: "",
+              tokens_used: 0,
+              rollout_path: "/work/session.jsonl",
+              created_at_ms: 1000,
+              created_at: 1,
+              updated_at_ms: 1000,
+              updated_at: 1,
+            },
+          ]) as T[],
+    exec: async () => ({ code: 1, stdout: "", stderr: "probe failed" }),
+  };
+  const [result] = await runSync([codexAdapter(undefined, { runtime })], { force: true });
+  expect(result?.error).toContain("writer-lock inspection failed");
+  const response = await req(app, "GET", "/sessions/live?agent=codex&active=true");
+  expect((await response.json()).sessions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ session_id: "probe-failure", status: "running" }),
+    ]),
+  );
+});
+
+test("session notices appear for a pending question and clear when the session continues", async () => {
+  const now = new Date();
+  let pendingHuman = true;
+  const adapter: SessionAdapter = {
+    backend: "codex",
+    minIntervalMs: 0,
+    list: async () => [
+      {
+        backend: "codex",
+        externalId: "question-notice",
+        title: "Question session",
+        status: "running",
+        pendingHuman,
+        createdAt: now,
+        lastActivityAt: now,
+      },
+    ],
+  };
+  await runSync([adapter], { force: true });
+  let result = await (await req(app, "GET", "/sessions/live?agent=codex&active=true")).json();
+  expect(result.sessions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ session_id: "question-notice", waiting_for_human: true }),
+    ]),
+  );
+  pendingHuman = false;
+  await runSync([adapter], { force: true });
+  result = await (await req(app, "GET", "/sessions/live?agent=codex&active=true")).json();
+  expect(result.sessions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ session_id: "question-notice", waiting_for_human: false }),
+    ]),
+  );
 });
 
 test("should discover Cursor CLI chat metadata", async () => {

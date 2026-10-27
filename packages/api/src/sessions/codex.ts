@@ -1,11 +1,14 @@
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, posix } from "node:path";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
+import { createLogger } from "@orc/core/logger";
+import { readCodexQuestionPending } from "./codex-attention.js";
 import { oneLine, statusFromMtime } from "./common.js";
-import { hasWriter } from "./ownership.js";
+import { hasWriter, remoteWriters } from "./ownership.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
 
 export const CODEX_STATE_DB = join(homedir(), ".codex", "state_5.sqlite");
+const logger = createLogger("api:codex-attention");
 
 type ThreadRow = {
   id: string;
@@ -35,16 +38,21 @@ export function codexAdapter(
     backend: "codex",
     minIntervalMs: 5_000,
     async list() {
+      const joinHost = runtime.host.kind === "ssh" ? posix.join : join;
       const home =
-        dbPath === CODEX_STATE_DB ? join(await runtime.home(), ".codex") : dirname(dbPath);
-      const stateDb = dbPath === CODEX_STATE_DB ? join(home, "state_5.sqlite") : dbPath;
+        dbPath === CODEX_STATE_DB
+          ? joinHost(await runtime.home(), ".codex")
+          : runtime.host.kind === "ssh"
+            ? posix.dirname(dbPath)
+            : dirname(dbPath);
+      const stateDb = dbPath === CODEX_STATE_DB ? joinHost(home, "state_5.sqlite") : dbPath;
       if (!(await runtime.isFile(stateDb))) return [];
       let statuses = new Map<string, string>();
       try {
         statuses = new Map(
           (
             await runtime.sqliteQuery<{ thread_id: string; status: string }>(
-              options.historyDb ?? join(home, "thread_history_1.sqlite"),
+              options.historyDb ?? joinHost(home, "thread_history_1.sqlite"),
               `SELECT thread_id, status FROM (
                  SELECT thread_id, status, ROW_NUMBER() OVER
                    (PARTITION BY thread_id ORDER BY rollout_ordinal DESC) AS rank
@@ -60,24 +68,43 @@ export function codexAdapter(
                 created_at_ms, created_at, updated_at_ms, updated_at
          FROM threads WHERE archived = 0`,
       );
+      const lockDirectory = joinHost(home, "thread-writer-locks");
+      const hasLockDirectory = await runtime.isDirectory(lockDirectory);
+      const remoteOwnership =
+        runtime.host.kind === "ssh" && hasLockDirectory
+          ? await remoteWriters(
+              runtime,
+              lockDirectory,
+              rows.map((row) => row.id),
+            )
+          : undefined;
       return Promise.all(
         rows.map(async (r): Promise<SessionRecord> => {
           const updated = r.updated_at_ms ?? r.updated_at * 1000;
           const live = (await runtime.stat(r.rollout_path))?.mtimeMs ?? null;
           const owned =
             runtime.host.kind === "local"
-              ? (options.writer ?? hasWriter)(join(home, "thread-writer-locks", `${r.id}.lock`))
-              : statuses.get(r.id) === "inProgress";
+              ? (options.writer ?? hasWriter)(join(lockDirectory, `${r.id}.lock`))
+              : (remoteOwnership?.get(r.id) ?? false);
           const turn = statuses.get(r.id);
           const status = owned
             ? turn === "inProgress"
               ? "running"
               : "idle"
-            : (await runtime.isDirectory(join(home, "thread-writer-locks")))
+            : hasLockDirectory
               ? "stopped"
               : live
                 ? statusFromMtime(live)
                 : "stopped";
+          let pendingHuman: boolean | undefined;
+          if (status === "stopped") pendingHuman = false;
+          else if (live !== null) {
+            try {
+              pendingHuman = await readCodexQuestionPending(runtime, r.rollout_path);
+            } catch (error) {
+              logger.warn("Cannot inspect Codex session for a pending question", { error });
+            }
+          }
           return {
             backend: "codex",
             externalId: r.id,
@@ -85,6 +112,7 @@ export function codexAdapter(
             summary: oneLine(r.preview || r.first_user_message || "", 400) || null,
             cwd: r.cwd,
             status,
+            ...(pendingHuman !== undefined ? { pendingHuman } : {}),
             createdAt: new Date(r.created_at_ms ?? r.created_at * 1000),
             lastActivityAt: new Date(Math.max(updated, live ?? 0)),
             transcriptPath: r.rollout_path,
