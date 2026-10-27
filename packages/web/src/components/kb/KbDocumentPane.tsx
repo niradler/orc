@@ -218,7 +218,7 @@ export function KbDocumentPane({
       data-testid={testId}
       disabled={busy}
       className={cn(
-        "flex min-h-9 w-full items-center gap-2 rounded px-2 text-left text-sm outline-none hover:bg-surface-highest focus-visible:bg-surface-highest disabled:opacity-50",
+        "flex min-h-9 w-full items-center gap-2 rounded px-2 text-left text-sm outline-hidden hover:bg-surface-highest focus-visible:bg-surface-highest disabled:opacity-50",
         danger && "text-error",
       )}
       onClick={() => {
@@ -351,7 +351,7 @@ export function KbDocumentPane({
             </div>
           </div>
           <header className="mb-2 mt-4 space-y-2">
-            <h1 data-testid="kb-document-title" className="break-words text-3xl font-medium">
+            <h1 data-testid="kb-document-title" className="wrap-break-word text-3xl font-medium">
               {doc.title}
             </h1>
             {doc.description && <p className="text-outline">{doc.description}</p>}
@@ -574,7 +574,7 @@ function DocumentDetails({
 }) {
   const usage = useKbDocumentUsage(doc.id);
   const revisions = useKbRevisions(doc.id);
-  const linkClass = "block min-h-8 w-full break-words text-left text-primary hover:underline";
+  const linkClass = "block min-h-8 w-full wrap-break-word text-left text-primary hover:underline";
   return (
     <aside
       data-testid="kb-document-details"

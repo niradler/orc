@@ -181,7 +181,7 @@ export function ResumeActions({ session }: { session: LiveSession }) {
         </p>
       )}
       {error && (
-        <p role="alert" className="text-xs text-error break-words">
+        <p role="alert" className="text-xs text-error wrap-break-word">
           {error}
         </p>
       )}

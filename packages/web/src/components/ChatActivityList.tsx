@@ -12,7 +12,7 @@ export function ChatActivityList({ value }: { value: unknown }) {
     <div data-testid="chat-activity" className="mb-3 space-y-1 text-xs text-on-surface-variant">
       {items.map((item: ChatActivity) =>
         item.type === "status" ? (
-          <p key={item.id} className="py-1 break-words">
+          <p key={item.id} className="py-1 wrap-break-word">
             {item.text}
           </p>
         ) : (
@@ -36,19 +36,19 @@ export function ChatActivityList({ value }: { value: unknown }) {
                 </span>
               )}
             </summary>
-            <div className="max-h-72 overflow-auto border-t border-outline-variant px-3 py-2 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+            <div className="max-h-72 overflow-auto border-t border-outline-variant px-3 py-2 whitespace-pre-wrap wrap-break-word wrap-anywhere">
               {item.type === "thinking" ? (
                 item.text
               ) : (
                 <>
                   <p className="mb-1 font-medium">Input</p>
-                  <pre className="whitespace-pre-wrap break-words font-mono">
+                  <pre className="whitespace-pre-wrap wrap-break-word font-mono">
                     {item.input || "No arguments"}
                   </pre>
                   {item.result !== undefined && (
                     <>
                       <p className="mt-3 mb-1 font-medium">Result</p>
-                      <pre className="whitespace-pre-wrap break-words font-mono">
+                      <pre className="whitespace-pre-wrap wrap-break-word font-mono">
                         {item.result || "Completed without output"}
                       </pre>
                     </>

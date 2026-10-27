@@ -22,8 +22,8 @@
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
     "@orc/task-service": "workspace:*",
-    "chokidar": "^5.0.0",
-    "croner": "^10.0.1",
-    "drizzle-orm": "^0.45.2"
+    "chokidar": "^6.0.0",
+    "croner": "^11.0.0",
+    "drizzle-orm": "^0.45.4"
   }
 }

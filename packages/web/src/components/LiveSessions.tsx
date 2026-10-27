@@ -217,7 +217,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                   >
                     <button
                       type="button"
-                      className="text-left text-sm font-medium break-words hover:text-primary"
+                      className="text-left text-sm font-medium wrap-break-word hover:text-primary"
                       onClick={() => setParam("session", session.id)}
                     >
                       <Highlight
@@ -236,7 +236,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                       <span>{formatWhen(session.last_activity_at)}</span>
                     </div>
                     {session.summary && (
-                      <p className="text-sm text-outline break-words">
+                      <p className="text-sm text-outline wrap-break-word">
                         <Highlight text={session.summary} query={searching ? query : ""} />
                       </p>
                     )}
@@ -244,7 +244,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                       <p
                         key={snippet}
                         data-testid="search-snippet"
-                        className="text-xs break-words text-on-surface-variant"
+                        className="text-xs wrap-break-word text-on-surface-variant"
                       >
                         <Highlight text={snippet} query={query} />
                       </p>

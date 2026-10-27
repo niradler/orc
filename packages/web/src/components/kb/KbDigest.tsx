@@ -359,7 +359,7 @@ function RunList({ runs }: { runs: KbDigestRun[] }) {
             key={r.run_id}
             data-testid="kb-digest-run-row"
             data-status={r.status}
-            className="min-w-0 break-words py-1.5"
+            className="min-w-0 wrap-break-word py-1.5"
           >
             <span className="inline-flex items-center gap-1.5">
               <StateDot tone={RUN_TONE[r.status] ?? "off"} />

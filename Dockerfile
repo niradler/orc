@@ -1,5 +1,5 @@
 # ── Stage 1: Build ────────────────────────────────────────────────────────────
-FROM oven/bun:1.4.2-slim AS builder
+FROM oven/bun:1.4.4-slim AS builder
 WORKDIR /app
 
 # Copy manifests first so dependency install is cached when only source changes
@@ -28,14 +28,14 @@ RUN bun run --filter @orc/web build && \
     cd packages/cli && bun run build:copy-web
 
 # ── Stage 2: Runtime ──────────────────────────────────────────────────────────
-FROM node:22-bookworm-slim AS agent-tools
-ARG ACPX_VERSION=0.12.1
-ARG CODEX_VERSION=0.159.2
-ARG CLAUDE_CODE_VERSION=2.1.299
+FROM node:24-bookworm-slim AS agent-tools
+ARG ACPX_VERSION=0.21.1
+ARG CODEX_VERSION=0.164.0
+ARG CLAUDE_CODE_VERSION=2.1.311
 RUN npm install --prefix /opt/orc-tools --omit=dev \
     acpx@${ACPX_VERSION} @openai/codex@${CODEX_VERSION} @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
-FROM oven/bun:1.4.2-slim AS runner
+FROM oven/bun:1.4.4-slim AS runner
 WORKDIR /app
 
 # The Bun base image provides the unprivileged `bun` user (UID 1000), which

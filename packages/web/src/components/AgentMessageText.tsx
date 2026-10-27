@@ -28,19 +28,19 @@ export function AgentMessageText({
         </summary>
         <pre
           data-testid="agent-context-content"
-          className="max-h-80 overflow-auto border-t border-outline-variant p-3 whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-mono text-xs"
+          className="max-h-80 overflow-auto border-t border-outline-variant p-3 whitespace-pre-wrap wrap-break-word wrap-anywhere font-mono text-xs"
         >
           {part.text}
         </pre>
       </details>
     ) : plain ? (
-      <pre key={part.offset} className="whitespace-pre-wrap break-words text-sm">
+      <pre key={part.offset} className="whitespace-pre-wrap wrap-break-word text-sm">
         {part.text}
       </pre>
     ) : (
       <Markdown
         key={part.offset}
-        fallback={<p className="whitespace-pre-wrap break-words">{part.text}</p>}
+        fallback={<p className="whitespace-pre-wrap wrap-break-word">{part.text}</p>}
       >
         {part.text}
       </Markdown>

@@ -92,7 +92,7 @@ export function ChatSessionPicker() {
             <Button variant="ghost" disabled={pending} onClick={() => setSelectedArchive(null)}>
               Back to conversations
             </Button>
-            <h3 className="font-medium break-words">{selectedArchive.title}</h3>
+            <h3 className="font-medium wrap-break-word">{selectedArchive.title}</h3>
             <p className="text-sm text-muted-foreground">
               Resume from a pushed repository, branch and exact commit. ORC verifies the checkout
               and imports the native history before opening chat.
@@ -242,7 +242,7 @@ export function ChatSessionPicker() {
           </>
         )}
         {(error || threads.error || live.error || archive.error) && (
-          <p role="alert" className="text-sm text-error break-words">
+          <p role="alert" className="text-sm text-error wrap-break-word">
             {error || threads.error?.message || live.error?.message || archive.error?.message}
           </p>
         )}
@@ -345,7 +345,7 @@ export function ChatModelPicker() {
         <p
           data-testid="chat-model-warning"
           role={error ? "alert" : "status"}
-          className="mt-1 text-xs text-on-surface-variant break-words"
+          className="mt-1 text-xs text-on-surface-variant wrap-break-word"
         >
           {error || warning}
         </p>
@@ -375,7 +375,7 @@ export function ChatConversationInfo() {
           Loosening permissions applies right away, including to a pending approval. Stricter
           permissions apply to your next message. Change new-chat defaults in Settings.
         </DialogDescription>
-        <dl className="space-y-3 text-sm break-words">
+        <dl className="space-y-3 text-sm wrap-break-word">
           <div>
             <dt className="text-muted-foreground">Agent and working folder</dt>
             <dd>
@@ -403,7 +403,7 @@ export function ChatConversationInfo() {
         <ChatAgentOptionsEditor key={`${config.agent}:${thread?.id ?? "new"}`} />
         <details className="text-sm">
           <summary className="min-h-11 cursor-pointer py-3">Conversation instructions</summary>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words text-xs">
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap wrap-break-word text-xs">
             {config.system || "No additional instructions"}
           </pre>
           <p className="mt-2 text-xs text-muted-foreground">

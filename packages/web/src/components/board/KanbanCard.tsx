@@ -95,7 +95,7 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
           <div className="flex flex-wrap items-center gap-1.5 min-w-0">
             <PriorityBadge priority={task.priority} />
             <span
-              className="flex-shrink-0 w-4 h-4 rounded-lg bg-surface-highest
+              className="shrink-0 w-4 h-4 rounded-lg bg-surface-highest
                 text-[8px] font-label font-bold text-outline
                 flex items-center justify-center"
             >
@@ -106,7 +106,7 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
               <span
                 data-testid="kanban-card-status"
                 className="text-xs font-label text-on-surface-variant
-                  px-1.5 py-0.5 rounded flex-shrink-0"
+                  px-1.5 py-0.5 rounded shrink-0"
               >
                 {statusLabel}
               </span>
@@ -123,7 +123,7 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
             ))}
           </div>
 
-          <div className="flex items-center gap-1.5 flex-shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             {!isDragOverlay && (
               <button
                 type="button"
@@ -134,7 +134,7 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
                 title="Move task with Space, arrow keys, then Space to drop"
                 onPointerUp={(event) => event.stopPropagation()}
                 onClick={(event) => event.stopPropagation()}
-                className="inline-flex min-h-11 min-w-11 md:min-h-8 md:min-w-8 items-center justify-center rounded text-outline hover:text-on-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                className="inline-flex min-h-11 min-w-11 md:min-h-8 md:min-w-8 items-center justify-center rounded text-outline hover:text-on-surface focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-primary"
               >
                 <GripVertical size={14} />
               </button>

@@ -82,7 +82,7 @@ export function FlowGraph({ definition, states, selectedNodeId, onSelectNode }: 
 
   return (
     <div
-      className="overflow-x-auto border border-surface-highest rounded-sm bg-surface-low"
+      className="overflow-x-auto border border-surface-highest rounded-xs bg-surface-low"
       data-testid="flow-graph"
       data-flow-name={definition.name}
     >

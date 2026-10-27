@@ -174,11 +174,11 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
             onClick={() => openDetail(profile.id)}
             className="w-full text-left border-b border-outline-variant p-4 hover:bg-surface-low"
           >
-            <span className="block break-words text-base font-medium">{profile.name}</span>
+            <span className="block wrap-break-word text-base font-medium">{profile.name}</span>
             <span className="mt-1 block break-all text-xs text-muted-foreground">
               {profile.id} · {profile.source}
             </span>
-            <p className="mt-2 break-words text-sm leading-relaxed text-muted-foreground">
+            <p className="mt-2 wrap-break-word text-sm leading-relaxed text-muted-foreground">
               {profile.description}
             </p>
           </button>
@@ -260,7 +260,7 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
                 <dl className="grid grid-cols-2 gap-4 text-sm">
                   <div>
                     <dt className="text-xs text-muted-foreground">Model</dt>
-                    <dd className="mt-1 break-words">
+                    <dd className="mt-1 wrap-break-word">
                       {agent.data.fields.model ?? "Coding-agent default"}
                     </dd>
                   </div>

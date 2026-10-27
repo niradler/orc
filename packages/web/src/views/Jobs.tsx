@@ -217,7 +217,7 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                 />
                 <button
                   type="button"
-                  className="min-w-0 text-left font-medium text-sm text-on-surface break-words hover:text-primary"
+                  className="min-w-0 text-left font-medium text-sm text-on-surface wrap-break-word hover:text-primary"
                   data-testid="job-open-detail"
                   onClick={() => openJobDetail(job.id)}
                 >
@@ -237,7 +237,7 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                 </Button>
               </div>
               {job.description && (
-                <p className="text-sm text-outline break-words">{job.description}</p>
+                <p className="text-sm text-outline wrap-break-word">{job.description}</p>
               )}
               <code className="block whitespace-pre-wrap break-all text-xs text-on-surface-variant">
                 {job.action?.type === "agent"

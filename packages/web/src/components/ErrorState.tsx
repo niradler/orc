@@ -11,7 +11,7 @@ export function ErrorState({ message, onRetry }: ErrorStateProps) {
       data-testid="error-state"
       className="flex flex-col items-center justify-center gap-3 px-4 py-16"
     >
-      <p role="alert" className="max-w-prose break-words text-center text-sm text-error">
+      <p role="alert" className="max-w-prose wrap-break-word text-center text-sm text-error">
         {message}
       </p>
       {onRetry && (

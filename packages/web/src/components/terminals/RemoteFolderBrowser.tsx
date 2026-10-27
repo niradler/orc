@@ -45,7 +45,7 @@ export function RemoteFolderBrowser({ initial, host, onPick, onClose }: RemoteFo
         </span>
       </div>
       {error && (
-        <p className="px-1 font-body text-xs text-error break-words">
+        <p className="px-1 font-body text-xs text-error wrap-break-word">
           {error instanceof Error ? error.message : String(error)}
         </p>
       )}

@@ -123,7 +123,7 @@ export function PackageImportDialog({
   }
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
-      <DialogContent className="min-w-0 grid-cols-[minmax(0,1fr)] w-[calc(100%_-_1rem)] max-w-xl max-h-[94dvh] overflow-x-hidden overflow-y-auto p-4 sm:p-6">
+      <DialogContent className="min-w-0 grid-cols-[minmax(0,1fr)] w-[calc(100%-1rem)] max-w-xl max-h-[94dvh] overflow-x-hidden overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>Import a package</DialogTitle>
           <DialogDescription>
@@ -205,7 +205,7 @@ export function PackageImportDialog({
                         checked={selection === `${pkg.format}:${pkg.path}`}
                         onChange={() => setSelection(`${pkg.format}:${pkg.path}`)}
                       />
-                      <span className="min-w-0 break-words">
+                      <span className="min-w-0 wrap-break-word">
                         <strong className="block text-sm">
                           {pkg.name}
                           {pkg.installed ? " · already in catalog" : ""}
@@ -221,7 +221,11 @@ export function PackageImportDialog({
                 </div>
                 {!candidates.length && <p>No APM or Plugin packages found in this repository.</p>}
                 {discover.data?.issues.map((issue) => (
-                  <p role="alert" className="text-xs text-destructive break-words" key={issue.path}>
+                  <p
+                    role="alert"
+                    className="text-xs text-destructive wrap-break-word"
+                    key={issue.path}
+                  >
                     {issue.path}: {issue.error}
                   </p>
                 ))}

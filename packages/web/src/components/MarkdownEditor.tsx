@@ -136,7 +136,7 @@ export function MarkdownEditor({
       data-testid="markdown-editor"
       data-expanded={expanded}
       data-document-expanded={expanded}
-      className={`flex min-w-0 flex-col ${flowing ? "" : "min-h-0 rounded-md border border-surface-highest bg-surface"} ${expanded ? "fixed inset-2 z-[60] sm:inset-6" : ""}`}
+      className={`flex min-w-0 flex-col ${flowing ? "" : "min-h-0 rounded-md border border-surface-highest bg-surface"} ${expanded ? "fixed inset-2 z-60 sm:inset-6" : ""}`}
       style={style}
       aria-label={`Document ${path}`}
       onKeyDown={(event) => {
@@ -236,12 +236,12 @@ export function MarkdownEditor({
             {/* A page keeps prose at a reading measure while code, tables and images use the
                 column; a frame centers the whole document. */}
             <div
-              className={`break-words ${flowing ? "[&_:is(p,ul,ol,blockquote,h1,h2,h3,h4,h5,h6)]:max-w-[72ch]" : "mx-auto max-w-[76ch]"}`}
+              className={`wrap-break-word ${flowing ? "[&_:is(p,ul,ol,blockquote,h1,h2,h3,h4,h5,h6)]:max-w-[72ch]" : "mx-auto max-w-[76ch]"}`}
             >
               {rendered.metadata !== null && !hideFrontmatter && (
                 <details className="mb-5 rounded border border-surface-highest p-3 text-sm text-outline">
                   <summary className="cursor-pointer">Document metadata</summary>
-                  <pre className="mt-3 whitespace-pre-wrap break-words font-mono text-xs">
+                  <pre className="mt-3 whitespace-pre-wrap wrap-break-word font-mono text-xs">
                     {rendered.metadata}
                   </pre>
                 </details>

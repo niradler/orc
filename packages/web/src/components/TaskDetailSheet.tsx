@@ -190,7 +190,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                 {task.body && (
                   <div className="space-y-1">
                     <div className="font-label text-xs font-medium text-outline">Body</div>
-                    <div className="font-body text-sm text-on-surface whitespace-pre-wrap break-words bg-transparent p-3 rounded-lg border border-border">
+                    <div className="font-body text-sm text-on-surface whitespace-pre-wrap wrap-break-word bg-transparent p-3 rounded-lg border border-border">
                       {task.body}
                     </div>
                   </div>
@@ -401,7 +401,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                               {new Date(c.created_at).toLocaleString()}
                             </span>
                           </div>
-                          <div className="font-body text-sm text-on-surface whitespace-pre-wrap break-words">
+                          <div className="font-body text-sm text-on-surface whitespace-pre-wrap wrap-break-word">
                             {c.content}
                           </div>
                         </div>

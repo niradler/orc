@@ -389,18 +389,22 @@ export function WorktreeManager({
               );
             })}
             {registry.data?.errors.map((item) => (
-              <p key={item.cwd} role="alert" className="font-body text-xs text-error break-words">
+              <p
+                key={item.cwd}
+                role="alert"
+                className="font-body text-xs text-error wrap-break-word"
+              >
                 {item.cwd}: {item.error}
               </p>
             ))}
           </div>
           {error && (
-            <p role="alert" className="font-body text-xs text-error break-words">
+            <p role="alert" className="font-body text-xs text-error wrap-break-word">
               {error}
             </p>
           )}
           {cleanup.error && (
-            <p role="alert" className="font-body text-xs text-error break-words">
+            <p role="alert" className="font-body text-xs text-error wrap-break-word">
               {cleanup.error.message}
             </p>
           )}

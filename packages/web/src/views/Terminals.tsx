@@ -465,7 +465,7 @@ export default function Terminals() {
               </div>
 
               {actionError && (
-                <span role="alert" className="w-full font-body text-sm text-error break-words">
+                <span role="alert" className="w-full font-body text-sm text-error wrap-break-word">
                   {actionError}
                 </span>
               )}
@@ -475,7 +475,7 @@ export default function Terminals() {
               )}
             </header>
             {!isDesktop && actionError && (
-              <p role="alert" className="p-2 text-sm text-error break-words">
+              <p role="alert" className="p-2 text-sm text-error wrap-break-word">
                 {actionError}
               </p>
             )}
@@ -528,7 +528,7 @@ export default function Terminals() {
           <SheetBody className="space-y-4">
             {mobileTerminal && (
               <div className="space-y-2 text-sm">
-                <p className="break-words font-medium">{mobileTerminal.name}</p>
+                <p className="wrap-break-word font-medium">{mobileTerminal.name}</p>
                 <p className="break-all text-on-surface-variant">{mobileTerminal.cwd}</p>
                 <p>{terminalStatus(mobileTerminal, connectionOf(mobileTerminal.id))}</p>
                 {mobileTerminal.live_session_id && (

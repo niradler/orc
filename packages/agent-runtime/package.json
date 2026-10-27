@@ -12,11 +12,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.220",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.311",
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*"
   },
   "optionalDependencies": {
-    "acpx": "^0.12.1"
+    "acpx": "^0.21.1"
   }
 }

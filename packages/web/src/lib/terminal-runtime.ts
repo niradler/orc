@@ -167,7 +167,7 @@ export function createRuntime(
   frame.dataset.testid = "terminal-surface";
   frame.style.touchAction = "none";
   const element = document.createElement("div");
-  element.className = "absolute inset-0 overflow-hidden outline-none";
+  element.className = "absolute inset-0 overflow-hidden outline-hidden";
   element.style.padding = "8px";
   // iOS would otherwise answer a long press outside the text with its own callout and loupe.
   element.style.setProperty("-webkit-touch-callout", "none");

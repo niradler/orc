@@ -39,12 +39,12 @@
     "@orc/runner": "workspace:*",
     "@orc/sdk": "workspace:*",
     "@orc/web": "workspace:*",
-    "commander": "^14.0.3"
+    "commander": "^15.0.0"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.220",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.311",
     "sqlite-vec": "0.1.9",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "peerDependencies": {
     "bun": ">=1.4.2"
@@ -84,7 +84,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "optionalDependencies": {
-    "acpx": "^0.12.1",
-    "skills": "1.7.2"
+    "acpx": "^0.21.1",
+    "skills": "1.7.4"
   }
 }

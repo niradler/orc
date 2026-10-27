@@ -19,12 +19,12 @@
   "dependencies": {
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
-    "croner": "^10.0.1",
+    "croner": "^11.0.0",
     "fflate": "0.8.3",
     "mammoth": "1.13.0",
     "sqlite-vec": "0.1.9",
     "turndown": "7.2.4",
-    "unpdf": "1.9.0",
+    "unpdf": "1.9.1",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {

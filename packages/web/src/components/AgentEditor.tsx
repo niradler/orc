@@ -105,7 +105,7 @@ export function AgentEditor({ agent, pending, error, onSave }: Props) {
               <select
                 id="agent-template"
                 data-testid="agent-template"
-                className="w-full border rounded-sm p-2 bg-surface"
+                className="w-full border rounded-xs p-2 bg-surface"
                 defaultValue="specialist"
                 onChange={(event) => {
                   const template =

@@ -492,7 +492,7 @@ export function CommandPalette({
                 data-testid={`palette-filter-${value.toLowerCase()}`}
                 aria-pressed={filter === value}
                 className={cn(
-                  "shrink-0 rounded-md px-3 py-2 text-xs focus-visible:outline focus-visible:outline-2",
+                  "shrink-0 rounded-md px-3 py-2 text-xs focus-visible:outline-solid focus-visible:outline-2",
                   filter === value
                     ? "bg-surface-highest text-on-surface"
                     : "text-outline hover:bg-surface",

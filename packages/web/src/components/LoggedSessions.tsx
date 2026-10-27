@@ -78,12 +78,12 @@ export function LoggedSessions({ projectId }: { projectId: string }) {
                 >
                   <button
                     type="button"
-                    className="min-h-11 text-sm text-left font-medium text-primary break-words"
+                    className="min-h-11 text-sm text-left font-medium text-primary wrap-break-word"
                     onClick={() => openDetail(session.id)}
                   >
                     {session.agent ?? "Session"}
                   </button>
-                  <p className="text-sm leading-relaxed text-on-surface break-words">
+                  <p className="text-sm leading-relaxed text-on-surface wrap-break-word">
                     {session.summary ?? "No summary recorded"}
                   </p>
                   <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-outline">

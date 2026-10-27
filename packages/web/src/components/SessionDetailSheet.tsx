@@ -108,7 +108,7 @@ export function SessionDetailSheet({ sessionId, open, onClose }: SessionDetailSh
                 <div>
                   <div className="font-label text-xs font-medium text-outline mb-3">Snapshot</div>
                   <ScrollArea className="h-[200px]">
-                    <pre className="font-mono text-xs text-on-surface-variant whitespace-pre-wrap break-words bg-background border-l border-border p-3">
+                    <pre className="font-mono text-xs text-on-surface-variant whitespace-pre-wrap wrap-break-word bg-background border-l border-border p-3">
                       {detail.snapshot}
                     </pre>
                   </ScrollArea>
@@ -136,12 +136,12 @@ function EventRow({ event }: { event: SessionEvent }) {
       >
         {hasData ? (
           expanded ? (
-            <ChevronDown size={10} className="text-outline flex-shrink-0" />
+            <ChevronDown size={10} className="text-outline shrink-0" />
           ) : (
-            <ChevronRight size={10} className="text-outline flex-shrink-0" />
+            <ChevronRight size={10} className="text-outline shrink-0" />
           )
         ) : (
-          <span className="w-[10px] flex-shrink-0" />
+          <span className="w-[10px] shrink-0" />
         )}
         <span
           className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-label font-medium  ${getEventColor(event.type)}`}
@@ -151,13 +151,13 @@ function EventRow({ event }: { event: SessionEvent }) {
         <span className="flex-1 font-body text-xs text-outline truncate">
           {summarizeEventData(event.data)}
         </span>
-        <span className="font-label text-[10px] text-outline flex-shrink-0">
+        <span className="font-label text-[10px] text-outline shrink-0">
           {new Date(event.created_at).toLocaleTimeString()}
         </span>
       </button>
       {expanded && hasData && (
         <div className="px-3 pb-2">
-          <pre className="font-mono text-xs text-on-surface-variant whitespace-pre-wrap break-words bg-background border-l border-border/65 p-2 max-h-48 overflow-auto">
+          <pre className="font-mono text-xs text-on-surface-variant whitespace-pre-wrap wrap-break-word bg-background border-l border-border/65 p-2 max-h-48 overflow-auto">
             {JSON.stringify(event.data, null, 2)}
           </pre>
         </div>

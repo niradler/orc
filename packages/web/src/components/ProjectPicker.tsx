@@ -85,7 +85,7 @@ export function ProjectPicker({
           <Popover.Content
             align="start"
             sideOffset={8}
-            className="z-[60] w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface-high p-2 text-on-surface shadow-xl"
+            className="z-60 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface-high p-2 text-on-surface shadow-xl"
             aria-label="Switch project"
           >
             <Input

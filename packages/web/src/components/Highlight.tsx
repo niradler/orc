@@ -9,7 +9,7 @@ export function Highlight({ text, query }: { text: string; query: string }) {
       {parts.map((part, i) =>
         part.toLowerCase() === q.toLowerCase() ? (
           // biome-ignore lint/suspicious/noArrayIndexKey: parts are positional
-          <mark key={i} className="bg-primary/30 text-on-surface rounded-sm">
+          <mark key={i} className="bg-primary/30 text-on-surface rounded-xs">
             {part}
           </mark>
         ) : (

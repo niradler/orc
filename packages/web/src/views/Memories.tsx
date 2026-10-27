@@ -456,7 +456,7 @@ function MemoryDetailSheet({
                 <div className="font-label text-sm text-muted-foreground mb-2">Content</div>
                 <div
                   data-testid="memory-detail-content"
-                  className="whitespace-pre-wrap break-words font-body text-sm text-on-surface border border-outline-variant p-3"
+                  className="whitespace-pre-wrap wrap-break-word font-body text-sm text-on-surface border border-outline-variant p-3"
                 >
                   {memory.content}
                 </div>
@@ -679,7 +679,7 @@ function MemoryFormDialog({
     <Dialog open onOpenChange={(open) => !open && !mutation.isPending && onClose()}>
       <DialogContent
         data-testid="memory-form-dialog"
-        className="bg-surface border-outline-variant w-[calc(100%_-_1rem)] max-w-2xl max-h-[94dvh] overflow-y-auto"
+        className="bg-surface border-outline-variant w-[calc(100%-1rem)] max-w-2xl max-h-[94dvh] overflow-y-auto"
       >
         <DialogHeader>
           <DialogTitle className="font-headline text-base text-on-surface">

@@ -129,13 +129,13 @@ function ToolBox({
       </summary>
       <div className="space-y-2 border-t border-border px-2 py-2">
         <div className="font-label text-[10px] font-medium text-outline">input</div>
-        <pre className="max-h-72 overflow-auto rounded-lg bg-background p-2 font-mono text-xs text-on-surface-variant whitespace-pre-wrap break-words">
+        <pre className="max-h-72 overflow-auto rounded-lg bg-background p-2 font-mono text-xs text-on-surface-variant whitespace-pre-wrap wrap-break-word">
           {prettyInput(block.input)}
         </pre>
         {done && (
           <>
             <div className="font-label text-[10px] font-medium text-outline">result</div>
-            <pre className="max-h-96 overflow-auto rounded-lg bg-background p-2 font-mono text-xs text-on-surface-variant whitespace-pre-wrap break-words">
+            <pre className="max-h-96 overflow-auto rounded-lg bg-background p-2 font-mono text-xs text-on-surface-variant whitespace-pre-wrap wrap-break-word">
               {block.result}
             </pre>
           </>
@@ -160,7 +160,7 @@ function Block({ block, matched }: { block: TurnBlock; matched: boolean }) {
           <Markdown>{block.text}</Markdown>
         </div>
       ) : (
-        <pre className="mt-1 max-h-96 overflow-auto rounded-lg bg-background p-2 font-mono text-xs text-on-surface-variant whitespace-pre-wrap break-words">
+        <pre className="mt-1 max-h-96 overflow-auto rounded-lg bg-background p-2 font-mono text-xs text-on-surface-variant whitespace-pre-wrap wrap-break-word">
           {block.text}
         </pre>
       )}
