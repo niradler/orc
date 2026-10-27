@@ -60,7 +60,8 @@ export async function preparePackageLaunch(
     if (setup.agent && !profile) throw new ValidationError(`Agent not found: ${setup.agent}`);
     const files = new Map<string, { content: string; encoding: "utf8" | "base64" }>();
     const staged: NonNullable<PackagePlan["steps"][number]["files"]> = [];
-    const root = posix.join(resolved.cwd, ".orc", "package-sources", ulid());
+    const sourceRoot = posix.join(resolved.cwd, ".orc", "package-sources");
+    const root = posix.join(sourceRoot, ulid());
     for (const pkg of packages) {
       staged.push({
         path: posix.join(root, pkg.name, pkg.manifestFile),
@@ -86,7 +87,7 @@ export async function preparePackageLaunch(
       (argv, minimum) => {
         requirements.push([argv[0] as string, minimum]);
       },
-      { cwd: resolved.cwd, packages, profile, files, join: posix.join },
+      { cwd: resolved.cwd, packages, profile, files, join: posix.join, apmSourceRoot: sourceRoot },
     );
     for (const [binary, minimum] of requirements) {
       const version = await transport.exec(host, [binary, "--version"], { timeoutMs: 10000 });

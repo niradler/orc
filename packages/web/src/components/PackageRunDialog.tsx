@@ -279,10 +279,18 @@ export function PackageRunDialog({
           >
             <p className="font-medium">Configuration to apply</p>
             {profile.data && (
-              <p>
-                {profile.data.name} · agent instructions
-                {profile.data.fields.model ? ` · ${profile.data.fields.model}` : ""}
-              </p>
+              <>
+                <p>
+                  {profile.data.name} · agent instructions
+                  {profile.data.fields.model ? ` · ${profile.data.fields.model}` : ""}
+                </p>
+                {host && (
+                  <p className="text-xs text-outline">
+                    Supporting files referenced by this agent are not transferred. Make them
+                    available at the referenced paths on {host}.
+                  </p>
+                )}
+              </>
             )}
             {components.isFetching && <p>Checking package contents…</p>}
             {components.data?.map((pkg) => (

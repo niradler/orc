@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { createAgent, discoverAgents, getUserAgentsDir } from "./agent-service.js";
 import {
   buildPackagePlan,
@@ -10,7 +10,8 @@ import {
   packagePlanArgv,
   saveAgentSetup,
 } from "./package-launch.js";
-import { createPackage, getPackagesDir } from "./package-service.js";
+import { createPackage, getPackagesDir, readPackage } from "./package-service.js";
+import { readSkillFile } from "./skill-files.js";
 import { listSkills, reloadCache } from "./skill-service.js";
 
 const cwd = mkdtempSync(join(tmpdir(), "orc-launch-test-"));
@@ -123,6 +124,106 @@ describe("package reuse and launch boundaries", () => {
       "codex",
       "--copy",
     ]);
+  });
+  test("native plugin revisions use fresh sources without changing the installed identity", () => {
+    const pkg = readPackage(name);
+    if (!pkg) throw Error("Missing plugin fixture");
+    const files = new Map<string, { content: string; encoding: "utf8" | "base64" }>(
+      pkg.files.map((file) => [
+        `${pkg.name}/${file.name}`,
+        readSkillFile(pkg.path, file.name, false),
+      ]),
+    );
+    const mcp = JSON.stringify({
+      $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+      mcpServers: { obsolete: { type: "streamable-http", url: "http://127.0.0.1:1/mcp" } },
+    });
+    files.set(`${pkg.name}/mcp.json`, { content: mcp, encoding: "utf8" });
+    const before = buildPackagePlan({ ...input, backend: "codex" }, tools, which, qualify, {
+      cwd,
+      packages: [{ ...pkg, files: [...pkg.files, { name: "mcp.json", path: "mcp.json" }] }],
+      profile: null,
+      files,
+      join,
+    });
+    const after = buildPackagePlan({ ...input, backend: "codex" }, tools, which, qualify, {
+      cwd,
+      packages: [{ ...pkg, files: pkg.files.filter((file) => file.name !== "assets/icon.bin") }],
+      profile: null,
+      files,
+      join,
+    });
+    const source = (plan: PackagePlan) => {
+      const manifest = plan.steps[0]?.files?.find((file) => file.path.endsWith("marketplace.json"));
+      if (!manifest) throw Error("Missing marketplace");
+      return JSON.parse(manifest.content).plugins[0].source.path as string;
+    };
+    expect(before.steps[0]?.argv).toEqual(after.steps[0]?.argv);
+    expect(before.steps[1]?.argv).toEqual(after.steps[1]?.argv);
+    expect(source(before)).not.toBe(source(after));
+    for (const plan of [before, after]) {
+      const materialize = plan.steps[0];
+      if (!materialize) throw Error("Missing files");
+      const result = Bun.spawnSync(
+        packagePlanArgv(
+          {
+            ...plan,
+            steps: [{ ...materialize, argv: [process.execPath, "--eval", ""] }],
+          },
+          process.execPath,
+        ),
+        { timeout: 10000 },
+      );
+      expect(result.exitCode).toBe(0);
+    }
+    const root = before.steps[0]?.argv.at(-1) as string;
+    expect(readFileSync(join(root, source(before), "assets/icon.bin"))).toEqual(
+      Buffer.from("AAEC/w==", "base64"),
+    );
+    expect(() => readFileSync(join(root, source(after), "assets/icon.bin"))).toThrow();
+    expect(readFileSync(join(root, source(before), "mcp.json"), "utf8")).toBe(mcp);
+    expect(() => readFileSync(join(root, source(after), "mcp.json"))).toThrow();
+  });
+  test("SSH APM relaunch replaces only selected ORC-managed sources", () => {
+    const project = join(cwd, "remote-manifest");
+    mkdirSync(project);
+    const sourceRoot = "/srv/work/.orc/package-sources";
+    const first = "01J00000000000000000000000";
+    const second = "01J00000000000000000000001";
+    const selected = `${sourceRoot}/${first}/repeat`;
+    const preserved = [
+      "./user-package",
+      `${sourceRoot}/${first}/other`,
+      `${sourceRoot}/custom/repeat`,
+    ];
+    writeFileSync(
+      join(project, "apm.yml"),
+      Bun.YAML.stringify({ dependencies: { apm: [...preserved, selected] } }),
+    );
+    const makePlan = (id: string): PackagePlan => {
+      const pkg = readPackage(name);
+      if (!pkg) throw Error("Missing package fixture");
+      const plan = buildPackagePlan({ ...input, packages: ["repeat"] }, tools, which, qualify, {
+        cwd: project,
+        packages: [{ ...pkg, name: "repeat", path: `${sourceRoot}/${id}/repeat`, format: "apm" }],
+        profile: null,
+        files: new Map(),
+        join: posix.join,
+        apmSourceRoot: sourceRoot,
+      });
+      const install = plan.steps[0];
+      if (!install) throw Error("Missing APM install");
+      return { ...plan, steps: [{ ...install, argv: [process.execPath, "--eval", ""] }] };
+    };
+    for (const id of [second, second]) {
+      const result = Bun.spawnSync(packagePlanArgv(makePlan(id), process.execPath), {
+        timeout: 10000,
+      });
+      expect(result.exitCode).toBe(0);
+      expect(Bun.YAML.parse(readFileSync(join(project, "apm.yml"), "utf8"))).toEqual({
+        dependencies: { apm: [...preserved, `${sourceRoot}/${second}/repeat`] },
+      });
+    }
   });
   test("Claude receives profile instructions, model and an explicit tool allowlist", () => {
     createAgent(

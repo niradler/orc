@@ -41,8 +41,10 @@ Deployment is persistent. For SSH, ORC transfers selected source files to a priv
 staging folder under the working folder's `.orc/` directory before preparation.
 APM extends the working folder's
 `dependencies.apm` in `apm.yml`, retaining other configuration and existing
-dependencies; serialization may reformat YAML. It then owns dependency
-resolution, locking, target deployment and admission. Vercel copies selected
+dependencies; serialization may reformat YAML.
+ORC replaces earlier generated SSH source entries for the selected package on
+relaunch, preserving user-managed dependencies and other package selections.
+APM then owns dependency resolution, locking, target deployment and admission. Vercel copies selected
 skills into its normal project destinations. Existing project configuration and
 packages may also be available to the agent. ORC does not grant folder trust or
 add permission-bypass flags. Resolve upstream trust/authentication/conflict
@@ -50,13 +52,17 @@ prompts in the terminal. Package code executes only through an explicit launch.
 
 Codex uses its native marketplace and plugin commands for whole plugins. The
 source snapshot stays under `.orc/plugin-marketplaces/` in the working folder;
-the installed plugin and activation settings live in Codex's user cache/config
+each revision has a fresh content snapshot while its installed identity stays
+stable, so removed files do not remain active after reinstalling.
+The installed plugin and activation settings live in Codex's user cache/config
 on that host and can be available to other Codex sessions. Original catalog files
 are preserved. Copilot continues to use APM native registration.
 A skills-only deployment rejects packages containing root `mcp.json`.
 Shared specialist instructions and model selection support Claude and Codex;
 profiles with an explicit tool allowlist require Claude. Other combinations fail
 before launching instead of silently dropping those settings.
+On SSH, standalone agent instructions are applied but their referenced supporting
+files are not transferred; those paths must already be accessible on that host.
 
 Imported plugin skills are discovered only at `skills/<name>/SKILL.md` and use
 package-qualified identities in ORC. Invalid skills are isolated. Original

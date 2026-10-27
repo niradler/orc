@@ -53,6 +53,7 @@ export type PackageStep = {
   cwd: string;
   timeout: number | null;
   apmDependencies?: string[];
+  apmManagedSources?: { root: string; packages: string[] };
   expectedPlugins?: string[];
   files?: { path: string; content: string; encoding: "utf8" | "base64" }[];
   codexPlugins?: { marketplace: string; plugins: { name: string; mcpServers: string[] }[] };
@@ -158,6 +159,7 @@ export function buildPackagePlan(
     profile: AgentFull | null;
     files: Map<string, { content: string; encoding: "utf8" | "base64" }>;
     join: typeof join;
+    apmSourceRoot?: string;
   },
 ): PackagePlan {
   const setup = AgentSetupSchema.parse(input);
@@ -284,20 +286,32 @@ export function buildPackagePlan(
       .slice(0, 16)}`;
     const root = pathJoin(cwd, ".orc", "plugin-marketplaces", marketplace);
     const files: NonNullable<PackageStep["files"]> = [];
+    const sources = new Map<string, string>();
     for (const pkg of plugins) {
+      const snapshot = pkg.files
+        .map((file) => {
+          const content =
+            resolved?.files.get(`${pkg.name}/${file.name}`) ??
+            readSkillFile(pkg.path, file.name, false);
+          return { name: file.name, content: content.content, encoding: content.encoding };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const digest = createHash("sha256")
+        .update(JSON.stringify([pkg.content, snapshot]))
+        .digest("hex");
+      const relative = `./snapshots/${digest}/plugins/${pkg.name}`;
+      sources.set(pkg.name, relative);
+      const pluginRoot = pathJoin(root, relative);
       files.push({
-        path: pathJoin(root, "plugins", pkg.name, pkg.manifestFile),
+        path: pathJoin(pluginRoot, pkg.manifestFile),
         content: pkg.content,
         encoding: "utf8",
       });
-      for (const file of pkg.files) {
-        const content =
-          resolved?.files.get(`${pkg.name}/${file.name}`) ??
-          readSkillFile(pkg.path, file.name, false);
+      for (const file of snapshot) {
         files.push({
-          path: pathJoin(root, "plugins", pkg.name, file.name),
-          content: content.content,
-          encoding: content.encoding,
+          path: pathJoin(pluginRoot, file.name),
+          content: file.content,
+          encoding: file.encoding,
         });
       }
     }
@@ -308,7 +322,7 @@ export function buildPackagePlan(
         name: marketplace,
         plugins: plugins.map((pkg) => ({
           name: pkg.name,
-          source: { source: "local", path: `./plugins/${pkg.name}` },
+          source: { source: "local", path: sources.get(pkg.name) },
           policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
           category: "Productivity",
         })),
@@ -342,6 +356,14 @@ export function buildPackagePlan(
       cwd,
       timeout: 300000,
       apmDependencies: apmPackages.map((pkg) => pkg.path),
+      ...(resolved?.apmSourceRoot
+        ? {
+            apmManagedSources: {
+              root: resolved.apmSourceRoot,
+              packages: apmPackages.map((pkg) => pkg.name),
+            },
+          }
+        : {}),
       expectedPlugins: apmPackages
         .filter((pkg) => pkg.format === "agent-plugin")
         .map((pkg) => pkg.name),
@@ -438,9 +460,15 @@ for(const step of steps){
   manifest.dependencies??={};
   const prior=manifest.dependencies.apm??[];
   if(!Array.isArray(prior))throw Error("apm.yml dependencies.apm must be an array");
-  const added=step.apmDependencies.filter(path=>!prior.includes(path));
-  if(added.length){
-   manifest.dependencies.apm=[...prior,...added];
+  const managed=step.apmManagedSources;
+  const retained=managed?prior.filter(value=>{
+   if(typeof value!=="string"||!value.startsWith(managed.root+"/"))return true;
+   const parts=value.slice(managed.root.length+1).split("/");
+   return parts.length!==2||!(/^[0-9A-HJKMNP-TV-Z]{26}$/).test(parts[0])||!managed.packages.includes(parts[1]);
+  }):prior;
+  const next=[...retained,...step.apmDependencies.filter(path=>!retained.includes(path))];
+  if(JSON.stringify(next)!==JSON.stringify(prior)){
+   manifest.dependencies.apm=next;
    if(existsSync(path)&&readFileSync(path,"utf8")!==original)throw Error("apm.yml changed; retry the launch");
    writeFileSync(path,Bun.YAML.stringify(manifest),{flag:original===null?"wx":"w"});
    console.log("[ORC] Added selected package dependencies to apm.yml (existing configuration retained).");
