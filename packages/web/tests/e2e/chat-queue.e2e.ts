@@ -1,0 +1,227 @@
+import { ChatSettingsSchema } from "@orc/core/chat";
+import { expect, type Locator, type Page, test } from "@playwright/test";
+import { API_SECRET } from "./_helpers";
+
+const headers = { Authorization: `Bearer ${API_SECRET}` };
+test.beforeEach(async ({ page, request }) => {
+  await request.patch("/api/settings", { headers, data: { chat: ChatSettingsSchema.parse({}) } });
+  await page.addInitScript((secret) => {
+    localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
+  }, API_SECRET);
+  await page.goto("/tasks?chat=open");
+});
+
+async function send(panel: Locator, text: string) {
+  await panel.getByTestId("chat-input").fill(text);
+  await panel.getByTestId("chat-send-button").click();
+}
+function posts(page: Page) {
+  const values: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/api/chat/stream"))
+      values.push(request.postDataJSON().messages[0].content);
+  });
+  return values;
+}
+
+test("keeps accepting messages while running and drains edited messages in order", async ({
+  page,
+}) => {
+  const sent = posts(page);
+  const panel = page.getByTestId("chat-panel");
+  await send(panel, "Respond after 2500ms. Reply with exactly: FIRST.");
+  await expect(panel).toHaveAttribute("data-streaming", "true");
+  await expect(panel.getByTestId("chat-input")).toBeEnabled();
+  await send(panel, "Reply with exactly: ORIGINAL.");
+  await send(panel, "Reply with exactly: THIRD.");
+  const pending = panel.getByTestId("chat-queued-message");
+  await expect(pending).toHaveCount(2);
+  await expect(panel.getByTestId("chat-pending-badge")).toHaveText(["Pending", "Pending"]);
+  await pending.first().getByTestId("chat-queued-edit").click();
+  await pending.first().getByTestId("chat-queued-input").fill("Reply with exactly: EDITED.");
+  await expect(panel).toHaveAttribute("data-streaming", "false");
+  expect(sent).toHaveLength(1); // editing reserves the pending entry even when the turn finishes
+  await pending.first().getByTestId("chat-queued-save").click();
+  await expect(pending).toHaveCount(0);
+  await expect(panel).toHaveAttribute("data-streaming", "false");
+  expect(sent).toEqual([
+    "Respond after 2500ms. Reply with exactly: FIRST.",
+    "Reply with exactly: EDITED.",
+    "Reply with exactly: THIRD.",
+  ]);
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText("THIRD");
+});
+
+test("force send stops the live run and prioritizes the selected message once", async ({
+  page,
+}) => {
+  const sent = posts(page);
+  const panel = page.getByTestId("chat-panel");
+  await send(panel, "Respond after 10000ms. Reply with exactly: INTERRUPTED.");
+  await expect(page).toHaveURL(/chatThread=/);
+  await send(panel, "Reply with exactly: LATER.");
+  await send(panel, "Reply with exactly: NOW.");
+  const cancelled = page.waitForResponse((response) =>
+    /\/chat\/runs\/[^/]+\/cancel$/.test(response.url()),
+  );
+  await panel.getByTestId("chat-queued-message").nth(1).getByTestId("chat-queued-force").click();
+  expect((await cancelled).ok()).toBe(true);
+  await expect(panel.getByTestId("chat-queued-message")).toHaveCount(0);
+  await expect(panel).toHaveAttribute("data-streaming", "false");
+  expect(sent.slice(1)).toEqual(["Reply with exactly: NOW.", "Reply with exactly: LATER."]);
+});
+
+test("Stop holds pending messages until explicitly forced", async ({ page }) => {
+  const sent = posts(page);
+  const panel = page.getByTestId("chat-panel");
+  await send(panel, "Respond after 10000ms. Reply with exactly: STOP.");
+  await send(panel, "Reply with exactly: PENDING.");
+  await panel.getByTestId("chat-cancel-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false");
+  await expect(panel.getByTestId("chat-queued-message")).toHaveCount(1);
+  expect(sent).toHaveLength(1);
+  await panel.getByTestId("chat-queued-force").click();
+  await expect(panel.getByTestId("chat-queued-message")).toHaveCount(0);
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText("PENDING");
+  expect(sent).toHaveLength(2);
+});
+
+test("queued messages stay with their background conversation across refresh", async ({ page }) => {
+  const sent = posts(page);
+  const panel = page.getByTestId("chat-panel");
+  await send(panel, "Respond after 2500ms. Reply with exactly: BACKGROUND.");
+  await expect(page).toHaveURL(/chatThread=/);
+  await send(panel, "Reply with exactly: QUEUED.");
+  await panel.getByTestId("chat-refresh-button").click();
+  await expect(panel.getByTestId("chat-queued-message")).toHaveCount(1);
+  await panel.getByTestId("chat-clear-button").click();
+  await expect(panel.getByTestId("chat-queued-message")).toHaveCount(0);
+  await send(panel, "Reply with exactly: OTHER.");
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText("OTHER");
+  await expect(panel.getByTestId("chat-tab").first()).toHaveAttribute("data-state", "attention");
+  await panel.getByTestId("chat-tab").first().getByRole("tab").click();
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText("QUEUED");
+  expect(sent).toHaveLength(3);
+});
+
+test("forcing before a run is named waits for cancellation before dispatching", async ({
+  page,
+}) => {
+  const sent = posts(page);
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let first = true;
+  await page.route("**/api/chat/stream", async (route) => {
+    if (first) {
+      first = false;
+      await held;
+    }
+    await route.continue();
+  });
+  const panel = page.getByTestId("chat-panel");
+  await send(panel, "Respond after 10000ms. Reply with exactly: DELAYED.");
+  await send(panel, "Reply with exactly: FORCED.");
+  await panel.getByTestId("chat-queued-force").click();
+  expect(sent).toHaveLength(1);
+  const cancelled = page.waitForRequest((request) =>
+    /\/chat\/runs\/[^/]+\/cancel$/.test(request.url()),
+  );
+  release();
+  await cancelled;
+  await expect(panel.getByTestId("chat-queued-message")).toHaveCount(0);
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText("FORCED");
+  expect(sent).toHaveLength(2);
+});
+
+test("a failed stop leaves the queue pending and displays the error", async ({ page }) => {
+  const sent = posts(page);
+  const panel = page.getByTestId("chat-panel");
+  await send(panel, "Respond after 3000ms. Reply with exactly: RUNNING.");
+  await expect(page).toHaveURL(/chatThread=/);
+  await send(panel, "Reply with exactly: PENDING.");
+  await page.route("**/api/chat/runs/*/cancel", (route) =>
+    route.fulfill({ status: 503, json: { error: "Unable to stop" } }),
+  );
+  await panel.getByTestId("chat-queued-force").click();
+  await expect(panel.getByTestId("chat-error")).toContainText("Unable to stop");
+  await expect(panel).toHaveAttribute("data-streaming", "false");
+  await expect(panel.getByTestId("chat-queued-message")).toHaveCount(1);
+  expect(sent).toHaveLength(1);
+});
+
+test("queued editing rejects blank text and cancelling retains the original", async ({ page }) => {
+  const panel = page.getByTestId("chat-panel");
+  await send(panel, "Respond after 2000ms. Reply with exactly: FIRST.");
+  await send(panel, "Reply with exactly: ORIGINAL.");
+  await panel.getByTestId("chat-queued-edit").click();
+  await panel.getByTestId("chat-queued-input").fill("   ");
+  await expect(panel.getByTestId("chat-queued-save")).toBeDisabled();
+  await expect(panel.getByTestId("chat-queued-force")).toHaveCount(0);
+  await panel.getByTestId("chat-queued-edit-cancel").click();
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText("ORIGINAL");
+});
+
+test("mobile composer queues messages without overflowing", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const panel = page.getByTestId("chat-panel");
+  await send(panel, "Respond after 2000ms. Reply with exactly: MOBILE.");
+  await send(panel, "x".repeat(200));
+  await expect(panel.getByTestId("chat-pending-badge")).toBeVisible();
+  expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+});
+
+test("desktop Enter queues, Shift+Enter inserts a newline, and whitespace does not send", async ({
+  page,
+}) => {
+  const sent = posts(page);
+  const panel = page.getByTestId("chat-panel");
+  await send(panel, "Respond after 3000ms. Reply with exactly: FIRST.");
+  const input = panel.getByTestId("chat-input");
+  await input.fill("line one");
+  await input.press("Shift+Enter");
+  await input.press("x");
+  await expect(input).toHaveValue("line one\nx");
+  await input.press("Enter");
+  await expect(panel.getByTestId("chat-queued-content")).toHaveText("line one\nx");
+  await expect(input).toHaveValue("");
+  await input.fill("   ");
+  await expect(panel.getByTestId("chat-send-button")).toBeDisabled();
+  await input.press("Enter");
+  await expect(panel.getByTestId("chat-queued-message")).toHaveCount(1);
+  expect(sent).toHaveLength(1);
+});
+
+test("a rejected turn pauses the rest of the queue without retrying POST", async ({ page }) => {
+  const sent = posts(page);
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/chat/stream", async (route) => {
+    await held;
+    await route.fulfill({ status: 400, json: { error: "Rejected turn" } });
+  });
+  const panel = page.getByTestId("chat-panel");
+  await send(panel, "FIRST");
+  await send(panel, "KEEP PENDING");
+  release();
+  await expect(panel.getByTestId("chat-error")).toContainText("Rejected turn");
+  await expect(panel).toHaveAttribute("data-streaming", "false");
+  await expect(panel.getByTestId("chat-queued-content")).toHaveText("KEEP PENDING");
+  expect(sent).toHaveLength(1);
+});
+
+test("closing a conversation cannot dispatch its pending message", async ({ page }) => {
+  const sent = posts(page);
+  const panel = page.getByTestId("chat-panel");
+  await send(panel, "Respond after 1800ms. Reply with exactly: FIRST.");
+  await expect(page).toHaveURL(/chatThread=/);
+  await send(panel, "NEVER SENT");
+  await panel.getByTestId("chat-tab-close").click();
+  await send(panel, "Respond after 2500ms. Reply with exactly: OTHER.");
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText("OTHER");
+  expect(sent).toHaveLength(2);
+  expect(sent).not.toContain("NEVER SENT");
+});

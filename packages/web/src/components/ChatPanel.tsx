@@ -1,4 +1,4 @@
-import { ComposerPrimitive, MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
+import { MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
 import {
   ArrowDown,
   ArrowUp,
@@ -11,7 +11,7 @@ import {
   Square,
   X,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AgentMessageText } from "@/components/AgentMessageText";
 import { ChatActivityList } from "@/components/ChatActivityList";
 import { ChatContinueInTerminal } from "@/components/ChatContinueInTerminal";
@@ -139,7 +139,22 @@ export function ChatPanel({
     question,
     respondQuestion,
     responding,
+    activeKey,
+    queued,
+    editingQueuedId,
+    editQueued,
+    forceQueued,
+    send,
+    cancel,
   } = useChat();
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const draft = drafts[activeKey] ?? "";
+  const setDraft = (value: string) => setDrafts((current) => ({ ...current, [activeKey]: value }));
+  const submit = () => {
+    if (!ready || !draft.trim()) return;
+    void send(draft);
+    setDraft("");
+  };
   const input = useRef<HTMLTextAreaElement>(null);
   const viewport = useRef<HTMLDivElement>(null);
   const historyAnchor = useRef<{ height: number; top: number; threadId: string } | null>(null);
@@ -405,6 +420,33 @@ export function ChatPanel({
           )}
         </div>
       )}
+      {queued.length > 0 && (
+        <section
+          data-testid="chat-message-queue"
+          aria-label="Pending messages"
+          className="mx-auto max-h-[30vh] w-full max-w-3xl shrink-0 overflow-y-auto border-t border-outline-variant px-4 py-2"
+        >
+          <p
+            role="status"
+            data-testid="chat-pending-count"
+            className="mb-1 text-xs text-on-surface-variant"
+          >
+            {queued.length} pending
+          </p>
+          {queued.map((entry) => (
+            <QueuedMessage
+              key={entry.id}
+              content={entry.content}
+              editing={editingQueuedId === entry.id}
+              forceDisabled={refreshing || !!editingQueuedId}
+              onEdit={() => editQueued(entry.id)}
+              onSave={(content) => editQueued(entry.id, content)}
+              onCancel={() => editQueued(null)}
+              onForce={() => forceQueued(entry.id)}
+            />
+          ))}
+        </section>
+      )}
       <div className="chat-composer-footer mx-auto w-full max-w-3xl shrink-0 px-3 pt-2 pb-3">
         <ThreadPrimitive.ScrollToBottom
           aria-label="Scroll to latest response"
@@ -413,15 +455,32 @@ export function ChatPanel({
           <ArrowDown size={14} />
           Latest response
         </ThreadPrimitive.ScrollToBottom>
-        <ComposerPrimitive.Root className="chat-composer-box rounded-lg border border-control-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus">
-          <ComposerPrimitive.Input
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+          className="chat-composer-box rounded-lg border border-control-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus"
+        >
+          <textarea
             ref={input}
             data-testid="chat-input"
             aria-label="Message your agent"
             placeholder="Message your agent…"
-            disabled={streaming || !ready}
-            submitMode="enter"
-            unstable_insertNewlineOnTouchEnter
+            disabled={!ready}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing &&
+                !window.matchMedia("(pointer: coarse)").matches
+              ) {
+                event.preventDefault();
+                submit();
+              }
+            }}
             rows={2}
             className="chat-composer-input block max-h-[min(12rem,calc(var(--app-height,100dvh)*0.3))] w-full resize-none overflow-y-auto bg-transparent p-2 text-base sm:text-sm leading-relaxed placeholder:text-on-surface-variant focus-visible:outline-none disabled:opacity-60"
           />
@@ -436,26 +495,122 @@ export function ChatPanel({
             >
               <Plus size={16} />
             </button>
-            {streaming ? (
-              <ComposerPrimitive.Cancel
-                data-testid="chat-cancel-button"
-                aria-label="Stop response"
-                className={iconButton}
-              >
-                <Square size={17} />
-              </ComposerPrimitive.Cancel>
-            ) : (
-              <ComposerPrimitive.Send
+            <div className="flex items-center gap-1">
+              {streaming && (
+                <button
+                  type="button"
+                  data-testid="chat-cancel-button"
+                  aria-label="Stop response"
+                  onClick={cancel}
+                  className={iconButton}
+                >
+                  <Square size={17} />
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={!ready || !draft.trim()}
                 data-testid="chat-send-button"
-                aria-label="Send message"
+                aria-label={streaming ? "Queue message" : "Send message"}
                 className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-primary text-primary-foreground disabled:opacity-40"
               >
                 <ArrowUp size={18} />
-              </ComposerPrimitive.Send>
-            )}
+              </button>
+            </div>
           </div>
-        </ComposerPrimitive.Root>
+        </form>
       </div>
     </ThreadPrimitive.Root>
+  );
+}
+
+function QueuedMessage({
+  content,
+  editing,
+  forceDisabled,
+  onEdit,
+  onSave,
+  onCancel,
+  onForce,
+}: {
+  content: string;
+  editing: boolean;
+  forceDisabled: boolean;
+  onEdit: () => void;
+  onSave: (content: string) => void;
+  onCancel: () => void;
+  onForce: () => void;
+}) {
+  const [draft, setDraft] = useState(content);
+  return (
+    <div data-testid="chat-queued-message" className="mb-2 rounded-md bg-surface px-3 py-2 text-sm">
+      <span
+        data-testid="chat-pending-badge"
+        className="rounded border border-control-border px-1.5 py-0.5 text-xs text-on-surface-variant"
+      >
+        Pending
+      </span>
+      {editing ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (draft.trim()) onSave(draft);
+          }}
+        >
+          <textarea
+            data-testid="chat-queued-input"
+            aria-label="Edit pending message"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            className="my-2 w-full rounded border border-control-border bg-background p-2"
+          />
+          <button
+            type="submit"
+            data-testid="chat-queued-save"
+            disabled={!draft.trim()}
+            className="min-h-11 px-2 disabled:opacity-40"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            data-testid="chat-queued-edit-cancel"
+            onClick={onCancel}
+            className="min-h-11 px-2"
+          >
+            Cancel
+          </button>
+        </form>
+      ) : (
+        <>
+          <p data-testid="chat-queued-content" className="mt-2 whitespace-pre-wrap break-words">
+            {content}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              data-testid="chat-queued-edit"
+              onClick={() => {
+                setDraft(content);
+                onEdit();
+              }}
+              className="min-h-11 px-2"
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              data-testid="chat-queued-force"
+              disabled={forceDisabled}
+              title="Stop the current response and send this message next"
+              onClick={onForce}
+              className="min-h-11 px-2 disabled:opacity-40"
+            >
+              Force send
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

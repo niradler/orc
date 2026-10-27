@@ -19,7 +19,9 @@ test.describe("Chat panel - end-to-end SSE round-trip", () => {
     await expect(page.getByTestId("chat-panel")).toBeVisible();
   });
 
-  test("sending a message streams an assistant reply and re-enables input", async ({ page }) => {
+  test("sending a message streams an assistant reply while keeping input available", async ({
+    page,
+  }) => {
     const panel = page.getByTestId("chat-panel");
     const input = page.getByTestId("chat-input");
     const marker = "PW-E2E-OK-1";
@@ -32,8 +34,8 @@ test.describe("Chat panel - end-to-end SSE round-trip", () => {
 
     // Streaming flag should flip on (within action timeout)
     await expect(panel).toHaveAttribute("data-streaming", "true");
-    // Input locked while streaming - proves UI respects streaming state
-    await expect(input).toBeDisabled();
+    // Keep composing follow-ups while the current response streams.
+    await expect(input).toBeEnabled();
 
     // Wait for SSE 'done' -> flag flips back
     await expect(panel).toHaveAttribute("data-streaming", "false", {
