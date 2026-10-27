@@ -188,9 +188,53 @@ try {
       });
       assert(answer.ok, "Attention response failed");
       assert.equal(await child.exited, 0, (await stderr).slice(-1000));
+      const output = await stdout;
       assert(
-        (await stdout).includes(approved ? "PROBE_EXECUTED" : "PROBE_DENIED"),
+        output.includes(approved ? "PROBE_EXECUTED" : "PROBE_DENIED"),
         "Native agent did not confirm the decision",
+      );
+      const events: unknown[] = output.split("\n").flatMap((line) => {
+        try {
+          return [JSON.parse(line)];
+        } catch {
+          return [];
+        }
+      });
+      const toolResult = z.object({
+        type: z.literal("user"),
+        message: z.object({
+          content: z.array(
+            z.object({ type: z.string(), is_error: z.boolean().optional(), content: z.unknown() }),
+          ),
+        }),
+      });
+      function hasCommandOutput(value: unknown): boolean {
+        if (!value || typeof value !== "object") return false;
+        return Object.entries(value).some(
+          ([key, entry]) =>
+            (key === "stdout" && typeof entry === "string" && entry.includes(marker)) ||
+            hasCommandOutput(entry),
+        );
+      }
+      const executed =
+        agent === "claude"
+          ? events.some((event) => {
+              const result = toolResult.safeParse(event);
+              return (
+                result.success &&
+                result.data.message.content.some(
+                  (block) =>
+                    block.type === "tool_result" &&
+                    block.is_error !== true &&
+                    JSON.stringify(block.content)?.includes(marker),
+                )
+              );
+            })
+          : events.some(hasCommandOutput);
+      assert.equal(
+        executed,
+        approved,
+        "Actual native tool output does not match the approval decision",
       );
       const delivered = HumanRequestSchema.parse(
         await (

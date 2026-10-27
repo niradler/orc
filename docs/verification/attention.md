@@ -29,8 +29,8 @@ native runtimes, without mocked permission callbacks.
 | Managed Claude question answered in chat | Real AskUserQuestion callback; durable inbox record; chat answer reaches Claude; completion marker and cleanup verified. |
 | Managed Claude approval denied in Attention | Actual Bash permission callback; denial reaches Claude and clears. A harmless Python command is used because simple read-only commands can be allowed without prompting. The existing empty-policy Rules guard isolates user auto-allow settings; no matching rule creates the notice. |
 | Managed cancellation | Cancelling a real waiting Codex run cancels the durable request, rejects late answers and removes the chat notice. |
-| Independent Claude native hook | Separate CLI process, source CLI hook and isolated authenticated API. Approval and denial both return to the native tool; PostToolUse or Stop acknowledges delivery; notice disappears. Only a harmless print command is approved. |
-| Independent Cursor native hook | Separate installed CLI and its actual Shell hook. Approval and denial both round-trip through Attention; lifecycle receipt and dismissal verified. Only a harmless print command is approved. |
+| Independent Claude native hook | Separate CLI process, source CLI hook and isolated authenticated API. Approval and denial both return to the native tool; PostToolUse or Stop acknowledges delivery; notice disappears. The test requires successful native tool output only for approval, rather than relying on the agent's reply. Only a harmless print command is approved. |
+| Independent Cursor native hook | Separate installed CLI and its actual Shell hook. Approval and denial both round-trip through Attention; lifecycle receipt and dismissal verified. The test checks structured native command stdout only for approval. Only a harmless print command is approved. |
 
 The external checks create settings only inside temporary workspaces. They do not
 alter installed agent settings or install hooks into user projects. Provider
@@ -66,6 +66,13 @@ managed response, observed-session dismissal, private-question content exclusion
 multiple hosts with the same native identity, and the existing waiting CLI flow.
 API/runtime tests cover auth, input validation, competing responses, stale versions,
 rule invalidation, cancellation, secret forms and persistence failures.
+
+The screenshot below is from the isolated browser fixture: the same native ID
+has a question on the secondary host and an approval on the local host. Both
+remain visible and the indicator counts two. It demonstrates UI behavior; the
+separate native checks above establish real provider delivery.
+
+![Distinct host notices remain visible](attention-host-visibility.png)
 
 ## Scope and limits
 
