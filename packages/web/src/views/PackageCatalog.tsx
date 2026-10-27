@@ -52,7 +52,7 @@ export default function PackageCatalog() {
     "edit",
   ]);
   const packages = useQuery({ queryKey: ["agent-packages"], queryFn: api.agentPackages.list });
-  const tools = useQuery({ queryKey: ["package-tools"], queryFn: api.packageTools.list });
+  const tools = useQuery({ queryKey: ["package-tools"], queryFn: () => api.packageTools.list() });
   const { selectedId, closeDetail } = useDetailRoute("/packages/item", "packageName");
   const creating = action === "new";
   const setCreating = (open: boolean) => setAction(open ? "new" : "");
@@ -240,7 +240,7 @@ export default function PackageCatalog() {
       <div className="space-y-1">
         <p className="max-w-2xl text-sm text-muted-foreground">
           Keep the instructions, skills and tools you trust in one place. Save a package once, then
-          install it for your coding agent or launch a configured terminal.
+          launch it in chat or a terminal on the host and folder you choose.
         </p>
       </div>
       {notice && (
@@ -319,8 +319,9 @@ export default function PackageCatalog() {
                 {warning}
               </p>
             ))}
-            <div className="mt-5 grid grid-cols-2 gap-2">
+            <div className="mt-4 flex flex-wrap items-center gap-1">
               <Button
+                size="sm"
                 variant="outline"
                 data-testid="package-run"
                 disabled={busy}
@@ -329,7 +330,8 @@ export default function PackageCatalog() {
                 Use package
               </Button>
               <Button
-                variant="outline"
+                size="sm"
+                variant="ghost"
                 data-testid="package-card-edit"
                 onClick={() => void edit(pkg.name)}
               >

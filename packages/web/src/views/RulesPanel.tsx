@@ -250,7 +250,12 @@ export function RulesPanel() {
               Settings
             </TabsTrigger>
           </TabsList>
-          <Button data-testid="rule-new" onClick={(event) => beginAdd(event.currentTarget)}>
+          <Button
+            size="sm"
+            className="ml-auto"
+            data-testid="rule-new"
+            onClick={(event) => beginAdd(event.currentTarget)}
+          >
             Add rule
           </Button>
         </div>
@@ -274,9 +279,11 @@ export function RulesPanel() {
                   </option>
                 ))}
             </select>
-            <span data-testid="rules-status" className="text-xs text-muted-foreground">
-              Enforcement {state.data?.enabled ? "on" : "off"}
-            </span>
+            {policies.some((policy) => policy.policy?.rules.length) && (
+              <span data-testid="rules-status" className="text-xs text-muted-foreground">
+                Enforcement {state.data?.enabled ? "on" : "off"}
+              </span>
+            )}
           </div>
           <div className="overflow-x-auto">
             <table
@@ -549,7 +556,8 @@ export function RulesPanel() {
       </Tabs>
       <Sheet open={editorOpen} onOpenChange={setEditorOpen}>
         <SheetContent
-          className="w-[640px] max-w-[100vw]"
+          defaultWidth={640}
+          resizeKey="rules"
           data-testid="rule-editor-panel"
           aria-describedby="rule-editor-description"
           onOpenAutoFocus={(event) => {

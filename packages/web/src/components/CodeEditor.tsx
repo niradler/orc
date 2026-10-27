@@ -19,6 +19,9 @@ export type CodeEditorProps = {
   header?: ReactNode;
   mode?: MarkdownEditorProps["mode"];
   onModeChange?: MarkdownEditorProps["onModeChange"];
+  layout?: MarkdownEditorProps["layout"];
+  hideFrontmatter?: boolean;
+  pageTitle?: string;
 };
 
 export function CodeEditor(props: CodeEditorProps) {

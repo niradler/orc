@@ -36,7 +36,7 @@ export function SessionDetailSheet({ sessionId, open, onClose }: SessionDetailSh
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent side="right" className="w-[540px] max-w-[90vw]">
+      <SheetContent side="right" defaultWidth={540} resizeKey="sessions">
         <SheetHeader>
           <SheetTitle>
             {isLoading

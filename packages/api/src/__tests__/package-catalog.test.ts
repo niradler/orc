@@ -8,11 +8,20 @@ import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof createApp>;
 const originalDirectory = process.env.ORC_PACKAGES_DIR;
+const originalHome = process.env.HOME;
+const originalProfile = process.env.USERPROFILE;
 beforeAll(() => {
-  process.env.ORC_PACKAGES_DIR = join(mkdtempSync(join(tmpdir(), "orc-catalog-api-")), "packages");
+  const home = mkdtempSync(join(tmpdir(), "orc-catalog-api-"));
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  process.env.ORC_PACKAGES_DIR = join(home, "packages");
   app = setupTestApp();
 });
 afterAll(() => {
+  if (originalHome === undefined) delete process.env.HOME;
+  else process.env.HOME = originalHome;
+  if (originalProfile === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = originalProfile;
   if (originalDirectory === undefined) delete process.env.ORC_PACKAGES_DIR;
   else process.env.ORC_PACKAGES_DIR = originalDirectory;
   reloadCache();
@@ -89,4 +98,74 @@ test("authored plugin MCP must match its schema; imported invalid components sta
   );
   const inspected = await (await req(app, "GET", `/agent-packages/${name}`)).json();
   expect(inspected.warnings.join(" ")).toContain("MCP configuration");
+});
+
+test("agent launches create a local chat in any working folder and preserve the profile on reopen", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-agent-chat-"));
+  const id = `launch-profile-${process.pid}`;
+  expect(
+    (
+      await req(app, "POST", "/agents", {
+        id,
+        content:
+          "---\nname: Launch reviewer\ndescription: Review local evidence\nmodel: profile-model\n---\nUse the selected evidence.",
+      })
+    ).status,
+  ).toBe(201);
+  const setup = {
+    name: "review-launch",
+    packages: [],
+    agent: id,
+    backend: "codex",
+    tool: "apm",
+    cwd,
+    host: null,
+    prompt: "",
+  };
+  const created = await req(app, "POST", "/chat/threads", { setup });
+  expect(created.status).toBe(200);
+  const thread = await created.json();
+  expect(thread).toMatchObject({ cwd, host: null, backend: "codex-cli", title: "Launch reviewer" });
+  expect(thread.config.model).toBe("profile-model");
+  expect(thread.config.system).toContain("Use the selected evidence.");
+  expect((await (await req(app, "GET", `/chat/threads/${thread.id}`)).json()).config).toEqual(
+    thread.config,
+  );
+  expect(
+    (await req(app, "POST", "/chat/threads", { setup: { ...setup, cwd: join(cwd, "missing") } }))
+      .status,
+  ).toBe(400);
+  expect(
+    (
+      await req(app, "POST", "/chat/threads", {
+        setup: { ...setup, host: "not-a-configured-host" },
+      })
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await app.request("/api/chat/threads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ setup }),
+      })
+    ).status,
+  ).toBe(401);
+  const restricted = `${id}-restricted`;
+  expect(
+    (
+      await req(app, "POST", "/agents", {
+        id: restricted,
+        content: "---\ndescription: Restricted agent\ntools: [Read]\n---\nUse evidence.",
+      })
+    ).status,
+  ).toBe(201);
+  expect(
+    (await req(app, "POST", "/chat/threads", { setup: { ...setup, agent: restricted } })).status,
+  ).toBe(400);
+  const allowed = await req(app, "POST", "/chat/threads", {
+    setup: { ...setup, agent: restricted, backend: "claude" },
+  });
+  expect(allowed.status).toBe(200);
+  expect((await allowed.json()).toolAllowlist).toEqual(["Read"]);
 });

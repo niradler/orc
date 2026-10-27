@@ -152,7 +152,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
         {/* Wider than the default sheet so the flow graph has somewhere to go. */}
-        <SheetContent data-testid="task-detail-sheet" className="w-[620px] max-w-[92vw]">
+        <SheetContent data-testid="task-detail-sheet" defaultWidth={620} resizeKey="tasks">
           <SheetHeader>
             {isLoading ? (
               <Skeleton className="h-5 w-48 bg-surface-highest" />

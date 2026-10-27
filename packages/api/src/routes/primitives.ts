@@ -6,7 +6,9 @@ import {
   readAgent,
   updateAgent,
 } from "@orc/core/agent-service";
+import { loadConfig } from "@orc/core/config";
 import { NotFoundError } from "@orc/core/errors";
+import { hostExec } from "@orc/core/exec-host";
 import {
   acquireApmSource,
   discoverRepositoryPackages,
@@ -17,9 +19,7 @@ import {
 } from "@orc/core/package-catalog";
 import {
   AgentSetupSchema,
-  buildPackagePlan,
   listAgentSetups,
-  packagePlanArgv,
   packageToolCommands,
   saveAgentSetup,
 } from "@orc/core/package-launch";
@@ -32,7 +32,9 @@ import {
   readPackageFile,
   updatePackage,
 } from "@orc/core/package-service";
+import { preparePackageLaunch } from "../lib/package-launch.js";
 import { createRouter } from "../lib/router.js";
+import { selectedTerminalHost, TerminalHostQuerySchema } from "../terminals/host.js";
 
 const app = createRouter();
 app.openapi(
@@ -40,6 +42,7 @@ app.openapi(
     method: "get",
     path: "/package-tools",
     tags: ["Agent packages"],
+    request: { query: z.object({ host: TerminalHostQuerySchema }) },
     responses: {
       200: {
         description: "Upstream tooling availability",
@@ -55,7 +58,25 @@ app.openapi(
       },
     },
   }),
-  (c) => {
+  async (c) => {
+    const alias = c.req.valid("query").host;
+    const host = selectedTerminalHost(loadConfig(), alias === "" ? null : alias);
+    if (host.kind === "ssh") {
+      const result = await hostExec(
+        host,
+        [
+          "/bin/sh",
+          "-c",
+          'command -v apm >/dev/null && printf "apm\\n"; command -v bun >/dev/null && printf "bun\\n"',
+        ],
+        { timeoutMs: 10000 },
+      );
+      return c.json({
+        apm: result.stdout.split("\n").includes("apm"),
+        skills: false,
+        bun: result.stdout.split("\n").includes("bun"),
+      });
+    }
     const tools = packageToolCommands();
     return c.json({
       apm: tools.apm !== null,
@@ -588,7 +609,7 @@ app.openapi(
     request: { body: { content: { "application/json": { schema: AgentSetupSchema } } } },
     responses: {
       200: {
-        description: "Command to execute this plan on the API machine",
+        description: "Command to execute this plan on the selected host",
         content: {
           "application/json": {
             schema: z.object({ command: z.string(), shell: z.string(), notice: z.string() }),
@@ -597,12 +618,18 @@ app.openapi(
       },
     },
   }),
-  (c) => {
-    const tools = packageToolCommands();
-    if (!tools.bun) throw new NotFoundError("Executable", "bun");
-    const plan = buildPackagePlan(c.req.valid("json"), tools);
+  async (c) => {
+    const setup = c.req.valid("json");
+    const host = selectedTerminalHost(loadConfig(), setup.host);
+    const { plan, argv } = await preparePackageLaunch(setup, host);
+    if (host.kind === "ssh")
+      return c.json({
+        command: argv.map((part) => `'${part.replaceAll("'", "'\\''")}'`).join(" "),
+        shell: "sh",
+        notice: plan.notice,
+      });
     return c.json({
-      command: writePackageCommand(packagePlanArgv(plan, tools.bun)),
+      command: writePackageCommand(argv),
       shell: process.platform === "win32" ? "PowerShell" : "sh",
       notice: plan.notice,
     });

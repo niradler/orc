@@ -16,7 +16,10 @@ bun.lockb
 .worktrees/
 .examples
 .claude
-.agents
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/orc-release/
 .cursor
 .vscode
 .demo

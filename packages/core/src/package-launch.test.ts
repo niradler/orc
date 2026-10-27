@@ -88,10 +88,20 @@ describe("package reuse and launch boundaries", () => {
     expect(plan.steps[1]?.timeout).toBeNull();
     expect(packagePlanArgv(plan, "/bun")[1]).toBe("--eval");
   });
-  test("refuses unsupported whole-plugin activation and missing tooling", () => {
-    expect(() => buildPackagePlan({ ...input, backend: "codex" }, tools, which, qualify)).toThrow(
-      /Copilot/,
+  test("uses native Codex plugin installation and still rejects missing APM tooling", () => {
+    const plan = buildPackagePlan(
+      { ...input, backend: "codex" },
+      { ...tools, apm: null },
+      which,
+      qualify,
     );
+    expect(plan.steps[0]?.argv.slice(0, 4)).toEqual(["/bin/codex", "plugin", "marketplace", "add"]);
+    expect(plan.steps[0]?.files?.some((file) => file.path.endsWith("marketplace.json"))).toBe(true);
+    expect(
+      plan.steps[0]?.files?.find((file) => file.path.endsWith("plugin.json"))?.content,
+    ).toContain("https://agent-plugins.org/schemas/1.0.0/plugin.schema.json");
+    expect(plan.steps[1]?.argv.slice(0, 3)).toEqual(["/bin/codex", "plugin", "add"]);
+    expect(plan.steps.at(-1)?.argv).toEqual(["/bin/codex", "--", input.prompt]);
     expect(() => buildPackagePlan(input, { ...tools, apm: null }, which, qualify)).toThrow(
       /apm-cli/,
     );

@@ -501,7 +501,7 @@ export function KbDocumentPane({
       {detailsOpen && wide && <DocumentDetails doc={doc} onOpen={onOpen} />}
       {!wide && (
         <Sheet open={detailsOpen} onOpenChange={onDetailsOpenChange}>
-          <SheetContent className="w-[360px]" aria-describedby={undefined}>
+          <SheetContent defaultWidth={360} resizeKey="kb-properties" aria-describedby={undefined}>
             <SheetHeader className="py-3">
               <SheetTitle>Details</SheetTitle>
             </SheetHeader>

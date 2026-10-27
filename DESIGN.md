@@ -288,6 +288,13 @@ Start with a 4px spacing unit. Use 8px within related controls, 12–16px within
 working group, 24px between sections, and 16px mobile / 24–32px desktop page insets.
 Spacing should explain relationships. Do not wrap each relationship in a card.
 
+Desktop detail panels resize from their outer edge by dragging or using arrow
+keys on the splitter. Remember widths per view, clamp them to the current
+viewport, and allow a double-click to restore the default. Phone panels fill the
+available width. Agent and package detail actions use compact toolbars, with
+instructions or files occupying the main reading area and source metadata in
+expandable details.
+
 The shell is project-centered: a compact sidebar, project dropdown and one
 contextual navigation row. Keep Activity first and the default at `/activity`.
 Knowledge has exactly Knowledge base and Memories as sibling destinations.

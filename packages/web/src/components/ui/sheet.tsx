@@ -1,6 +1,7 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import * as React from "react";
+import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { collapseExpandedDocument, keepMarkdownFullscreen } from "@/lib/document-display";
 import { cn } from "@/lib/utils";
 
@@ -28,43 +29,84 @@ const SheetContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
     side?: "right" | "left";
+    defaultWidth?: number;
+    resizeKey?: string;
   }
->(({ className, children, side = "right", ...props }, ref) => (
-  <SheetPortal>
-    <SheetOverlay />
-    <DialogPrimitive.Content
-      ref={ref}
-      className={cn(
-        "viewport-sheet fixed z-50 flex flex-col bg-surface-high border-l border-surface-highest shadow-lg",
-        "w-[480px] max-w-full sm:max-w-[90vw]",
-        "data-[state=open]:animate-in data-[state=closed]:animate-out",
-        side === "right"
-          ? "right-0 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right"
-          : "left-0 data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left",
-        "duration-200",
-        className,
-      )}
-      {...props}
-      data-document-container
-      onEscapeKeyDown={(event) => {
-        if (!collapseExpandedDocument(event)) props.onEscapeKeyDown?.(event);
-      }}
-      onInteractOutside={(event) => {
-        keepMarkdownFullscreen(event);
-        if (!event.defaultPrevented) props.onInteractOutside?.(event);
-      }}
-    >
-      {children}
-      <DialogPrimitive.Close
-        data-testid="sheet-close"
-        className="absolute right-1 top-1 flex size-11 items-center justify-center text-outline hover:text-on-surface transition-colors"
-        aria-label="Close panel"
-      >
-        <X size={16} />
-      </DialogPrimitive.Close>
-    </DialogPrimitive.Content>
-  </SheetPortal>
-));
+>(
+  (
+    { className, children, side = "right", defaultWidth = 480, resizeKey, style, ...props },
+    ref,
+  ) => {
+    const [viewportWidth, setViewportWidth] = React.useState(() =>
+      typeof window === "undefined" ? 1920 : window.innerWidth,
+    );
+    React.useEffect(() => {
+      const resize = () => setViewportWidth(window.innerWidth);
+      window.addEventListener("resize", resize);
+      return () => window.removeEventListener("resize", resize);
+    }, []);
+    const panel = usePanelWidth({
+      storageKey: `orc_sheet_width_${resizeKey ?? defaultWidth}`,
+      initial: defaultWidth,
+      min: Math.min(320, viewportWidth),
+      max: viewportWidth,
+      edge: side === "right" ? "left" : "right",
+    });
+    return (
+      <SheetPortal>
+        <SheetOverlay />
+        <DialogPrimitive.Content
+          ref={ref}
+          style={{ ...style, width: panel.width, maxWidth: "100vw" }}
+          className={cn(
+            "viewport-sheet fixed z-50 flex flex-col bg-surface-high border-l border-surface-highest shadow-lg",
+            "data-[state=open]:animate-in data-[state=closed]:animate-out",
+            side === "right"
+              ? "right-0 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right"
+              : "left-0 data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left",
+            "duration-200",
+            className,
+          )}
+          {...props}
+          data-document-container
+          onEscapeKeyDown={(event) => {
+            if (!collapseExpandedDocument(event)) props.onEscapeKeyDown?.(event);
+          }}
+          onInteractOutside={(event) => {
+            keepMarkdownFullscreen(event);
+            if (!event.defaultPrevented) props.onInteractOutside?.(event);
+          }}
+        >
+          {children}
+          {/* biome-ignore lint/a11y/useSemanticElements: an interactive splitter has no native element */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize side panel"
+            aria-valuenow={panel.width}
+            aria-valuemin={Math.min(320, viewportWidth)}
+            aria-valuemax={viewportWidth}
+            tabIndex={0}
+            data-testid="sheet-resize-handle"
+            title="Drag to resize, double-click to reset"
+            className={cn(
+              "absolute inset-y-0 z-20 hidden w-2 cursor-col-resize touch-none hover:bg-surface-highest focus-visible:bg-focus sm:block",
+              side === "right" ? "-left-1" : "-right-1",
+            )}
+            {...panel.handleProps}
+          />
+          <DialogPrimitive.Close
+            data-testid="sheet-close"
+            className="absolute right-1 top-1 flex size-11 items-center justify-center text-outline hover:text-on-surface transition-colors"
+            aria-label="Close panel"
+          >
+            <X size={16} />
+          </DialogPrimitive.Close>
+        </DialogPrimitive.Content>
+      </SheetPortal>
+    );
+  },
+);
 SheetContent.displayName = "SheetContent";
 
 function SheetHeader({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

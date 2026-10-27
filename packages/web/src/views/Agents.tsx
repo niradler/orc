@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { type AgentFull, api } from "@/api/client";
+import { type AgentFull, type AgentSetup, api } from "@/api/client";
 import { AgentEditor } from "@/components/AgentEditor";
 import { CodeEditor } from "@/components/CodeEditor";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
+import { PackageRunDialog } from "@/components/PackageRunDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -41,6 +42,7 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<AgentFull>();
   const [deleting, setDeleting] = useState(false);
+  const [launch, setLaunch] = useState<AgentSetup>();
   const create = useMutation({
     mutationFn: api.agents.create,
     onSuccess: () => {
@@ -190,7 +192,7 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
         )}
       </div>
       <Sheet open={Boolean(selectedId)} onOpenChange={(open) => !open && closeDetail()}>
-        <SheetContent>
+        <SheetContent defaultWidth={860} resizeKey="agents" data-testid="agent-detail-sheet">
           <SheetHeader>
             <SheetTitle>{agent.data?.name ?? "Agent profile"}</SheetTitle>
           </SheetHeader>
@@ -199,59 +201,108 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
               <ErrorState message={agent.error.message} onRetry={() => void agent.refetch()} />
             ) : agent.data ? (
               <div className="space-y-4">
-                <p className="text-sm">{agent.data.description}</p>
-                <Button
-                  data-testid="agent-edit"
-                  variant="outline"
-                  onClick={async () => {
-                    update.reset();
-                    const current = await agent.refetch();
-                    if (current.data) setEditing(current.data);
-                  }}
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {agent.data.description}
+                </p>
+                <div
+                  className="flex flex-wrap items-center gap-1 border-b border-outline-variant pb-3"
+                  data-testid="agent-actions"
                 >
-                  Edit agent
-                </Button>
-                <Button
-                  data-testid="agent-delete"
-                  variant="destructive"
-                  onClick={() => {
-                    deleteAgent.reset();
-                    setDeleting(true);
-                  }}
-                  disabled={deleteAgent.isPending}
-                >
-                  Delete agent
-                </Button>
+                  <Button
+                    size="sm"
+                    data-testid="agent-launch"
+                    onClick={() =>
+                      agent.data &&
+                      setLaunch({
+                        name: "agent-launch",
+                        packages: [],
+                        backend: agent.data.fields.tools === undefined ? "codex" : "claude",
+                        tool: "apm",
+                        cwd: "",
+                        agent: agent.data.id,
+                        prompt: "",
+                      })
+                    }
+                  >
+                    Launch agent
+                  </Button>
+                  <Button
+                    size="sm"
+                    data-testid="agent-edit"
+                    variant="ghost"
+                    onClick={async () => {
+                      update.reset();
+                      const current = await agent.refetch();
+                      if (current.data) setEditing(current.data);
+                    }}
+                  >
+                    Edit agent
+                  </Button>
+                  <Button
+                    size="sm"
+                    data-testid="agent-delete"
+                    variant="ghost"
+                    className="ml-auto text-error"
+                    onClick={() => {
+                      deleteAgent.reset();
+                      setDeleting(true);
+                    }}
+                    disabled={deleteAgent.isPending}
+                  >
+                    Delete
+                  </Button>
+                </div>
                 {deleteAgent.error && (
                   <p data-testid="agent-delete-error" role="alert" className="text-destructive">
                     {deleteAgent.error.message}
                   </p>
                 )}
-                <p className="text-xs text-muted-foreground">
-                  Use this profile in a flow agent node with <code>"agent": "{agent.data.id}"</code>{" "}
-                  and choose the coding backend independently.
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Model and tool restrictions depend on backend support. ORC refuses to launch when
-                  it cannot honor a declared restriction. Handoffs remain declarations; flow edges
-                  choose execution.
-                </p>
-                <CodeEditor
-                  path="metadata.json"
-                  value={JSON.stringify(agent.data.fields, null, 2)}
-                  readOnly
-                  height={180}
-                  testId="agent-fields"
-                />
+                <dl className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Model</dt>
+                    <dd className="mt-1 break-words">
+                      {agent.data.fields.model ?? "Coding-agent default"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Tools</dt>
+                    <dd className="mt-1">
+                      {agent.data.fields.tools === undefined
+                        ? "Coding-agent default"
+                        : "Defined by this agent; requires Claude"}
+                    </dd>
+                  </div>
+                </dl>
+                <h4 className="text-sm font-medium">Instructions</h4>
                 <CodeEditor
                   path="agent.agent.md"
                   mode={editorMode}
                   onModeChange={setEditorMode}
                   value={agent.data.raw}
                   readOnly
-                  height={400}
+                  layout="page"
+                  hideFrontmatter
+                  pageTitle={agent.data.name}
                   testId="agent-content"
                 />
+                <details className="border-t border-outline-variant pt-3 text-sm">
+                  <summary className="cursor-pointer text-muted-foreground">
+                    Source and configuration
+                  </summary>
+                  <p className="my-3 text-xs text-muted-foreground break-all">
+                    {agent.data.id} · {agent.data.source} definition
+                  </p>
+                  <pre
+                    data-testid="agent-fields"
+                    className="max-h-80 overflow-auto rounded bg-background p-3 text-xs"
+                  >
+                    {JSON.stringify(agent.data.fields, null, 2)}
+                  </pre>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    To use this agent in a flow, set <code>"agent": "{agent.data.id}"</code> on its
+                    agent node.
+                  </p>
+                </details>
               </div>
             ) : (
               <p>Loading...</p>
@@ -272,6 +323,7 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
             });
         }}
       />
+      {launch && <PackageRunDialog initial={launch} onClose={() => setLaunch(undefined)} />}
       <Dialog open={creating} onOpenChange={(open) => !create.isPending && setCreating(open)}>
         {creating && (
           <AgentEditor

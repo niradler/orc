@@ -34,7 +34,7 @@ export function FlowDetailSheet({
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
       {/* Wider than the default sheet: this view exists to show a graph, and the
           shipped flows are up to five layers across. */}
-      <SheetContent className="w-[880px] max-w-[95vw]">
+      <SheetContent defaultWidth={880} resizeKey="flows">
         <SheetHeader>
           <SheetTitle>{flow?.name ?? flowName ?? "Flow"}</SheetTitle>
           {flow?.description && (

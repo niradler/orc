@@ -1035,14 +1035,14 @@ Data flow: `Agent → MCP → API → DB` / `CLI → SDK → API → DB`
 
 ```bash
 bun install       # install all workspace deps
-bun dev           # API + CLI in watch mode
+bun dev           # API + CLI + web in watch mode
 bun typecheck     # typecheck all packages
 bun check         # biome lint + format
 bun test          # run all tests
 bun build         # build all packages
 ```
 
-See [AGENTS.md](./AGENTS.md) for the full development guide and coding conventions.
+See the [development guide](./docs/development.md) for dev ports, servers, testing, and troubleshooting. [AGENTS.md](./AGENTS.md) contains session-wide agent instructions and coding conventions. For releases and installation upgrades, follow the [release protocol](./docs/releases.md).
 
 ## Learn more
 

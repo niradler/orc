@@ -1,5 +1,6 @@
 import type { ScopeQuery, SkillMeta } from "@orc/sdk/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { diffLines } from "diff";
 import { useState } from "react";
 import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -63,12 +64,12 @@ export function SkillHistoryPanel({
           className="border-b border-outline-variant p-3"
         >
           <summary className="text-xs cursor-pointer">
-            {change.action} · {change.reason} · {change.author}
+            {change.action} · {change.reason} · {change.author} ·{" "}
+            <time dateTime={new Date(change.created_at * 1000).toISOString()}>
+              {new Date(change.created_at * 1000).toLocaleString()}
+            </time>
           </summary>
-          <p className="text-xs text-outline mt-2">Before</p>
-          <pre className="text-xs whitespace-pre-wrap break-all">{change.previous_raw}</pre>
-          <p className="text-xs text-outline mt-2">After</p>
-          <pre className="text-xs whitespace-pre-wrap break-all">{change.raw}</pre>
+          <SkillChangeContent before={change.previous_raw} after={change.raw} />
           <Button
             data-testid="skill-revert-change"
             size="sm"
@@ -81,5 +82,46 @@ export function SkillHistoryPanel({
         </details>
       ))}
     </section>
+  );
+}
+
+function SkillChangeContent({ before, after }: { before: string; after: string }) {
+  const [showFull, setShowFull] = useState(false);
+  const changes = diffLines(before, after).filter((part) => part.added || part.removed);
+  return (
+    <div className="my-3 space-y-2">
+      <pre data-testid="skill-change-diff" className="text-xs whitespace-pre-wrap break-all">
+        {changes.length === 0
+          ? "No instruction changes"
+          : changes.map((part) => (
+              <span
+                key={`${changes.indexOf(part)}-${part.added ? "added" : "removed"}`}
+                className={
+                  part.added
+                    ? "text-green-600 dark:text-green-400"
+                    : "text-red-600 dark:text-red-400"
+                }
+              >
+                {part.value
+                  .split(/(?<=\n)/)
+                  .filter(Boolean)
+                  .map((line) => `${part.added ? "+ " : "- "}${line}`)
+                  .join("")}
+                {!part.value.endsWith("\n") && "\n"}
+              </span>
+            ))}
+      </pre>
+      <Button type="button" size="sm" variant="outline" onClick={() => setShowFull(!showFull)}>
+        {showFull ? "Hide full skill" : "Show full skill"}
+      </Button>
+      {showFull && (
+        <div data-testid="skill-change-full">
+          <p className="text-xs text-outline mt-2">Before</p>
+          <pre className="text-xs whitespace-pre-wrap break-all">{before}</pre>
+          <p className="text-xs text-outline mt-2">After</p>
+          <pre className="text-xs whitespace-pre-wrap break-all">{after}</pre>
+        </div>
+      )}
+    </div>
   );
 }
