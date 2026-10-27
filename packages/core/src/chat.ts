@@ -106,6 +106,7 @@ export const ChatThreadSchema = z.object({
   runtimeId: z.string().nullable(),
   backend: z.string(),
   sourceId: z.string().nullable(),
+  toolAllowlist: z.array(z.string()).optional(),
   messages: z.array(ChatMessageSchema),
   historyBefore: z.number().int().nonnegative().nullable().optional(),
   importedMessages: z.number().int().nonnegative().optional(),

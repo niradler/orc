@@ -5,9 +5,7 @@ export default function Rules() {
   return (
     <div data-testid="rules-view">
       <ViewHeader title="Rules" />
-      <div className="max-w-4xl">
-        <RulesPanel />
-      </div>
+      <RulesPanel />
     </div>
   );
 }

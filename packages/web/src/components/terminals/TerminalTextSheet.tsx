@@ -23,10 +23,7 @@ export function TerminalTextSheet({ text, onClose }: { text: string; onClose: ()
         if (!open) onClose();
       }}
     >
-      <SheetContent
-        data-testid="terminal-text-sheet"
-        className="w-screen max-w-full sm:w-[720px] sm:max-w-[90vw]"
-      >
+      <SheetContent data-testid="terminal-text-sheet" defaultWidth={720} resizeKey="terminal-text">
         <SheetHeader className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
             <SheetTitle>Terminal text</SheetTitle>

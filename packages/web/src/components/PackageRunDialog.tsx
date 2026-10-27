@@ -2,6 +2,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { type AgentSetup, api, type PackageFull } from "@/api/client";
+import { RemoteFolderBrowser } from "@/components/terminals/RemoteFolderBrowser";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,6 +14,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useChat } from "@/hooks/useChat";
+import { useProjects } from "@/hooks/useProjects";
+import { useSsh } from "@/hooks/useSsh";
 import { useTerminals } from "@/lib/terminals";
 import { workspaceDestination } from "@/lib/workspace-navigation";
 
@@ -32,7 +36,23 @@ export function PackageRunDialog({
   const navigate = useNavigate();
   const location = useLocation();
   const terminals = useTerminals();
-  const tools = useQuery({ queryKey: ["package-tools"], queryFn: api.packageTools.list });
+  const ssh = useSsh();
+  const projects = useProjects();
+  const chat = useChat();
+  const host = setup.host === undefined ? (ssh.data?.host ?? null) : setup.host;
+  const [destination, setDestination] = useState<"terminal" | "chat">("terminal");
+  const [browsing, setBrowsing] = useState(false);
+  const tools = useQuery({
+    queryKey: ["package-tools", host],
+    queryFn: () => api.packageTools.list(host),
+    enabled: Boolean(ssh.data),
+  });
+  const hostInfo = useQuery({
+    queryKey: ["package-launch-host", host],
+    queryFn: () => api.terminals.list(host),
+    enabled: Boolean(ssh.data),
+    retry: false,
+  });
   const components = useQuery({
     queryKey: ["setup-components", setup.packages],
     enabled: setup.packages.length > 0,
@@ -41,29 +61,61 @@ export function PackageRunDialog({
         setup.packages.map((name) => api.agentPackages.get(name) as Promise<PackageFull>),
       ),
   });
+  const profile = useQuery({
+    queryKey: ["agent", setup.agent],
+    queryFn: () => api.agents.get(setup.agent as string),
+    enabled: Boolean(setup.agent),
+  });
   const command = useMutation({ mutationFn: api.agentSetups.command });
   useEffect(() => {
     if (command.data) commandBox.current?.scrollIntoView({ block: "nearest" });
   }, [command.data]);
   const portable = components.data?.some((pkg) => pkg.format === "agent-plugin");
-  const unsupported = portable && setup.backend !== "copilot";
-  const valid = Boolean(setup.cwd.trim() && setup.packages.length && setup.name.trim());
+  const unsupported = portable && setup.backend === "claude";
+  const needsApm = components.data?.some(
+    (pkg) => pkg.format === "apm" || setup.backend !== "codex",
+  );
+  const valid = Boolean(
+    setup.cwd.trim() && (setup.packages.length || setup.agent) && setup.name.trim(),
+  );
   const canOperate =
-    valid && tools.data?.apm && !unsupported && !components.error && !components.isFetching;
+    valid &&
+    tools.data?.bun &&
+    (!needsApm || tools.data?.apm) &&
+    !unsupported &&
+    !components.error &&
+    !components.isFetching &&
+    !profile.error &&
+    !profile.isFetching &&
+    !hostInfo.isFetching &&
+    !hostInfo.error;
   function change(next: Partial<AgentSetup>) {
     setSetup((current) => ({ ...current, ...next }));
     command.reset();
     setCopied(false);
     setError(undefined);
+    setBrowsing(false);
   }
   async function perform(operation: "run" | "install") {
     setBusy(true);
     setError(undefined);
     try {
+      if (operation === "run" && destination === "chat") {
+        const thread = await api.chat.fromSetup({ ...setup, host });
+        chat.openThread(thread, { follow: false });
+        if (setup.prompt.trim()) void chat.send(setup.prompt);
+        const next = new URLSearchParams(location.search);
+        next.set("chat", "open");
+        next.set("chatThread", thread.id);
+        onClose();
+        navigate(`${location.pathname}?${next}`);
+        return;
+      }
       const terminal = await terminals.create({
         kind: setup.backend,
         name: `${setup.name}${operation === "install" ? " · install" : ""}`,
-        setup: { ...setup, operation },
+        host,
+        setup: { ...setup, host, operation },
       });
       onClose();
       navigate(
@@ -83,13 +135,35 @@ export function PackageRunDialog({
     <Dialog open onOpenChange={(open) => !open && !busy && !command.isPending && onClose()}>
       <DialogContent className="min-w-0 grid-cols-[minmax(0,1fr)] w-[calc(100%_-_1rem)] max-w-2xl max-h-[94dvh] overflow-x-hidden overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle>Use package</DialogTitle>
+          <DialogTitle>{setup.packages.length ? "Use package" : "Launch agent"}</DialogTitle>
           <DialogDescription>
             Install it for your coding agent, launch here, or copy a command for your own terminal.
           </DialogDescription>
         </DialogHeader>
         <fieldset disabled={busy || command.isPending} className="min-w-0 space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="setup-host">Host</Label>
+              <select
+                id="setup-host"
+                data-testid="setup-host"
+                className="w-full rounded border border-control-border bg-surface-low p-3"
+                value={host ?? ""}
+                onChange={(event) => change({ host: event.target.value || null, cwd: "" })}
+              >
+                <option value="">Local</option>
+                {[
+                  ...new Set([
+                    ...(ssh.data?.hosts ?? []),
+                    ...(ssh.data?.host ? [ssh.data.host] : []),
+                  ]),
+                ].map((alias) => (
+                  <option key={alias} value={alias}>
+                    {alias}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="space-y-1">
               <Label htmlFor="setup-backend">Coding agent</Label>
               <select
@@ -98,19 +172,15 @@ export function PackageRunDialog({
                 className="w-full rounded border border-control-border bg-surface-low p-3"
                 value={setup.backend}
                 onChange={(event) =>
-                  change({ backend: event.target.value as AgentSetup["backend"], agent: undefined })
+                  change({ backend: event.target.value as AgentSetup["backend"] })
                 }
               >
                 {["claude", "codex", "copilot"].map((kind) => (
-                  <option
-                    key={kind}
-                    value={kind}
-                    disabled={Boolean(portable && kind !== "copilot")}
-                  >
+                  <option key={kind} value={kind} disabled={Boolean(portable && kind === "claude")}>
                     {kind}
-                    {portable && kind !== "copilot"
+                    {portable && kind === "claude"
                       ? " · unsupported for this plugin"
-                      : !terminals.info?.launchers.includes(kind as AgentSetup["backend"])
+                      : !hostInfo.data?.launchers.includes(kind as AgentSetup["backend"])
                         ? " · not installed"
                         : ""}
                   </option>
@@ -119,7 +189,40 @@ export function PackageRunDialog({
             </div>
           </div>
           <div className="space-y-1">
-            <Label htmlFor="setup-cwd">Project folder on this ORC machine</Label>
+            <Label htmlFor="setup-destination">Open in</Label>
+            <select
+              id="setup-destination"
+              data-testid="setup-destination"
+              className="w-full rounded border border-control-border bg-surface-low p-3"
+              value={destination}
+              onChange={(event) => setDestination(event.target.value as "terminal" | "chat")}
+            >
+              <option value="terminal">Terminal</option>
+              <option value="chat" disabled={setup.backend === "copilot"}>
+                Chat{setup.backend === "copilot" ? " · choose Claude or Codex" : ""}
+              </option>
+            </select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="setup-cwd">Working folder on {host ?? "Local"}</Label>
+            <select
+              data-testid="setup-project-folder"
+              aria-label="Fill working folder from a project (optional)"
+              className="w-full rounded border border-control-border bg-surface-low p-3 text-sm"
+              value=""
+              onChange={(event) => {
+                if (event.target.value) change({ cwd: event.target.value });
+              }}
+            >
+              <option value="">Use a project folder (optional)…</option>
+              {projects.data
+                ?.filter((project) => project.scope)
+                .map((project) => (
+                  <option key={project.id} value={project.scope ?? ""}>
+                    {project.name}
+                  </option>
+                ))}
+            </select>
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 id="setup-cwd"
@@ -130,10 +233,17 @@ export function PackageRunDialog({
               <Button
                 type="button"
                 variant="outline"
-                disabled={!terminals.info?.ready}
+                data-testid="setup-browse"
+                disabled={
+                  hostInfo.isFetching || Boolean(hostInfo.error) || (!host && !hostInfo.data?.ready)
+                }
                 onClick={async () => {
+                  if (host) {
+                    setBrowsing(true);
+                    return;
+                  }
                   try {
-                    const result = await api.terminals.pickFolder(setup.cwd || undefined);
+                    const result = await api.terminals.pickFolder(setup.cwd || undefined, null);
                     if (result.path) change({ cwd: result.path });
                   } catch (failure) {
                     setError((failure as Error).message);
@@ -143,6 +253,15 @@ export function PackageRunDialog({
                 Browse
               </Button>
             </div>
+            {browsing && host && (
+              <RemoteFolderBrowser
+                key={host}
+                initial={setup.cwd}
+                host={host}
+                onPick={(cwd) => change({ cwd })}
+                onClose={() => setBrowsing(false)}
+              />
+            )}
           </div>
           <div className="space-y-1">
             <Label htmlFor="setup-prompt">What should the agent work on?</Label>
@@ -159,6 +278,20 @@ export function PackageRunDialog({
             className="rounded-lg bg-surface-low p-3 text-sm space-y-1"
           >
             <p className="font-medium">Configuration to apply</p>
+            {profile.data && (
+              <>
+                <p>
+                  {profile.data.name} · agent instructions
+                  {profile.data.fields.model ? ` · ${profile.data.fields.model}` : ""}
+                </p>
+                {host && (
+                  <p className="text-xs text-outline">
+                    Supporting files referenced by this agent are not transferred. Make them
+                    available at the referenced paths on {host}.
+                  </p>
+                )}
+              </>
+            )}
             {components.isFetching && <p>Checking package contents…</p>}
             {components.data?.map((pkg) => (
               <p key={pkg.name} className="break-words">
@@ -180,52 +313,68 @@ export function PackageRunDialog({
           </div>
         </fieldset>
         <p className="text-xs text-outline">
-          APM installs into this project and retains the configuration after the session. Trust and
-          file-conflict prompts appear in the terminal. Copied commands run on this ORC machine in{" "}
-          {navigator.platform.startsWith("Win") ? "PowerShell" : "your shell"}.
+          Package files are transferred to the selected host when needed. APM deploys agent
+          configuration into the working folder; Codex plugins install into Codex's user cache on
+          that host. These tools must already be installed. Configuration remains after the session;
+          use a terminal for installer trust or conflict prompts.
         </p>
         {unsupported && (
           <p role="alert" className="text-sm text-destructive">
-            APM currently activates whole Agent Plugins for Copilot. Select Copilot for this
-            package.
+            Choose Codex or Copilot for this Agent Plugin.
           </p>
         )}
-        {tools.data && !tools.data.apm && (
+        {tools.data && needsApm && !tools.data.apm && (
           <p role="alert" className="text-sm">
-            Install APM 0.33.0 or newer on the ORC machine, or set ORC_APM_PATH.
+            APM 0.33.0 or newer must be available on {host ?? "Local"}.
           </p>
         )}
-        {!terminals.info?.ready && (
+        {!hostInfo.data?.ready && destination === "terminal" && (
           <p role="alert" className="text-sm">
-            {terminals.info?.reason ?? "Checking terminal availability…"}
+            {hostInfo.data?.reason ?? "Checking terminal availability…"}
           </p>
         )}
-        {(error || command.error || components.error) && (
+        {(error ||
+          command.error ||
+          components.error ||
+          profile.error ||
+          hostInfo.error ||
+          ssh.error) && (
           <p role="alert" data-testid="setup-error" className="text-sm text-destructive">
-            {error ?? command.error?.message ?? components.error?.message}
+            {error ??
+              command.error?.message ??
+              components.error?.message ??
+              profile.error?.message ??
+              hostInfo.error?.message ??
+              ssh.error?.message}
           </p>
         )}
         <div className="grid gap-2 sm:grid-cols-2">
           <Button
             data-testid="setup-install"
             variant="outline"
-            disabled={busy || !canOperate || !terminals.info?.ready}
+            disabled={busy || !canOperate || !hostInfo.data?.ready || !setup.packages.length}
             onClick={() => void perform("install")}
           >
             Install for coding agent
           </Button>
           <Button
             data-testid="setup-launch"
-            disabled={busy || !canOperate || !terminals.info?.ready}
+            disabled={
+              busy ||
+              !canOperate ||
+              (destination === "terminal"
+                ? !hostInfo.data?.ready || !hostInfo.data?.launchers.includes(setup.backend)
+                : !chat.ready || setup.backend === "copilot")
+            }
             onClick={() => void perform("run")}
           >
-            {busy ? "Preparing…" : "Run in ORC terminal"}
+            {busy ? "Preparing…" : destination === "chat" ? "Open in chat" : "Run in ORC terminal"}
           </Button>
           <Button
             data-testid="setup-command"
             variant="outline"
             disabled={busy || command.isPending || !canOperate}
-            onClick={() => command.mutate({ ...setup, operation: commandMode })}
+            onClick={() => command.mutate({ ...setup, host, operation: commandMode })}
           >
             {command.isPending ? "Preparing command…" : "Command for my terminal"}
           </Button>
@@ -251,7 +400,9 @@ export function PackageRunDialog({
             ref={commandBox}
             className="min-w-0 space-y-2 rounded border border-surface-highest p-3"
           >
-            <Label htmlFor="package-command">Run in {command.data.shell} on the ORC machine</Label>
+            <Label htmlFor="package-command">
+              Run in {command.data.shell} on {host ?? "Local"}
+            </Label>
             <Textarea
               id="package-command"
               data-testid="package-command"

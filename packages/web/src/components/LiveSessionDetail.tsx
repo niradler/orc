@@ -226,7 +226,8 @@ export function LiveSessionDetail({
     <Sheet open={Boolean(sessionId)} onOpenChange={(v) => !v && onClose()}>
       <SheetContent
         side="right"
-        className="w-[1100px] max-w-[95vw]"
+        defaultWidth={1100}
+        resizeKey="live-session"
         data-testid="live-session-detail"
       >
         <SheetHeader>

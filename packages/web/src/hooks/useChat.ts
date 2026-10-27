@@ -463,7 +463,7 @@ function useChatController() {
   }, [attach, find, update]);
 
   const openThread = useCallback(
-    (next: ChatThread, options: { activate?: boolean } = {}) => {
+    (next: ChatThread, options: { activate?: boolean; follow?: boolean } = {}) => {
       const existing = tabsRef.current.find((tab) => tab.thread?.id === next.id);
       const loaded = {
         thread: next,
@@ -490,7 +490,7 @@ function useChatController() {
       }
       if (options.activate !== false) activate(key);
       if (existing?.streaming) return;
-      void attach(key, next.id);
+      if (options.follow !== false) void attach(key, next.id);
     },
     [activate, attach, mutate, update, find],
   );

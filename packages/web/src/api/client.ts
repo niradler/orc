@@ -192,6 +192,7 @@ export type AgentSetup = {
   model?: string;
   prompt: string;
   operation?: "run" | "install";
+  host?: string | null;
 };
 
 export type Terminal = {
@@ -609,6 +610,7 @@ export const api = {
       }),
     resume: (sourceSessionId: string) =>
       req<ChatThread>("POST", "/chat/threads", { sourceSessionId }),
+    fromSetup: (setup: AgentSetup) => req<ChatThread>("POST", "/chat/threads", { setup }),
     permission: (runId: string, requestId: string, decision: "approved" | "denied") =>
       req<{ ok: boolean }>("POST", `/chat/runs/${encodeURIComponent(runId)}/permission`, {
         requestId,
@@ -1031,7 +1033,13 @@ export const api = {
       ),
   },
   packageTools: {
-    list: () => req<{ apm: boolean; skills: boolean; bun: boolean }>("GET", "/package-tools"),
+    list: (host?: string | null) =>
+      req<{ apm: boolean; skills: boolean; bun: boolean }>(
+        "GET",
+        "/package-tools",
+        undefined,
+        host === undefined ? undefined : { host: host ?? "" },
+      ),
   },
 
   audit: {

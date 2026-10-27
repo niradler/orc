@@ -282,6 +282,26 @@ export interface paths {
                 content: {
                     "application/json": {
                         sourceSessionId: string;
+                    } | {
+                        setup: {
+                            name: string;
+                            packages: string[];
+                            /** @enum {string} */
+                            backend: "claude" | "codex" | "copilot";
+                            /**
+                             * @default apm
+                             * @enum {string}
+                             */
+                            tool?: "apm" | "skills";
+                            cwd: string;
+                            agent?: string;
+                            model?: string;
+                            /** @default  */
+                            prompt?: string;
+                            /** @enum {string} */
+                            operation?: "run" | "install";
+                            host?: string | null;
+                        };
                     };
                 };
             };
@@ -306,7 +326,14 @@ export interface paths {
                                     agent: string;
                                     id: string;
                                 }[];
-                                /** @default You are an AI assistant integrated into the ORC orchestration hub. Help users manage tasks, review agent activity, and answer questions about the system. Use ORC tools for current workspace facts. Ask before destructive actions or publishing. */
+                                /**
+                                 * @default You are the ORC platform chat assistant.
+                                 *
+                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
+                                 *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
+                                 *     Manage longer work through ORC tasks, progress updates, and handoffs.
+                                 */
                                 system: string;
                                 /** @default false */
                                 autoApprove: boolean;
@@ -361,6 +388,7 @@ export interface paths {
                             runtimeId: string | null;
                             backend: string;
                             sourceId: string | null;
+                            toolAllowlist?: string[];
                             messages: {
                                 id: string;
                                 /** @enum {string} */
@@ -440,7 +468,14 @@ export interface paths {
                                     agent: string;
                                     id: string;
                                 }[];
-                                /** @default You are an AI assistant integrated into the ORC orchestration hub. Help users manage tasks, review agent activity, and answer questions about the system. Use ORC tools for current workspace facts. Ask before destructive actions or publishing. */
+                                /**
+                                 * @default You are the ORC platform chat assistant.
+                                 *
+                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
+                                 *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
+                                 *     Manage longer work through ORC tasks, progress updates, and handoffs.
+                                 */
                                 system: string;
                                 /** @default false */
                                 autoApprove: boolean;
@@ -495,6 +530,7 @@ export interface paths {
                             runtimeId: string | null;
                             backend: string;
                             sourceId: string | null;
+                            toolAllowlist?: string[];
                             messages: {
                                 id: string;
                                 /** @enum {string} */
@@ -624,7 +660,14 @@ export interface paths {
                                     agent: string;
                                     id: string;
                                 }[];
-                                /** @default You are an AI assistant integrated into the ORC orchestration hub. Help users manage tasks, review agent activity, and answer questions about the system. Use ORC tools for current workspace facts. Ask before destructive actions or publishing. */
+                                /**
+                                 * @default You are the ORC platform chat assistant.
+                                 *
+                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
+                                 *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
+                                 *     Manage longer work through ORC tasks, progress updates, and handoffs.
+                                 */
                                 system: string;
                                 /** @default false */
                                 autoApprove: boolean;
@@ -679,6 +722,7 @@ export interface paths {
                             runtimeId: string | null;
                             backend: string;
                             sourceId: string | null;
+                            toolAllowlist?: string[];
                             messages: {
                                 id: string;
                                 /** @enum {string} */
@@ -879,7 +923,14 @@ export interface paths {
                                     agent: string;
                                     id: string;
                                 }[];
-                                /** @default You are an AI assistant integrated into the ORC orchestration hub. Help users manage tasks, review agent activity, and answer questions about the system. Use ORC tools for current workspace facts. Ask before destructive actions or publishing. */
+                                /**
+                                 * @default You are the ORC platform chat assistant.
+                                 *
+                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
+                                 *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
+                                 *     Manage longer work through ORC tasks, progress updates, and handoffs.
+                                 */
                                 system: string;
                                 /** @default false */
                                 autoApprove: boolean;
@@ -934,6 +985,7 @@ export interface paths {
                             runtimeId: string | null;
                             backend: string;
                             sourceId: string | null;
+                            toolAllowlist?: string[];
                             messages: {
                                 id: string;
                                 /** @enum {string} */
@@ -2160,7 +2212,14 @@ export interface paths {
                                     agent: string;
                                     id: string;
                                 }[];
-                                /** @default You are an AI assistant integrated into the ORC orchestration hub. Help users manage tasks, review agent activity, and answer questions about the system. Use ORC tools for current workspace facts. Ask before destructive actions or publishing. */
+                                /**
+                                 * @default You are the ORC platform chat assistant.
+                                 *
+                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
+                                 *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
+                                 *     Manage longer work through ORC tasks, progress updates, and handoffs.
+                                 */
                                 system: string;
                                 /** @default false */
                                 autoApprove: boolean;
@@ -2244,7 +2303,14 @@ export interface paths {
                                 agent: string;
                                 id: string;
                             }[];
-                            /** @default You are an AI assistant integrated into the ORC orchestration hub. Help users manage tasks, review agent activity, and answer questions about the system. Use ORC tools for current workspace facts. Ask before destructive actions or publishing. */
+                            /**
+                             * @default You are the ORC platform chat assistant.
+                             *
+                             *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                             *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
+                             *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
+                             *     Manage longer work through ORC tasks, progress updates, and handoffs.
+                             */
                             system?: string;
                             /** @default false */
                             autoApprove?: boolean;
@@ -2318,7 +2384,14 @@ export interface paths {
                                     agent: string;
                                     id: string;
                                 }[];
-                                /** @default You are an AI assistant integrated into the ORC orchestration hub. Help users manage tasks, review agent activity, and answer questions about the system. Use ORC tools for current workspace facts. Ask before destructive actions or publishing. */
+                                /**
+                                 * @default You are the ORC platform chat assistant.
+                                 *
+                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
+                                 *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
+                                 *     Manage longer work through ORC tasks, progress updates, and handoffs.
+                                 */
                                 system: string;
                                 /** @default false */
                                 autoApprove: boolean;
@@ -4938,7 +5011,9 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    host?: "" | string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -5008,6 +5083,7 @@ export interface paths {
                                 prompt: string;
                                 /** @enum {string} */
                                 operation?: "run" | "install";
+                                host?: string | null;
                             }[];
                             broken: {
                                 path: string;
@@ -5045,6 +5121,7 @@ export interface paths {
                         prompt?: string;
                         /** @enum {string} */
                         operation?: "run" | "install";
+                        host?: string | null;
                     };
                 };
             };
@@ -5072,6 +5149,7 @@ export interface paths {
                             prompt: string;
                             /** @enum {string} */
                             operation?: "run" | "install";
+                            host?: string | null;
                         };
                     };
                 };
@@ -5771,11 +5849,12 @@ export interface paths {
                         prompt?: string;
                         /** @enum {string} */
                         operation?: "run" | "install";
+                        host?: string | null;
                     };
                 };
             };
             responses: {
-                /** @description Command to execute this plan on the API machine */
+                /** @description Command to execute this plan on the selected host */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -10807,6 +10886,7 @@ export interface paths {
                             prompt?: string;
                             /** @enum {string} */
                             operation?: "run" | "install";
+                            host?: string | null;
                         };
                     };
                 };

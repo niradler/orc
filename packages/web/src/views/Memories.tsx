@@ -394,10 +394,7 @@ function MemoryDetailSheet({
   const { data: memory, isLoading, error, refetch } = useMemory(projectId, name);
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent
-        data-testid="memory-detail"
-        className="w-screen max-w-full sm:w-[860px] sm:max-w-[96vw]"
-      >
+      <SheetContent data-testid="memory-detail" defaultWidth={860} resizeKey="memories">
         <SheetHeader>
           <SheetTitle>{name}</SheetTitle>
           {memory && (

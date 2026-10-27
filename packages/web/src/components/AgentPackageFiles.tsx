@@ -42,6 +42,26 @@ export function AgentPackageFiles({
       return [{ path: pkg.manifestFile, content: pkg.content }, ...supporting];
     },
   });
+  const contents = manifest.data
+    ? [
+        {
+          label: "skills",
+          count: manifest.data.files.filter((file) => /(^|\/)SKILL\.md$/.test(file.name)).length,
+        },
+        {
+          label: "instruction files",
+          count: manifest.data.files.filter((file) => file.name.endsWith(".instructions.md"))
+            .length,
+        },
+        {
+          label: "agent definitions",
+          count: manifest.data.files.filter((file) => file.name.endsWith(".agent.md")).length,
+        },
+      ]
+        .filter((item) => item.count > 0)
+        .map((item) => `${item.count} ${item.label}`)
+        .join(" · ")
+    : "";
   return (
     <Sheet
       open
@@ -49,7 +69,7 @@ export function AgentPackageFiles({
         if (!open) onClose();
       }}
     >
-      <SheetContent className="w-screen max-w-full sm:w-[720px] sm:max-w-[90vw]">
+      <SheetContent defaultWidth={960} resizeKey="packages" data-testid="package-detail-sheet">
         <SheetHeader>
           <SheetTitle>{name}</SheetTitle>
         </SheetHeader>
@@ -58,15 +78,9 @@ export function AgentPackageFiles({
             <p className="text-sm text-outline break-words">{manifest.data?.description}</p>
             {manifest.data && (
               <p className="text-xs text-outline">
-                {manifest.data.files.filter((file) => /(^|\/)SKILL\.md$/.test(file.name)).length}{" "}
-                skills ·{" "}
-                {
-                  manifest.data.files.filter((file) => file.name.endsWith(".instructions.md"))
-                    .length
-                }{" "}
-                instruction files ·{" "}
-                {manifest.data.files.filter((file) => file.name.endsWith(".agent.md")).length} agent
-                definitions
+                {manifest.data.format === "apm" ? "APM package" : "Agent Plugin"}
+                {contents ? ` · ${contents}` : ""}
+                {manifest.data.files.some((file) => file.name === "mcp.json") ? " · MCP tools" : ""}
               </p>
             )}
             {manifest.data?.warnings.map((warning) => (
@@ -74,48 +88,59 @@ export function AgentPackageFiles({
                 {warning}
               </p>
             ))}
-            <div className="grid gap-2 grid-cols-2">
+            <div
+              className="flex flex-wrap items-center gap-1 border-b border-outline-variant pb-3"
+              data-testid="package-actions"
+            >
               {onUse && (
-                <Button data-testid="package-detail-run" onClick={onUse} disabled={busy}>
+                <Button size="sm" data-testid="package-detail-run" onClick={onUse} disabled={busy}>
                   Use package
                 </Button>
               )}
               {onEdit && (
                 <Button
+                  size="sm"
                   data-testid="package-edit"
-                  variant="outline"
+                  variant="ghost"
                   onClick={onEdit}
                   disabled={busy}
                 >
-                  Edit configuration
+                  Edit
                 </Button>
               )}
               {onExport && (
                 <Button
+                  size="sm"
                   data-testid="package-export-artifact"
-                  variant="outline"
+                  variant="ghost"
                   onClick={onExport}
                   disabled={busy}
                 >
-                  {busy ? "Preparing…" : "Export for installation"}
+                  {busy ? "Preparing…" : "Installation export"}
                 </Button>
               )}
               {onSource && (
                 <Button
+                  size="sm"
                   data-testid="package-export"
-                  variant="outline"
+                  variant="ghost"
                   onClick={onSource}
                   disabled={busy}
                 >
-                  Download source
+                  Source ZIP
                 </Button>
               )}
             </div>
-            <p className="text-xs text-outline">
-              APM builds installation exports (
-              {manifest.data?.format === "agent-plugin" ? "portable Agent Plugin" : "Claude plugin"}
-              ). Download source preserves the editable manifest and all files.
-            </p>
+            <details className="text-xs text-outline">
+              <summary className="cursor-pointer">About exports</summary>
+              <p className="mt-2">
+                APM builds installation exports (
+                {manifest.data?.format === "agent-plugin"
+                  ? "portable Agent Plugin"
+                  : "Claude plugin"}
+                ). Download source preserves the editable manifest and all files.
+              </p>
+            </details>
             {operationError && (
               <p role="alert" className="text-sm text-destructive">
                 {operationError}
@@ -127,7 +152,10 @@ export function AgentPackageFiles({
           ) : files.isLoading ? (
             <p>Loading files…</p>
           ) : (
-            <PackageFileTabs files={files.data ?? []} readOnly testId="package-file-content" />
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium">Package files</h4>
+              <PackageFileTabs files={files.data ?? []} readOnly testId="package-file-content" />
+            </div>
           )}
         </SheetBody>
       </SheetContent>

@@ -677,7 +677,7 @@ function SkillDetailSheet({
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && confirmDocumentClose(documentId) && onClose()}>
-      <SheetContent className="w-screen max-w-full sm:w-[1120px] sm:max-w-[96vw]">
+      <SheetContent defaultWidth={1120} resizeKey="skills">
         <SheetHeader>
           <SheetTitle>{skill?.name ?? "Skill Details"}</SheetTitle>
           {skill?.description && (

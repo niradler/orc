@@ -3,18 +3,14 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { execHostFor, LOCAL_HOST, listHostDirectories } from "@orc/core/exec-host";
-import {
-  AgentSetupSchema,
-  buildPackagePlan,
-  packagePlanArgv,
-  packageToolCommands,
-} from "@orc/core/package-launch";
+import { AgentSetupSchema } from "@orc/core/package-launch";
 import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions } from "@orc/db/schema";
 import { and, eq } from "drizzle-orm";
 import { rememberTerminalFolder } from "../git/registry.js";
 import { getHandoffService } from "../handoffs/service.js";
+import { preparePackageLaunch } from "../lib/package-launch.js";
 import { createRouter } from "../lib/router.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
 import {
@@ -271,7 +267,9 @@ app.openapi(createTerminalRoute, async (c) => {
   requireTerminals(config);
   const body = c.req.valid("json");
   const manager = getTerminalManager();
-  let host = body.live_session_id ? LOCAL_HOST : selectedTerminalHost(config, body.host);
+  let host = body.live_session_id
+    ? LOCAL_HOST
+    : selectedTerminalHost(config, body.host !== undefined ? body.host : body.setup?.host);
   let deps = await launchDeps(config, host);
   const checkRules = (cwd: string | undefined | null): void => {
     if (!config.rules.enabled) return;
@@ -292,10 +290,6 @@ app.openapi(createTerminalRoute, async (c) => {
   };
 
   if (body.setup) {
-    if (host.kind === "ssh")
-      throw new ValidationError(
-        `Package setups install files and run Bun on the machine running orc, so they cannot start on the SSH host ${host.alias} yet`,
-      );
     checkRules(body.setup.cwd);
     if (body.live_session_id || body.worktree)
       throw new ValidationError(
@@ -303,17 +297,15 @@ app.openapi(createTerminalRoute, async (c) => {
       );
     if (body.kind && body.kind !== body.setup.backend)
       throw new ValidationError("Terminal backend must match the selected setup");
-    const tools = packageToolCommands();
-    if (!tools.bun) throw new ValidationError("Configured package terminals need Bun on PATH");
     manager.assertCapacity();
-    const plan = buildPackagePlan(body.setup, tools);
+    const { plan, argv } = await preparePackageLaunch(body.setup, host);
     const info = manager.create({
-      launch: {
+      launch: await launchOnHost(host, {
         kind: plan.setup.backend,
-        argv: packagePlanArgv(plan, tools.bun),
+        argv,
         cwd: plan.setup.cwd,
         resume: false,
-      },
+      }),
       name: body.name ?? plan.setup.name,
     });
     rememberTerminalFolder(info.cwd, info.host);

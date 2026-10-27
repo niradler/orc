@@ -6,6 +6,7 @@ import {
   type SessionOpts,
   sessionRules,
 } from "@orc/agent-runtime";
+import { readAgent, renderAgentInstructions } from "@orc/core/agent-service";
 import {
   appendChatActivity,
   CHAT_HISTORY_PAGE_SIZE,
@@ -27,6 +28,7 @@ import { loadConfig } from "@orc/core/config";
 import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostHome, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
+import { AgentSetupSchema } from "@orc/core/package-launch";
 import type { PushMessage } from "@orc/core/push";
 import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
@@ -36,11 +38,13 @@ import { and, eq } from "drizzle-orm";
 import type { Context } from "hono";
 import { streamSSE } from "hono/streaming";
 import { getHandoffService } from "../handoffs/service.js";
+import { installPackageForChat } from "../lib/package-launch.js";
 import { createRouter } from "../lib/router.js";
 import { notify, truncate } from "../push/service.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
 import { chatHistory } from "../sessions/chat-history.js";
 import { MAX_TRANSCRIPT_BYTES, readTranscriptBytes } from "../sessions/transcript.js";
+import { selectedTerminalHost } from "../terminals/host.js";
 
 const logger = createLogger("api:chat");
 const app = createRouter();
@@ -182,18 +186,23 @@ app.openapi(
   },
 );
 
-async function newThread(agent?: string, model?: string, sourceId?: string): Promise<ChatThread> {
+async function newThread(
+  agent?: string,
+  model?: string,
+  sourceId?: string,
+  launch?: { host?: string | null | undefined; cwd: string },
+): Promise<ChatThread> {
   const config = ChatSettingsSchema.parse(loadConfig().preferences.chat ?? {});
   if (agent) config.agent = agent;
   if (model !== undefined) config.model = model;
-  const host = resolveExecHost();
+  const host = launch ? selectedTerminalHost(loadConfig(), launch.host) : resolveExecHost();
   const thread: ChatThread = {
     id: crypto.randomUUID(),
     title: "New chat",
     config,
     backend: config.agent === "codex" ? "codex-cli" : config.agent === "claude" ? "claude" : "acpx",
     runtimeId: null,
-    cwd: host.kind === "ssh" ? await hostHome(host) : process.cwd(),
+    cwd: launch?.cwd ?? (host.kind === "ssh" ? await hostHome(host) : process.cwd()),
     host: host.kind === "ssh" ? host.alias : null,
     sourceId: sourceId ?? null,
     messages: [],
@@ -382,7 +391,10 @@ app.openapi(
       body: {
         content: {
           "application/json": {
-            schema: z.object({ sourceSessionId: z.string().min(1).max(256) }).strict(),
+            schema: z.union([
+              z.object({ sourceSessionId: z.string().min(1).max(256) }).strict(),
+              z.object({ setup: AgentSetupSchema }).strict(),
+            ]),
           },
         },
       },
@@ -390,8 +402,52 @@ app.openapi(
     responses: response,
   }),
   async (c) => {
-    const source = c.req.valid("json").sourceSessionId;
-    const thread = await newThread(undefined, undefined, source);
+    const body = c.req.valid("json");
+    let thread: ChatThread;
+    if ("setup" in body) {
+      const setup = body.setup;
+      if (!["claude", "codex"].includes(setup.backend))
+        throw new ValidationError(
+          "Package chat currently supports Claude and Codex. Use a terminal for Copilot.",
+        );
+      thread = await newThread(setup.backend, setup.model, undefined, setup);
+      const host = selectedTerminalHost(loadConfig(), thread.host);
+      if (setup.agent) {
+        const profile = readAgent(setup.agent, host.kind === "local" ? setup.cwd : undefined);
+        if (!profile) throw new NotFoundError("Agent", setup.agent);
+        const tools = profile.fields.tools;
+        if (tools !== undefined) {
+          if (setup.backend !== "claude")
+            throw new ValidationError(
+              "Codex cannot enforce this agent's tool allowlist. Choose Claude.",
+            );
+          thread.toolAllowlist =
+            typeof tools === "string"
+              ? tools.split(/[\s,]+/).filter(Boolean)
+              : Array.isArray(tools)
+                ? tools
+                : Object.entries(tools)
+                    .filter(([, allowed]) => allowed)
+                    .map(([name]) => name);
+        }
+        thread.config.model = setup.model ?? profile.fields.model ?? thread.config.model;
+        thread.config.system = [thread.config.system, renderAgentInstructions(profile)]
+          .filter(Boolean)
+          .join("\n\n");
+        if (!ChatSettingsSchema.safeParse(thread.config).success)
+          throw new ValidationError(
+            "The agent's combined chat instructions or model configuration exceed the supported limits",
+          );
+        thread.title = profile.name;
+      }
+      if (
+        loadConfig().rules.enabled &&
+        new RuleStore(getSqlite()).active(setup.cwd).length &&
+        setup.packages.length
+      )
+        throw new ValidationError("Package installation cannot bypass protected workspace rules");
+      thread.cwd = await installPackageForChat(setup, host);
+    } else thread = await newThread(undefined, undefined, body.sourceSessionId);
     store().save(thread);
     return c.json(thread);
   },
@@ -696,6 +752,7 @@ app.openapi(
           thread.runtimeId ??= `mock-${thread.id}`;
         } else {
           const opts: SessionOpts = {
+            toolAllowlist: thread.toolAllowlist,
             chatAgentOptions: thread.config.agentOptions[thread.config.agent],
             interactive: true,
             cwd: thread.cwd,

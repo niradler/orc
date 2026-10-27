@@ -38,6 +38,7 @@ export function usePanelWidth({
 }: PanelWidthOptions) {
   const direction = edge === "left" ? -1 : 1;
   const [width, setWidth] = useState(() => clamp(readStored(storageKey, initial), min, max));
+  const currentWidth = clamp(width, min, max);
 
   const commit = useCallback(
     (next: number) => {
@@ -53,7 +54,7 @@ export function usePanelWidth({
       event.preventDefault();
       const handle = event.currentTarget;
       const startX = event.clientX;
-      const startWidth = width;
+      const startWidth = currentWidth;
       handle.setPointerCapture(event.pointerId);
       const onMove = (e: globalThis.PointerEvent) =>
         setWidth(clamp(startWidth + direction * (e.clientX - startX), min, max));
@@ -67,23 +68,23 @@ export function usePanelWidth({
       handle.addEventListener("pointerup", onUp);
       handle.addEventListener("pointercancel", onUp);
     },
-    [width, min, max, commit, direction],
+    [currentWidth, min, max, commit, direction],
   );
 
   const onKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
-      if (event.key === "ArrowLeft") commit(width - direction * KEY_STEP);
-      else if (event.key === "ArrowRight") commit(width + direction * KEY_STEP);
+      if (event.key === "ArrowLeft") commit(currentWidth - direction * KEY_STEP);
+      else if (event.key === "ArrowRight") commit(currentWidth + direction * KEY_STEP);
       else return;
       event.preventDefault();
     },
-    [width, commit, direction],
+    [currentWidth, commit, direction],
   );
 
   const reset = useCallback(() => commit(initial), [commit, initial]);
 
   return {
-    width,
+    width: currentWidth,
     handleProps: { onPointerDown, onKeyDown, onDoubleClick: reset },
   };
 }
