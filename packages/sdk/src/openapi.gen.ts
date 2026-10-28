@@ -311,6 +311,10 @@ export interface paths {
                                 title: string;
                                 updatedAt: number;
                                 running: boolean;
+                                agent?: string | null;
+                                runtimeId?: string | null;
+                                sourceId?: string | null;
+                                host?: string | null;
                             }[];
                         };
                     };

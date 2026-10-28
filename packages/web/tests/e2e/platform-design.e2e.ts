@@ -275,13 +275,13 @@ for (const width of [1440, 390]) {
     await openChatHistory(page);
     await page.getByTestId("chat-session-search").fill(marker);
     await expect(
-      page.getByTestId("chat-open-sessions").getByTestId("chat-session-select"),
+      page.getByTestId("chat-session-list").getByTestId("chat-session-select"),
     ).toHaveCount(1);
-    await page.getByTestId("chat-open-sessions").getByTestId("chat-tab-close").click();
+    await page.getByTestId("chat-session-list").getByTestId("chat-tab-close").click();
     await expect(
-      page.getByTestId("chat-closed-sessions").getByTestId("chat-session-select"),
+      page.getByTestId("chat-session-list").getByTestId("chat-session-select"),
     ).toBeVisible();
-    await page.getByTestId("chat-closed-sessions").getByTestId("chat-session-select").click();
+    await page.getByTestId("chat-session-list").getByTestId("chat-session-select").click();
     await closeChatHistory(page);
     await expect(page.getByTestId("chat-input")).toHaveValue("Keep my unsent follow-up");
     await expect(page.getByTestId("chat-model-button")).toHaveText("retained-model");

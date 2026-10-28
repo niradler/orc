@@ -53,6 +53,7 @@ interface PendingPermission {
 
 /** One open conversation. Each tab streams on its own, so turns keep running in the background. */
 export interface ChatTab {
+  createdAt?: number;
   /** Closed from the open list; retained in history so drafts and background work survive. */
   hidden?: boolean;
   key: string;
@@ -84,6 +85,7 @@ export interface ChatTab {
 function blankTab(config: ChatConfig): ChatTab {
   return {
     key: crypto.randomUUID(),
+    createdAt: Date.now(),
     thread: null,
     config,
     messages: [],
@@ -740,7 +742,11 @@ function useChatController() {
   );
 
   const setDraft = useCallback(
-    (draft: string) => update(activeRef.current, () => ({ draft })),
+    (draft: string) =>
+      update(activeRef.current, (tab) => ({
+        draft,
+        ...(!tab.thread && !tab.draft.trim() && draft.trim() ? { createdAt: Date.now() } : {}),
+      })),
     [update],
   );
   const removeQueued = useCallback(

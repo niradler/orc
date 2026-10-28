@@ -607,10 +607,18 @@ export const api = {
     models: (agent: string, threadId?: string) =>
       req<ChatModels>("GET", "/chat/models", undefined, { agent, threadId }),
     list: () =>
-      req<{ threads: { id: string; title: string; updatedAt: number; running: boolean }[] }>(
-        "GET",
-        "/chat/threads",
-      ),
+      req<{
+        threads: {
+          id: string;
+          title: string;
+          updatedAt: number;
+          running: boolean;
+          agent?: string | null;
+          runtimeId?: string | null;
+          sourceId?: string | null;
+          host?: string | null;
+        }[];
+      }>("GET", "/chat/threads"),
     cancel: (runId: string) =>
       req<{ ok: boolean }>("POST", `/chat/runs/${encodeURIComponent(runId)}/cancel`),
     get: (id: string) => req<ChatThread>("GET", `/chat/threads/${encodeURIComponent(id)}`),

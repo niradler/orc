@@ -2,9 +2,9 @@ import { ChatModelSchema } from "@orc/core/chat";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Check,
   ChevronDown,
   CircleAlert,
+  CircleDot,
   History,
   LoaderCircle,
   MessageSquare,
@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
 import { useSsh } from "@/hooks/useSsh";
+import { type ChatHistoryEntry, chatHistoryList, mergeHistoryState } from "@/lib/chat-history-list";
 
 export function ChatSessionPicker({
   docked = false,
@@ -42,6 +43,7 @@ export function ChatSessionPicker({
   const [dialogOpen, setOpen] = useState(false);
   const open = docked || dialogOpen;
   const [search, setSearch] = useState("");
+  const [visibleCount, setVisibleCount] = useState(50);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
@@ -79,7 +81,14 @@ export function ChatSessionPicker({
       setPending(false);
     }
   }
-  const matches = (value: string) => value.toLowerCase().includes(search.toLowerCase());
+  const entries = chatHistoryList(
+    chat.tabs,
+    threads.data?.threads ?? [],
+    live.data?.sessions ?? [],
+    archive.data?.sessions ?? [],
+    search,
+  );
+  const loading = threads.isLoading || live.isLoading || archive.isLoading;
   return (
     <SessionHistoryFrame
       docked={docked}
@@ -140,130 +149,67 @@ export function ChatSessionPicker({
         </section>
       ) : (
         <>
+          <Button
+            variant="ghost"
+            className="w-full justify-start"
+            data-testid="chat-history-new"
+            disabled={pending}
+            onClick={() => {
+              chat.newTab();
+              setOpen(false);
+            }}
+          >
+            New conversation
+          </Button>
           <Input
             data-testid="chat-session-search"
             aria-label="Search conversations"
             placeholder="Search conversations…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setVisibleCount(50);
+            }}
           />
-          <div className="min-w-0 space-y-4">
-            <OpenChatSessions search={search} onSelect={() => setOpen(false)} />
-            <details open={search ? true : undefined}>
-              <summary
-                data-testid="chat-earlier-toggle"
-                className="min-h-8 cursor-pointer text-xs text-muted-foreground"
-              >
-                Earlier conversations
-                {chat.tabs.some(
-                  (tab) =>
-                    tab.hidden && (tab.permissions.length || tab.questions.length || tab.error),
-                ) && <span className="ml-2 text-warning">Needs attention</span>}
-              </summary>
-              <ClosedChatSessions search={search} onSelect={() => setOpen(false)} />
-              {threads.data?.threads
-                .filter(
-                  (t) => matches(t.title) && !chat.tabs.some((tab) => tab.thread?.id === t.id),
-                )
-                .slice(0, 50)
-                .map((t) => (
-                  <button
-                    key={t.id}
-                    data-testid="chat-resume-thread"
-                    type="button"
-                    disabled={pending}
-                    className="flex min-h-8 w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-surface"
-                    onClick={() => void select(() => api.chat.get(t.id))}
-                  >
-                    <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                    {t.running && (
-                      <span
-                        data-testid="chat-thread-running"
-                        className="flex shrink-0 items-center gap-1 text-xs text-primary"
-                      >
-                        <LoaderCircle size={12} aria-hidden="true" className="animate-spin" />
-                        Running
-                      </span>
-                    )}
-                  </button>
-                ))}
-              {threads.isLoading && (
-                <p role="status" className="text-sm text-muted-foreground">
-                  Loading chats…
-                </p>
-              )}
-              {!threads.isLoading && !threads.data?.threads.length && (
-                <p className="text-sm text-muted-foreground">
-                  Your conversations will appear here.
-                </p>
-              )}
-            </details>
-            <details open={search ? true : undefined}>
-              <summary
-                data-testid="chat-native-toggle"
-                className="min-h-8 cursor-pointer text-xs text-muted-foreground"
-              >
-                Coding agent sessions
-              </summary>
-              <p className="my-2 text-xs text-muted-foreground">
-                End the original agent before resuming it here.
-              </p>
-              {live.data?.sessions
-                .filter(
-                  (s) =>
-                    ["claude", "codex"].includes(s.agent) &&
-                    matches(`${s.name ?? ""} ${s.cwd ?? ""}`),
-                )
-                .slice(0, 50)
-                .map((s) => (
-                  <button
-                    key={s.id}
-                    data-testid="chat-resume-live"
-                    type="button"
-                    disabled={pending || s.status === "running" || s.status === "idle"}
-                    className="block min-h-8 w-full rounded-md px-3 py-2 text-left text-sm hover:bg-surface disabled:opacity-40"
-                    onClick={() => void select(() => api.chat.resume(s.id))}
-                  >
-                    <span className="block truncate">{s.name || s.session_id || "Session"}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {s.agent} · {s.status} · {s.cwd}
-                    </span>
-                  </button>
-                ))}
-            </details>
-            <details open={search ? true : undefined}>
-              <summary
-                data-testid="chat-synced-toggle"
-                className="min-h-8 cursor-pointer text-xs text-muted-foreground"
-              >
-                Synced sessions
-              </summary>
-              {archive.data?.sessions
-                .filter((s) => ["claude", "codex"].includes(s.agent))
-                .map((s) => (
-                  <button
-                    type="button"
-                    data-testid="chat-resume-archive"
-                    key={s.id}
-                    disabled={pending}
-                    className="block min-h-8 w-full rounded-md px-3 py-2 text-left text-sm hover:bg-surface disabled:opacity-40"
-                    onClick={() => {
-                      setSelectedArchive(s);
-                      setRepository(s.metadata.repository ?? "");
-                      setBranch(s.metadata.branch ?? "");
-                      setCommit(s.metadata.commit ?? "");
-                      setSubdirectory(s.metadata.subdirectory ?? "");
-                      setError("");
-                    }}
-                  >
-                    <span className="block truncate">{s.title || s.native_id}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {s.agent} · Import and resume
-                    </span>
-                  </button>
-                ))}
-            </details>
+          <div data-testid="chat-session-list" className="min-w-0 space-y-1">
+            {entries.slice(0, visibleCount).map((entry) => (
+              <HistoryRow
+                key={entry.id}
+                entry={entry}
+                pending={pending}
+                onLocalSelect={() => setOpen(false)}
+                onSavedSelect={(id) => void select(() => api.chat.get(id))}
+                onNativeSelect={(id) => void select(() => api.chat.resume(id))}
+                onArchiveSelect={(session) => {
+                  setSelectedArchive(session);
+                  setRepository(session.metadata.repository ?? "");
+                  setBranch(session.metadata.branch ?? "");
+                  setCommit(session.metadata.commit ?? "");
+                  setSubdirectory(session.metadata.subdirectory ?? "");
+                  setError("");
+                }}
+              />
+            ))}
           </div>
+          {loading && (
+            <p role="status" className="px-2 text-xs text-muted-foreground">
+              Loading sessions…
+            </p>
+          )}
+          {!loading && !entries.length && (
+            <p className="px-2 text-sm text-muted-foreground">
+              {search ? "No sessions match." : "No conversations yet."}
+            </p>
+          )}
+          {entries.length > visibleCount && (
+            <Button
+              variant="ghost"
+              data-testid="chat-history-more"
+              onClick={() => setVisibleCount((count) => count + 50)}
+            >
+              Load older sessions
+            </Button>
+          )}
         </>
       )}
       {(error || threads.error || live.error || archive.error) && (
@@ -271,16 +217,6 @@ export function ChatSessionPicker({
           {error || threads.error?.message || live.error?.message || archive.error?.message}
         </p>
       )}
-      <Button
-        variant="outline"
-        disabled={pending}
-        onClick={() => {
-          chat.newTab();
-          setOpen(false);
-        }}
-      >
-        New conversation
-      </Button>
     </SessionHistoryFrame>
   );
 }
@@ -362,122 +298,159 @@ function SessionHistoryFrame({
   );
 }
 
-function SessionRows({
-  closed = false,
-  search = "",
-  onSelect,
+type SessionState = "idle" | "open" | "running" | "waiting" | "attention" | "error";
+function HistoryRow({
+  entry,
+  pending,
+  onLocalSelect,
+  onSavedSelect,
+  onNativeSelect,
+  onArchiveSelect,
 }: {
-  closed?: boolean;
-  search?: string;
-  onSelect: () => void;
+  entry: ChatHistoryEntry;
+  pending: boolean;
+  onLocalSelect: () => void;
+  onSavedSelect: (id: string) => void;
+  onNativeSelect: (id: string) => void;
+  onArchiveSelect: (session: ArchiveSession) => void;
 }) {
   const chat = useChat();
-  const tabs = chat.tabs.filter(
-    (tab) =>
-      Boolean(tab.hidden) === closed &&
-      `${tab.thread?.title || "New conversation"} ${tab.config.agent}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
-  );
-  return (
-    <div data-testid={closed ? "chat-closed-sessions" : "chat-open-sessions"} className="space-y-1">
-      {tabs.map((tab) => {
-        const waiting = tab.permissions.length > 0 || tab.questions.length > 0;
-        const state = waiting
+  const tab = entry.kind === "local" ? entry.tab : null;
+  const selected = tab?.key === chat.activeKey;
+  const open = !!tab && !tab.hidden;
+  const localState: SessionState = tab
+    ? tab.permissions.length || tab.questions.length
+      ? "waiting"
+      : tab.error
+        ? "error"
+        : tab.streaming
+          ? "running"
+          : tab.attention
+            ? "attention"
+            : open
+              ? "open"
+              : "idle"
+    : entry.kind === "saved"
+      ? entry.thread.running
+        ? "running"
+        : "idle"
+      : entry.kind === "native"
+        ? entry.session.waiting_for_human
           ? "waiting"
-          : tab.error
-            ? "error"
-            : tab.streaming
-              ? "running"
-              : tab.attention
-                ? "attention"
-                : "idle";
-        const title = tab.thread?.title || "New conversation";
-        return (
-          <div
-            key={tab.key}
-            data-testid="chat-tab"
-            data-active={tab.key === chat.activeKey ? "true" : "false"}
-            data-state={state}
-            className={`group flex min-w-0 items-center rounded-md ${tab.key === chat.activeKey ? "bg-surface-highest" : "hover:bg-surface"}`}
-          >
-            <button
-              type="button"
-              data-testid="chat-session-select"
-              aria-current={tab.key === chat.activeKey ? "true" : undefined}
-              onClick={() => {
-                chat.selectTab(tab.key);
-                onSelect();
-              }}
-              className="flex min-h-12 min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left"
-            >
-              {waiting ? (
-                <CircleAlert
-                  size={15}
-                  className="shrink-0 text-warning"
-                  aria-label="Needs your input"
-                />
-              ) : tab.error ? (
-                <CircleAlert size={15} className="shrink-0 text-error" aria-label="Error" />
-              ) : tab.streaming ? (
-                <LoaderCircle
-                  size={15}
-                  className="shrink-0 animate-spin text-progress"
-                  aria-label="Working"
-                />
-              ) : (
-                <MessageSquare size={15} className="shrink-0 text-muted-foreground" />
-              )}
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px]">{title}</span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {tab.config.agent}
-                  {waiting
-                    ? " · Needs your input"
-                    : tab.error
-                      ? " · Error"
-                      : tab.streaming
-                        ? " · Working"
-                        : tab.attention
-                          ? " · New response"
-                          : ""}
-                  {tab.draft ? " · Draft" : ""}
-                </span>
-              </span>
-              {tab.key === chat.activeKey && <Check size={12} className="shrink-0" />}
-            </button>
-            {!closed && (
-              <button
-                type="button"
-                data-testid="chat-tab-close"
-                aria-label={`Close ${title} from open sessions`}
-                title="Close from open sessions; history and background work are kept"
-                onClick={() => chat.closeTab(tab.key)}
-                className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
-              >
-                <X size={13} />
-              </button>
-            )}
-          </div>
-        );
-      })}
+          : entry.session.status === "running"
+            ? "running"
+            : entry.session.status === "idle"
+              ? "open"
+              : entry.session.status === "error"
+                ? "error"
+                : "idle"
+        : "idle";
+  const state = mergeHistoryState(localState, entry.observedState ?? "idle");
+  const agent =
+    tab?.config.agent ||
+    (entry.kind === "native" || entry.kind === "archive" ? entry.session.agent : "");
+  const status = {
+    idle: "Saved conversation",
+    open: "Open session",
+    running: "Working",
+    waiting: "Needs your input",
+    attention: "New response",
+    error: "Error",
+  }[state];
+  const liveBusy = entry.kind === "native" && ["running", "idle"].includes(entry.session.status);
+  const selectRow = () => {
+    if (entry.kind === "local") {
+      chat.selectTab(entry.tab.key);
+      onLocalSelect();
+    } else if (entry.kind === "saved") onSavedSelect(entry.thread.id);
+    else if (entry.kind === "native") onNativeSelect(entry.session.id);
+    else onArchiveSelect(entry.session);
+  };
+  const Glyph =
+    state === "running"
+      ? LoaderCircle
+      : state === "waiting" || state === "error"
+        ? CircleAlert
+        : state === "open" || state === "attention"
+          ? CircleDot
+          : MessageSquare;
+  const testId =
+    entry.kind === "local"
+      ? "chat-session-select"
+      : entry.kind === "saved"
+        ? "chat-resume-thread"
+        : entry.kind === "native"
+          ? "chat-resume-live"
+          : "chat-resume-archive";
+  return (
+    <div
+      data-testid={tab ? "chat-tab" : "chat-history-row"}
+      data-history-id={entry.id}
+      data-history-updated={entry.updatedAt}
+      data-history-kind={entry.kind}
+      data-history-open={open ? "true" : "false"}
+      data-active={selected ? "true" : "false"}
+      data-state={state}
+      className={`group flex min-w-0 items-center rounded-md ${selected ? "bg-surface-highest" : "hover:bg-surface"}`}
+    >
+      <button
+        type="button"
+        data-testid={testId}
+        aria-current={selected ? "true" : undefined}
+        disabled={pending || liveBusy}
+        title={
+          entry.title +
+          "\n" +
+          [
+            agent,
+            status,
+            entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : "",
+            liveBusy ? "End the original agent before resuming here." : "",
+          ]
+            .filter(Boolean)
+            .join(" · ")
+        }
+        onClick={selectRow}
+        className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left disabled:opacity-60"
+      >
+        <Glyph
+          data-testid="chat-session-status"
+          data-state={state}
+          role="img"
+          aria-label={status}
+          size={15}
+          className={`shrink-0 ${state === "waiting" ? "text-warning" : state === "error" ? "text-error" : state === "running" ? "animate-spin text-progress" : state === "open" || state === "attention" ? "text-progress" : "text-muted-foreground"}`}
+        />
+        <span className="min-w-0 flex-1 truncate text-[13px]">{entry.title}</span>
+        <span className="sr-only">
+          {agent ? ` · ${agent}` : ""}
+          {tab?.draft ? " · Draft" : ""}
+          {liveBusy
+            ? " · End the original agent before resuming here."
+            : entry.kind === "archive"
+              ? " · Import and resume"
+              : ""}
+        </span>
+        {entry.kind === "saved" && entry.thread.running && (
+          <span data-testid="chat-thread-running" className="sr-only">
+            Running
+          </span>
+        )}
+      </button>
+      {open && tab && (
+        <button
+          type="button"
+          data-testid="chat-tab-close"
+          aria-label={`Close ${entry.title} from open sessions`}
+          title="Close from open sessions; history and background work are kept"
+          onClick={() => chat.closeTab(tab.key)}
+          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100"
+        >
+          <X size={13} />
+        </button>
+      )}
     </div>
   );
-}
-function OpenChatSessions({ search, onSelect }: { search: string; onSelect: () => void }) {
-  const chat = useChat();
-  return (
-    <section>
-      <h3 className="mb-2 flex justify-between px-2 text-xs text-muted-foreground">
-        <span>Open sessions</span>
-        <span>{chat.tabs.filter((tab) => !tab.hidden).length}</span>
-      </h3>
-      <SessionRows search={search} onSelect={onSelect} />
-    </section>
-  );
-}
-function ClosedChatSessions({ search, onSelect }: { search: string; onSelect: () => void }) {
-  return <SessionRows closed search={search} onSelect={onSelect} />;
 }
 
 export function ChatAgentPicker() {

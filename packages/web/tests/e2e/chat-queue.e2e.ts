@@ -110,12 +110,12 @@ test("queued messages stay with their background conversation across refresh", a
   await expect(panel.getByTestId("chat-message-content").last()).toContainText("OTHER");
   await openChatHistory(page);
   await expect(
-    page.getByTestId("chat-open-sessions").getByTestId("chat-tab").first(),
+    page.getByTestId("chat-session-list").getByTestId("chat-tab").filter({ hasText: "BACKGROUND" }),
   ).toHaveAttribute("data-state", "attention");
   await page
-    .getByTestId("chat-open-sessions")
+    .getByTestId("chat-session-list")
     .getByTestId("chat-tab")
-    .first()
+    .filter({ hasText: "BACKGROUND" })
     .getByTestId("chat-session-select")
     .click();
   await expect(panel.getByTestId("chat-message-content").last()).toContainText("QUEUED");
@@ -242,7 +242,7 @@ test("closing a conversation cannot dispatch its pending message", async ({ page
   await expect(page).toHaveURL(/chatThread=/);
   await send(panel, "NEVER SENT");
   await openChatHistory(page);
-  await page.getByTestId("chat-open-sessions").getByTestId("chat-tab-close").click();
+  await page.getByTestId("chat-session-list").getByTestId("chat-tab-close").click();
   await closeChatHistory(page);
   await send(panel, "Respond after 2500ms. Reply with exactly: OTHER.");
   await expect(panel.getByTestId("chat-message-content").last()).toContainText("OTHER");

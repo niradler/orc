@@ -219,13 +219,16 @@ the actual application with realistic data and preserve its working behavior.
   the opener. Pending operations cannot be dismissed. Successful writes use the
   committed close callback so navigation is not mistaken for discarded work.
   Prefer grouped/conditional fields over a universal wizard.
-- **Chat:** show one selected conversation. Session history contains open and
-  earlier conversations with selected/working/needs-input/error context; use a
+- **Chat:** show one selected conversation. Session history is **one flat list,
+  newest activity first**. Open, selected, working and needs-input states use icons
+  and selection styling; they never create sections or override date order. Do not
+  add Open/Earlier, source or date groups without explicit new direction. This is
+  an intentional exception to the general secondary-list disclosure guidance. Use a
   collapsible sidebar in desktop fullscreen and a named phone drawer. Keep agent
   and model controls in the composer and infrequent conversation actions in one
   named menu. Changing agents after a session starts creates a separate session;
   changing models applies to the next turn. Align assistant and composer columns,
-  including16px phone insets. Closing from the open list retains drafts/history
+  including16px phone insets. Closing an open session leaves it in this same list with its drafts/history
   and background activity, but pauses pending-message dispatch. Stop, requests,
   errors and paused queues remain discoverable. Provider catalogs and model
   validation use the existing contracts; never hardcode a preview model list.

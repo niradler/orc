@@ -187,13 +187,16 @@ test("closing a session keeps background reconnect and history without cancellin
   await page.evaluate(() => window.reconnectTest.drop(false));
   await expect(page.getByTestId("chat-reconnecting")).toBeVisible();
   await openChatHistory(page);
-  await page.getByTestId("chat-open-sessions").getByTestId("chat-tab-close").click();
+  await page.getByTestId("chat-session-list").getByTestId("chat-tab-close").click();
   await closeChatHistory(page);
   await page.clock.fastForward(10_000);
   expect(await page.evaluate(() => window.reconnectTest.state.attaches)).toBe(1);
   await openChatHistory(page);
-  await page.getByTestId("chat-earlier-toggle").click();
-  await page.getByTestId("chat-closed-sessions").getByTestId("chat-session-select").click();
+  await page
+    .getByTestId("chat-session-list")
+    .getByTestId("chat-session-select")
+    .filter({ hasText: "Reconnect fixture" })
+    .click();
   await expect(page.getByTestId("chat-panel")).toHaveAttribute("data-streaming", "true");
   expect(await page.evaluate(() => window.reconnectTest.state.cancels)).toBe(0);
 });

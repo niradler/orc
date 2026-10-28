@@ -211,7 +211,7 @@ test("coding-session selection opens native history before sending a continuatio
   });
   await openChat(page);
   await page.getByTestId("chat-sessions-button").click();
-  await page.getByTestId("chat-native-toggle").click();
+  await page.getByTestId("chat-session-search").fill("Imported coding work");
   await page.getByTestId("chat-resume-live").filter({ hasText: "Imported coding work" }).click();
   await expect(page.getByTestId("chat-message-content")).toContainText("Earlier native answer");
   await expect(page.getByTestId("chat-agent-button")).toHaveText("codex");
@@ -267,7 +267,7 @@ test("synced sessions can supply missing checkout details before chat resume", a
   );
   await openChat(page);
   await page.getByTestId("chat-sessions-button").click();
-  await page.getByTestId("chat-synced-toggle").click();
+  await page.getByTestId("chat-session-search").fill(source.title);
   await page.getByTestId("chat-resume-archive").filter({ hasText: source.title }).click();
   await expect(page.getByTestId("chat-archive-prepare")).toBeDisabled();
   await page.getByTestId("chat-archive-repository").fill("https://example.test/fixture.git");

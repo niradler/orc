@@ -32,7 +32,7 @@ export async function openChatHistory(page: Page): Promise<void> {
   if (await page.getByTestId("chat-session-sidebar").isVisible()) return;
   if (!(await page.getByTestId("chat-sessions-dialog").isVisible()))
     await page.getByTestId("chat-sessions-button").filter({ visible: true }).click();
-  await expect(page.getByTestId("chat-open-sessions")).toBeVisible();
+  await expect(page.getByTestId("chat-session-list")).toBeVisible();
 }
 
 export async function closeChatHistory(page: Page): Promise<void> {
