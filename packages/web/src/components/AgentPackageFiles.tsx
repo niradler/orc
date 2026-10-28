@@ -9,6 +9,7 @@ export function AgentPackageFiles({
   onClose,
   onUse,
   onEdit,
+  onDelete,
   onExport,
   onSource,
   busy,
@@ -18,6 +19,7 @@ export function AgentPackageFiles({
   onClose: () => void;
   onUse?: () => void;
   onEdit?: () => void;
+  onDelete?: () => void;
   onExport?: () => void;
   onSource?: () => void;
   busy?: boolean;
@@ -106,6 +108,18 @@ export function AgentPackageFiles({
                   disabled={busy}
                 >
                   Edit
+                </Button>
+              )}
+              {onDelete && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive"
+                  data-testid="package-detail-delete"
+                  onClick={onDelete}
+                  disabled={busy}
+                >
+                  Delete package
                 </Button>
               )}
               {onExport && (
