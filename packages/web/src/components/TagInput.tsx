@@ -90,7 +90,7 @@ export function TagInput({
           <button
             type="button"
             aria-label={`Remove ${tag}`}
-            className="rounded-full p-0.5 text-outline hover:bg-surface-highest hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            className="rounded-full p-0.5 text-outline hover:bg-surface-highest hover:text-on-surface focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus"
             onClick={(e) => {
               e.stopPropagation();
               onChange(value.filter((t) => t !== tag));
@@ -112,7 +112,7 @@ export function TagInput({
         onPaste={paste}
         onBlur={() => draft.trim() && commit(draft)}
         placeholder={value.length === 0 ? placeholder : ""}
-        className="h-7 min-w-[8rem] flex-1 bg-transparent px-1 outline-none placeholder:text-muted-foreground"
+        className="h-7 min-w-32 flex-1 bg-transparent px-1 outline-hidden placeholder:text-muted-foreground"
       />
       {offered.length > 0 && (
         <datalist id={listId}>

@@ -413,7 +413,36 @@ Comments stay collapsed to one header row with a count per status (open uses
 the warning dot, resolved done, dismissed neutral); a count opens the list
 filtered to it. Maintenance warnings appear only when a document needs action.
 
-### Conversation and terminal
+### Compact, screen-aware working controls
+
+Nir approved the compact chat queue in PR124 as the reference for professional
+workspace controls. Design for the available screen space and the user's main
+task; supporting controls must not consume the reading or editing area by default.
+
+- Prefer one quiet summary with a count and progressive disclosure for secondary
+  lists. Start nonessential details collapsed; new entries update the summary
+  without reopening it. Keep urgent errors and decisions visible.
+- Expanded repeated items should usually be slim rows with concise text and
+  nearby actions, rather than separate padded cards, repeated badges, headings
+  and multi-line action bars. Add a container only when it communicates structure.
+- Show multiline editors and their Save/Cancel controls only for the item being
+  edited. Keep routine actions, including removal where appropriate, reachable
+  without opening a large editor. Icon actions need names, tooltips and focus states.
+- Adapt density to the actual panel width and viewport, including narrow desktop
+  side panels, phones, landscape and the software keyboard. Preserve readable
+  text, 44px phone touch targets and bounded scrolling. Do not shrink touch targets
+  merely to make a screenshot look dense.
+- Preserve drafts and edit state when panels hide, resize or become fullscreen.
+  A resumed editor must remain discoverable. Collapsing UI must not lose work or
+  change the order, pause state or meaning of queued actions.
+
+For a new or substantially changed control, inspect realistic populated desktop
+and phone screenshots before calling the UI complete. Compare the space used in
+its default, expanded and editing states. Reduce repeated chrome before asking
+Nir to approve the result. The approved queue uses a 32px desktop / 44px phone
+summary; those are examples, not mandatory heights for every component.
+
+### Chat and terminal continuity
 
 Keep messages on a calm reading surface with light role/agent attribution.
 Avoid a border around every assistant paragraph or a new card for each chunk.

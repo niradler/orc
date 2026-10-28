@@ -64,9 +64,16 @@ for (const [name, resolver] of [["runner watcher", chokidarRequire]] as const) {
 test("API IP parsing and YAML use patched dependency versions", () => {
   const apiRequire = createRequire(join(repo, "packages/api/package.json"));
   const mcpRequire = createRequire(apiRequire.resolve("@modelcontextprotocol/sdk/server/index.js"));
-  expect(version(apiRequire.resolve("@modelcontextprotocol/sdk/server/index.js"))).toBe("1.32.1");
+  expect(
+    Bun.semver.satisfies(
+      version(apiRequire.resolve("@modelcontextprotocol/sdk/server/index.js")),
+      ">=1.32.2 <2",
+    ),
+  ).toBe(true);
   const limiterRequire = createRequire(mcpRequire.resolve("express-rate-limit"));
-  expect(version(limiterRequire.resolve("ip-address"))).toBe("10.7.3");
+  expect(Bun.semver.satisfies(version(limiterRequire.resolve("ip-address")), ">=10.7.5 <11")).toBe(
+    true,
+  );
   const { Address4 } = limiterRequire("ip-address") as {
     Address4: new (value: string) => { correctForm: () => string };
   };

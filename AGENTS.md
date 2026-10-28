@@ -33,7 +33,11 @@ extra agents, production changes, publication, or imply hook enforcement.
   ports are API 7701 and web 3077; inspect existing listeners before starting.
   For port recovery, dev commands and Windows process details, see
   [docs/development.md](docs/development.md).
-- Read [DESIGN.md](DESIGN.md) before web UI work. Preserve its list-selection
+- Read [DESIGN.md](DESIGN.md) before web UI work. Follow its compact,
+  screen-aware controls guidance: secondary lists default to a quiet
+  collapsed summary, expanded items use slim rows, and editors appear on demand.
+  Review populated desktop and phone states before declaring substantial UI work done.
+  Preserve its list-selection
   and bulk-action standard. Browser E2E selectors use `data-testid`; see
   [docs/development.md](docs/development.md#web-ui-e2e-tests-playwright).
 - For releases or installation upgrades, follow [docs/releases.md](docs/releases.md)

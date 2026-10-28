@@ -871,7 +871,7 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && close()}>
-      <DialogContent className="bg-surface border-outline-variant w-[calc(100%_-_1rem)] max-w-5xl max-h-[94dvh] overflow-y-auto">
+      <DialogContent className="bg-surface border-outline-variant w-[calc(100%-1rem)] max-w-5xl max-h-[94dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="font-headline text-base  text-on-surface">New skill</DialogTitle>
         </DialogHeader>

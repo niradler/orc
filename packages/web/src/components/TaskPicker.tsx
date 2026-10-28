@@ -82,7 +82,7 @@ export function TaskPicker({
               onClick={() => void select(task.id)}
               className="w-full min-h-11 py-2 text-left hover:bg-surface-highest disabled:opacity-50"
             >
-              <span className="block text-sm break-words">{task.title}</span>
+              <span className="block text-sm wrap-break-word">{task.title}</span>
               <span className="inline-flex items-center gap-2 text-xs text-outline">
                 <StatusBadge status={task.status} className="px-0" />
                 {task.id}

@@ -66,7 +66,7 @@ The sidebar shows the saved execution host, for example `Connected (lab)` or `Co
 <details>
 <summary>Headless / CLI-only install (servers, Docker, CI)</summary>
 
-Needs [Bun](https://bun.sh) >= 1.4.2 for the npm install.
+Needs [Bun](https://bun.sh) >= 1.4.4 for the npm install.
 
 ```bash
 npm install -g orc-ai

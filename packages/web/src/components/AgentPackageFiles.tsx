@@ -77,7 +77,7 @@ export function AgentPackageFiles({
         </SheetHeader>
         <SheetBody>
           <div className="mb-5 space-y-3">
-            <p className="text-sm text-outline break-words">{manifest.data?.description}</p>
+            <p className="text-sm text-outline wrap-break-word">{manifest.data?.description}</p>
             {manifest.data && (
               <p className="text-xs text-outline">
                 {manifest.data.format === "apm" ? "APM package" : "Agent Plugin"}
@@ -86,7 +86,7 @@ export function AgentPackageFiles({
               </p>
             )}
             {manifest.data?.warnings.map((warning) => (
-              <p role="alert" key={warning} className="text-xs text-destructive break-words">
+              <p role="alert" key={warning} className="text-xs text-destructive wrap-break-word">
                 {warning}
               </p>
             ))}

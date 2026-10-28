@@ -124,8 +124,8 @@ export function Sidebar({
               className={cn(
                 "w-full appearance-none bg-surface-highest/50 border border-surface-highest",
                 "text-on-surface font-label text-[11px] tracking-tight",
-                "pl-3 pr-8 py-2 rounded-sm cursor-pointer",
-                "hover:bg-surface-highest focus:outline-none focus:ring-1 focus:ring-primary/40",
+                "pl-3 pr-8 py-2 rounded-xs cursor-pointer",
+                "hover:bg-surface-highest focus:outline-hidden focus:ring-1 focus:ring-primary/40",
                 "transition-colors duration-150",
               )}
             >
@@ -182,7 +182,7 @@ export function Sidebar({
                 ) : (
                   <span
                     title={`${badge} running`}
-                    className="ml-auto min-w-5 px-1.5 py-0.5 rounded-sm bg-secondary/15 text-secondary text-center text-[10px] font-bold leading-none"
+                    className="ml-auto min-w-5 px-1.5 py-0.5 rounded-xs bg-secondary/15 text-secondary text-center text-[10px] font-bold leading-none"
                   >
                     {badge}
                   </span>

@@ -345,7 +345,7 @@ export function ChatPanel({
                     ? message.metadata.custom.agent
                     : "Assistant"}
               </div>
-              <div data-testid="chat-message-content" className="min-w-0 break-words">
+              <div data-testid="chat-message-content" className="min-w-0 wrap-break-word">
                 <ChatActivityList value={message.metadata.custom.activity} />
                 <MessagePrimitive.Parts components={textParts} />
               </div>
@@ -367,7 +367,7 @@ export function ChatPanel({
         <div
           role="alert"
           data-testid="chat-error"
-          className="shrink-0 max-h-32 overflow-auto border-t border-outline-variant px-4 py-3 text-sm text-error break-words"
+          className="shrink-0 max-h-32 overflow-auto border-t border-outline-variant px-4 py-3 text-sm text-error wrap-break-word"
         >
           {error}
         </div>
@@ -380,7 +380,7 @@ export function ChatPanel({
               className="shrink-0 max-h-52 overflow-auto border-t border-outline-variant px-4 py-3 text-sm"
             >
               <p className="font-medium">Allow {permission.tool}?</p>
-              <pre className="my-2 max-h-20 overflow-auto whitespace-pre-wrap break-words text-xs">
+              <pre className="my-2 max-h-20 overflow-auto whitespace-pre-wrap wrap-break-word text-xs">
                 {permission.command}
               </pre>
               <div className="flex gap-2">
@@ -503,7 +503,7 @@ export function ChatPanel({
               }
             }}
             rows={2}
-            className="chat-composer-input block max-h-[min(12rem,calc(var(--app-height,100dvh)*0.3))] w-full resize-none overflow-y-auto bg-transparent p-2 text-base sm:text-sm leading-relaxed placeholder:text-on-surface-variant focus-visible:outline-none disabled:opacity-60"
+            className="chat-composer-input block max-h-[min(12rem,calc(var(--app-height,100dvh)*0.3))] w-full resize-none overflow-y-auto bg-transparent p-2 text-base sm:text-sm leading-relaxed placeholder:text-on-surface-variant focus-visible:outline-hidden disabled:opacity-60"
           />
           <div className="flex items-center justify-between gap-2">
             <button

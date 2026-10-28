@@ -93,7 +93,7 @@ function Directory({
               aria-current={!entry.directory && selected === entry.path ? "true" : undefined}
               title={entry.path}
               onClick={() => (entry.directory ? toggle(entry.path) : select(entry.path))}
-              className={`flex min-h-11 sm:min-h-8 w-full min-w-0 items-center gap-2 rounded px-2 text-left text-[13px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus ${selected === entry.path ? "bg-surface-highest text-on-surface" : "hover:bg-surface"}`}
+              className={`flex min-h-11 sm:min-h-8 w-full min-w-0 items-center gap-2 rounded px-2 text-left text-[13px] focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-focus ${selected === entry.path ? "bg-surface-highest text-on-surface" : "hover:bg-surface"}`}
             >
               <span className="flex w-3 shrink-0 items-center">
                 {entry.directory && (
@@ -390,7 +390,7 @@ export function FilePanel({
             title={rootPath}
             aria-expanded={rootOpen}
             onClick={() => setRootOpen((open) => !open)}
-            className="mb-1 flex min-h-11 sm:min-h-8 w-full min-w-0 items-center gap-2 rounded px-2 text-left text-[13px] font-medium hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+            className="mb-1 flex min-h-11 sm:min-h-8 w-full min-w-0 items-center gap-2 rounded px-2 text-left text-[13px] font-medium hover:bg-surface focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-focus"
           >
             <ChevronRight
               size={12}

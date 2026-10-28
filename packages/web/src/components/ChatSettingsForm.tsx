@@ -148,7 +148,7 @@ export function ChatSettingsForm() {
         <p
           role="status"
           data-testid="chat-settings-feedback"
-          className="break-words text-sm text-muted-foreground"
+          className="wrap-break-word text-sm text-muted-foreground"
         >
           {feedback}
         </p>

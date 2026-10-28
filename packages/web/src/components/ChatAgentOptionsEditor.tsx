@@ -137,7 +137,11 @@ export function ChatAgentOptionsEditor() {
         </Button>
       </div>
       {error && (
-        <p role="alert" data-testid="chat-agent-options-error" className="break-words text-error">
+        <p
+          role="alert"
+          data-testid="chat-agent-options-error"
+          className="wrap-break-word text-error"
+        >
           {error}
         </p>
       )}

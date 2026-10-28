@@ -202,7 +202,7 @@ export function SourceEditor({
       data-testid="code-editor"
       data-file-path={path}
       data-read-only={readOnly}
-      className="flex min-h-0 flex-col overflow-hidden rounded-sm border border-control-border"
+      className="flex min-h-0 flex-col overflow-hidden rounded-xs border border-control-border"
       style={{ height }}
     >
       <div className="flex shrink-0 items-center gap-2 border-b border-surface-highest px-2 py-1 text-xs">

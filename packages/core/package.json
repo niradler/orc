@@ -1,6 +1,6 @@
 {
   "name": "@orc/core",
-  "version": "0.1.50",
+  "version": "0.1.52",
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
@@ -68,9 +68,9 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "ajv": "^8.18.0",
-    "skills": "1.7.2",
-    "zod": "^4.4.3",
-    "re2js": "2.8.6"
+    "ajv": "^8.20.0",
+    "skills": "1.7.4",
+    "zod": "^4.6.7",
+    "re2js": "2.9.0"
   }
 }

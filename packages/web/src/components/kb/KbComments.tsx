@@ -206,7 +206,7 @@ function CommentRow({
           <StatusDot status={c.status} />
           <span data-testid="kb-comment-status">{c.status}</span>
         </span>
-        <span className="min-w-0 break-words">
+        <span className="min-w-0 wrap-break-word">
           {/* The source only adds information when it differs from the author, e.g. "ui". */}
           {c.source === c.author ? c.author : `${c.author} via ${c.source}`} ·{" "}
           {new Date(c.created_at).toLocaleString()}
@@ -228,9 +228,9 @@ function CommentRow({
           )}
         </span>
       </p>
-      <p className="whitespace-pre-wrap break-words">{c.body}</p>
+      <p className="whitespace-pre-wrap wrap-break-word">{c.body}</p>
       {c.reply && (
-        <p className="break-words text-xs" data-testid="kb-comment-reply-text">
+        <p className="wrap-break-word text-xs" data-testid="kb-comment-reply-text">
           <span className="text-outline">
             {c.status === "dismissed" ? "Dismissed" : "Resolved"}
             {c.resolved_by ? ` by ${c.resolved_by}` : ""}:

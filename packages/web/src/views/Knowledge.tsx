@@ -76,7 +76,7 @@ function Snippet({ text }: { text: string }) {
       {parts.map((part, i) =>
         i % 2 ? (
           // biome-ignore lint/suspicious/noArrayIndexKey: parts are positional
-          <mark key={i} className="rounded-sm bg-primary/20 px-0.5 text-on-surface">
+          <mark key={i} className="rounded-xs bg-primary/20 px-0.5 text-on-surface">
             {part}
           </mark>
         ) : (

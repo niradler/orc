@@ -43,7 +43,7 @@ export function TerminalTextSheet({ text, onClose }: { text: string; onClose: ()
             if (body) body.scrollTop = body.scrollHeight;
           }}
         >
-          <pre className="select-text whitespace-pre-wrap break-words font-mono text-xs text-on-surface">
+          <pre className="select-text whitespace-pre-wrap wrap-break-word font-mono text-xs text-on-surface">
             {text}
           </pre>
         </SheetBody>

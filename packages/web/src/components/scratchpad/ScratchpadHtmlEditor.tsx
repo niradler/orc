@@ -144,7 +144,7 @@ export function HtmlPreview({
       sandbox={SANDBOX}
       referrerPolicy="no-referrer"
       srcDoc={nonce ? withBridge(html, nonce) : html}
-      className={`h-[var(--pad-height,70vh)] w-full border bg-white ${trusted ? "border-destructive" : "border-outline-variant"}`}
+      className={`h-(--pad-height,70vh) w-full border bg-white ${trusted ? "border-destructive" : "border-outline-variant"}`}
     />
   );
 }

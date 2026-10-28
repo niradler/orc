@@ -1,7 +1,7 @@
 {
   "name": "@orc/desktop",
   "productName": "orc",
-  "version": "0.1.50",
+  "version": "0.1.52",
   "private": true,
   "type": "module",
   "description": "orc desktop app - Electron shell around the orc daemon",
@@ -21,7 +21,7 @@
     "clean": "rm -rf dist release"
   },
   "devDependencies": {
-    "electron": "44.9.1",
-    "electron-builder": "^26.15.3"
+    "electron": "45.0.0",
+    "electron-builder": "^26.18.1"
   }
 }

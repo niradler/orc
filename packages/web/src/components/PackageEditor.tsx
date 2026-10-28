@@ -187,9 +187,9 @@ export function PackageEditor({
   }
 
   return (
-    <DialogContent className="min-w-0 grid-cols-[minmax(0,1fr)] w-[calc(100%_-_1rem)] max-w-4xl max-h-[94dvh] overflow-x-hidden overflow-y-auto p-4 sm:p-6">
+    <DialogContent className="min-w-0 grid-cols-[minmax(0,1fr)] w-[calc(100%-1rem)] max-w-4xl max-h-[94dvh] overflow-x-hidden overflow-y-auto p-4 sm:p-6">
       <DialogHeader>
-        <DialogTitle className="break-words pr-8">
+        <DialogTitle className="wrap-break-word pr-8">
           {initial ? `Edit ${initial.name}` : "New package"}
         </DialogTitle>
         <DialogDescription>
@@ -498,7 +498,7 @@ export function PackageEditor({
                         key={file.path}
                         className="flex flex-wrap items-center justify-between gap-2 border-b border-outline-variant p-3"
                       >
-                        <span className="min-w-0 break-words text-sm">
+                        <span className="min-w-0 wrap-break-word text-sm">
                           Included: {prefix.split("/").slice(-2)[0]}
                         </span>
                         <Button
@@ -568,7 +568,7 @@ export function PackageEditor({
                               )
                             }
                           />
-                          <span className="min-w-0 break-words">
+                          <span className="min-w-0 wrap-break-word">
                             <span className="block text-sm font-medium">
                               {skill.name}
                               {alreadyIncluded ? " · included" : ""}

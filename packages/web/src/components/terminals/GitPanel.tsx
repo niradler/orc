@@ -305,7 +305,7 @@ export function GitPanelBody({ terminal, paneId }: { terminal: Terminal; paneId:
                 </TerminalSelect>
               </label>
             </div>
-            <div className="flex min-w-0 flex-1 basis-80 max-w-[32rem] items-end gap-2">
+            <div className="flex min-w-0 flex-1 basis-80 max-w-lg items-end gap-2">
               <label
                 htmlFor={`git-worktree-${paneId}`}
                 className="block flex-1 min-w-0 text-xs text-on-surface-variant"

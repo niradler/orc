@@ -1,6 +1,6 @@
 {
   "name": "@orc/db",
-  "version": "0.1.50",
+  "version": "0.1.52",
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
@@ -33,9 +33,9 @@
   },
   "dependencies": {
     "@orc/core": "workspace:*",
-    "drizzle-orm": "^0.45.2"
+    "drizzle-orm": "^0.45.4"
   },
   "devDependencies": {
-    "drizzle-kit": "^0.31.10"
+    "drizzle-kit": "^0.31.11"
   }
 }

@@ -1,7 +1,7 @@
 # Releases
 
 The desktop app is the default installation. Run releases from Windows x64,
-macOS ARM64, or Linux x64/ARM64 with Bun 1.4.2+, Git, GitHub CLI, npm and Docker
+macOS ARM64, or Linux x64/ARM64 with Bun 1.4.4+, Git, GitHub CLI, npm and Docker
 Buildx installed and authenticated. Docker must be running and able to push to
 `niradler/orc`; npm must be able to publish `orc-ai`.
 

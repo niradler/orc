@@ -200,7 +200,7 @@ export default function ScratchpadDiagramEditor({ pad }: { pad: Scratchpad }) {
       )}
       <div
         data-testid="scratchpad-canvas"
-        className="h-[var(--pad-height,70vh)] min-h-[420px] border border-outline-variant"
+        className="h-(--pad-height,70vh) min-h-[420px] border border-outline-variant"
         onPointerDownCapture={() => {
           touched.current = true;
         }}

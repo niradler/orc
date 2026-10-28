@@ -16,6 +16,8 @@ test("should create a skill from the expanded Markdown editor on a phone", async
   const dimensions = await page.getByTestId("markdown-editor").boundingBox();
   expect(dimensions?.height).toBeGreaterThan(750);
   expect(dimensions?.width).toBeLessThanOrEqual(390);
+  expect(dimensions?.x).toBeGreaterThanOrEqual(0);
+  expect(dimensions?.y).toBeGreaterThanOrEqual(0);
   await page.getByTestId("markdown-save").click();
   const row = page.locator(`[data-testid="skill-row"][data-skill-name="${name}"]`);
   await expect(row).toBeVisible();

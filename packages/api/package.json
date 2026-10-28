@@ -1,6 +1,6 @@
 {
   "name": "@orc/api",
-  "version": "0.1.50",
+  "version": "0.1.52",
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
@@ -18,8 +18,8 @@
   },
   "dependencies": {
     "@hono/swagger-ui": "^0.6.1",
-    "@hono/zod-openapi": "^1.5.1",
-    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@hono/zod-openapi": "^1.6.3",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@orc/agent-runtime": "workspace:*",
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
@@ -28,11 +28,11 @@
     "@orc/mcp": "workspace:*",
     "@orc/runner": "workspace:*",
     "@orc/task-service": "workspace:*",
-    "croner": "^10.0.1",
-    "drizzle-orm": "^0.45.2",
-    "hono": "^4.13.13",
+    "croner": "^11.0.0",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.14",
     "web-push": "3.6.7",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@orc/sdk": "workspace:*",

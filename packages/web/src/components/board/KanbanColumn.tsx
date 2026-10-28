@@ -44,17 +44,14 @@ export function KanbanColumn({
         ${borderClass}
       `}
     >
-      <div className="flex-shrink-0 px-3 py-2.5 border-b border-border">
+      <div className="shrink-0 px-3 py-2.5 border-b border-border">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div
-              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-              style={{ backgroundColor: color }}
-            />
+            <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
             <span className="font-label text-sm font-medium text-on-surface-variant">{label}</span>
           </div>
           <span
-            className="text-[11px] font-label px-1.5 py-0.5 rounded-sm
+            className="text-[11px] font-label px-1.5 py-0.5 rounded-xs
               text-outline"
           >
             {tasks.length}

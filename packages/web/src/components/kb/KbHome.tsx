@@ -60,7 +60,7 @@ export function KbHome({
     <div data-testid="kb-overview" className="w-full min-w-0 space-y-8 p-4 sm:p-8">
       <header className="space-y-3">
         <div className="space-y-1">
-          <h2 className="break-words text-2xl font-medium" data-testid="kb-overview-name">
+          <h2 className="wrap-break-word text-2xl font-medium" data-testid="kb-overview-name">
             {kb.name}
           </h2>
           {kb.description && <p className="max-w-prose text-outline">{kb.description}</p>}

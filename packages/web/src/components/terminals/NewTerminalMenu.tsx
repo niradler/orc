@@ -258,8 +258,8 @@ export function NewTerminalMenu({
             className={cn(
               "terminal-launch-controls bg-surface-high border border-outline-variant rounded-lg shadow-xl p-3 space-y-3 overflow-y-auto overscroll-contain",
               compact
-                ? "fixed inset-x-3 top-[calc(var(--app-top,0px)_+_env(safe-area-inset-top)_+_1rem)] z-50 max-h-[calc(var(--app-height,100dvh)-2rem)]"
-                : "absolute left-0 top-full mt-1 z-30 w-[22rem] max-w-[calc(100vw-2rem)] max-h-[70dvh]",
+                ? "fixed inset-x-3 top-[calc(var(--app-top,0px)+env(safe-area-inset-top)+1rem)] z-50 max-h-[calc(var(--app-height,100dvh)-2rem)]"
+                : "absolute left-0 top-full mt-1 z-30 w-88 max-w-[calc(100vw-2rem)] max-h-[70dvh]",
             )}
           >
             {compact && (
@@ -317,7 +317,7 @@ export function NewTerminalMenu({
                   onChange={(e) => chooseFolder(e.target.value)}
                   placeholder="~ (home folder)"
                   spellCheck={false}
-                  className="min-w-0 flex-1 bg-background border border-control-border rounded-md min-h-11 px-2 py-1 font-body text-base sm:text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-2 focus:ring-focus"
+                  className="min-w-0 flex-1 bg-background border border-control-border rounded-md min-h-11 px-2 py-1 font-body text-base sm:text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-hidden focus:ring-2 focus:ring-focus"
                 />
                 <button
                   type="button"
@@ -459,7 +459,7 @@ export function NewTerminalMenu({
               </div>
             )}
             {shownError && (
-              <p role="alert" className="px-1 font-body text-xs text-error break-words">
+              <p role="alert" className="px-1 font-body text-xs text-error wrap-break-word">
                 {shownError}
               </p>
             )}

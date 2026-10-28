@@ -587,7 +587,7 @@ function ScratchpadPage({ id }: { id: string }) {
         <div className="min-w-0 space-y-1">
           <h1
             data-testid="scratchpad-title"
-            className="font-headline font-medium text-2xl tracking-tight text-on-surface break-words"
+            className="font-headline font-medium text-2xl tracking-tight text-on-surface wrap-break-word"
           >
             {pad.title}
           </h1>

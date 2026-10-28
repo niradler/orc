@@ -277,7 +277,7 @@ export default function PackageCatalog() {
         </p>
       </div>
       {notice && (
-        <p role="status" className="text-sm text-primary break-words">
+        <p role="status" className="text-sm text-primary wrap-break-word">
           {notice}
         </p>
       )}
@@ -340,15 +340,15 @@ export default function PackageCatalog() {
               type="button"
               data-testid="package-inspect"
               onClick={() => openDetail(pkg.name)}
-              className="text-left font-medium break-words hover:text-primary"
+              className="text-left font-medium wrap-break-word hover:text-primary"
             >
               {pkg.name}
             </button>
-            <p className="mt-2 flex-1 text-sm text-muted-foreground break-words">
+            <p className="mt-2 flex-1 text-sm text-muted-foreground wrap-break-word">
               {pkg.description || "Add a description to help you choose this configuration later."}
             </p>
             {pkg.warnings.map((warning) => (
-              <p key={warning} className="mt-2 text-xs text-muted-foreground break-words">
+              <p key={warning} className="mt-2 text-xs text-muted-foreground wrap-break-word">
                 {warning}
               </p>
             ))}
@@ -414,7 +414,7 @@ export default function PackageCatalog() {
         </div>
       )}
       {packages.data?.broken.map((issue) => (
-        <p role="alert" key={issue.path} className="text-destructive break-words">
+        <p role="alert" key={issue.path} className="text-destructive wrap-break-word">
           {issue.path}: {issue.error}
         </p>
       ))}

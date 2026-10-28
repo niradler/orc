@@ -133,7 +133,7 @@ export function PackageRunDialog({
   }
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && !command.isPending && onClose()}>
-      <DialogContent className="min-w-0 grid-cols-[minmax(0,1fr)] w-[calc(100%_-_1rem)] max-w-2xl max-h-[94dvh] overflow-x-hidden overflow-y-auto p-4 sm:p-6">
+      <DialogContent className="min-w-0 grid-cols-[minmax(0,1fr)] w-[calc(100%-1rem)] max-w-2xl max-h-[94dvh] overflow-x-hidden overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle>{setup.packages.length ? "Use package" : "Launch agent"}</DialogTitle>
           <DialogDescription>
@@ -294,7 +294,7 @@ export function PackageRunDialog({
             )}
             {components.isFetching && <p>Checking package contents…</p>}
             {components.data?.map((pkg) => (
-              <p key={pkg.name} className="break-words">
+              <p key={pkg.name} className="wrap-break-word">
                 {pkg.name}:{" "}
                 {
                   pkg.files.filter((file) =>

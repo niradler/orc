@@ -74,7 +74,10 @@ export function WorkspaceHeader({
           data-testid="attention-indicator"
           to={workspaceDestination("/attention", projectId, search)}
           aria-label={`Attention needed: ${totalAttention} requests`}
-          className={buttonVariants({ variant: totalAttention ? "outline" : "ghost", size: "sm" })}
+          className={buttonVariants({
+            variant: totalAttention ? "outline" : "ghost",
+            size: "sm",
+          })}
         >
           <Bell size={16} />
           <span className="hidden sm:inline">Attention</span>
