@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api, type LocalSkill } from "@/api/client";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -58,17 +59,17 @@ export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
         closeDisabled={busy}
         className="flex min-w-0 w-[min(800px,calc(100vw-2rem))] max-w-none max-h-[calc(var(--app-height,100dvh)-2rem)] flex-col gap-0 overflow-hidden p-0"
       >
-        <DialogHeader className="shrink-0 border-b px-4 py-4 pr-12 sm:px-6">
+        <DialogHeader className="shrink-0 flex-row items-center gap-1 border-b px-4 py-3 pr-12 sm:px-6">
           <DialogTitle>Import from local agents</DialogTitle>
+          <HelpPopover label="local skill imports">
+            Copies skills from agent folders such as ~/.claude/skills and ~/.codex/skills into ORC.
+            The originals are not changed.
+          </HelpPopover>
         </DialogHeader>
         <div
           className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6"
           data-testid="local-skill-import-body"
         >
-          <p className="text-xs text-outline">
-            Copies skills from agent folders such as ~/.claude/skills and ~/.codex/skills into ORC.
-            The originals are not changed.
-          </p>
           {listing.isLoading && <p role="status">Scanning agent folders…</p>}
           {listing.data && !agents.length && (
             <p role="status">No local agent skill folders found.</p>

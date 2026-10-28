@@ -65,6 +65,13 @@ for (const viewport of [
       await page
         .getByTestId(source === "remote" ? "import-skill-button" : "import-local-skills-button")
         .click();
+      const help = page.getByRole("dialog").getByTestId("view-help");
+      await help.click();
+      await expect(page.getByTestId("view-help-content")).toContainText(
+        source === "remote" ? "Private repositories" : "The originals are not changed.",
+      );
+      await help.click();
+      await expect(page.getByTestId("view-help-content")).toBeHidden();
       if (source === "remote") {
         await page.getByTestId("skill-repository-input").fill("acme/skills");
         await page.getByTestId("skill-discover").click();

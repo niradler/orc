@@ -124,9 +124,7 @@ export function ImportSkillDialog({ onClose }: { onClose: () => void }) {
                 onClear={selection.clear}
                 disabled={busy}
               >
-                <span className="text-xs text-muted-foreground">
-                  Imports run in batches of up to 16.
-                </span>
+                {null}
               </BulkActionBar>
               <div className="divide-y divide-border">
                 {discover.data.skills.map((skill) => (

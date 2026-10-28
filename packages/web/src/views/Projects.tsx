@@ -226,7 +226,9 @@ export default function Projects() {
         {!bulkUpdate.isPending && bulkResult && (
           <div role="status" className="mb-3 space-y-1 text-sm" data-testid="projects-bulk-result">
             <p>
-              {bulkResult.succeeded.length} projects set to {bulkResult.status}.
+              {bulkResult.succeeded.length}{" "}
+              {bulkResult.succeeded.length === 1 ? "project" : "projects"} set to{" "}
+              {bulkResult.status}.
             </p>
             {bulkResult.failed.map((item) => (
               <p key={item.id} className="text-error">
