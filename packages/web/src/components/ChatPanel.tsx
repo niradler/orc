@@ -1,14 +1,17 @@
-import { ComposerPrimitive, MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
+import { MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
 import {
   ArrowDown,
   ArrowUp,
+  ChevronDown,
   LoaderCircle,
   Maximize2,
   MessageSquare,
   Minimize2,
+  Pencil,
   Plus,
   RefreshCw,
   Square,
+  Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef } from "react";
@@ -139,8 +142,29 @@ export function ChatPanel({
     question,
     respondQuestion,
     responding,
+    activeKey,
+    draft,
+    setDraft,
+    queued,
+    editingQueuedId,
+    queuedDraft,
+    setQueuedDraft,
+    editQueued,
+    removeQueued,
+    forceQueued,
+    send,
+    cancel,
   } = useChat();
+  const submit = () => {
+    if (!ready || !draft.trim()) return;
+    void send(draft);
+    setDraft("");
+  };
   const input = useRef<HTMLTextAreaElement>(null);
+  const queueDetails = useRef<HTMLDetailsElement>(null);
+  useLayoutEffect(() => {
+    if (open && editingQueuedId && queueDetails.current) queueDetails.current.open = true;
+  }, [editingQueuedId, open]);
   const viewport = useRef<HTMLDivElement>(null);
   const historyAnchor = useRef<{ height: number; top: number; threadId: string } | null>(null);
   useLayoutEffect(() => {
@@ -405,6 +429,45 @@ export function ChatPanel({
           )}
         </div>
       )}
+      {queued.length > 0 && (
+        <details
+          key={activeKey}
+          ref={queueDetails}
+          data-testid="chat-message-queue"
+          aria-label="Pending messages"
+          className="group mx-auto w-full max-w-3xl shrink-0 border-t border-outline-variant px-4"
+        >
+          <summary
+            data-testid="chat-queue-toggle"
+            className="flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-xs text-on-surface-variant hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus sm:min-h-8 [&::-webkit-details-marker]:hidden"
+          >
+            <ChevronDown
+              size={14}
+              className="shrink-0 transition-transform group-open:rotate-180"
+            />
+            <span role="status" data-testid="chat-pending-count">
+              {queued.length} pending
+            </span>
+          </summary>
+          <ol className="max-h-[min(30vh,14rem)] overflow-y-auto pb-1">
+            {queued.map((entry) => (
+              <QueuedMessage
+                key={entry.id}
+                content={entry.content}
+                editing={editingQueuedId === entry.id}
+                draft={queuedDraft}
+                onDraftChange={setQueuedDraft}
+                forceDisabled={refreshing || !!editingQueuedId}
+                onEdit={() => editQueued(entry.id)}
+                onSave={(content) => editQueued(entry.id, content)}
+                onCancel={() => editQueued(null)}
+                onForce={() => forceQueued(entry.id)}
+                onRemove={() => removeQueued(entry.id)}
+              />
+            ))}
+          </ol>
+        </details>
+      )}
       <div className="chat-composer-footer mx-auto w-full max-w-3xl shrink-0 px-3 pt-2 pb-3">
         <ThreadPrimitive.ScrollToBottom
           aria-label="Scroll to latest response"
@@ -413,15 +476,32 @@ export function ChatPanel({
           <ArrowDown size={14} />
           Latest response
         </ThreadPrimitive.ScrollToBottom>
-        <ComposerPrimitive.Root className="chat-composer-box rounded-lg border border-control-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus">
-          <ComposerPrimitive.Input
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+          className="chat-composer-box rounded-lg border border-control-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus"
+        >
+          <textarea
             ref={input}
             data-testid="chat-input"
             aria-label="Message your agent"
             placeholder="Message your agent…"
-            disabled={streaming || !ready}
-            submitMode="enter"
-            unstable_insertNewlineOnTouchEnter
+            disabled={!ready}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing &&
+                !window.matchMedia("(pointer: coarse)").matches
+              ) {
+                event.preventDefault();
+                submit();
+              }
+            }}
             rows={2}
             className="chat-composer-input block max-h-[min(12rem,calc(var(--app-height,100dvh)*0.3))] w-full resize-none overflow-y-auto bg-transparent p-2 text-base sm:text-sm leading-relaxed placeholder:text-on-surface-variant focus-visible:outline-none disabled:opacity-60"
           />
@@ -436,26 +516,140 @@ export function ChatPanel({
             >
               <Plus size={16} />
             </button>
-            {streaming ? (
-              <ComposerPrimitive.Cancel
-                data-testid="chat-cancel-button"
-                aria-label="Stop response"
-                className={iconButton}
-              >
-                <Square size={17} />
-              </ComposerPrimitive.Cancel>
-            ) : (
-              <ComposerPrimitive.Send
+            <div className="flex items-center gap-1">
+              {streaming && (
+                <button
+                  type="button"
+                  data-testid="chat-cancel-button"
+                  aria-label="Stop response"
+                  onClick={cancel}
+                  className={iconButton}
+                >
+                  <Square size={17} />
+                </button>
+              )}
+              <button
+                type="submit"
+                disabled={!ready || !draft.trim()}
                 data-testid="chat-send-button"
-                aria-label="Send message"
+                aria-label={streaming ? "Queue message" : "Send message"}
                 className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg bg-primary text-primary-foreground disabled:opacity-40"
               >
                 <ArrowUp size={18} />
-              </ComposerPrimitive.Send>
-            )}
+              </button>
+            </div>
           </div>
-        </ComposerPrimitive.Root>
+        </form>
       </div>
     </ThreadPrimitive.Root>
+  );
+}
+
+function QueuedMessage({
+  content,
+  editing,
+  draft,
+  onDraftChange,
+  forceDisabled,
+  onEdit,
+  onSave,
+  onCancel,
+  onForce,
+  onRemove,
+}: {
+  content: string;
+  editing: boolean;
+  draft: string;
+  onDraftChange: (draft: string) => void;
+  forceDisabled: boolean;
+  onEdit: () => void;
+  onSave: (content: string) => void;
+  onCancel: () => void;
+  onForce: () => void;
+  onRemove: () => void;
+}) {
+  const removeButton = (
+    <button
+      type="button"
+      data-testid="chat-queued-remove"
+      aria-label="Remove pending message"
+      title="Remove pending message"
+      onClick={onRemove}
+      className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-destructive focus-visible:ring-2 focus-visible:ring-focus sm:size-8"
+    >
+      <Trash2 size={14} />
+    </button>
+  );
+  return (
+    <li data-testid="chat-queued-message" className="border-t border-outline-variant text-sm">
+      {editing ? (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (draft.trim()) onSave(draft);
+          }}
+        >
+          <textarea
+            data-testid="chat-queued-input"
+            aria-label="Edit pending message"
+            value={draft}
+            onChange={(event) => onDraftChange(event.target.value)}
+            rows={2}
+            className="mt-2 block max-h-32 w-full rounded border border-control-border bg-background p-2 text-base sm:text-sm"
+          />
+          <div className="flex items-center">
+            <button
+              type="submit"
+              data-testid="chat-queued-save"
+              disabled={!draft.trim()}
+              className="min-h-11 px-2 text-xs disabled:opacity-40 sm:min-h-8"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              data-testid="chat-queued-edit-cancel"
+              onClick={onCancel}
+              className="min-h-11 px-2 text-xs text-on-surface-variant sm:min-h-8"
+            >
+              Cancel
+            </button>
+            <div className="ml-auto">{removeButton}</div>
+          </div>
+        </form>
+      ) : (
+        <div className="flex min-h-11 items-center gap-1 sm:min-h-9">
+          <p
+            data-testid="chat-queued-content"
+            title={content}
+            className="min-w-0 flex-1 truncate text-xs"
+          >
+            {content}
+          </p>
+          <button
+            type="button"
+            data-testid="chat-queued-edit"
+            onClick={onEdit}
+            aria-label="Edit pending message"
+            title="Edit pending message"
+            className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus sm:size-8"
+          >
+            <Pencil size={14} />
+          </button>
+          <button
+            type="button"
+            data-testid="chat-queued-force"
+            disabled={forceDisabled}
+            aria-label="Force send pending message"
+            title="Stop the current response and send this message next"
+            onClick={onForce}
+            className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
+          >
+            <ArrowUp size={14} />
+          </button>
+          {removeButton}
+        </div>
+      )}
+    </li>
   );
 }
