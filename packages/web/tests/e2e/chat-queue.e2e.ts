@@ -15,6 +15,11 @@ async function send(panel: Locator, text: string) {
   await panel.getByTestId("chat-input").fill(text);
   await panel.getByTestId("chat-send-button").click();
 }
+async function expandQueue(panel: Locator) {
+  const queue = panel.getByTestId("chat-message-queue");
+  if ((await queue.getAttribute("open")) === null)
+    await panel.getByTestId("chat-queue-toggle").click();
+}
 function posts(page: Page) {
   const values: string[] = [];
   page.on("request", (request) => {
@@ -36,7 +41,8 @@ test("keeps accepting messages while running and drains edited messages in order
   await send(panel, "Reply with exactly: THIRD.");
   const pending = panel.getByTestId("chat-queued-message");
   await expect(pending).toHaveCount(2);
-  await expect(panel.getByTestId("chat-pending-badge")).toHaveText(["Pending", "Pending"]);
+  await expect(panel.getByTestId("chat-pending-count")).toHaveText("2 pending");
+  await expandQueue(panel);
   await pending.first().getByTestId("chat-queued-edit").click();
   await pending.first().getByTestId("chat-queued-input").fill("Reply with exactly: EDITED.");
   await expect(panel).toHaveAttribute("data-streaming", "false");
@@ -64,6 +70,7 @@ test("force send stops the live run and prioritizes the selected message once", 
   const cancelled = page.waitForResponse((response) =>
     /\/chat\/runs\/[^/]+\/cancel$/.test(response.url()),
   );
+  await expandQueue(panel);
   await panel.getByTestId("chat-queued-message").nth(1).getByTestId("chat-queued-force").click();
   expect((await cancelled).ok()).toBe(true);
   await expect(panel.getByTestId("chat-queued-message")).toHaveCount(0);
@@ -80,6 +87,7 @@ test("Stop holds pending messages until explicitly forced", async ({ page }) => 
   await expect(panel).toHaveAttribute("data-streaming", "false");
   await expect(panel.getByTestId("chat-queued-message")).toHaveCount(1);
   expect(sent).toHaveLength(1);
+  await expandQueue(panel);
   await panel.getByTestId("chat-queued-force").click();
   await expect(panel.getByTestId("chat-queued-message")).toHaveCount(0);
   await expect(panel.getByTestId("chat-message-content").last()).toContainText("PENDING");
@@ -123,6 +131,7 @@ test("forcing before a run is named waits for cancellation before dispatching", 
   const panel = page.getByTestId("chat-panel");
   await send(panel, "Respond after 10000ms. Reply with exactly: DELAYED.");
   await send(panel, "Reply with exactly: FORCED.");
+  await expandQueue(panel);
   await panel.getByTestId("chat-queued-force").click();
   expect(sent).toHaveLength(1);
   const cancelled = page.waitForRequest((request) =>
@@ -144,6 +153,7 @@ test("a failed stop leaves the queue pending and displays the error", async ({ p
   await page.route("**/api/chat/runs/*/cancel", (route) =>
     route.fulfill({ status: 503, json: { error: "Unable to stop" } }),
   );
+  await expandQueue(panel);
   await panel.getByTestId("chat-queued-force").click();
   await expect(panel.getByTestId("chat-error")).toContainText("Unable to stop");
   await expect(panel).toHaveAttribute("data-streaming", "false");
@@ -155,6 +165,7 @@ test("queued editing rejects blank text and cancelling retains the original", as
   const panel = page.getByTestId("chat-panel");
   await send(panel, "Respond after 2000ms. Reply with exactly: FIRST.");
   await send(panel, "Reply with exactly: ORIGINAL.");
+  await expandQueue(panel);
   await panel.getByTestId("chat-queued-edit").click();
   await panel.getByTestId("chat-queued-input").fill("   ");
   await expect(panel.getByTestId("chat-queued-save")).toBeDisabled();
@@ -168,7 +179,8 @@ test("mobile composer queues messages without overflowing", async ({ page }) => 
   const panel = page.getByTestId("chat-panel");
   await send(panel, "Respond after 2000ms. Reply with exactly: MOBILE.");
   await send(panel, "x".repeat(200));
-  await expect(panel.getByTestId("chat-pending-badge")).toBeVisible();
+  await expect(panel.getByTestId("chat-queue-toggle")).toBeVisible();
+  await expect(panel.getByTestId("chat-queued-content")).not.toBeVisible();
   expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
 
@@ -237,6 +249,7 @@ test("should retain mobile drafts and pending edits when hiding and reopening ch
   await expect(panel.getByTestId("chat-input")).toHaveValue("Unsent mobile draft");
   await send(panel, "Respond after 1500ms. Reply with exactly: FIRST.");
   await send(panel, "ORIGINAL");
+  await expandQueue(panel);
   await panel.getByTestId("chat-queued-edit").click();
   await panel.getByTestId("chat-queued-input").fill("Saved after reopening");
   await panel.getByTestId("chat-close-button").click();
@@ -256,3 +269,34 @@ test("should keep the composer draft when switching to fullscreen and back", asy
   await panel.getByTestId("chat-fullscreen-button").click();
   await expect(panel.getByTestId("chat-input")).toHaveValue("Unsent desktop draft");
 });
+
+for (const width of [390, 1440]) {
+  test(`should keep the queue compact and collapsed by default at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const panel = page.getByTestId("chat-panel").filter({ visible: true });
+    await send(panel, "Respond after 10000ms. Reply with exactly: FIRST.");
+    await send(panel, "A long pending message ".repeat(20));
+    await send(panel, "Second pending message");
+    const queue = panel.getByTestId("chat-message-queue");
+    const toggle = panel.getByTestId("chat-queue-toggle");
+    await expect(toggle).toHaveText("2 pending");
+    await expect(queue).not.toHaveAttribute("open");
+    expect((await queue.boundingBox())?.height).toBeLessThanOrEqual(46);
+    await toggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(queue).toHaveAttribute("open");
+    const rows = panel.getByTestId("chat-queued-message");
+    await expect(rows.first().getByTestId("chat-queued-edit")).toBeVisible();
+    expect((await rows.first().boundingBox())?.height).toBeLessThanOrEqual(46);
+    expect(await queue.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    );
+    await toggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(queue).not.toHaveAttribute("open");
+    await send(panel, "Third pending message");
+    await expect(toggle).toHaveText("3 pending");
+    await expect(queue).not.toHaveAttribute("open");
+    await panel.getByTestId("chat-cancel-button").click();
+  });
+}
