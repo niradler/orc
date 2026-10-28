@@ -272,7 +272,7 @@ for (const width of [1440, 390, 320]) {
     await row(beta.id).getByTestId("project-select").check();
     await page.getByTestId("projects-bulk-archived").click();
     await expect(page.getByTestId("projects-bulk-result")).toContainText(
-      "1 projects set to archived",
+      "1 project set to archived",
     );
     expect((await apiGet<{ status: string }>(request, `/projects/${alpha.id}`)).status).toBe(
       "active",
