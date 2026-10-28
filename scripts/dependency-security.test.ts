@@ -90,3 +90,22 @@ test("API IP parsing and YAML use patched dependency versions", () => {
     copy: { enabled: true },
   });
 });
+
+test("should safely serialize hostile query-string array elements through the API dependencies", () => {
+  const apiRequire = createRequire(join(repo, "packages/api/package.json"));
+  const mcpRequire = createRequire(apiRequire.resolve("@modelcontextprotocol/sdk/server/index.js"));
+  const expressRequire = createRequire(mcpRequire.resolve("express"));
+  const qs = expressRequire("qs") as {
+    stringify: (
+      input: unknown,
+      options: { arrayFormat: "comma"; encodeValuesOnly?: boolean },
+    ) => string;
+  };
+  expect(Bun.semver.satisfies(version(expressRequire.resolve("qs")), ">=6.16.1 <7")).toBe(true);
+  const hostile: unknown = JSON.parse('{"a":[{"toString":"x"}]}');
+  for (const encodeValuesOnly of [false, true])
+    expect(qs.stringify(hostile, { arrayFormat: "comma", encodeValuesOnly })).toBe(
+      "a=%5Bobject%20Object%5D",
+    );
+  expect(qs.stringify({ a: ["one", "two"] }, { arrayFormat: "comma" })).toBe("a=one%2Ctwo");
+});

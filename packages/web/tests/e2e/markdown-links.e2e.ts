@@ -10,7 +10,8 @@ for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await gotoView(page, "overview");
     const open = page.getByTestId("chat-open-button");
-    if (await open.isVisible()) await open.click();
+    await expect(open).toBeVisible();
+    await open.click();
     const input = page.getByTestId("chat-input").filter({ visible: true });
     await input.fill("[Example](https://example.com/chat-link)");
     await input.press("Enter");
