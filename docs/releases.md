@@ -111,6 +111,14 @@ first. The handoff records a particular run; this document is the reusable proce
    surface defects rather than treating source-data checks as interchangeable with
    index counts. Preserve unrelated services and supplied originals.
 
+   Recovery is bounded, not an accumulating archive. Make one verified pre-upgrade
+   recovery point per installation and release; reuse it on retries only when the
+   source data/configuration has not changed. Keep temporary migration databases
+   with that recovery point rather than creating unrelated permanent copies.
+   Confirm the service stays stopped during the archive: an external reconciler
+   can restart it even after `docker stop` succeeds. Abort an inconsistent backup;
+   never ignore archive errors to continue an upgrade.
+
 4. **Run the canonical release.** Use `bun run release --yes`, or stage it with
    `--prepare --yes` and then `--resume --yes`. Keep a bounded process and a distinct
    log. Let the command perform validation, version commit, binaries/host installer,
@@ -161,4 +169,24 @@ first. The handoff records a particular run; this document is the reusable proce
    `.claude/docs/releases.md` with commit, digest, private backup locations, logs,
    actual outcomes and remaining issues; record the ORC session summary. Keep
    recovery material and credentials private. Do not silently republish an immutable
-   version or clean up retained evidence as part of declaring completion.
+   version. Keep concise verification and failure evidence in the handoff/logs.
+
+8. **Prune old release backups after successful verification.** Default retention
+   is the newest verified backup for each of the two most recent distinct release
+   versions, separately for the PC and each lab installation. This retains the
+   current pre-upgrade recovery point and the preceding release's recovery point.
+   After all installation, auth and data checks pass, remove older release backup
+   folders, superseded same-release duplicates and failed-attempt archives. Preserve
+   useful failure diagnostics in the existing release log before retiring a failed
+   archive. Do not prune when the upgrade or data verification is unresolved.
+
+   Inventory exact paths and sizes first, validate the retained archives and their
+   migration/integrity evidence, and ensure every resolved cleanup path stays inside
+   the intended backup root with no symbolic links/reparse points. Limit cleanup to
+   recognized release backup folders (`~/.orc-backups/before-<version>-*` on the PC,
+   `/mnt/backups/orc-before-<version>-*` on this lab). Leave manual/unclassified
+   backups, active data, credentials, unfinished release checkpoints, worktrees and
+   unrelated Docker resources alone. Follow the user's destructive-command rules;
+   cleanup authorization does not authorize a global prune. Record retained paths,
+   retired paths and reclaimed bytes. Backup retention cleanup is a required release
+   finishing step, not an optional future task.

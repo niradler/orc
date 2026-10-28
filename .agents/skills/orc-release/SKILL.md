@@ -29,3 +29,11 @@ in the protocol. When startup retention changes counts, investigate against the
 backup, logs and retention criteria; do not silently waive discrepancies. Record
 evidence and recovery locations in the handoff, and clearly report any unfinished
 publication, installation, data discrepancy or verification.
+
+After successful installation and data verification, apply the operator protocol's
+bounded backup retention: keep the newest verified recovery point for each of the
+two newest distinct release versions per installation. Retire older, duplicate and
+failed-attempt release archives within the user's cleanup authorization, preserving
+concise diagnostic evidence. Validate exact paths and retained archives first; leave
+manual backups, live data, unfinished checkpoints and unrelated resources alone.
+Record retained paths and reclaimed space. Do not let release backups accumulate.
