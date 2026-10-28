@@ -163,7 +163,7 @@ export function ArchivedSessions({ projectId }: { projectId: string }) {
         </p>
       )}
       <details data-testid="archive-disclosure">
-        <summary className="min-h-11 cursor-pointer py-2 text-sm text-outline lg:min-h-9">
+        <summary className="min-h-11 cursor-pointer py-2 text-sm text-outline lg:min-h-8">
           Archived sessions
           {listing.data
             ? ` · ${offset + listing.data.sessions.length}${listing.data.has_more ? "+" : ""}`

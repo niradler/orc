@@ -4,6 +4,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { ResumeActions } from "@/components/ResumeActions";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -13,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ViewHeader } from "@/components/ViewHeader";
 import { useJobs } from "@/hooks/useJobs";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useMemories } from "@/hooks/useMemories";
@@ -147,15 +149,11 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
 
   return (
     <div data-activity-preview data-testid="activity-preview" className="activity-preview">
-      <div className="activity-heading">
-        <div>
-          <h1 data-testid="view-title">Activity</h1>
-          <p data-testid="view-meta">{scopeLabel || "All projects"}</p>
-        </div>
-        <button type="button" className="activity-primary" onClick={() => navigate("/tasks")}>
-          View tasks
-        </button>
-      </div>
+      <ViewHeader
+        title="Activity"
+        meta={scopeLabel || "All projects"}
+        action={<Button onClick={() => navigate("/tasks")}>View tasks</Button>}
+      />
 
       {[tasksQuery, jobsQuery, memoriesQuery, sessionsQuery].some((query) => query.isLoading) && (
         <p role="status" className="activity-muted mb-4">

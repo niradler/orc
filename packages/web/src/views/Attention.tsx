@@ -21,7 +21,7 @@ function ObservedSessionCard({ session }: { session: LiveSession }) {
   return (
     <article
       data-testid={`attention-session-${session.id}`}
-      className="rounded-lg border border-border bg-surface p-5 space-y-4"
+      className="space-y-3 border-b border-border py-4"
     >
       <p className="text-xs text-outline">
         Question · {session.agent} · {session.host ?? "Local"} · Observed session
@@ -102,7 +102,7 @@ function RequestCard({ request }: { request: HumanRequest }) {
   return (
     <article
       data-testid={`attention-request-${request.id}`}
-      className="rounded-lg border border-border bg-surface p-5 space-y-4"
+      className="space-y-3 border-b border-border py-4"
     >
       <div className="flex flex-wrap justify-between gap-2 text-xs text-outline">
         <span>
@@ -299,11 +299,10 @@ export default function Attention() {
   const [params] = useSearchParams();
   return (
     <div data-testid="attention-view" className="max-w-4xl">
-      <ViewHeader title="Attention needed" meta="Questions and approvals from your agents" />
-      <p className="mb-4 text-sm text-outline">
-        Live Codex questions can also appear as session notices. Direct responses require an ORC
-        connection or a supported hook; ACPX CLI does not expose pending approvals to ORC.
-      </p>
+      <ViewHeader
+        title="Attention needed"
+        help="Questions and approvals from your agents. Live Codex questions can also appear as session notices. Direct responses require an ORC connection or a supported hook; ACPX CLI does not expose pending approvals to ORC."
+      />
       {state.isLoading && <p role="status">Loading requests…</p>}
       {state.error && <p role="alert">{state.error.message}</p>}
       {observed.error && (
@@ -329,12 +328,12 @@ export default function Attention() {
           entries reveals more.
         </p>
       )}
-      <div className="space-y-4">
+      <div>
         {chatWaits.data.map((wait) => (
           <article
             key={`${wait.thread_id}:${wait.request_key}`}
             data-testid={`attention-chat-${wait.thread_id}`}
-            className="rounded-lg border border-border bg-surface p-5 space-y-4"
+            className="space-y-3 border-b border-border py-4"
           >
             <p className="text-xs text-outline">
               {wait.kind === "question" ? "Question" : "Approval"} · {wait.agent} ·{" "}

@@ -31,7 +31,7 @@ export function ResponsiveFilters({
         id={id}
         data-testid="view-filters"
         className={cn(
-          "order-last w-full flex-wrap items-center gap-2 border-t border-border pt-3 lg:order-none lg:flex lg:w-auto lg:border-0 lg:pt-0",
+          "order-last w-full flex-wrap items-center gap-2 border-t border-border pt-3 lg:order-none lg:flex lg:w-auto lg:border-0 lg:pt-0 lg:[&>select]:w-auto",
           open ? "flex" : "hidden",
         )}
       >

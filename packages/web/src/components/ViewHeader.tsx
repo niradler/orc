@@ -18,7 +18,7 @@ export function ViewHeader({
   meta,
   level = 1,
   help,
-  compact = false,
+  compact = true,
 }: ViewHeaderProps) {
   const { pathname } = useLocation();
   const Heading = level === 2 ? "h2" : "h1";

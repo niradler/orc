@@ -431,7 +431,7 @@ export default function Terminals() {
 
         {selected ? (
           <>
-            <header className="hidden lg:flex shrink-0 flex-wrap items-center gap-3 px-3 py-3 border-b border-outline-variant bg-background min-w-0">
+            <header className="hidden lg:flex shrink-0 flex-wrap items-center gap-2 px-3 py-2 border-b border-outline-variant bg-background min-w-0">
               <span
                 className={cn(
                   "h-2 w-2 shrink-0 rounded-full",

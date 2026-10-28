@@ -5,6 +5,7 @@ import { type DragEvent, Fragment, type ReactNode, useEffect, useState } from "r
 import { useLocation, useSearchParams } from "react-router-dom";
 import { confirmDocumentClose } from "@/components/DocumentWorkspace";
 import { ErrorState } from "@/components/ErrorState";
+import { HelpPopover } from "@/components/HelpPopover";
 import { CreateKbDialog, KbSettingsDialog, NewDocumentDialog } from "@/components/kb/KbDialogs";
 import { KbDocumentPane, kbWorkspaceId } from "@/components/kb/KbDocumentPane";
 import { KbHome } from "@/components/kb/KbHome";
@@ -280,12 +281,7 @@ function KnowledgeBases({ projectId }: { projectId: string | undefined }) {
     </Scroll>
   ) : bases.data?.length === 0 ? (
     <Centered testId="empty-state">
-      <BookOpen size={28} className="text-primary" />
-      <h2 className="text-xl font-medium">Build a knowledge base</h2>
-      <p className="max-w-md text-outline">
-        Upload documents, write Markdown or sync a folder. Agents search it with citations through
-        MCP, the CLI and the API, and you can see what they read.
-      </p>
+      <p className="text-sm text-outline">No knowledge bases configured</p>
       <Button data-testid="kb-empty-create" onClick={() => setDialog("create")}>
         <Plus size={16} />
         New knowledge base
@@ -350,7 +346,13 @@ function KnowledgeBases({ projectId }: { projectId: string | undefined }) {
       )}
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         <div className="flex items-center justify-between px-2 pb-1">
-          <h2 className="text-sm font-medium text-outline">Knowledge bases</h2>
+          <div className="flex min-w-0 items-center gap-1">
+            <h2 className="text-sm font-medium text-outline">Knowledge bases</h2>
+            <HelpPopover label="Knowledge bases">
+              Upload documents, write Markdown or sync a folder. Agents search this knowledge with
+              citations, and document details show what they read.
+            </HelpPopover>
+          </div>
           <Button
             size="icon"
             variant="ghost"

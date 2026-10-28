@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { API_SECRET, apiPost, gotoView, tid } from "./_helpers";
+
 import { test } from "./_terminal-fixture";
 
 async function fitsViewport(page: Page, target: Locator): Promise<void> {
@@ -65,7 +66,7 @@ for (const theme of ["dark", "light"] as const) {
         await fitsViewport(page, sheet);
         const input = sheet.getByTestId("chat-input");
         await input.fill("A question from my phone");
-        await touchTarget(sheet.getByTestId("chat-agent-select"));
+        await touchTarget(sheet.getByTestId("chat-agent-button"));
         await touchTarget(sheet.getByTestId("chat-send-button"));
         await sheet.getByTestId("chat-send-button").tap();
         await expect(sheet.getByTestId("chat-activity-status")).toBeVisible();

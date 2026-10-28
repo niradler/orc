@@ -1,5 +1,6 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
+import { chooseChatAgent, openChatSettings } from "./_chat-ui";
 import { API_SECRET, gotoView } from "./_helpers";
 
 for (const width of [390, 1440]) {
@@ -17,12 +18,10 @@ for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await gotoView(page, "dashboard");
     await page.goto("/?chat=open");
-    const agent = page.getByTestId("chat-agent-select").filter({ visible: true });
-    const settings = page.getByTestId("chat-config-button").filter({ visible: true });
     const editor = page.getByTestId("chat-agent-options-input");
     const apply = page.getByTestId("chat-agent-options-apply");
-    await agent.selectOption("gemini");
-    await settings.click();
+    await chooseChatAgent(page, "gemini");
+    await openChatSettings(page);
     await page.getByTestId("chat-agent-options").locator("summary").click();
     await expect(page.getByTestId("chat-agent-options-help")).toContainText("--approve-all");
     await editor.fill('["--format", "text"]');
@@ -36,15 +35,15 @@ for (const width of [390, 1440]) {
       "start this conversation",
     );
     await page.keyboard.press("Escape");
-    await agent.selectOption("claude");
-    await settings.click();
+    await chooseChatAgent(page, "claude");
+    await openChatSettings(page);
     await page.getByTestId("chat-agent-options").locator("summary").click();
     await expect(editor).toHaveValue("{}");
     await editor.fill('{"permissionMode":"bypassPermissions","maxTurns":3,"effort":"low"}');
     await apply.click();
     await expect(page.getByTestId("chat-permission-mode")).toHaveValue("bypassPermissions");
     await page.keyboard.press("Escape");
-    await agent.selectOption("gemini");
+    await chooseChatAgent(page, "gemini");
     const title = `Launch options ${width}`;
     const sent = page.waitForRequest((request) => request.url().endsWith("/api/chat/stream"));
     await page.getByTestId("chat-input").filter({ visible: true }).fill(title);
@@ -57,7 +56,7 @@ for (const width of [390, 1440]) {
       },
     });
     await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeEnabled();
-    await settings.click();
+    await openChatSettings(page);
     await page.getByTestId("chat-agent-options").locator("summary").click();
     await editor.fill('["--deny-all", "--timeout", "20"]');
     const saved = page.waitForResponse(
@@ -72,8 +71,8 @@ for (const width of [390, 1440]) {
     );
     await page.reload();
     await page.getByTestId("chat-sessions-button").filter({ visible: true }).click();
-    await page.getByTestId("chat-resume-thread").filter({ hasText: title }).click();
-    await settings.click();
+    await page.getByTestId("chat-session-select").filter({ hasText: title }).click();
+    await openChatSettings(page);
     await page.getByTestId("chat-agent-options").locator("summary").click();
     await expect(editor).toHaveValue(JSON.stringify(["--deny-all", "--timeout", "20"], null, 2));
     await page.keyboard.press("Escape");

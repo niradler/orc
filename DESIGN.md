@@ -185,6 +185,62 @@ components:
 
 # ORC design guide
 
+## Platform patterns approved 2026-10-28
+
+These rules apply across the product, including populated, empty, error and phone
+states. Retain Tailwind, shadcn/Radix, IBM Plex and the existing neutral palette.
+Use the shared components instead of inventing a different toolbar or control
+style in each feature. An assessment or mock does not complete adoption: validate
+the actual application with realistic data and preserve its working behavior.
+
+- **Controls:**32px desktop controls with13px labels;44px touch hit areas, including
+  tablets. Primary phone controls can have a34px painted face within that target.
+  Use one neutral filled action per working area. Secondary actions are ghost or
+  a restrained outline; use a contextual menu for infrequent row actions. Give
+  icon actions an accessible name. Do not hide touch actions behind hover.
+- **Headers and lists:** use `ViewHeader` for a compact title, concise count,
+  optional title-adjacent help and main action. Dense list titles use16px; the
+  standalone page-title token remains22px. Search/filter/view controls share one
+  aligned region; `ResponsiveFilters` retains phone filter state and active count.
+  Explain selection scope and preserve displayed-record bulk semantics. Use slim
+  records; do not stack44px controls vertically just to fit desktop columns on a
+  phone. Put related edits in a row action menu while keeping essential status
+  visible. Preserve full accessible names when visual titles truncate.
+- **Copy and disclosure:** remove redundant explanations. Optional format/setup
+  information belongs in focus/hover/tap help beside its subject. Keep required
+  instructions, failures, permission decisions and recovery visible. Secondary
+  history/setup starts collapsed; counts/status identify relevant work without
+  forcing it open for new arrivals. Documents and current work precede setup.
+- **Forms:** short confirmations stay small. Use `FormDialog` for long project,
+  task and job configuration: up to960px, related desktop columns, one ordered
+  phone column, scrollable body and stable actions. Keep errors in the body above
+  the footer. Protect dirty Cancel/Escape/backdrop, browser Back and reload; Keep
+  editing preserves values, explicit Discard leaves safely, and focus returns to
+  the opener. Pending operations cannot be dismissed. Successful writes use the
+  committed close callback so navigation is not mistaken for discarded work.
+  Prefer grouped/conditional fields over a universal wizard.
+- **Chat:** show one selected conversation. Session history contains open and
+  earlier conversations with selected/working/needs-input/error context; use a
+  collapsible sidebar in desktop fullscreen and a named phone drawer. Keep agent
+  and model controls in the composer and infrequent conversation actions in one
+  named menu. Changing agents after a session starts creates a separate session;
+  changing models applies to the next turn. Align assistant and composer columns,
+  including16px phone insets. Closing from the open list retains drafts/history
+  and background activity, but pauses pending-message dispatch. Stop, requests,
+  errors and paused queues remain discoverable. Provider catalogs and model
+  validation use the existing contracts; never hardcode a preview model list.
+- **Settings:** named sections have clear save ownership. Appearance saves
+  immediately; browser connection and server terminal font each have their own
+  actions. Embedded server/host/chat/notification/knowledge forms own their saves.
+  Keep sections mounted so switching categories does not erase drafts. URLs
+  restore the current section on Back/reload.
+- **Verification:** review populated desktop and phone states, both themes,
+  keyboard focus, touch targets, long content and recoverable failures. Exercise
+  real save/reopen, selection/filter scope, native session resume, stream/queue
+  controls and terminal continuity when affected. Screenshots and automated
+  accessibility scans support this evidence; they do not certify every browser
+  or assistive technology.
+
 ## Overview
 
 **Status: Activity direction approved for application-wide adoption, 2026-10-15.**
@@ -226,7 +282,7 @@ Use a pure black canvas with neutral charcoal interaction surfaces in dark mode 
 Dark chrome uses equal RGB channels. Sidebar, header and main canvas share the
 same #000000 background: one continuous workspace, not contrasting panels. Avoid
 even a subtle blue cast. This reflects Nir’s preference after
-the Activity comparison. No typography or sizing change is requested. Dark is the
+the Activity comparison. Fonts remain; control sizing follows the compact platform rules above. Dark is the
 initial default; an explicit choice persists. Avoid blue casts across the entire
 canvas, sidebar, cards and text. Dark mode should remain comfortable, rather than
 using maximum black/white contrast everywhere.

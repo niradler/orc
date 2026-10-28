@@ -19,6 +19,7 @@ test("imports a real GitHub skill, edits it, reopens it and preserves edits on s
 }) => {
   test.setTimeout(120000);
   await gotoView(page, "skills");
+  await page.getByTestId("skill-import-menu").click();
   await page.getByTestId("import-skill-button").click();
   await page
     .getByTestId("skill-repository-input")
@@ -105,6 +106,7 @@ test("selects all new skills, imports in bounded batches and retains failed sele
     return route.fulfill({ json: { skills: [] } });
   });
   await gotoView(page, "skills");
+  await page.getByTestId("skill-import-menu").click();
   await page.getByTestId("import-skill-button").click();
   await page.getByTestId("skill-repository-input").fill("acme/skills");
   await page.getByTestId("skill-discover").click();
@@ -168,7 +170,7 @@ test("bulk actions sync only GitHub skills, retain conflicts and delete selected
     });
   await gotoView(page, "skills");
   await page.getByTestId("skill-search-input").fill(prefix);
-  await page.getByTestId("skill-search-submit").click();
+
   await expect(page.getByTestId("skill-row")).toHaveCount(3);
   await expect(page.getByTestId("skill-select")).toHaveCount(3);
   await expect(page.getByTestId("select-all-rows")).toBeEnabled();

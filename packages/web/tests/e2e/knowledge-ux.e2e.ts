@@ -129,8 +129,9 @@ test("package edit identity and safe tabs copy/reload while Back/Forward retains
   await gotoView(page, "packages");
   await page
     .locator(`[data-testid="agent-package-row"][data-package-name="${name}"]`)
-    .getByTestId("package-card-edit")
+    .getByTestId("package-actions-menu")
     .click();
+  await page.getByTestId("package-card-edit").click();
   await expect(page).toHaveURL(new RegExp(`/packages/item/${name}`));
   expect(new URL(page.url()).searchParams.get("packageAction")).toBe("edit");
   await page.getByTestId("package-editor-configuration").click();

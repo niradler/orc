@@ -146,7 +146,7 @@ test.describe("Memories", () => {
         expect(res.ok()).toBe(true);
       }
       await openMemories(page, project.id);
-      await expect(page.getByTestId("view-meta")).toHaveText("3 memories");
+      await expect(page.getByTestId("view-meta")).toHaveText("· 3 memories");
       await expect(page.getByTestId("memory-sort-reads")).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByTestId("memory-row").first()).toHaveAttribute(
         "data-memory-name",

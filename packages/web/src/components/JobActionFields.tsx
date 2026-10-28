@@ -27,7 +27,7 @@ export function JobActionFields({
         <select
           id={`${id}-type`}
           data-testid="job-action-type"
-          className="w-full min-h-11 rounded-md border border-control-border bg-background px-3 text-sm"
+          className="w-full min-h-8 rounded-md border border-control-border bg-background px-3 text-sm"
           value={value.type}
           onChange={(event) => {
             if (event.target.value === "command") onChange({ type: "command", command: "" });

@@ -47,7 +47,7 @@ export function ChatPermissionSelect({
               : {}),
           });
         }}
-        className="min-h-11 w-full rounded-md border border-control-border bg-background px-3 text-base sm:text-sm disabled:opacity-50"
+        className="min-h-8 w-full rounded-md border border-control-border bg-background px-3 text-base sm:text-sm disabled:opacity-50"
       >
         <option value="default">Ask in chat</option>
         <option value="acceptEdits">Allow workspace edits</option>

@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { settingsSection } from "./_chat-ui";
 import { gotoView } from "./_helpers";
 
 const pages = [
@@ -67,6 +68,7 @@ for (const scenario of pages) {
     const empty = page.getByTestId("empty-state").or(page.getByTestId("page-empty"));
     try {
       await gotoView(page, scenario.view);
+      if (scenario.view === "settings") await settingsSection(page, "execution");
       await expect(loading.first()).toBeVisible();
       await page.screenshot({ path: testInfo.outputPath(`${scenario.view}-loading.png`) });
       state = "failed";

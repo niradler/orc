@@ -53,6 +53,8 @@ interface PendingPermission {
 
 /** One open conversation. Each tab streams on its own, so turns keep running in the background. */
 export interface ChatTab {
+  /** Closed from the open list; retained in history so drafts and background work survive. */
+  hidden?: boolean;
   key: string;
   thread: ChatThread | null;
   config: ChatConfig;
@@ -107,7 +109,7 @@ function blankTab(config: ChatConfig): ChatTab {
   };
 }
 const isBlank = (tab: ChatTab) =>
-  !tab.thread && !tab.messages.length && !tab.queued.length && !tab.streaming;
+  !tab.thread && !tab.messages.length && !tab.queued.length && !tab.streaming && !tab.draft.trim();
 
 function readStorage(key: string): string | null {
   try {
@@ -175,7 +177,7 @@ function useChatController() {
     (key: string) => {
       activeRef.current = key;
       setActiveKey(key);
-      update(key, () => ({ attention: false }));
+      update(key, () => ({ attention: false, hidden: false }));
     },
     [update],
   );
@@ -530,22 +532,27 @@ function useChatController() {
     mutate((current) => [...current, tab]);
     activate(tab.key);
   }, [activate, mutate, update]);
-  const closeTab = useCallback(
-    (key: string) => {
-      const stream = streams.current.get(key);
-      if (stream?.cancel) stream.closed = true;
-      else {
-        stream?.controller.abort();
-        streams.current.delete(key);
-      }
-      const index = tabsRef.current.findIndex((tab) => tab.key === key);
-      const rest = tabsRef.current.filter((tab) => tab.key !== key);
-      const remaining = rest.length ? rest : [blankTab(defaults.current)];
-      mutate(() => remaining);
-      if (activeRef.current === key)
-        activate((remaining[Math.min(index, remaining.length - 1)] ?? remaining[0]).key);
+  const startAgentConversation = useCallback(
+    (agent: string) => {
+      const next = blankTab({ ...defaults.current, agent, model: "" });
+      mutate((current) => [...current, next]);
+      activate(next.key);
     },
     [activate, mutate],
+  );
+  const closeTab = useCallback(
+    (key: string) => {
+      update(key, () => ({ hidden: true, queuePaused: true }));
+      if (activeRef.current !== key) return;
+      const next = tabsRef.current.find((tab) => !tab.hidden);
+      if (next) activate(next.key);
+      else {
+        const blank = blankTab(defaults.current);
+        mutate((current) => [...current, blank]);
+        activate(blank.key);
+      }
+    },
+    [activate, mutate, update],
   );
 
   // Reopen this browser's tabs; a shared link's conversation takes focus over the stored one.
@@ -562,7 +569,7 @@ function useChatController() {
     });
   }, [openThread]);
   useEffect(() => {
-    const threads = tabs.flatMap((tab) => (tab.thread ? [tab.thread.id] : []));
+    const threads = tabs.flatMap((tab) => (tab.thread && !tab.hidden ? [tab.thread.id] : []));
     const active = tabs.find((tab) => tab.key === activeKey)?.thread?.id ?? null;
     writeStorage(CHAT_TABS_KEY, JSON.stringify({ threads, active }));
   }, [tabs, activeKey]);
@@ -861,11 +868,13 @@ function useChatController() {
     selectTab: activate,
     closeTab,
     newTab,
+    startAgentConversation,
     showThread,
     messages: tab.messages,
     draft: tab.draft,
     setDraft,
     queued: tab.queued,
+    queuePaused: tab.queuePaused,
     editingQueuedId: tab.editingQueuedId,
     queuedDraft: tab.queuedDraft,
     setQueuedDraft,

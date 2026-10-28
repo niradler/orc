@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { settingsSection } from "./_chat-ui";
 import { API_BASE, API_SECRET, AUTH_HEADERS } from "./_helpers";
 
 test.afterEach(async ({ request }) => {
@@ -39,12 +40,14 @@ test("remembered login survives reload and preferences survive a fresh browser c
   await page.getByTestId("api-login-secret").fill(API_SECRET);
   await page.getByTestId("api-login-remember").check();
   await page.getByTestId("api-login-submit").click();
+  await settingsSection(page, "appearance");
   await page.getByTestId("settings-theme-light").click();
+  await settingsSection(page, "terminals");
   await page.locator("#settings-terminal-font").fill("Test Mono");
-  await page.getByTestId("settings-save").click();
-  await expect(page.getByRole("status")).toContainText("saved on the server");
+  await page.getByTestId("settings-terminal-save").click();
+  await expect(page.getByRole("status")).toContainText("Terminal font saved");
   await page.reload();
-  await expect(page.getByTestId("settings-save")).toBeVisible();
+  await expect(page.getByTestId("settings-terminal-save")).toBeVisible();
   await expect(page.getByTestId("api-login")).toHaveCount(0);
   const context = await browser.newContext();
   const fresh = await context.newPage();
@@ -53,6 +56,7 @@ test("remembered login survives reload and preferences survive a fresh browser c
     await fresh.getByTestId("api-login-secret").fill(API_SECRET);
     await fresh.getByTestId("api-login-submit").click();
     await expect(fresh.locator("html")).toHaveAttribute("data-theme", "light");
+    await settingsSection(fresh, "terminals");
     await expect(fresh.locator("#settings-terminal-font")).toHaveValue("Test Mono");
   } finally {
     await context.close();
@@ -73,6 +77,7 @@ test("stale remembered credentials prompt again and a runtime 401 reopens login"
   await page.route("**/api/settings", (route) =>
     route.fulfill({ status: 401, json: { error: "Unauthorized" } }),
   );
+  await settingsSection(page, "appearance");
   await page.getByTestId("settings-theme-light").click();
   await expect(page.getByTestId("api-login")).toBeVisible();
 });

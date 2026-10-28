@@ -1,6 +1,7 @@
 import type { KbDocumentListing, KnowledgeBase } from "@orc/core/kb";
 import { ArrowDown, ArrowUp, FilePlus, FolderSync, Settings, Upload } from "lucide-react";
 import { useState } from "react";
+import { HelpPopover } from "@/components/HelpPopover";
 import { KbComments } from "@/components/kb/KbComments";
 import { SOURCE_LABELS } from "@/components/kb/KbDialogs";
 import { KbDigestSection } from "@/components/kb/KbDigest";
@@ -57,14 +58,14 @@ export function KbHome({
 }) {
   const agentsEdit = kb.editable_by.includes("mcp");
   return (
-    <div data-testid="kb-overview" className="w-full min-w-0 space-y-8 p-4 sm:p-8">
-      <header className="space-y-3">
-        <div className="space-y-1">
-          <h2 className="wrap-break-word text-2xl font-medium" data-testid="kb-overview-name">
+    <div data-testid="kb-overview" className="w-full min-w-0 space-y-6 p-4 sm:p-6">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <h2 className="wrap-break-word text-base font-medium" data-testid="kb-overview-name">
             {kb.name}
           </h2>
           {kb.description && <p className="max-w-prose text-outline">{kb.description}</p>}
-          <p className="text-sm text-outline" data-testid="kb-overview-meta">
+          <p className="text-xs text-outline" data-testid="kb-overview-meta">
             {owner} · {kb.document_count} {kb.document_count === 1 ? "document" : "documents"} ·{" "}
             {agentsEdit ? "agents can edit" : "agents read only"}
           </p>
@@ -81,6 +82,17 @@ export function KbHome({
         </div>
       </header>
 
+      <Attention kbId={kb.id} onOpen={onOpen} />
+
+      <DocumentTable
+        listing={listing}
+        total={kb.document_count}
+        label={label}
+        onLabel={onLabel}
+        onOpen={onOpen}
+        onNewDocument={onNewDocument}
+      />
+
       <section aria-labelledby="kb-setup-heading" className="space-y-1">
         <h3 id="kb-setup-heading" className="text-sm font-medium text-outline">
           Setup
@@ -93,17 +105,6 @@ export function KbHome({
           <KbComments kbId={kb.id} onOpenDocument={onOpen} />
         </div>
       </section>
-
-      <Attention kbId={kb.id} onOpen={onOpen} />
-
-      <DocumentTable
-        listing={listing}
-        total={kb.document_count}
-        label={label}
-        onLabel={onLabel}
-        onOpen={onOpen}
-        onNewDocument={onNewDocument}
-      />
     </div>
   );
 }
@@ -149,7 +150,10 @@ function UploadsRow({ kb, onSettings }: { kb: KnowledgeBase; onSettings: () => v
       summary={
         <span className="text-outline" data-testid="kb-uploads-parser">
           {chosen}
-          {" · "}PDF, Word, PowerPoint, Excel, HTML, Markdown and text become Markdown
+          <HelpPopover label="Document uploads">
+            PDF, Word, PowerPoint, Excel, HTML, Markdown and text are converted to searchable
+            Markdown by the selected parser.
+          </HelpPopover>
         </span>
       }
       actions={

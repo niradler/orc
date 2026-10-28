@@ -10,233 +10,250 @@ import { SshHostSettings } from "@/components/SshHostSettings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { ViewHeader } from "@/components/ViewHeader";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
 import { TERMINAL_FONT_KEY } from "@/lib/terminal-runtime";
 import { setTheme, useTheme } from "@/lib/theme";
+import { useViewParam } from "@/lib/view-params";
+
+const sections = [
+  "connection",
+  "appearance",
+  "execution",
+  "server",
+  "notifications",
+  "chat",
+  "knowledge",
+  "terminals",
+  "storage",
+] as const;
+type Section = (typeof sections)[number];
+const sectionLabels: Record<Section, string> = {
+  connection: "Connection",
+  appearance: "Appearance",
+  execution: "Execution host",
+  server: "Server",
+  notifications: "Notifications",
+  chat: "Chat",
+  knowledge: "Knowledge",
+  terminals: "Terminals",
+  storage: "Storage",
+};
 
 export default function Settings() {
   const { theme } = useTheme();
+  const [section, setSection] = useViewParam<Section>("settingsSection", "connection", sections);
   const [apiUrl, setApiUrl] = useState(getApiUrl);
   const [terminalFont, setTerminalFont] = useState(
     () => localStorage.getItem(TERMINAL_FONT_KEY) ?? "",
   );
-  const [saved, setSaved] = useState(false);
-  const [feedback, setFeedback] = useState("");
-  const [storageError, setStorageError] = useState("");
   const [pending, setPending] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [error, setError] = useState("");
   const qc = useQueryClient();
-
-  const handleSave = async () => {
-    setStorageError("");
+  function navigate(value: Section) {
+    setSection(value);
+    setError("");
+    setFeedback("");
+  }
+  async function save(kind: "connection" | "terminals", reset = false) {
+    setError("");
+    setFeedback("");
     setPending(true);
     try {
-      const target = apiUrl.trim();
-      if (target && !target.startsWith("/") && !/^https?:\/\//i.test(target))
-        throw new Error("Use a relative API path or an http(s) server URL.");
-      const preferences = await api.settings.save({ theme, terminal_font: terminalFont.trim() });
-      setTheme(preferences.theme ?? theme);
-      setTerminalFont(preferences.terminal_font ?? "");
-      if (preferences.terminal_font)
-        localStorage.setItem(TERMINAL_FONT_KEY, preferences.terminal_font);
-      else localStorage.removeItem(TERMINAL_FONT_KEY);
-      const changed = (target || "/api") !== getApiUrl();
-      localStorage.setItem("orc_api_url", target || "/api");
-      if (changed) window.dispatchEvent(new Event(API_ACCESS_CHANGED));
-      qc.invalidateQueries();
-      setSaved(true);
-      setFeedback("Workspace preferences saved on the server. API address saved in this browser.");
-      setTimeout(() => setSaved(false), 2000);
-    } catch (error) {
-      setStorageError(
-        error instanceof Error ? error.message : "Browser settings could not be saved.",
-      );
-    } finally {
-      setPending(false);
-    }
-  };
-
-  const handleReset = async () => {
-    setStorageError("");
-    setPending(true);
-    try {
-      const preferences = await api.settings.save({ terminal_font: "" });
-      localStorage.removeItem("orc_api_url");
-      localStorage.setItem(TERMINAL_FONT_KEY, preferences.terminal_font ?? "");
-      setApiUrl("/api");
-      setTerminalFont(preferences.terminal_font ?? "");
-      window.dispatchEvent(new Event(API_ACCESS_CHANGED));
-      qc.invalidateQueries();
-      setSaved(false);
-      setFeedback(
-        "Connection and terminal font restored to their defaults. Appearance and execution host were kept.",
-      );
-    } catch (error) {
-      setStorageError(
-        error instanceof Error ? error.message : "Browser settings could not be reset.",
-      );
-    } finally {
-      setPending(false);
-    }
-  };
-
-  async function changeTheme(value: "dark" | "light"): Promise<void> {
-    setStorageError("");
-    setPending(true);
-    try {
-      const preferences = await api.settings.save({ theme: value });
-      setTheme(preferences.theme ?? value);
-    } catch (error) {
-      setStorageError(error instanceof Error ? error.message : "Appearance could not be saved.");
+      if (kind === "connection") {
+        const target = reset ? "/api" : apiUrl.trim() || "/api";
+        if (!target.startsWith("/") && !/^https?:\/\//i.test(target))
+          throw new Error("Use a relative API path or an http(s) server URL.");
+        const changed = target !== getApiUrl();
+        localStorage.setItem("orc_api_url", target);
+        setApiUrl(target);
+        if (changed) window.dispatchEvent(new Event(API_ACCESS_CHANGED));
+        setFeedback(
+          reset
+            ? "Connection restored to the current server."
+            : "Connection saved in this browser.",
+        );
+      } else {
+        const preferences = await api.settings.save({
+          terminal_font: reset ? "" : terminalFont.trim(),
+        });
+        const font = preferences.terminal_font ?? "";
+        setTerminalFont(font);
+        if (font) localStorage.setItem(TERMINAL_FONT_KEY, font);
+        else localStorage.removeItem(TERMINAL_FONT_KEY);
+        setFeedback(
+          reset
+            ? "Terminal font restored to its default."
+            : "Terminal font saved. New terminals use this font.",
+        );
+      }
+      await qc.invalidateQueries();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Settings could not be saved.");
     } finally {
       setPending(false);
     }
   }
-
+  async function changeTheme(value: "dark" | "light") {
+    setError("");
+    setFeedback("");
+    setPending(true);
+    try {
+      const preferences = await api.settings.save({ theme: value });
+      setTheme(preferences.theme ?? value);
+      setFeedback("Appearance saved.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Appearance could not be saved.");
+    } finally {
+      setPending(false);
+    }
+  }
+  const saveActions = (kind: "connection" | "terminals") => (
+    <div className="mt-6 flex flex-wrap items-center gap-2">
+      <Button
+        data-testid={kind === "connection" ? "settings-save" : "settings-terminal-save"}
+        disabled={pending}
+        onClick={() => void save(kind)}
+      >
+        {feedback ? <CheckCircle size={14} /> : <Save size={14} />}Save changes
+      </Button>
+      <Button variant="ghost" disabled={pending} onClick={() => void save(kind, true)}>
+        Reset {kind === "connection" ? "connection" : "font"}
+      </Button>
+    </div>
+  );
   return (
     <div>
       <ViewHeader title="Settings" />
-
-      <div className="max-w-lg space-y-8">
-        <section aria-labelledby="appearance-title">
-          <h2 id="appearance-title" className="mb-1 text-base font-medium">
-            Appearance
-          </h2>
-          <p className="mb-4 text-sm text-muted-foreground">
-            Choose a workspace theme. Your choice is saved on the server immediately.
-          </p>
-          <fieldset className="flex flex-wrap gap-2" aria-label="Theme">
-            {(["dark", "light"] as const).map((value) => (
-              <Button
-                key={value}
-                variant={theme === value ? "secondary" : "outline"}
-                aria-pressed={theme === value}
-                data-testid={`settings-theme-${value}`}
-                disabled={pending}
-                onClick={() => void changeTheme(value)}
-              >
-                {value === "dark" ? "Dark" : "Light"}
-              </Button>
-            ))}
-          </fieldset>
-        </section>
-        {/* API connection */}
-        <section>
-          <h2 className="font-headline font-medium text-base  text-on-surface mb-1">
-            API connection
-          </h2>
-          <p className="font-body text-sm text-muted-foreground mb-4">
-            Connect this workspace to an ORC server. The default{" "}
-            <code className="text-primary">/api</code> uses the current server or the configured
-            development proxy.
-          </p>
-          <Separator className="bg-outline-variant mb-4" />
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label
-                htmlFor="settings-api-url"
-                className="font-label text-sm text-muted-foreground"
-              >
-                API base URL
-              </Label>
-              <Input
-                id="settings-api-url"
-                data-testid="settings-api-url"
-                value={apiUrl}
-                onChange={(e) => setApiUrl(e.target.value)}
-                placeholder="/api  or  http://localhost:7700"
-                className="bg-background text-on-surface font-body text-sm"
-              />
-              <p className="font-body text-sm text-muted-foreground">
-                Use <code>/api</code> (dev proxy) or a direct URL when CORS is enabled.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <SshHostSettings />
-        <ServerSettings />
-        <NotificationSettings />
-
-        <ChatSettingsForm />
-
-        <KnowledgeSettings />
-
-        {/* Terminal */}
-        <section>
-          <h2 className="font-headline font-medium text-base  text-on-surface mb-1">Terminal</h2>
-          <p className="font-body text-sm text-muted-foreground mb-4">
-            Prompt and agent status icons need a Nerd Font installed on this machine. Common ones
-            are tried automatically; set the exact family name if your icons show as empty boxes.
-            Applies to terminals opened after saving.
-          </p>
-          <Separator className="bg-outline-variant mb-4" />
-          <div className="space-y-2">
-            <Label
-              htmlFor="settings-terminal-font"
-              className="font-label text-sm text-muted-foreground"
+      <div className="grid gap-6 md:grid-cols-[160px_minmax(0,1fr)] md:gap-8">
+        <nav aria-label="Settings sections" className="hidden space-y-1 md:block">
+          {sections.map((id) => (
+            <Button
+              key={id}
+              data-testid={`settings-section-${id}`}
+              variant={section === id ? "secondary" : "ghost"}
+              aria-current={section === id ? "page" : undefined}
+              onClick={() => navigate(id)}
+              className="w-full justify-start"
             >
-              Terminal font family
-            </Label>
-            <Input
-              id="settings-terminal-font"
-              value={terminalFont}
-              onChange={(e) => setTerminalFont(e.target.value)}
-              placeholder="e.g. MesloLGS NF"
-              className="bg-background text-on-surface font-body text-sm"
-            />
+              {sectionLabels[id]}
+            </Button>
+          ))}
+        </nav>
+        <label className="md:hidden">
+          <span className="sr-only">Settings section</span>
+          <select
+            aria-label="Settings section"
+            className="form-control form-control-single"
+            value={section}
+            onChange={(event) => navigate(event.target.value as Section)}
+          >
+            {sections.map((id) => (
+              <option key={id} value={id}>
+                {sectionLabels[id]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="min-w-0 max-w-4xl">
+          <section hidden={section !== "connection"} aria-label="Connection settings">
+            <h2 className="mb-6 text-base font-medium">Connection</h2>
+            <div className="grid gap-4 border-b border-border pb-6 lg:grid-cols-[minmax(160px,1fr)_minmax(0,2fr)]">
+              <div>
+                <Label htmlFor="settings-api-url">API connection</Label>
+                <p className="mt-1 text-xs text-muted-foreground">Saved in this browser.</p>
+              </div>
+              <div className="space-y-2">
+                <Input
+                  id="settings-api-url"
+                  data-testid="settings-api-url"
+                  value={apiUrl}
+                  onChange={(event) => setApiUrl(event.target.value)}
+                  placeholder="/api or http://localhost:7700"
+                />
+                <p className="text-xs text-muted-foreground">
+                  <code>/api</code> uses the current server or development proxy.
+                </p>
+              </div>
+            </div>
+            {saveActions("connection")}
+          </section>
+          <section hidden={section !== "appearance"} aria-label="Appearance settings">
+            <h2 className="mb-2 text-base font-medium">Appearance</h2>
+            <p className="mb-5 text-xs text-muted-foreground">Changes save immediately.</p>
+            <fieldset aria-label="Theme" className="flex gap-2">
+              {(["dark", "light"] as const).map((value) => (
+                <Button
+                  key={value}
+                  variant={theme === value ? "secondary" : "outline"}
+                  aria-pressed={theme === value}
+                  data-testid={`settings-theme-${value}`}
+                  disabled={pending}
+                  onClick={() => void changeTheme(value)}
+                >
+                  {value === "dark" ? "Dark" : "Light"}
+                </Button>
+              ))}
+            </fieldset>
+          </section>
+          <div hidden={section !== "execution"}>
+            <SshHostSettings />
           </div>
-        </section>
-
-        {/* Actions */}
-        <div className="flex flex-wrap gap-3 pt-2">
-          <Button
-            data-testid="settings-save"
-            disabled={pending}
-            onClick={() => void handleSave()}
-            className="font-label text-sm "
-          >
-            {saved ? (
-              <>
-                <CheckCircle size={12} className="mr-1.5" /> Saved
-              </>
-            ) : (
-              <>
-                <Save size={12} className="mr-1.5" /> Save settings
-              </>
-            )}
-          </Button>
-          <Button
-            variant="ghost"
-            disabled={pending}
-            onClick={() => void handleReset()}
-            className="font-label text-sm text-muted-foreground hover:text-on-surface"
-          >
-            Reset to defaults
-          </Button>
+          <div hidden={section !== "server"}>
+            <ServerSettings />
+          </div>
+          <div hidden={section !== "notifications"}>
+            <NotificationSettings />
+          </div>
+          <div hidden={section !== "chat"}>
+            <ChatSettingsForm />
+          </div>
+          <div hidden={section !== "knowledge"}>
+            <KnowledgeSettings />
+          </div>
+          <section hidden={section !== "terminals"} aria-label="Terminal settings">
+            <h2 className="mb-6 text-base font-medium">Terminals</h2>
+            <div className="grid gap-4 border-b border-border pb-6 lg:grid-cols-[minmax(160px,1fr)_minmax(0,2fr)]">
+              <div>
+                <Label htmlFor="settings-terminal-font">Terminal font family</Label>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Applies to newly opened terminals.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Input
+                  id="settings-terminal-font"
+                  value={terminalFont}
+                  onChange={(event) => setTerminalFont(event.target.value)}
+                  placeholder="e.g. MesloLGS NF"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Nerd Fonts support prompt and agent icons. Leave blank to choose automatically.
+                </p>
+              </div>
+            </div>
+            {saveActions("terminals")}
+          </section>
+          <section hidden={section !== "storage"} aria-label="Settings storage">
+            <h2 className="mb-3 text-base font-medium">Storage</h2>
+            <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              Workspace preferences and SSH selection are saved in the server's{" "}
+              <code>~/.orc/config.json</code>. The API address and optionally remembered login are
+              stored in this browser.
+            </p>
+          </section>
+          {error && (
+            <p role="alert" className="mt-4 text-sm text-error">
+              {error}
+            </p>
+          )}
+          {feedback && !error && (
+            <p role="status" className="mt-4 text-sm text-muted-foreground">
+              {feedback}
+            </p>
+          )}
         </div>
-        {storageError && (
-          <p role="alert" className="text-sm text-error">
-            {storageError}
-          </p>
-        )}
-        {feedback && !storageError && (
-          <p role="status" className="text-sm text-muted-foreground">
-            {feedback}
-          </p>
-        )}
-
-        {/* Info */}
-        <section>
-          <Separator className="bg-outline-variant mb-4" />
-          <div className="font-label text-sm  text-muted-foreground mb-2">Storage</div>
-          <p className="font-body text-sm text-muted-foreground">
-            Workspace preferences and SSH selection are persisted in the server's{" "}
-            <code>~/.orc/config.json</code>. The API address and optionally remembered login are
-            stored in this browser.
-          </p>
-        </section>
       </div>
     </div>
   );

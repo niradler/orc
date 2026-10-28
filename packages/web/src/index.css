@@ -284,6 +284,78 @@
 }
 
 @layer utilities {
+  .work-form-dialog {
+    display: flex;
+    flex-direction: column;
+    width: min(960px, calc(100vw - 3rem));
+    max-width: none;
+    max-height: min(85dvh, calc(var(--app-height, 100dvh) - 2rem));
+    overflow: hidden;
+    padding: 0;
+    gap: 0;
+  }
+  .chat-history-drawer {
+    display: flex;
+    flex-direction: column;
+    left: 0;
+    top: var(--app-top, 0px);
+    width: min(340px, calc(100vw - 24px));
+    max-width: none;
+    height: var(--app-height, 100dvh);
+    max-height: var(--app-height, 100dvh);
+    translate: 0 0;
+    transform: none;
+    border-radius: 0;
+    padding: 20px 16px;
+    gap: 16px;
+  }
+  .chat-history-drawer > * {
+    flex-shrink: 0;
+  }
+  .work-form-dialog > :first-child {
+    flex-shrink: 0;
+    padding: 20px 24px;
+    padding-right: 48px;
+    border-bottom: 1px solid rgb(var(--border));
+    text-align: left;
+  }
+  .work-form-dialog > form {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .work-form-body {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 20px 24px;
+  }
+  .work-form-footer {
+    flex-shrink: 0;
+    border-top: 1px solid rgb(var(--border));
+    padding: 12px 24px;
+    background: rgb(var(--surface-high));
+    gap: 8px;
+  }
+  @media (max-width: 639px) {
+    .work-form-dialog {
+      width: 100%;
+      height: var(--app-height, 100dvh);
+      max-height: var(--app-height, 100dvh);
+      border: 0;
+      border-radius: 0;
+    }
+    .work-form-dialog > :first-child,
+    .work-form-body,
+    .work-form-footer {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+    .work-form-footer {
+      padding-bottom: max(12px, env(safe-area-inset-bottom));
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     html:root:root *,
     html:root:root *::before,
@@ -298,9 +370,29 @@
   @media (max-width: 767px), (any-pointer: coarse) {
     html:root button,
     html:root [role="button"],
-    html:root [role="combobox"] {
+    html:root [role="combobox"],
+    html:root select {
       min-height: 44px;
       min-width: 44px;
+    }
+
+    html:root [data-ui="button"][data-variant="default"],
+    html:root .chat-send-button {
+      position: relative;
+      isolation: isolate;
+      background-color: transparent;
+    }
+    html:root [data-ui="button"][data-variant="default"]::before,
+    html:root .chat-send-button::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset: 5px 0;
+      border-radius: inherit;
+      background-color: rgb(var(--primary));
+    }
+    html:root .chat-send-button::before {
+      inset: 6px;
     }
 
     html:root a[href] {
@@ -360,4 +452,20 @@
   --tw-translate-y: 0;
   transform: none;
   animation: none;
+}
+
+@layer utilities {
+  @media (min-width: 768px) {
+    .work-form-body [data-testid="job-action-fields"] {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      align-items: start;
+      margin-block: 0;
+    }
+    .work-form-body [data-testid="job-action-fields"] > * {
+      margin-block: 0;
+    }
+  }
 }

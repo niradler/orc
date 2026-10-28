@@ -8,6 +8,7 @@ import {
 } from "@/components/BackendPicker";
 import { DetailField } from "@/components/DetailField";
 import { ErrorState } from "@/components/ErrorState";
+import { FormDialog } from "@/components/FormDialog";
 import { FlowPicker, USE_DEFAULT_FLOW, useEffectiveFlow } from "@/components/flow/FlowPicker";
 import { FlowRunPanel, FlowSectionHeading } from "@/components/flow/FlowRunPanel";
 import { PriorityBadge } from "@/components/PriorityBadge";
@@ -15,13 +16,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { TaskGitLinks } from "@/components/TaskGitLinks";
 import { TaskSessions } from "@/components/TaskSessions";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -450,6 +445,7 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
           {task && (
             <SheetFooter>
               <Button
+                variant="ghost"
                 size="sm"
                 onClick={() => setEditing(true)}
                 className="font-label text-xs font-medium bg-transparent text-on-surface border border-control-border hover:bg-surface"
@@ -493,7 +489,7 @@ function EditTaskDialog({
   const [maxReviewRounds, setMaxReviewRounds] = useState(String(task.max_review_rounds));
   const [flowName, setFlowName] = useState(task.flow_name ?? USE_DEFAULT_FLOW);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent, afterSave = onClose) => {
     e.preventDefault();
     if (!title.trim()) return;
     const parsedTags = tags
@@ -521,205 +517,247 @@ function EditTaskDialog({
           ? {}
           : { flow_name: flowName === USE_DEFAULT_FLOW ? null : flowName }),
       },
-      { onSuccess: () => onClose() },
+      { onSuccess: afterSave },
     );
   };
 
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent
-        data-testid="edit-task-dialog"
-        className="bg-surface-high border-border max-w-lg max-h-[85vh] overflow-y-auto"
-      >
-        <DialogHeader>
-          <DialogTitle className="font-headline text-sm font-medium text-on-surface">
-            Edit task
-          </DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
-          <div className="space-y-1.5">
-            <Label className="font-label text-xs font-medium text-outline">Title *</Label>
-            <Input
-              aria-label="Title"
-              data-testid="edit-task-title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="bg-background border-control-border text-on-surface font-body text-sm"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="font-label text-xs font-medium text-outline">Body</Label>
-            <Textarea
-              aria-label="Body"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              className="bg-background border-control-border text-on-surface font-body text-sm resize-none"
-              rows={4}
-            />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="font-label text-xs font-medium text-outline">Status</Label>
-              <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
-                <SelectTrigger
-                  aria-label="Status"
-                  className="bg-background border-control-border text-on-surface font-label text-xs"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-surface-highest border-surface-highest">
-                  {ALL_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s} className="font-label text-xs">
-                      {s.replace(/_/g, " ")}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+    <FormDialog
+      testId="edit-task-dialog"
+      open={open}
+      onClose={onClose}
+      busy={updateTask.isPending}
+      dirty={
+        JSON.stringify([
+          title,
+          body,
+          status,
+          priority,
+          dueAt,
+          tags,
+          projectId,
+          skillName,
+          agentBackend,
+          requiredReview,
+          maxReviewRounds,
+          flowName,
+        ]) !==
+        JSON.stringify([
+          task.title,
+          task.body ?? "",
+          task.status,
+          task.priority,
+          task.due_at ?? "",
+          (task.tags ?? []).join(", "),
+          task.project_id ?? "",
+          task.skill_name ?? "",
+          task.agent_backend ?? USE_DEFAULT_BACKEND,
+          task.required_review,
+          String(task.max_review_rounds),
+          task.flow_name ?? USE_DEFAULT_FLOW,
+        ])
+      }
+    >
+      {(requestClose, closeAfterSave) => (
+        <>
+          <DialogHeader>
+            <DialogTitle className="font-headline text-sm font-medium text-on-surface">
+              Edit task
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={(event) => handleSubmit(event, closeAfterSave)} className="min-h-0">
+            <div className="work-form-body grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="font-label text-xs font-medium text-outline">Title *</Label>
+                <Input
+                  aria-label="Title"
+                  data-testid="edit-task-title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="bg-background border-control-border text-on-surface font-body text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="font-label text-xs font-medium text-outline">Body</Label>
+                <Textarea
+                  aria-label="Body"
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  className="bg-background border-control-border text-on-surface font-body text-sm resize-none"
+                  rows={4}
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:col-span-2">
+                <div className="space-y-1.5">
+                  <Label className="font-label text-xs font-medium text-outline">Status</Label>
+                  <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
+                    <SelectTrigger
+                      aria-label="Status"
+                      className="bg-background border-control-border text-on-surface font-label text-xs"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-surface-highest border-surface-highest">
+                      {ALL_STATUSES.map((s) => (
+                        <SelectItem key={s} value={s} className="font-label text-xs">
+                          {s.replace(/_/g, " ")}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="font-label text-xs font-medium text-outline">Priority</Label>
+                  <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
+                    <SelectTrigger
+                      aria-label="Priority"
+                      className="bg-background border-control-border text-on-surface font-label text-xs"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-surface-highest border-surface-highest">
+                      {PRIORITIES.map((p) => (
+                        <SelectItem key={p} value={p} className="font-label text-xs">
+                          {p}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:col-span-2">
+                <div className="space-y-1.5">
+                  <Label className="font-label text-xs font-medium text-outline">Due date</Label>
+                  <Input
+                    type="datetime-local"
+                    value={dueAt ? dueAt.slice(0, 16) : ""}
+                    onChange={(e) =>
+                      setDueAt(e.target.value ? new Date(e.target.value).toISOString() : "")
+                    }
+                    className="bg-background border-control-border text-on-surface font-body text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="font-label text-xs font-medium text-outline">Project</Label>
+                  <Select
+                    value={projectId || "__none__"}
+                    onValueChange={(v) => setProjectId(v === "__none__" ? "" : v)}
+                  >
+                    <SelectTrigger
+                      aria-label="Project"
+                      className="bg-background border-control-border text-on-surface font-label text-xs"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-surface-highest border-surface-highest">
+                      <SelectItem value="__none__" className="font-label text-xs">
+                        None
+                      </SelectItem>
+                      {projects?.map((p) => (
+                        <SelectItem key={p.id} value={p.id} className="font-label text-xs">
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="font-label text-xs font-medium text-outline">
+                  Tags (comma-separated)
+                </Label>
+                <Input
+                  aria-label="Tags"
+                  value={tags}
+                  onChange={(e) => setTags(e.target.value)}
+                  placeholder="tag1, tag2"
+                  className="bg-background border-control-border text-on-surface font-body text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:col-span-2">
+                <div className="space-y-1.5">
+                  <Label className="font-label text-xs font-medium text-outline">Skill Name</Label>
+                  <Input
+                    aria-label="Skill override"
+                    value={skillName}
+                    onChange={(e) => setSkillName(e.target.value)}
+                    placeholder="e.g. code-review"
+                    className="bg-background border-control-border text-on-surface font-body text-sm"
+                  />
+                </div>
+                <BackendPicker
+                  value={agentBackend}
+                  onChange={setAgentBackend}
+                  testId="edit-task-backend"
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:col-span-2">
+                <div className="space-y-1.5 flex items-center gap-2 pt-4">
+                  <input
+                    type="checkbox"
+                    id="edit-required-review"
+                    checked={requiredReview}
+                    onChange={(e) => setRequiredReview(e.target.checked)}
+                    className="accent-primary"
+                  />
+                  <Label
+                    htmlFor="edit-required-review"
+                    className="font-label text-xs font-medium text-outline cursor-pointer"
+                  >
+                    Required Review
+                  </Label>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="font-label text-xs font-medium text-outline">
+                    Max Review Rounds
+                  </Label>
+                  <Input
+                    type="number"
+                    value={maxReviewRounds}
+                    onChange={(e) => setMaxReviewRounds(e.target.value)}
+                    min={1}
+                    className="bg-background border-control-border text-on-surface font-body text-sm"
+                  />
+                </div>
+              </div>
+              {task.flow_override ? (
+                <p className="font-body text-sm text-outline" data-testid="task-flow-override-note">
+                  This task carries an inline flow definition (flow_override), which beats any named
+                  flow. Detach it with <code>orc flow attach</code> to use a named flow instead.
+                </p>
+              ) : (
+                <FlowPicker value={flowName} onChange={setFlowName} testId="edit-task-flow" />
+              )}
+              {updateTask.error && (
+                <p role="alert" className="text-sm text-error md:col-span-2">
+                  {updateTask.error.message}
+                </p>
+              )}
             </div>
-            <div className="space-y-1.5">
-              <Label className="font-label text-xs font-medium text-outline">Priority</Label>
-              <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
-                <SelectTrigger
-                  aria-label="Priority"
-                  className="bg-background border-control-border text-on-surface font-label text-xs"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-surface-highest border-surface-highest">
-                  {PRIORITIES.map((p) => (
-                    <SelectItem key={p} value={p} className="font-label text-xs">
-                      {p}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="font-label text-xs font-medium text-outline">Due date</Label>
-              <Input
-                type="datetime-local"
-                value={dueAt ? dueAt.slice(0, 16) : ""}
-                onChange={(e) =>
-                  setDueAt(e.target.value ? new Date(e.target.value).toISOString() : "")
-                }
-                className="bg-background border-control-border text-on-surface font-body text-sm"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="font-label text-xs font-medium text-outline">Project</Label>
-              <Select
-                value={projectId || "__none__"}
-                onValueChange={(v) => setProjectId(v === "__none__" ? "" : v)}
+            <DialogFooter className="work-form-footer">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                data-testid="form-cancel"
+                onClick={requestClose}
+                className="font-label text-xs text-outline"
               >
-                <SelectTrigger
-                  aria-label="Project"
-                  className="bg-background border-control-border text-on-surface font-label text-xs"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-surface-highest border-surface-highest">
-                  <SelectItem value="__none__" className="font-label text-xs">
-                    None
-                  </SelectItem>
-                  {projects?.map((p) => (
-                    <SelectItem key={p.id} value={p.id} className="font-label text-xs">
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="font-label text-xs font-medium text-outline">
-              Tags (comma-separated)
-            </Label>
-            <Input
-              aria-label="Tags"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              placeholder="tag1, tag2"
-              className="bg-background border-control-border text-on-surface font-body text-sm"
-            />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="font-label text-xs font-medium text-outline">Skill Name</Label>
-              <Input
-                aria-label="Skill override"
-                value={skillName}
-                onChange={(e) => setSkillName(e.target.value)}
-                placeholder="e.g. code-review"
-                className="bg-background border-control-border text-on-surface font-body text-sm"
-              />
-            </div>
-            <BackendPicker
-              value={agentBackend}
-              onChange={setAgentBackend}
-              testId="edit-task-backend"
-            />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1.5 flex items-center gap-2 pt-4">
-              <input
-                type="checkbox"
-                id="edit-required-review"
-                checked={requiredReview}
-                onChange={(e) => setRequiredReview(e.target.checked)}
-                className="accent-primary"
-              />
-              <Label
-                htmlFor="edit-required-review"
-                className="font-label text-xs font-medium text-outline cursor-pointer"
+                Cancel
+              </Button>
+              <Button
+                data-testid="edit-task-submit"
+                type="submit"
+                size="sm"
+                disabled={updateTask.isPending || !title.trim()}
+                className="font-label text-xs bg-primary text-primary-foreground hover:bg-primary/90"
               >
-                Required Review
-              </Label>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="font-label text-xs font-medium text-outline">
-                Max Review Rounds
-              </Label>
-              <Input
-                type="number"
-                value={maxReviewRounds}
-                onChange={(e) => setMaxReviewRounds(e.target.value)}
-                min={1}
-                className="bg-background border-control-border text-on-surface font-body text-sm"
-              />
-            </div>
-          </div>
-          {task.flow_override ? (
-            <p className="font-body text-sm text-outline" data-testid="task-flow-override-note">
-              This task carries an inline flow definition (flow_override), which beats any named
-              flow. Detach it with <code>orc flow attach</code> to use a named flow instead.
-            </p>
-          ) : (
-            <FlowPicker value={flowName} onChange={setFlowName} testId="edit-task-flow" />
-          )}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onClose}
-              className="font-label text-xs text-outline"
-            >
-              Cancel
-            </Button>
-            <Button
-              data-testid="edit-task-submit"
-              type="submit"
-              size="sm"
-              disabled={updateTask.isPending || !title.trim()}
-              className="font-label text-xs bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              {updateTask.isPending ? "Saving..." : "Save"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+                {updateTask.isPending ? "Saving..." : "Save"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </>
+      )}
+    </FormDialog>
   );
 }

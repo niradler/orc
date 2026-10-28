@@ -6,10 +6,10 @@ export default function Audit({ projectId: savedProjectId }: { projectId: string
   const projectId = useProjectScope(savedProjectId);
   return (
     <div>
-      <ViewHeader title="Audit" />
-      <p className="mb-4 text-sm text-outline">
-        Recorded summaries and events. Open Sessions to read conversations or resume a coding agent.
-      </p>
+      <ViewHeader
+        title="Audit"
+        help="Recorded summaries and events. Open Sessions to read conversations or resume a coding agent."
+      />
       <LoggedSessions key={projectId} projectId={projectId} />
     </div>
   );

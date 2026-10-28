@@ -1,5 +1,5 @@
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   MEMORY_DESCRIPTION_MAX,
@@ -13,6 +13,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DetailField } from "@/components/DetailField";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -42,6 +43,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { ViewHeader } from "@/components/ViewHeader";
+import { useBreakpoint } from "@/hooks/useMediaQuery";
 import {
   useCreateMemory,
   useDeleteMemory,
@@ -90,6 +92,14 @@ export default function Memories({
   );
   const [searchInput, setSearchInput] = useState(query);
   useEffect(() => setSearchInput(query), [query]);
+  const queryWriter = useRef(setQuery);
+  queryWriter.current = setQuery;
+  useEffect(() => {
+    if (searchInput === query) return;
+    const timer = window.setTimeout(() => queryWriter.current(searchInput, { replace: true }), 250);
+    return () => window.clearTimeout(timer);
+  }, [searchInput, query]);
+  const desktop = useBreakpoint("lg");
   const [editing, setEditing] = useState<Memory | "new" | null>(null);
   const [deleting, setDeleting] = useState<Memory | null>(null);
   const { data: projects } = useProjects({ status: "active" });
@@ -121,6 +131,7 @@ export default function Memories({
     <div>
       <ViewHeader
         title="Memories"
+        help="Short project facts such as ports, conventions and decisions that agents can read in later sessions. Longer procedures belong in a skill."
         meta={
           list.data
             ? `${list.data.total} ${list.data.total === 1 ? "memory" : "memories"}`
@@ -137,60 +148,59 @@ export default function Memories({
           </Button>
         }
       />
-      <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
-        Short project facts agents load next session: ports, conventions, gotchas, decisions. Longer
-        procedures belong in a skill.
-      </p>
-
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <Select value={project} onValueChange={(value) => setProject(value)}>
-          <SelectTrigger
-            aria-label="Project"
-            data-testid="memory-project-filter"
-            className="h-9 w-48 bg-background text-on-surface font-body text-sm"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="bg-surface border-outline-variant">
-            <SelectItem value={ALL_PROJECTS} className="font-body text-sm">
-              All projects
-            </SelectItem>
-            {unassigned && (
-              <SelectItem value="unassigned" className="font-body text-sm">
-                Unassigned
-              </SelectItem>
-            )}
-            {projects?.map((p) => (
-              <SelectItem
-                key={p.id}
-                value={p.id}
-                data-testid={`memory-project-option-${p.id}`}
-                className="font-body text-sm"
-              >
-                {p.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="flex shrink-0 flex-wrap gap-1.5">
-          {SORTS.map((s) => (
-            <button
-              key={s.value}
-              type="button"
-              onClick={() => setSort(s.value)}
-              data-testid={`memory-sort-${s.value}`}
-              aria-pressed={sort === s.value}
-              className={`font-label text-sm px-3 py-1.5 border transition-colors ${
-                sort === s.value
-                  ? "bg-surface-highest text-on-surface border-transparent"
-                  : "bg-transparent border-transparent text-muted-foreground hover:bg-surface-low hover:text-on-surface"
-              }`}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <ResponsiveFilters
+          activeCount={Number(sort !== "reads") + Number(project !== ALL_PROJECTS)}
+        >
+          <Select value={project} onValueChange={(value) => setProject(value)}>
+            <SelectTrigger
+              aria-label="Project"
+              data-testid="memory-project-filter"
+              className="h-9 w-48 bg-background text-on-surface font-body text-sm"
             >
-              {s.label}
-            </button>
-          ))}
-        </div>
-        <div className="relative min-w-[160px] flex-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-surface border-outline-variant">
+              <SelectItem value={ALL_PROJECTS} className="font-body text-sm">
+                All projects
+              </SelectItem>
+              {unassigned && (
+                <SelectItem value="unassigned" className="font-body text-sm">
+                  Unassigned
+                </SelectItem>
+              )}
+              {projects?.map((p) => (
+                <SelectItem
+                  key={p.id}
+                  value={p.id}
+                  data-testid={`memory-project-option-${p.id}`}
+                  className="font-body text-sm"
+                >
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="flex shrink-0 flex-wrap gap-1.5">
+            {SORTS.map((s) => (
+              <button
+                key={s.value}
+                type="button"
+                onClick={() => setSort(s.value)}
+                data-testid={`memory-sort-${s.value}`}
+                aria-pressed={sort === s.value}
+                className={`font-label text-sm px-3 py-1.5 border transition-colors ${
+                  sort === s.value
+                    ? "bg-surface-highest text-on-surface border-transparent"
+                    : "bg-transparent border-transparent text-muted-foreground hover:bg-surface-low hover:text-on-surface"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </ResponsiveFilters>
+        <div className="relative order-first min-w-0 flex-1 lg:max-w-md">
           <Search
             size={12}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
@@ -205,14 +215,6 @@ export default function Memories({
             className="pl-8 bg-background text-on-surface font-body text-sm placeholder:text-muted-foreground"
           />
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setQuery(searchInput)}
-          className="font-label text-sm"
-        >
-          Search
-        </Button>
       </div>
 
       {unassigned ? (
@@ -228,6 +230,34 @@ export default function Memories({
         </div>
       ) : memories.length === 0 ? (
         <EmptyState message={query ? "No memories match your search" : "No memories yet"} />
+      ) : !desktop ? (
+        <div className="divide-y divide-outline-variant">
+          {memories.map((memory) => (
+            <button
+              key={memory.key}
+              type="button"
+              data-testid="memory-row"
+              data-memory-name={memory.name}
+              data-memory-project={memory.project_id}
+              onClick={() => openDetail(memory)}
+              className="flex w-full min-w-0 items-start justify-between gap-3 px-2 py-3 text-left hover:bg-surface"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block wrap-break-word text-sm font-medium">{memory.name}</span>
+                <span className="mt-1 line-clamp-2 wrap-break-word text-sm text-muted-foreground">
+                  {memory.description}
+                </span>
+                <span className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                  {allProjects && <span>{projectName(memory.project_id)}</span>}
+                  <span data-testid="memory-read-count" title={readsTitle(memory)}>
+                    {memory.read_count} reads
+                  </span>
+                </span>
+              </span>
+              <MemoryPriority priority={memory.priority} />
+            </button>
+          ))}
+        </div>
       ) : (
         <div className="overflow-hidden">
           <Table>

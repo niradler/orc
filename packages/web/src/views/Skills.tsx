@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  ChevronDown,
   Download,
   Plus,
   Search,
@@ -23,6 +24,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { ImportLocalSkillsDialog } from "@/components/ImportLocalSkillsDialog";
 import { ImportSkillDialog } from "@/components/ImportSkillDialog";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
+import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { SkillHistoryPanel } from "@/components/SkillHistoryPanel";
 import { SkillSync } from "@/components/SkillSync";
 import { Button } from "@/components/ui/button";
@@ -35,6 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -48,6 +51,7 @@ import {
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
 import { useListSelection } from "@/hooks/useListSelection";
+import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjectScope } from "@/hooks/useProjectScope";
 import {
   useCreateSkill,
@@ -91,6 +95,7 @@ const SOURCE_COLORS: Record<SkillSource, string> = {
 };
 
 export default function Skills({ projectId }: { projectId: string }) {
+  const desktop = useBreakpoint("xl");
   const project = useProjectScope(projectId);
   const scope: ScopeQuery =
     project === "all" || project === "unassigned" ? { scope: "global" } : { project_id: project };
@@ -108,6 +113,13 @@ export default function Skills({ projectId }: { projectId: string }) {
   );
   const RepositorySortIcon = REPOSITORY_SORT_ICONS[repositorySort];
   useEffect(() => setSearchInput(query), [query]);
+  const queryWriter = useRef(setQuery);
+  queryWriter.current = setQuery;
+  useEffect(() => {
+    if (searchInput === query) return;
+    const timer = window.setTimeout(() => queryWriter.current(searchInput, { replace: true }), 250);
+    return () => window.clearTimeout(timer);
+  }, [searchInput, query]);
   const {
     selectedId: selectedSkill,
     openDetail: openSkillDetail,
@@ -116,6 +128,7 @@ export default function Skills({ projectId }: { projectId: string }) {
   const [creating, setCreating] = useState(false);
   const [importingRepository, setImportingRepository] = useState(false);
   const [importingLocal, setImportingLocal] = useState(false);
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
   const visibility = useSkillVisibility();
   const setVisibility = useSetSkillVisibility();
   const pageScope = JSON.stringify([project, query, sourceFilter]);
@@ -233,29 +246,102 @@ export default function Skills({ projectId }: { projectId: string }) {
 
   if (error) return <ErrorState message={(error as Error).message} onRetry={() => refetch()} />;
 
+  const discoveryControl = (skill: (typeof displayedSkills)[number], compact = false) => (
+    <button
+      type="button"
+      role="switch"
+      aria-label={`${skill.name} visible to agents`}
+      aria-checked={!skill.discovery_hidden}
+      data-testid={`skill-visibility-${skill.name}`}
+      disabled={!visibility.data || setVisibility.isPending}
+      className={
+        compact
+          ? "inline-flex size-11 shrink-0 items-center justify-center rounded-md text-primary hover:bg-surface disabled:opacity-50"
+          : "inline-flex min-h-11 items-center gap-2 text-xs text-primary disabled:opacity-50"
+      }
+      title={
+        skill.discovery_hidden
+          ? "Hidden from agent discovery. Still loadable by name and in flows."
+          : "Hide from agent discovery"
+      }
+      onClick={() => {
+        const hidden = new Set(visibility.data?.hidden_skills ?? []);
+        const builtins = new Set(visibility.data?.hidden_builtins ?? []);
+        if (skill.discovery_hidden) {
+          hidden.delete(skill.name);
+          builtins.delete(skill.name);
+        } else hidden.add(skill.name);
+        setVisibility.mutate({
+          hidden_skills: [...hidden],
+          hidden_builtins: [...builtins],
+        });
+      }}
+    >
+      {skill.discovery_hidden ? (
+        <ToggleLeft size={22} aria-hidden="true" className="text-muted-foreground" />
+      ) : (
+        <ToggleRight size={22} aria-hidden="true" />
+      )}
+      {!compact && (skill.discovery_hidden ? "Hidden" : "Visible")}
+      {!compact && skill.mutation && " (Modified)"}
+    </button>
+  );
   return (
     <div>
       <ViewHeader
         title="Skills"
-        meta={`${(skills ?? []).length} skills`}
+        meta={(skills ?? []).length}
+        help="Reusable agent instructions stored in skill folders. Import existing skills or create your own."
         action={
           <div className="flex flex-wrap gap-2">
-            <Button
-              data-testid="import-skill-button"
-              size="sm"
-              variant="outline"
-              onClick={() => setImportingRepository(true)}
-            >
-              <Download size={12} className="mr-1" /> Import from GitHub
-            </Button>
-            <Button
-              data-testid="import-local-skills-button"
-              size="sm"
-              variant="outline"
-              onClick={() => setImportingLocal(true)}
-            >
-              <Download size={12} className="mr-1" /> Import from agents
-            </Button>
+            <Popover open={importMenuOpen} onOpenChange={setImportMenuOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  data-testid="skill-import-menu"
+                  aria-label="Import skills"
+                  size="sm"
+                  variant="ghost"
+                >
+                  <Download size={14} />
+                  <span className="hidden sm:inline">Import</span>
+                  <ChevronDown size={12} className="hidden sm:block" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent aria-label="Import skills" align="end" className="w-56 space-y-1 p-1">
+                <Button
+                  data-testid="import-skill-button"
+                  size="sm"
+                  variant="ghost"
+                  className="w-full justify-start"
+                  onClick={() => {
+                    setImportMenuOpen(false);
+                    setImportingRepository(true);
+                  }}
+                >
+                  <Download size={12} className="mr-1" /> Import from GitHub
+                </Button>
+                <Button
+                  data-testid="import-local-skills-button"
+                  size="sm"
+                  variant="ghost"
+                  className="w-full justify-start"
+                  onClick={() => {
+                    setImportMenuOpen(false);
+                    setImportingLocal(true);
+                  }}
+                >
+                  <Download size={12} className="mr-1" /> Import from agents
+                </Button>
+                <a
+                  className="block rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                  href="https://agentskills.io/specification"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Agent Skills specification
+                </a>
+              </PopoverContent>
+            </Popover>
             <Button
               data-testid="new-skill-button"
               size="sm"
@@ -268,18 +354,6 @@ export default function Skills({ projectId }: { projectId: string }) {
         }
       />
 
-      <p className="text-xs text-muted-foreground mb-3">
-        Skill folders follow the{" "}
-        <a
-          className="text-primary underline"
-          href="https://agentskills.io/specification"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Agent Skills specification
-        </a>
-        .
-      </p>
       {(visibility.error || setVisibility.error) && (
         <p role="alert" className="text-destructive text-xs mb-2">
           {(visibility.error || setVisibility.error)?.message}
@@ -293,27 +367,52 @@ export default function Skills({ projectId }: { projectId: string }) {
 
       {/* Source filter pills */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="flex shrink-0 flex-wrap gap-1.5">
-          {SOURCE_FILTERS.map((f) => (
-            <button
-              key={f.value}
-              type="button"
-              onClick={() => setSourceFilter(f.value)}
-              data-testid={`skill-source-${f.value}`}
-              aria-pressed={sourceFilter === f.value}
-              className={`font-label text-sm  px-3 py-1.5 border transition-colors ${
-                sourceFilter === f.value
-                  ? "bg-surface-highest text-on-surface border-transparent"
-                  : "bg-transparent border-transparent text-muted-foreground hover:bg-surface-low hover:text-on-surface"
-              }`}
+        <ResponsiveFilters
+          activeCount={Number(sourceFilter !== "all") + Number(repositorySort !== "default")}
+        >
+          <div className="flex shrink-0 flex-wrap gap-1.5">
+            {SOURCE_FILTERS.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                onClick={() => setSourceFilter(f.value)}
+                data-testid={`skill-source-${f.value}`}
+                aria-pressed={sourceFilter === f.value}
+                className={`font-label text-sm  px-3 py-1.5 border transition-colors ${
+                  sourceFilter === f.value
+                    ? "bg-surface-highest text-on-surface border-transparent"
+                    : "bg-transparent border-transparent text-muted-foreground hover:bg-surface-low hover:text-on-surface"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          {!desktop && (
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="skill-repository-sort"
+              aria-label={`Sort by repository, ${repositorySort} order`}
+              title="Cycle repository order: ascending, descending, then default"
+              onClick={() =>
+                setRepositorySort(
+                  repositorySort === "default"
+                    ? "asc"
+                    : repositorySort === "asc"
+                      ? "desc"
+                      : "default",
+                )
+              }
             >
-              {f.label}
-            </button>
-          ))}
-        </div>
+              <RepositorySortIcon size={14} />
+              Repository order
+            </Button>
+          )}
+        </ResponsiveFilters>
 
         {/* Search */}
-        <div className="relative min-w-[160px] flex-1">
+        <div className="relative order-first min-w-0 flex-1 lg:max-w-md">
           <Search
             size={12}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
@@ -328,15 +427,6 @@ export default function Skills({ projectId }: { projectId: string }) {
             className="pl-8 bg-background text-on-surface font-body text-sm placeholder:text-muted-foreground"
           />
         </div>
-        <Button
-          data-testid="skill-search-submit"
-          variant="outline"
-          size="sm"
-          onClick={() => setQuery(searchInput)}
-          className="font-label text-sm "
-        >
-          Search
-        </Button>
       </div>
 
       {!!skills?.length && (
@@ -447,6 +537,66 @@ export default function Skills({ projectId }: { projectId: string }) {
         </div>
       ) : (skills ?? []).length === 0 ? (
         <EmptyState message={query ? "No skills match your search" : "No skills found"} />
+      ) : !desktop ? (
+        <div className="divide-y divide-outline-variant">
+          {displayedSkills.map((skill) => (
+            <div
+              key={skill.name}
+              data-testid="skill-row"
+              data-skill-name={skill.name}
+              className="flex min-w-0 items-center gap-1 py-2"
+            >
+              <label className="flex size-11 shrink-0 items-center justify-center">
+                <input
+                  type="checkbox"
+                  data-testid="skill-select"
+                  aria-label={`Select ${skill.name}`}
+                  checked={selection.selectedIds.includes(skill.name)}
+                  disabled={bulk.isPending}
+                  onChange={() => selection.toggle(skill.name)}
+                  className="size-4 accent-primary"
+                />
+              </label>
+              <div className="min-w-0 flex-1">
+                <button
+                  type="button"
+                  data-testid="skill-open"
+                  className="block min-h-11 w-full min-w-0 text-left text-sm"
+                  title={skill.name}
+                  onClick={() => openSkillDetail(skill.name)}
+                >
+                  <span className="block truncate font-medium">{skill.name}</span>
+                  {skill.description && (
+                    <span className="block truncate text-muted-foreground">
+                      {skill.description}
+                    </span>
+                  )}
+                </button>
+                <div className="flex min-w-0 items-center gap-x-2 text-xs text-muted-foreground">
+                  <span data-testid="skill-source-cell" className="shrink-0">
+                    {skill.source}
+                  </span>
+                  {skill.mutation && <span className="shrink-0 text-primary">Modified</span>}
+                  <span data-testid="skill-repository-cell" className="min-w-0 flex-1 truncate">
+                    {repositoryByName.get(skill.name) ? (
+                      <a
+                        data-testid="skill-repository-link"
+                        href={`https://github.com/${repositoryByName.get(skill.name)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="hover:underline"
+                        title={repositoryByName.get(skill.name)}
+                      >
+                        {repositoryByName.get(skill.name)}
+                      </a>
+                    ) : null}
+                  </span>
+                </div>
+              </div>
+              {discoveryControl(skill, true)}
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="overflow-hidden">
           <Table>
@@ -552,44 +702,7 @@ export default function Skills({ projectId }: { projectId: string }) {
                     )}
                   </TableCell>
                   <TableCell onClick={(event) => event.stopPropagation()}>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-label={`${skill.name} visible to agents`}
-                      aria-checked={!skill.discovery_hidden}
-                      data-testid={`skill-visibility-${skill.name}`}
-                      disabled={!visibility.data || setVisibility.isPending}
-                      className="inline-flex min-h-11 items-center gap-2 text-xs text-primary disabled:opacity-50"
-                      title={
-                        skill.discovery_hidden
-                          ? "Hidden from agent discovery. Still loadable by name and in flows."
-                          : "Hide from agent discovery"
-                      }
-                      onClick={() => {
-                        const hidden = new Set(visibility.data?.hidden_skills ?? []);
-                        const builtins = new Set(visibility.data?.hidden_builtins ?? []);
-                        if (skill.discovery_hidden) {
-                          hidden.delete(skill.name);
-                          builtins.delete(skill.name);
-                        } else hidden.add(skill.name);
-                        setVisibility.mutate({
-                          hidden_skills: [...hidden],
-                          hidden_builtins: [...builtins],
-                        });
-                      }}
-                    >
-                      {skill.discovery_hidden ? (
-                        <ToggleLeft
-                          size={22}
-                          aria-hidden="true"
-                          className="text-muted-foreground"
-                        />
-                      ) : (
-                        <ToggleRight size={22} aria-hidden="true" />
-                      )}
-                      {skill.discovery_hidden ? "Hidden" : "Visible"}
-                      {skill.mutation && " (Modified)"}
-                    </button>
+                    {discoveryControl(skill)}
                   </TableCell>
                 </TableRow>
               ))}

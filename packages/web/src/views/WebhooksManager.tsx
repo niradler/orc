@@ -57,9 +57,12 @@ export default function WebhooksManager({
           <h2 className="text-sm font-normal">No webhooks configured</h2>
         </section>
       ) : (
-        <section className="space-y-6">
+        <section className="space-y-4" aria-labelledby="configured-webhooks-title">
+          <h2 id="configured-webhooks-title" className="sr-only">
+            Configured webhooks
+          </h2>
           {visibleHooks.map((hook) => (
-            <div key={hook.id} className="space-y-2">
+            <div key={hook.id} className="space-y-2 border-b border-border pb-4 last:border-0">
               <WebhookEndpoint hook={hook} />
               <Button
                 type="button"

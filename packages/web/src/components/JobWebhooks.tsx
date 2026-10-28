@@ -92,7 +92,7 @@ export function WebhookCreate({
         <select
           id={`${id}-provider`}
           data-testid="webhook-provider"
-          className="w-full min-h-11 rounded-md border border-control-border bg-background px-3 text-sm"
+          className="w-full min-h-8 rounded-md border border-control-border bg-background px-3 text-sm"
           value={provider}
           onChange={(event) => setProvider(event.target.value as typeof provider)}
         >
@@ -162,7 +162,7 @@ export function WebhookPicker({
           <select
             id="job-webhook-source"
             data-testid="job-webhook-select"
-            className="w-full min-h-11 rounded-md border border-control-border bg-background px-3 text-sm"
+            className="w-full min-h-8 rounded-md border border-control-border bg-background px-3 text-sm"
             value=""
             disabled={isLoading}
             onChange={(event) => {

@@ -87,7 +87,7 @@ for (const width of [1440, 390]) {
     await page.reload();
     await page.getByTestId("chat-sessions-button").filter({ visible: true }).click();
     await page
-      .getByTestId("chat-resume-thread")
+      .getByTestId("chat-session-select")
       .filter({ hasText: `Large history ${externalId}` })
       .click();
     await expect(page.getByTestId("chat-message")).toHaveCount(502);

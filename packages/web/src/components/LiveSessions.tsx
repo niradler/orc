@@ -155,7 +155,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             placeholder="Search agent sessions…"
-            className="h-11 w-full rounded-md border border-control-border bg-background pl-9 pr-3 font-body text-base text-on-surface placeholder:text-outline lg:h-9 lg:text-sm"
+            className="h-11 w-full rounded-md border border-control-border bg-background pl-9 pr-3 font-body text-base text-on-surface placeholder:text-outline lg:h-8 lg:text-[13px]"
           />
         </div>
         <ResponsiveFilters
@@ -166,7 +166,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
             data-testid="session-date-sort"
             value={order}
             onChange={(event) => setParam("order", event.target.value === "asc" ? "asc" : null)}
-            className="h-11 max-w-full rounded-md border border-control-border bg-background px-3 text-base text-on-surface lg:h-9 lg:text-sm"
+            className="h-11 max-w-full rounded-md border border-control-border bg-background px-3 text-base text-on-surface lg:h-8 lg:text-[13px]"
           >
             <option value="desc">Last active: newest</option>
             <option value="asc">Last active: oldest</option>
@@ -174,7 +174,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
           <select
             data-testid="agent-filter"
             aria-label="Agent"
-            className="h-11 max-w-full rounded-md border border-control-border bg-background px-3 text-base text-on-surface lg:h-9 lg:text-sm"
+            className="h-11 max-w-full rounded-md border border-control-border bg-background px-3 text-base text-on-surface lg:h-8 lg:text-[13px]"
             value={agent}
             onChange={(e) => setParam("agent", e.target.value || null)}
           >
@@ -186,7 +186,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
             ))}
           </select>
           {
-            <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-outline lg:min-h-9">
+            <label className="flex min-h-11 cursor-pointer items-center gap-2 text-[13px] text-outline lg:min-h-8">
               <input
                 type="checkbox"
                 data-testid="show-ended"

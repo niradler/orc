@@ -173,6 +173,7 @@ export function JobDetailSheet({ jobId, open, onClose, onEdit }: JobDetailSheetP
           )}
           {job && (
             <Button
+              variant="ghost"
               size="sm"
               disabled={triggerJob.isPending}
               onClick={() => triggerJob.mutate(job.id)}

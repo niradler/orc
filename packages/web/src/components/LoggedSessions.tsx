@@ -21,7 +21,7 @@ const PAGE_SIZE = 25;
 const HEAD = "font-label text-xs font-medium text-outline";
 
 export function LoggedSessions({ projectId }: { projectId: string }) {
-  const desktop = useBreakpoint("sm");
+  const desktop = useBreakpoint("xl");
   const [order, setOrder] = useViewParam<"asc" | "desc">("order", "desc", ["asc", "desc"]);
   const [pagination, setPagination] = useState({ order, page: 0 });
   const page = pagination.order === order ? pagination.page : 0;
@@ -41,7 +41,8 @@ export function LoggedSessions({ projectId }: { projectId: string }) {
 
   return (
     <section data-testid="logged-sessions">
-      <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs text-outline">{total} records</span>
         <select
           aria-label="Sort audit by date"
           data-testid="audit-date-sort"
@@ -50,7 +51,7 @@ export function LoggedSessions({ projectId }: { projectId: string }) {
             setPage(0);
             setOrder(event.target.value as "asc" | "desc");
           }}
-          className="min-h-11 rounded-md border border-control-border bg-background px-3 text-sm text-on-surface"
+          className="form-control form-control-single w-auto max-w-full"
         >
           <option value="desc">Created: newest first</option>
           <option value="asc">Created: oldest first</option>
@@ -74,11 +75,11 @@ export function LoggedSessions({ projectId }: { projectId: string }) {
                   key={session.id}
                   data-testid="session-row"
                   data-session-id={session.id}
-                  className="py-4 space-y-3"
+                  className="py-3 space-y-2"
                 >
                   <button
                     type="button"
-                    className="min-h-11 text-sm text-left font-medium text-primary wrap-break-word"
+                    className="min-h-8 text-sm text-left font-medium text-primary wrap-break-word"
                     onClick={() => openDetail(session.id)}
                   >
                     {session.agent ?? "Session"}
@@ -107,7 +108,7 @@ export function LoggedSessions({ projectId }: { projectId: string }) {
                   <TableHead className={`${HEAD} w-24`}>Version</TableHead>
                   <TableHead className={HEAD}>Summary</TableHead>
                   <TableHead className={`${HEAD} w-24`}>Project</TableHead>
-                  <TableHead className={`${HEAD} w-28`}>Tokens Used</TableHead>
+                  <TableHead className={`${HEAD} w-28`}>Tokens used</TableHead>
                   <TableHead className={`${HEAD} w-36`}>Created</TableHead>
                 </TableRow>
               </TableHeader>

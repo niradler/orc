@@ -119,7 +119,7 @@ test("Codex chat streams and keeps history while switching between desktop and m
   );
   await page.goto("/tasks");
   await page.getByTestId("chat-open-button").click();
-  await expect(page.getByTestId("chat-agent-select")).toHaveValue("codex");
+  await expect(page.getByTestId("chat-agent-button")).toHaveText("codex");
   const marker = tid("chat-continuity");
   await page.getByTestId("chat-input").fill(`Reply with exactly: ${marker}.`);
   await page.getByTestId("chat-send-button").click();

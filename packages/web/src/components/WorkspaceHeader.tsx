@@ -65,7 +65,7 @@ export function WorkspaceHeader({
           {themeError}
         </p>
       )}
-      <header className="flex min-h-14 items-center gap-2 px-3 md:px-6">
+      <header className="flex min-h-12 items-center gap-2 px-3 md:px-6">
         <Button
           data-testid="mobile-nav-open"
           ref={navButtonRef}
@@ -114,7 +114,7 @@ export function WorkspaceHeader({
         <Button
           ref={chatButtonRef}
           data-testid="chat-open-button"
-          variant="outline"
+          variant="ghost"
           size="sm"
           onClick={onOpenChat}
         >
@@ -127,7 +127,7 @@ export function WorkspaceHeader({
         <nav
           ref={sectionNav}
           aria-label={`${section.label} pages`}
-          className="flex gap-1 overflow-x-auto px-3 pb-2 md:px-6"
+          className="flex gap-1 overflow-x-auto px-3 pb-1 md:px-6"
         >
           {section.pages.map((page) => (
             <NavLink
@@ -136,7 +136,7 @@ export function WorkspaceHeader({
               end={page.path === "/packages"}
               data-testid={page.id === "knowledge" ? "section-knowledge" : `nav-${page.id}`}
               className={({ isActive }) =>
-                `flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-md px-3 py-2 text-sm transition-colors lg:min-h-9 ${isActive ? "bg-surface-highest text-on-surface" : "text-outline hover:bg-surface hover:text-on-surface"}`
+                `flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-md px-3 py-1.5 text-[13px] transition-colors lg:min-h-8 ${isActive ? "bg-surface-highest text-on-surface" : "text-outline hover:bg-surface hover:text-on-surface"}`
               }
             >
               {page.label}

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { strToU8, zipSync } from "fflate";
-import { FileBox, PackagePlus, Search, Upload } from "lucide-react";
+import { MoreHorizontal, PackagePlus, Search, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -19,6 +19,7 @@ import {
 } from "@/components/PackageEditor";
 import { PackageImportDialog } from "@/components/PackageImportDialog";
 import { PackageRunDialog } from "@/components/PackageRunDialog";
+import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -28,6 +29,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
 import type { PackageInput } from "@/lib/package-draft";
@@ -243,14 +245,15 @@ export default function PackageCatalog() {
         (format === "all" || pkg.format === format),
     ) ?? [];
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="min-w-0 space-y-4">
       <ViewHeader
         title="Packages"
         meta={`${packages.data?.packages.length ?? 0} in your catalog`}
+        help="Packages combine instructions, skills and tools for reuse. Use a package in chat or a terminal on the host and folder you choose."
         action={
           <div className="flex flex-wrap gap-2">
             <Button
-              variant="outline"
+              variant="ghost"
               data-testid="package-import-button"
               onClick={() => setImporting(true)}
             >
@@ -270,12 +273,6 @@ export default function PackageCatalog() {
           </div>
         }
       />
-      <div className="space-y-1">
-        <p className="max-w-2xl text-sm text-muted-foreground">
-          Keep the instructions, skills and tools you trust in one place. Save a package once, then
-          launch it in chat or a terminal on the host and folder you choose.
-        </p>
-      </div>
       {notice && (
         <p role="status" className="text-sm text-primary wrap-break-word">
           {notice}
@@ -286,9 +283,12 @@ export default function PackageCatalog() {
           <span data-testid="page-error">{error ?? packages.error?.message}</span>
         </p>
       )}
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <div className="relative min-w-0 flex-1">
-          <Search size={16} className="absolute left-3 top-3 text-muted-foreground" />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-0 flex-1 lg:max-w-md">
+          <Search
+            size={14}
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+          />
           <Input
             className="pl-9"
             data-testid="package-search"
@@ -303,114 +303,117 @@ export default function PackageCatalog() {
             }}
           />
         </div>
-        <select
-          aria-label="Filter package type"
-          data-testid="package-format-filter"
-          className="rounded border border-control-border bg-background p-2 text-sm"
-          value={format}
-          onChange={(event) => {
-            const next = new URLSearchParams(params);
-            next.set("format", event.target.value);
-            setParams(next, { replace: true });
-          }}
-        >
-          <option value="all">All formats</option>
-          <option value="apm">APM packages</option>
-          <option value="agent-plugin">Agent Plugins</option>
-        </select>
+        <ResponsiveFilters activeCount={Number(format !== "all")}>
+          <select
+            aria-label="Filter package type"
+            data-testid="package-format-filter"
+            className="form-control form-control-single w-full lg:w-auto"
+            value={format}
+            onChange={(event) => {
+              const next = new URLSearchParams(params);
+              next.set("format", event.target.value);
+              setParams(next, { replace: true });
+            }}
+          >
+            <option value="all">All formats</option>
+            <option value="apm">APM packages</option>
+            <option value="agent-plugin">Agent Plugins</option>
+          </select>
+        </ResponsiveFilters>
       </div>
       {packages.isLoading && (
         <p role="status" data-testid="page-loading">
           Loading your catalog…
         </p>
       )}
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="divide-y divide-outline-variant">
         {filtered.map((pkg) => (
           <article
             key={pkg.name}
             data-testid="agent-package-row"
             data-package-name={pkg.name}
-            className="min-w-0 flex flex-col border-b border-outline-variant p-4"
+            className="flex min-w-0 flex-wrap items-start justify-between gap-x-6 gap-y-2 px-2 py-3 sm:flex-nowrap"
           >
-            <span className="mb-3 text-xs text-muted-foreground">
-              {pkg.format === "apm" ? "APM package" : "Agent Plugins"}
-              {pkg.version ? ` · v${pkg.version}` : ""}
-            </span>
-            <button
-              type="button"
-              data-testid="package-inspect"
-              onClick={() => openDetail(pkg.name)}
-              className="text-left font-medium wrap-break-word hover:text-primary"
-            >
-              {pkg.name}
-            </button>
-            <p className="mt-2 flex-1 text-sm text-muted-foreground wrap-break-word">
-              {pkg.description || "Add a description to help you choose this configuration later."}
-            </p>
-            {pkg.warnings.map((warning) => (
-              <p key={warning} className="mt-2 text-xs text-muted-foreground wrap-break-word">
-                {warning}
-              </p>
-            ))}
-            <div className="mt-4 flex flex-wrap items-center gap-1">
+            <div className="min-w-0 flex-1">
+              <button
+                type="button"
+                data-testid="package-inspect"
+                onClick={() => openDetail(pkg.name)}
+                className="min-h-8 text-left text-sm font-medium wrap-break-word hover:text-primary"
+              >
+                {pkg.name}
+              </button>
+              <span className="ml-3 text-xs text-muted-foreground">
+                {pkg.format === "apm" ? "APM package" : "Agent Plugins"}
+                {pkg.version ? ` · v${pkg.version}` : ""}
+              </span>
+              {pkg.description && (
+                <p className="line-clamp-2 text-sm text-muted-foreground wrap-break-word">
+                  {pkg.description}
+                </p>
+              )}
+              {pkg.warnings.map((warning) => (
+                <p key={warning} className="mt-2 text-xs text-muted-foreground wrap-break-word">
+                  {warning}
+                </p>
+              ))}
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
               <Button
                 size="sm"
-                variant="outline"
+                variant="ghost"
                 data-testid="package-run"
                 disabled={busy}
                 onClick={() => openRun(pkg.name)}
               >
                 Use package
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                data-testid="package-card-edit"
-                onClick={() => void edit(pkg.name)}
-              >
-                Edit package
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-destructive"
-                data-testid="package-card-delete"
-                disabled={busy || deletion.isPending}
-                onClick={() => void requestDelete(pkg.name)}
-              >
-                Delete package
-              </Button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    data-testid="package-actions-menu"
+                    aria-label={`Actions for ${pkg.name}`}
+                  >
+                    <MoreHorizontal size={16} />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  aria-label="Package actions"
+                  align="end"
+                  className="w-44 space-y-1 p-1"
+                >
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="w-full justify-start"
+                    data-testid="package-card-edit"
+                    onClick={() => void edit(pkg.name)}
+                  >
+                    Edit package
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="w-full justify-start text-destructive"
+                    data-testid="package-card-delete"
+                    disabled={busy || deletion.isPending}
+                    onClick={() => void requestDelete(pkg.name)}
+                  >
+                    Delete package
+                  </Button>
+                </PopoverContent>
+              </Popover>
             </div>
           </article>
         ))}
       </div>
       {!packages.isLoading && !packages.error && !filtered.length && (
-        <div
-          data-testid="page-empty"
-          className="rounded-lg border border-dashed border-outline-variant px-4 py-10 text-center"
-        >
-          <FileBox size={32} className="mx-auto mb-3 text-muted-foreground" />
-          <h3 className="font-medium">
-            {search || format !== "all"
-              ? "No matching configurations"
-              : "Build your personal agent catalog"}
-          </h3>
-          <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-            {search || format !== "all"
-              ? "Try another search or package format."
-              : "Create an APM package with your instructions and existing skills, or import an Agent Plugin from GitHub."}
+        <div data-testid="page-empty" className="px-4 py-16 text-center">
+          <p className="text-sm text-muted-foreground">
+            {search || format !== "all" ? "No matching packages" : "No packages configured"}
           </p>
-          {!search && format === "all" && (
-            <Button
-              className="mt-4"
-              onClick={() => {
-                save.reset();
-                setCreating(true);
-              }}
-            >
-              Create your first package
-            </Button>
-          )}
         </div>
       )}
       {packages.data?.broken.map((issue) => (

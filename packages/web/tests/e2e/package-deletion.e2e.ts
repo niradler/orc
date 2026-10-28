@@ -15,7 +15,8 @@ for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await gotoView(page, "packages");
     const card = page.locator(`[data-testid="agent-package-row"][data-package-name="${name}"]`);
-    await card.getByTestId("package-card-delete").click();
+    await card.getByTestId("package-actions-menu").click();
+    await page.getByTestId("package-card-delete").click();
     const dialog = page.getByTestId("package-delete-dialog");
     await expect(dialog).toContainText(name);
     await page.getByTestId("package-delete-cancel").click();

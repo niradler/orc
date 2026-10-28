@@ -42,7 +42,7 @@ export function ChatContinueInTerminal() {
         title="Continue in terminal"
         disabled={streaming || pending || !thread.runtimeId}
         onClick={() => void open()}
-        className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface disabled:opacity-40"
+        className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface disabled:opacity-40"
       >
         <SquareTerminal size={17} />
       </button>
