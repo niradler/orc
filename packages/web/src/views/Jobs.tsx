@@ -1,5 +1,5 @@
 import type { JobAction, WebhookSubscription } from "@orc/core/job-actions";
-import { Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { Pencil, Play, Plus, Search, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { CreateJobInput, Job, JobTriggerType, UpdateJobInput } from "@/api/client";
 import { BulkActionBar } from "@/components/BulkActionBar";
@@ -9,6 +9,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { JobActionFields, jobActionValid } from "@/components/JobActionFields";
 import { JobDetailSheet } from "@/components/JobDetailSheet";
 import { WebhookPicker } from "@/components/JobWebhooks";
+import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -49,6 +50,7 @@ import { useListSelection } from "@/hooks/useListSelection";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjectScope } from "@/hooks/useProjectScope";
 import { useProjects } from "@/hooks/useProjects";
+import { useViewParam } from "@/lib/view-params";
 
 const TRIGGER_TYPES: JobTriggerType[] = [
   "one-shot",
@@ -63,7 +65,17 @@ const OVERLAPS: Array<"skip" | "queue" | "kill"> = ["skip", "queue", "kill"];
 const NOTIFY_OPTIONS: Array<"never" | "failure" | "always"> = ["never", "failure", "always"];
 
 export default function Jobs({ projectId: savedProjectId }: { projectId: string }) {
-  const desktop = useBreakpoint("sm");
+  const desktop = useBreakpoint("xl");
+  const [query, setQuery] = useViewParam<string>("jobQuery", "");
+  const [status, setStatus] = useViewParam<string>("jobStatus", "all", [
+    "all",
+    "enabled",
+    "disabled",
+  ]);
+  const [trigger, setTrigger] = useViewParam<string>("jobTrigger", "all", [
+    "all",
+    ...TRIGGER_TYPES,
+  ]);
   const projectId = useProjectScope(savedProjectId);
   const scopedProjectId = projectId === "all" || projectId === "unassigned" ? undefined : projectId;
   const {
@@ -72,23 +84,33 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
     error,
     refetch,
   } = useJobs({ project_id: scopedProjectId, limit: 100 });
-  const jobs =
+  const scopedJobs =
     projectId === "unassigned" ? allJobs?.filter((job) => job.project_id === null) : allJobs;
+  const jobs = scopedJobs?.filter(
+    (job) =>
+      (!query ||
+        `${job.name} ${job.description ?? ""} ${job.command ?? ""}`
+          .toLowerCase()
+          .includes(query.toLowerCase())) &&
+      (status === "all" || job.enabled === (status === "enabled")) &&
+      (trigger === "all" || job.trigger_type === trigger),
+  );
+  const listScope = JSON.stringify([projectId, query, status, trigger]);
   const triggerJob = useTriggerJob();
   const deleteJob = useDeleteJob();
   const updateJob = useUpdateJob();
   const bulkUpdate = useSetJobsEnabled();
-  const bulkResult = bulkUpdate.data?.scope === projectId ? bulkUpdate.data : undefined;
+  const bulkResult = bulkUpdate.data?.scope === listScope ? bulkUpdate.data : undefined;
 
   const selection = useListSelection(
     (jobs ?? []).map((job) => job.id),
-    projectId,
+    listScope,
   );
   async function setSelectedEnabled(enabled: boolean): Promise<void> {
     const result = await bulkUpdate.mutateAsync({
       ids: selection.selectedIds,
       enabled,
-      scope: projectId,
+      scope: listScope,
     });
     selection.select(result.failed.map((item) => item.id));
   }
@@ -116,6 +138,7 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
     <div>
       <ViewHeader
         title="Jobs"
+        compact
         meta={`${enabledCount}/${(jobs ?? []).length} enabled`}
         action={
           <Button
@@ -128,6 +151,48 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
           </Button>
         }
       />
+
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-0 flex-1 lg:max-w-md">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-outline" />
+          <Input
+            type="search"
+            aria-label="Search jobs"
+            data-testid="job-search"
+            placeholder="Search jobs…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value, { replace: true })}
+            className="h-11 pl-9 text-base lg:h-9 lg:text-sm"
+          />
+        </div>
+        <ResponsiveFilters activeCount={Number(status !== "all") + Number(trigger !== "all")}>
+          <select
+            aria-label="Job status"
+            data-testid="job-status-filter"
+            value={status}
+            onChange={(event) => setStatus(event.target.value)}
+            className="form-control form-control-single max-w-full"
+          >
+            <option value="all">All statuses</option>
+            <option value="enabled">Enabled</option>
+            <option value="disabled">Disabled</option>
+          </select>
+          <select
+            aria-label="Job trigger"
+            data-testid="job-trigger-filter"
+            value={trigger}
+            onChange={(event) => setTrigger(event.target.value)}
+            className="form-control form-control-single max-w-full"
+          >
+            <option value="all">All triggers</option>
+            {TRIGGER_TYPES.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+        </ResponsiveFilters>
+      </div>
 
       {(triggerJob.error || deleteJob.error || updateJob.error) && (
         <p role="alert" className="mb-4 text-sm text-error">
@@ -194,16 +259,20 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
           ))}
         </div>
       ) : (jobs ?? []).length === 0 ? (
-        <EmptyState message="No jobs configured" />
+        <EmptyState
+          message={
+            query || status !== "all" || trigger !== "all" ? "No jobs match" : "No jobs configured"
+          }
+        />
       ) : !desktop ? (
-        <div className="space-y-3">
+        <div className="divide-y divide-border">
           {(jobs ?? []).map((job) => (
             <article
               key={job.id}
               data-testid="job-row"
               data-job-id={job.id}
               data-job-name={job.name}
-              className="border-b border-border/65 py-4 space-y-3"
+              className="py-3 space-y-2"
             >
               <div className="flex items-start justify-between gap-3">
                 <input
@@ -217,7 +286,7 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                 />
                 <button
                   type="button"
-                  className="min-w-0 text-left font-medium text-sm text-on-surface wrap-break-word hover:text-primary"
+                  className="min-w-0 flex-1 text-left font-medium text-sm text-on-surface wrap-break-word hover:text-primary"
                   data-testid="job-open-detail"
                   onClick={() => openJobDetail(job.id)}
                 >
@@ -250,10 +319,10 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                 {job.trigger_type} · {job.run_count} runs
                 {job.next_run_at ? ` · Next: ${new Date(job.next_run_at).toLocaleString()}` : ""}
               </p>
-              <div className="flex flex-wrap gap-2 border-t border-border pt-3">
+              <div className="flex flex-wrap gap-2">
                 <Button
                   data-testid="job-edit"
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   onClick={() => setEditing(job)}
                 >
@@ -262,7 +331,7 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                 </Button>
                 <Button
                   data-testid="job-trigger"
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   disabled={triggerJob.isPending}
                   onClick={() => triggerJob.mutate(job.id)}

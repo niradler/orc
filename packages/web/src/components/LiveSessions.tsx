@@ -7,8 +7,10 @@ import { ErrorState } from "@/components/ErrorState";
 import { Highlight } from "@/components/Highlight";
 import { LiveSessionDetail } from "@/components/LiveSessionDetail";
 import { Pager } from "@/components/Pager";
+import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { ResumeActions } from "@/components/ResumeActions";
 import { SessionTaskLink } from "@/components/SessionTaskLink";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -17,6 +19,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ViewHeader } from "@/components/ViewHeader";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
 import { useLiveSessions, useSessionSearch, useSyncSessions } from "@/hooks/useSessions";
@@ -29,7 +32,7 @@ const HEAD = "font-label text-xs font-medium text-outline";
 type Row = LiveSession & { snippets?: string[]; matched?: string[] };
 
 export function LiveSessions({ projectId }: { projectId: string }) {
-  const desktop = useBreakpoint("sm");
+  const desktop = useBreakpoint("xl");
   const [params, setParams] = useSearchParams();
   const agent = params.get("agent") ?? "";
   const showEnded = params.get("ended") !== "0";
@@ -103,57 +106,79 @@ export function LiveSessions({ projectId }: { projectId: string }) {
 
   return (
     <section className="mb-8" data-testid="live-sessions">
-      <p className="mb-4 text-sm text-outline">
-        Discovered from your coding agents. Working sessions update automatically; waiting sessions
-        remain available to resume.
-      </p>
-      <div className="mb-3 relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-outline" />
-        <input
-          data-testid="session-search"
-          aria-label="Search agent sessions"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="Search agent sessions: titles, summaries and conversation text"
-          className="w-full bg-background border border-control-border rounded-lg pl-9 pr-3 py-2 font-body text-xs text-on-surface placeholder:text-outline"
-        />
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h2 className="font-label text-xs font-medium text-outline">
-          {searching ? "Search results" : "Agent sessions"} · {visible.length}
-          {visible.length !== byAgent.length && (
-            <span data-testid="scope-hint" className="normal-case tracking-normal">
-              {" "}
-              of {byAgent.length} · scope: {scopeName}
-            </span>
-          )}
-          {searching && search.data && (
-            <span data-testid="search-meta" className="normal-case tracking-normal">
-              {" "}
-              · {(search.data.ms / 1000).toFixed(1)}s
-              {search.data.rg ? "" : " · titles and summaries only (install ripgrep for content)"}
-            </span>
-          )}
-        </h2>
-        <div className="flex flex-wrap items-center gap-3">
+      <ViewHeader
+        compact
+        level={2}
+        title={searching ? "Search results" : "Agent sessions"}
+        help="Discovered from your coding agents. Working sessions update automatically; waiting sessions remain available to resume."
+        meta={
+          <>
+            {visible.length}
+            {visible.length !== byAgent.length && (
+              <span data-testid="scope-hint" className="normal-case tracking-normal">
+                {" "}
+                of {byAgent.length} · scope: {scopeName}
+              </span>
+            )}
+            {searching && search.data && (
+              <span data-testid="search-meta" className="normal-case tracking-normal">
+                {" "}
+                · {(search.data.ms / 1000).toFixed(1)}s
+                {search.data.rg ? "" : " · titles and summaries only (install ripgrep for content)"}
+              </span>
+            )}
+          </>
+        }
+        action={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={sync.isPending ? "Syncing sessions" : "Refresh sessions"}
+            title="Refresh sessions"
+            data-testid="sync-sessions"
+            disabled={sync.isPending}
+            className="lg:size-8"
+            onClick={() => sync.mutate()}
+          >
+            <RefreshCw className={sync.isPending ? "animate-spin" : ""} />
+          </Button>
+        }
+      />
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-0 flex-1 lg:max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-outline" />
+          <input
+            type="search"
+            data-testid="session-search"
+            aria-label="Search agent sessions"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Search agent sessions…"
+            className="h-11 w-full rounded-md border border-control-border bg-background pl-9 pr-3 font-body text-base text-on-surface placeholder:text-outline lg:h-9 lg:text-sm"
+          />
+        </div>
+        <ResponsiveFilters
+          activeCount={Number(Boolean(agent)) + Number(!showEnded) + Number(order === "asc")}
+        >
           <select
             aria-label="Sort sessions by date"
             data-testid="session-date-sort"
             value={order}
             onChange={(event) => setParam("order", event.target.value === "asc" ? "asc" : null)}
-            className="min-h-11 rounded-md border border-control-border bg-background px-3 text-sm text-on-surface"
+            className="h-11 max-w-full rounded-md border border-control-border bg-background px-3 text-base text-on-surface lg:h-9 lg:text-sm"
           >
-            <option value="desc">Last active: newest first</option>
-            <option value="asc">Last active: oldest first</option>
+            <option value="desc">Last active: newest</option>
+            <option value="asc">Last active: oldest</option>
           </select>
           <select
             data-testid="agent-filter"
             aria-label="Agent"
-            className="bg-background border border-control-border rounded-lg min-h-11 px-3 py-2 font-label text-xs font-medium text-on-surface"
+            className="h-11 max-w-full rounded-md border border-control-border bg-background px-3 text-base text-on-surface lg:h-9 lg:text-sm"
             value={agent}
             onChange={(e) => setParam("agent", e.target.value || null)}
           >
-            <option value="">all agents</option>
+            <option value="">All agents</option>
             {agents.map((a) => (
               <option key={a} value={a}>
                 {a}
@@ -161,7 +186,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
             ))}
           </select>
           {
-            <label className="flex items-center gap-2 font-label text-xs font-medium text-outline cursor-pointer">
+            <label className="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-outline lg:min-h-9">
               <input
                 type="checkbox"
                 data-testid="show-ended"
@@ -171,17 +196,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
               Show ended
             </label>
           }
-          <button
-            type="button"
-            data-testid="sync-sessions"
-            disabled={sync.isPending}
-            className="min-h-11 px-2 inline-flex items-center gap-1 font-label text-xs font-medium text-primary hover:text-on-surface disabled:opacity-50"
-            onClick={() => sync.mutate()}
-          >
-            <RefreshCw className={`h-3 w-3 ${sync.isPending ? "animate-spin" : ""}`} />
-            {sync.isPending ? "Syncing" : "Refresh"}
-          </button>
-        </div>
+        </ResponsiveFilters>
       </div>
       {sync.error && (
         <p role="alert" className="mb-3 text-sm text-error">
@@ -213,7 +228,7 @@ export function LiveSessions({ projectId }: { projectId: string }) {
                     data-testid="live-session-row"
                     data-session-id={session.session_id}
                     data-agent={session.agent}
-                    className="py-4 space-y-3"
+                    className="py-3 space-y-2"
                   >
                     <button
                       type="button"

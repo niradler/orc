@@ -1,5 +1,4 @@
 import { type ReactElement, useState } from "react";
-import { Link } from "react-router-dom";
 import { ErrorState } from "@/components/ErrorState";
 import { WebhookCreate, WebhookEndpoint } from "@/components/JobWebhooks";
 import { Button } from "@/components/ui/button";
@@ -21,10 +20,12 @@ export default function WebhooksManager({
     (hook) => projectId !== "unassigned" || hook.project_id === null,
   );
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <ViewHeader
         title="Webhooks"
-        meta="Configured event sources and connected jobs"
+        compact
+        meta={visibleHooks?.length ? visibleHooks.length : undefined}
+        help="Configure each event source once, then connect it in Jobs. One webhook can trigger multiple jobs, each with its own event filters and action."
         action={
           <Button
             type="button"
@@ -36,10 +37,6 @@ export default function WebhooksManager({
           </Button>
         }
       />
-      <p className="text-sm text-outline">
-        Configure each event source once, then select it in Jobs. One webhook can trigger multiple
-        jobs, each with its own event filters and action.
-      </p>
       {adding && (
         <section className="space-y-4 border-y border-border py-4">
           <h2 className="text-sm font-medium">New webhook</h2>
@@ -56,23 +53,11 @@ export default function WebhooksManager({
       ) : isLoading ? (
         <p role="status">Loading webhooks...</p>
       ) : !visibleHooks?.length ? (
-        <section className="space-y-3 border-t border-border py-6">
-          <h2 className="text-sm font-medium">No webhooks configured</h2>
-          <p className="text-sm text-outline">
-            Create a webhook above, register its URL and secret with your provider, then select it
-            when creating a job.
-          </p>
-          <Link
-            className="inline-block text-sm underline"
-            to={`/jobs?project=${encodeURIComponent(projectId)}`}
-            data-testid="webhooks-go-jobs"
-          >
-            Open Jobs
-          </Link>
+        <section className="grid min-h-[50dvh] place-items-center text-outline">
+          <h2 className="text-sm font-normal">No webhooks configured</h2>
         </section>
       ) : (
         <section className="space-y-6">
-          <h2 className="text-sm font-medium">Configured webhooks ({visibleHooks.length})</h2>
           {visibleHooks.map((hook) => (
             <div key={hook.id} className="space-y-2">
               <WebhookEndpoint hook={hook} />

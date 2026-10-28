@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { AgentMessageText } from "@/components/AgentMessageText";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -135,43 +136,7 @@ export function ArchivedSessions({ projectId }: { projectId: string }) {
 
   if (!visible) return null;
   return (
-    <section className="mt-8 space-y-3" data-testid="session-archive">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-base font-medium">Archived sessions</h2>
-          <p className="text-xs text-outline">
-            Uploaded history stays available after the source computer is offline.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            data-testid="archive-index"
-            disabled={pending}
-            onClick={() =>
-              void run(async () => {
-                const result = await api.sessions.archiveIndex(
-                  projectId === "all" || projectId === "unassigned" ? undefined : projectId,
-                );
-                setFeedback(
-                  `${result.indexed} sessions indexed; ${result.failed} failed; ${result.skipped} skipped.`,
-                );
-              })
-            }
-          >
-            Index discovered sessions
-          </Button>
-          <Button
-            data-testid="archive-upload-open"
-            onClick={() => {
-              setProject(projectId);
-              setUploading(true);
-            }}
-          >
-            Upload sessions
-          </Button>
-        </div>
-      </div>
+    <section className="mt-4 space-y-3 border-t border-border pt-2" data-testid="session-archive">
       {feedback && (
         <p role="status" data-testid="archive-feedback" className="text-sm">
           {feedback}
@@ -192,59 +157,107 @@ export function ArchivedSessions({ projectId }: { projectId: string }) {
           {listing.data.pending_chunks} passages waiting for embeddings
         </p>
       )}
-      <div className="divide-y divide-outline-variant rounded border border-outline-variant">
-        {listing.isLoading && <p className="p-4 text-sm">Loading archived sessions…</p>}
-        {!listing.isLoading && !listing.data?.sessions.length && (
-          <p className="p-4 text-sm text-outline">No archived sessions match this view.</p>
-        )}
-        {listing.data?.sessions.map((session) => (
-          <button
-            type="button"
-            key={session.id}
-            data-testid="archive-session-row"
-            data-archive-id={session.id}
-            className="block w-full p-3 text-left hover:bg-surface-container"
-            onClick={() => {
-              setSelected(session);
-              setTurnOffset(0);
-              setRepository(session.metadata.repository ?? "");
-              setBranch(session.metadata.branch ?? "");
-              setCommit(session.metadata.commit ?? "");
-              setSubdirectory(session.metadata.subdirectory);
-            }}
-          >
-            <span className="block text-sm font-medium">{session.title}</span>
-            <span className="text-xs text-outline">
-              {session.agent} · ended · {new Date(session.updated_at).toLocaleString()} · revision{" "}
-              {session.revision} · {session.metadata.cwd}
-            </span>
-            {session.passages.map((passage) => (
-              <span className="mt-1 block text-sm text-outline" key={passage.citation}>
-                {passage.snippet}
+      {listing.data?.sessions.some((session) => session.embedding_error) && (
+        <p role="alert" className="text-sm text-error">
+          Some archived sessions could not be indexed. Open archived sessions for details.
+        </p>
+      )}
+      <details data-testid="archive-disclosure">
+        <summary className="min-h-11 cursor-pointer py-2 text-sm text-outline lg:min-h-9">
+          Archived sessions
+          {listing.data
+            ? ` · ${offset + listing.data.sessions.length}${listing.data.has_more ? "+" : ""}`
+            : ""}
+        </summary>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <HelpPopover label="Archived sessions">
+            Uploaded history stays available after the source computer is offline.
+          </HelpPopover>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="archive-index"
+              disabled={pending}
+              onClick={() =>
+                void run(async () => {
+                  const result = await api.sessions.archiveIndex(
+                    projectId === "all" || projectId === "unassigned" ? undefined : projectId,
+                  );
+                  setFeedback(
+                    `${result.indexed} sessions indexed; ${result.failed} failed; ${result.skipped} skipped.`,
+                  );
+                })
+              }
+            >
+              Index discovered sessions
+            </Button>
+            <Button
+              size="sm"
+              data-testid="archive-upload-open"
+              onClick={() => {
+                setProject(projectId);
+                setUploading(true);
+              }}
+            >
+              Upload sessions
+            </Button>
+          </div>
+        </div>
+        <div className="divide-y divide-border" data-testid="archive-records">
+          {listing.isLoading && <p className="p-4 text-sm">Loading archived sessions…</p>}
+          {!listing.isLoading && !listing.data?.sessions.length && (
+            <p className="p-4 text-sm text-outline">No archived sessions match this view.</p>
+          )}
+          {listing.data?.sessions.map((session) => (
+            <button
+              type="button"
+              key={session.id}
+              data-testid="archive-session-row"
+              data-archive-id={session.id}
+              className="block w-full p-3 text-left hover:bg-surface-container"
+              onClick={() => {
+                setSelected(session);
+                setTurnOffset(0);
+                setRepository(session.metadata.repository ?? "");
+                setBranch(session.metadata.branch ?? "");
+                setCommit(session.metadata.commit ?? "");
+                setSubdirectory(session.metadata.subdirectory);
+              }}
+            >
+              <span className="block text-sm font-medium">{session.title}</span>
+              <span className="text-xs text-outline">
+                {session.agent} · ended · {new Date(session.updated_at).toLocaleString()} · revision{" "}
+                {session.revision} · {session.metadata.cwd}
               </span>
-            ))}
-            {session.embedding_error && (
-              <span className="block text-xs text-error">{session.embedding_error}</span>
-            )}
-          </button>
-        ))}
-      </div>
-      <div className="flex items-center justify-end gap-2">
-        <Button
-          variant="ghost"
-          disabled={offset === 0}
-          onClick={() => setOffset(Math.max(0, offset - 20))}
-        >
-          Previous
-        </Button>
-        <Button
-          variant="ghost"
-          disabled={!listing.data?.has_more}
-          onClick={() => setOffset(offset + 20)}
-        >
-          Next
-        </Button>
-      </div>
+              {session.passages.map((passage) => (
+                <span className="mt-1 block text-sm text-outline" key={passage.citation}>
+                  {passage.snippet}
+                </span>
+              ))}
+              {session.embedding_error && (
+                <span className="block text-xs text-error">{session.embedding_error}</span>
+              )}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            variant="ghost"
+            disabled={offset === 0}
+            onClick={() => setOffset(Math.max(0, offset - 20))}
+          >
+            Previous
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={!listing.data?.has_more}
+            onClick={() => setOffset(offset + 20)}
+          >
+            Next
+          </Button>
+        </div>
+      </details>
       <Dialog open={uploading} onOpenChange={setUploading}>
         <DialogContent>
           <DialogHeader>

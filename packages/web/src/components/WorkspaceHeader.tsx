@@ -1,5 +1,5 @@
 import { Bell, Menu, MessageSquare } from "lucide-react";
-import type { Ref } from "react";
+import { type Ref, useEffect, useRef } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { CommandPalette } from "@/components/CommandPalette";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
@@ -29,6 +29,18 @@ export function WorkspaceHeader({
   chatButtonRef?: Ref<HTMLButtonElement>;
 }) {
   const { pathname, search } = useLocation();
+  const sectionNav = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!workspaceSection(pathname)) return;
+    const nav = sectionNav.current;
+    const active = nav?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (nav && active) {
+      nav.scrollLeft +=
+        active.getBoundingClientRect().left -
+        nav.getBoundingClientRect().left -
+        (nav.clientWidth - active.offsetWidth) / 2;
+    }
+  }, [pathname]);
   const { data: projects } = useProjects({ status: "active" });
   const { data: humanRequests } = useHumanRequests();
   const observedSessions = useAttentionSessions();
@@ -113,8 +125,9 @@ export function WorkspaceHeader({
       </header>
       {section && section.pages.length > 1 && (
         <nav
+          ref={sectionNav}
           aria-label={`${section.label} pages`}
-          className="flex flex-wrap gap-1 px-3 pb-2 md:px-6"
+          className="flex gap-1 overflow-x-auto px-3 pb-2 md:px-6"
         >
           {section.pages.map((page) => (
             <NavLink
@@ -123,7 +136,7 @@ export function WorkspaceHeader({
               end={page.path === "/packages"}
               data-testid={page.id === "knowledge" ? "section-knowledge" : `nav-${page.id}`}
               className={({ isActive }) =>
-                `rounded-md px-3 py-2 text-sm transition-colors ${isActive ? "bg-surface-highest text-on-surface" : "text-outline hover:bg-surface hover:text-on-surface"}`
+                `flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-md px-3 py-2 text-sm transition-colors lg:min-h-9 ${isActive ? "bg-surface-highest text-on-surface" : "text-outline hover:bg-surface hover:text-on-surface"}`
               }
             >
               {page.label}

@@ -191,6 +191,7 @@ test("offline project sync via trusted helper is idempotent, incremental and sea
   await page.getByTestId("session-search").fill("quartz butterfly");
   await expect(row).toHaveCount(1);
   await expect(row).toContainText("quartz butterfly");
+  await page.getByTestId("archive-disclosure").locator("summary").click();
   await row.click();
   await expect(page.getByTestId("archive-turn")).toContainText([
     "quartz butterfly",
@@ -232,6 +233,7 @@ test("browser upload requires a project and Settings persists the independent se
   const project = await apiPost<{ id: string }>(request, "/projects", { name });
   await gotoView(page, "sessions");
   await page.goto("/sessions?project=all");
+  await page.getByTestId("archive-disclosure").locator("summary").click();
   await page.getByTestId("archive-upload-open").click();
   await expect(page.getByTestId("archive-files")).toBeDisabled();
   await page.getByTestId("archive-project").selectOption(project.id);
@@ -455,6 +457,7 @@ for (const agent of ["claude", "codex"] as const) {
     );
     await gotoView(page, "sessions");
     await page.goto(`/sessions?project=${project.id}`);
+    await page.getByTestId("archive-disclosure").locator("summary").click();
     await page
       .locator(`[data-testid="archive-session-row"][data-archive-id="${accepted.session.id}"]`)
       .click();

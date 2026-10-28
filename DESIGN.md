@@ -419,6 +419,18 @@ Nir approved the compact chat queue in PR124 as the reference for professional
 workspace controls. Design for the available screen space and the user's main
 task; supporting controls must not consume the reading or editing area by default.
 
+The workspace cleanup approved on 2026-10-28 extends this to Webhooks, Sessions,
+Scratchpads and Jobs. Use the shared compact `ViewHeader`, `HelpPopover` and
+`ResponsiveFilters` patterns: title, useful count and one primary action, followed
+by search and filters. Remove obvious introductions and repeated empty-state
+instructions. Put useful one-time explanations beside the title in help that
+works with hover, keyboard focus and tap. Keep errors, recovery instructions,
+permission decisions and unsaved state visible. On phones, keep search available
+and disclose secondary filters with their active count; preserve their values
+through hide/reopen, viewport changes and reload. Section tabs scroll locally
+rather than wrapping into several rows. Use compact lists when table columns
+would squeeze the actual work, retaining task links, status and contextual actions.
+
 - Prefer one quiet summary with a count and progressive disclosure for secondary
   lists. Start nonessential details collapsed; new entries update the summary
   without reopening it. Keep urgent errors and decisions visible.
