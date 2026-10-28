@@ -1,6 +1,6 @@
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Search, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type { Project, ProjectStatus, ProjectSummary, UpdateProjectInput } from "@/api/client";
 import { BulkActionBar } from "@/components/BulkActionBar";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -10,6 +10,7 @@ import { DetailField } from "@/components/DetailField";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { FormDialog } from "@/components/FormDialog";
+import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { TaskDetailSheet } from "@/components/TaskDetailSheet";
 import { Button } from "@/components/ui/button";
 import { DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -58,6 +59,8 @@ const STATUS_TABS: Array<{ value: ProjectStatus | "all"; label: string }> = [
 export default function Projects() {
   const desktop = useBreakpoint("xl");
   const { data: projects, isLoading, error, refetch } = useProjects();
+  const [query, setQuery] = useViewParam<string>("projectQuery", "");
+  const [, setSearchParams] = useSearchParams();
   const [filter, setFilter] = useViewParam<ProjectStatus | "all">("status", "all", [
     "all",
     "active",
@@ -76,36 +79,47 @@ export default function Projects() {
   const deleteProject = useDeleteProject();
   const editing = editingId ? ((projects ?? []).find((p) => p.id === editingId) ?? null) : null;
 
-  const visible = useMemo(() => {
-    const all = projects ?? [];
-    return filter === "all" ? all : all.filter((p) => p.status === filter);
-  }, [projects, filter]);
+  const matches = useMemo(() => {
+    const search = query.trim().toLowerCase();
+    return (projects ?? []).filter(
+      (project) =>
+        !search ||
+        `${project.name} ${project.description ?? ""} ${project.scope ?? ""} ${(project.tags ?? []).join(" ")}`
+          .toLowerCase()
+          .includes(search),
+    );
+  }, [projects, query]);
+  const visible = useMemo(
+    () => (filter === "all" ? matches : matches.filter((project) => project.status === filter)),
+    [matches, filter],
+  );
+  const listScope = JSON.stringify([filter, query]);
 
   const selection = useListSelection(
     visible.map((project) => project.id),
-    filter,
+    listScope,
   );
   const bulkUpdate = useSetProjectsStatus();
-  const bulkResult = bulkUpdate.data?.scope === filter ? bulkUpdate.data : undefined;
+  const bulkResult = bulkUpdate.data?.scope === listScope ? bulkUpdate.data : undefined;
 
   async function setSelectedStatus(status: ProjectStatus): Promise<void> {
     const result = await bulkUpdate.mutateAsync({
       ids: selection.selectedIds,
       status,
-      scope: filter,
+      scope: listScope,
     });
     selection.select(result.failed.map((item) => item.id));
   }
 
   const counts = useMemo(() => {
-    return (projects ?? []).reduce(
+    return matches.reduce(
       (acc, p) => {
         acc[p.status] = (acc[p.status] ?? 0) + 1;
         return acc;
       },
       {} as Record<string, number>,
     );
-  }, [projects]);
+  }, [matches]);
 
   if (error) return <ErrorState message={error.message} onRetry={() => refetch()} />;
 
@@ -113,7 +127,11 @@ export default function Projects() {
     <div>
       <ViewHeader
         title="Projects"
-        meta={`${(projects ?? []).length} total`}
+        meta={
+          query || filter !== "all"
+            ? `${visible.length} of ${(projects ?? []).length}`
+            : (projects ?? []).length
+        }
         action={
           <Button
             data-testid="new-project-button"
@@ -132,25 +150,48 @@ export default function Projects() {
         onValueChange={(v) => setFilter(v as ProjectStatus | "all")}
         className="mb-4"
       >
-        <TabsList className="bg-transparent gap-1 h-auto max-w-full flex-wrap justify-start p-0">
-          {STATUS_TABS.map(({ value, label }) => (
-            <TabsTrigger
-              key={value}
-              data-testid={`projects-filter-${value}`}
-              value={value}
-              className="font-label text-[13px] px-3 py-1.5 rounded-md
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-1 lg:max-w-md">
+            <Search
+              size={14}
+              aria-hidden
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-outline"
+            />
+            <Input
+              type="search"
+              data-testid="project-search"
+              aria-label="Search projects"
+              placeholder="Search projects…"
+              value={query}
+              onChange={(event) => setQuery(event.target.value, { replace: true })}
+              className="pl-9"
+            />
+          </div>
+          <ResponsiveFilters activeCount={Number(filter !== "all")}>
+            <TabsList
+              aria-label="Project status"
+              className="bg-transparent gap-1 h-auto max-w-full flex-wrap justify-start p-0"
+            >
+              {STATUS_TABS.map(({ value, label }) => (
+                <TabsTrigger
+                  key={value}
+                  data-testid={`projects-filter-${value}`}
+                  value={value}
+                  className="font-label text-[13px] px-3 py-1.5 rounded-md
                 data-[state=active]:bg-surface-highest data-[state=active]:text-on-surface data-[state=active]:shadow-none
                 text-muted-foreground hover:text-on-surface"
-            >
-              {label}
-              {value !== "all" && counts[value] != null && (
-                <span className="ml-1.5 text-xs text-muted-foreground px-1.5 py-0.5">
-                  {counts[value]}
-                </span>
-              )}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+                >
+                  {label}
+                  {value !== "all" && counts[value] != null && (
+                    <span className="ml-1.5 text-xs text-muted-foreground px-1.5 py-0.5">
+                      {counts[value]}
+                    </span>
+                  )}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </ResponsiveFilters>
+        </div>
         {visible.length > 0 && (
           <BulkActionBar
             resourceLabel="projects"
@@ -205,7 +246,30 @@ export default function Projects() {
               ))}
             </div>
           ) : visible.length === 0 ? (
-            <EmptyState message="No projects" />
+            query || filter !== "all" ? (
+              <div
+                data-testid="empty-state"
+                className="flex flex-col items-center justify-center gap-2 py-16 text-sm text-outline"
+              >
+                <p>No matching projects</p>
+                <Button
+                  variant="ghost"
+                  data-testid="project-clear-filters"
+                  onClick={() =>
+                    setSearchParams((previous) => {
+                      const next = new URLSearchParams(previous);
+                      next.delete("projectQuery");
+                      next.delete("status");
+                      return next;
+                    })
+                  }
+                >
+                  Clear filters
+                </Button>
+              </div>
+            ) : (
+              <EmptyState message="No projects" />
+            )
           ) : !desktop ? (
             <div className="divide-y divide-border">
               {visible.map((project) => (

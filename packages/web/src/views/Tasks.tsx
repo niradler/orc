@@ -256,7 +256,6 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
         }
       />
 
-      <GithubBoard projectId={apiProjectId} />
       {(updateTask.error || deleteTask.error) && (
         <p role="alert" className="mb-4 text-sm text-error">
           {(updateTask.error ?? deleteTask.error)?.message}
@@ -296,6 +295,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
             </SelectContent>
           </Select>
         </ResponsiveFilters>
+        <GithubBoard projectId={apiProjectId} />
       </div>
 
       {viewMode === "board" ? (

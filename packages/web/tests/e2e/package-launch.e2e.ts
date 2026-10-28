@@ -1,6 +1,74 @@
 import { expect, test } from "@playwright/test";
 import { apiPost, gotoView, tid } from "./_helpers";
 
+for (const viewport of [
+  { width: 390, height: 700 },
+  { width: 1440, height: 800 },
+]) {
+  test(`package setup keeps launch actions visible while editing at ${viewport.width}px`, async ({
+    page,
+  }, testInfo) => {
+    const pkg = {
+      name: "layout-review-package",
+      version: "1.0.0",
+      description: "Reusable professional workflow. ".repeat(12),
+      path: "/fixture/package",
+      manifest: { name: "layout-review-package" },
+      format: "agent-plugin",
+      manifestFile: "plugin.json",
+      warnings: [],
+      content: "{}",
+      files: Array.from({ length: 20 }, (_, i) => ({
+        name: `skills/workflow-${i}/SKILL.md`,
+        path: `/fixture/${i}`,
+      })),
+    };
+    await page.route("**/api/agent-packages", (route) =>
+      route.fulfill({ json: { packages: [pkg], broken: [] } }),
+    );
+    await page.route("**/api/agent-packages/layout-review-package", (route) =>
+      route.fulfill({ json: pkg }),
+    );
+    await page.route("**/api/ssh", (route) => route.fulfill({ json: { host: null, hosts: [] } }));
+    await page.route("**/api/package-tools**", (route) =>
+      route.fulfill({ json: { apm: true, skills: true, bun: true } }),
+    );
+    await page.route("**/api/terminals?**", (route) =>
+      route.fulfill({
+        json: {
+          terminals: [],
+          ready: true,
+          reason: null,
+          launchers: ["codex", "claude"],
+          host: null,
+        },
+      }),
+    );
+    await page.setViewportSize(viewport);
+    await gotoView(page, "packages");
+    await page
+      .locator('[data-testid="agent-package-row"][data-package-name="layout-review-package"]')
+      .getByTestId("package-run")
+      .click();
+    await expect(page.getByTestId("setup-components")).toContainText("20 skill files");
+    await page.getByTestId("setup-backend").selectOption("codex");
+    await page.getByTestId("setup-cwd").fill("/fixture/work");
+    await page
+      .getByTestId("setup-prompt")
+      .fill("Review and explain the workflow without running it.");
+    const dialog = page.getByRole("dialog");
+    const launch = page.getByTestId("setup-launch");
+    await expect(launch).toBeEnabled();
+    const box = await launch.boundingBox();
+    console.log(JSON.stringify({ viewport, dialog: await dialog.boundingBox(), launch: box }));
+    await page.screenshot({ path: testInfo.outputPath(`package-setup-${viewport.width}.png`) });
+    if (!box) throw new Error("Missing launch action");
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+    expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  });
+}
+
 test("Use package selects Codex, browses SSH, and opens chat on the selected host", async ({
   page,
   request,

@@ -13,15 +13,10 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DetailField } from "@/components/DetailField";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { FormDialog } from "@/components/FormDialog";
 import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -649,6 +644,9 @@ function MemoryFormDialog({
   const [reason, setReason] = useState("");
   const createMemory = useCreateMemory();
   const updateMemory = useUpdateMemory();
+  const initialFields = useRef(
+    JSON.stringify([projectId, name, description, content, priority, reason]),
+  );
   const contentMax = useMemoryLimits().data?.content_max;
   const mutation = memory ? updateMemory : createMemory;
 
@@ -665,7 +663,7 @@ function MemoryFormDialog({
     (contentMax === undefined || charCount(content) <= contentMax) &&
     priorityValid;
 
-  function submit(): void {
+  function submit(afterSave: () => void): void {
     if (!valid || mutation.isPending) return;
     if (!memory) {
       createMemory.mutate(
@@ -678,7 +676,7 @@ function MemoryFormDialog({
         },
         {
           onSuccess: (created) => {
-            onClose();
+            afterSave();
             onCreated(created);
           },
         },
@@ -691,7 +689,7 @@ function MemoryFormDialog({
       ...(priorityValue !== memory.priority && { priority: priorityValue }),
     };
     if (Object.keys(changes).length === 0) {
-      onClose();
+      afterSave();
       return;
     }
     updateMemory.mutate(
@@ -701,163 +699,177 @@ function MemoryFormDialog({
         ...changes,
         ...(reason.trim() && { reason: reason.trim() }),
       },
-      { onSuccess: onClose },
+      { onSuccess: afterSave },
     );
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && !mutation.isPending && onClose()}>
-      <DialogContent
-        data-testid="memory-form-dialog"
-        className="bg-surface border-outline-variant w-[calc(100%-1rem)] max-w-2xl max-h-[94dvh] overflow-y-auto"
-      >
-        <DialogHeader>
-          <DialogTitle className="font-headline text-base text-on-surface">
-            {memory ? `Edit ${memory.name}` : "New memory"}
-          </DialogTitle>
-        </DialogHeader>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit();
-          }}
-          className="space-y-3 mt-2"
-        >
-          {!memory && (
-            <>
+    <FormDialog
+      open
+      onClose={onClose}
+      busy={mutation.isPending}
+      dirty={
+        JSON.stringify([projectId, name, description, content, priority, reason]) !==
+        initialFields.current
+      }
+      testId="memory-form-dialog"
+    >
+      {(requestClose, closeAfterSave) => (
+        <>
+          <DialogHeader>
+            <DialogTitle className="font-headline text-base text-on-surface">
+              {memory ? `Edit ${memory.name}` : "New memory"}
+            </DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              submit(closeAfterSave);
+            }}
+            className="min-h-0"
+          >
+            <div className="work-form-body grid grid-cols-1 gap-4 md:grid-cols-2">
+              {!memory && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="font-label text-sm text-muted-foreground">Project *</Label>
+                    <Select value={projectId} onValueChange={setProjectId}>
+                      <SelectTrigger
+                        aria-label="Memory project"
+                        data-testid="memory-project-select"
+                        className="bg-background text-on-surface font-body text-sm h-9"
+                      >
+                        <SelectValue placeholder="Choose a project" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-surface border-outline-variant">
+                        {projects?.map((p) => (
+                          <SelectItem key={p.id} value={p.id} className="font-body text-sm">
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="font-label text-sm text-muted-foreground">Name *</Label>
+                    <Input
+                      aria-label="Name"
+                      data-testid="memory-name-input"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="api-port"
+                      maxLength={64}
+                      className="bg-background text-on-surface font-body text-sm"
+                      autoFocus
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Lowercase words joined by hyphens, unique in the project.
+                    </p>
+                  </div>
+                </>
+              )}
               <div className="space-y-1.5">
-                <Label className="font-label text-sm text-muted-foreground">Project *</Label>
-                <Select value={projectId} onValueChange={setProjectId}>
-                  <SelectTrigger
-                    aria-label="Memory project"
-                    data-testid="memory-project-select"
-                    className="bg-background text-on-surface font-body text-sm h-9"
-                  >
-                    <SelectValue placeholder="Choose a project" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-surface border-outline-variant">
-                    {projects?.map((p) => (
-                      <SelectItem key={p.id} value={p.id} className="font-body text-sm">
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="font-label text-sm text-muted-foreground">Name *</Label>
-                <Input
-                  aria-label="Name"
-                  data-testid="memory-name-input"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="api-port"
-                  maxLength={64}
-                  className="bg-background text-on-surface font-body text-sm"
-                  autoFocus
+                <div className="flex items-center justify-between">
+                  <Label className="font-label text-sm text-muted-foreground">Description *</Label>
+                  <CharCount
+                    value={description}
+                    max={MEMORY_DESCRIPTION_MAX}
+                    testId="memory-description-count"
+                  />
+                </div>
+                <Textarea
+                  aria-label="Description"
+                  data-testid="memory-description-input"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="One line agents see in lists and context"
+                  className="bg-background text-on-surface font-body text-sm resize-none"
+                  rows={2}
                 />
-                <p className="text-xs text-muted-foreground">
-                  Lowercase words joined by hyphens, unique in the project.
-                </p>
               </div>
-            </>
-          )}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <Label className="font-label text-sm text-muted-foreground">Description *</Label>
-              <CharCount
-                value={description}
-                max={MEMORY_DESCRIPTION_MAX}
-                testId="memory-description-count"
-              />
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="font-label text-sm text-muted-foreground">Content *</Label>
+                  <CharCount value={content} max={contentMax} testId="memory-content-count" />
+                </div>
+                <Textarea
+                  aria-label="Content"
+                  data-testid="memory-content-input"
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  placeholder="The fact itself. Longer guidance belongs in a skill."
+                  className="bg-background text-on-surface font-body text-sm"
+                  rows={6}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="font-label text-sm text-muted-foreground">
+                  Priority (0-{MEMORY_PRIORITY_MAX}, empty = unscored)
+                </Label>
+                <Input
+                  aria-label="Priority"
+                  data-testid="memory-priority-input"
+                  type="number"
+                  min={0}
+                  max={MEMORY_PRIORITY_MAX}
+                  step={1}
+                  value={priority}
+                  onChange={(e) => setPriority(e.target.value)}
+                  className="w-32 bg-background text-on-surface font-body text-sm"
+                />
+                {!priorityValid && (
+                  <p className="text-xs text-destructive">
+                    Priority must be a whole number from 0 to {MEMORY_PRIORITY_MAX}.
+                  </p>
+                )}
+              </div>
+              {memory && (
+                <div className="space-y-1.5">
+                  <Label className="font-label text-sm text-muted-foreground">Reason</Label>
+                  <Input
+                    aria-label="Reason"
+                    data-testid="memory-reason-input"
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    placeholder="Why this changed (optional)"
+                    className="bg-background text-on-surface font-body text-sm"
+                  />
+                </div>
+              )}
+              {mutation.error && (
+                <p
+                  role="alert"
+                  data-testid="memory-form-error"
+                  className="text-sm text-destructive md:col-span-2"
+                >
+                  {mutation.error.message}
+                </p>
+              )}
             </div>
-            <Textarea
-              aria-label="Description"
-              data-testid="memory-description-input"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="One line agents see in lists and context"
-              className="bg-background text-on-surface font-body text-sm resize-none"
-              rows={2}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <Label className="font-label text-sm text-muted-foreground">Content *</Label>
-              <CharCount value={content} max={contentMax} testId="memory-content-count" />
-            </div>
-            <Textarea
-              aria-label="Content"
-              data-testid="memory-content-input"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="The fact itself. Longer guidance belongs in a skill."
-              className="bg-background text-on-surface font-body text-sm"
-              rows={6}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="font-label text-sm text-muted-foreground">
-              Priority (0-{MEMORY_PRIORITY_MAX}, empty = unscored)
-            </Label>
-            <Input
-              aria-label="Priority"
-              data-testid="memory-priority-input"
-              type="number"
-              min={0}
-              max={MEMORY_PRIORITY_MAX}
-              step={1}
-              value={priority}
-              onChange={(e) => setPriority(e.target.value)}
-              className="w-32 bg-background text-on-surface font-body text-sm"
-            />
-            {!priorityValid && (
-              <p className="text-xs text-destructive">
-                Priority must be a whole number from 0 to {MEMORY_PRIORITY_MAX}.
-              </p>
-            )}
-          </div>
-          {memory && (
-            <div className="space-y-1.5">
-              <Label className="font-label text-sm text-muted-foreground">Reason</Label>
-              <Input
-                aria-label="Reason"
-                data-testid="memory-reason-input"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="Why this changed (optional)"
-                className="bg-background text-on-surface font-body text-sm"
-              />
-            </div>
-          )}
-          {mutation.error && (
-            <p role="alert" data-testid="memory-form-error" className="text-sm text-destructive">
-              {mutation.error.message}
-            </p>
-          )}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={onClose}
-              disabled={mutation.isPending}
-              className="font-label text-sm text-muted-foreground"
-            >
-              Cancel
-            </Button>
-            <Button
-              data-testid="memory-submit"
-              type="submit"
-              size="sm"
-              disabled={!valid || mutation.isPending}
-              className="font-label text-sm"
-            >
-              {mutation.isPending ? "Saving..." : memory ? "Save" : "Create"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+            <DialogFooter className="work-form-footer">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={requestClose}
+                disabled={mutation.isPending}
+                className="font-label text-sm text-muted-foreground"
+              >
+                Cancel
+              </Button>
+              <Button
+                data-testid="memory-submit"
+                type="submit"
+                size="sm"
+                disabled={!valid || mutation.isPending}
+                className="font-label text-sm"
+              >
+                {mutation.isPending ? "Saving..." : memory ? "Save" : "Create"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </>
+      )}
+    </FormDialog>
   );
 }

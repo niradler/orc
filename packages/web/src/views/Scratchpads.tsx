@@ -18,23 +18,18 @@ import {
   Settings2,
   Trash2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { LiveSession } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { FormDialog } from "@/components/FormDialog";
 import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { ScratchpadEditor } from "@/components/scratchpad/ScratchpadEditor";
 import { TagInput } from "@/components/TagInput";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -409,6 +404,8 @@ export function ScratchpadFormDialog({
   );
   const [sessionId, setSessionId] = useState(pad?.session_id ?? NO_SESSION);
   const [tags, setTags] = useState<string[]>(pad?.tags ?? []);
+  const [tagDraft, setTagDraft] = useState("");
+  const initialFields = useRef(JSON.stringify([kind, title, projectId, sessionId, tags]));
   const { data: projects } = useProjects({ status: "active" });
   const { data: sessions } = useLiveSessions(false);
   const sessionOptions = sessionChoices(sessions, projectId, sessionId);
@@ -416,7 +413,7 @@ export function ScratchpadFormDialog({
   const update = useUpdateScratchpad();
   const mutation = pad ? update : create;
 
-  function submit() {
+  function submit(afterSave: () => void) {
     const fields = {
       title: title.trim(),
       project_id: projectId === NO_PROJECT ? null : projectId,
@@ -424,7 +421,7 @@ export function ScratchpadFormDialog({
       tags,
     };
     const done = (saved: Scratchpad) => {
-      onClose();
+      afterSave();
       onSaved?.(saved);
     };
     if (pad) update.mutate({ id: pad.id, ...fields }, { onSuccess: done });
@@ -432,129 +429,150 @@ export function ScratchpadFormDialog({
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent data-testid="scratchpad-form" className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{pad ? "Scratchpad properties" : "New scratchpad"}</DialogTitle>
-        </DialogHeader>
-        <form
-          className="space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit();
-          }}
-        >
-          {!pad && (
-            <fieldset className="space-y-2">
-              <legend className="font-label text-sm">Kind</legend>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {SCRATCHPAD_KINDS.map((value) => {
-                  const { label, icon: Icon, hint } = KIND_META[value];
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      data-testid={`scratchpad-form-kind-${value}`}
-                      aria-pressed={kind === value}
-                      onClick={() => setKind(value)}
-                      className={`flex flex-col items-start gap-1 border p-3 text-left transition-colors ${
-                        kind === value
-                          ? "border-primary bg-surface-low"
-                          : "border-outline-variant hover:bg-surface-low"
-                      }`}
-                    >
-                      <span className="inline-flex items-center gap-1.5 font-label text-sm">
-                        <Icon size={14} aria-hidden /> {label}
-                      </span>
-                      <span className="text-xs text-muted-foreground">{hint}</span>
-                    </button>
-                  );
-                })}
+    <FormDialog
+      open
+      onClose={onClose}
+      busy={mutation.isPending}
+      dirty={
+        Boolean(tagDraft.trim()) ||
+        JSON.stringify([kind, title, projectId, sessionId, tags]) !== initialFields.current
+      }
+      testId="scratchpad-form"
+    >
+      {(requestClose, closeAfterSave) => (
+        <>
+          <DialogHeader>
+            <DialogTitle>{pad ? "Scratchpad properties" : "New scratchpad"}</DialogTitle>
+          </DialogHeader>
+          <form
+            className="min-h-0"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submit(closeAfterSave);
+            }}
+          >
+            <div className="work-form-body grid grid-cols-1 gap-4 md:grid-cols-2">
+              {!pad && (
+                <fieldset className="space-y-2 md:col-span-2">
+                  <legend className="font-label text-sm">Kind</legend>
+                  <div className="grid grid-cols-3 gap-2">
+                    {SCRATCHPAD_KINDS.map((value) => {
+                      const { label, icon: Icon } = KIND_META[value];
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          data-testid={`scratchpad-form-kind-${value}`}
+                          aria-pressed={kind === value}
+                          onClick={() => setKind(value)}
+                          className={`flex min-h-8 items-center justify-center gap-1 rounded-md border px-2 py-2 transition-colors ${
+                            kind === value
+                              ? "border-primary bg-surface-low"
+                              : "border-outline-variant hover:bg-surface-low"
+                          }`}
+                        >
+                          <span className="inline-flex items-center gap-1.5 font-label text-[13px]">
+                            <Icon size={14} aria-hidden /> {label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground" data-testid="scratchpad-kind-hint">
+                    {KIND_META[kind].hint}
+                  </p>
+                </fieldset>
+              )}
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="scratchpad-title">Title</Label>
+                <Input
+                  id="scratchpad-title"
+                  data-testid="scratchpad-form-title"
+                  value={title}
+                  maxLength={SCRATCHPAD_TITLE_MAX}
+                  autoFocus
+                  onChange={(e) => setTitle(e.target.value)}
+                />
               </div>
-            </fieldset>
-          )}
-          <div className="space-y-2">
-            <Label htmlFor="scratchpad-title">Title</Label>
-            <Input
-              id="scratchpad-title"
-              data-testid="scratchpad-form-title"
-              value={title}
-              maxLength={SCRATCHPAD_TITLE_MAX}
-              autoFocus
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="scratchpad-project">Project</Label>
-            <Select value={projectId} onValueChange={setProjectId}>
-              <SelectTrigger id="scratchpad-project" data-testid="scratchpad-form-project">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-surface border-outline-variant">
-                <SelectItem value={NO_PROJECT}>No project</SelectItem>
-                {projects?.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="scratchpad-session">Session</Label>
-            <Select value={sessionId} onValueChange={setSessionId}>
-              <SelectTrigger id="scratchpad-session" data-testid="scratchpad-form-session">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-surface border-outline-variant">
-                <SelectItem value={NO_SESSION}>No session</SelectItem>
-                {sessionId !== NO_SESSION &&
-                  !sessionOptions.some((s) => s.session_id === sessionId) && (
-                    <SelectItem value={sessionId}>{sessionId.slice(0, 8)}</SelectItem>
-                  )}
-                {sessionOptions.map((s) => (
-                  <SelectItem
-                    key={s.id}
-                    value={s.session_id as string}
-                    data-testid="scratchpad-form-session-option"
-                  >
-                    {s.agent} · {s.name ?? "Untitled session"} ·{" "}
-                    {formatWhen(s.last_activity_at ?? s.created_at)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Tags</Label>
-            <TagInput
-              value={tags}
-              onChange={setTags}
-              placeholder="Add a tag"
-              aria-label="Tags"
-              data-testid="scratchpad-form-tags"
-            />
-          </div>
-          {mutation.error && (
-            <p role="alert" className="text-sm text-destructive">
-              {mutation.error.message}
-            </p>
-          )}
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              data-testid="scratchpad-form-submit"
-              disabled={!title.trim() || mutation.isPending}
-            >
-              {pad ? "Save" : "Create"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+              <div className="space-y-2">
+                <Label htmlFor="scratchpad-project">Project</Label>
+                <Select value={projectId} onValueChange={setProjectId}>
+                  <SelectTrigger id="scratchpad-project" data-testid="scratchpad-form-project">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-surface border-outline-variant">
+                    <SelectItem value={NO_PROJECT}>No project</SelectItem>
+                    {projects?.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="scratchpad-session">Session</Label>
+                <Select value={sessionId} onValueChange={setSessionId}>
+                  <SelectTrigger id="scratchpad-session" data-testid="scratchpad-form-session">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-surface border-outline-variant">
+                    <SelectItem value={NO_SESSION}>No session</SelectItem>
+                    {sessionId !== NO_SESSION &&
+                      !sessionOptions.some((s) => s.session_id === sessionId) && (
+                        <SelectItem value={sessionId}>{sessionId.slice(0, 8)}</SelectItem>
+                      )}
+                    {sessionOptions.map((s) => (
+                      <SelectItem
+                        key={s.id}
+                        value={s.session_id as string}
+                        data-testid="scratchpad-form-session-option"
+                      >
+                        {s.agent} · {s.name ?? "Untitled session"} ·{" "}
+                        {formatWhen(s.last_activity_at ?? s.created_at)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Tags</Label>
+                <TagInput
+                  value={tags}
+                  onChange={setTags}
+                  onDraftChange={setTagDraft}
+                  placeholder="Add a tag"
+                  aria-label="Tags"
+                  data-testid="scratchpad-form-tags"
+                />
+              </div>
+              {mutation.error && (
+                <p role="alert" className="text-sm text-destructive md:col-span-2">
+                  {mutation.error.message}
+                </p>
+              )}
+            </div>
+            <DialogFooter className="work-form-footer">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={requestClose}
+                disabled={mutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                data-testid="scratchpad-form-submit"
+                disabled={!title.trim() || mutation.isPending}
+              >
+                {pad ? "Save" : "Create"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </>
+      )}
+    </FormDialog>
   );
 }
 

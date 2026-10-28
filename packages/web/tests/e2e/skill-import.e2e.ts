@@ -1,6 +1,133 @@
 import { expect, test } from "@playwright/test";
 import { apiPost, gotoView, tid } from "./_helpers";
 
+for (const viewport of [
+  { width: 390, height: 700 },
+  { width: 1440, height: 800 },
+]) {
+  for (const source of ["remote", "local"] as const) {
+    test(`populated ${source} skill discovery keeps selection and actions reachable at ${viewport.width}px`, async ({
+      page,
+    }, testInfo) => {
+      const description =
+        "A detailed reusable workflow with validation, configuration, review and delivery instructions. ".repeat(
+          6,
+        );
+      const skills = Array.from({ length: 40 }, (_, index) => ({
+        name: `discovered-workflow-${index}`,
+        description,
+        path: `skills/${"nested-directory/".repeat(8)}workflow-${index}`,
+        installed: false,
+        agent: "codex",
+        content_hash: "a".repeat(64),
+        status: "new",
+        also_in: [],
+        extra_fields: [],
+      }));
+      await page.route("**/api/skills/discover", (route) =>
+        route.fulfill({
+          json: {
+            repository: "acme/skills",
+            ref: "HEAD",
+            path: "",
+            commit: "a".repeat(40),
+            skills,
+            issues: [],
+          },
+        }),
+      );
+      await page.route("**/api/skills/local-agents", (route) =>
+        route.fulfill({
+          json: {
+            agents: [
+              {
+                id: "codex",
+                label: "Codex",
+                dir: `/home/user/${"long-agent-folder/".repeat(8)}skills`,
+                skills,
+              },
+            ],
+          },
+        }),
+      );
+      let imports = 0;
+      await page.route("**/api/skills/import", (route) => {
+        imports++;
+        return route.fulfill({ json: { skills: [] } });
+      });
+      await page.route("**/api/skills/local-agents/import", (route) => {
+        imports++;
+        return route.fulfill({ json: { imported: [], skipped: [] } });
+      });
+      await page.setViewportSize(viewport);
+      await gotoView(page, "skills");
+      await page.getByTestId("skill-import-menu").click();
+      await page
+        .getByTestId(source === "remote" ? "import-skill-button" : "import-local-skills-button")
+        .click();
+      if (source === "remote") {
+        await page.getByTestId("skill-repository-input").fill("acme/skills");
+        await page.getByTestId("skill-discover").click();
+      }
+      const dialog = page.getByRole("dialog");
+      const rows = dialog.getByTestId(source === "remote" ? "remote-skill" : "local-skill");
+      await expect(rows).toHaveCount(40);
+      await rows.first().getByRole("checkbox").check();
+      const details = rows
+        .first()
+        .getByTestId(source === "remote" ? "remote-skill-details" : "local-skill-details");
+      await details.click();
+      await expect(details.locator("..")).toHaveAttribute("open", "");
+      await expect(details.locator("..")).toContainText(description.trim());
+      if (source === "remote") {
+        await expect(details.locator("..")).toContainText(skills[0].path);
+      }
+      await expect(rows.first().getByRole("checkbox")).toBeChecked();
+      await page.screenshot({
+        path: testInfo.outputPath(`${source}-discovery-details-${viewport.width}.png`),
+        animations: "disabled",
+      });
+      await details.click();
+      await expect(details.locator("..")).not.toHaveAttribute("open", "");
+      const submit = page.getByTestId(
+        source === "remote" ? "skill-import-submit" : "local-skill-import-submit",
+      );
+      await expect(submit).toBeEnabled();
+      const before = await submit.boundingBox();
+      console.log(
+        JSON.stringify({
+          source,
+          viewport,
+          dialog: await dialog.boundingBox(),
+          submit: before,
+          rowHeight: (await rows.first().boundingBox())?.height,
+          widths: await dialog.evaluate((el) => ({
+            client: el.clientWidth,
+            scroll: el.scrollWidth,
+          })),
+        }),
+      );
+      await page.screenshot({
+        path: testInfo.outputPath(`${source}-discovery-${viewport.width}.png`),
+        animations: "disabled",
+      });
+      expect(before).not.toBeNull();
+      if (!before) throw new Error("Missing import action");
+      expect(before.y).toBeGreaterThanOrEqual(0);
+      expect(before.y + before.height).toBeLessThanOrEqual(viewport.height);
+      expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+      await rows.last().getByRole("checkbox").check();
+      await expect(rows.first().getByRole("checkbox")).toBeChecked();
+      await expect(submit).toContainText("2");
+      const after = await submit.boundingBox();
+      if (!after) throw new Error("Missing import action after selection");
+      expect(after.y + after.height).toBeLessThanOrEqual(viewport.height);
+      expect(after.y).toBeCloseTo(before.y, 0);
+      expect(imports).toBe(0);
+    });
+  }
+}
+
 test.beforeEach(({ page }) => {
   page.on("pageerror", (error) => console.error(`Browser error: ${error.message}`));
   page.on("requestfailed", (request) =>
