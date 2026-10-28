@@ -271,6 +271,35 @@ test("should keep the composer draft when switching to fullscreen and back", asy
 });
 
 for (const width of [390, 1440]) {
+  test(`should remove pending and edited messages without dispatching them at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const panel = page.getByTestId("chat-panel").filter({ visible: true });
+    const sent = posts(page);
+    await send(panel, "Respond after 3000ms. Reply with exactly: FIRST.");
+    await send(panel, "REMOVE FIRST");
+    await send(panel, "REMOVE WHILE EDITING");
+    await send(panel, "Reply with exactly: KEEP ONE.");
+    await send(panel, "Reply with exactly: KEEP TWO.");
+    await expandQueue(panel);
+    const pending = panel.getByTestId("chat-queued-message");
+    await pending.first().getByTestId("chat-queued-remove").click();
+    await expect(pending).toHaveCount(3);
+    await pending.first().getByTestId("chat-queued-edit").click();
+    await panel.getByTestId("chat-queued-input").fill("UNSAVED REMOVED EDIT");
+    await pending.first().getByTestId("chat-queued-remove").click();
+    await expect(panel.getByTestId("chat-queued-input")).toHaveCount(0);
+    await expect(panel.getByTestId("chat-pending-count")).toHaveText("2 pending");
+    await expect(panel).toHaveAttribute("data-streaming", "false");
+    await expect(pending).toHaveCount(0);
+    expect(sent).toEqual([
+      "Respond after 3000ms. Reply with exactly: FIRST.",
+      "Reply with exactly: KEEP ONE.",
+      "Reply with exactly: KEEP TWO.",
+    ]);
+  });
+
   test(`should keep the queue compact and collapsed by default at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     const panel = page.getByTestId("chat-panel").filter({ visible: true });
@@ -300,3 +329,19 @@ for (const width of [390, 1440]) {
     await panel.getByTestId("chat-cancel-button").click();
   });
 }
+
+test("should hide an emptied paused queue and accept a new message", async ({ page }) => {
+  const panel = page.getByTestId("chat-panel");
+  const sent = posts(page);
+  await send(panel, "Respond after 10000ms. Reply with exactly: FIRST.");
+  await send(panel, "REMOVE ME");
+  await panel.getByTestId("chat-cancel-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false");
+  await expandQueue(panel);
+  await panel.getByTestId("chat-queued-remove").click();
+  await expect(panel.getByTestId("chat-message-queue")).toHaveCount(0);
+  expect(sent).toHaveLength(1);
+  await send(panel, "Reply with exactly: NEW.");
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText("NEW");
+  expect(sent).toHaveLength(2);
+});

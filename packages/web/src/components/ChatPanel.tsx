@@ -11,6 +11,7 @@ import {
   Plus,
   RefreshCw,
   Square,
+  Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef } from "react";
@@ -149,6 +150,7 @@ export function ChatPanel({
     queuedDraft,
     setQueuedDraft,
     editQueued,
+    removeQueued,
     forceQueued,
     send,
     cancel,
@@ -460,6 +462,7 @@ export function ChatPanel({
                 onSave={(content) => editQueued(entry.id, content)}
                 onCancel={() => editQueued(null)}
                 onForce={() => forceQueued(entry.id)}
+                onRemove={() => removeQueued(entry.id)}
               />
             ))}
           </ol>
@@ -552,6 +555,7 @@ function QueuedMessage({
   onSave,
   onCancel,
   onForce,
+  onRemove,
 }: {
   content: string;
   editing: boolean;
@@ -562,7 +566,20 @@ function QueuedMessage({
   onSave: (content: string) => void;
   onCancel: () => void;
   onForce: () => void;
+  onRemove: () => void;
 }) {
+  const removeButton = (
+    <button
+      type="button"
+      data-testid="chat-queued-remove"
+      aria-label="Remove pending message"
+      title="Remove pending message"
+      onClick={onRemove}
+      className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-destructive focus-visible:ring-2 focus-visible:ring-focus sm:size-8"
+    >
+      <Trash2 size={14} />
+    </button>
+  );
   return (
     <li data-testid="chat-queued-message" className="border-t border-outline-variant text-sm">
       {editing ? (
@@ -580,22 +597,25 @@ function QueuedMessage({
             rows={2}
             className="mt-2 block max-h-32 w-full rounded border border-control-border bg-background p-2 text-base sm:text-sm"
           />
-          <button
-            type="submit"
-            data-testid="chat-queued-save"
-            disabled={!draft.trim()}
-            className="min-h-11 px-2 text-xs disabled:opacity-40 sm:min-h-8"
-          >
-            Save
-          </button>
-          <button
-            type="button"
-            data-testid="chat-queued-edit-cancel"
-            onClick={onCancel}
-            className="min-h-11 px-2 text-xs text-on-surface-variant sm:min-h-8"
-          >
-            Cancel
-          </button>
+          <div className="flex items-center">
+            <button
+              type="submit"
+              data-testid="chat-queued-save"
+              disabled={!draft.trim()}
+              className="min-h-11 px-2 text-xs disabled:opacity-40 sm:min-h-8"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              data-testid="chat-queued-edit-cancel"
+              onClick={onCancel}
+              className="min-h-11 px-2 text-xs text-on-surface-variant sm:min-h-8"
+            >
+              Cancel
+            </button>
+            <div className="ml-auto">{removeButton}</div>
+          </div>
         </form>
       ) : (
         <div className="flex min-h-11 items-center gap-1 sm:min-h-9">
@@ -627,6 +647,7 @@ function QueuedMessage({
           >
             <ArrowUp size={14} />
           </button>
+          {removeButton}
         </div>
       )}
     </li>

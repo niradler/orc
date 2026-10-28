@@ -736,6 +736,14 @@ function useChatController() {
     (draft: string) => update(activeRef.current, () => ({ draft })),
     [update],
   );
+  const removeQueued = useCallback(
+    (id: string) =>
+      update(activeRef.current, (tab) => ({
+        queued: tab.queued.filter((entry) => entry.id !== id),
+        ...(tab.editingQueuedId === id ? { editingQueuedId: null, queuedDraft: "" } : {}),
+      })),
+    [update],
+  );
   const setQueuedDraft = useCallback(
     (queuedDraft: string) => update(activeRef.current, () => ({ queuedDraft })),
     [update],
@@ -862,6 +870,7 @@ function useChatController() {
     queuedDraft: tab.queuedDraft,
     setQueuedDraft,
     editQueued,
+    removeQueued,
     forceQueued,
     streaming: tab.streaming,
     reconnecting: tab.reconnecting,
