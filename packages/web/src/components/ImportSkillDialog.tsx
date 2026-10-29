@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Info, LoaderCircle, Search } from "lucide-react";
 import { useState } from "react";
 import { api } from "@/api/client";
 import { BulkActionBar } from "@/components/BulkActionBar";
@@ -13,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useListSelection } from "@/hooks/useListSelection";
 
 export function ImportSkillDialog({ onClose }: { onClose: () => void }) {
@@ -81,13 +83,16 @@ export function ImportSkillDialog({ onClose }: { onClose: () => void }) {
           data-testid="skill-import-body"
         >
           <form
-            className="space-y-4"
+            className="relative"
             onSubmit={(event) => {
               event.preventDefault();
+              if (busy || !source.trim()) return;
               discover.mutate(source.trim());
             }}
           >
-            <Label htmlFor="skill-repository">Repository or skills.sh link</Label>
+            <Label htmlFor="skill-repository" className="sr-only">
+              Repository or skills.sh link
+            </Label>
             <Input
               id="skill-repository"
               data-testid="skill-repository-input"
@@ -100,11 +105,26 @@ export function ImportSkillDialog({ onClose }: { onClose: () => void }) {
                 selection.clear();
                 setImportedPaths([]);
               }}
-              placeholder="https://github.com/vercel-labs/agent-skills"
+              placeholder="Repository or skills.sh link"
+              className="pr-12"
               autoFocus
             />
-            <Button type="submit" data-testid="skill-discover" disabled={busy || !source.trim()}>
-              {discover.isPending ? "Discovering…" : "Discover skills"}
+            <Button
+              type="submit"
+              data-testid="skill-discover"
+              aria-label="Discover skills"
+              title="Find skills in this repository"
+              aria-busy={discover.isPending}
+              variant="ghost"
+              size="icon"
+              className="absolute right-0 top-0 h-full w-11 rounded-l-none"
+              disabled={busy || !source.trim()}
+            >
+              {discover.isPending ? (
+                <LoaderCircle aria-hidden className="animate-spin" />
+              ) : (
+                <Search aria-hidden />
+              )}
             </Button>
           </form>
           {discover.data && (
@@ -130,13 +150,14 @@ export function ImportSkillDialog({ onClose }: { onClose: () => void }) {
                 {discover.data.skills.map((skill) => (
                   <div
                     key={skill.path}
-                    className="min-w-0 py-2"
+                    className="flex min-w-0 items-center gap-2 py-2"
                     data-testid="remote-skill"
                     data-skill-name={skill.name}
                   >
-                    <label className="flex min-h-11 min-w-0 items-center gap-3 text-sm md:min-h-6 pointer-coarse:min-h-11">
+                    <label className="flex min-h-11 min-w-0 flex-1 items-start gap-3 text-sm">
                       <input
                         type="checkbox"
+                        aria-label={`Select ${skill.name}`}
                         className="mt-1 shrink-0"
                         data-testid="remote-skill-select"
                         checked={selected.includes(skill.path)}
@@ -144,26 +165,40 @@ export function ImportSkillDialog({ onClose }: { onClose: () => void }) {
                         onChange={() => selection.toggle(skill.path)}
                       />
                       <span className="min-w-0 text-sm wrap-break-word">
-                        <span className="font-medium">{skill.name}</span>
+                        <span className="block truncate font-medium">{skill.name}</span>
                         {(skill.installed || importedPaths.includes(skill.path)) && (
                           <span className="ml-2 text-xs text-outline">Already installed</span>
                         )}
+                        <span className="mt-0.5 line-clamp-2 text-xs leading-4 text-outline">
+                          {skill.description}
+                        </span>
                       </span>
                     </label>
-                    <details className="min-w-0 pl-6">
-                      <summary
-                        data-testid="remote-skill-details"
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          actionHelp={false}
+                          data-testid="remote-skill-details"
+                          aria-label={`Details for ${skill.name}`}
+                          className="shrink-0"
+                        >
+                          <Info aria-hidden />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        data-testid="remote-skill-details-content"
                         aria-label={`Details for ${skill.name}`}
-                        className="flex min-h-11 cursor-pointer items-center gap-2 rounded-sm text-xs text-outline md:min-h-8 pointer-coarse:min-h-11"
+                        align="end"
+                        className="max-h-[60dvh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto space-y-2 text-sm wrap-break-word"
                       >
-                        <span className="min-w-0 flex-1 truncate">{skill.description}</span>
-                        <span className="shrink-0">Details</span>
-                      </summary>
-                      <div className="space-y-1 pb-2 text-xs wrap-break-word">
+                        <p className="font-medium">{skill.name}</p>
                         <p>{skill.description}</p>
-                        <p className="text-outline">{skill.path || "Repository root"}</p>
-                      </div>
-                    </details>
+                        <p className="text-xs text-outline">{skill.path || "Repository root"}</p>
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 ))}
               </div>

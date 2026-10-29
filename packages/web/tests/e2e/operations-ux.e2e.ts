@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { API_SECRET, apiGet, apiPost, gotoView, selectProject, tid } from "./_helpers";
 
 for (const theme of ["dark", "light"] as const) {
@@ -87,9 +88,12 @@ for (const theme of ["dark", "light"] as const) {
       await row.getByTestId("job-edit").click();
       const dialog = page.getByRole("dialog");
       await dialog.getByLabel("Description", { exact: true }).fill("");
+      await revealFormField(page, dialog.getByLabel("Maximum retries", { exact: true }));
       await dialog.getByLabel("Maximum retries", { exact: true }).fill("0");
+      await revealFormField(page, dialog.getByLabel("Command", { exact: true }));
       await dialog.getByLabel("Command", { exact: true }).fill("echo changed operations");
       await page.screenshot({ path: testInfo.outputPath("job-edit.png"), fullPage: true });
+      await openFinalFormStep(page);
       await dialog.getByTestId("job-edit-submit").click();
       await expect(dialog).toHaveCount(0);
       await page.reload();

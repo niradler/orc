@@ -218,7 +218,11 @@ the actual application with realistic data and preserve its working behavior.
   editing preserves values, explicit Discard leaves safely, and focus returns to
   the opener. Pending operations cannot be dismissed. Successful writes use the
   committed close callback so navigation is not mistaken for discarded work.
-  Prefer grouped/conditional fields over a universal wizard.
+  Long configuration forms use named tabbed steps to reduce scrolling. Keep
+  values while moving between tabs, allow direct tab navigation, and validate
+  every step before saving; reveal and focus an invalid field's step. Short forms
+  stay on one page. Phone footers reach the dialog bottom without stretching
+  gaps between fields.
 - **Chat:** show one selected conversation. Session history is **one flat list,
   newest activity first**. Open, selected, working and needs-input states use icons
   and selection styling; they never create sections or override date order. Do not
@@ -437,6 +441,12 @@ that emphasis; secondary actions are ghost/text, with an outline only when
 necessary. Hover uses a small surface change; pressed/selected remains stable.
 Focus is a visible 2px outline, independent of hover and color perception.
 Destructive actions remain explicit and separated from the default action.
+
+Icon-only actions need an accessible name and explanatory hover/focus help.
+Shared icon Buttons provide `ActionHelp`; raw icon actions use the same wrapper.
+On touch, a hold explains an action without executing it, while a short tap keeps
+its normal behavior. Actions with an existing explanation/confirmation popover
+opt out of duplicate help. Keep destructive and installation confirmation explicit.
 
 Navigation uses readable text with a quiet selected fill. Avoid simultaneously
 emphasizing the same selection through several decorative treatments. Keep URL,

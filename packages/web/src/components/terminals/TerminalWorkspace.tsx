@@ -13,6 +13,7 @@ import {
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { Terminal } from "@/api/client";
+import { ActionHelp } from "@/components/ActionHelp";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { openTerminalPalette } from "@/lib/terminal-palette";
 import {
@@ -295,52 +296,59 @@ function WorkspaceTree(props: TreeProps) {
           </div>
         </details>
         <div className="hidden md:flex items-center gap-1">
-          <button
-            type="button"
-            data-testid="pane-split-horizontal"
-            aria-label="Split side by side"
-            title="Split side by side"
-            disabled={leaves(root).length >= 8}
-            onClick={() => split("row")}
-            className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-primary hover:bg-surface disabled:opacity-40"
-          >
-            <Columns2 size={16} />
-          </button>
-          <button
-            type="button"
-            data-testid="pane-split-vertical"
-            aria-label="Split top and bottom"
-            title="Split top and bottom"
-            disabled={leaves(root).length >= 8}
-            onClick={() => split("column")}
-            className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-primary hover:bg-surface disabled:opacity-40"
-          >
-            <Rows2 size={16} />
-          </button>
-          {leaves(root).length > 1 && (
+          <ActionHelp label="Split side by side">
             <button
               type="button"
-              data-testid="pane-focus"
-              aria-label={zoomed ? "Restore split layout" : "Expand pane"}
-              title={zoomed ? "Restore split layout" : "Expand pane"}
-              aria-pressed={!!zoomed}
-              onClick={() => zoom(zoomed ? null : node.id)}
-              className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-on-surface-variant hover:bg-surface"
+              data-testid="pane-split-horizontal"
+              aria-label="Split side by side"
+              disabled={leaves(root).length >= 8}
+              onClick={() => split("row")}
+              className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-primary hover:bg-surface disabled:opacity-40"
             >
-              {zoomed ? <PanelsTopLeft size={15} /> : <PanelTop size={15} />}
+              <Columns2 size={16} />
             </button>
+          </ActionHelp>
+          <ActionHelp label="Split top and bottom">
+            <button
+              type="button"
+              data-testid="pane-split-vertical"
+              aria-label="Split top and bottom"
+              disabled={leaves(root).length >= 8}
+              onClick={() => split("column")}
+              className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-primary hover:bg-surface disabled:opacity-40"
+            >
+              <Rows2 size={16} />
+            </button>
+          </ActionHelp>
+          {leaves(root).length > 1 && (
+            <ActionHelp label={zoomed ? "Restore split layout" : "Expand pane"}>
+              <button
+                type="button"
+                data-testid="pane-focus"
+                aria-label={zoomed ? "Restore split layout" : "Expand pane"}
+                aria-pressed={!!zoomed}
+                onClick={() => zoom(zoomed ? null : node.id)}
+                className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-on-surface-variant hover:bg-surface"
+              >
+                {zoomed ? <PanelsTopLeft size={15} /> : <PanelTop size={15} />}
+              </button>
+            </ActionHelp>
           )}
           {leaves(root).length > 1 && (
-            <button
-              type="button"
-              data-testid="pane-close"
-              aria-label="Close pane (keep terminal running)"
-              title="Close pane; terminal keeps running"
-              onClick={() => close(node.id)}
-              className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-on-surface-variant hover:bg-surface"
+            <ActionHelp
+              label="Close pane (keep terminal running)"
+              description="Close pane; terminal keeps running"
             >
-              <X size={16} />
-            </button>
+              <button
+                type="button"
+                data-testid="pane-close"
+                aria-label="Close pane (keep terminal running)"
+                onClick={() => close(node.id)}
+                className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 inline-flex items-center justify-center rounded-md text-on-surface-variant hover:bg-surface"
+              >
+                <X size={16} />
+              </button>
+            </ActionHelp>
           )}
         </div>
       </header>

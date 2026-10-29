@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
+import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { apiGet, apiPost, gotoView, tid } from "./_helpers";
 
 test("should create jobs disabled, toggle inline and retry failed bulk updates without touching unselected jobs", async ({
@@ -86,8 +87,11 @@ test("should create jobs disabled, toggle inline and retry failed bulk updates w
   const name = tid("new-disabled-job");
   await page.getByTestId("new-job-button").click();
   await expect(page.getByTestId("job-create-enabled")).not.toBeChecked();
+  await revealFormField(page, page.getByTestId("job-name-input"));
   await page.getByTestId("job-name-input").fill(name);
+  await revealFormField(page, page.getByTestId("job-command-input"));
   await page.getByTestId("job-command-input").fill("echo new");
+  await openFinalFormStep(page);
   await page.getByTestId("job-submit").click();
   const row = page.locator(`[data-testid="job-row"][data-job-name="${name}"]`);
   await expect(row.getByTestId("job-toggle-enabled")).toHaveAttribute("aria-pressed", "false");

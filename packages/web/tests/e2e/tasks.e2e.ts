@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { apiDelete, apiPatch, apiPost, gotoView, tid } from "./_helpers";
 
 interface Task {
@@ -19,7 +20,9 @@ test.describe("Tasks CRUD", () => {
 
     // Create
     await page.getByTestId("new-task-button").click();
+    await revealFormField(page, page.getByTestId("task-title-input"));
     await page.getByTestId("task-title-input").fill(title);
+    await openFinalFormStep(page);
     await page.getByTestId("task-submit").click();
     await expect(page.getByTestId("task-detail-sheet")).toContainText(title);
     await page.keyboard.press("Escape");

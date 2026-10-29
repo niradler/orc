@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { FormStepActions, FormStepPanel, FormSteps, useFormSteps } from "@/components/useFormSteps";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
 import { useListSelection } from "@/hooks/useListSelection";
@@ -518,6 +519,13 @@ function EditProjectDialog({
   onClose: () => void;
   onFirstTask: (id: string) => void;
 }) {
+  const steps = useFormSteps(
+    [
+      { id: "details", label: "Details" },
+      { id: "configuration", label: "Configuration" },
+    ],
+    open,
+  );
   const [name, setName] = useState(project.name);
   const [description, setDescription] = useState(project.description ?? "");
   const [status, setStatus] = useState<ProjectStatus>(project.status);
@@ -580,149 +588,165 @@ function EditProjectDialog({
             </DialogTitle>
           </DialogHeader>
 
-          <form onSubmit={(event) => handleSubmit(event, closeAfterSave)} className="min-h-0">
-            <div className="work-form-body grid grid-cols-1 gap-4 md:grid-cols-2">
-              {summary && (
-                <div className="md:col-span-2">
-                  <ProjectSummaryBar summary={summary} allowNavigation={!dirty} />
-                </div>
-              )}
-              <div className="flex flex-wrap items-center gap-2 md:col-span-2">
-                <Button
-                  type="button"
-                  data-testid="project-create-task"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onFirstTask(project.id)}
-                  disabled={dirty || updateProject.isPending}
-                >
-                  Create task in this project
-                </Button>
-                {dirty && (
-                  <span className="text-xs text-muted-foreground">
-                    Save changes before opening related work.
-                  </span>
+          <form
+            noValidate
+            ref={steps.form}
+            onSubmit={(event) => steps.submit(event, () => handleSubmit(event, closeAfterSave))}
+            className="min-h-0"
+          >
+            <FormSteps steps={steps}>
+              <div className="work-form-body space-y-4">
+                <FormStepPanel steps={steps} id="details">
+                  {summary && (
+                    <div className="md:col-span-2">
+                      <ProjectSummaryBar summary={summary} allowNavigation={!dirty} />
+                    </div>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2 md:col-span-2">
+                    <Button
+                      type="button"
+                      data-testid="project-create-task"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onFirstTask(project.id)}
+                      disabled={dirty || updateProject.isPending}
+                    >
+                      Create task in this project
+                    </Button>
+                    {dirty && (
+                      <span className="text-xs text-muted-foreground">
+                        Save changes before opening related work.
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="font-label text-sm  text-muted-foreground">Name *</Label>
+                    <Input
+                      aria-label="Name"
+                      data-testid="edit-project-name-input"
+                      required
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="bg-background border-control-border text-on-surface font-body text-sm"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="font-label text-sm  text-muted-foreground">Description</Label>
+                    <Textarea
+                      aria-label="Description"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      rows={2}
+                      className="bg-background border-control-border text-on-surface font-body text-sm resize-none"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="font-label text-sm  text-muted-foreground">Status</Label>
+                    <Select value={status} onValueChange={(v) => setStatus(v as ProjectStatus)}>
+                      <SelectTrigger
+                        aria-label="Status"
+                        className="bg-background border-control-border text-on-surface font-label text-sm"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-surface border-outline-variant">
+                        {PROJECT_STATUSES.map((s) => (
+                          <SelectItem key={s} value={s} className="font-label text-sm">
+                            {s}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="font-label text-sm  text-muted-foreground">
+                      Tags (comma separated)
+                    </Label>
+                    <Input
+                      aria-label="Tags (comma separated)"
+                      value={tags}
+                      onChange={(e) => setTags(e.target.value)}
+                      className="bg-background border-control-border text-on-surface font-body text-sm"
+                    />
+                  </div>
+                </FormStepPanel>
+                <FormStepPanel steps={steps} id="configuration">
+                  <div className="space-y-1.5">
+                    <Label className="font-label text-sm  text-muted-foreground">Scope</Label>
+                    <Input
+                      aria-label="Scope"
+                      value={scope}
+                      onChange={(e) => setScope(e.target.value)}
+                      className="bg-background border-control-border text-on-surface font-body text-sm"
+                    />
+                  </div>
+                  <div className="space-y-1.5 md:col-span-2">
+                    <Label
+                      htmlFor="edit-project-git-remote-url"
+                      className="font-label text-sm text-muted-foreground"
+                    >
+                      Git remote URL (optional)
+                    </Label>
+                    <Input
+                      id="edit-project-git-remote-url"
+                      className="bg-background border-control-border text-on-surface font-body text-sm"
+                      data-testid="edit-project-git-remote-url"
+                      value={gitRemoteUrl}
+                      onChange={(event) => setGitRemoteUrl(event.target.value)}
+                      placeholder="https://github.com/owner/repo.git or git@github.com:owner/repo.git"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Clear this field to remove the saved address.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="font-label text-sm  text-muted-foreground">Max workers</Label>
+                    <Input
+                      aria-label="Max Workers"
+                      type="number"
+                      min={1}
+                      value={maxWorkers}
+                      onChange={(e) => setMaxWorkers(e.target.value)}
+                      placeholder="1"
+                      className="bg-background border-control-border text-on-surface font-body text-sm"
+                    />
+                  </div>
+                </FormStepPanel>
+                {updateProject.error && (
+                  <p role="alert" className="text-sm text-error md:col-span-2">
+                    {updateProject.error.message}
+                  </p>
+                )}
+                {steps.error && (
+                  <p role="alert" className="text-sm text-error">
+                    {steps.error}
+                  </p>
                 )}
               </div>
-              <div className="space-y-1.5">
-                <Label className="font-label text-sm  text-muted-foreground">Name *</Label>
-                <Input
-                  aria-label="Name"
-                  data-testid="edit-project-name-input"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="bg-background border-control-border text-on-surface font-body text-sm"
-                  autoFocus
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="font-label text-sm  text-muted-foreground">Description</Label>
-                <Textarea
-                  aria-label="Description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={2}
-                  className="bg-background border-control-border text-on-surface font-body text-sm resize-none"
-                />
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:col-span-2">
-                <div className="space-y-1.5">
-                  <Label className="font-label text-sm  text-muted-foreground">Status</Label>
-                  <Select value={status} onValueChange={(v) => setStatus(v as ProjectStatus)}>
-                    <SelectTrigger
-                      aria-label="Status"
-                      className="bg-background border-control-border text-on-surface font-label text-sm"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-surface border-outline-variant">
-                      {PROJECT_STATUSES.map((s) => (
-                        <SelectItem key={s} value={s} className="font-label text-sm">
-                          {s}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="font-label text-sm  text-muted-foreground">Max workers</Label>
-                  <Input
-                    aria-label="Max Workers"
-                    type="number"
-                    min={1}
-                    value={maxWorkers}
-                    onChange={(e) => setMaxWorkers(e.target.value)}
-                    placeholder="1"
-                    className="bg-background border-control-border text-on-surface font-body text-sm"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="font-label text-sm  text-muted-foreground">
-                  Tags (comma separated)
-                </Label>
-                <Input
-                  aria-label="Tags (comma separated)"
-                  value={tags}
-                  onChange={(e) => setTags(e.target.value)}
-                  className="bg-background border-control-border text-on-surface font-body text-sm"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="font-label text-sm  text-muted-foreground">Scope</Label>
-                <Input
-                  aria-label="Scope"
-                  value={scope}
-                  onChange={(e) => setScope(e.target.value)}
-                  className="bg-background border-control-border text-on-surface font-body text-sm"
-                />
-              </div>
-              <div className="space-y-1.5 md:col-span-2">
-                <Label
-                  htmlFor="edit-project-git-remote-url"
+              <DialogFooter className="work-form-footer">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={requestClose}
                   className="font-label text-sm text-muted-foreground"
                 >
-                  Git remote URL (optional)
-                </Label>
-                <Input
-                  id="edit-project-git-remote-url"
-                  className="bg-background border-control-border text-on-surface font-body text-sm"
-                  data-testid="edit-project-git-remote-url"
-                  value={gitRemoteUrl}
-                  onChange={(event) => setGitRemoteUrl(event.target.value)}
-                  placeholder="https://github.com/owner/repo.git or git@github.com:owner/repo.git"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Clear this field to remove the saved address.
-                </p>
-              </div>
-              {updateProject.error && (
-                <p role="alert" className="text-sm text-error md:col-span-2">
-                  {updateProject.error.message}
-                </p>
-              )}
-            </div>
-            <DialogFooter className="work-form-footer">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={requestClose}
-                className="font-label text-sm text-muted-foreground"
-              >
-                Cancel
-              </Button>
-              <Button
-                data-testid="edit-project-submit"
-                type="submit"
-                size="sm"
-                disabled={updateProject.isPending || !name.trim()}
-                className="font-label text-sm bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                {updateProject.isPending ? "Saving…" : "Save changes"}
-              </Button>
-            </DialogFooter>
+                  Cancel
+                </Button>
+                <FormStepActions steps={steps} busy={updateProject.isPending}>
+                  <Button
+                    data-testid="edit-project-submit"
+                    type="submit"
+                    size="sm"
+                    disabled={updateProject.isPending}
+                    className="font-label text-sm bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    {updateProject.isPending ? "Saving…" : "Save changes"}
+                  </Button>
+                </FormStepActions>
+              </DialogFooter>
+            </FormSteps>
           </form>
         </>
       )}

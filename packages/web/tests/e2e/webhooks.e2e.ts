@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { resolve } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
+import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers";
 
 for (const width of [1440, 390]) {
@@ -109,18 +110,27 @@ async function newWebhookJob(
 ) {
   await gotoView(page, "jobs");
   await page.getByTestId("new-job-button").click();
+  await revealFormField(page, page.getByTestId("job-name-input"));
   await page.getByTestId("job-name-input").fill(name);
+  await revealFormField(page, page.getByTestId("job-action-type"));
   await page.getByTestId("job-action-type").selectOption(kind);
-  if (kind === "command")
+  if (kind === "command") {
+    await revealFormField(page, page.getByTestId("job-command-input"));
     await page.getByTestId("job-command-input").fill("echo reusable-webhook-ok");
+  }
   if (kind === "task") {
+    await revealFormField(page, page.getByTestId("job-task-title"));
     await page.getByTestId("job-task-title").fill("Review received event");
     await expect(page.getByTestId("job-task-autostart")).not.toBeChecked();
   }
-  if (kind === "agent")
+  if (kind === "agent") {
+    await revealFormField(page, page.getByTestId("job-agent-prompt"));
     await page.getByTestId("job-agent-prompt").fill("Review the event and report findings");
+  }
+  await revealFormField(page, page.getByTestId("job-trigger-type"));
   await page.getByTestId("job-trigger-type").click();
   await page.getByTestId("job-trigger-webhook").click();
+  await revealFormField(page, page.getByTestId("job-webhook-select"));
   await page.getByTestId("job-webhook-select").selectOption(sourceId);
 }
 
@@ -146,18 +156,25 @@ test("standalone source connects multiple typed jobs, filters deliveries and reo
   const commandName = tid("command-subscriber");
   await newWebhookJob(page, commandName, sourceId);
   await expect(page.getByTestId("job-create-enabled")).not.toBeChecked();
+  await revealFormField(page, page.getByTestId("webhook-events"));
   await page.getByTestId("webhook-events").pressSequentially("build, deploy");
   await expect(page.getByTestId("webhook-events")).toHaveValue("build, deploy");
+  await revealFormField(page, page.getByTestId("webhook-actions"));
   await page.getByTestId("webhook-actions").fill("completed");
+  await revealFormField(page, page.getByTestId("job-create-enabled"));
   await page.getByTestId("job-create-enabled").check();
+  await openFinalFormStep(page);
   await page.getByTestId("job-submit").click();
   await expect(page.getByTestId("job-name-input")).toHaveCount(0);
 
   const taskName = tid("task-subscriber");
   await newWebhookJob(page, taskName, sourceId, "task");
   await expect(page.getByTestId("job-command-input")).toHaveCount(0);
+  await revealFormField(page, page.getByTestId("webhook-events"));
   await page.getByTestId("webhook-events").fill("build");
+  await revealFormField(page, page.getByTestId("job-create-enabled"));
   await page.getByTestId("job-create-enabled").check();
+  await openFinalFormStep(page);
   await page.getByTestId("job-submit").click();
   await expect(page.getByTestId("job-name-input")).toHaveCount(0);
 
@@ -202,7 +219,9 @@ test("standalone source connects multiple typed jobs, filters deliveries and reo
   await page.getByTestId("job-detail-edit").click();
   await expect(page.getByTestId("job-action-type")).toHaveValue("task");
   await expect(page.getByTestId("webhook-events")).toHaveValue("build");
+  await revealFormField(page, page.getByTestId("webhook-events"));
   await page.getByTestId("webhook-events").fill("build, deploy");
+  await openFinalFormStep(page);
   await page.getByTestId("job-edit-submit").click();
   await expect(page.getByTestId("job-edit-submit")).toHaveCount(0);
   await page.goto(`/jobs/${taskJob.id}?project=all`);
@@ -218,9 +237,13 @@ test("inline source creation retries safely and agent action needs no command", 
   const name = tid("inline-agent");
   await gotoView(page, "jobs");
   await page.getByTestId("new-job-button").click();
+  await revealFormField(page, page.getByTestId("job-name-input"));
   await page.getByTestId("job-name-input").fill(name);
+  await revealFormField(page, page.getByTestId("job-action-type"));
   await page.getByTestId("job-action-type").selectOption("agent");
+  await revealFormField(page, page.getByTestId("job-agent-prompt"));
   await page.getByTestId("job-agent-prompt").fill("Inspect the incoming event");
+  await revealFormField(page, page.getByTestId("job-trigger-type"));
   await page.getByTestId("job-trigger-type").click();
   await page.getByTestId("job-trigger-webhook").click();
   await page.getByTestId("webhook-add").click();
@@ -240,6 +263,7 @@ test("inline source creation retries safely and agent action needs no command", 
   await expect(page.getByTestId("webhook-created")).toBeVisible();
   await page.getByTestId("webhook-setup-done").click();
   await expect(page.getByTestId("job-webhook-binding")).toHaveCount(1);
+  await openFinalFormStep(page);
   await page.getByTestId("job-submit").click();
   await expect(page.getByTestId("job-name-input")).toHaveCount(0);
   const { jobs } = await apiGet<{
@@ -318,6 +342,7 @@ test("project-scoped job picker offers shared and matching sources only", async 
   await gotoView(page, "jobs");
   await page.goto(`/jobs?project=${first.id}`);
   await page.getByTestId("new-job-button").click();
+  await revealFormField(page, page.getByTestId("job-trigger-type"));
   await page.getByTestId("job-trigger-type").click();
   await page.getByTestId("job-trigger-webhook").click();
   const picker = page.getByTestId("job-webhook-select");
@@ -328,6 +353,7 @@ test("project-scoped job picker offers shared and matching sources only", async 
   await page.getByTestId("discard-form-changes").click();
   await page.goto("/jobs?project=all");
   await page.getByTestId("new-job-button").click();
+  await revealFormField(page, page.getByTestId("job-trigger-type"));
   await page.getByTestId("job-trigger-type").click();
   await page.getByTestId("job-trigger-webhook").click();
   await expect(picker.locator(`option[value="${shared.id}"]`)).toHaveCount(1);

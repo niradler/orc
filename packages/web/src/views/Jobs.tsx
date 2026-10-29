@@ -31,6 +31,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { FormStepActions, FormStepPanel, FormSteps, useFormSteps } from "@/components/useFormSteps";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
 import {
@@ -469,24 +470,28 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                       >
                         <Play size={10} className="mr-1" /> Run
                       </Button>
-                      <button
+                      <Button
                         type="button"
                         data-testid="job-edit"
+                        variant="ghost"
+                        size="icon"
                         aria-label={`Edit ${job.name}`}
                         onClick={() => setEditing(job)}
                         className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-outline hover:text-primary hover:bg-surface-highest"
                       >
                         <Pencil size={16} />
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
                         data-testid="job-delete"
+                        variant="ghost"
+                        size="icon"
                         aria-label={`Delete ${job.name}`}
                         onClick={() => setDeleting(job)}
                         className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-outline hover:text-error hover:bg-error/10"
                       >
                         <Trash2 size={12} />
-                      </button>
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -548,6 +553,14 @@ function CreateJobDialog({
   onClose: () => void;
 }) {
   const { data: projects } = useProjects();
+  const steps = useFormSteps(
+    [
+      { id: "details", label: "Details" },
+      { id: "execution", label: "Execution" },
+      { id: "automation", label: "Automation" },
+    ],
+    open,
+  );
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [action, setAction] = useState<JobAction>({ type: "command", command: "" });
@@ -565,8 +578,11 @@ function CreateJobDialog({
 
   const handleSubmit = (e: React.FormEvent, afterSave = onClose) => {
     e.preventDefault();
-    if (!name.trim() || !jobActionValid(action) || (triggerType === "webhook" && !bindings.length))
+    if (triggerType === "webhook" && !bindings.length) {
+      steps.invalid("automation", "Select at least one webhook for this trigger.");
       return;
+    }
+    if (!name.trim() || !jobActionValid(action)) return;
     const input: CreateJobInput = {
       name: name.trim(),
       description: description.trim(),
@@ -630,237 +646,264 @@ function CreateJobDialog({
               New job
             </DialogTitle>
           </DialogHeader>
-          <form onSubmit={(event) => handleSubmit(event, closeAfterSave)} className="min-h-0">
-            <div className="work-form-body grid grid-cols-1 gap-4 md:grid-cols-2">
-              <label className="flex min-h-11 items-center gap-3 text-sm md:col-span-2">
-                <input
-                  type="checkbox"
-                  data-testid="job-create-enabled"
-                  checked={enabled}
-                  onChange={(event) => setEnabled(event.target.checked)}
-                  className="size-4 accent-primary"
-                />
-                Enable this job immediately
-              </label>
-              <p className="text-xs text-outline md:col-span-2">
-                Created disabled unless you enable it above.
-              </p>
-              <div className="space-y-1.5">
-                <Label className="font-label text-xs font-medium text-outline">Name *</Label>
-                <Input
-                  aria-label="Name"
-                  data-testid="job-name-input"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Job name..."
-                  className="bg-background border-control-border text-on-surface font-body text-sm"
-                  autoFocus
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="font-label text-xs font-medium text-outline">Description</Label>
-                <Input
-                  aria-label="Description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Optional description..."
-                  className="bg-background border-control-border text-on-surface font-body text-sm"
-                />
-              </div>
-              <JobActionFields value={action} onChange={setAction} />
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:col-span-2">
-                <div className="space-y-1.5">
-                  <Label className="font-label text-xs font-medium text-outline">Trigger</Label>
-                  <Select
-                    value={triggerType}
-                    onValueChange={(v) => setTriggerType(v as JobTriggerType)}
-                  >
-                    <SelectTrigger
-                      aria-label="Trigger type"
-                      data-testid="job-trigger-type"
-                      className="bg-background border-control-border text-on-surface font-body text-sm min-h-8"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-surface border-border">
-                      {TRIGGER_TYPES.map((t) => (
-                        <SelectItem
-                          key={t}
-                          value={t}
-                          data-testid={`job-trigger-${t}`}
-                          className="font-body text-sm"
-                        >
-                          {t}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {triggerType === "webhook" && (
-                  <div className="sm:col-span-2">
-                    <WebhookPicker
-                      value={bindings}
-                      onChange={setBindings}
-                      projectId={projectId || undefined}
+          <form
+            noValidate
+            ref={steps.form}
+            onSubmit={(event) => steps.submit(event, () => handleSubmit(event, closeAfterSave))}
+            className="min-h-0"
+          >
+            <FormSteps steps={steps}>
+              <div className="work-form-body space-y-4">
+                <FormStepPanel steps={steps} id="details">
+                  <div className="space-y-1.5">
+                    <Label className="font-label text-xs font-medium text-outline">Name *</Label>
+                    <Input
+                      required
+                      aria-label="Name"
+                      data-testid="job-name-input"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Job name..."
+                      className="bg-background border-control-border text-on-surface font-body text-sm"
+                      autoFocus
                     />
                   </div>
-                )}
-                {triggerType === "cron" && (
                   <div className="space-y-1.5">
                     <Label className="font-label text-xs font-medium text-outline">
-                      Cron expression
+                      Description
                     </Label>
                     <Input
-                      aria-label="Cron expression"
-                      value={cronExpr}
-                      onChange={(e) => setCronExpr(e.target.value)}
-                      placeholder="*/5 * * * *"
-                      className="bg-background border-control-border text-on-surface font-mono text-xs"
+                      aria-label="Description"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Optional description..."
+                      className="bg-background border-control-border text-on-surface font-body text-sm"
                     />
                   </div>
-                )}
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:col-span-2">
-                <div className="space-y-1.5">
-                  <Label className="font-label text-xs font-medium text-outline">Timeout (s)</Label>
-                  <Input
-                    aria-label="Timeout in seconds"
-                    type="number"
-                    min={1}
-                    required
-                    value={timeoutSecs}
-                    onChange={(e) => setTimeoutSecs(e.target.value)}
-                    className="bg-background border-control-border text-on-surface font-body text-sm"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="font-label text-xs font-medium text-outline">Retries</Label>
-                  <Input
-                    aria-label="Maximum retries"
-                    type="number"
-                    min={0}
-                    required
-                    value={maxRetries}
-                    onChange={(e) => setMaxRetries(e.target.value)}
-                    className="bg-background border-control-border text-on-surface font-body text-sm"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="font-label text-xs font-medium text-outline">Overlap</Label>
-                  <Select value={overlap} onValueChange={(v) => setOverlap(v as typeof overlap)}>
-                    <SelectTrigger
-                      aria-label="Overlap"
-                      className="bg-background border-control-border text-on-surface font-body text-sm min-h-8"
+                  <div className="space-y-1.5">
+                    <Label className="font-label text-xs font-medium text-outline">Project</Label>
+                    <Select
+                      value={projectId || "__none__"}
+                      onValueChange={(v) => {
+                        setProjectId(v === "__none__" ? "" : v);
+                        setBindings([]);
+                      }}
                     >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-surface border-border">
-                      {OVERLAPS.map((o) => (
-                        <SelectItem key={o} value={o} className="font-body text-sm">
-                          {o}
+                      <SelectTrigger
+                        aria-label="Project"
+                        data-testid="job-project-select"
+                        className="bg-background border-control-border text-on-surface font-body text-sm min-h-8"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-surface border-border">
+                        <SelectItem value="__none__" className="font-body text-sm">
+                          None
                         </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:col-span-2">
-                <div className="space-y-1.5">
-                  <Label className="font-label text-xs font-medium text-outline">Notify On</Label>
-                  <Select value={notifyOn} onValueChange={(v) => setNotifyOn(v as typeof notifyOn)}>
-                    <SelectTrigger
-                      aria-label="Notify on"
-                      className="bg-background border-control-border text-on-surface font-body text-sm min-h-8"
+                        {projects?.map((p) => (
+                          <SelectItem key={p.id} value={p.id} className="font-body text-sm">
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </FormStepPanel>
+                <FormStepPanel steps={steps} id="execution">
+                  <JobActionFields value={action} onChange={setAction} />
+                  <div className="space-y-1.5">
+                    <Label className="font-label text-xs font-medium text-outline">
+                      Working Dir
+                    </Label>
+                    <Input
+                      aria-label="Working directory"
+                      value={workingDir}
+                      onChange={(e) => setWorkingDir(e.target.value)}
+                      placeholder="/path/to/dir"
+                      className="bg-background border-control-border text-on-surface font-body text-sm"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:col-span-2">
+                    <div className="space-y-1.5">
+                      <Label className="font-label text-xs font-medium text-outline">
+                        Timeout (s)
+                      </Label>
+                      <Input
+                        aria-label="Timeout in seconds"
+                        type="number"
+                        min={1}
+                        required
+                        value={timeoutSecs}
+                        onChange={(e) => setTimeoutSecs(e.target.value)}
+                        className="bg-background border-control-border text-on-surface font-body text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="font-label text-xs font-medium text-outline">Retries</Label>
+                      <Input
+                        aria-label="Maximum retries"
+                        type="number"
+                        min={0}
+                        required
+                        value={maxRetries}
+                        onChange={(e) => setMaxRetries(e.target.value)}
+                        className="bg-background border-control-border text-on-surface font-body text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="font-label text-xs font-medium text-outline">Overlap</Label>
+                      <Select
+                        value={overlap}
+                        onValueChange={(v) => setOverlap(v as typeof overlap)}
+                      >
+                        <SelectTrigger
+                          aria-label="Overlap"
+                          className="bg-background border-control-border text-on-surface font-body text-sm min-h-8"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-surface border-border">
+                          {OVERLAPS.map((o) => (
+                            <SelectItem key={o} value={o} className="font-body text-sm">
+                              {o}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </FormStepPanel>
+                <FormStepPanel steps={steps} id="automation">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:col-span-2">
+                    <div className="space-y-1.5">
+                      <Label className="font-label text-xs font-medium text-outline">Trigger</Label>
+                      <Select
+                        value={triggerType}
+                        onValueChange={(v) => setTriggerType(v as JobTriggerType)}
+                      >
+                        <SelectTrigger
+                          aria-label="Trigger type"
+                          data-testid="job-trigger-type"
+                          className="bg-background border-control-border text-on-surface font-body text-sm min-h-8"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-surface border-border">
+                          {TRIGGER_TYPES.map((t) => (
+                            <SelectItem
+                              key={t}
+                              value={t}
+                              data-testid={`job-trigger-${t}`}
+                              className="font-body text-sm"
+                            >
+                              {t}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {triggerType === "webhook" && (
+                      <div className="sm:col-span-2">
+                        <WebhookPicker
+                          value={bindings}
+                          onChange={setBindings}
+                          projectId={projectId || undefined}
+                        />
+                      </div>
+                    )}
+                    {triggerType === "cron" && (
+                      <div className="space-y-1.5">
+                        <Label className="font-label text-xs font-medium text-outline">
+                          Cron expression
+                        </Label>
+                        <Input
+                          required
+                          aria-label="Cron expression"
+                          value={cronExpr}
+                          onChange={(e) => setCronExpr(e.target.value)}
+                          placeholder="*/5 * * * *"
+                          className="bg-background border-control-border text-on-surface font-mono text-xs"
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="font-label text-xs font-medium text-outline">Notify On</Label>
+                    <Select
+                      value={notifyOn}
+                      onValueChange={(v) => setNotifyOn(v as typeof notifyOn)}
                     >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-surface border-border">
-                      {NOTIFY_OPTIONS.map((n) => (
-                        <SelectItem key={n} value={n} className="font-body text-sm">
-                          {n}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                      <SelectTrigger
+                        aria-label="Notify on"
+                        className="bg-background border-control-border text-on-surface font-body text-sm min-h-8"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-surface border-border">
+                        {NOTIFY_OPTIONS.map((n) => (
+                          <SelectItem key={n} value={n} className="font-body text-sm">
+                            {n}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <label className="flex min-h-11 items-center gap-3 text-sm md:col-span-2">
+                    <input
+                      type="checkbox"
+                      data-testid="job-create-enabled"
+                      checked={enabled}
+                      onChange={(event) => setEnabled(event.target.checked)}
+                      className="size-4 accent-primary"
+                    />
+                    Enable this job immediately
+                  </label>
+                  <p className="text-xs text-outline md:col-span-2">
+                    Created disabled unless you enable it above.
+                  </p>
+                </FormStepPanel>
+                <div className="md:col-span-2">
+                  {createJob.error && (
+                    <p role="alert" className="text-sm text-error">
+                      {createJob.error.message}
+                    </p>
+                  )}
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="font-label text-xs font-medium text-outline">Working Dir</Label>
-                  <Input
-                    aria-label="Working directory"
-                    value={workingDir}
-                    onChange={(e) => setWorkingDir(e.target.value)}
-                    placeholder="/path/to/dir"
-                    className="bg-background border-control-border text-on-surface font-body text-sm"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="font-label text-xs font-medium text-outline">Project</Label>
-                <Select
-                  value={projectId || "__none__"}
-                  onValueChange={(v) => {
-                    setProjectId(v === "__none__" ? "" : v);
-                    setBindings([]);
-                  }}
-                >
-                  <SelectTrigger
-                    aria-label="Project"
-                    data-testid="job-project-select"
-                    className="bg-background border-control-border text-on-surface font-body text-sm min-h-8"
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-surface border-border">
-                    <SelectItem value="__none__" className="font-body text-sm">
-                      None
-                    </SelectItem>
-                    {projects?.map((p) => (
-                      <SelectItem key={p.id} value={p.id} className="font-body text-sm">
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="md:col-span-2">
-                {createJob.error && (
+                {steps.error && (
                   <p role="alert" className="text-sm text-error">
-                    {createJob.error.message}
+                    {steps.error}
                   </p>
                 )}
               </div>
-            </div>
-            <DialogFooter className="work-form-footer">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                data-testid="form-cancel"
-                onClick={requestClose}
-                className="font-label text-xs text-outline"
-              >
-                Cancel
-              </Button>
-              <Button
-                data-testid="job-submit"
-                type="submit"
-                size="sm"
-                disabled={
-                  createJob.isPending ||
-                  !name.trim() ||
-                  !jobActionValid(action) ||
-                  (triggerType === "webhook" && !bindings.length)
-                }
-                className="font-label text-xs bg-primary text-primary-foreground hover:bg-primary/90"
-              >
-                {createJob.isPending
-                  ? "Creating..."
-                  : triggerType === "webhook"
-                    ? "Create job"
-                    : "Create"}
-              </Button>
-            </DialogFooter>
+              <DialogFooter className="work-form-footer">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  data-testid="form-cancel"
+                  onClick={requestClose}
+                  className="font-label text-xs text-outline"
+                >
+                  Cancel
+                </Button>
+                <FormStepActions steps={steps} busy={createJob.isPending}>
+                  <Button
+                    data-testid="job-submit"
+                    type="submit"
+                    size="sm"
+                    disabled={createJob.isPending}
+                    className="font-label text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    {createJob.isPending
+                      ? "Creating..."
+                      : triggerType === "webhook"
+                        ? "Create job"
+                        : "Create"}
+                  </Button>
+                </FormStepActions>
+              </DialogFooter>
+            </FormSteps>
           </form>
         </>
       )}
@@ -869,6 +912,14 @@ function CreateJobDialog({
 }
 
 function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClose: () => void }) {
+  const steps = useFormSteps(
+    [
+      { id: "details", label: "Details" },
+      { id: "execution", label: "Execution" },
+      { id: "automation", label: "Automation" },
+    ],
+    open,
+  );
   const [name, setName] = useState(job.name);
   const [description, setDescription] = useState(job.description ?? "");
   const [action, setAction] = useState<JobAction>(
@@ -886,8 +937,11 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
 
   const handleSubmit = (e: React.FormEvent, afterSave = onClose) => {
     e.preventDefault();
-    if (!name.trim() || !jobActionValid(action) || (triggerType === "webhook" && !bindings.length))
+    if (triggerType === "webhook" && !bindings.length) {
+      steps.invalid("automation", "Select at least one webhook for this trigger.");
       return;
+    }
+    if (!name.trim() || !jobActionValid(action)) return;
     const input: UpdateJobInput & { id: string } = {
       id: job.id,
       name: name.trim(),
@@ -947,196 +1001,218 @@ function EditJobDialog({ job, open, onClose }: { job: Job; open: boolean; onClos
             </DialogTitle>
           </DialogHeader>
           <form
+            noValidate
+            ref={steps.form}
             id="edit-job-form"
-            onSubmit={(event) => handleSubmit(event, closeAfterSave)}
+            onSubmit={(event) => steps.submit(event, () => handleSubmit(event, closeAfterSave))}
             className="min-h-0"
           >
-            <div className="work-form-body grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label className="font-label text-xs font-medium text-outline">Name *</Label>
-                <Input
-                  aria-label="Name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="bg-background border-control-border text-on-surface font-body text-sm"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="font-label text-xs font-medium text-outline">Description</Label>
-                <Input
-                  aria-label="Description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="bg-background border-control-border text-on-surface font-body text-sm"
-                />
-              </div>
-              <JobActionFields value={action} onChange={setAction} />
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:col-span-2">
-                <div className="space-y-1.5">
-                  <Label className="font-label text-xs font-medium text-outline">Trigger</Label>
-                  <Select
-                    value={triggerType}
-                    onValueChange={(v) => setTriggerType(v as JobTriggerType)}
-                  >
-                    <SelectTrigger
-                      aria-label="Trigger type"
-                      data-testid="job-trigger-type"
-                      className="bg-background border-control-border text-on-surface font-body text-sm min-h-8"
-                    >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-surface border-border">
-                      {TRIGGER_TYPES.map((t) => (
-                        <SelectItem
-                          key={t}
-                          value={t}
-                          data-testid={`job-trigger-${t}`}
-                          className="font-body text-sm"
-                        >
-                          {t}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {triggerType === "webhook" && (
-                  <div className="sm:col-span-2">
-                    <WebhookPicker
-                      value={bindings}
-                      onChange={setBindings}
-                      projectId={job.project_id ?? undefined}
+            <FormSteps steps={steps}>
+              <div className="work-form-body space-y-4">
+                <FormStepPanel steps={steps} id="details">
+                  <div className="space-y-1.5">
+                    <Label className="font-label text-xs font-medium text-outline">Name *</Label>
+                    <Input
+                      required
+                      aria-label="Name"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="bg-background border-control-border text-on-surface font-body text-sm"
                     />
                   </div>
-                )}
-                {triggerType === "cron" && (
                   <div className="space-y-1.5">
                     <Label className="font-label text-xs font-medium text-outline">
-                      Cron expression
+                      Description
                     </Label>
                     <Input
-                      aria-label="Cron expression"
-                      value={cronExpr}
-                      onChange={(e) => setCronExpr(e.target.value)}
-                      placeholder="*/5 * * * *"
-                      className="bg-background border-control-border text-on-surface font-mono text-xs"
+                      aria-label="Description"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      className="bg-background border-control-border text-on-surface font-body text-sm"
                     />
                   </div>
-                )}
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:col-span-2">
-                <div className="space-y-1.5">
-                  <Label className="font-label text-xs font-medium text-outline">Timeout (s)</Label>
-                  <Input
-                    aria-label="Timeout in seconds"
-                    type="number"
-                    min={1}
-                    required
-                    value={timeoutSecs}
-                    onChange={(e) => setTimeoutSecs(e.target.value)}
-                    className="bg-background border-control-border text-on-surface font-body text-sm"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="font-label text-xs font-medium text-outline">Retries</Label>
-                  <Input
-                    aria-label="Maximum retries"
-                    type="number"
-                    min={0}
-                    required
-                    value={maxRetries}
-                    onChange={(e) => setMaxRetries(e.target.value)}
-                    className="bg-background border-control-border text-on-surface font-body text-sm"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="font-label text-xs font-medium text-outline">Overlap</Label>
-                  <Select value={overlap} onValueChange={(v) => setOverlap(v as typeof overlap)}>
-                    <SelectTrigger
-                      aria-label="Overlap"
-                      className="bg-background border-control-border text-on-surface font-body text-sm min-h-8"
+                </FormStepPanel>
+                <FormStepPanel steps={steps} id="execution">
+                  <JobActionFields value={action} onChange={setAction} />
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:col-span-2">
+                    <div className="space-y-1.5">
+                      <Label className="font-label text-xs font-medium text-outline">
+                        Timeout (s)
+                      </Label>
+                      <Input
+                        aria-label="Timeout in seconds"
+                        type="number"
+                        min={1}
+                        required
+                        value={timeoutSecs}
+                        onChange={(e) => setTimeoutSecs(e.target.value)}
+                        className="bg-background border-control-border text-on-surface font-body text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="font-label text-xs font-medium text-outline">Retries</Label>
+                      <Input
+                        aria-label="Maximum retries"
+                        type="number"
+                        min={0}
+                        required
+                        value={maxRetries}
+                        onChange={(e) => setMaxRetries(e.target.value)}
+                        className="bg-background border-control-border text-on-surface font-body text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="font-label text-xs font-medium text-outline">Overlap</Label>
+                      <Select
+                        value={overlap}
+                        onValueChange={(v) => setOverlap(v as typeof overlap)}
+                      >
+                        <SelectTrigger
+                          aria-label="Overlap"
+                          className="bg-background border-control-border text-on-surface font-body text-sm min-h-8"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-surface border-border">
+                          {OVERLAPS.map((o) => (
+                            <SelectItem key={o} value={o} className="font-body text-sm">
+                              {o}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </FormStepPanel>
+                <FormStepPanel steps={steps} id="automation">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:col-span-2">
+                    <div className="space-y-1.5">
+                      <Label className="font-label text-xs font-medium text-outline">Trigger</Label>
+                      <Select
+                        value={triggerType}
+                        onValueChange={(v) => setTriggerType(v as JobTriggerType)}
+                      >
+                        <SelectTrigger
+                          aria-label="Trigger type"
+                          data-testid="job-trigger-type"
+                          className="bg-background border-control-border text-on-surface font-body text-sm min-h-8"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-surface border-border">
+                          {TRIGGER_TYPES.map((t) => (
+                            <SelectItem
+                              key={t}
+                              value={t}
+                              data-testid={`job-trigger-${t}`}
+                              className="font-body text-sm"
+                            >
+                              {t}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {triggerType === "webhook" && (
+                      <div className="sm:col-span-2">
+                        <WebhookPicker
+                          value={bindings}
+                          onChange={setBindings}
+                          projectId={job.project_id ?? undefined}
+                        />
+                      </div>
+                    )}
+                    {triggerType === "cron" && (
+                      <div className="space-y-1.5">
+                        <Label className="font-label text-xs font-medium text-outline">
+                          Cron expression
+                        </Label>
+                        <Input
+                          required
+                          aria-label="Cron expression"
+                          value={cronExpr}
+                          onChange={(e) => setCronExpr(e.target.value)}
+                          placeholder="*/5 * * * *"
+                          className="bg-background border-control-border text-on-surface font-mono text-xs"
+                        />
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="font-label text-xs font-medium text-outline">Notify On</Label>
+                    <Select
+                      value={notifyOn}
+                      onValueChange={(v) => setNotifyOn(v as typeof notifyOn)}
                     >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-surface border-border">
-                      {OVERLAPS.map((o) => (
-                        <SelectItem key={o} value={o} className="font-body text-sm">
-                          {o}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:col-span-2">
-                <div className="space-y-1.5">
-                  <Label className="font-label text-xs font-medium text-outline">Notify On</Label>
-                  <Select value={notifyOn} onValueChange={(v) => setNotifyOn(v as typeof notifyOn)}>
-                    <SelectTrigger
-                      aria-label="Notify on"
-                      className="bg-background border-control-border text-on-surface font-body text-sm min-h-8"
+                      <SelectTrigger
+                        aria-label="Notify on"
+                        className="bg-background border-control-border text-on-surface font-body text-sm min-h-8"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-surface border-border">
+                        {NOTIFY_OPTIONS.map((n) => (
+                          <SelectItem key={n} value={n} className="font-body text-sm">
+                            {n}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="font-label text-xs font-medium text-outline">Enabled</Label>
+                    <button
+                      type="button"
+                      onClick={() => setEnabled(!enabled)}
+                      className={`w-full min-h-11 rounded-md flex items-center justify-center border font-label text-xs font-medium transition-colors ${
+                        enabled
+                          ? "bg-surface-highest text-on-surface border-border"
+                          : "bg-background text-outline border-border"
+                      }`}
                     >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-surface border-border">
-                      {NOTIFY_OPTIONS.map((n) => (
-                        <SelectItem key={n} value={n} className="font-body text-sm">
-                          {n}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                      {enabled ? "\u25CF Enabled" : "\u25CB Disabled"}
+                    </button>
+                  </div>
+                </FormStepPanel>
+                <div className="md:col-span-2">
+                  {updateJob.error && (
+                    <p role="alert" className="text-sm text-error">
+                      {updateJob.error.message}
+                    </p>
+                  )}
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="font-label text-xs font-medium text-outline">Enabled</Label>
-                  <button
-                    type="button"
-                    onClick={() => setEnabled(!enabled)}
-                    className={`w-full min-h-11 rounded-md flex items-center justify-center border font-label text-xs font-medium transition-colors ${
-                      enabled
-                        ? "bg-surface-highest text-on-surface border-border"
-                        : "bg-background text-outline border-border"
-                    }`}
-                  >
-                    {enabled ? "\u25CF Enabled" : "\u25CB Disabled"}
-                  </button>
-                </div>
-              </div>
-              <div className="md:col-span-2">
-                {updateJob.error && (
+                {steps.error && (
                   <p role="alert" className="text-sm text-error">
-                    {updateJob.error.message}
+                    {steps.error}
                   </p>
                 )}
               </div>
-            </div>
+              <DialogFooter className="work-form-footer">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  data-testid="form-cancel"
+                  onClick={requestClose}
+                  className="font-label text-xs text-outline"
+                >
+                  Cancel
+                </Button>
+                <FormStepActions steps={steps} busy={updateJob.isPending}>
+                  <Button
+                    data-testid="job-edit-submit"
+                    form="edit-job-form"
+                    type="submit"
+                    size="sm"
+                    disabled={updateJob.isPending}
+                    className="font-label text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    {updateJob.isPending ? "Saving..." : "Save"}
+                  </Button>
+                </FormStepActions>
+              </DialogFooter>
+            </FormSteps>
           </form>
-          <DialogFooter className="work-form-footer">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              data-testid="form-cancel"
-              onClick={requestClose}
-              className="font-label text-xs text-outline"
-            >
-              Cancel
-            </Button>
-            <Button
-              data-testid="job-edit-submit"
-              form="edit-job-form"
-              type="submit"
-              size="sm"
-              disabled={
-                updateJob.isPending ||
-                !name.trim() ||
-                !jobActionValid(action) ||
-                (triggerType === "webhook" && !bindings.length)
-              }
-              className="font-label text-xs bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              {updateJob.isPending ? "Saving..." : "Save"}
-            </Button>
-          </DialogFooter>
         </>
       )}
     </FormDialog>

@@ -56,6 +56,7 @@ test("portable package import, tabbed files, lossless export and edit/use flow s
   await expect(page.getByTestId("setup-save")).toHaveCount(0);
   await expect(page.getByTestId("setup-name")).toHaveCount(0);
   await page.getByTestId("setup-cwd").fill(root);
+  await page.getByTestId("setup-instructions-tab").click();
   await page.getByTestId("setup-prompt").fill("Use the portable package");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("packages-setups-tab")).toHaveCount(0);

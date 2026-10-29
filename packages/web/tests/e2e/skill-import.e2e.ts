@@ -24,8 +24,10 @@ for (const viewport of [
         also_in: [],
         extra_fields: [],
       }));
-      await page.route("**/api/skills/discover", (route) =>
-        route.fulfill({
+      let discoveries = 0;
+      await page.route("**/api/skills/discover", (route) => {
+        discoveries++;
+        return route.fulfill({
           json: {
             repository: "acme/skills",
             ref: "HEAD",
@@ -34,8 +36,8 @@ for (const viewport of [
             skills,
             issues: [],
           },
-        }),
-      );
+        });
+      });
       await page.route("**/api/skills/local-agents", (route) =>
         route.fulfill({
           json: {
@@ -73,29 +75,57 @@ for (const viewport of [
       await help.click();
       await expect(page.getByTestId("view-help-content")).toBeHidden();
       if (source === "remote") {
-        await page.getByTestId("skill-repository-input").fill("acme/skills");
-        await page.getByTestId("skill-discover").click();
+        const input = page.getByTestId("skill-repository-input");
+        const search = page.getByTestId("skill-discover");
+        await input.press("Enter");
+        await expect(search).toBeDisabled();
+        expect(discoveries).toBe(0);
+        await input.fill("acme/skills");
+        const inputBox = await input.boundingBox();
+        const searchBox = await search.boundingBox();
+        if (!inputBox || !searchBox) throw new Error("Missing inline repository search");
+        expect(searchBox.x).toBeGreaterThanOrEqual(inputBox.x);
+        expect(searchBox.y).toBeGreaterThanOrEqual(inputBox.y - 1);
+        expect(searchBox.x + searchBox.width).toBeLessThanOrEqual(inputBox.x + inputBox.width + 1);
+        expect(searchBox.y + searchBox.height).toBeLessThanOrEqual(
+          inputBox.y + inputBox.height + 1,
+        );
+        if (viewport.width === 390) await input.press("Enter");
+        else {
+          await search.hover();
+          await expect(page.getByTestId("action-help-content")).toHaveText(
+            "Find skills in this repository",
+          );
+          await search.focus();
+          await expect(page.getByTestId("action-help-content")).toBeVisible();
+          await search.click();
+        }
       }
       const dialog = page.getByRole("dialog");
       const rows = dialog.getByTestId(source === "remote" ? "remote-skill" : "local-skill");
       await expect(rows).toHaveCount(40);
+      expect(discoveries).toBe(source === "remote" ? 1 : 0);
+      expect((await rows.first().boundingBox())?.height).toBeLessThanOrEqual(84);
       await rows.first().getByRole("checkbox").check();
       const details = rows
         .first()
         .getByTestId(source === "remote" ? "remote-skill-details" : "local-skill-details");
       await details.click();
-      await expect(details.locator("..")).toHaveAttribute("open", "");
-      await expect(details.locator("..")).toContainText(description.trim());
+      const detailsContent = page.getByTestId(
+        source === "remote" ? "remote-skill-details-content" : "local-skill-details-content",
+      );
+      await expect(detailsContent).toBeVisible();
+      await expect(detailsContent).toContainText(description.trim());
       if (source === "remote") {
-        await expect(details.locator("..")).toContainText(skills[0].path);
+        await expect(detailsContent).toContainText(skills[0].path);
       }
       await expect(rows.first().getByRole("checkbox")).toBeChecked();
       await page.screenshot({
         path: testInfo.outputPath(`${source}-discovery-details-${viewport.width}.png`),
         animations: "disabled",
       });
-      await details.click();
-      await expect(details.locator("..")).not.toHaveAttribute("open", "");
+      await page.keyboard.press("Escape");
+      await expect(detailsContent).toHaveCount(0);
       const submit = page.getByTestId(
         source === "remote" ? "skill-import-submit" : "local-skill-import-submit",
       );

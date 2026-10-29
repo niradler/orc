@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Info } from "lucide-react";
 import { useState } from "react";
 import { api, type LocalSkill } from "@/api/client";
 import { HelpPopover } from "@/components/HelpPopover";
@@ -10,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 const STATUS_LABEL: Record<LocalSkill["status"], string> = {
   new: "",
@@ -106,13 +108,14 @@ export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
                       return (
                         <div
                           key={key(skill)}
-                          className="min-w-0 py-2"
+                          className="flex min-w-0 items-center gap-2 py-2"
                           data-testid="local-skill"
                           data-skill-name={skill.name}
                         >
-                          <label className="flex min-h-11 min-w-0 items-center gap-3 text-sm md:min-h-6 pointer-coarse:min-h-11">
+                          <label className="flex min-h-11 min-w-0 flex-1 items-start gap-3 text-sm">
                             <input
                               type="checkbox"
+                              aria-label={`Select ${skill.name}`}
                               className="mt-1 shrink-0"
                               data-testid="local-skill-select"
                               checked={checked}
@@ -120,29 +123,43 @@ export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
                               onChange={(event) => toggle(skill, event.target.checked)}
                             />
                             <span className="min-w-0 text-sm wrap-break-word">
-                              <span className="font-medium">{skill.name}</span>
+                              <span className="block truncate font-medium">{skill.name}</span>
                               {STATUS_LABEL[skill.status] && (
                                 <span className="ml-2 text-xs text-outline">
                                   {STATUS_LABEL[skill.status]}
                                 </span>
                               )}
+                              <span className="mt-0.5 line-clamp-2 text-xs leading-4 text-outline">
+                                {skill.description}
+                              </span>
+                              {skill.error && (
+                                <span className="block text-xs text-destructive wrap-break-word">
+                                  {skill.error}
+                                </span>
+                              )}
                             </span>
                           </label>
-                          {skill.error && (
-                            <p className="pl-6 text-xs text-destructive wrap-break-word">
-                              {skill.error}
-                            </p>
-                          )}
-                          <details className="min-w-0 pl-6">
-                            <summary
-                              data-testid="local-skill-details"
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                actionHelp={false}
+                                data-testid="local-skill-details"
+                                aria-label={`Details for ${skill.name}`}
+                                className="shrink-0"
+                              >
+                                <Info aria-hidden />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              data-testid="local-skill-details-content"
                               aria-label={`Details for ${skill.name}`}
-                              className="flex min-h-11 cursor-pointer items-center gap-2 rounded-sm text-xs text-outline md:min-h-8 pointer-coarse:min-h-11"
+                              align="end"
+                              className="max-h-[60dvh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto space-y-2 text-sm wrap-break-word"
                             >
-                              <span className="min-w-0 flex-1 truncate">{skill.description}</span>
-                              <span className="shrink-0">Details</span>
-                            </summary>
-                            <div className="space-y-1 pb-2 text-xs wrap-break-word">
+                              <p className="font-medium">{skill.name}</p>
                               <p>{skill.description}</p>
                               {skill.extra_fields.length > 0 && (
                                 <span
@@ -157,8 +174,8 @@ export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
                                   Also in {skill.also_in.join(", ")}
                                 </span>
                               )}
-                            </div>
-                          </details>
+                            </PopoverContent>
+                          </Popover>
                         </div>
                       );
                     })}

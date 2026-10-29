@@ -1,5 +1,6 @@
 import type { APIRequestContext } from "@playwright/test";
 import { expect, type Page, test } from "@playwright/test";
+import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { apiDelete, apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers";
 
 interface Task {
@@ -140,9 +141,12 @@ test.describe("Task flow run panel", () => {
     await page.getByTestId("new-task-button").click();
 
     const dialog = page.getByRole("dialog");
+    await revealFormField(page, dialog.getByTestId("task-title-input"));
     await dialog.getByTestId("task-title-input").fill(title);
+    await revealFormField(page, dialog.getByTestId("new-task-flow"));
     await dialog.getByTestId("new-task-flow").click();
     await page.getByTestId("flow-option-orc-human-review").click();
+    await openFinalFormStep(page);
     await dialog.getByTestId("task-submit").click();
 
     let created: Task | undefined;

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
 import { api } from "@/api/client";
+import { ActionHelp } from "@/components/ActionHelp";
 import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
 import { Button } from "@/components/ui/button";
@@ -438,16 +439,20 @@ function HistoryRow({
         )}
       </button>
       {open && tab && (
-        <button
-          type="button"
-          data-testid="chat-tab-close"
-          aria-label={`Close ${entry.title} from open sessions`}
-          title="Close from open sessions; history and background work are kept"
-          onClick={() => chat.closeTab(tab.key)}
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100"
+        <ActionHelp
+          label={`Close ${entry.title} from open sessions`}
+          description="Close from open sessions; history and background work are kept"
         >
-          <X size={13} />
-        </button>
+          <button
+            type="button"
+            data-testid="chat-tab-close"
+            aria-label={`Close ${entry.title} from open sessions`}
+            onClick={() => chat.closeTab(tab.key)}
+            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100"
+          >
+            <X size={13} />
+          </button>
+        </ActionHelp>
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { apiPost, gotoView, tid } from "./_helpers";
 
 for (const viewport of [
+  { width: 320, height: 650 },
   { width: 390, height: 700 },
   { width: 1440, height: 800 },
 ]) {
@@ -44,6 +45,21 @@ for (const viewport of [
         },
       }),
     );
+    const operations: { url: string; body: Record<string, unknown> }[] = [];
+    await page.route("**/api/agent-setups/command", async (route) => {
+      operations.push({ url: route.request().url(), body: route.request().postDataJSON() });
+      await route.fulfill({ json: { command: "echo review-package", shell: "bash", notice: "" } });
+    });
+    await page.route("**/api/terminals", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      operations.push({ url: route.request().url(), body: route.request().postDataJSON() });
+      await route.fulfill({ status: 400, json: { error: "Install fixture rejected" } });
+    });
+    await page.route("**/api/chat/threads", async (route) => {
+      if (route.request().method() !== "POST") return route.continue();
+      operations.push({ url: route.request().url(), body: route.request().postDataJSON() });
+      await route.fulfill({ status: 400, json: { error: "Unexpected chat execution" } });
+    });
     await page.setViewportSize(viewport);
     await gotoView(page, "packages");
     await page
@@ -53,9 +69,57 @@ for (const viewport of [
     await expect(page.getByTestId("setup-components")).toContainText("20 skill files");
     await page.getByTestId("setup-backend").selectOption("codex");
     await page.getByTestId("setup-cwd").fill("/fixture/work");
+    const action = page.getByTestId("setup-destination");
+    await expect(action).toHaveValue("terminal");
+    expect(
+      await action
+        .locator("option")
+        .evaluateAll((options) => options.map((option) => option.value)),
+    ).toEqual(["terminal", "chat", "command"]);
+    await page.getByTestId("setup-instructions-tab").click();
     await page
       .getByTestId("setup-prompt")
       .fill("Review and explain the workflow without running it.");
+    await page.getByTestId("setup-context-tab").click();
+    await expect(page.getByTestId("setup-cwd")).toHaveValue("/fixture/work");
+    await page.getByTestId("setup-instructions-tab").click();
+    await expect(page.getByTestId("setup-prompt")).toHaveValue(
+      "Review and explain the workflow without running it.",
+    );
+    await action.selectOption("chat");
+    await action.selectOption("command");
+    expect(operations).toEqual([]);
+    await page.getByTestId("setup-command").click();
+    await expect(page.getByTestId("package-command")).toHaveValue("echo review-package");
+    expect(operations).toHaveLength(1);
+    await page.getByTestId("setup-context-tab").click();
+    await page.getByTestId("setup-instructions-tab").click();
+    await expect(page.getByTestId("package-command")).toHaveValue("echo review-package");
+    await action.selectOption("chat");
+    await page.getByTestId("setup-context-tab").click();
+    await page.getByTestId("setup-backend").selectOption("copilot");
+    await expect(action.locator('option[value="chat"]')).toBeDisabled();
+    await expect(action.locator('option[value="chat"]')).toContainText("requires Claude or Codex");
+    await expect(page.getByTestId("setup-launch")).toBeDisabled();
+    await expect(page.getByRole("alert")).toContainText("Chat requires Claude or Codex");
+    await action.selectOption("terminal");
+    await page.getByTestId("setup-backend").selectOption("codex");
+    await page.getByTestId("setup-install-info").click();
+    await expect(page.getByTestId("setup-install-explanation")).toContainText(
+      "without launching an agent",
+    );
+    expect(operations).toHaveLength(1);
+    await page.getByTestId("setup-install").click();
+    await expect.poll(() => operations.length).toBe(2);
+    expect(operations[1]?.body).toMatchObject({
+      setup: {
+        operation: "install",
+        cwd: "/fixture/work",
+        prompt: "Review and explain the workflow without running it.",
+      },
+    });
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("setup-error")).toContainText("Install fixture rejected");
     const dialog = page.getByRole("dialog");
     const launch = page.getByTestId("setup-launch");
     await expect(launch).toBeEnabled();
@@ -66,6 +130,14 @@ for (const viewport of [
     expect(box.y).toBeGreaterThanOrEqual(0);
     expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
     expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    for (const control of [action, page.getByTestId("setup-install-info")]) {
+      const bounds = await control.boundingBox();
+      expect(bounds).toBeTruthy();
+      if (!bounds) throw new Error("Missing footer control");
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width);
+      if (viewport.width < 640) expect(bounds.height).toBeGreaterThanOrEqual(44);
+    }
   });
 }
 

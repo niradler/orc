@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { expect, type Locator, test } from "@playwright/test";
+import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { apiPost, gotoView, repoRoot, tid } from "./_helpers";
 
 async function expectStableFooter(dialog: Locator, width: number, height: number) {
@@ -99,12 +100,33 @@ for (const width of [1440, 390, 320]) {
     await expect(dialog).toBeVisible();
     await expectStableFooter(dialog, width, height);
     const name = tid("review-memory").toLowerCase();
+    const saves: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/memories"))
+        saves.push(request.url());
+    });
+    await openFinalFormStep(page);
+    await dialog.getByTestId("memory-content-input").fill("Retained content draft");
+    await dialog.getByTestId("memory-submit").click();
+    await expect(dialog.getByTestId("form-step-details")).toHaveAttribute("aria-selected", "true");
+    await expect(dialog.getByTestId("memory-name-input")).toBeFocused();
+    expect(saves).toEqual([]);
     await dialog.getByTestId("memory-name-input").fill(name);
     await dialog.getByTestId("memory-description-input").fill("Non-chat form review");
+    await dialog.getByTestId("memory-priority-input").fill("60");
+    await dialog.getByTestId("form-step-next").click();
+    await expect(dialog.getByTestId("memory-content-input")).toHaveValue("Retained content draft");
     await dialog
       .getByTestId("memory-content-input")
       .fill("Keep draft text while reviewing the form.");
-    await dialog.getByTestId("memory-priority-input").fill("60");
+    await dialog.getByTestId("form-step-back").click();
+    await expect(dialog.getByTestId("memory-name-input")).toHaveValue(name);
+    await expect(dialog.getByTestId("memory-description-input")).toHaveValue(
+      "Non-chat form review",
+    );
+    await expect(dialog.getByTestId("memory-priority-input")).toHaveValue("60");
+    await openFinalFormStep(page);
+    await expectStableFooter(dialog, width, height);
     await page.keyboard.press("Escape");
     await page.getByTestId("keep-editing").click();
     await expect(dialog.getByTestId("memory-content-input")).toHaveValue(
@@ -121,6 +143,7 @@ for (const width of [1440, 390, 320]) {
     );
     await expect(page.getByTestId("discard-form-changes")).toHaveCount(0);
     await page.getByTestId("memory-edit").click();
+    await revealFormField(page, "memory-description-input");
     await dialog.getByTestId("memory-description-input").fill("Changed description");
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
     await page.getByTestId("discard-form-changes").click();

@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { Download } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { type AgentSetup, api, type PackageFull } from "@/api/client";
@@ -14,6 +15,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useChat } from "@/hooks/useChat";
 import { useProjects } from "@/hooks/useProjects";
@@ -41,7 +44,8 @@ export function PackageRunDialog({
   const projects = useProjects();
   const chat = useChat();
   const host = setup.host === undefined ? (ssh.data?.host ?? null) : setup.host;
-  const [destination, setDestination] = useState<"terminal" | "chat">("terminal");
+  const [destination, setDestination] = useState<"terminal" | "chat" | "command">("terminal");
+  const [step, setStep] = useState("context");
   const [browsing, setBrowsing] = useState(false);
   const tools = useQuery({
     queryKey: ["package-tools", host],
@@ -140,314 +144,416 @@ export function PackageRunDialog({
       >
         <DialogHeader className="shrink-0 border-b px-4 py-4 pr-12 sm:px-6">
           <DialogTitle>{setup.packages.length ? "Use package" : "Launch agent"}</DialogTitle>
-          <DialogDescription>
-            Install it for your coding agent, launch here, or copy a command for your own terminal.
+          <DialogDescription className="sr-only">
+            Choose the context and instructions, then launch or install configuration.
           </DialogDescription>
         </DialogHeader>
-        <div
-          data-testid="package-setup-body"
-          className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6"
-        >
-          <fieldset disabled={busy || command.isPending} className="min-w-0 space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1">
-                <Label htmlFor="setup-host">Host</Label>
-                <select
-                  id="setup-host"
-                  data-testid="setup-host"
-                  className="form-control form-control-single"
-                  value={host ?? ""}
-                  onChange={(event) => change({ host: event.target.value || null, cwd: "" })}
-                >
-                  <option value="">Local</option>
-                  {[
-                    ...new Set([
-                      ...(ssh.data?.hosts ?? []),
-                      ...(ssh.data?.host ? [ssh.data.host] : []),
-                    ]),
-                  ].map((alias) => (
-                    <option key={alias} value={alias}>
-                      {alias}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="setup-backend">Coding agent</Label>
-                <select
-                  id="setup-backend"
-                  data-testid="setup-backend"
-                  className="form-control form-control-single"
-                  value={setup.backend}
-                  onChange={(event) =>
-                    change({ backend: event.target.value as AgentSetup["backend"] })
-                  }
-                >
-                  {["claude", "codex", "copilot"].map((kind) => (
-                    <option
-                      key={kind}
-                      value={kind}
-                      disabled={Boolean(portable && kind === "claude")}
+        <Tabs value={step} onValueChange={setStep} className="flex min-h-0 flex-1 flex-col">
+          <TabsList
+            aria-label="Launch setup"
+            className="shrink-0 justify-start border-b rounded-none px-4 sm:px-6"
+          >
+            <TabsTrigger
+              value="context"
+              data-testid="setup-context-tab"
+              disabled={busy || command.isPending}
+            >
+              Context
+            </TabsTrigger>
+            <TabsTrigger
+              value="instructions"
+              data-testid="setup-instructions-tab"
+              disabled={busy || command.isPending}
+            >
+              Instructions
+            </TabsTrigger>
+          </TabsList>
+          <div
+            data-testid="package-setup-body"
+            className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6"
+          >
+            <fieldset disabled={busy || command.isPending} className="min-w-0 space-y-4">
+              <TabsContent
+                value="context"
+                forceMount
+                className="mt-0 space-y-4 data-[state=inactive]:hidden"
+              >
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="setup-host">Host</Label>
+                    <select
+                      id="setup-host"
+                      data-testid="setup-host"
+                      className="form-control form-control-single"
+                      value={host ?? ""}
+                      onChange={(event) => change({ host: event.target.value || null, cwd: "" })}
                     >
-                      {kind}
-                      {portable && kind === "claude"
-                        ? " · unsupported for this plugin"
-                        : !hostInfo.data?.launchers.includes(kind as AgentSetup["backend"])
-                          ? " · not installed"
-                          : ""}
-                    </option>
+                      <option value="">Local</option>
+                      {[
+                        ...new Set([
+                          ...(ssh.data?.hosts ?? []),
+                          ...(ssh.data?.host ? [ssh.data.host] : []),
+                        ]),
+                      ].map((alias) => (
+                        <option key={alias} value={alias}>
+                          {alias}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="setup-backend">Coding agent</Label>
+                    <select
+                      id="setup-backend"
+                      data-testid="setup-backend"
+                      className="form-control form-control-single"
+                      value={setup.backend}
+                      onChange={(event) =>
+                        change({ backend: event.target.value as AgentSetup["backend"] })
+                      }
+                    >
+                      {["claude", "codex", "copilot"].map((kind) => (
+                        <option
+                          key={kind}
+                          value={kind}
+                          disabled={Boolean(portable && kind === "claude")}
+                        >
+                          {kind}
+                          {portable && kind === "claude"
+                            ? " · unsupported for this plugin"
+                            : !hostInfo.data?.launchers.includes(kind as AgentSetup["backend"])
+                              ? " · not installed"
+                              : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="setup-cwd">Working folder on {host ?? "Local"}</Label>
+                  <select
+                    data-testid="setup-project-folder"
+                    aria-label="Fill working folder from a project (optional)"
+                    className="form-control form-control-single"
+                    value=""
+                    onChange={(event) => {
+                      if (event.target.value) change({ cwd: event.target.value });
+                    }}
+                  >
+                    <option value="">Use a project folder (optional)…</option>
+                    {projects.data
+                      ?.filter((project) => project.scope)
+                      .map((project) => (
+                        <option key={project.id} value={project.scope ?? ""}>
+                          {project.name}
+                        </option>
+                      ))}
+                  </select>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      id="setup-cwd"
+                      data-testid="setup-cwd"
+                      value={setup.cwd}
+                      onChange={(event) => change({ cwd: event.target.value })}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      data-testid="setup-browse"
+                      disabled={
+                        hostInfo.isFetching ||
+                        Boolean(hostInfo.error) ||
+                        (!host && !hostInfo.data?.ready)
+                      }
+                      onClick={async () => {
+                        if (host) {
+                          setBrowsing(true);
+                          return;
+                        }
+                        try {
+                          const result = await api.terminals.pickFolder(
+                            setup.cwd || undefined,
+                            null,
+                          );
+                          if (result.path) change({ cwd: result.path });
+                        } catch (failure) {
+                          setError((failure as Error).message);
+                        }
+                      }}
+                    >
+                      Browse
+                    </Button>
+                  </div>
+                  {browsing && host && (
+                    <RemoteFolderBrowser
+                      key={host}
+                      initial={setup.cwd}
+                      host={host}
+                      onPick={(cwd) => change({ cwd })}
+                      onClose={() => setBrowsing(false)}
+                    />
+                  )}
+                </div>
+                <details data-testid="setup-components" className="text-sm space-y-1">
+                  <summary className="cursor-pointer min-h-11 content-center sm:min-h-8">
+                    Configuration to apply
+                  </summary>
+                  {profile.data && (
+                    <>
+                      <p>
+                        {profile.data.name} · agent instructions
+                        {profile.data.fields.model ? ` · ${profile.data.fields.model}` : ""}
+                      </p>
+                      {host && (
+                        <p className="text-xs text-outline">
+                          Supporting files referenced by this agent are not transferred. Make them
+                          available at the referenced paths on {host}.
+                        </p>
+                      )}
+                    </>
+                  )}
+                  {components.isFetching && <p>Checking package contents…</p>}
+                  {components.data?.map((pkg) => (
+                    <p key={pkg.name} className="wrap-break-word">
+                      {pkg.name}:{" "}
+                      {
+                        pkg.files.filter((file) =>
+                          /^(skills|\.apm\/skills)\/[^/]+\/SKILL\.md$/.test(file.name),
+                        ).length
+                      }{" "}
+                      skill files
+                      {pkg.files.some((file) => file.name === "mcp.json")
+                        ? ", native MCP configuration"
+                        : ""}
+                      {pkg.files.some((file) => file.name.endsWith(".instructions.md"))
+                        ? ", shared instructions"
+                        : ""}
+                    </p>
                   ))}
-                </select>
-              </div>
-            </div>
-            <div className="space-y-1 sm:max-w-sm">
-              <Label htmlFor="setup-destination">Open in</Label>
-              <select
-                id="setup-destination"
-                data-testid="setup-destination"
-                className="form-control form-control-single"
-                value={destination}
-                onChange={(event) => setDestination(event.target.value as "terminal" | "chat")}
+                </details>
+              </TabsContent>
+              <TabsContent
+                value="instructions"
+                forceMount
+                className="mt-0 space-y-4 data-[state=inactive]:hidden"
               >
-                <option value="terminal">Terminal</option>
-                <option value="chat" disabled={setup.backend === "copilot"}>
-                  Chat{setup.backend === "copilot" ? " · choose Claude or Codex" : ""}
-                </option>
-              </select>
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="setup-cwd">Working folder on {host ?? "Local"}</Label>
-              <select
-                data-testid="setup-project-folder"
-                aria-label="Fill working folder from a project (optional)"
-                className="form-control form-control-single"
-                value=""
-                onChange={(event) => {
-                  if (event.target.value) change({ cwd: event.target.value });
-                }}
-              >
-                <option value="">Use a project folder (optional)…</option>
-                {projects.data
-                  ?.filter((project) => project.scope)
-                  .map((project) => (
-                    <option key={project.id} value={project.scope ?? ""}>
-                      {project.name}
-                    </option>
-                  ))}
-              </select>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  id="setup-cwd"
-                  data-testid="setup-cwd"
-                  value={setup.cwd}
-                  onChange={(event) => change({ cwd: event.target.value })}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  data-testid="setup-browse"
-                  disabled={
-                    hostInfo.isFetching ||
-                    Boolean(hostInfo.error) ||
-                    (!host && !hostInfo.data?.ready)
-                  }
-                  onClick={async () => {
-                    if (host) {
-                      setBrowsing(true);
-                      return;
-                    }
-                    try {
-                      const result = await api.terminals.pickFolder(setup.cwd || undefined, null);
-                      if (result.path) change({ cwd: result.path });
-                    } catch (failure) {
-                      setError((failure as Error).message);
-                    }
+                <div className="space-y-1">
+                  <Label htmlFor="setup-prompt">What should the agent work on?</Label>
+                  <Textarea
+                    id="setup-prompt"
+                    data-testid="setup-prompt"
+                    rows={5}
+                    value={setup.prompt}
+                    onChange={(event) => change({ prompt: event.target.value })}
+                  />
+                </div>
+              </TabsContent>
+            </fieldset>
+            <details className="text-xs text-outline">
+              <summary className="cursor-pointer min-h-11 flex items-center sm:min-h-8">
+                How configuration is applied
+              </summary>
+              <p>
+                Package files are transferred to the selected host when needed. APM deploys agent
+                configuration into the working folder; Codex plugins install into Codex's user cache
+                on that host. These tools must already be installed. Configuration remains after the
+                session; use a terminal for installer trust or conflict prompts.
+              </p>
+            </details>
+            {unsupported && (
+              <p role="alert" className="text-sm text-destructive">
+                Choose Codex or Copilot for this Agent Plugin.
+              </p>
+            )}
+            {tools.data && needsApm && !tools.data.apm && (
+              <p role="alert" className="text-sm">
+                APM 0.33.0 or newer must be available on {host ?? "Local"}.
+              </p>
+            )}
+            {tools.data && !tools.data.bun && (
+              <p role="alert" className="text-sm">
+                Bun must be available on {host ?? "Local"}.
+              </p>
+            )}
+            {!hostInfo.data?.ready && destination === "terminal" && (
+              <p role="alert" className="text-sm">
+                {hostInfo.data?.reason ?? "Checking terminal availability…"}
+              </p>
+            )}
+            {destination === "chat" && setup.backend === "copilot" && (
+              <p role="alert" className="text-sm">
+                Chat requires Claude or Codex. Choose another coding agent in Context.
+              </p>
+            )}
+            {(error ||
+              command.error ||
+              components.error ||
+              profile.error ||
+              tools.error ||
+              hostInfo.error ||
+              ssh.error) && (
+              <p role="alert" data-testid="setup-error" className="text-sm text-destructive">
+                {error ??
+                  command.error?.message ??
+                  components.error?.message ??
+                  profile.error?.message ??
+                  tools.error?.message ??
+                  hostInfo.error?.message ??
+                  ssh.error?.message}
+              </p>
+            )}
+            <div
+              hidden={step !== "instructions" || destination !== "command"}
+              className="space-y-4"
+            >
+              <div className="space-y-1">
+                <Label htmlFor="command-mode">Command for your terminal</Label>
+                <select
+                  id="command-mode"
+                  className="form-control form-control-single"
+                  disabled={busy || command.isPending}
+                  value={commandMode}
+                  onChange={(event) => {
+                    setCommandMode(event.target.value as "run" | "install");
+                    command.reset();
                   }}
                 >
-                  Browse
-                </Button>
+                  <option value="run">Install and launch the agent</option>
+                  <option value="install">Install configuration only</option>
+                </select>
               </div>
-              {browsing && host && (
-                <RemoteFolderBrowser
-                  key={host}
-                  initial={setup.cwd}
-                  host={host}
-                  onPick={(cwd) => change({ cwd })}
-                  onClose={() => setBrowsing(false)}
-                />
+              {command.data && (
+                <div
+                  ref={commandBox}
+                  className="min-w-0 space-y-2 rounded border border-surface-highest p-3"
+                >
+                  <Label htmlFor="package-command">
+                    Run in {command.data.shell} on {host ?? "Local"}
+                  </Label>
+                  <Textarea
+                    id="package-command"
+                    data-testid="package-command"
+                    value={command.data.command}
+                    readOnly
+                    rows={3}
+                    className="font-mono text-xs"
+                  />
+                  <Button
+                    variant="outline"
+                    disabled={busy || command.isPending}
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(command.data.command);
+                        setCopied(true);
+                      } catch {
+                        setError(
+                          "Copy is unavailable in this browser. Select and copy the command above.",
+                        );
+                      }
+                    }}
+                  >
+                    {copied ? "Copied" : "Copy command"}
+                  </Button>
+                </div>
               )}
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="setup-prompt">What should the agent work on?</Label>
-              <Textarea
-                id="setup-prompt"
-                data-testid="setup-prompt"
-                rows={3}
-                value={setup.prompt}
-                onChange={(event) => change({ prompt: event.target.value })}
-              />
-            </div>
-            <div
-              data-testid="setup-components"
-              className="rounded-lg bg-surface-low p-3 text-sm space-y-1"
-            >
-              <p className="font-medium">Configuration to apply</p>
-              {profile.data && (
-                <>
-                  <p>
-                    {profile.data.name} · agent instructions
-                    {profile.data.fields.model ? ` · ${profile.data.fields.model}` : ""}
-                  </p>
-                  {host && (
-                    <p className="text-xs text-outline">
-                      Supporting files referenced by this agent are not transferred. Make them
-                      available at the referenced paths on {host}.
-                    </p>
-                  )}
-                </>
-              )}
-              {components.isFetching && <p>Checking package contents…</p>}
-              {components.data?.map((pkg) => (
-                <p key={pkg.name} className="wrap-break-word">
-                  {pkg.name}:{" "}
-                  {
-                    pkg.files.filter((file) =>
-                      /^(skills|\.apm\/skills)\/[^/]+\/SKILL\.md$/.test(file.name),
-                    ).length
-                  }{" "}
-                  skill files
-                  {pkg.files.some((file) => file.name === "mcp.json")
-                    ? ", native MCP configuration"
-                    : ""}
-                  {pkg.files.some((file) => file.name.endsWith(".instructions.md"))
-                    ? ", shared instructions"
-                    : ""}
-                </p>
-              ))}
-            </div>
-          </fieldset>
-          <p className="text-xs text-outline">
-            Package files are transferred to the selected host when needed. APM deploys agent
-            configuration into the working folder; Codex plugins install into Codex's user cache on
-            that host. These tools must already be installed. Configuration remains after the
-            session; use a terminal for installer trust or conflict prompts.
-          </p>
-          {unsupported && (
-            <p role="alert" className="text-sm text-destructive">
-              Choose Codex or Copilot for this Agent Plugin.
-            </p>
-          )}
-          {tools.data && needsApm && !tools.data.apm && (
-            <p role="alert" className="text-sm">
-              APM 0.33.0 or newer must be available on {host ?? "Local"}.
-            </p>
-          )}
-          {!hostInfo.data?.ready && destination === "terminal" && (
-            <p role="alert" className="text-sm">
-              {hostInfo.data?.reason ?? "Checking terminal availability…"}
-            </p>
-          )}
-          {(error ||
-            command.error ||
-            components.error ||
-            profile.error ||
-            hostInfo.error ||
-            ssh.error) && (
-            <p role="alert" data-testid="setup-error" className="text-sm text-destructive">
-              {error ??
-                command.error?.message ??
-                components.error?.message ??
-                profile.error?.message ??
-                hostInfo.error?.message ??
-                ssh.error?.message}
-            </p>
-          )}
-          <div className="space-y-1">
-            <Label htmlFor="command-mode">Command for your terminal</Label>
-            <select
-              id="command-mode"
-              className="form-control form-control-single"
-              disabled={busy || command.isPending}
-              value={commandMode}
-              onChange={(event) => {
-                setCommandMode(event.target.value as "run" | "install");
-                command.reset();
-              }}
-            >
-              <option value="run">Install and launch the agent</option>
-              <option value="install">Install configuration only</option>
-            </select>
           </div>
-          {command.data && (
-            <div
-              ref={commandBox}
-              className="min-w-0 space-y-2 rounded border border-surface-highest p-3"
-            >
-              <Label htmlFor="package-command">
-                Run in {command.data.shell} on {host ?? "Local"}
-              </Label>
-              <Textarea
-                id="package-command"
-                data-testid="package-command"
-                value={command.data.command}
-                readOnly
-                rows={3}
-                className="font-mono text-xs"
-              />
+        </Tabs>
+        <DialogFooter className="shrink-0 flex-row flex-nowrap items-center gap-2 border-t px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] sm:px-6">
+          <Popover>
+            <PopoverTrigger asChild>
               <Button
-                variant="outline"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(command.data.command);
-                    setCopied(true);
-                  } catch {
-                    setError(
-                      "Copy is unavailable in this browser. Select and copy the command above.",
-                    );
-                  }
-                }}
+                type="button"
+                variant="ghost"
+                size="icon"
+                actionHelp={false}
+                aria-label="Install configuration"
+                title="Install configuration"
+                data-testid="setup-install-info"
+                disabled={busy || command.isPending}
+                className="shrink-0 mr-auto"
               >
-                {copied ? "Copied" : "Copy command"}
+                <Download aria-hidden="true" />
               </Button>
-            </div>
-          )}
-        </div>
-        <DialogFooter className="shrink-0 border-t px-4 py-3 sm:px-6">
-          <Button
-            data-testid="setup-command"
-            variant="ghost"
-            disabled={busy || command.isPending || !canOperate}
-            onClick={() => command.mutate({ ...setup, host, operation: commandMode })}
+            </PopoverTrigger>
+            <PopoverContent
+              align="start"
+              side="top"
+              className="w-80 space-y-3"
+              data-testid="setup-install-explanation"
+            >
+              <p className="text-sm">
+                Install package configuration for your coding agent on {host ?? "Local"}, without
+                launching an agent. Configuration remains after the session. Installer trust or
+                conflict prompts open in a terminal.
+              </p>
+              {!setup.packages.length && (
+                <p className="text-sm text-outline">
+                  Choose a package to install configuration separately. This saved agent can be
+                  launched directly.
+                </p>
+              )}
+              <Button
+                data-testid="setup-install"
+                variant="ghost"
+                disabled={
+                  busy ||
+                  command.isPending ||
+                  !canOperate ||
+                  !hostInfo.data?.ready ||
+                  !setup.packages.length
+                }
+                onClick={() => void perform("install")}
+              >
+                Install configuration
+              </Button>
+            </PopoverContent>
+          </Popover>
+          <select
+            id="setup-destination"
+            data-testid="setup-destination"
+            aria-label="Launch action"
+            className="form-control form-control-single w-auto min-w-0 max-w-36"
+            disabled={busy || command.isPending}
+            value={destination}
+            onChange={(event) => {
+              const next = event.target.value as typeof destination;
+              setDestination(next);
+              if (next === "command") setStep("instructions");
+            }}
           >
-            {command.isPending ? "Preparing command…" : "Command for my terminal"}
-          </Button>
+            <option value="terminal">Terminal</option>
+            <option value="chat" disabled={setup.backend === "copilot"}>
+              Chat{setup.backend === "copilot" ? " · requires Claude or Codex" : ""}
+            </option>
+            <option value="command">Command</option>
+          </select>
           <Button
-            data-testid="setup-install"
-            variant="ghost"
+            data-testid={destination === "command" ? "setup-command" : "setup-launch"}
+            className="shrink-0"
             disabled={
               busy ||
               command.isPending ||
               !canOperate ||
-              !hostInfo.data?.ready ||
-              !setup.packages.length
+              (destination === "command"
+                ? false
+                : destination === "terminal"
+                  ? !hostInfo.data?.ready || !hostInfo.data?.launchers.includes(setup.backend)
+                  : !chat.ready || setup.backend === "copilot")
             }
-            onClick={() => void perform("install")}
-          >
-            Install for coding agent
-          </Button>
-          <Button
-            data-testid="setup-launch"
-            disabled={
-              busy ||
-              command.isPending ||
-              !canOperate ||
-              (destination === "terminal"
-                ? !hostInfo.data?.ready || !hostInfo.data?.launchers.includes(setup.backend)
-                : !chat.ready || setup.backend === "copilot")
+            onClick={() =>
+              destination === "command"
+                ? command.mutate({ ...setup, host, operation: commandMode })
+                : void perform("run")
             }
-            onClick={() => void perform("run")}
           >
-            {busy ? "Preparing…" : destination === "chat" ? "Open in chat" : "Run in ORC terminal"}
+            {busy || command.isPending
+              ? "Preparing…"
+              : destination === "command"
+                ? "Generate"
+                : destination === "chat"
+                  ? "Open chat"
+                  : "Run"}
           </Button>
         </DialogFooter>
       </DialogContent>

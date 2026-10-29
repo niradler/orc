@@ -1,4 +1,5 @@
 import { expect, type Locator, test } from "@playwright/test";
+import { revealFormField } from "./_form-ui";
 import { API_SECRET, apiPost, gotoView, tid } from "./_helpers";
 
 async function nativeChevron(control: Locator) {
@@ -42,12 +43,14 @@ for (const theme of ["dark", "light"] as const) {
       await page.getByTestId("new-job-button").click();
       const action = page.getByTestId("job-action-type");
       const trigger = page.getByTestId("job-trigger-type");
+      await revealFormField(page, action);
       const nativeImage = await nativeChevron(action);
       await action.focus();
       await action.press("End");
       await expect(action).toHaveValue("task");
       await action.press("Home");
       await expect(action).toHaveValue("command");
+      await revealFormField(page, trigger);
       await trigger.focus();
       await trigger.press("Space");
       await expect(page.getByTestId("job-trigger-manual")).toBeFocused();
@@ -57,6 +60,7 @@ for (const theme of ["dark", "light"] as const) {
       await expect(trigger).toContainText("cron");
 
       const projectChoice = page.getByTestId("job-project-select");
+      await revealFormField(page, projectChoice);
       await projectChoice.click();
       await page.getByRole("option", { name: longName, exact: true }).click();
       await expect(projectChoice).toContainText(longName);
@@ -97,11 +101,13 @@ for (const theme of ["dark", "light"] as const) {
         return computed;
       }, nativeImage);
       expect(nativeColor).toBe(geometry.color);
+      await revealFormField(page, action);
       await action.scrollIntoViewIfNeeded();
       await page.screenshot({
         path: testInfo.outputPath(`job-dropdowns-${theme}-${width}.png`),
         animations: "disabled",
       });
+      await revealFormField(page, projectChoice);
       await projectChoice.scrollIntoViewIfNeeded();
       await page.screenshot({
         path: testInfo.outputPath(`long-project-${theme}-${width}.png`),

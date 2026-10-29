@@ -12,6 +12,7 @@ export function HelpPopover({ label, children }: { label: string; children: Reac
       <Tooltip open={open} onOpenChange={setOpen} delayDuration={150}>
         <TooltipTrigger asChild>
           <Button
+            actionHelp={false}
             type="button"
             variant="ghost"
             size="icon"

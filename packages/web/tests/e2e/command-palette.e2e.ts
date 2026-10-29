@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { API_SECRET, apiGet, apiPost, gotoView, tid } from "./_helpers";
 
 for (const theme of ["dark", "light"])
@@ -140,7 +141,9 @@ test("palette actions save tasks, switch scope and open terminal setup", async (
   await input.fill("create task");
   await input.press("Enter");
   const title = tid("palette-created-task");
+  await revealFormField(page, page.getByTestId("task-title-input"));
   await page.getByTestId("task-title-input").fill(title);
+  await openFinalFormStep(page);
   await page.getByTestId("task-submit").click();
   await expect(page.getByTestId("task-detail-sheet")).toBeVisible();
   const taskId = new URL(page.url()).pathname.split("/").at(-1);

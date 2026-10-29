@@ -1,6 +1,7 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import * as React from "react";
+import { ActionHelp } from "@/components/ActionHelp";
 import { collapseExpandedDocument, keepMarkdownFullscreen } from "@/lib/document-display";
 import { cn } from "@/lib/utils";
 
@@ -50,13 +51,15 @@ const DialogContent = React.forwardRef<
       }}
     >
       {children}
-      <DialogPrimitive.Close
-        disabled={closeDisabled}
-        className="absolute right-2 top-2 flex size-8 items-center justify-center rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-focus focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-muted data-[state=open]:text-muted-foreground    "
-      >
-        <X className="h-4 w-4" />
-        <span className="sr-only">Close</span>
-      </DialogPrimitive.Close>
+      <ActionHelp label="Close" description="Close dialog">
+        <DialogPrimitive.Close
+          disabled={closeDisabled}
+          className="absolute right-2 top-2 flex size-8 items-center justify-center rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-hidden focus:ring-2 focus:ring-focus focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-muted data-[state=open]:text-muted-foreground    "
+        >
+          <X className="h-4 w-4" />
+          <span className="sr-only">Close</span>
+        </DialogPrimitive.Close>
+      </ActionHelp>
     </DialogPrimitive.Content>
   </DialogPortal>
 ));

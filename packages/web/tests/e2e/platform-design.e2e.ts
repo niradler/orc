@@ -1,6 +1,7 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
 import { chooseChatModel, closeChatHistory, openChatHistory, settingsSection } from "./_chat-ui";
+import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { API_SECRET, AUTH_HEADERS, apiGet, apiPost, gotoView, tid } from "./_helpers";
 
 test.afterEach(async ({ request }) => {
@@ -15,7 +16,9 @@ test("discarding a phone task draft clears it and restores the create action", a
   await gotoView(page, "tasks");
   const opener = page.getByTestId("new-task-button");
   await opener.click();
+  await revealFormField(page, page.getByTestId("task-title-input"));
   await page.getByTestId("task-title-input").fill("Discard this task draft");
+  await revealFormField(page, page.getByTestId("task-body-input"));
   await page.getByTestId("task-body-input").fill("Draft acceptance criteria");
   await page.getByTestId("form-cancel").click();
   await expect(page.getByTestId("keep-editing")).toBeFocused();
@@ -35,7 +38,9 @@ test("Back and reload protect an active form until changes are explicitly discar
   await gotoView(page, "activity");
   await page.getByTestId("nav-jobs").click();
   await page.getByTestId("new-job-button").click();
+  await revealFormField(page, page.getByTestId("job-name-input"));
   await page.getByTestId("job-name-input").fill("Draft protected from navigation");
+  await revealFormField(page, page.getByTestId("job-command-input"));
   await page.getByTestId("job-command-input").fill("echo navigation draft");
   await page.goBack();
   await expect(page.getByTestId("keep-editing")).toBeVisible();
@@ -150,6 +155,7 @@ for (const width of [390, 320]) {
     await row.getByTestId("project-open").click();
     const field = page.getByTestId("edit-project-name-input");
     await field.fill(`${name}-draft`);
+    await openFinalFormStep(page);
     await expect(page.getByTestId("edit-project-submit")).toBeInViewport();
     await page.keyboard.press("Escape");
     await page.getByTestId("keep-editing").click();
@@ -159,6 +165,7 @@ for (const width of [390, 320]) {
     await row.getByTestId("project-open").click();
     await expect(field).toHaveValue(name);
     await field.fill(`${name}-saved`);
+    await openFinalFormStep(page);
     await page.getByTestId("edit-project-submit").click();
     await expect(page.getByTestId("edit-project-dialog")).toHaveCount(0);
     await expect(page.getByTestId("discard-form-changes")).toHaveCount(0);
@@ -175,12 +182,14 @@ for (const width of [1440, 390]) {
     const opener = page.getByTestId("new-job-button");
     await opener.click();
     const form = page.getByTestId("form-dialog");
-    const submit = page.getByTestId("job-submit");
+    const submit = page.getByTestId("form-step-next");
     await expect(submit).toBeInViewport();
     const bounds = await form.boundingBox();
     if (width === 1440) expect(bounds?.width).toBeGreaterThan(800);
     else expect(bounds?.width).toBe(width);
+    await revealFormField(page, page.getByTestId("job-name-input"));
     await page.getByTestId("job-name-input").fill("Draft job");
+    await revealFormField(page, page.getByTestId("job-command-input"));
     await page.getByTestId("job-command-input").fill("echo draft");
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("keep-editing")).toBeFocused();

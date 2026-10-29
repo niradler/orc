@@ -352,6 +352,13 @@
       padding-left: 16px;
       padding-right: 16px;
     }
+    .work-form-dialog > form {
+      flex: 1 1 0%;
+    }
+    .work-form-dialog .work-form-body {
+      flex: 1 1 auto;
+      align-content: start;
+    }
     .work-form-footer {
       padding-bottom: max(12px, env(safe-area-inset-bottom));
     }

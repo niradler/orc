@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ActionHelp } from "@/components/ActionHelp";
 import { AgentMessageText } from "@/components/AgentMessageText";
 import { ChatActivityList } from "@/components/ChatActivityList";
 import { ChatContinueInTerminal } from "@/components/ChatContinueInTerminal";
@@ -193,16 +194,17 @@ export function ChatPanel({
           >
             {thread?.title || "New conversation"}
           </h2>
-          <button
-            type="button"
-            data-testid="chat-clear-button"
-            onClick={newTab}
-            aria-label="New conversation"
-            title="New conversation"
-            className={iconButton}
-          >
-            <Pencil size={16} />
-          </button>
+          <ActionHelp label="New conversation">
+            <button
+              type="button"
+              data-testid="chat-clear-button"
+              onClick={newTab}
+              aria-label="New conversation"
+              className={iconButton}
+            >
+              <Pencil size={16} />
+            </button>
+          </ActionHelp>
           <Popover>
             <PopoverTrigger asChild>
               <button
@@ -221,45 +223,49 @@ export function ChatPanel({
               onInteractOutside={keepConversationDialog}
               onFocusOutside={keepConversationDialog}
             >
-              <button
-                type="button"
-                data-testid="chat-refresh-button"
-                onClick={() => void refresh()}
-                disabled={!thread || refreshing}
-                className={iconButton}
-                aria-label="Refresh conversation"
-                title="Refresh conversation"
-              >
-                <RefreshCw
-                  size={17}
-                  className={refreshing || reconnecting ? "animate-spin" : undefined}
-                />
-              </button>
+              <ActionHelp label="Refresh conversation">
+                <button
+                  type="button"
+                  data-testid="chat-refresh-button"
+                  onClick={() => void refresh()}
+                  disabled={!thread || refreshing}
+                  className={iconButton}
+                  aria-label="Refresh conversation"
+                >
+                  <RefreshCw
+                    size={17}
+                    className={refreshing || reconnecting ? "animate-spin" : undefined}
+                  />
+                </button>
+              </ActionHelp>
               <ChatContinueInTerminal key={thread?.id ?? "new"} />
               <ChatConversationInfo />
             </PopoverContent>
           </Popover>
           {onToggleFullscreen && (
+            <ActionHelp label={fullscreen ? "Exit full screen chat" : "Full screen chat"}>
+              <button
+                type="button"
+                data-testid="chat-fullscreen-button"
+                onClick={onToggleFullscreen}
+                className={cn(iconButton, "hidden xl:inline-flex")}
+                aria-label={fullscreen ? "Exit full screen chat" : "Full screen chat"}
+              >
+                {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+              </button>
+            </ActionHelp>
+          )}
+          <ActionHelp label="Close chat">
             <button
               type="button"
-              data-testid="chat-fullscreen-button"
-              onClick={onToggleFullscreen}
-              className={cn(iconButton, "hidden xl:inline-flex")}
-              aria-label={fullscreen ? "Exit full screen chat" : "Full screen chat"}
-              title={fullscreen ? "Exit full screen" : "Full screen"}
+              onClick={onClose ?? onToggle}
+              data-testid="chat-close-button"
+              className={iconButton}
+              aria-label="Close chat"
             >
-              {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+              <X size={18} />
             </button>
-          )}
-          <button
-            type="button"
-            onClick={onClose ?? onToggle}
-            data-testid="chat-close-button"
-            className={iconButton}
-            aria-label="Close chat"
-          >
-            <X size={18} />
-          </button>
+          </ActionHelp>
         </header>
         {reconnecting && (
           <p
@@ -502,25 +508,29 @@ export function ChatPanel({
               </div>
               <div className="flex items-center gap-1">
                 {streaming && (
-                  <button
-                    type="button"
-                    data-testid="chat-cancel-button"
-                    aria-label="Stop response"
-                    onClick={cancel}
-                    className={iconButton}
-                  >
-                    <Square size={17} />
-                  </button>
+                  <ActionHelp label="Stop response">
+                    <button
+                      type="button"
+                      data-testid="chat-cancel-button"
+                      aria-label="Stop response"
+                      onClick={cancel}
+                      className={iconButton}
+                    >
+                      <Square size={17} />
+                    </button>
+                  </ActionHelp>
                 )}
-                <button
-                  type="submit"
-                  disabled={!ready || !draft.trim()}
-                  data-testid="chat-send-button"
-                  aria-label={streaming ? "Queue message" : "Send message"}
-                  className="chat-send-button inline-flex min-h-8 min-w-8 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
-                >
-                  <ArrowUp size={18} />
-                </button>
+                <ActionHelp label={streaming ? "Queue message" : "Send message"}>
+                  <button
+                    type="submit"
+                    disabled={!ready || !draft.trim()}
+                    data-testid="chat-send-button"
+                    aria-label={streaming ? "Queue message" : "Send message"}
+                    className="chat-send-button inline-flex min-h-8 min-w-8 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
+                  >
+                    <ArrowUp size={18} />
+                  </button>
+                </ActionHelp>
               </div>
             </div>
           </form>
@@ -554,16 +564,17 @@ function QueuedMessage({
   onRemove: () => void;
 }) {
   const removeButton = (
-    <button
-      type="button"
-      data-testid="chat-queued-remove"
-      aria-label="Remove pending message"
-      title="Remove pending message"
-      onClick={onRemove}
-      className="flex size-8 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-destructive focus-visible:ring-2 focus-visible:ring-focus sm:size-8"
-    >
-      <Trash2 size={14} />
-    </button>
+    <ActionHelp label="Remove pending message">
+      <button
+        type="button"
+        data-testid="chat-queued-remove"
+        aria-label="Remove pending message"
+        onClick={onRemove}
+        className="flex size-8 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-destructive focus-visible:ring-2 focus-visible:ring-focus sm:size-8"
+      >
+        <Trash2 size={14} />
+      </button>
+    </ActionHelp>
   );
   return (
     <li data-testid="chat-queued-message" className="border-t border-outline-variant text-sm">
@@ -611,27 +622,32 @@ function QueuedMessage({
           >
             {content}
           </p>
-          <button
-            type="button"
-            data-testid="chat-queued-edit"
-            onClick={onEdit}
-            aria-label="Edit pending message"
-            title="Edit pending message"
-            className="flex size-8 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus sm:size-8"
+          <ActionHelp label="Edit pending message">
+            <button
+              type="button"
+              data-testid="chat-queued-edit"
+              onClick={onEdit}
+              aria-label="Edit pending message"
+              className="flex size-8 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus sm:size-8"
+            >
+              <Pencil size={14} />
+            </button>
+          </ActionHelp>
+          <ActionHelp
+            label="Force send pending message"
+            description="Stop the current response and send this message next"
           >
-            <Pencil size={14} />
-          </button>
-          <button
-            type="button"
-            data-testid="chat-queued-force"
-            disabled={forceDisabled}
-            aria-label="Force send pending message"
-            title="Stop the current response and send this message next"
-            onClick={onForce}
-            className="flex size-8 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
-          >
-            <ArrowUp size={14} />
-          </button>
+            <button
+              type="button"
+              data-testid="chat-queued-force"
+              disabled={forceDisabled}
+              aria-label="Force send pending message"
+              onClick={onForce}
+              className="flex size-8 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
+            >
+              <ArrowUp size={14} />
+            </button>
+          </ActionHelp>
           {removeButton}
         </div>
       )}
