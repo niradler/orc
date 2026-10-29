@@ -4,7 +4,6 @@ import {
   CheckSquare,
   ChevronLeft,
   ChevronRight,
-  ChevronsUpDown,
   Folder,
   History,
   Package,
@@ -137,10 +136,6 @@ export function Sidebar({
                 </option>
               ))}
             </select>
-            <ChevronsUpDown
-              size={12}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-outline pointer-events-none"
-            />
           </div>
         </div>
       )}

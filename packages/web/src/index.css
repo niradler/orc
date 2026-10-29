@@ -414,6 +414,52 @@
   }
 }
 
+/* Native pickers keep their platform menu, but share the closed control's chevron with Radix. */
+:root {
+  --select-chevron-size: 14px;
+  --select-chevron-inset: 12px;
+  --select-chevron-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2362666E' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+:root.dark {
+  --select-chevron-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23A3A3A3' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+html:root select:not([multiple]):not([size]),
+html:root select:not([multiple])[size="1"] {
+  appearance: none;
+  background-image: var(--select-chevron-image);
+  background-repeat: no-repeat;
+  background-position: right var(--select-chevron-inset) center;
+  background-size: var(--select-chevron-size) var(--select-chevron-size);
+  padding-inline-end: calc(var(--select-chevron-inset) + var(--select-chevron-size) + 10px);
+  text-overflow: ellipsis;
+}
+
+html:root select:not([multiple]):not([size]):dir(rtl),
+html:root select:not([multiple])[size="1"]:dir(rtl) {
+  background-position: left var(--select-chevron-inset) center;
+}
+
+.select-trigger {
+  min-width: 0;
+  padding-inline-end: var(--select-chevron-inset);
+}
+
+.select-trigger > .select-chevron {
+  width: var(--select-chevron-size);
+  height: var(--select-chevron-size);
+  pointer-events: none;
+}
+
+@media (forced-colors: active) {
+  html:root select:not([multiple]):not([size]),
+  html:root select:not([multiple])[size="1"] {
+    appearance: auto;
+    background-image: none;
+  }
+}
+
 @layer utilities {
   @keyframes pulse-subtle {
     0%,

@@ -461,6 +461,13 @@ canonical control for each filter; do not add duplicate bulk toolbar actions.
 Persistent agent-discovery visibility and a local source filter are distinct
 behaviors, and their labels must explain that distinction.
 
+Single-value selects share a 14px chevron, 12px edge inset and centered alignment.
+Native selects reserve space for that glyph through the global rule; Radix uses
+the shared `SelectTrigger`. Do not add another arrow overlay to native selects.
+Long selected values truncate before the arrow. Keep native popup and keyboard
+behavior, omit chevrons from multi-row listboxes, mirror placement for RTL and
+allow the platform arrow in forced-colors mode.
+
 ### Knowledge base
 
 The document is the focal point. The file tree, links, comments, save state
