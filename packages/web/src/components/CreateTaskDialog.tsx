@@ -4,6 +4,7 @@ import { api, type CreateTaskInput, type TaskPriority, type TaskStatus } from "@
 import { BackendPicker, USE_DEFAULT_BACKEND } from "@/components/BackendPicker";
 import { FormDialog } from "@/components/FormDialog";
 import { FlowPicker, USE_DEFAULT_FLOW } from "@/components/flow/FlowPicker";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -170,10 +171,16 @@ export function CreateTaskDialog({
     >
       {(requestClose, closeAfterSave) => (
         <>
-          <DialogHeader>
+          <DialogHeader className="flex-row items-center gap-1 space-y-0">
             <DialogTitle className="font-headline text-sm font-medium text-on-surface">
               New task
             </DialogTitle>
+            <HelpPopover label="task creation">
+              <p className="text-xs text-outline" data-testid="task-onboarding-hint">
+                Choose a project folder, describe the result and acceptance checks, then preview a
+                workflow. Built-in workflows include implementation and review skills automatically.
+              </p>
+            </HelpPopover>
           </DialogHeader>
           <form
             noValidate
@@ -186,11 +193,6 @@ export function CreateTaskDialog({
             <FormSteps steps={steps}>
               <div className="work-form-body space-y-4">
                 <FormStepPanel steps={steps} id="details" className="space-y-4">
-                  <p className="text-xs text-outline" data-testid="task-onboarding-hint">
-                    Choose a project folder, describe the result and acceptance checks, then preview
-                    a workflow. Built-in workflows include implementation and review skills
-                    automatically.
-                  </p>
                   <fieldset
                     disabled={Boolean(savedId) || starting || createTask.isPending}
                     className="space-y-4"
