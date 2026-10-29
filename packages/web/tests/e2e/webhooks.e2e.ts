@@ -3,6 +3,104 @@ import { resolve } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers";
 
+for (const width of [1440, 390]) {
+  for (const provider of ["github", "generic"] as const) {
+    test(`webhook setup stays optional and secrets require explicit creation or rotation ${provider} ${width}`, async ({
+      page,
+      request,
+    }, testInfo) => {
+      await page.setViewportSize({ width, height: 900 });
+      let rotationPosts = 0;
+      page.on("request", (event) => {
+        if (event.method() === "POST" && new URL(event.url()).pathname.endsWith("/rotate-secret"))
+          rotationPosts++;
+      });
+      const name = tid(`guide-${provider}`);
+      const guidance = provider === "github" ? "GitHub Settings" : "HMAC-SHA256";
+      await gotoView(page, "jobs");
+      await page.getByTestId("nav-webhooks").click();
+      await page.getByTestId("new-webhook-button").click();
+      await page.getByTestId("webhook-name").fill(name);
+      await page.getByTestId("webhook-provider").selectOption(provider);
+      await page.getByTestId("webhook-create").click();
+      const created = page.getByTestId("webhook-created");
+      await expect(created.getByTestId("webhook-url")).toContainText("/webhooks/");
+      await expect(created).toContainText(guidance);
+      const originalSecret = await created.getByTestId("webhook-secret").innerText();
+      expect(originalSecret.length).toBeGreaterThan(20);
+      await page.getByTestId("webhook-setup-done").click();
+
+      const endpoint = page.getByTestId("webhook-endpoint").filter({ hasText: name });
+      await expect(endpoint.getByTestId("webhook-connected-jobs")).toContainText(
+        "Connected jobs (0)",
+      );
+      await expect(endpoint.getByTestId("webhook-url")).toContainText("/webhooks/");
+      await expect(endpoint).toContainText("This address is local.");
+      await expect(endpoint).toContainText("Enabled");
+      await expect(endpoint.getByTestId("webhook-secret")).toHaveCount(0);
+      await expect(endpoint.getByText(/The signing secret is hidden/)).toHaveCount(0);
+      const toggle = endpoint.getByTestId("webhook-setup-toggle");
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      await expect(endpoint.getByText(guidance, { exact: false })).toHaveCount(0);
+      await endpoint.scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: testInfo.outputPath(`webhook-collapsed-${provider}-${width}.png`),
+        animations: "disabled",
+      });
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      await expect(endpoint).toContainText(guidance);
+      await expect(endpoint.getByTestId("webhook-secret")).toHaveCount(0);
+      expect(rotationPosts).toBe(0);
+      await toggle.click();
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+      const id = await endpoint.getAttribute("data-webhook-id");
+      if (!id) throw new Error("Webhook identity missing");
+      await page.route(`**/api/webhooks/${id}/deliveries`, (route) =>
+        route.fulfill({
+          status: 503,
+          json: { error: "Delivery inspection temporarily unavailable" },
+        }),
+      );
+      await endpoint.getByTestId("webhook-deliveries-toggle").click();
+      await expect(endpoint).toContainText("Delivery inspection temporarily unavailable");
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      await endpoint.getByTestId("webhook-deliveries-toggle").click();
+      await toggle.click();
+      await endpoint.getByRole("button", { name: "New signing secret", exact: true }).click();
+      await expect(endpoint).toContainText("existing secret will stop working");
+      await expect(endpoint.getByTestId("webhook-secret")).toHaveCount(0);
+      expect(rotationPosts).toBe(0);
+      await endpoint
+        .getByRole("button", { name: "Generate replacement secret", exact: true })
+        .click();
+      await expect(endpoint.getByTestId("webhook-secret")).toBeVisible();
+      const replacement = await endpoint.getByTestId("webhook-secret").innerText();
+      expect(replacement).not.toBe(originalSecret);
+      expect(rotationPosts).toBe(1);
+      await expect(toggle).toHaveAttribute("aria-expanded", "true");
+      await expect(endpoint).toContainText(guidance);
+      await toggle.click();
+      await expect(endpoint.getByTestId("webhook-secret")).toHaveCount(0);
+      await toggle.click();
+      await expect(endpoint.getByTestId("webhook-secret")).toHaveCount(0);
+      await page.reload();
+      await expect(endpoint.getByTestId("webhook-url")).toBeVisible();
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+      await toggle.click();
+      await expect(endpoint.getByTestId("webhook-secret")).toHaveCount(0);
+      expect(rotationPosts).toBe(1);
+      const persisted = JSON.stringify(await apiGet(request, "/webhooks"));
+      expect(persisted).not.toContain(originalSecret);
+      expect(persisted).not.toContain(replacement);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    });
+  }
+}
+
 async function newWebhookJob(
   page: Page,
   name: string,
@@ -227,6 +325,7 @@ test("project-scoped job picker offers shared and matching sources only", async 
   await expect(picker.locator(`option[value="${shared.id}"]`)).toHaveCount(1);
   await expect(picker.locator(`option[value="${other.id}"]`)).toHaveCount(0);
   await page.keyboard.press("Escape");
+  await page.getByTestId("discard-form-changes").click();
   await page.goto("/jobs?project=all");
   await page.getByTestId("new-job-button").click();
   await page.getByTestId("job-trigger-type").click();
