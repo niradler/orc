@@ -2295,6 +2295,7 @@ export interface paths {
                             /** @enum {string} */
                             theme?: "dark" | "light";
                             terminal_font?: string;
+                            attention_retention_hours?: number;
                             chat?: {
                                 /** @default codex */
                                 agent: string;
@@ -2386,6 +2387,7 @@ export interface paths {
                         /** @enum {string} */
                         theme?: "dark" | "light";
                         terminal_font?: string;
+                        attention_retention_hours?: number;
                         chat?: {
                             /** @default codex */
                             agent?: string;
@@ -2467,6 +2469,7 @@ export interface paths {
                             /** @enum {string} */
                             theme?: "dark" | "light";
                             terminal_font?: string;
+                            attention_retention_hours?: number;
                             chat?: {
                                 /** @default codex */
                                 agent: string;

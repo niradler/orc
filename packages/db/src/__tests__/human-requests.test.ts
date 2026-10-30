@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { loadConfig, resetConfig } from "@orc/core/config";
 import { HumanRequestStore } from "../human-requests.js";
 
 function fixture() {
@@ -11,6 +12,7 @@ function fixture() {
   return {
     db,
     store: new HumanRequestStore(db, () => time),
+    now: () => time,
     advance: (milliseconds = 2000) => {
       time += milliseconds;
     },
@@ -22,6 +24,80 @@ const question = {
   prompt: "Which color?",
   choices: ["Blue", "Green"],
 };
+
+test("should expire unavailable and undelivered requests after 72 hours while retaining their audit", () => {
+  const { db, store, advance } = fixture();
+  try {
+    const request = store.create(question);
+    store.respond(request.id, 1, { kind: "question", answer: "Blue" });
+    store.unavailable(request.id, 2);
+    advance(72 * 3600000 - 1);
+    expect(store.list()).toHaveLength(1);
+    advance(1);
+    expect(store.list()).toEqual([]);
+    expect(store.get(request.id).status).toBe("expired");
+    expect(store.get(request.id).response).toEqual({ kind: "question", answer: "Blue" });
+    expect(store.get(request.id).delivered_at).toBeNull();
+    expect(() => store.respond(request.id, 3, { kind: "question", answer: "late" })).toThrow();
+  } finally {
+    db.close();
+  }
+});
+
+test("should apply changed retention to existing requests without expiring fresh ones", () => {
+  const { db, store, advance } = fixture();
+  try {
+    const request = store.create(question);
+    store.respond(request.id, 1, { kind: "question", answer: "Blue" });
+    advance(2 * 3600000);
+    expect(store.list()).toHaveLength(1);
+    loadConfig({ preferences: { attention_retention_hours: 1 } });
+    const fresh = store.create({
+      ...question,
+      origin: { ...question.origin, request_id: "fresh" },
+    });
+    expect(store.list().map((entry) => entry.id)).toEqual([fresh.id]);
+    expect(store.get(request.id).status).toBe("expired");
+  } finally {
+    resetConfig();
+    db.close();
+  }
+});
+
+test("should dismiss only obsolete requests from the continuing session and backend", () => {
+  const { db, store } = fixture();
+  try {
+    const request = store.create({
+      ...question,
+      origin: { ...question.origin, tool_call_id: "tool" },
+    });
+    store.unavailable(request.id, 1);
+    const other = store.create({
+      ...question,
+      origin: { ...question.origin, session_id: "other" },
+    });
+    const managed = store.create({
+      ...question,
+      origin: { ...question.origin, request_id: "managed", chat_thread_id: crypto.randomUUID() },
+    });
+    store.dismissObsolete("session-a", "claude");
+    expect(store.get(request.id).status).toBe("unavailable");
+    store.acknowledgeToolResults("session-a", "codex", "different");
+    expect(store.get(request.id).status).toBe("unavailable");
+    store.acknowledgeToolResults("session-a", "codex", "tool");
+    expect(store.get(request.id).status).toBe("cancelled");
+    expect(store.get(request.id).delivered_at).toBeNull();
+    expect(store.get(other.id).status).toBe("pending");
+    store.respond(other.id, 1, { kind: "question", answer: "Blue" });
+    store.dismissObsolete("other", "codex");
+    expect(store.list().map((entry) => entry.id)).toEqual([managed.id]);
+    expect(store.get(other.id).status).toBe("cancelled");
+    expect(store.get(other.id).response).toEqual({ kind: "question", answer: "Blue" });
+    expect(store.get(other.id).delivered_at).toBeNull();
+  } finally {
+    db.close();
+  }
+});
 
 test("should reopen pending and answered requests from a closed SQLite database", () => {
   const path = join(mkdtempSync(join(tmpdir(), "orc-human-reopen-")), "requests.db");
@@ -65,14 +141,14 @@ test("should invalidate a dead runtime owner without expiring independent reques
 });
 
 test("should persist a response across store reconnection and distinguish delivery", () => {
-  const { db, store } = fixture();
+  const { db, store, now } = fixture();
   try {
     const request = store.create(question);
     const answered = store.respond(request.id, request.version, {
       kind: "question",
       answer: "Custom color",
     });
-    const reconnected = new HumanRequestStore(db);
+    const reconnected = new HumanRequestStore(db, now);
     expect(reconnected.get(request.id).response).toEqual({
       kind: "question",
       answer: "Custom color",

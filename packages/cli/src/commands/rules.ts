@@ -90,6 +90,11 @@ export function rulesCommand(): Command {
             normalized.session_id,
             normalized.backend,
           );
+        if (["stop", "session_end", "prompt_submit"].includes(normalized.phase))
+          new HumanRequestStore(getSqlite()).dismissObsolete(
+            normalized.session_id,
+            normalized.backend,
+          );
         const store = new RuleStore(getSqlite());
         const result = await runHumanRuleActions(
           normalized,

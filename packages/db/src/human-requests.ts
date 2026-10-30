@@ -78,6 +78,13 @@ export class HumanRequestStore {
   }
 
   private expire(): void {
+    const cutoff =
+      this.now() - (loadConfig().preferences.attention_retention_hours ?? 72) * 3600000;
+    this.db
+      .query(
+        "UPDATE human_requests SET status='expired',version=version+1 WHERE status IN ('pending','answered','unavailable') AND created_at<=?",
+      )
+      .run(cutoff);
     this.db
       .query(
         "UPDATE human_requests SET status='expired',version=version+1 WHERE status='pending' AND expires_at<=?",
@@ -232,6 +239,7 @@ export class HumanRequestStore {
   }
 
   acknowledgeToolResults(sessionId: string, backend: string, toolCallId: string): void {
+    this.dismissObsolete(sessionId, backend, toolCallId);
     const rows = this.db
       .query<{ id: string }, [string, string, string]>(
         "SELECT id FROM human_requests WHERE status='answered' AND json_extract(payload,'$.origin.session_id')=? AND json_extract(payload,'$.origin.backend')=? AND json_extract(payload,'$.origin.tool_call_id')=?",
@@ -241,6 +249,21 @@ export class HumanRequestStore {
       const request = this.get(row.id);
       if (request.status === "answered") this.acknowledge(row.id, request.version);
     }
+  }
+
+  dismissObsolete(sessionId: string, backend: string, toolCallId?: string): void {
+    // Continuation is not proof that an undelivered answer was consumed. Preserve
+    // the audit record as cancelled, and never turn it into an approval/delivery.
+    this.db
+      .query(
+        `UPDATE human_requests SET status='cancelled',version=version+1
+         WHERE status IN (${toolCallId === undefined ? "'pending','answered','unavailable'" : "'pending','unavailable'"})
+         AND json_extract(payload,'$.origin.session_id')=?
+         AND json_extract(payload,'$.origin.backend')=?
+         AND json_extract(payload,'$.origin.chat_thread_id') IS NULL
+         ${toolCallId === undefined ? "" : "AND json_extract(payload,'$.origin.tool_call_id')=?"}`,
+      )
+      .run(...(toolCallId === undefined ? [sessionId, backend] : [sessionId, backend, toolCallId]));
   }
 
   acknowledgeDeniedAtStop(sessionId: string, backend: string): void {

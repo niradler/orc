@@ -6,6 +6,102 @@ import type { HumanRequest } from "@orc/core/human-requests";
 import { expect, test } from "@playwright/test";
 import { API_BASE, AUTH_HEADERS, apiGet, apiPost, gotoView, repoRoot, tid } from "./_helpers";
 
+test("should show dated unavailable questions and contextual help on desktop and phone", async ({
+  page,
+  request,
+}) => {
+  const origin = tid("stale-question");
+  const entry = await apiPost<HumanRequest>(request, "/human-requests", {
+    kind: "question",
+    prompt: "Cancelled?",
+    origin: { backend: "claude", session_id: origin, request_id: "cancelled-question" },
+  });
+  // Use the same isolated E2E database to reproduce a disconnected origin.
+  const seed = spawn(
+    "bun",
+    [
+      "-e",
+      `import { getSqlite } from './packages/db/src/client.ts'; import { HumanRequestStore } from './packages/db/src/human-requests.ts'; new HumanRequestStore(getSqlite()).unavailable(${JSON.stringify(entry.id)}, 1);`,
+    ],
+    {
+      cwd: repoRoot(),
+      env: process.env,
+      stdio: "pipe",
+      timeout: 10000,
+    },
+  );
+  expect(
+    await new Promise((resolve, reject) => {
+      seed.once("exit", resolve);
+      seed.once("error", reject);
+    }),
+  ).toBe(0);
+  await gotoView(page, "attention");
+  const card = page.getByTestId(`attention-request-${entry.id}`);
+  for (const [width, theme] of [
+    [1440, "dark"],
+    [390, "light"],
+  ] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.evaluate((value) => {
+      document.documentElement.classList.toggle("dark", value === "dark");
+    }, theme);
+    await expect(card).toContainText("Cancelled?");
+    await expect(card).toContainText("Agent unavailable");
+    await expect(card.getByTestId("attention-date")).toContainText("Created");
+    await expect(card.locator("time")).toHaveAttribute(
+      "datetime",
+      new Date(entry.created_at).toISOString(),
+    );
+    await expect(page.getByTestId("view-title")).toHaveText("Attention needed");
+    await page.getByTestId("view-help").click();
+    await expect(page.getByTestId("view-help-content")).toContainText(
+      "Live Codex questions can also appear as session notices.",
+    );
+    await page.screenshot({
+      path: `../../.claude/docs/attention-${width}-${theme}.png`,
+      fullPage: true,
+    });
+    await page.keyboard.press("Escape");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  }
+  const hook = spawn("bun", ["packages/cli/src/index.ts", "rules", "hook", "claude", "Stop"], {
+    cwd: repoRoot(),
+    env: process.env,
+    stdio: ["pipe", "pipe", "pipe"],
+    timeout: 10000,
+  });
+  hook.stdin.end(JSON.stringify({ session_id: origin, cwd: repoRoot() }));
+  expect(
+    await new Promise((resolve, reject) => {
+      hook.once("exit", resolve);
+      hook.once("error", reject);
+    }),
+  ).toBe(0);
+  await page.reload();
+  await expect(card).toHaveCount(0);
+  const cancelled = await apiGet<HumanRequest>(request, `/human-requests/${entry.id}`);
+  expect(cancelled.status).toBe("cancelled");
+  expect(cancelled.delivered_at).toBeNull();
+});
+
+test("should save attention retention and retain it after reloading settings", async ({ page }) => {
+  await gotoView(page, "settings");
+  await page.goto("/settings?settingsSection=notifications");
+  const input = page.getByTestId("attention-retention-hours");
+  await expect(input).toHaveValue("72");
+  await input.fill("48");
+  await page.getByTestId("attention-retention-save").click();
+  await expect(page.getByTestId("attention-retention-saved")).toBeVisible();
+  await page.reload();
+  await expect(input).toHaveValue("48");
+  await input.fill("72");
+  await page.getByTestId("attention-retention-save").click();
+  await expect(page.getByTestId("attention-retention-saved")).toBeVisible();
+});
+
 test("should continue a waiting CLI after answering through the reloaded inbox", async ({
   page,
   request,
