@@ -227,3 +227,58 @@ test("invalid conditions and non-JSON native payloads are rejected", async () =>
     ).status,
   ).toBe(400);
 });
+
+test("Otherwise persists last and previews without bypassing approved sender checks", async () => {
+  const specific = {
+    id: "specific",
+    name: "Private",
+    condition: { field: "is_direct", op: "is", value: true },
+    action: { type: "ignore" },
+  };
+  const fallback = {
+    id: "otherwise",
+    name: "Otherwise",
+    condition: { always: true },
+    action: { type: "agent", agent: "default", project_id: "p1" },
+  };
+  const input = {
+    id: "fallback-test",
+    name: "Fallback test",
+    provider: "telegram",
+    enabled: false,
+    targets: [
+      {
+        id: "me",
+        name: "Nir",
+        chat_id: "123",
+        user_ids: ["nir"],
+        inbound: true,
+        project_ids: ["p1"],
+      },
+    ],
+    routes: [specific, fallback],
+  };
+  expect(
+    (await request("/channels/fallback-test", "PUT", { ...input, routes: [fallback, specific] }))
+      .status,
+  ).toBe(400);
+  const response = await request("/channels/fallback-test", "PUT", input);
+  expect(response.status).toBe(200);
+  expect(ChannelViewSchema.parse(await response.json()).routes.at(-1)?.condition).toEqual({
+    always: true,
+  });
+  const probe = { sender: "nir", chat: "123", text: "hello", is_direct: false, is_mention: false };
+  expect(
+    await (await request("/channels/fallback-test/route-test", "POST", probe)).json(),
+  ).toMatchObject({ authorized: true, route_id: "otherwise", action: fallback.action });
+  expect(
+    await (
+      await request("/channels/fallback-test/route-test", "POST", { ...probe, sender: "outsider" })
+    ).json(),
+  ).toMatchObject({ authorized: false, route_id: null });
+  expect(
+    new ChannelService(new ChannelStore(db), () => transport)
+      .connection("fallback-test")
+      .routes.at(-1)?.condition,
+  ).toEqual({ always: true });
+});

@@ -68,6 +68,72 @@ test("ordered nested AND/OR/NOT routing is first-match and defaults to no route"
   expect(() => route("bad", { field: "text", op: "matches", value: "(a+)+" })).toThrow();
 });
 
+test("Otherwise is explicit, last, optional and does not shadow earlier enabled rules", () => {
+  const specific = route("specific", { field: "is_direct", op: "is", value: true });
+  const fallback = route("otherwise", { always: true });
+  expect(routeMessage([specific, fallback], inbound)?.id).toBe("specific");
+  expect(routeMessage([specific, fallback], { ...inbound, is_direct: false })?.id).toBe(
+    "otherwise",
+  );
+  expect(routeMessage([{ ...specific, enabled: false }, fallback], inbound)?.id).toBe("otherwise");
+  expect(routeMessage([{ ...fallback, enabled: false }], inbound)).toBeUndefined();
+  const connection = {
+    id: "test",
+    name: "test",
+    provider: "telegram",
+    routes: [specific, fallback],
+  };
+  expect(ChannelConnectionSchema.parse(connection).routes).toHaveLength(2);
+  expect(() =>
+    ChannelConnectionSchema.parse({ ...connection, routes: [fallback, specific] }),
+  ).toThrow("Otherwise rule must be last");
+  expect(() =>
+    ChannelConnectionSchema.parse({
+      ...connection,
+      routes: [fallback, { ...fallback, id: "second" }],
+    }),
+  ).toThrow("Otherwise rule must be last");
+  expect(() => route("bad", { always: false })).toThrow();
+  expect(() => route("bad", { not: { always: true } })).toThrow();
+});
+
+test("Otherwise never grants an unapproved sender or a forbidden project access", async () => {
+  const db = new Database(":memory:");
+  const service = new ChannelService(new ChannelStore(db));
+  const current = ChannelConnectionSchema.parse({
+    id: "test",
+    name: "test",
+    provider: "telegram",
+    enabled: true,
+    targets: [
+      {
+        id: "me",
+        name: "me",
+        chat_id: "private",
+        user_ids: ["nir"],
+        project_ids: ["allowed"],
+        inbound: true,
+      },
+    ],
+    routes: [route("otherwise", { always: true })],
+  });
+  service.connections = () => [current];
+  let calls = 0;
+  service.handler = async () => {
+    calls++;
+  };
+  await service.receive({ ...inbound, sender: "intruder" });
+  await service.receive(inbound);
+  expect(calls).toBe(0);
+  current.routes[0] = {
+    ...route("otherwise", { always: true }),
+    action: { type: "agent", project_id: "allowed", agent: "default" },
+  };
+  await service.receive({ ...inbound, message_id: "allowed" });
+  expect(calls).toBe(1);
+  db.close();
+});
+
 test("Markdown renders natively, escapes HTML and preserves links/code", () => {
   const msg = ChannelMessageSchema.parse({
     text: "**Done** [Open](https://example.com)\n\n`<secret>` <script>",

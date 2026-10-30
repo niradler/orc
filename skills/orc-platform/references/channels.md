@@ -84,7 +84,11 @@ Pairing is short-lived, single-use and requires authenticated confirmation. Only
 
 Enable inbound on an approved destination and list allowed sender IDs. Authorization precedes routing. Rules run in saved order; the first enabled matching rule wins. No match launches no agent. An ignore rule stops routing. No implicit fallthrough into a general-purpose agent handler is allowed.
 
-Simple rules can use the Settings editor; advanced JSON supports `all`, `any` and `not`, with at most five levels and 100 condition nodes. Predicates have `field`, `op`, and `value`. Fields: `sender`, `chat`, `thread`, `text`, `command`, `is_direct`, `is_mention`, `kind`. Operators: `is`, `in`, `contains`, `starts_with`. `in` uses a string array; boolean comparisons use JSON booleans. Comparisons are case-sensitive. No arbitrary scripts or unbounded regular expressions.
+Settings provides a visual builder for nested **Match all (AND)**, **Match any (OR)** and **Exclude matches (NOT)** groups. Conditions use named fields, comparisons and typed values; no JSON editing is needed. Numbered rules show their conditions and destination. Move rules up/down to set priority; disabled rules are skipped. Apply a rule, then save the connection. Preview uses saved rules and never invokes an agent.
+
+The separate **Otherwise** rule is optional, fixed last, and runs only after every enabled condition rule fails. It can route to an agent or ignore silently; recipient/project authorization still applies. With no enabled default, authorized unmatched messages get setup guidance and no agent starts. Reply setup and newly added rules insert before Otherwise. HTTP configuration represents this final fallback with `condition: {"always":true}`; the API rejects multiple defaults, a default before other rules, or a nested `always` predicate.
+
+API condition trees support `all`, `any` and `not`, with at most five levels and 100 condition nodes. Predicates have `field`, `op`, and `value`. Fields: `sender`, `chat`, `thread`, `text`, `command`, `is_direct`, `is_mention`, `kind`. Operators: `is`, `in`, `contains`, `starts_with`. `in` uses a string array; boolean comparisons use JSON booleans. Comparisons are case-sensitive. No arbitrary scripts or unbounded regular expressions.
 
 ```json
 {

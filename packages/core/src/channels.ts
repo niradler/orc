@@ -100,6 +100,7 @@ export const ChannelFields = [
 ] as const;
 export const ChannelOperators = ["is", "in", "contains", "starts_with"] as const;
 export type ChannelCondition =
+  | { always: true }
   | {
       field: (typeof ChannelFields)[number];
       op: (typeof ChannelOperators)[number];
@@ -108,6 +109,17 @@ export type ChannelCondition =
   | { all: ChannelCondition[] }
   | { any: ChannelCondition[] }
   | { not: ChannelCondition };
+
+export function isChannelCatchAll(input: unknown): input is { always: true } {
+  return (
+    !!input &&
+    typeof input === "object" &&
+    !Array.isArray(input) &&
+    Object.keys(input).length === 1 &&
+    "always" in input &&
+    input.always === true
+  );
+}
 
 export function validChannelCondition(
   input: unknown,
@@ -125,6 +137,7 @@ export function validChannelCondition(
   const item = input as Record<string, unknown>;
   const keys = Object.keys(item);
   if (keys.length === 1) {
+    if ("always" in item) return depth === 0 && item.always === true;
     if ("not" in item) return validChannelCondition(item.not, depth + 1, budget);
     const children = item.all ?? item.any;
     return (
@@ -163,7 +176,7 @@ export const ChannelRouteSchema = z
       .unknown()
       .refine(
         (value): boolean => validChannelCondition(value),
-        "Use field/op/value or nonempty all/any/not groups (maximum depth 5 and 100 conditions)",
+        "Use field/op/value, nonempty all/any/not groups (maximum depth 5 and 100 conditions), or a top-level always:true fallback",
       ),
     action: z.discriminatedUnion("type", [
       z.object({ type: z.literal("ignore") }).strict(),
@@ -230,6 +243,16 @@ export const ChannelConnectionSchema = z
       if (new Set(v[field].map((x) => x.id)).size !== v[field].length)
         ctx.addIssue({ code: "custom", message: `Duplicate ${field} IDs`, path: [field] });
     }
+    if (
+      v.routes.some(
+        (route, index) => isChannelCatchAll(route.condition) && index !== v.routes.length - 1,
+      )
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "The Otherwise rule must be last; only one is allowed",
+        path: ["routes"],
+      });
   });
 
 export const ChannelSaveSchema = ChannelConnectionSchema;

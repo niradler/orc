@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { settingsSection } from "./_chat-ui";
-import { apiDelete, apiGet, apiPost, gotoView, tid } from "./_helpers";
+import { apiDelete, apiGet, apiPatch, apiPost, gotoView, tid } from "./_helpers";
 
 for (const width of [1440, 390]) {
   test(`Channels setup, recipient, nested routing and save/reopen at ${width}px`, async ({
@@ -8,6 +8,7 @@ for (const width of [1440, 390]) {
     request,
   }) => {
     await page.setViewportSize({ width, height: 900 });
+    await apiPatch(request, "/settings", { theme: "dark" });
     const failures: string[] = [];
     page.on("pageerror", (error) => failures.push(error.message));
     const project = await apiPost<{ id: string }>(request, "/projects", {
@@ -48,9 +49,9 @@ for (const width of [1440, 390]) {
       await editor.getByRole("button", { name: "Add routing rule", exact: true }).click();
       await editor.getByTestId("channel-route-name").fill("Private messages for Nir");
       await editor.getByTestId("channel-route-project").selectOption(project.id);
-      await editor.getByRole("button", { name: "Advanced JSON", exact: true }).click();
       const condition = {
         all: [
+          { field: "kind", op: "is", value: "message" },
           { field: "is_direct", op: "is", value: true },
           {
             any: [
@@ -60,7 +61,16 @@ for (const width of [1440, 390]) {
           },
         ],
       };
-      await editor.getByTestId("channel-condition-json").fill(JSON.stringify(condition));
+      const builder = editor.getByTestId("channel-condition-builder");
+      await expect(editor.getByRole("button", { name: "Advanced JSON" })).toHaveCount(0);
+      await builder.getByRole("button", { name: "Add group", exact: true }).click();
+      const group = builder.getByTestId("channel-condition-group").nth(1);
+      await group.getByLabel("Condition field", { exact: true }).selectOption("sender");
+      await group.getByLabel("Condition value", { exact: true }).fill("456");
+      await group.getByRole("button", { name: "Add condition", exact: true }).click();
+      const textCondition = group.getByTestId("channel-condition-row").nth(1);
+      await textCondition.getByLabel("Condition comparison").selectOption("not:contains");
+      await textCondition.getByLabel("Condition value").fill("ignore");
       await editor.getByTestId("channel-route-apply").click();
       await editor.getByTestId("channel-save").click();
       await expect(page.getByRole("status").filter({ hasText: "Connection saved" })).toBeVisible();
@@ -153,16 +163,100 @@ for (const width of [1440, 390]) {
         .locator("summary")
         .filter({ hasText: /^Inbound routing/ })
         .click();
-      await editor.getByRole("button", { name: "Edit rule", exact: true }).first().click();
-      await editor.getByTestId("channel-condition-json").scrollIntoViewIfNeeded();
-      const ruleBounds = await editor.getByTestId("channel-condition-json").boundingBox();
+      await expect(editor.getByTestId("channel-route-default")).toContainText(
+        "Show setup guidance; no agent starts.",
+      );
+      await editor.getByRole("button", { name: "Set default", exact: true }).click();
+      await expect(editor.getByTestId("channel-condition-builder")).toHaveCount(0);
+      await editor.getByTestId("channel-route-apply").click();
+      await editor.getByRole("button", { name: "Move Replies to Nir up", exact: true }).click();
+      await expect(editor.getByTestId("channel-route-row").first()).toContainText("Replies to Nir");
+      await expect(
+        editor.getByRole("button", { name: "Move Private messages for Nir down", exact: true }),
+      ).toBeDisabled();
+      await editor.getByTestId("channel-save").click();
+      await expect(page.getByRole("status").filter({ hasText: "Connection saved" })).toBeVisible();
+      const ordered = (
+        await apiGet<Array<{ id: string; routes: Array<{ name: string; condition: unknown }> }>>(
+          request,
+          "/channels",
+        )
+      ).find((c) => c.id === id);
+      expect(ordered?.routes.map((route) => route.name)).toEqual([
+        "Replies to Nir",
+        "Private messages for Nir",
+        "Otherwise",
+      ]);
+      expect(ordered?.routes[2]?.condition).toEqual({ always: true });
+      await editor.getByRole("button", { name: "Move Replies to Nir down", exact: true }).click();
+      await editor.getByTestId("channel-save").click();
+      await expect(page.getByRole("status").filter({ hasText: "Connection saved" })).toBeVisible();
+      await editor.getByTestId("channel-route-order").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `../../.claude/docs/channels-route-order-${width}.png` });
+      await editor
+        .getByRole("button", { name: "Edit rule Private messages for Nir", exact: true })
+        .click();
+      await expect(builder.getByLabel("Condition comparison").last()).toHaveValue("not:contains");
+      await expect(builder.getByLabel("Group match").nth(1)).toHaveValue("any");
+      const nested = builder.getByTestId("channel-condition-group").nth(1);
+      const comparison = nested.getByLabel("Condition comparison").last();
+      await comparison.focus();
+      await comparison.selectOption("contains");
+      await expect(comparison).toBeFocused();
+      await comparison.selectOption("not:contains");
+      const textValue = nested.getByLabel("Condition value").last();
+      await textValue.fill("");
+      await expect(editor.getByTestId("channel-route-apply")).toBeDisabled();
+      await expect(builder).toBeVisible();
+      await textValue.fill("ignore");
+      await nested.getByLabel("Group match").selectOption("all");
+      await nested.getByLabel("Exclude matches (NOT)").check();
+      await editor.getByTestId("channel-route-apply").click();
+      await editor.getByTestId("channel-save").click();
+      await expect(page.getByRole("status").filter({ hasText: "Connection saved" })).toBeVisible();
+      const negated = (
+        await apiGet<Array<{ id: string; routes: Array<{ condition: unknown }> }>>(
+          request,
+          "/channels",
+        )
+      ).find((c) => c.id === id);
+      expect(negated?.routes[0]?.condition).toEqual({
+        all: [condition.all[0], condition.all[1], { not: { all: condition.all[2]?.any } }],
+      });
+      await page.reload();
+      await settingsSection(page, "channels");
+      await page.getByRole("button", { name: `Edit Telegram ${width}`, exact: true }).click();
+      await editor
+        .locator("summary")
+        .filter({ hasText: /^Inbound routing/ })
+        .click();
+      await editor
+        .getByRole("button", { name: "Edit rule Private messages for Nir", exact: true })
+        .click();
+      await expect(builder.getByLabel("Group match").nth(1)).toHaveValue("all");
+      await expect(builder.getByLabel("Exclude matches (NOT)").nth(1)).toBeChecked();
+      await builder.getByLabel("Exclude matches (NOT)").nth(1).uncheck();
+      await builder.getByLabel("Group match").nth(1).selectOption("any");
+      await builder.screenshot({ path: `../../.claude/docs/channels-conditions-${width}.png` });
+      await editor.getByTestId("channel-condition-builder").scrollIntoViewIfNeeded();
+      const ruleBounds = await editor.getByTestId("channel-condition-builder").boundingBox();
       expect(ruleBounds && ruleBounds.x >= 0 && ruleBounds.x + ruleBounds.width <= width).toBe(
         true,
       );
       await page.screenshot({
         path: `../../.claude/docs/channels-routing-${width}.png`,
-        fullPage: true,
+        fullPage: false,
       });
+      await page.getByTestId("theme-toggle").click();
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+      await expect(page.locator("html")).not.toHaveAttribute("data-magicui-theme-vt", "active");
+      await builder.screenshot({
+        path: `../../.claude/docs/channels-conditions-light-${width}.png`,
+      });
+      await expect(builder.getByLabel("Group match").first()).toHaveValue("all");
+      await page.getByTestId("theme-toggle").click();
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+      await expect(page.locator("html")).not.toHaveAttribute("data-magicui-theme-vt", "active");
       expect(failures).toEqual([]);
     } finally {
       await apiDelete(request, `/projects/${project.id}`);

@@ -7,6 +7,7 @@ import {
 } from "@orc/core/channels";
 
 export function matchesCondition(condition: ChannelCondition, message: ChannelInbound): boolean {
+  if ("always" in condition) return true;
   if ("all" in condition) return condition.all.every((c) => matchesCondition(c, message));
   if ("any" in condition) return condition.any.some((c) => matchesCondition(c, message));
   if ("not" in condition) return !matchesCondition(condition.not, message);

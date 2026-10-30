@@ -1,6 +1,6 @@
 # Channels: UI and flow review
 
-Review companion for [PR #126](https://github.com/niradler/orc/pull/126). These are screenshots of the running ORC UI with fixture data, not mockups. Credentials are blank or test-only; generated project names identify isolated test data. The application behavior shown is the validated `eb8b87d` implementation. Screenshot capture changes do not change that behavior.
+Review companion for [PR #126](https://github.com/niradler/orc/pull/126). These are screenshots of the running ORC UI with fixture data, not mockups. Credentials are blank or test-only; generated project names identify isolated test data. The routing screenshots reflect the visual condition builder and explicit Otherwise fallback added after the original gallery. Other screenshots retain unchanged setup and chat behavior.
 
 ## Desktop: Settings → Channels
 
@@ -17,9 +17,19 @@ After pairing a recipient, **Set up agent replies** chooses a project, default a
 <details>
 <summary>Ordered routing and custom prompt shortcuts</summary>
 
-Rules use first-match order and support AND, OR and NOT. The simple editor and advanced JSON edit the same rule tree. Route preview does not invoke an agent.
+Rules are numbered in first-match order, with readable condition and agent/project summaries. Disabled rules are skipped. The separate **Otherwise** fallback stays last; it cannot shadow earlier rules. Without an enabled default, unmatched authorized messages get setup guidance and no agent starts. Apply each rule, then save the connection. Preview uses saved rules without invoking an agent.
 
-![Ordered routes and advanced condition editor](../screenshots/channels/routing-desktop.png)
+![Ordered routes and final Otherwise fallback](../screenshots/channels/routing-desktop.png)
+
+Nested **Match all (AND)**, **Match any (OR)** and **Exclude matches (NOT)** groups use real controls. Negative comparisons read naturally, such as “does not contain”. Boolean and event-type values use choices. Invalid drafts stay editable and cannot be applied. Changing comparisons preserves keyboard focus. There is no JSON condition editor.
+
+![Desktop nested condition builder](../screenshots/channels/conditions-desktop.png)
+
+| Phone conditions | Light theme |
+| --- | --- |
+| <img src="../screenshots/channels/conditions-mobile.png" alt="Phone visual AND OR NOT condition controls" width="358"> | <img src="../screenshots/channels/conditions-light-mobile.png" alt="Light theme phone visual condition controls" width="358"> |
+
+<img src="../screenshots/channels/routing-mobile.png" alt="Phone rule priority and final Otherwise default" width="390">
 
 Shortcuts expand a configured prompt. `$ARGUMENTS` is literal substitution, never shell evaluation. Chat-control command names are reserved.
 
@@ -65,7 +75,8 @@ flowchart TD
   G --> I["Set recipient directions, Attention and project access"]
   H --> I
   I --> J["Choose agent defaults and ordered inbound routes"]
-  J --> K["Save and run an explicit delivery test"]
+  J --> L["Optional Otherwise default stays last"]
+  L --> K["Save and run an explicit delivery test"]
 ```
 
 Pairing does not grant agent execution by itself. Inbound direction, approved sender IDs, project access and an enabled matching agent route must also permit it. Slack's manifest registers `/orc`; Telegram registers the small control menu and configured shortcuts.
@@ -115,7 +126,8 @@ flowchart LR
 
 | Check | Result |
 | --- | --- |
-| Complete browser suite on the application implementation | **464 passed, 0 failed**, 2 unchanged opt-in real-agent demos skipped |
+| Complete browser suite on base implementation `eb8b87d` | **464 passed, 0 failed**, 2 unchanged opt-in real-agent demos skipped |
+| Routing UX follow-up | **5 browser checks passed**: desktop/phone visual nested groups, NOT, invalid drafts, keyboard focus, persisted order/default and project pickers; **16 channel + 7 API tests passed**, including default ordering and authorization |
 | Normal pre-commit CI | Passed: lint/format, all workspace typechecks, package tests, dependency-security regressions and web units; one unchanged platform-specific unit skip |
 | All workspace production builds | Passed |
 | Dependency audit | 0 vulnerabilities across 993 packages |
@@ -123,12 +135,12 @@ flowchart LR
 | Live Telegram | Formatted MCP send/button, commands, session continuity, project folder selection, model/session controls, native approvals and question reply/agent continuation verified |
 | Live Slack | **Not verified**; automated transport/rendering/authorization/onboarding coverage passes |
 
-The original complete browser run's five findings were corrected and the entire suite rerun successfully. The added screenshot captures are replayed by `channels.e2e.ts` and `mobile-terminal-chat.e2e.ts`; the other images come from the passing project/job pagination checks. No production installation, merge or release is part of this PR.
+The original complete browser run's five findings were corrected and the entire suite rerun successfully. The current routing follow-up reran the affected browser flows and production web build. The screenshot captures are replayed by `channels.e2e.ts` and `mobile-terminal-chat.e2e.ts`; the other images come from the passing project/job pagination checks. No production installation, merge or release is part of this PR.
 
 ## Suggested review path
 
 1. Compare the desktop overview and phone reply setup above.
-2. Inspect rule order/condition editing, prompt shortcuts and Slack-specific setup.
+2. Inspect rule order, the Otherwise default, nested visual conditions, prompt shortcuts and Slack-specific setup.
 3. Trace both message directions and the durable Attention reply flow.
 4. Review permission changes, callback replay/refusal, receipt ambiguity and restart recovery in the channel/provider/runtime tests.
 5. Keep live Telegram evidence distinct from fixture screenshots and Slack's automated coverage.

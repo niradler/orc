@@ -3,8 +3,6 @@ import {
   type ChannelCondition,
   type ChannelConnection,
   ChannelConnectionSchema,
-  ChannelFields,
-  ChannelOperators,
   type ChannelProviderInfo,
   type ChannelRoute,
   ChannelRouteSchema,
@@ -12,26 +10,33 @@ import {
   ChannelTargetSchema,
   type ChannelView,
   channelCommands,
+  isChannelCatchAll,
   validChannelCondition,
 } from "@orc/core/channels";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowDown, ArrowUp, Pencil } from "lucide-react";
 import { cloneElement, type ReactElement, useId, useState } from "react";
 import { api } from "@/api/client";
+import {
+  ChannelConditionBuilder,
+  channelConditionSummary,
+} from "@/components/ChannelConditionBuilder";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
-const split = (text: string) =>
-  text
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
 const conditionDefault: ChannelCondition = { field: "is_direct", op: "is", value: true };
 const defaultRouteCondition: ChannelCondition = {
   all: [{ field: "kind", op: "is", value: "message" }, conditionDefault],
 };
 const control = "form-control form-control-single w-full";
 type Project = { id: string; name: string };
+function routeActionLabel(route: Pick<ChannelRoute, "action">, projects: Project[]): string {
+  const action = route.action;
+  if (action.type === "ignore") return "Ignore silently · no agent starts";
+  const project = projects.find((project) => project.id === action.project_id);
+  return `Agent: ${action.agent} · Project: ${project?.name ?? action.project_id}${action.model ? ` · Model: ${action.model}` : ""}`;
+}
+
 function connectionDraft(view: ChannelView): ChannelConnection {
   const {
     status: _status,
@@ -71,179 +76,6 @@ function Field({ label, children }: { label: string; children: ReactElement<{ id
       <span>{label}</span>
       {cloneElement(children, { id })}
     </label>
-  );
-}
-
-function ConditionEditor({
-  value,
-  onChange,
-  onValidity,
-}: {
-  value: ChannelRoute["condition"];
-  onChange: (v: ChannelRoute["condition"]) => void;
-  onValidity: (valid: boolean) => void;
-}) {
-  const condition = validChannelCondition(value) ? value : conditionDefault;
-  const group = "all" in condition ? "all" : "any" in condition ? "any" : "all";
-  const clauses =
-    "all" in condition ? condition.all : "any" in condition ? condition.any : [condition];
-  const simple = clauses.every((c) => "field" in c);
-  const [clauseKeys, setClauseKeys] = useState(() => clauses.map(() => crypto.randomUUID()));
-  const [advanced, setAdvanced] = useState(!simple);
-  const [raw, setRaw] = useState(JSON.stringify(value, null, 2));
-  const [error, setError] = useState("");
-  return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Label>Conditions</Label>
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => {
-            setRaw(JSON.stringify(value, null, 2));
-            setError("");
-            onValidity(true);
-            setClauseKeys(clauses.map(() => crypto.randomUUID()));
-            setAdvanced(!advanced);
-          }}
-        >
-          {advanced ? "Simple editor" : "Advanced JSON"}
-        </Button>
-      </div>
-      {advanced ? (
-        <>
-          <textarea
-            aria-label="Rule condition JSON"
-            data-testid="channel-condition-json"
-            className="form-control min-h-36 w-full font-mono text-xs"
-            value={raw}
-            onChange={(e) => {
-              setRaw(e.target.value);
-              try {
-                const next = JSON.parse(e.target.value);
-                if (!validChannelCondition(next))
-                  throw new Error("Use field/op/value or all/any/not groups.");
-                onChange(next);
-                setError("");
-                onValidity(true);
-              } catch (e) {
-                onValidity(false);
-                setError(e instanceof Error ? e.message : "Invalid JSON");
-              }
-            }}
-          />
-          {error && (
-            <p role="alert" className="text-sm text-error">
-              {error}
-            </p>
-          )}
-        </>
-      ) : !simple ? (
-        <p className="text-sm">
-          This condition uses nested groups. Open Advanced JSON to edit it without changing its
-          meaning.
-        </p>
-      ) : (
-        <>
-          <Field label="Match">
-            <select
-              aria-label="Rule match mode"
-              className={control}
-              value={group}
-              onChange={(e) => onChange({ [e.target.value]: clauses })}
-            >
-              <option value="all">All conditions (AND)</option>
-              <option value="any">Any condition (OR)</option>
-            </select>
-          </Field>
-          {clauses.map(
-            (clause, index) =>
-              "field" in clause && (
-                <div
-                  key={clauseKeys[index]}
-                  className="grid grid-cols-2 gap-2 sm:grid-cols-[1fr_1fr_2fr_auto]"
-                >
-                  <select
-                    aria-label={`Condition ${index + 1} field`}
-                    className={control}
-                    value={clause.field}
-                    onChange={(e) => {
-                      const next = [...clauses];
-                      next[index] = { ...clause, field: e.target.value as typeof clause.field };
-                      onChange({ [group]: next });
-                    }}
-                  >
-                    {ChannelFields.map((field) => (
-                      <option key={field}>{field}</option>
-                    ))}
-                  </select>
-                  <select
-                    aria-label={`Condition ${index + 1} operator`}
-                    className={control}
-                    value={clause.op}
-                    onChange={(e) => {
-                      const next = [...clauses];
-                      next[index] = {
-                        ...clause,
-                        op: e.target.value as typeof clause.op,
-                        value:
-                          e.target.value === "in" ? [String(clause.value)] : String(clause.value),
-                      };
-                      onChange({ [group]: next });
-                    }}
-                  >
-                    {ChannelOperators.map((op) => (
-                      <option key={op}>{op}</option>
-                    ))}
-                  </select>
-                  <Input
-                    aria-label={`Condition ${index + 1} value`}
-                    value={
-                      Array.isArray(clause.value) ? clause.value.join(", ") : String(clause.value)
-                    }
-                    onChange={(e) => {
-                      const next = [...clauses];
-                      next[index] = {
-                        ...clause,
-                        value:
-                          clause.op === "in"
-                            ? split(e.target.value)
-                            : ["is_direct", "is_mention"].includes(clause.field) &&
-                                clause.op === "is"
-                              ? e.target.value === "true"
-                              : e.target.value,
-                      };
-                      onChange({ [group]: next });
-                    }}
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    disabled={clauses.length === 1}
-                    onClick={() => {
-                      setClauseKeys((keys) => keys.filter((_, i) => i !== index));
-                      onChange({ [group]: clauses.filter((_, i) => i !== index) });
-                    }}
-                    aria-label={`Remove condition ${index + 1}`}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              ),
-          )}
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              setClauseKeys((keys) => [...keys, crypto.randomUUID()]);
-              onChange({ [group]: [...clauses, conditionDefault] });
-            }}
-          >
-            Add condition
-          </Button>
-        </>
-      )}
-    </div>
   );
 }
 
@@ -391,7 +223,7 @@ function RouteEditor({
 }) {
   const [route, setRoute] = useState(value);
   const [error, setError] = useState("");
-  const [conditionValid, setConditionValid] = useState(true);
+  const [conditionValid, setConditionValid] = useState(validChannelCondition(value.condition));
   return (
     <div className="space-y-3 border-t border-border py-3" data-testid="channel-route-editor">
       <Field label="Rule name">
@@ -406,11 +238,20 @@ function RouteEditor({
         checked={route.enabled}
         onChange={(v) => setRoute({ ...route, enabled: v })}
       />
-      <ConditionEditor
-        value={route.condition}
-        onChange={(v) => setRoute({ ...route, condition: v })}
-        onValidity={setConditionValid}
-      />
+      {isChannelCatchAll(route.condition) ? (
+        <p className="text-sm text-muted-foreground">
+          Runs only when no enabled rule above matches. Recipient and project permissions still
+          apply.
+        </p>
+      ) : (
+        validChannelCondition(value.condition) && (
+          <ChannelConditionBuilder
+            value={value.condition}
+            onChange={(condition) => setRoute({ ...route, condition })}
+            onValidity={setConditionValid}
+          />
+        )
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Action">
           <select
@@ -428,7 +269,7 @@ function RouteEditor({
             }
           >
             <option value="agent">Invoke agent</option>
-            <option value="ignore">Ignore</option>
+            <option value="ignore">Ignore silently</option>
           </select>
         </Field>
         {route.action.type === "agent" && (
@@ -507,7 +348,19 @@ function RouteEditor({
           disabled={!conditionValid}
           onClick={() => {
             try {
-              onSave(ChannelRouteSchema.parse(route));
+              const parsed = ChannelRouteSchema.safeParse(route);
+              if (!parsed.success) {
+                const field = parsed.error.issues[0]?.path[0];
+                setError(
+                  field === "name"
+                    ? "Give this rule a name."
+                    : field === "action"
+                      ? "Choose a project and a valid agent, model and profile."
+                      : "Complete the rule conditions.",
+                );
+                return;
+              }
+              onSave(parsed.data);
             } catch (e) {
               setError(e instanceof Error ? e.message : "Invalid rule");
             }
@@ -578,6 +431,30 @@ function ConnectionEditor({
     is_direct: true,
     is_mention: false,
   });
+
+  const ruleEditor = rule && (
+    <RouteEditor
+      key={rule.id}
+      value={rule}
+      projects={projects}
+      onCancel={() => setRule(null)}
+      onSave={(value) => {
+        const exists = draft.routes.some((r) => r.id === value.id);
+        const routes = exists
+          ? draft.routes.map((r) => (r.id === value.id ? value : r))
+          : isChannelCatchAll(value.condition)
+            ? [...draft.routes, value]
+            : [
+                ...draft.routes.filter((r) => !isChannelCatchAll(r.condition)),
+                value,
+                ...draft.routes.filter((r) => isChannelCatchAll(r.condition)),
+              ];
+        update({ ...draft, routes });
+        setRule(null);
+      }}
+    />
+  );
+  const fallback = draft.routes.find((route) => isChannelCatchAll(route.condition));
   return (
     <div className="space-y-4 border-t border-border pt-4" data-testid="channel-editor">
       <div className="flex items-center justify-between gap-3">
@@ -956,7 +833,13 @@ function ConnectionEditor({
                             }
                           : t,
                       ),
-                      routes: [...draft.routes.filter((r) => r.id !== rule.id), rule],
+                      routes: [
+                        ...draft.routes.filter(
+                          (r) => r.id !== rule.id && !isChannelCatchAll(r.condition),
+                        ),
+                        rule,
+                        ...draft.routes.filter((r) => isChannelCatchAll(r.condition)),
+                      ],
                     });
                     setReplyTarget(null);
                     return "Agent replies configured. Save the connection to activate them.";
@@ -1085,60 +968,94 @@ function ConnectionEditor({
         <summary className="min-h-11 cursor-pointer py-3 text-sm">
           Inbound routing ({draft.routes.length})
         </summary>
-        <p className="mb-2 text-xs text-muted-foreground">
-          First match wins. Authorized senders only. No match invokes no agent. Apply edits, then
-          save the connection.
+        <p className="mb-3 text-sm text-muted-foreground">
+          Checked from top to bottom. The first enabled match handles the message; later rules do
+          not run. Only approved senders and permitted projects can invoke an agent.
         </p>
-        <div className="divide-y divide-border">
-          {draft.routes.map((r, i) => (
-            <div
-              key={r.id}
-              className="flex min-h-11 flex-wrap items-center justify-between gap-2 py-1"
-            >
-              <span className="min-w-0 text-sm">
-                {i + 1}. {r.name}
-                {!r.enabled ? " (disabled)" : ""}
-              </span>
-              <div className="flex gap-1">
-                <Button
-                  variant="ghost"
-                  disabled={i === 0}
-                  aria-label={`Move ${r.name} up`}
-                  onClick={() => {
-                    const routes = [...draft.routes];
-                    [routes[i - 1], routes[i]] = [
-                      routes[i] as ChannelRoute,
-                      routes[i - 1] as ChannelRoute,
-                    ];
-                    update({ ...draft, routes });
-                  }}
-                >
-                  Up
-                </Button>
-                <Button
-                  variant="ghost"
-                  disabled={i === draft.routes.length - 1}
-                  aria-label={`Move ${r.name} down`}
-                  onClick={() => {
-                    const routes = [...draft.routes];
-                    [routes[i], routes[i + 1]] = [
-                      routes[i + 1] as ChannelRoute,
-                      routes[i] as ChannelRoute,
-                    ];
-                    update({ ...draft, routes });
-                  }}
-                >
-                  Down
-                </Button>
-                <Button variant="ghost" onClick={() => setRule(r)}>
-                  Edit rule
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
+        <ol className="divide-y divide-border" data-testid="channel-route-order">
+          {draft.routes
+            .filter((r) => !isChannelCatchAll(r.condition))
+            .map((r, i, routes) => (
+              <li key={r.id} className="min-w-0 py-3" data-testid="channel-route-row">
+                <div className="flex min-w-0 items-start gap-2">
+                  <span
+                    className="flex size-8 shrink-0 items-center justify-center text-sm text-muted-foreground"
+                    title={`Priority ${i + 1}`}
+                  >
+                    {i + 1}
+                  </span>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <p className="break-words text-sm font-medium">
+                      {r.name}
+                      {!r.enabled && (
+                        <span className="ml-2 font-normal text-muted-foreground">
+                          Disabled · skipped
+                        </span>
+                      )}
+                    </p>
+                    <p
+                      className="line-clamp-2 break-words text-xs text-muted-foreground"
+                      title={channelConditionSummary(r.condition)}
+                    >
+                      {channelConditionSummary(r.condition)}
+                    </p>
+                    <p className="break-words text-xs">{routeActionLabel(r, projects)}</p>
+                  </div>
+                  <div className="flex shrink-0 gap-0.5">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      disabled={i === 0}
+                      aria-label={`Move ${r.name} up`}
+                      onClick={() => {
+                        const ordered = [...draft.routes];
+                        [ordered[i - 1], ordered[i]] = [
+                          ordered[i] as ChannelRoute,
+                          ordered[i - 1] as ChannelRoute,
+                        ];
+                        update({ ...draft, routes: ordered });
+                      }}
+                    >
+                      <ArrowUp className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      disabled={i === routes.length - 1}
+                      aria-label={`Move ${r.name} down`}
+                      onClick={() => {
+                        const ordered = [...draft.routes];
+                        [ordered[i], ordered[i + 1]] = [
+                          ordered[i + 1] as ChannelRoute,
+                          ordered[i] as ChannelRoute,
+                        ];
+                        update({ ...draft, routes: ordered });
+                      }}
+                    >
+                      <ArrowDown className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Edit rule ${r.name}`}
+                      onClick={() => setRule(r)}
+                    >
+                      <Pencil className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+                {rule?.id === r.id && ruleEditor}
+              </li>
+            ))}
+        </ol>
+        {!draft.routes.some((r) => !isChannelCatchAll(r.condition)) && (
+          <p className="py-3 text-sm text-muted-foreground">
+            No conditions yet. Add a rule for messages that need a specific agent or project.
+          </p>
+        )}
         <Button
           variant="outline"
+          className="mt-2"
           onClick={() =>
             setRule({
               id: crypto.randomUUID(),
@@ -1151,24 +1068,46 @@ function ConnectionEditor({
         >
           Add routing rule
         </Button>
-        {rule && (
-          <RouteEditor
-            key={rule.id}
-            value={rule}
-            projects={projects}
-            onCancel={() => setRule(null)}
-            onSave={(v) => {
-              const exists = draft.routes.some((r) => r.id === v.id);
-              update({
-                ...draft,
-                routes: exists
-                  ? draft.routes.map((r) => (r.id === v.id ? v : r))
-                  : [...draft.routes, v],
-              });
-              setRule(null);
-            }}
-          />
-        )}
+        {rule &&
+          !isChannelCatchAll(rule.condition) &&
+          !draft.routes.some((route) => route.id === rule.id) &&
+          ruleEditor}
+        <div className="my-3 border-y border-border py-3" data-testid="channel-route-default">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 space-y-1">
+              <p className="text-sm font-medium">Otherwise</p>
+              <p className="text-xs text-muted-foreground">
+                After all rules above, for any remaining authorized message.
+              </p>
+              <p className="break-words text-sm">
+                {fallback?.enabled
+                  ? routeActionLabel(fallback, projects)
+                  : `${fallback ? "Default disabled. " : ""}Show setup guidance; no agent starts.`}
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              onClick={() =>
+                setRule(
+                  draft.routes.find((r) => isChannelCatchAll(r.condition)) ?? {
+                    id: crypto.randomUUID(),
+                    name: "Otherwise",
+                    enabled: true,
+                    condition: { always: true },
+                    action: { type: "ignore" },
+                  },
+                )
+              }
+            >
+              {fallback ? "Edit default" : "Set default"}
+            </Button>
+          </div>
+          {rule && isChannelCatchAll(rule.condition) && ruleEditor}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Apply each rule, then save the connection to activate changes. Preview below uses the last
+          saved rules.
+        </p>
         <details className="mt-3">
           <summary className="min-h-11 cursor-pointer py-3 text-sm">
             Test saved routing without invoking an agent
@@ -1209,12 +1148,19 @@ function ConnectionEditor({
             variant="outline"
             onClick={() =>
               void run(async () => {
+                const saved = (await api.channels.list()).find(
+                  (connection) => connection.id === draft.id,
+                );
                 const result = await api.channels.routeTest(draft.id, probe);
+                const action = ChannelRouteSchema.shape.action.safeParse(result.action);
                 return !result.authorized
                   ? "Sender/destination not authorized."
                   : result.route_id
-                    ? `Matched ${result.route_id}: ${JSON.stringify(result.action)}`
-                    : "Authorized; no routing rule matched.";
+                    ? (() => {
+                        const matched = saved?.routes.find((route) => route.id === result.route_id);
+                        return `${matched && isChannelCatchAll(matched.condition) ? "Otherwise" : `Matched ${matched?.name ?? result.route_id}`}: ${action.success ? routeActionLabel({ action: action.data }, projects) : "No action"}`;
+                      })()
+                    : "No rule matched. Show setup guidance; no agent starts.";
               })
             }
           >
