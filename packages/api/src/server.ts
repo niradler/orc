@@ -11,6 +11,7 @@ import { constraintFailure } from "./lib/sqlite-errors.js";
 import { bearerAuth } from "./middleware/auth.js";
 import { auditRouter } from "./routes/audit.js";
 import { backendsRouter } from "./routes/backends.js";
+import { channelsRouter } from "./routes/channels.js";
 import { chatRouter } from "./routes/chat.js";
 import { eventsRouter } from "./routes/events.js";
 import { flowsRouter } from "./routes/flows.js";
@@ -118,6 +119,7 @@ export function createApp() {
   app.route("/api", healthRouter);
   app.route("/api", humanRequestsRouter);
   app.route("/api", settingsRouter);
+  app.route("/api", channelsRouter);
   app.route("/api", systemRouter);
   app.route("/api", mcpToolRouter);
   app.route("/", mcpRouter);

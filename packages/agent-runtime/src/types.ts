@@ -9,6 +9,19 @@ export type SessionOpts = {
   chatAgentOptions?: ChatAgentOptions | undefined;
   interactive?: boolean | undefined;
   attentionContext?: { chatThreadId: string; sessionTitle: string } | undefined;
+  humanRequestContext?:
+    | {
+        projectId: string;
+        notify: ("telegram" | "slack")[];
+        channel?: {
+          connection: string;
+          target: string;
+          chat_id: string;
+          thread_id?: string;
+          sender_id: string;
+        };
+      }
+    | undefined;
   ruleBuiltinActions?: boolean;
   /** Undefined follows the currently selected host; null explicitly means local. */
   executionHost?: string | null | undefined;

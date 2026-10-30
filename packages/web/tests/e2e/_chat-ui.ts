@@ -42,6 +42,12 @@ export async function closeChatHistory(page: Page): Promise<void> {
 
 export async function settingsSection(page: Page, section: string): Promise<void> {
   const mobile = page.getByRole("combobox", { name: "Settings section", exact: true });
+  await expect(
+    mobile
+      .or(page.getByTestId(`settings-section-${section}`))
+      .filter({ visible: true })
+      .first(),
+  ).toBeVisible();
   if (await mobile.isVisible()) await mobile.selectOption(section);
   else await page.getByTestId(`settings-section-${section}`).click();
 }

@@ -644,7 +644,24 @@ rotated. The receiver is intentionally outside normal ORC bearer authentication;
 the per-endpoint HMAC is its authentication boundary. Management remains under the
 authenticated API.
 
-### Gateway (Telegram / Slack)
+### Channels (Telegram / Slack)
+
+Use **Settings → Channels** to configure connections, verify bot/workspace identity,
+pair approved recipients, and define ordered inbound rules that invoke agents.
+Rules support simple predicates and nested AND/OR/NOT groups; authorization runs
+before routing, and the first matching rule wins. Agent replies return to the
+original conversation. Agents can also send independently through `channel_send`
+over MCP or `POST /api/channels/messages`.
+
+Common Markdown renders automatically. Optional `overrides` accepts the provider's
+native JSON message options, including Slack Block Kit and Telegram HTML/keyboards.
+Connections, recipients and routes live in SQLite; credentials are encrypted or
+referenced through server environment variables. Pairing grants messaging access
+only; inbound invocation and Attention notifications are separate opt-ins.
+
+See the [channel setup, routing, API/MCP and native payload reference](skills/orc-platform/references/channels.md).
+
+### Legacy gateway (Telegram / Slack)
 
 Approve agent work from your phone, search memory, or start a live AI session.
 
@@ -1024,6 +1041,7 @@ packages/
   mcp/            MCP server (stdio + Streamable HTTP at /mcp)
   runner/         Job executor + cron/watch scheduler + task loop
   gateway/        Telegram + Slack bridge + agent sessions
+  channels/       Provider transport, rendering, pairing and channel delivery
   agent-runtime/  Agent backend registry (claude, acpx, a2a)
   task-service/   Task status transitions + side-effects
   web/            React dashboard (Vite + Tailwind + shadcn + React Query)

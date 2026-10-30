@@ -1,3 +1,11 @@
+import type {
+  ChannelConnection,
+  ChannelPairingView,
+  ChannelProviderInfo,
+  ChannelReceipt,
+  ChannelSend,
+  ChannelView,
+} from "@orc/core/channels";
 import { loadConfig, resolveApiBase } from "@orc/core/config";
 import type { HumanRequest, HumanRequestInput, HumanResponse } from "@orc/core/human-requests";
 import type {
@@ -254,6 +262,38 @@ export function createOrcClient(options?: OrcClientOptions) {
           "POST",
           `/push/subscriptions/${e(id)}/test`,
         ),
+    },
+    channels: {
+      list: (project_id?: string) =>
+        c<ChannelView[]>("GET", "/channels", undefined, { project_id }),
+      providers: () => c<ChannelProviderInfo[]>("GET", "/channels/providers"),
+      save: (input: ChannelConnection) =>
+        c<ChannelView>("PUT", `/channels/${encodeURIComponent(input.id)}`, input),
+      verify: (id: string) =>
+        c<{ id: string; name: string }>("POST", `/channels/${encodeURIComponent(id)}/verify`),
+      targets: (id: string, project_id?: string) =>
+        c<ChannelView["targets"]>("GET", `/channels/${encodeURIComponent(id)}/targets`, undefined, {
+          project_id,
+        }),
+      send: (input: ChannelSend) =>
+        c<ChannelReceipt & { warnings: string[] }>("POST", "/channels/messages", input),
+      message: (id: string, project_id?: string) =>
+        c<ChannelReceipt>("GET", `/channels/messages/${encodeURIComponent(id)}`, undefined, {
+          project_id,
+        }),
+      updateMessage: (
+        id: string,
+        input: Pick<ChannelSend, "message" | "overrides" | "project_id" | "thread_id">,
+      ) => c<ChannelReceipt>("PATCH", `/channels/messages/${encodeURIComponent(id)}`, input),
+      pair: (id: string) =>
+        c<{ id: string; url: string; message: string; expires_at: number }>(
+          "POST",
+          `/channels/${encodeURIComponent(id)}/pairings`,
+        ),
+      pairing: (id: string) =>
+        c<ChannelPairingView>("GET", `/channels/pairings/${encodeURIComponent(id)}`),
+      confirmPairing: (id: string) =>
+        c<unknown>("POST", `/channels/pairings/${encodeURIComponent(id)}/confirm`),
     },
     humanRequests: {
       list: () => c<HumanRequest[]>("GET", "/human-requests"),

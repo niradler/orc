@@ -1,5 +1,19 @@
 import type { JobAction, WebhookSubscription } from "@orc/core/job-actions";
 
+export type {
+  ChannelCondition,
+  ChannelConnection,
+  ChannelInbound,
+  ChannelMessage,
+  ChannelPairingView,
+  ChannelProviderInfo,
+  ChannelReceipt,
+  ChannelRoute,
+  ChannelSend,
+  ChannelTarget,
+  ChannelView,
+} from "@orc/core/channels";
+
 export type { JobAction, WebhookSubscription } from "@orc/core/job-actions";
 export type {
   ArchiveSearchResult,

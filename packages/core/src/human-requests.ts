@@ -17,6 +17,16 @@ export const HumanRequestInputSchema = z
         native_session_id: identity.optional(),
         native_request_key: identity.optional(),
         execution_host: z.string().min(1).max(255).nullable().optional(),
+        channel: z
+          .object({
+            connection: identity,
+            target: identity,
+            chat_id: identity,
+            thread_id: identity.optional(),
+            sender_id: identity,
+          })
+          .strict()
+          .optional(),
       })
       .strict(),
     project_id: identity.nullable().default(null),

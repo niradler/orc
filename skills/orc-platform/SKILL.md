@@ -1,6 +1,6 @@
 ---
 name: orc-platform
-description: "Operate ORC: CLI/API/MCP, auth/settings, projects, tasks/flows, memory/KB/digests/embeddings, sessions/handoff, terminals/chat, jobs/gateway, agents/backends/packages, Git/GitHub/SSH, rules/hooks, tags/audit, scratchpads (plans, diagrams, HTML), dashboard links."
+description: "Operate ORC: CLI/API/MCP, auth/settings, projects, tasks/flows, memory/KB/digests/embeddings, sessions/handoff, terminals/chat, jobs/channels/gateway, agents/backends/packages, Git/GitHub/SSH, rules/hooks, tags/audit, scratchpads (plans, diagrams, HTML), dashboard links."
 ---
 
 # Operate ORC
@@ -39,6 +39,7 @@ verify the returned hash/size without loading the script body into context.
 | KB intake/search/edit, parsers, embeddings, README/Markdown and living Learnings digests | [Knowledge and documentation](references/knowledge.md) |
 | Scratchpads: plans/docs with mermaid, Excalidraw diagrams, interactive HTML pages with or without ORC access | [Scratchpads](references/scratchpads.md) |
 | Projects, tasks/flows, jobs, gateway, status, tags and audit | [Work and operations](references/work.md) |
+| Channel setup, Telegram/Slack, inbound agent routing, outbound API/MCP, Markdown/native payloads | [Channels](references/channels.md) |
 | Session continuity/handoff, terminals, chat, SSH execution, Git/GitHub | [Sessions and execution](references/execution.md) |
 | Archive local coding sessions on remote ORC, incremental sync/deduplication, session retrieval design | [Session archive and search](references/session-archive.md) |
 | Deterministic rules, hooks and enforcement capabilities | [Rules](references/rules.md) |

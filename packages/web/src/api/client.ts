@@ -1,3 +1,11 @@
+import type {
+  ChannelConnection,
+  ChannelPairingView,
+  ChannelProviderInfo,
+  ChannelReceipt,
+  ChannelSend,
+  ChannelView,
+} from "@orc/core/channels";
 import type { ChatHistoryPage, ChatModels, ChatThread } from "@orc/core/chat";
 import type { HumanRequest, HumanResponse } from "@orc/core/human-requests";
 import type {
@@ -568,6 +576,29 @@ export type UpdateScratchpadInput = {
 // ---- API client ----
 
 export const api = {
+  channels: {
+    list: () => req<ChannelView[]>("GET", "/channels"),
+    providers: () => req<ChannelProviderInfo[]>("GET", "/channels/providers"),
+    save: (input: ChannelConnection) =>
+      req<ChannelView>("PUT", `/channels/${enc(input.id)}`, input),
+    verify: (id: string) =>
+      req<{ id: string; name: string }>("POST", `/channels/${enc(id)}/verify`),
+    send: (input: ChannelSend) => req<ChannelReceipt>("POST", "/channels/messages", input),
+    pair: (id: string) =>
+      req<{ id: string; url: string; message: string; expires_at: number }>(
+        "POST",
+        `/channels/${enc(id)}/pairings`,
+      ),
+    pairing: (id: string) => req<ChannelPairingView>("GET", `/channels/pairings/${enc(id)}`),
+    confirmPairing: (id: string) => req<unknown>("POST", `/channels/pairings/${enc(id)}/confirm`),
+    manifest: () => req<Record<string, unknown>>("GET", "/channels/slack-manifest"),
+    routeTest: (id: string, input: Record<string, unknown>) =>
+      req<{ authorized: boolean; route_id: string | null; action: unknown }>(
+        "POST",
+        `/channels/${enc(id)}/route-test`,
+        input,
+      ),
+  },
   push: {
     config: () => req<PushConfig>("GET", "/push/config"),
     devices: () => req<PushDevice[]>("GET", "/push/subscriptions"),

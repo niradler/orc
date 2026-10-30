@@ -4,6 +4,53 @@ import { HumanRequestStore } from "@orc/db/human-requests";
 import { HumanRequestChannels } from "../human-requests.js";
 import type { GatewayAdapter, IncomingMessage } from "../types.js";
 
+test("sensitive approvals send only an ORC review notice and cannot be approved in-channel", async () => {
+  const db = new Database(":memory:");
+  try {
+    const store = new HumanRequestStore(db);
+    const request = store.create({
+      origin: { session_id: "s", backend: "codex", request_id: "secret" },
+      kind: "approval",
+      prompt: "Connect account?",
+      notify: ["telegram"],
+      action: {
+        tool: "connect",
+        input: { password: "short", headers: { Authorization: "Bearer private-value" } },
+        cwd: "/tmp",
+        host: "local",
+      },
+    });
+    const sent: string[] = [];
+    const adapter: GatewayAdapter = {
+      platform: "telegram",
+      start: async () => {},
+      stop: async () => {},
+      send: async (_id, text) => {
+        sent.push(text);
+        return "sent";
+      },
+    };
+    const channels = new HumanRequestChannels(store);
+    await channels.notify(new Map([["telegram", adapter]]), [
+      { platform: "telegram", chat_id: "nir", project_id: null, thread_id: null },
+    ]);
+    expect(sent[0]).toContain("sensitive input");
+    expect(sent[0]).not.toContain("short");
+    expect(sent[0]).not.toContain("private-value");
+    expect(
+      channels.reply({
+        platform: "telegram",
+        chatId: "nir",
+        userId: "nir",
+        text: `/attention ${request.id} 1 approve`,
+      }),
+    ).toContain("not offered");
+    expect(store.get(request.id).status).toBe("pending");
+  } finally {
+    db.close();
+  }
+});
+
 test("should persist channel bindings, route only matching projects, and reject cross-chat or duplicate decisions", async () => {
   const db = new Database(":memory:");
   try {

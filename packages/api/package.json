@@ -4,6 +4,7 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./channels-router": "./src/routes/channels.ts",
     "./lifecycle": "./src/lifecycle.ts",
     ".": "./src/index.ts",
     "./server": "./src/server.ts"
@@ -17,6 +18,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@orc/channels": "workspace:*",
     "@hono/swagger-ui": "^0.6.1",
     "@hono/zod-openapi": "^1.6.3",
     "@modelcontextprotocol/sdk": "^1.32.2",

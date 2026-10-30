@@ -64,7 +64,12 @@ export function createMcpServer({
   const served: readonly ListedTool[] = toolDefinitions;
 
   async function callTool(name: string, args: unknown): Promise<ToolResult> {
-    logger.debug(`Tool call: ${name}`, name === "session_handoff" ? undefined : args);
+    logger.debug(
+      `Tool call: ${name}`,
+      name === "session_handoff" || name === "tool_invoke" || name.startsWith("channel_")
+        ? undefined
+        : args,
+    );
 
     try {
       const toolDef = served.find((t) => t.name === name);

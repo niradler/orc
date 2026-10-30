@@ -1,3 +1,4 @@
+import { getChannelService } from "@orc/channels";
 import { loadConfig } from "@orc/core/config";
 import { hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
@@ -89,12 +90,17 @@ class GatewayManager {
     const config = loadConfig();
 
     const enabledAdapters: string[] = [];
-    if (config.gateway.telegram.enabled && config.gateway.telegram.token)
+    if (
+      config.gateway.telegram.enabled &&
+      config.gateway.telegram.token &&
+      !getChannelService().managesAccount("telegram", config.gateway.telegram.token)
+    )
       enabledAdapters.push("telegram");
     if (
       config.gateway.slack.enabled &&
       config.gateway.slack.bot_token &&
-      config.gateway.slack.app_token
+      config.gateway.slack.app_token &&
+      !getChannelService().managesAccount("slack", config.gateway.slack.bot_token)
     )
       enabledAdapters.push("slack");
 
@@ -142,6 +148,7 @@ class GatewayManager {
       if (this.attentionBusy) return;
       this.attentionBusy = true;
       try {
+        await this.releaseManagedAccounts();
         await this.attention?.notify(this.adapters, await listReviewTargets());
       } catch {
         logger.warn("Attention notification scan failed; requests remain in the inbox");
@@ -160,6 +167,17 @@ class GatewayManager {
     this.permissionManager.denyAll();
     await Promise.all([...this.adapters.values()].map((a) => a.stop().catch(() => {})));
     this.adapters.clear();
+  }
+  async releaseManagedAccounts(): Promise<void> {
+    for (const platform of ["telegram", "slack"] as const) {
+      const adapter = this.adapters.get(platform);
+      const credentials = loadConfig().gateway[platform];
+      const token = platform === "telegram" ? credentials.token : credentials.bot_token;
+      if (adapter && token && getChannelService().managesAccount(platform, token)) {
+        this.adapters.delete(platform);
+        await adapter.stop().catch(() => {});
+      }
+    }
   }
 
   resolvePermission(requestId: string, approved: boolean): boolean {

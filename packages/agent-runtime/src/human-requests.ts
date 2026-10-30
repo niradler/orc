@@ -124,6 +124,9 @@ export function withHumanRequests(
             origin: {
               session_id: session.id,
               backend: agent,
+              ...(opts.humanRequestContext?.channel
+                ? { channel: opts.humanRequestContext.channel }
+                : {}),
               execution_host: host.kind === "ssh" ? host.alias : null,
               native_request_key: createHash("sha256").update(event.data.requestId).digest("hex"),
               ...(nativeSessionId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(nativeSessionId)
@@ -148,6 +151,7 @@ export function withHumanRequests(
             },
             project_id:
               revisions.find((revision) => revision.id === bindings[0]?.revision_id)?.project_id ??
+              opts.humanRequestContext?.projectId ??
               null,
             ...(bindings.length ? { rule_bindings: bindings } : {}),
             kind: event.type === "question_request" ? "question" : "approval",
@@ -160,7 +164,12 @@ export function withHumanRequests(
               question?.options?.map((option) => [option.label, option.description]) ?? [],
             ),
             multi_select: question?.multiSelect ?? false,
-            notify: [...new Set(actions.flatMap((action) => action.target.notify))],
+            notify: [
+              ...new Set([
+                ...actions.flatMap((action) => action.target.notify),
+                ...(opts.humanRequestContext?.notify ?? []),
+              ]),
+            ],
             expires_in_seconds: actions.length
               ? Math.min(...actions.map((action) => action.target.expires_in_seconds))
               : 86400,

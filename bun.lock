@@ -33,6 +33,7 @@
         "@hono/zod-openapi": "^1.6.3",
         "@modelcontextprotocol/sdk": "^1.32.2",
         "@orc/agent-runtime": "workspace:*",
+        "@orc/channels": "workspace:*",
         "@orc/core": "workspace:*",
         "@orc/db": "workspace:*",
         "@orc/gateway": "workspace:*",
@@ -49,6 +50,15 @@
       "devDependencies": {
         "@orc/sdk": "workspace:*",
         "@types/web-push": "^3.6.4",
+      },
+    },
+    "packages/channels": {
+      "name": "@orc/channels",
+      "version": "0.1.53",
+      "dependencies": {
+        "@orc/core": "workspace:*",
+        "@orc/db": "workspace:*",
+        "marked": "^18.0.11",
       },
     },
     "packages/cli": {
@@ -117,6 +127,7 @@
       "version": "0.1.53",
       "dependencies": {
         "@orc/agent-runtime": "workspace:*",
+        "@orc/channels": "workspace:*",
         "@orc/core": "workspace:*",
         "@orc/db": "workspace:*",
         "@orc/runner": "workspace:*",
@@ -158,6 +169,7 @@
       },
       "devDependencies": {
         "@orc/api": "workspace:*",
+        "@orc/channels": "workspace:*",
       },
     },
     "packages/runner": {
@@ -593,6 +605,8 @@
     "@orc/agent-runtime": ["@orc/agent-runtime@workspace:packages/agent-runtime"],
 
     "@orc/api": ["@orc/api@workspace:packages/api"],
+
+    "@orc/channels": ["@orc/channels@workspace:packages/channels"],
 
     "@orc/core": ["@orc/core@workspace:packages/core"],
 
