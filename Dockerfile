@@ -7,6 +7,7 @@ COPY package.json bun.lock* tsconfig.json ./
 COPY patches/ patches/
 COPY packages/agent-runtime/package.json packages/agent-runtime/
 COPY packages/api/package.json            packages/api/
+COPY packages/channels/package.json       packages/channels/
 COPY packages/cli/package.json            packages/cli/
 COPY packages/core/package.json           packages/core/
 COPY packages/db/package.json             packages/db/
