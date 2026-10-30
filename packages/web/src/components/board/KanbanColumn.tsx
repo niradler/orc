@@ -44,14 +44,14 @@ export function KanbanColumn({
         ${borderClass}
       `}
     >
-      <div className="shrink-0 px-3 py-2.5 border-b border-border">
+      <div className="shrink-0 px-3 py-2 border-b border-border">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
             <span className="font-label text-sm font-medium text-on-surface-variant">{label}</span>
           </div>
           <span
-            className="text-[11px] font-label px-1.5 py-0.5 rounded-xs
+            className="text-xs font-label px-1.5 py-0.5 rounded-xs
               text-outline"
           >
             {tasks.length}
@@ -64,16 +64,16 @@ export function KanbanColumn({
         data-testid="kanban-column"
         data-column-status={status}
         data-drop-target={isOver}
-        className="flex-1 overflow-y-auto p-2 space-y-2 min-h-[100px]"
+        className="flex-1 overflow-y-auto p-2 space-y-2 min-h-11 md:min-h-[100px]"
       >
         {tasks.map((task) => (
           <KanbanCard key={task.id} task={task} onDelete={onDeleteTask} onClick={onCardClick} />
         ))}
 
         {tasks.length === 0 && (
-          <div className="flex items-center justify-center h-16 text-outline text-sm font-label">
-            Empty
-          </div>
+          <span className="sr-only">
+            No tasks in {label}. Drop a task here to change its status.
+          </span>
         )}
       </div>
     </div>

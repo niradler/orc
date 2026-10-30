@@ -284,6 +284,85 @@
 }
 
 @layer utilities {
+  .work-form-dialog {
+    display: flex;
+    flex-direction: column;
+    width: min(960px, calc(100vw - 3rem));
+    max-width: none;
+    max-height: min(85dvh, calc(var(--app-height, 100dvh) - 2rem));
+    overflow: hidden;
+    padding: 0;
+    gap: 0;
+  }
+  .chat-history-drawer {
+    display: flex;
+    flex-direction: column;
+    left: 0;
+    top: var(--app-top, 0px);
+    width: min(340px, calc(100vw - 24px));
+    max-width: none;
+    height: var(--app-height, 100dvh);
+    max-height: var(--app-height, 100dvh);
+    translate: 0 0;
+    transform: none;
+    border-radius: 0;
+    padding: 20px 16px;
+    gap: 16px;
+  }
+  .chat-history-drawer > * {
+    flex-shrink: 0;
+  }
+  .work-form-dialog > :first-child {
+    flex-shrink: 0;
+    padding: 20px 24px;
+    padding-right: 48px;
+    border-bottom: 1px solid rgb(var(--border));
+    text-align: left;
+  }
+  .work-form-dialog > form {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .work-form-body {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 20px 24px;
+  }
+  .work-form-footer {
+    flex-shrink: 0;
+    border-top: 1px solid rgb(var(--border));
+    padding: 12px 24px;
+    background: rgb(var(--surface-high));
+    gap: 8px;
+  }
+  @media (max-width: 639px) {
+    .work-form-dialog {
+      width: 100%;
+      height: var(--app-height, 100dvh);
+      max-height: var(--app-height, 100dvh);
+      border: 0;
+      border-radius: 0;
+    }
+    .work-form-dialog > :first-child,
+    .work-form-body,
+    .work-form-footer {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+    .work-form-dialog > form {
+      flex: 1 1 0%;
+    }
+    .work-form-dialog .work-form-body {
+      flex: 1 1 auto;
+      align-content: start;
+    }
+    .work-form-footer {
+      padding-bottom: max(12px, env(safe-area-inset-bottom));
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     html:root:root *,
     html:root:root *::before,
@@ -298,9 +377,29 @@
   @media (max-width: 767px), (any-pointer: coarse) {
     html:root button,
     html:root [role="button"],
-    html:root [role="combobox"] {
+    html:root [role="combobox"],
+    html:root select {
       min-height: 44px;
       min-width: 44px;
+    }
+
+    html:root [data-ui="button"][data-variant="default"],
+    html:root .chat-send-button {
+      position: relative;
+      isolation: isolate;
+      background-color: transparent;
+    }
+    html:root [data-ui="button"][data-variant="default"]::before,
+    html:root .chat-send-button::before {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      inset: 5px 0;
+      border-radius: inherit;
+      background-color: rgb(var(--primary));
+    }
+    html:root .chat-send-button::before {
+      inset: 6px;
     }
 
     html:root a[href] {
@@ -319,6 +418,52 @@
   /* Fullscreen markdown views live on <body>, which an open modal dialog makes inert. */
   [data-streamdown$="-fullscreen"] {
     pointer-events: auto;
+  }
+}
+
+/* Native pickers keep their platform menu, but share the closed control's chevron with Radix. */
+:root {
+  --select-chevron-size: 14px;
+  --select-chevron-inset: 12px;
+  --select-chevron-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2362666E' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+:root.dark {
+  --select-chevron-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23A3A3A3' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+html:root select:not([multiple]):not([size]),
+html:root select:not([multiple])[size="1"] {
+  appearance: none;
+  background-image: var(--select-chevron-image);
+  background-repeat: no-repeat;
+  background-position: right var(--select-chevron-inset) center;
+  background-size: var(--select-chevron-size) var(--select-chevron-size);
+  padding-inline-end: calc(var(--select-chevron-inset) + var(--select-chevron-size) + 10px);
+  text-overflow: ellipsis;
+}
+
+html:root select:not([multiple]):not([size]):dir(rtl),
+html:root select:not([multiple])[size="1"]:dir(rtl) {
+  background-position: left var(--select-chevron-inset) center;
+}
+
+.select-trigger {
+  min-width: 0;
+  padding-inline-end: var(--select-chevron-inset);
+}
+
+.select-trigger > .select-chevron {
+  width: var(--select-chevron-size);
+  height: var(--select-chevron-size);
+  pointer-events: none;
+}
+
+@media (forced-colors: active) {
+  html:root select:not([multiple]):not([size]),
+  html:root select:not([multiple])[size="1"] {
+    appearance: auto;
+    background-image: none;
   }
 }
 
@@ -360,4 +505,20 @@
   --tw-translate-y: 0;
   transform: none;
   animation: none;
+}
+
+@layer utilities {
+  @media (min-width: 768px) {
+    .work-form-body [data-testid="job-action-fields"] {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      align-items: start;
+      margin-block: 0;
+    }
+    .work-form-body [data-testid="job-action-fields"] > * {
+      margin-block: 0;
+    }
+  }
 }

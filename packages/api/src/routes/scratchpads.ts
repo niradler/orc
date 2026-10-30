@@ -51,6 +51,10 @@ app.openapi(
       query: z.object({
         kind: ScratchpadKindSchema.optional(),
         project_id: z.string().min(1).optional(),
+        include_global: z.enum(["true", "false"]).optional().openapi({
+          description:
+            "Include shared pads alongside project_id; exact project filtering is the default",
+        }),
         unassigned: z
           .enum(["true", "false"])
           .optional()
@@ -73,10 +77,11 @@ app.openapi(
     },
   }),
   (c) => {
-    const { limit, unassigned, project_id, ...query } = c.req.valid("query");
+    const { limit, unassigned, project_id, include_global, ...query } = c.req.valid("query");
     const pads = store().list({
       ...query,
       project_id: unassigned === "true" ? null : project_id,
+      include_global: include_global === "true",
     });
     return c.json({ scratchpads: pads.slice(0, limit), total: pads.length });
   },

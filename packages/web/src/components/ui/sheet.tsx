@@ -1,6 +1,7 @@
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import * as React from "react";
+import { ActionHelp } from "@/components/ActionHelp";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { collapseExpandedDocument, keepMarkdownFullscreen } from "@/lib/document-display";
 import { cn } from "@/lib/utils";
@@ -95,13 +96,15 @@ const SheetContent = React.forwardRef<
             )}
             {...panel.handleProps}
           />
-          <DialogPrimitive.Close
-            data-testid="sheet-close"
-            className="absolute right-1 top-1 flex size-11 items-center justify-center text-outline hover:text-on-surface transition-colors"
-            aria-label="Close panel"
-          >
-            <X size={16} />
-          </DialogPrimitive.Close>
+          <ActionHelp label="Close panel">
+            <DialogPrimitive.Close
+              data-testid="sheet-close"
+              className="absolute right-1 top-1 flex size-11 items-center justify-center text-outline hover:text-on-surface transition-colors"
+              aria-label="Close panel"
+            >
+              <X size={16} />
+            </DialogPrimitive.Close>
+          </ActionHelp>
         </DialogPrimitive.Content>
       </SheetPortal>
     );

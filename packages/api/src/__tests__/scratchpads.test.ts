@@ -103,6 +103,26 @@ describe("Scratchpads REST API", () => {
     expect(await ids("kind=html")).not.toContain(linked.id);
     expect(await ids(`project_id=${projectId}`)).toContain(linked.id);
     expect(await ids(`project_id=${projectId}`)).not.toContain(html.id);
+    const otherProject = (
+      await (await req(app, "POST", "/projects", { name: "unrelated-pad-project" })).json()
+    ).id;
+    const unrelated = await create({ kind: "doc", title: "Unrelated", project_id: otherProject });
+    const shared = await ids(`project_id=${projectId}&include_global=true`);
+    expect(shared).toContain(linked.id);
+    expect(shared).toContain(html.id);
+    expect(shared).not.toContain(unrelated.id);
+    const first = await (
+      await req(app, "GET", `/scratchpads?project_id=${projectId}&include_global=true&limit=1`)
+    ).json();
+    expect(first.total).toBe(shared.length);
+    expect(first.scratchpads).toHaveLength(1);
+    expect(await ids(`project_id=${projectId}&include_global=false`)).toEqual([linked.id]);
+    expect(
+      (await req(app, "GET", `/scratchpads?project_id=${projectId}&include_global=yes`)).status,
+    ).toBe(400);
+    expect(
+      (await app.request(`/api/scratchpads?project_id=${projectId}&include_global=true`)).status,
+    ).toBe(401);
     expect(await ids("unassigned=true")).toContain(html.id);
     expect(await ids("unassigned=true")).not.toContain(linked.id);
     expect(await ids("session_id=native-9")).toEqual([html.id]);

@@ -1,4 +1,3 @@
-import { ChevronDown } from "lucide-react";
 import type { SelectHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 import "./TerminalControls.css";
@@ -13,7 +12,6 @@ export function TerminalSelect({
       <select {...props} className={cn("terminal-select", className)}>
         {children}
       </select>
-      <ChevronDown size={12} strokeWidth={1.5} aria-hidden="true" />
     </span>
   );
 }

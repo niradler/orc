@@ -5,15 +5,6 @@
   min-width: 0;
 }
 
-.terminal-select-wrap > svg {
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  pointer-events: none;
-  color: rgb(var(--muted-foreground));
-}
-
 .terminal-select,
 .terminal-field {
   width: 100%;
@@ -30,8 +21,6 @@
 }
 
 .terminal-select {
-  appearance: none;
-  padding-right: 30px;
   text-overflow: ellipsis;
 }
 

@@ -65,6 +65,7 @@ export const OrcConfigSchema = z.object({
     .object({
       theme: z.enum(["dark", "light"]).optional(),
       terminal_font: z.string().max(200).optional(),
+      attention_retention_hours: z.number().int().min(1).max(8760).optional(),
       chat: ChatSettingsSchema.optional(),
     })
     .default({}),

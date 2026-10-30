@@ -335,7 +335,16 @@ app.openapi(
           "application/json": {
             schema: z.object({
               threads: z.array(
-                z.object({ id, title: z.string(), updatedAt: z.number(), running: z.boolean() }),
+                z.object({
+                  id,
+                  title: z.string(),
+                  updatedAt: z.number(),
+                  running: z.boolean(),
+                  agent: z.string().nullable().optional(),
+                  runtimeId: z.string().nullable().optional(),
+                  sourceId: z.string().nullable().optional(),
+                  host: z.string().nullable().optional(),
+                }),
               ),
             }),
           },

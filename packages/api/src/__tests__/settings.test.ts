@@ -64,7 +64,12 @@ test("should persist selected settings without changing or exposing credentials"
 });
 
 test("should reject unknown settings, credential writes and invalid values", async () => {
-  for (const body of [{ secret: "bad" }, { theme: "pink" }, { terminal_font: "x".repeat(201) }]) {
+  for (const body of [
+    { secret: "bad" },
+    { theme: "pink" },
+    { terminal_font: "x".repeat(201) },
+    ...[0, -1, 1.5, 8761, "72"].map((value) => ({ attention_retention_hours: value })),
+  ]) {
     expect(
       (await app.request("/api/settings", { method: "PATCH", headers, body: JSON.stringify(body) }))
         .status,
@@ -116,4 +121,18 @@ test("should persist validated chat defaults without exposing server credentials
       ).status,
     ).toBe(400);
   }
+});
+
+test("should save and reload attention retention without exposing credentials", async () => {
+  const result = await app.request("/api/settings", {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ attention_retention_hours: 48 }),
+  });
+  expect(result.status).toBe(200);
+  resetConfig();
+  const reloaded = await app.request("/api/settings", { headers });
+  const body = await reloaded.text();
+  expect(JSON.parse(body).attention_retention_hours).toBe(48);
+  expect(body).not.toContain("private-server-secret");
 });

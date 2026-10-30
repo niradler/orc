@@ -37,6 +37,7 @@ export const CHAT_TABS_KEY = "orc_chat_tabs";
 export interface StoredChatTabs {
   threads: string[];
   active: string | null;
+  projectIds?: Record<string, string | null>;
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -48,13 +49,29 @@ export function parseChatTabs(raw: string | null): StoredChatTabs {
   try {
     const value: unknown = JSON.parse(raw ?? "null");
     if (!value || typeof value !== "object") return { threads: [], active: null };
-    const { threads, active } = value as Record<string, unknown>;
+    const { threads, active, projectIds: rawProjects } = value as Record<string, unknown>;
     const ids = Array.isArray(threads)
       ? threads
           .filter((id): id is string => typeof id === "string" && isChatThreadId(id))
           .slice(0, 20)
       : [];
+    const projectIds = Object.fromEntries(
+      rawProjects && typeof rawProjects === "object" && !Array.isArray(rawProjects)
+        ? Object.entries(rawProjects).filter(
+            ([id, project]) =>
+              ids.includes(id) &&
+              (project === null ||
+                (typeof project === "string" &&
+                  project.length > 0 &&
+                  project.length <= 100 &&
+                  !["all", "unassigned"].includes(project))),
+          )
+        : [],
+    );
     return {
+      ...(Object.keys(projectIds).length
+        ? { projectIds: projectIds as Record<string, string | null> }
+        : {}),
       threads: ids,
       active: typeof active === "string" && ids.includes(active) ? active : null,
     };

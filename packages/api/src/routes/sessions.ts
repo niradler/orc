@@ -77,6 +77,10 @@ const liveListRoute = createRoute({
     query: z.object({
       agent: z.string().optional(),
       task_id: z.string().optional(),
+      project_id: z.string().min(1).max(200).optional().openapi({
+        description:
+          "Project id, or unassigned for sessions without a project; filtered before limit",
+      }),
       active: z
         .enum(["true", "false"])
         .optional()
@@ -106,6 +110,7 @@ const liveSearchRoute = createRoute({
     query: z.object({
       q: z.string().min(2),
       agent: z.string().optional(),
+      project_id: z.string().min(1).max(200).optional(),
       limit: z.coerce.number().int().min(1).max(500).optional().default(100),
     }),
   },
@@ -355,11 +360,16 @@ async function toLiveDtos(rows: GatewayRow[]) {
 }
 
 app.openapi(liveListRoute, async (c) => {
-  const { agent, task_id, active, limit } = c.req.valid("query");
+  const { agent, task_id, active, limit, project_id } = c.req.valid("query");
   const bodyIds = task_id ? await sessionIdsOfTask(task_id) : [];
   const rows = await getDb().query.gateway_sessions.findMany({
     where: and(
       eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
+      project_id === "unassigned"
+        ? isNull(gateway_sessions.project_id)
+        : project_id
+          ? eq(gateway_sessions.project_id, project_id)
+          : undefined,
       agent ? eq(gateway_sessions.backend, agent) : undefined,
       task_id
         ? or(
@@ -386,11 +396,12 @@ app.openapi(liveListRoute, async (c) => {
 });
 
 app.openapi(liveSearchRoute, async (c) => {
-  const { q, agent, limit } = c.req.valid("query");
+  const { q, agent, limit, project_id } = c.req.valid("query");
   const result = await searchSessions({
     q,
     agent,
     limit,
+    projectId: project_id,
     runtime: hostRuntime(resolveExecHost()),
   });
   const dtos = await toLiveDtos(result.hits.map((h) => h.row));

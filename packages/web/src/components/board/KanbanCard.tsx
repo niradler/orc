@@ -70,7 +70,7 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
         ${isDragOverlay ? "bg-surface shadow-lg" : ""}
       `}
     >
-      <div className="pl-4 pr-3 py-4">
+      <div className="px-3 py-3">
         <button
           type="button"
           aria-label={`Open task: ${task.title}`}
@@ -95,11 +95,13 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
           <div className="flex flex-wrap items-center gap-1.5 min-w-0">
             <PriorityBadge priority={task.priority} />
             <span
-              className="shrink-0 w-4 h-4 rounded-lg bg-surface-highest
-                text-[8px] font-label font-bold text-outline
-                flex items-center justify-center"
+              className="shrink-0 text-xs font-label text-outline"
+              title={task.author || "Unassigned author"}
             >
-              {task.author?.[0] ?? "?"}
+              <span aria-hidden>{task.author?.[0] ?? "—"}</span>
+              <span className="sr-only">
+                {task.author ? `Author: ${task.author}` : "Unassigned author"}
+              </span>
             </span>
 
             {statusLabel && (
@@ -144,7 +146,7 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
                 className="flex items-center gap-0.5 text-xs font-label text-outline"
                 title={`${task.comments_count} comment${task.comments_count === 1 ? "" : "s"}`}
               >
-                <MessageSquare size={9} />
+                <MessageSquare size={12} />
                 {task.comments_count}
               </span>
             )}
@@ -160,7 +162,7 @@ export function KanbanCard({ task, onDelete, onClick, isDragOverlay }: KanbanCar
                 e.stopPropagation();
                 onDelete(task.id);
               }}
-              className="opacity-100 md:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-outline hover:text-error
+              className="opacity-100 md:pointer-fine:opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 text-outline hover:text-error
                 transition-opacity min-h-11 min-w-11 md:min-h-8 md:min-w-8 inline-flex items-center justify-center"
             >
               <Trash2 size={14} />

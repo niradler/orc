@@ -56,12 +56,14 @@ test("portable package import, tabbed files, lossless export and edit/use flow s
   await expect(page.getByTestId("setup-save")).toHaveCount(0);
   await expect(page.getByTestId("setup-name")).toHaveCount(0);
   await page.getByTestId("setup-cwd").fill(root);
+  await page.getByTestId("setup-instructions-tab").click();
   await page.getByTestId("setup-prompt").fill("Use the portable package");
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("packages-setups-tab")).toHaveCount(0);
   await expect(page.getByTestId("workspace-sidebar").getByTestId("nav-agents")).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
-  await card.getByTestId("package-card-edit").click();
+  await card.getByTestId("package-actions-menu").click();
+  await page.getByTestId("package-card-edit").click();
   await expect(page.getByRole("tab", { name: "plugin.json", exact: true })).toBeVisible();
   await page.getByRole("tab", { name: "asset.bin", exact: true }).click();
   await expect(page.getByTestId("package-file-input")).toHaveAttribute("contenteditable", "false");

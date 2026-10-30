@@ -21,6 +21,7 @@ function merge(tags: string[], text: string): string[] {
 export function TagInput({
   value,
   onChange,
+  onDraftChange,
   suggestions = [],
   placeholder = "Add a label",
   "aria-label": ariaLabel,
@@ -28,6 +29,8 @@ export function TagInput({
 }: {
   value: string[];
   onChange: (tags: string[]) => void;
+  /** A form can protect text that has not yet been committed as a tag. */
+  onDraftChange?: (draft: string) => void;
   suggestions?: string[];
   placeholder?: string;
   "aria-label": string;
@@ -38,10 +41,15 @@ export function TagInput({
   const listId = useId();
   const offered = suggestions.filter((s) => !value.includes(s));
 
+  function changeDraft(text: string) {
+    setDraft(text);
+    onDraftChange?.(text);
+  }
+
   function commit(text: string) {
     const next = merge(value, text);
     if (next.length !== value.length) onChange(next);
-    setDraft("");
+    changeDraft("");
   }
 
   function type(text: string) {
@@ -50,8 +58,8 @@ export function TagInput({
     if (parts.length > 1) {
       const rest = parts.pop() ?? "";
       onChange(merge(value, parts.join(",")));
-      setDraft(rest);
-    } else setDraft(text);
+      changeDraft(rest);
+    } else changeDraft(text);
   }
 
   function key(e: KeyboardEvent<HTMLInputElement>) {

@@ -47,6 +47,7 @@ export function forgetApiSecret(apiUrl: string): void {
 }
 
 export type WorkspacePreferences = {
+  attention_retention_hours?: number;
   theme?: "dark" | "light";
   terminal_font?: string;
   chat?: ChatSettings;

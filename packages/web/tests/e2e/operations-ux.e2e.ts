@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { API_SECRET, apiGet, apiPost, gotoView, selectProject, tid } from "./_helpers";
 
 for (const theme of ["dark", "light"] as const) {
@@ -87,9 +88,12 @@ for (const theme of ["dark", "light"] as const) {
       await row.getByTestId("job-edit").click();
       const dialog = page.getByRole("dialog");
       await dialog.getByLabel("Description", { exact: true }).fill("");
+      await revealFormField(page, dialog.getByLabel("Maximum retries", { exact: true }));
       await dialog.getByLabel("Maximum retries", { exact: true }).fill("0");
+      await revealFormField(page, dialog.getByLabel("Command", { exact: true }));
       await dialog.getByLabel("Command", { exact: true }).fill("echo changed operations");
       await page.screenshot({ path: testInfo.outputPath("job-edit.png"), fullPage: true });
+      await openFinalFormStep(page);
       await dialog.getByTestId("job-edit-submit").click();
       await expect(dialog).toHaveCount(0);
       await page.reload();
@@ -220,5 +224,170 @@ for (const view of ["tasks", "jobs", "sessions", "dashboard"] as const) {
     failing = false;
     await page.getByRole("button", { name: /retry/i }).first().click();
     await expect(page.getByText(emptyText, { exact: true }).first()).toBeVisible();
+  });
+}
+
+for (const width of [1440, 390, 320]) {
+  test(`project search and status preserve URL, selection boundaries and no-match recovery ${width}`, async ({
+    page,
+    request,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const prefix = tid("project-search");
+    const alpha = await apiPost<{ id: string }>(request, "/projects", {
+      name: `${prefix}-alpha`,
+      status: "active",
+    });
+    const beta = await apiPost<{ id: string }>(request, "/projects", {
+      name: `${prefix}-beta`,
+      status: "paused",
+    });
+    await gotoView(page, "projects");
+    const search = page.getByTestId("project-search");
+    const row = (id: string) =>
+      page.locator(`[data-testid="project-row"][data-project-id="${id}"]`);
+    await search.fill(prefix);
+    await expect(page.getByTestId("project-row")).toHaveCount(2);
+    await row(alpha.id).getByTestId("project-select").check();
+    await expect(page.getByTestId("bulk-actions")).toContainText("1 selected");
+    await search.fill(`${prefix}-beta`);
+    await expect(page.getByTestId("project-row")).toHaveCount(1);
+    await expect(page.getByTestId("projects-bulk-archived")).toHaveCount(0);
+    if (width < 1024) await page.getByTestId("view-filters-toggle").click();
+    await page.getByTestId("projects-filter-paused").click();
+    await expect(page).toHaveURL(/status=paused/);
+    await page.goBack();
+    await expect.poll(() => new URL(page.url()).searchParams.get("status")).toBeNull();
+    await page.goForward();
+    await expect(page).toHaveURL(/status=paused/);
+    await page.reload();
+    await expect(search).toHaveValue(`${prefix}-beta`);
+    await expect(row(beta.id)).toBeVisible();
+    if (width < 1024)
+      await expect(page.getByTestId("view-filters-toggle")).toContainText("Filters (1)");
+    await search.fill(`${prefix}-missing`);
+    await expect(page.getByTestId("empty-state")).toContainText("No matching projects");
+    await page.getByTestId("project-clear-filters").click();
+    await expect(search).toHaveValue("");
+    await expect.poll(() => new URL(page.url()).searchParams.get("status")).toBeNull();
+    await expect.poll(() => new URL(page.url()).searchParams.get("projectQuery")).toBeNull();
+    await expect(row(alpha.id)).toBeVisible();
+    await search.fill(`${prefix}-beta`);
+    await row(beta.id).getByTestId("project-select").check();
+    await page.getByTestId("projects-bulk-archived").click();
+    await expect(page.getByTestId("projects-bulk-result")).toContainText(
+      "1 project set to archived",
+    );
+    expect((await apiGet<{ status: string }>(request, `/projects/${alpha.id}`)).status).toBe(
+      "active",
+    );
+    expect((await apiGet<{ status: string }>(request, `/projects/${beta.id}`)).status).toBe(
+      "archived",
+    );
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: testInfo.outputPath("project-search.png"), fullPage: true });
+  });
+
+  test(`GitHub toolbar disclosure preserves drafts and keeps real failures visible ${width}`, async ({
+    page,
+    request,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    const task = await apiPost<{ id: string }>(request, "/tasks", {
+      title: tid("github-link-draft"),
+      status: "todo",
+    });
+    let feedCalls = 0,
+      failFeed = false,
+      auth: "gh" | "none" = "gh";
+    await page.route("**/api/github/items?*", async (route) => {
+      feedCalls++;
+      await route.fulfill({
+        status: failFeed ? 503 : 200,
+        json: failFeed
+          ? { error: "GitHub feed unavailable" }
+          : {
+              auth,
+              login: auth === "gh" ? "fixture-user" : null,
+              errors: [],
+              truncated: false,
+              items:
+                auth === "gh"
+                  ? [
+                      {
+                        repo: "fixture/orc",
+                        number: 41,
+                        title: "Review work item",
+                        url: "https://github.com/fixture/orc/issues/41",
+                        kind: "issue",
+                        state: "open",
+                        branch: null,
+                        assignees: [],
+                        task_ids: [],
+                      },
+                    ]
+                  : [],
+            },
+      });
+    });
+    await page.route(`**/api/tasks/${task.id}`, async (route) => {
+      if (route.request().method() !== "PATCH") return route.continue();
+      await route.fulfill({ status: 503, json: { error: "Task link unavailable" } });
+    });
+    await gotoView(page, "tasks");
+    const toggle = page.getByTestId("github-board-toggle"),
+      panel = page.getByTestId("github-board");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(panel).not.toBeVisible();
+    expect(feedCalls).toBe(0);
+    const searchBox = await page.getByLabel("Search tasks", { exact: true }).boundingBox();
+    const toggleBox = await toggle.boundingBox();
+    expect(
+      searchBox &&
+        toggleBox &&
+        Math.abs(searchBox.y + searchBox.height / 2 - toggleBox.y - toggleBox.height / 2) < 2,
+    ).toBe(true);
+    await toggle.click();
+    await expect(page.getByTestId("github-item")).toHaveCount(1);
+    await page.getByTestId("github-link-task").selectOption(task.id);
+    await toggle.click();
+    await expect(panel).not.toBeVisible();
+    await toggle.click();
+    await expect(page.getByTestId("github-link-task")).toHaveValue(task.id);
+    await page.getByTestId("github-link-save").click();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Task link unavailable" }),
+    ).toBeVisible();
+    await toggle.click();
+    await expect(panel).not.toBeVisible();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Task link unavailable" }),
+    ).toBeVisible();
+    await toggle.click();
+    auth = "none";
+    await page.getByTestId("github-refresh").click();
+    await expect(page.getByTestId("github-no-auth")).toBeVisible();
+    await toggle.click();
+    await expect(page.getByTestId("github-no-auth")).not.toBeVisible();
+    await toggle.click();
+    failFeed = true;
+    await page.getByTestId("github-refresh").click();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "GitHub feed unavailable" }),
+    ).toBeVisible();
+    await toggle.click();
+    await expect(panel).not.toBeVisible();
+    await expect(
+      page.getByRole("alert").filter({ hasText: "GitHub feed unavailable" }),
+    ).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.screenshot({
+      path: testInfo.outputPath("github-collapsed-failure.png"),
+      fullPage: true,
+    });
   });
 }

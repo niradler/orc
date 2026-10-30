@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Pencil, Play, Power } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Job, JobRun } from "@/api/client";
 import { DetailField } from "@/components/DetailField";
@@ -24,16 +24,33 @@ interface JobDetailSheetProps {
   open: boolean;
   onClose: () => void;
   onEdit?: (job: Job) => void;
+  projectScope?: string;
 }
 
-export function JobDetailSheet({ jobId, open, onClose, onEdit }: JobDetailSheetProps) {
-  const { data: job, isLoading, error, refetch } = useJob(jobId);
+export function JobDetailSheet({
+  jobId,
+  open,
+  onClose,
+  onEdit,
+  projectScope = "all",
+}: JobDetailSheetProps) {
+  const { data: fetchedJob, isLoading, error, refetch } = useJob(jobId);
+  const inScope =
+    fetchedJob &&
+    (projectScope === "all" ||
+      (projectScope === "unassigned"
+        ? fetchedJob.project_id === null
+        : fetchedJob.project_id === projectScope));
+  const job = inScope ? fetchedJob : undefined;
+  useEffect(() => {
+    if (open && fetchedJob && !inScope) onClose();
+  }, [open, fetchedJob, inScope, onClose]);
   const {
     data: runs,
     isLoading: runsLoading,
     error: runsError,
     refetch: refetchRuns,
-  } = useJobRuns(jobId);
+  } = useJobRuns(job?.id ?? null);
   const triggerJob = useTriggerJob();
   const updateJob = useUpdateJob();
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
@@ -173,6 +190,7 @@ export function JobDetailSheet({ jobId, open, onClose, onEdit }: JobDetailSheetP
           )}
           {job && (
             <Button
+              variant="ghost"
               size="sm"
               disabled={triggerJob.isPending}
               onClick={() => triggerJob.mutate(job.id)}

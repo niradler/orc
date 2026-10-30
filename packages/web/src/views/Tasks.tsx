@@ -1,4 +1,12 @@
-import { LayoutGrid, List, MessageSquare, Plus, Search, Trash2 } from "lucide-react";
+import {
+  LayoutGrid,
+  List,
+  MessageSquare,
+  MoreHorizontal,
+  Plus,
+  Search,
+  Trash2,
+} from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { Task, TaskPriority, TaskStatus } from "@/api/client";
@@ -9,10 +17,13 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { GithubBoard } from "@/components/GithubBoard";
 import { PriorityBadge } from "@/components/PriorityBadge";
+import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TaskDetailSheet } from "@/components/TaskDetailSheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -32,6 +43,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
+import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjectScope } from "@/hooks/useProjectScope";
 import { useDeleteTask, useTasks, useUpdateTask } from "@/hooks/useTasks";
 
@@ -71,6 +83,7 @@ interface TasksProps {
 }
 
 export default function Tasks({ projectId: savedProjectId }: TasksProps) {
+  const desktop = useBreakpoint("xl");
   const projectId = useProjectScope(savedProjectId);
   const [searchParams, setSearchParams] = useSearchParams();
   const pendingParams = useRef(searchParams);
@@ -132,7 +145,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
     isLoading,
     error,
     refetch,
-  } = useTasks(apiProjectId ? { project_id: apiProjectId } : undefined);
+  } = useTasks(projectId === "all" ? undefined : { project_id: projectId });
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
 
@@ -195,7 +208,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
     <div className="flex-1 min-h-0 flex flex-col">
       <ViewHeader
         title="Tasks"
-        meta={`${filteredByProject.length} total`}
+        meta={filteredByProject.length}
         action={
           <div className="flex items-center gap-2">
             <div className="flex rounded-md overflow-hidden">
@@ -206,7 +219,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
                 aria-label="Board view"
                 aria-pressed={viewMode === "board"}
                 onClick={() => setViewMode("board")}
-                className={`p-3 transition-colors ${
+                className={`inline-flex size-8 items-center justify-center transition-colors ${
                   viewMode === "board"
                     ? "bg-surface-highest text-on-surface"
                     : "text-outline hover:text-on-surface-variant"
@@ -221,7 +234,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
                 aria-label="Table view"
                 aria-pressed={viewMode === "table"}
                 onClick={() => setViewMode("table")}
-                className={`p-3 transition-colors ${
+                className={`inline-flex size-8 items-center justify-center transition-colors ${
                   viewMode === "table"
                     ? "bg-surface-highest text-on-surface"
                     : "text-outline hover:text-on-surface-variant"
@@ -243,44 +256,46 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
         }
       />
 
-      <GithubBoard projectId={apiProjectId} />
       {(updateTask.error || deleteTask.error) && (
         <p role="alert" className="mb-4 text-sm text-error">
           {(updateTask.error ?? deleteTask.error)?.message}
         </p>
       )}
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="relative flex-1 max-w-xs">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-0 flex-1 lg:max-w-md">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-outline" />
           <Input
             aria-label="Search tasks"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search tasks..."
-            className="bg-background border-control-border text-on-surface font-body text-xs pl-8 min-h-11"
+            className="bg-background border-control-border text-on-surface font-body pl-8"
           />
         </div>
-        <Select
-          value={priorityFilter}
-          onValueChange={(v) => setPriorityFilter(v as TaskPriority | "all")}
-        >
-          <SelectTrigger
-            aria-label="Filter by priority"
-            className="bg-background border-control-border text-on-surface font-label text-xs w-36 min-h-11"
+        <ResponsiveFilters activeCount={Number(priorityFilter !== "all")}>
+          <Select
+            value={priorityFilter}
+            onValueChange={(v) => setPriorityFilter(v as TaskPriority | "all")}
           >
-            <SelectValue placeholder="Priority" />
-          </SelectTrigger>
-          <SelectContent className="bg-surface border-border">
-            <SelectItem value="all" className="font-label text-xs">
-              All Priorities
-            </SelectItem>
-            {PRIORITIES.map((p) => (
-              <SelectItem key={p} value={p} className="font-label text-xs">
-                {p}
+            <SelectTrigger
+              aria-label="Filter by priority"
+              className="bg-background border-control-border text-on-surface font-label text-[13px] w-40 min-h-8"
+            >
+              <SelectValue placeholder="Priority" />
+            </SelectTrigger>
+            <SelectContent className="bg-surface border-border">
+              <SelectItem value="all" className="font-label text-xs">
+                All priorities
               </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+              {PRIORITIES.map((p) => (
+                <SelectItem key={p} value={p} className="font-label text-xs">
+                  {p}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </ResponsiveFilters>
+        <GithubBoard projectId={apiProjectId} unassigned={projectId === "unassigned"} />
       </div>
 
       {viewMode === "board" ? (
@@ -308,12 +323,12 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
           onValueChange={(v) => setStatusFilter(v as TaskStatus | "all")}
           className="mb-4"
         >
-          <TabsList className="bg-background gap-1 h-auto p-0 flex-wrap justify-start">
+          <TabsList className="max-w-full bg-background gap-1 h-auto p-0 flex-nowrap justify-start overflow-x-auto">
             {statusTabs.map(({ value, label }) => (
               <TabsTrigger
                 key={value}
                 value={value}
-                className="font-label text-sm px-4 py-2 rounded-md
+                className="shrink-0 font-label text-[13px] px-3 py-1.5 rounded-md
                     data-[state=active]:bg-surface-highest data-[state=active]:text-on-surface data-[state=active]:shadow-none
                     text-outline hover:text-on-surface-variant"
               >
@@ -339,6 +354,58 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
               </div>
             ) : visible.length === 0 ? (
               <EmptyState message="No tasks" />
+            ) : !desktop ? (
+              <div className="divide-y divide-border">
+                {visible.map((task) => (
+                  <article
+                    key={task.id}
+                    data-testid="task-row"
+                    data-task-id={task.id}
+                    data-task-title={task.title}
+                    className="flex min-h-16 min-w-0 items-center gap-2"
+                  >
+                    <button
+                      type="button"
+                      data-testid="task-open"
+                      className="min-h-16 min-w-0 flex-1 py-2 text-left hover:text-primary"
+                      onClick={() => openDetail(task.id)}
+                    >
+                      <span className="block text-sm font-medium leading-5 wrap-break-word">
+                        {task.title}
+                      </span>
+                      <span
+                        id={`task-row-meta-${task.id}`}
+                        className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-outline"
+                      >
+                        <StatusBadge status={task.status} />
+                        <PriorityBadge priority={task.priority} />
+                        {task.due_at && (
+                          <span className={isOverdue(task.due_at, task.status) ? "text-error" : ""}>
+                            Due {new Date(task.due_at).toLocaleDateString()}
+                          </span>
+                        )}
+                        {!!task.comments_count && (
+                          <span
+                            data-testid="task-comments-count"
+                            className="inline-flex items-center gap-1"
+                          >
+                            <MessageSquare size={12} />
+                            {task.comments_count}
+                            <span className="sr-only">comments</span>
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                    <TaskRowActions
+                      task={task}
+                      busy={updateTask.isPending}
+                      onStatus={(status) => updateTask.mutate({ id: task.id, status })}
+                      onPriority={(priority) => updateTask.mutate({ id: task.id, priority })}
+                      onDelete={() => setDeleteTarget(task)}
+                    />
+                  </article>
+                ))}
+              </div>
             ) : (
               <div className="overflow-hidden">
                 <Table>
@@ -359,7 +426,9 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
                       <TableHead className="font-label text-xs text-outline w-24">
                         Updated
                       </TableHead>
-                      <TableHead className="w-10" />
+                      <TableHead className="w-10">
+                        <span className="sr-only">Actions</span>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -479,7 +548,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
                               e.stopPropagation();
                               setDeleteTarget(task);
                             }}
-                            className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-outline hover:text-error hover:bg-error/10 transition-colors p-2"
+                            className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-outline hover:text-error hover:bg-error/10 transition-colors p-2"
                           >
                             <Trash2 size={12} />
                           </button>
@@ -517,6 +586,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
       />
 
       <TaskDetailSheet
+        projectScope={projectId}
         taskId={selectedTaskId}
         open={selectedTaskId !== null}
         onOpenChange={(open) => {
@@ -524,5 +594,107 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
         }}
       />
     </div>
+  );
+}
+
+function TaskRowActions({
+  task,
+  busy,
+  onStatus,
+  onPriority,
+  onDelete,
+}: {
+  task: Task;
+  busy: boolean;
+  onStatus: (status: TaskStatus) => void;
+  onPriority: (priority: TaskPriority) => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          data-testid="task-actions-button"
+          aria-label={`Actions for ${task.title}`}
+          className="shrink-0 text-outline"
+        >
+          <MoreHorizontal size={16} />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        aria-label={`Actions for ${task.title}`}
+        align="end"
+        className="w-64 space-y-3"
+      >
+        <h2 className="truncate text-sm font-medium" title={task.title}>
+          {task.title}
+        </h2>
+        <div className="space-y-1.5">
+          <Label htmlFor={`task-status-${task.id}`}>Status</Label>
+          <Select
+            value={task.status}
+            disabled={busy}
+            onValueChange={(value) => onStatus(value as TaskStatus)}
+          >
+            <SelectTrigger
+              data-testid="task-row-status"
+              id={`task-status-${task.id}`}
+              aria-label={`Status for ${task.title}`}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ALL_STATUSES.map((status) => (
+                <SelectItem key={status} value={status}>
+                  {status.replace(/_/g, " ")}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`task-priority-${task.id}`}>Priority</Label>
+          <Select
+            value={task.priority}
+            disabled={busy}
+            onValueChange={(value) => onPriority(value as TaskPriority)}
+          >
+            <SelectTrigger
+              data-testid="task-row-priority"
+              id={`task-priority-${task.id}`}
+              aria-label={`Priority for ${task.title}`}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PRIORITIES.map((priority) => (
+                <SelectItem key={priority} value={priority}>
+                  {priority}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="border-t border-border pt-2">
+          <Button
+            type="button"
+            variant="ghost"
+            data-testid="task-delete"
+            aria-label={`Delete task, ${task.title}`}
+            className="w-full justify-start text-error"
+            onClick={() => {
+              setOpen(false);
+              onDelete();
+            }}
+          >
+            <Trash2 size={14} />
+            Delete task
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

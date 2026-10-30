@@ -35,6 +35,7 @@ export function DocumentWorkspace({
   layout,
   pageTitle,
   hideFrontmatter,
+  compact,
 }: {
   documentId: string;
   content: string;
@@ -48,6 +49,7 @@ export function DocumentWorkspace({
   layout?: MarkdownEditorProps["layout"];
   pageTitle?: string;
   hideFrontmatter?: boolean;
+  compact?: boolean;
 }) {
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -147,6 +149,7 @@ export function DocumentWorkspace({
           layout="page"
           pageTitle={pageTitle}
           hideFrontmatter={hideFrontmatter}
+          compact={compact}
           notice={error || (dirty && content !== original) ? notices : undefined}
           actions={
             (mode !== "read" || dirty || saving) && (
@@ -203,6 +206,7 @@ export function DocumentWorkspace({
         expanded={expanded}
         onExpandedChange={onExpandedChange}
         layout={layout}
+        compact={compact}
         header={
           <div className="space-y-2">
             {navigation && <div className="mb-3 min-w-0">{navigation}</div>}

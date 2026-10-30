@@ -1,18 +1,18 @@
 import type { ScopeQuery } from "@orc/sdk/types";
-import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  ChevronDown,
   Download,
   Plus,
   Search,
   ToggleLeft,
   ToggleRight,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { api, type SkillFull, type SkillRefContent, type SkillSource } from "@/api/client";
-import { BulkActionBar } from "@/components/BulkActionBar";
 import { CodeEditor } from "@/components/CodeEditor";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DetailField } from "@/components/DetailField";
@@ -20,9 +20,11 @@ import { DocumentTabs } from "@/components/DocumentTabs";
 import { confirmDocumentClose, DocumentWorkspace } from "@/components/DocumentWorkspace";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { HelpPopover } from "@/components/HelpPopover";
 import { ImportLocalSkillsDialog } from "@/components/ImportLocalSkillsDialog";
 import { ImportSkillDialog } from "@/components/ImportSkillDialog";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
+import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { SkillHistoryPanel } from "@/components/SkillHistoryPanel";
 import { SkillSync } from "@/components/SkillSync";
 import { Button } from "@/components/ui/button";
@@ -35,6 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -48,7 +51,9 @@ import {
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
 import { useListSelection } from "@/hooks/useListSelection";
+import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjectScope } from "@/hooks/useProjectScope";
+import { useProjects } from "@/hooks/useProjects";
 import {
   useCreateSkill,
   useSetSkillVisibility,
@@ -91,9 +96,13 @@ const SOURCE_COLORS: Record<SkillSource, string> = {
 };
 
 export default function Skills({ projectId }: { projectId: string }) {
+  const desktop = useBreakpoint("xl");
   const project = useProjectScope(projectId);
+  const { data: projects } = useProjects();
+  const [multiselect, setMultiselect] = useState(false);
   const scope: ScopeQuery =
     project === "all" || project === "unassigned" ? { scope: "global" } : { project_id: project };
+  const listScope = project === "all" ? { scope: "all" as const } : scope;
   const [query, setQuery] = useViewParam<string>("skillQuery", "");
   const [searchInput, setSearchInput] = useState(query);
   const [sourceFilter, setSourceFilter] = useViewParam<SourceFilter>("source", "all", [
@@ -108,6 +117,13 @@ export default function Skills({ projectId }: { projectId: string }) {
   );
   const RepositorySortIcon = REPOSITORY_SORT_ICONS[repositorySort];
   useEffect(() => setSearchInput(query), [query]);
+  const queryWriter = useRef(setQuery);
+  queryWriter.current = setQuery;
+  useEffect(() => {
+    if (searchInput === query) return;
+    const timer = window.setTimeout(() => queryWriter.current(searchInput, { replace: true }), 250);
+    return () => window.clearTimeout(timer);
+  }, [searchInput, query]);
   const {
     selectedId: selectedSkill,
     openDetail: openSkillDetail,
@@ -116,6 +132,7 @@ export default function Skills({ projectId }: { projectId: string }) {
   const [creating, setCreating] = useState(false);
   const [importingRepository, setImportingRepository] = useState(false);
   const [importingLocal, setImportingLocal] = useState(false);
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
   const visibility = useSkillVisibility();
   const setVisibility = useSetSkillVisibility();
   const pageScope = JSON.stringify([project, query, sourceFilter]);
@@ -128,7 +145,7 @@ export default function Skills({ projectId }: { projectId: string }) {
     error,
     refetch,
   } = useSkills({
-    ...scope,
+    ...listScope,
     q: query || undefined,
     source: sourceFilter === "all" ? undefined : sourceFilter,
     include_hidden: true,
@@ -136,6 +153,13 @@ export default function Skills({ projectId }: { projectId: string }) {
     offset,
   });
   const skills = library?.skills;
+  const searchPending = searchInput !== query;
+  const skillScope = (skill: NonNullable<typeof skills>[number]) =>
+    skill.project_ids?.length
+      ? skill.project_ids
+          .map((id) => projects?.find((item) => item.id === id)?.name ?? id)
+          .join(", ")
+      : "Global";
   const queryClient = useQueryClient();
   const userSkills = (skills ?? []).filter((skill) => skill.source === "user");
   const origins = useQueries({
@@ -164,7 +188,7 @@ export default function Skills({ projectId }: { projectId: string }) {
       return left.name.localeCompare(right.name);
     });
   }
-  const selectionScope = JSON.stringify([project, query, sourceFilter, offset]);
+  const selectionScope = JSON.stringify([project, query, searchInput, sourceFilter, offset]);
   const currentScope = useRef(selectionScope);
   currentScope.current = selectionScope;
   const selection = useListSelection(
@@ -233,29 +257,102 @@ export default function Skills({ projectId }: { projectId: string }) {
 
   if (error) return <ErrorState message={(error as Error).message} onRetry={() => refetch()} />;
 
+  const discoveryControl = (skill: (typeof displayedSkills)[number], compact = false) => (
+    <button
+      type="button"
+      role="switch"
+      aria-label={`${skill.name} visible to agents`}
+      aria-checked={!skill.discovery_hidden}
+      data-testid={`skill-visibility-${skill.name}`}
+      disabled={!visibility.data || setVisibility.isPending}
+      className={
+        compact
+          ? "inline-flex size-11 shrink-0 items-center justify-center rounded-md text-primary hover:bg-surface disabled:opacity-50"
+          : "inline-flex min-h-11 items-center gap-2 text-xs text-primary disabled:opacity-50"
+      }
+      title={
+        skill.discovery_hidden
+          ? "Hidden from agent discovery. Still loadable by name and in flows."
+          : "Hide from agent discovery"
+      }
+      onClick={() => {
+        const hidden = new Set(visibility.data?.hidden_skills ?? []);
+        const builtins = new Set(visibility.data?.hidden_builtins ?? []);
+        if (skill.discovery_hidden) {
+          hidden.delete(skill.name);
+          builtins.delete(skill.name);
+        } else hidden.add(skill.name);
+        setVisibility.mutate({
+          hidden_skills: [...hidden],
+          hidden_builtins: [...builtins],
+        });
+      }}
+    >
+      {skill.discovery_hidden ? (
+        <ToggleLeft size={22} aria-hidden="true" className="text-muted-foreground" />
+      ) : (
+        <ToggleRight size={22} aria-hidden="true" />
+      )}
+      {!compact && (skill.discovery_hidden ? "Hidden" : "Visible")}
+      {!compact && skill.mutation && " (Modified)"}
+    </button>
+  );
   return (
     <div>
       <ViewHeader
         title="Skills"
-        meta={`${(skills ?? []).length} skills`}
+        meta={(skills ?? []).length}
+        help="Reusable agent instructions stored in skill folders. Import existing skills or create your own."
         action={
           <div className="flex flex-wrap gap-2">
-            <Button
-              data-testid="import-skill-button"
-              size="sm"
-              variant="outline"
-              onClick={() => setImportingRepository(true)}
-            >
-              <Download size={12} className="mr-1" /> Import from GitHub
-            </Button>
-            <Button
-              data-testid="import-local-skills-button"
-              size="sm"
-              variant="outline"
-              onClick={() => setImportingLocal(true)}
-            >
-              <Download size={12} className="mr-1" /> Import from agents
-            </Button>
+            <Popover open={importMenuOpen} onOpenChange={setImportMenuOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  data-testid="skill-import-menu"
+                  aria-label="Import skills"
+                  size="sm"
+                  variant="ghost"
+                >
+                  <Download size={14} />
+                  <span className="hidden sm:inline">Import</span>
+                  <ChevronDown size={12} className="hidden sm:block" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent aria-label="Import skills" align="end" className="w-56 space-y-1 p-1">
+                <Button
+                  data-testid="import-skill-button"
+                  size="sm"
+                  variant="ghost"
+                  className="w-full justify-start"
+                  onClick={() => {
+                    setImportMenuOpen(false);
+                    setImportingRepository(true);
+                  }}
+                >
+                  <Download size={12} className="mr-1" /> Import from GitHub
+                </Button>
+                <Button
+                  data-testid="import-local-skills-button"
+                  size="sm"
+                  variant="ghost"
+                  className="w-full justify-start"
+                  onClick={() => {
+                    setImportMenuOpen(false);
+                    setImportingLocal(true);
+                  }}
+                >
+                  <Download size={12} className="mr-1" /> Import from agents
+                </Button>
+                <a
+                  className="block rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                  href="https://agentskills.io/specification"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Agent Skills specification
+                </a>
+              </PopoverContent>
+            </Popover>
             <Button
               data-testid="new-skill-button"
               size="sm"
@@ -268,18 +365,6 @@ export default function Skills({ projectId }: { projectId: string }) {
         }
       />
 
-      <p className="text-xs text-muted-foreground mb-3">
-        Skill folders follow the{" "}
-        <a
-          className="text-primary underline"
-          href="https://agentskills.io/specification"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Agent Skills specification
-        </a>
-        .
-      </p>
       {(visibility.error || setVisibility.error) && (
         <p role="alert" className="text-destructive text-xs mb-2">
           {(visibility.error || setVisibility.error)?.message}
@@ -293,27 +378,52 @@ export default function Skills({ projectId }: { projectId: string }) {
 
       {/* Source filter pills */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
-        <div className="flex shrink-0 flex-wrap gap-1.5">
-          {SOURCE_FILTERS.map((f) => (
-            <button
-              key={f.value}
-              type="button"
-              onClick={() => setSourceFilter(f.value)}
-              data-testid={`skill-source-${f.value}`}
-              aria-pressed={sourceFilter === f.value}
-              className={`font-label text-sm  px-3 py-1.5 border transition-colors ${
-                sourceFilter === f.value
-                  ? "bg-surface-highest text-on-surface border-transparent"
-                  : "bg-transparent border-transparent text-muted-foreground hover:bg-surface-low hover:text-on-surface"
-              }`}
+        <ResponsiveFilters
+          activeCount={Number(sourceFilter !== "all") + Number(repositorySort !== "default")}
+        >
+          <div className="flex shrink-0 flex-wrap gap-1.5">
+            {SOURCE_FILTERS.map((f) => (
+              <button
+                key={f.value}
+                type="button"
+                onClick={() => setSourceFilter(f.value)}
+                data-testid={`skill-source-${f.value}`}
+                aria-pressed={sourceFilter === f.value}
+                className={`font-label text-sm  px-3 py-1.5 border transition-colors ${
+                  sourceFilter === f.value
+                    ? "bg-surface-highest text-on-surface border-transparent"
+                    : "bg-transparent border-transparent text-muted-foreground hover:bg-surface-low hover:text-on-surface"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          {!desktop && (
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="skill-repository-sort"
+              aria-label={`Sort by repository, ${repositorySort} order`}
+              title="Cycle repository order: ascending, descending, then default"
+              onClick={() =>
+                setRepositorySort(
+                  repositorySort === "default"
+                    ? "asc"
+                    : repositorySort === "asc"
+                      ? "desc"
+                      : "default",
+                )
+              }
             >
-              {f.label}
-            </button>
-          ))}
-        </div>
+              <RepositorySortIcon size={14} />
+              Repository order
+            </Button>
+          )}
+        </ResponsiveFilters>
 
         {/* Search */}
-        <div className="relative min-w-[160px] flex-1">
+        <div className="relative order-first min-w-40 flex-1 lg:max-w-md">
           <Search
             size={12}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
@@ -328,45 +438,96 @@ export default function Skills({ projectId }: { projectId: string }) {
             className="pl-8 bg-background text-on-surface font-body text-sm placeholder:text-muted-foreground"
           />
         </div>
-        <Button
-          data-testid="skill-search-submit"
-          variant="outline"
-          size="sm"
-          onClick={() => setQuery(searchInput)}
-          className="font-label text-sm "
-        >
-          Search
-        </Button>
+        {(!!skills?.length || multiselect) && (
+          <div
+            className={`flex flex-wrap items-center gap-1 ${multiselect ? "basis-full md:basis-auto" : ""}`}
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid={multiselect ? "skills-select-displayed" : "skills-multiselect"}
+              disabled={bulk.isPending || (multiselect && (!skills?.length || searchPending))}
+              aria-pressed={multiselect ? selection.allSelected : undefined}
+              onClick={() => {
+                if (!multiselect) setMultiselect(true);
+                else if (selection.allSelected) selection.clear();
+                else selection.selectAll();
+              }}
+            >
+              {multiselect
+                ? selection.allSelected
+                  ? "Deselect displayed"
+                  : "Select displayed"
+                : "Multiselect"}
+            </Button>
+            {multiselect && (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  data-testid="clear-selection"
+                  disabled={bulk.isPending || !selection.selectedIds.length}
+                  onClick={selection.clear}
+                >
+                  Clear
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  data-testid="skills-multiselect-exit"
+                  disabled={bulk.isPending}
+                  onClick={() => {
+                    selection.clear();
+                    setMultiselect(false);
+                  }}
+                >
+                  Done
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
-      {!!skills?.length && (
-        <BulkActionBar
-          resourceLabel="skills"
-          count={selection.selectedIds.length}
-          allSelected={selection.allSelected}
-          someSelected={selection.someSelected}
-          onSelectAll={selection.selectAll}
-          onClear={selection.clear}
-          disabled={bulk.isPending}
+      {multiselect && selection.selectedIds.length > 0 && (
+        <fieldset
+          className="mb-3 flex flex-wrap items-center gap-2 border-y border-border py-1"
+          data-testid="bulk-actions"
+          aria-label="Selected skills and actions"
         >
-          <Button
-            data-testid="skills-bulk-hide"
-            variant="outline"
-            size="sm"
-            disabled={bulk.isPending || !visibility.data}
-            onClick={() => void runBulk("hide", selection.selectedIds)}
-          >
-            Hide
-          </Button>
-          <Button
-            data-testid="skills-bulk-show"
-            variant="outline"
-            size="sm"
-            disabled={bulk.isPending || !visibility.data}
-            onClick={() => void runBulk("show", selection.selectedIds)}
-          >
-            Show
-          </Button>
+          <span className="text-[13px]">{selection.selectedIds.length} selected</span>
+          <fieldset className="flex min-w-0 flex-wrap items-center gap-1">
+            <legend className="sr-only">Agent discovery</legend>
+            <span aria-hidden="true" className="text-xs text-muted-foreground">
+              Agent discovery
+            </span>
+            <HelpPopover label="Agent discovery">
+              Hide excludes selected skills from agent discovery on this ORC installation. Hidden
+              skills stay in Skills and can still be loaded by name or used in flows. Show restores
+              discovery. This setting applies across projects.
+            </HelpPopover>
+            <Button
+              data-testid="skills-bulk-hide"
+              variant="outline"
+              size="sm"
+              disabled={bulk.isPending || !visibility.data}
+              onClick={() => void runBulk("hide", selection.selectedIds)}
+            >
+              Hide
+            </Button>
+            <Button
+              data-testid="skills-bulk-show"
+              variant="outline"
+              size="sm"
+              disabled={bulk.isPending || !visibility.data}
+              onClick={() => void runBulk("show", selection.selectedIds)}
+            >
+              Show
+            </Button>
+          </fieldset>
           <Button
             data-testid="skills-bulk-sync"
             variant="outline"
@@ -399,7 +560,7 @@ export default function Skills({ projectId }: { projectId: string }) {
           >
             {`Delete${selectedUser.length ? ` (${selectedUser.length})` : ""}`}
           </Button>
-        </BulkActionBar>
+        </fieldset>
       )}
       <ConfirmDialog
         open={confirmingDelete}
@@ -447,14 +608,86 @@ export default function Skills({ projectId }: { projectId: string }) {
         </div>
       ) : (skills ?? []).length === 0 ? (
         <EmptyState message={query ? "No skills match your search" : "No skills found"} />
+      ) : !desktop ? (
+        <div className="divide-y divide-outline-variant">
+          {displayedSkills.map((skill) => (
+            <div
+              key={skill.name}
+              data-testid="skill-row"
+              data-skill-name={skill.name}
+              className="flex min-w-0 items-center gap-1 py-2"
+            >
+              {multiselect && (
+                <label className="flex size-11 shrink-0 items-center justify-center">
+                  <input
+                    type="checkbox"
+                    data-testid="skill-select"
+                    aria-label={`Select ${skill.name}`}
+                    checked={selection.selectedIds.includes(skill.name)}
+                    disabled={bulk.isPending || searchPending}
+                    onChange={() => selection.toggle(skill.name)}
+                    className="size-4 accent-primary"
+                  />
+                </label>
+              )}
+              <div className="min-w-0 flex-1">
+                <button
+                  type="button"
+                  data-testid="skill-open"
+                  className="block min-h-11 w-full min-w-0 text-left text-sm"
+                  title={skill.name}
+                  onClick={() => openSkillDetail(skill.name)}
+                >
+                  <span className="block truncate font-medium">{skill.name}</span>
+                  {skill.description && (
+                    <span className="block truncate text-muted-foreground">
+                      {skill.description}
+                    </span>
+                  )}
+                </button>
+                <div className="flex min-w-0 items-center gap-x-2 text-xs text-muted-foreground">
+                  <span data-testid="skill-source-cell" className="shrink-0">
+                    {skill.source}
+                  </span>
+                  <span
+                    data-testid="skill-scope-cell"
+                    title={skillScope(skill)}
+                    className="min-w-0 truncate"
+                  >
+                    <span className="sr-only">Scope: </span>
+                    {skillScope(skill)}
+                  </span>
+                  {skill.mutation && <span className="shrink-0 text-primary">Modified</span>}
+                  <span data-testid="skill-repository-cell" className="min-w-0 flex-1 truncate">
+                    {repositoryByName.get(skill.name) ? (
+                      <a
+                        data-testid="skill-repository-link"
+                        href={`https://github.com/${repositoryByName.get(skill.name)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="hover:underline"
+                        title={repositoryByName.get(skill.name)}
+                      >
+                        {repositoryByName.get(skill.name)}
+                      </a>
+                    ) : null}
+                  </span>
+                </div>
+              </div>
+              {discoveryControl(skill, true)}
+            </div>
+          ))}
+        </div>
       ) : (
         <div className="overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow className="border-b border-outline-variant hover:bg-transparent">
-                <TableHead className="w-12">
-                  <span className="sr-only">Select skills</span>
-                </TableHead>
+                {multiselect && (
+                  <TableHead className="w-12">
+                    <span className="sr-only">Select skills</span>
+                  </TableHead>
+                )}
                 <TableHead className="font-label text-sm  text-muted-foreground">Name</TableHead>
                 <TableHead className="font-label text-sm  text-muted-foreground">
                   Description
@@ -462,6 +695,7 @@ export default function Skills({ projectId }: { projectId: string }) {
                 <TableHead className="font-label text-sm  text-muted-foreground w-24">
                   Source
                 </TableHead>
+                <TableHead className="text-sm text-muted-foreground">Scope</TableHead>
                 <TableHead
                   data-testid="skill-repository-header"
                   aria-sort={REPOSITORY_SORT_ORDER[repositorySort]}
@@ -492,17 +726,21 @@ export default function Skills({ projectId }: { projectId: string }) {
                   className="border-b border-outline-variant/50 hover:bg-surface-low cursor-pointer"
                   onClick={() => openSkillDetail(skill.name)}
                 >
-                  <TableCell onClick={(event) => event.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      data-testid="skill-select"
-                      aria-label={`Select ${skill.name}`}
-                      checked={selection.selectedIds.includes(skill.name)}
-                      disabled={bulk.isPending}
-                      onChange={() => selection.toggle(skill.name)}
-                      className="size-4 accent-primary"
-                    />
-                  </TableCell>
+                  {multiselect && (
+                    <TableCell onClick={(event) => event.stopPropagation()}>
+                      <label className="flex size-11 items-center justify-center">
+                        <input
+                          type="checkbox"
+                          data-testid="skill-select"
+                          aria-label={`Select ${skill.name}`}
+                          checked={selection.selectedIds.includes(skill.name)}
+                          disabled={bulk.isPending || searchPending}
+                          onChange={() => selection.toggle(skill.name)}
+                          className="size-4 accent-primary"
+                        />
+                      </label>
+                    </TableCell>
+                  )}
                   <TableCell className="font-body text-sm font-medium text-on-surface">
                     <button
                       type="button"
@@ -532,6 +770,13 @@ export default function Skills({ projectId }: { projectId: string }) {
                     </span>
                   </TableCell>
                   <TableCell
+                    data-testid="skill-scope-cell"
+                    title={skillScope(skill)}
+                    className="max-w-48 truncate text-sm text-muted-foreground"
+                  >
+                    {skillScope(skill)}
+                  </TableCell>
+                  <TableCell
                     data-testid="skill-repository-cell"
                     onClick={(event) => event.stopPropagation()}
                     className="max-w-56 truncate text-sm text-muted-foreground"
@@ -552,44 +797,7 @@ export default function Skills({ projectId }: { projectId: string }) {
                     )}
                   </TableCell>
                   <TableCell onClick={(event) => event.stopPropagation()}>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-label={`${skill.name} visible to agents`}
-                      aria-checked={!skill.discovery_hidden}
-                      data-testid={`skill-visibility-${skill.name}`}
-                      disabled={!visibility.data || setVisibility.isPending}
-                      className="inline-flex min-h-11 items-center gap-2 text-xs text-primary disabled:opacity-50"
-                      title={
-                        skill.discovery_hidden
-                          ? "Hidden from agent discovery. Still loadable by name and in flows."
-                          : "Hide from agent discovery"
-                      }
-                      onClick={() => {
-                        const hidden = new Set(visibility.data?.hidden_skills ?? []);
-                        const builtins = new Set(visibility.data?.hidden_builtins ?? []);
-                        if (skill.discovery_hidden) {
-                          hidden.delete(skill.name);
-                          builtins.delete(skill.name);
-                        } else hidden.add(skill.name);
-                        setVisibility.mutate({
-                          hidden_skills: [...hidden],
-                          hidden_builtins: [...builtins],
-                        });
-                      }}
-                    >
-                      {skill.discovery_hidden ? (
-                        <ToggleLeft
-                          size={22}
-                          aria-hidden="true"
-                          className="text-muted-foreground"
-                        />
-                      ) : (
-                        <ToggleRight size={22} aria-hidden="true" />
-                      )}
-                      {skill.discovery_hidden ? "Hidden" : "Visible"}
-                      {skill.mutation && " (Modified)"}
-                    </button>
+                    {discoveryControl(skill)}
                   </TableCell>
                 </TableRow>
               ))}
@@ -628,6 +836,8 @@ export default function Skills({ projectId }: { projectId: string }) {
       <SkillDetailSheet
         key={selectedSkill}
         scope={scope}
+        allProjects={project === "all"}
+        projects={projects ?? []}
         skillName={selectedSkill}
         open={Boolean(selectedSkill)}
         onClose={closeSkillDetail}
@@ -643,22 +853,50 @@ export default function Skills({ projectId }: { projectId: string }) {
 function SkillDetailSheet({
   skillName,
   scope,
+  allProjects,
+  projects,
   open,
   onClose,
 }: {
   skillName: string | null;
   scope: ScopeQuery;
+  allProjects: boolean;
+  projects: { id: string; name: string }[];
   open: boolean;
   onClose: () => void;
 }) {
-  const { data, isLoading, error, refetch } = useSkill(skillName, undefined, scope);
+  const [instructionProject, setInstructionProject] = useViewParam<string>("skillProject", "");
+  const contextId = useId();
+  const assignments = useQuery({
+    queryKey: ["skill-projects", skillName],
+    queryFn: () => api.skills.projects(skillName as string),
+    enabled: allProjects && open && Boolean(skillName),
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnMount: "always",
+    retry: false,
+  });
+  const assignedProjects = [...new Set(assignments.data?.project_ids ?? [])].sort();
+  const selectedProject = assignedProjects.includes(instructionProject)
+    ? instructionProject
+    : assignedProjects[0];
+  const detailScope: ScopeQuery = allProjects
+    ? selectedProject
+      ? { project_id: selectedProject }
+      : { scope: "global" }
+    : scope;
+  const scopeReady = !allProjects || (assignments.isSuccess && !assignments.isFetching);
+  const readableName = scopeReady ? skillName : null;
+  const { data, isLoading, error, refetch } = useSkill(readableName, undefined, detailScope);
   const skill = data as SkillFull | undefined;
   const [selectedFile, setSelectedFile] = useViewParam<string>("skillFile", "SKILL.md");
-  const fileQuery = useSkill(skillName, selectedFile ?? "SKILL.md", scope);
+  const fileQuery = useSkill(readableName, selectedFile ?? "SKILL.md", detailScope);
   const file = fileQuery.data as SkillRefContent | undefined;
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
-  const documentId = `skill:${scope.project_id ?? "global"}:${skillName}:${selectedFile ?? "SKILL.md"}`;
+  const documentId = `skill:${detailScope.project_id ?? "global"}:${skillName}:${selectedFile ?? "SKILL.md"}`;
+  const projectName = (id?: string) =>
+    id ? (projects.find((item) => item.id === id)?.name ?? id) : "Global";
+  const detailError = (allProjects && assignments.error) || error;
   function selectFile(path?: string): boolean {
     if ((path ?? "SKILL.md") === (selectedFile ?? "SKILL.md")) return true;
     if (!confirmDocumentClose(documentId)) return false;
@@ -683,17 +921,56 @@ function SkillDetailSheet({
           {skill?.description && (
             <p className="font-body text-sm text-muted-foreground mt-1">{skill.description}</p>
           )}
+          {scopeReady && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {allProjects && assignedProjects.length > 0 ? (
+                <>
+                  <Label htmlFor={contextId}>Instructions for</Label>
+                  <select
+                    id={contextId}
+                    aria-label="Instructions for"
+                    data-testid="skill-instruction-project"
+                    className="form-control form-control-single w-auto max-w-full"
+                    value={selectedProject}
+                    onChange={(event) => {
+                      const next = event.target.value;
+                      if (next === selectedProject || !assignedProjects.includes(next)) return;
+                      if (confirmDocumentClose(documentId)) setInstructionProject(next);
+                    }}
+                  >
+                    {assignedProjects.map((id) => (
+                      <option key={id} value={id}>
+                        {projectName(id)}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              ) : (
+                <span data-testid="skill-instruction-context">
+                  Instructions for {projectName(detailScope.project_id)}
+                </span>
+              )}
+            </div>
+          )}
         </SheetHeader>
         <SheetBody>
           {
             <>
-              {skillName && skill && (
-                <SkillHistoryPanel name={skillName} scope={scope} mutation={skill.mutation} />
+              {scopeReady && skillName && skill && (
+                <SkillHistoryPanel
+                  key={detailScope.project_id ?? "global"}
+                  name={skillName}
+                  scope={detailScope}
+                  mutation={skill.mutation}
+                />
               )}
-              {skillName && skill && <SkillSync name={skillName} />}
-              {error ? (
-                <ErrorState message={(error as Error).message} onRetry={() => void refetch()} />
-              ) : isLoading || !skill ? (
+              {scopeReady && skillName && skill && <SkillSync name={skillName} />}
+              {detailError ? (
+                <ErrorState
+                  message={(detailError as Error).message}
+                  onRetry={() => void (assignments.error ? assignments.refetch() : refetch())}
+                />
+              ) : !scopeReady || isLoading || !skill ? (
                 <div className="space-y-3">
                   {[...Array(4)].map((_, i) => (
                     // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
@@ -738,6 +1015,7 @@ function SkillDetailSheet({
                         />
                       ) : (
                         <DocumentWorkspace
+                          compact
                           key={documentId}
                           documentId={documentId}
                           expanded={expanded}
@@ -752,7 +1030,7 @@ function SkillDetailSheet({
                                   const path = selectedFile ?? "SKILL.md";
                                   if (skill.mutation && path === "SKILL.md") {
                                     await api.skills.updateInstructions(skill.name, {
-                                      project_id: scope.project_id ?? null,
+                                      project_id: detailScope.project_id ?? null,
                                       content,
                                       expected_content: expectedContent,
                                       reason: "Manual instruction edit",
@@ -906,6 +1184,7 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
           <div className="space-y-1.5">
             <Label className="font-label text-sm  text-muted-foreground">SKILL.md *</Label>
             <MarkdownEditor
+              compact
               testId="skill-content-input"
               path="SKILL.md"
               value={content}
@@ -952,6 +1231,7 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
                   }
                 />
                 <CodeEditor
+                  compact
                   testId="skill-file-content-input"
                   path={file.path || "supporting.txt"}
                   readOnly={file.encoding === "base64"}

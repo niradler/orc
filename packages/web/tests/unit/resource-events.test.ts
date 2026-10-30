@@ -8,6 +8,35 @@ import {
 } from "../../src/lib/resource-events";
 
 describe("resource events", () => {
+  test("open history refreshes activity dates and active icons when session work changes", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY } },
+    });
+    let state = { running: true, updatedAt: 10 };
+    const threads = new QueryObserver(client, {
+      queryKey: ["chat-threads", true],
+      queryFn: async () => ({ ...state }),
+    });
+    const native = new QueryObserver(client, {
+      queryKey: ["chat-resume-sessions", true],
+      queryFn: async () => ({ ...state }),
+    });
+    const cleanup = [threads.subscribe(() => {}), native.subscribe(() => {})];
+    try {
+      await Promise.all([threads.refetch(), native.refetch()]);
+      state = { running: false, updatedAt: 20 };
+      await invalidateResources(client, ["human-requests"]);
+      expect(threads.getCurrentResult().data).toEqual(state);
+      expect(native.getCurrentResult().data).toEqual(state);
+      state = { running: true, updatedAt: 30 };
+      await invalidateResources(client, ["sessions"]);
+      expect(threads.getCurrentResult().data).toEqual(state);
+      expect(native.getCurrentResult().data).toEqual(state);
+    } finally {
+      for (const unsubscribe of cleanup) unsubscribe();
+      client.clear();
+    }
+  });
   test("should keep health idle for unrelated resource changes and refresh explicit health changes", async () => {
     const client = new QueryClient({
       defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY } },

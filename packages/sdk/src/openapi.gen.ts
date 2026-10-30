@@ -311,6 +311,10 @@ export interface paths {
                                 title: string;
                                 updatedAt: number;
                                 running: boolean;
+                                agent?: string | null;
+                                runtimeId?: string | null;
+                                sourceId?: string | null;
+                                host?: string | null;
                             }[];
                         };
                     };
@@ -2291,6 +2295,7 @@ export interface paths {
                             /** @enum {string} */
                             theme?: "dark" | "light";
                             terminal_font?: string;
+                            attention_retention_hours?: number;
                             chat?: {
                                 /** @default codex */
                                 agent: string;
@@ -2382,6 +2387,7 @@ export interface paths {
                         /** @enum {string} */
                         theme?: "dark" | "light";
                         terminal_font?: string;
+                        attention_retention_hours?: number;
                         chat?: {
                             /** @default codex */
                             agent?: string;
@@ -2463,6 +2469,7 @@ export interface paths {
                             /** @enum {string} */
                             theme?: "dark" | "light";
                             terminal_font?: string;
+                            attention_retention_hours?: number;
                             chat?: {
                                 /** @default codex */
                                 agent: string;
@@ -3811,7 +3818,7 @@ export interface paths {
             parameters: {
                 query?: {
                     project_id?: string;
-                    scope?: "global";
+                    scope?: "global" | "all";
                     /** @description Hybrid lexical search; results sorted by relevance */
                     q?: string;
                     source?: "builtin" | "user";
@@ -7088,6 +7095,8 @@ export interface paths {
                 query?: {
                     kind?: "doc" | "diagram" | "html";
                     project_id?: string;
+                    /** @description Include shared pads alongside project_id; exact project filtering is the default */
+                    include_global?: "true" | "false";
                     /** @description true lists only pads without a project */
                     unassigned?: "true" | "false";
                     session_id?: string;
@@ -9955,6 +9964,8 @@ export interface paths {
                 query?: {
                     agent?: string;
                     task_id?: string;
+                    /** @description Project id, or unassigned for sessions without a project; filtered before limit */
+                    project_id?: string;
                     active?: "true" | "false";
                     limit?: number;
                 };
@@ -9998,6 +10009,7 @@ export interface paths {
                 query: {
                     q: string;
                     agent?: string;
+                    project_id?: string;
                     limit?: number;
                 };
                 header?: never;
@@ -10560,6 +10572,7 @@ export interface paths {
             parameters: {
                 query?: {
                     enabled?: "true" | "false";
+                    /** @description Project id, or unassigned for jobs without a project; filtered before limit */
                     project_id?: string;
                     limit?: number;
                 };

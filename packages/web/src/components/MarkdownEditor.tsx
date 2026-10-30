@@ -40,6 +40,8 @@ export type MarkdownEditorProps = {
   pageTitle?: string;
   /** Front matter is shown elsewhere as properties, so the preview leaves it out. */
   hideFrontmatter?: boolean;
+  /** Compact form controls without removing the editor's modes or expansion. */
+  compact?: boolean;
 };
 
 /** Drops a first-line `# Title` from the body when it repeats the page title. */
@@ -73,6 +75,7 @@ export function MarkdownEditor({
   notice,
   pageTitle,
   hideFrontmatter = false,
+  compact = false,
 }: MarkdownEditorProps) {
   const markdown = isMarkdownFile(path);
   const [localMode, setLocalMode] = useState<Mode>(
@@ -149,7 +152,7 @@ export function MarkdownEditor({
     >
       {header && <div className="shrink-0 border-b border-surface-highest p-3">{header}</div>}
       <div
-        className={`flex shrink-0 flex-wrap items-center gap-2 border-b border-surface-highest ${flowing ? "sticky top-0 z-10 bg-background py-2" : "p-2"}`}
+        className={`flex shrink-0 flex-wrap items-center ${compact ? "gap-1" : "gap-2"} border-b border-surface-highest ${flowing ? "sticky top-0 z-10 bg-background py-2" : compact ? "px-2 py-1" : "p-2"}`}
       >
         {markdown && (
           <fieldset className="flex gap-1" aria-label="Document mode">
@@ -158,11 +161,9 @@ export function MarkdownEditor({
                 key={item}
                 type="button"
                 size="sm"
-                variant={mode === item ? "default" : "ghost"}
+                variant={!compact && mode === item ? "default" : "ghost"}
                 // A page is read side by side only with room; phones switch between Read and Edit.
-                className={
-                  item === "split" && layout === "page" ? "hidden md:inline-flex" : undefined
-                }
+                className={`${item === "split" && layout === "page" ? "hidden md:inline-flex" : ""} ${compact && mode === item ? "bg-surface-highest text-on-surface" : ""}`}
                 data-testid={`markdown-mode-${item}`}
                 aria-pressed={mode === item}
                 onClick={() => setMode(item)}
@@ -179,7 +180,7 @@ export function MarkdownEditor({
           </fieldset>
         )}
         <span className="min-w-0 flex-1 truncate px-1 text-xs text-outline" title={path}>
-          {layout === "page" ? "" : path}
+          {layout === "page" || compact ? "" : path}
         </span>
         {actions}
         {expanded && onSave && !header && !actions && (

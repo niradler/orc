@@ -73,6 +73,30 @@ describe("project-scoped skill discovery", () => {
     expect((await req(app, "GET", "/skills/orc-sdlc")).status).toBe(404);
   });
 
+  test("should browse all assigned skills explicitly without widening default discovery or reads", async () => {
+    history.setProjects("orc-sdlc", ["skills-one"]);
+    history.setProjects("orc-platform", ["skills-two"]);
+    const first = await (await req(app, "GET", "/skills?scope=all&source=builtin&limit=1")).json();
+    expect(first.total).toBe(2);
+    expect(first.skills).toHaveLength(1);
+    const second = await (
+      await req(app, "GET", `/skills?scope=all&source=builtin&limit=1&offset=${first.next_offset}`)
+    ).json();
+    expect(
+      new Set([...first.skills, ...second.skills].map((skill: { name: string }) => skill.name)),
+    ).toEqual(new Set(["orc-sdlc", "orc-platform"]));
+    expect(second.next_offset).toBeNull();
+    const global = await (await req(app, "GET", "/skills?source=builtin")).json();
+    expect(global.skills).toEqual([]);
+    const selected = await (
+      await req(app, "GET", "/skills?source=builtin&project_id=skills-one")
+    ).json();
+    expect(selected.skills.map((skill: { name: string }) => skill.name)).toEqual(["orc-sdlc"]);
+    expect((await req(app, "GET", "/skills/orc-platform?scope=all")).status).toBe(400);
+    expect((await req(app, "GET", "/skills?scope=all&project_id=skills-one")).status).toBe(400);
+    expect((await app.request("/api/skills?scope=all")).status).toBe(401);
+  });
+
   test("should require reassignment before deleting a project with assigned skills", async () => {
     history.setProjects("orc-sdlc", ["skills-two"]);
     const response = await req(app, "DELETE", "/projects/skills-two");

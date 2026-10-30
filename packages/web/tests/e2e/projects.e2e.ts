@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { apiDelete, apiGet, apiPost, gotoView, tid } from "./_helpers";
 
 interface Project {
@@ -16,9 +17,13 @@ test.describe("Projects CRUD", () => {
     const name = tid("pw-project-remote");
     await gotoView(page, "projects");
     await page.getByTestId("new-project-button").click();
+    await revealFormField(page, page.getByTestId("project-name-input"));
     await page.getByTestId("project-name-input").fill(name);
+    await revealFormField(page, page.getByTestId("project-first-task"));
     await page.getByTestId("project-first-task").uncheck();
+    await revealFormField(page, page.getByTestId("project-git-remote-url"));
     await page.getByTestId("project-git-remote-url").fill("https://github.com/acme/project.git");
+    await openFinalFormStep(page);
     await page.getByTestId("project-submit").click();
     const row = page.locator(`[data-testid="project-row"][data-project-name="${name}"]`);
     await expect(row).toBeVisible();
@@ -27,14 +32,18 @@ test.describe("Projects CRUD", () => {
       await page.reload();
       await row.click();
       const remote = page.getByTestId("edit-project-git-remote-url");
+      await revealFormField(page, remote);
       await expect(remote).toHaveValue("https://github.com/acme/project.git");
       await page.screenshot({ path: "../../.claude/docs/project-git-remote-desktop.png" });
       await remote.fill("git@github.com:acme/project.git");
+      await openFinalFormStep(page);
       await page.getByTestId("edit-project-submit").click();
       await expect(page.getByTestId("edit-project-dialog")).not.toBeVisible();
       await row.click();
       await expect(remote).toHaveValue("git@github.com:acme/project.git");
+      await revealFormField(page, remote);
       await remote.fill("");
+      await openFinalFormStep(page);
       await page.getByTestId("edit-project-submit").click();
       await expect(page.getByTestId("edit-project-dialog")).not.toBeVisible();
       await page.reload();
@@ -52,8 +61,11 @@ test.describe("Projects CRUD", () => {
 
     // Create
     await page.getByTestId("new-project-button").click();
+    await revealFormField(page, page.getByTestId("project-name-input"));
     await page.getByTestId("project-name-input").fill(name);
+    await revealFormField(page, page.getByTestId("project-first-task"));
     await page.getByTestId("project-first-task").uncheck();
+    await openFinalFormStep(page);
     await page.getByTestId("project-submit").click();
 
     // Row appears
@@ -106,6 +118,7 @@ test.describe("Projects CRUD", () => {
       await nameInput.clear();
       await nameInput.fill(updatedName);
 
+      await openFinalFormStep(page);
       await editDialog.getByTestId("edit-project-submit").click();
 
       // The row in the table should now show the new name

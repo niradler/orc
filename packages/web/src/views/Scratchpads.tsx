@@ -18,22 +18,18 @@ import {
   Settings2,
   Trash2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { LiveSession } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { FormDialog } from "@/components/FormDialog";
+import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { ScratchpadEditor } from "@/components/scratchpad/ScratchpadEditor";
 import { TagInput } from "@/components/TagInput";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -53,6 +49,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ViewHeader } from "@/components/ViewHeader";
+import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
 import {
   useCreateScratchpad,
@@ -105,10 +102,19 @@ function KindLabel({ kind }: { kind: ScratchpadKind }) {
 }
 
 function ScratchpadList({ defaultProjectId }: { defaultProjectId: string }) {
+  const desktop = useBreakpoint("lg");
   const navigate = useNavigate();
   const location = useLocation();
-  // Pads are often project-less, so the list starts across every project, not the sidebar's.
-  const [project, setProject] = useViewParam<string>("padProject", ALL);
+  const [project, setProject] = useViewParam<string>("project", defaultProjectId);
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const legacyProject = params.get("padProject");
+    if (!legacyProject) return;
+    // Older pad links used a separate filter; migrate them to the shared project selection.
+    if (!params.has("project")) params.set("project", legacyProject);
+    params.delete("padProject");
+    navigate({ search: params.toString() }, { replace: true });
+  }, [location.search, navigate]);
   const [kind, setKind] = useViewParam<ScratchpadKind | typeof ALL>("padKind", ALL, [
     ALL,
     ...SCRATCHPAD_KINDS,
@@ -116,6 +122,11 @@ function ScratchpadList({ defaultProjectId }: { defaultProjectId: string }) {
   const [query, setQuery] = useViewParam<string>("padQuery", "");
   const [searchInput, setSearchInput] = useState(query);
   useEffect(() => setSearchInput(query), [query]);
+  useEffect(() => {
+    if (searchInput === query) return;
+    const timer = setTimeout(() => setQuery(searchInput, { replace: true }), 350);
+    return () => clearTimeout(timer);
+  }, [searchInput, query, setQuery]);
   const [creating, setCreating] = useState(false);
   // The command palette opens the create dialog with ?new=1.
   useEffect(() => {
@@ -130,24 +141,29 @@ function ScratchpadList({ defaultProjectId }: { defaultProjectId: string }) {
   const list = useScratchpads({
     kind: kind === ALL ? undefined : kind,
     project_id: project === ALL || project === UNASSIGNED ? undefined : project,
+    include_global: project !== ALL && project !== UNASSIGNED ? "true" : undefined,
     unassigned: project === UNASSIGNED ? "true" : undefined,
     q: query || undefined,
     limit: LIST_LIMIT,
   });
   const pads = list.data?.scratchpads ?? [];
   const projectName = (id: string | null) =>
-    id ? (projects?.find((p) => p.id === id)?.name ?? id) : "—";
+    id ? (projects?.find((p) => p.id === id)?.name ?? id) : "Global";
   const filtered = Boolean(query) || kind !== ALL || project !== ALL;
 
   return (
     <div>
       <ViewHeader
         title="Scratchpads"
-        meta={
-          list.data
-            ? `${list.data.total} ${list.data.total === 1 ? "scratchpad" : "scratchpads"}`
-            : undefined
+        compact
+        help={
+          <>
+            Working docs, diagrams and HTML pages you or an agent keep and come back to. Agents
+            create and edit them with the <code className="font-mono text-xs">pad_*</code> tools;
+            share one by copying its link.
+          </>
         }
+        meta={list.data ? list.data.total : undefined}
         action={
           <Button
             data-testid="new-scratchpad-button"
@@ -155,80 +171,75 @@ function ScratchpadList({ defaultProjectId }: { defaultProjectId: string }) {
             onClick={() => setCreating(true)}
             className="font-label text-sm"
           >
-            <Plus size={12} className="mr-1" /> New scratchpad
+            <Plus size={12} className="mr-1" /> New
+            <span className="sr-only sm:not-sr-only"> scratchpad</span>
           </Button>
         }
       />
-      <p className="mb-4 text-sm leading-relaxed text-muted-foreground">
-        Working docs, diagrams and HTML pages you or an agent keep and come back to. Agents create
-        and edit them with the <code className="font-mono text-xs">pad_*</code> tools; share one by
-        copying its link.
-      </p>
-
-      <div className="flex flex-wrap items-center gap-3 mb-4">
-        <Select value={project} onValueChange={(value) => setProject(value)}>
-          <SelectTrigger
-            aria-label="Project"
-            data-testid="scratchpad-project-filter"
-            className="h-9 w-48 bg-background text-on-surface font-body text-sm"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent className="bg-surface border-outline-variant">
-            <SelectItem value={ALL} className="font-body text-sm">
-              All projects
-            </SelectItem>
-            <SelectItem value={UNASSIGNED} className="font-body text-sm">
-              No project
-            </SelectItem>
-            {projects?.map((p) => (
-              <SelectItem key={p.id} value={p.id} className="font-body text-sm">
-                {p.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="flex shrink-0 flex-wrap gap-1.5">
-          {([ALL, ...SCRATCHPAD_KINDS] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setKind(value)}
-              data-testid={`scratchpad-kind-${value}`}
-              aria-pressed={kind === value}
-              className={`font-label text-sm px-3 py-1.5 border transition-colors ${
-                kind === value
-                  ? "bg-surface-highest text-on-surface border-transparent"
-                  : "bg-transparent border-transparent text-muted-foreground hover:bg-surface-low hover:text-on-surface"
-              }`}
-            >
-              {value === ALL ? "All" : KIND_META[value].label}
-            </button>
-          ))}
-        </div>
-        <div className="relative min-w-[160px] flex-1">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-0 flex-1 lg:max-w-md">
           <Search
-            size={12}
+            size={14}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
           />
           <Input
+            type="search"
             aria-label="Search scratchpads"
             data-testid="scratchpad-search-input"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && setQuery(e.currentTarget.value)}
-            placeholder="Search titles and content..."
-            className="pl-8 bg-background text-on-surface font-body text-sm placeholder:text-muted-foreground"
+            placeholder="Search scratchpads…"
+            className="h-11 pl-9 text-base lg:h-9 lg:text-sm"
           />
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setQuery(searchInput)}
-          className="font-label text-sm"
-        >
-          Search
-        </Button>
+        <ResponsiveFilters activeCount={Number(kind !== ALL) + Number(project !== ALL)}>
+          <Select value={project} onValueChange={(value) => setProject(value)}>
+            <SelectTrigger
+              aria-label="Project"
+              data-testid="scratchpad-project-filter"
+              className="h-11 w-48 max-w-full bg-background font-body text-base text-on-surface lg:h-9 lg:text-sm"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-surface border-outline-variant">
+              <SelectItem value={ALL} className="font-body text-sm">
+                All projects
+              </SelectItem>
+              <SelectItem value={UNASSIGNED} className="font-body text-sm">
+                Global
+              </SelectItem>
+              {projects?.map((p) => (
+                <SelectItem
+                  key={p.id}
+                  value={p.id}
+                  data-testid={`scratchpad-project-${p.id}`}
+                  className="font-body text-sm"
+                >
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="flex shrink-0 flex-wrap gap-1.5">
+            {([ALL, ...SCRATCHPAD_KINDS] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setKind(value)}
+                data-testid={`scratchpad-kind-${value}`}
+                aria-pressed={kind === value}
+                className={`min-h-11 rounded-md font-label text-sm px-3 py-1.5 border transition-colors lg:min-h-9 focus-visible:outline-2 focus-visible:outline-focus ${
+                  kind === value
+                    ? "bg-surface-highest text-on-surface border-transparent"
+                    : "bg-transparent border-transparent text-muted-foreground hover:bg-surface-low hover:text-on-surface"
+                }`}
+              >
+                {value === ALL ? "All" : KIND_META[value].label}
+              </button>
+            ))}
+          </div>
+        </ResponsiveFilters>
       </div>
 
       {list.error ? (
@@ -244,67 +255,102 @@ function ScratchpadList({ defaultProjectId }: { defaultProjectId: string }) {
         <EmptyState message={filtered ? "No scratchpads match" : "No scratchpads yet"} />
       ) : (
         <div className="overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-b border-outline-variant hover:bg-transparent">
-                <TableHead className="font-label text-sm text-muted-foreground">Title</TableHead>
-                <TableHead className="font-label text-sm text-muted-foreground w-28">
-                  Kind
-                </TableHead>
-                <TableHead className="font-label text-sm text-muted-foreground">Project</TableHead>
-                <TableHead className="font-label text-sm text-muted-foreground hidden md:table-cell">
-                  Author
-                </TableHead>
-                <TableHead className="font-label text-sm text-muted-foreground w-20 hidden md:table-cell">
-                  Size
-                </TableHead>
-                <TableHead className="font-label text-sm text-muted-foreground w-44">
-                  Updated
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          {desktop ? (
+            <Table>
+              <TableHeader>
+                <TableRow className="border-b border-outline-variant hover:bg-transparent">
+                  <TableHead className="font-label text-sm text-muted-foreground">Title</TableHead>
+                  <TableHead className="font-label text-sm text-muted-foreground w-28">
+                    Kind
+                  </TableHead>
+                  <TableHead className="font-label text-sm text-muted-foreground">
+                    Project
+                  </TableHead>
+                  <TableHead className="font-label text-sm text-muted-foreground hidden md:table-cell">
+                    Author
+                  </TableHead>
+                  <TableHead className="font-label text-sm text-muted-foreground w-20 hidden md:table-cell">
+                    Size
+                  </TableHead>
+                  <TableHead className="font-label text-sm text-muted-foreground w-44">
+                    Updated
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pads.map((pad) => (
+                  <TableRow
+                    key={pad.id}
+                    data-testid="scratchpad-row"
+                    data-scratchpad-id={pad.id}
+                    className="border-b border-outline-variant/50 hover:bg-surface-low cursor-pointer"
+                    onClick={() => navigate(`${scratchpadPath(pad.id)}${location.search}`)}
+                  >
+                    <TableCell className="font-body text-sm font-medium text-on-surface">
+                      <Link
+                        to={`${scratchpadPath(pad.id)}${location.search}`}
+                        className="inline-flex min-h-11 items-center hover:text-primary"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        {pad.title}
+                      </Link>
+                      {pad.tags.length > 0 && (
+                        <span className="ml-2 font-label text-xs text-outline">
+                          {pad.tags.map((t) => `#${t}`).join(" ")}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <KindLabel kind={pad.kind} />
+                    </TableCell>
+                    <TableCell className="font-body text-sm text-muted-foreground">
+                      {projectName(pad.project_id)}
+                    </TableCell>
+                    <TableCell className="font-body text-sm text-muted-foreground hidden md:table-cell">
+                      {pad.author}
+                    </TableCell>
+                    <TableCell className="font-label text-sm text-muted-foreground hidden md:table-cell">
+                      {formatBytes(pad.size_bytes)}
+                    </TableCell>
+                    <TableCell className="font-label text-sm text-muted-foreground">
+                      {formatTime(pad.updated_at)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <div className="divide-y divide-border">
               {pads.map((pad) => (
-                <TableRow
+                <Link
                   key={pad.id}
+                  to={`${scratchpadPath(pad.id)}${location.search}`}
                   data-testid="scratchpad-row"
                   data-scratchpad-id={pad.id}
-                  className="border-b border-outline-variant/50 hover:bg-surface-low cursor-pointer"
-                  onClick={() => navigate(`${scratchpadPath(pad.id)}${location.search}`)}
+                  className="block min-h-11 py-3 text-sm hover:bg-surface focus-visible:outline-2 focus-visible:outline-focus"
                 >
-                  <TableCell className="font-body text-sm font-medium text-on-surface">
-                    <Link
-                      to={`${scratchpadPath(pad.id)}${location.search}`}
-                      className="inline-flex min-h-11 items-center hover:text-primary"
-                      onClick={(event) => event.stopPropagation()}
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="min-w-0 break-words font-medium">{pad.title}</span>
+                    <time
+                      className="shrink-0 text-xs text-outline"
+                      dateTime={new Date(pad.updated_at * 1000).toISOString()}
+                      title={formatTime(pad.updated_at)}
                     >
-                      {pad.title}
-                    </Link>
-                    {pad.tags.length > 0 && (
-                      <span className="ml-2 font-label text-xs text-outline">
-                        {pad.tags.map((t) => `#${t}`).join(" ")}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell>
+                      {formatWhen(new Date(pad.updated_at * 1000).toISOString())}
+                    </time>
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-outline">
                     <KindLabel kind={pad.kind} />
-                  </TableCell>
-                  <TableCell className="font-body text-sm text-muted-foreground">
-                    {projectName(pad.project_id)}
-                  </TableCell>
-                  <TableCell className="font-body text-sm text-muted-foreground hidden md:table-cell">
-                    {pad.author}
-                  </TableCell>
-                  <TableCell className="font-label text-sm text-muted-foreground hidden md:table-cell">
-                    {formatBytes(pad.size_bytes)}
-                  </TableCell>
-                  <TableCell className="font-label text-sm text-muted-foreground">
-                    {formatTime(pad.updated_at)}
-                  </TableCell>
-                </TableRow>
+                    <span>{projectName(pad.project_id)}</span>
+                    <span>{pad.author}</span>
+                    {pad.tags.length > 0 && (
+                      <span>{pad.tags.map((tag) => `#${tag}`).join(" ")}</span>
+                    )}
+                  </div>
+                </Link>
               ))}
-            </TableBody>
-          </Table>
+            </div>
+          )}
         </div>
       )}
 
@@ -367,6 +413,8 @@ export function ScratchpadFormDialog({
   );
   const [sessionId, setSessionId] = useState(pad?.session_id ?? NO_SESSION);
   const [tags, setTags] = useState<string[]>(pad?.tags ?? []);
+  const [tagDraft, setTagDraft] = useState("");
+  const initialFields = useRef(JSON.stringify([kind, title, projectId, sessionId, tags]));
   const { data: projects } = useProjects({ status: "active" });
   const { data: sessions } = useLiveSessions(false);
   const sessionOptions = sessionChoices(sessions, projectId, sessionId);
@@ -374,7 +422,7 @@ export function ScratchpadFormDialog({
   const update = useUpdateScratchpad();
   const mutation = pad ? update : create;
 
-  function submit() {
+  function submit(afterSave: () => void) {
     const fields = {
       title: title.trim(),
       project_id: projectId === NO_PROJECT ? null : projectId,
@@ -382,7 +430,7 @@ export function ScratchpadFormDialog({
       tags,
     };
     const done = (saved: Scratchpad) => {
-      onClose();
+      afterSave();
       onSaved?.(saved);
     };
     if (pad) update.mutate({ id: pad.id, ...fields }, { onSuccess: done });
@@ -390,129 +438,150 @@ export function ScratchpadFormDialog({
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent data-testid="scratchpad-form" className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{pad ? "Scratchpad properties" : "New scratchpad"}</DialogTitle>
-        </DialogHeader>
-        <form
-          className="space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit();
-          }}
-        >
-          {!pad && (
-            <fieldset className="space-y-2">
-              <legend className="font-label text-sm">Kind</legend>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {SCRATCHPAD_KINDS.map((value) => {
-                  const { label, icon: Icon, hint } = KIND_META[value];
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      data-testid={`scratchpad-form-kind-${value}`}
-                      aria-pressed={kind === value}
-                      onClick={() => setKind(value)}
-                      className={`flex flex-col items-start gap-1 border p-3 text-left transition-colors ${
-                        kind === value
-                          ? "border-primary bg-surface-low"
-                          : "border-outline-variant hover:bg-surface-low"
-                      }`}
-                    >
-                      <span className="inline-flex items-center gap-1.5 font-label text-sm">
-                        <Icon size={14} aria-hidden /> {label}
-                      </span>
-                      <span className="text-xs text-muted-foreground">{hint}</span>
-                    </button>
-                  );
-                })}
+    <FormDialog
+      open
+      onClose={onClose}
+      busy={mutation.isPending}
+      dirty={
+        Boolean(tagDraft.trim()) ||
+        JSON.stringify([kind, title, projectId, sessionId, tags]) !== initialFields.current
+      }
+      testId="scratchpad-form"
+    >
+      {(requestClose, closeAfterSave) => (
+        <>
+          <DialogHeader>
+            <DialogTitle>{pad ? "Scratchpad properties" : "New scratchpad"}</DialogTitle>
+          </DialogHeader>
+          <form
+            className="min-h-0"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submit(closeAfterSave);
+            }}
+          >
+            <div className="work-form-body grid grid-cols-1 gap-4 md:grid-cols-2">
+              {!pad && (
+                <fieldset className="space-y-2 md:col-span-2">
+                  <legend className="font-label text-sm">Kind</legend>
+                  <div className="grid grid-cols-3 gap-2">
+                    {SCRATCHPAD_KINDS.map((value) => {
+                      const { label, icon: Icon } = KIND_META[value];
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          data-testid={`scratchpad-form-kind-${value}`}
+                          aria-pressed={kind === value}
+                          onClick={() => setKind(value)}
+                          className={`flex min-h-8 items-center justify-center gap-1 rounded-md border px-2 py-2 transition-colors ${
+                            kind === value
+                              ? "border-primary bg-surface-low"
+                              : "border-outline-variant hover:bg-surface-low"
+                          }`}
+                        >
+                          <span className="inline-flex items-center gap-1.5 font-label text-[13px]">
+                            <Icon size={14} aria-hidden /> {label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-muted-foreground" data-testid="scratchpad-kind-hint">
+                    {KIND_META[kind].hint}
+                  </p>
+                </fieldset>
+              )}
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="scratchpad-title">Title</Label>
+                <Input
+                  id="scratchpad-title"
+                  data-testid="scratchpad-form-title"
+                  value={title}
+                  maxLength={SCRATCHPAD_TITLE_MAX}
+                  autoFocus
+                  onChange={(e) => setTitle(e.target.value)}
+                />
               </div>
-            </fieldset>
-          )}
-          <div className="space-y-2">
-            <Label htmlFor="scratchpad-title">Title</Label>
-            <Input
-              id="scratchpad-title"
-              data-testid="scratchpad-form-title"
-              value={title}
-              maxLength={SCRATCHPAD_TITLE_MAX}
-              autoFocus
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="scratchpad-project">Project</Label>
-            <Select value={projectId} onValueChange={setProjectId}>
-              <SelectTrigger id="scratchpad-project" data-testid="scratchpad-form-project">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-surface border-outline-variant">
-                <SelectItem value={NO_PROJECT}>No project</SelectItem>
-                {projects?.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="scratchpad-session">Session</Label>
-            <Select value={sessionId} onValueChange={setSessionId}>
-              <SelectTrigger id="scratchpad-session" data-testid="scratchpad-form-session">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-surface border-outline-variant">
-                <SelectItem value={NO_SESSION}>No session</SelectItem>
-                {sessionId !== NO_SESSION &&
-                  !sessionOptions.some((s) => s.session_id === sessionId) && (
-                    <SelectItem value={sessionId}>{sessionId.slice(0, 8)}</SelectItem>
-                  )}
-                {sessionOptions.map((s) => (
-                  <SelectItem
-                    key={s.id}
-                    value={s.session_id as string}
-                    data-testid="scratchpad-form-session-option"
-                  >
-                    {s.agent} · {s.name ?? "Untitled session"} ·{" "}
-                    {formatWhen(s.last_activity_at ?? s.created_at)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Tags</Label>
-            <TagInput
-              value={tags}
-              onChange={setTags}
-              placeholder="Add a tag"
-              aria-label="Tags"
-              data-testid="scratchpad-form-tags"
-            />
-          </div>
-          {mutation.error && (
-            <p role="alert" className="text-sm text-destructive">
-              {mutation.error.message}
-            </p>
-          )}
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              data-testid="scratchpad-form-submit"
-              disabled={!title.trim() || mutation.isPending}
-            >
-              {pad ? "Save" : "Create"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+              <div className="space-y-2">
+                <Label htmlFor="scratchpad-project">Project</Label>
+                <Select value={projectId} onValueChange={setProjectId}>
+                  <SelectTrigger id="scratchpad-project" data-testid="scratchpad-form-project">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-surface border-outline-variant">
+                    <SelectItem value={NO_PROJECT}>No project</SelectItem>
+                    {projects?.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="scratchpad-session">Session</Label>
+                <Select value={sessionId} onValueChange={setSessionId}>
+                  <SelectTrigger id="scratchpad-session" data-testid="scratchpad-form-session">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-surface border-outline-variant">
+                    <SelectItem value={NO_SESSION}>No session</SelectItem>
+                    {sessionId !== NO_SESSION &&
+                      !sessionOptions.some((s) => s.session_id === sessionId) && (
+                        <SelectItem value={sessionId}>{sessionId.slice(0, 8)}</SelectItem>
+                      )}
+                    {sessionOptions.map((s) => (
+                      <SelectItem
+                        key={s.id}
+                        value={s.session_id as string}
+                        data-testid="scratchpad-form-session-option"
+                      >
+                        {s.agent} · {s.name ?? "Untitled session"} ·{" "}
+                        {formatWhen(s.last_activity_at ?? s.created_at)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label>Tags</Label>
+                <TagInput
+                  value={tags}
+                  onChange={setTags}
+                  onDraftChange={setTagDraft}
+                  placeholder="Add a tag"
+                  aria-label="Tags"
+                  data-testid="scratchpad-form-tags"
+                />
+              </div>
+              {mutation.error && (
+                <p role="alert" className="text-sm text-destructive md:col-span-2">
+                  {mutation.error.message}
+                </p>
+              )}
+            </div>
+            <DialogFooter className="work-form-footer">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={requestClose}
+                disabled={mutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                data-testid="scratchpad-form-submit"
+                disabled={!title.trim() || mutation.isPending}
+              >
+                {pad ? "Save" : "Create"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </>
+      )}
+    </FormDialog>
   );
 }
 

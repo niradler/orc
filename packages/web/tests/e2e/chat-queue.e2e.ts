@@ -1,5 +1,6 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { closeChatHistory, openChatActions, openChatHistory } from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
 
 const headers = { Authorization: `Bearer ${API_SECRET}` };
@@ -100,14 +101,23 @@ test("queued messages stay with their background conversation across refresh", a
   await send(panel, "Respond after 2500ms. Reply with exactly: BACKGROUND.");
   await expect(page).toHaveURL(/chatThread=/);
   await send(panel, "Reply with exactly: QUEUED.");
-  await panel.getByTestId("chat-refresh-button").click();
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").click();
   await expect(panel.getByTestId("chat-queued-message")).toHaveCount(1);
   await panel.getByTestId("chat-clear-button").click();
   await expect(panel.getByTestId("chat-queued-message")).toHaveCount(0);
   await send(panel, "Reply with exactly: OTHER.");
   await expect(panel.getByTestId("chat-message-content").last()).toContainText("OTHER");
-  await expect(panel.getByTestId("chat-tab").first()).toHaveAttribute("data-state", "attention");
-  await panel.getByTestId("chat-tab").first().getByRole("tab").click();
+  await openChatHistory(page);
+  await expect(
+    page.getByTestId("chat-session-list").getByTestId("chat-tab").filter({ hasText: "BACKGROUND" }),
+  ).toHaveAttribute("data-state", "attention");
+  await page
+    .getByTestId("chat-session-list")
+    .getByTestId("chat-tab")
+    .filter({ hasText: "BACKGROUND" })
+    .getByTestId("chat-session-select")
+    .click();
   await expect(panel.getByTestId("chat-message-content").last()).toContainText("QUEUED");
   expect(sent).toHaveLength(3);
 });
@@ -231,7 +241,9 @@ test("closing a conversation cannot dispatch its pending message", async ({ page
   await send(panel, "Respond after 1800ms. Reply with exactly: FIRST.");
   await expect(page).toHaveURL(/chatThread=/);
   await send(panel, "NEVER SENT");
-  await panel.getByTestId("chat-tab-close").click();
+  await openChatHistory(page);
+  await page.getByTestId("chat-session-list").getByTestId("chat-tab-close").click();
+  await closeChatHistory(page);
   await send(panel, "Respond after 2500ms. Reply with exactly: OTHER.");
   await expect(panel.getByTestId("chat-message-content").last()).toContainText("OTHER");
   expect(sent).toHaveLength(2);

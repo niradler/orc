@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import type { ElementType } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { ActionHelp } from "@/components/ActionHelp";
 import { ProjectPicker } from "@/components/ProjectPicker";
 import { Button } from "@/components/ui/button";
 import { useHealth } from "@/hooks/useHealth";
@@ -79,14 +80,13 @@ export function WorkspaceSidebar({
       <nav aria-label="Workspace" className="mt-7 flex min-h-0 flex-1 flex-col gap-1 overflow-auto">
         {WORKSPACE_SECTIONS.map((section) => {
           const Icon = icons[section.id];
-          return (
+          const button = (
             <button
               key={section.id}
               type="button"
               data-testid={`nav-${section.id}`}
               aria-current={active === section.id ? "page" : undefined}
               aria-label={section.label}
-              title={rail ? section.label : undefined}
               onClick={() => {
                 navigate(workspaceDestination(section.path, projectId, search));
                 onNavigate?.();
@@ -106,6 +106,13 @@ export function WorkspaceSidebar({
                 <span className="rounded bg-surface px-1.5 text-xs text-primary">{running}</span>
               )}
             </button>
+          );
+          return rail ? (
+            <ActionHelp key={section.id} label={section.label}>
+              {button}
+            </ActionHelp>
+          ) : (
+            button
           );
         })}
       </nav>

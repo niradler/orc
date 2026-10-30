@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { apiDelete, apiGet, apiPost, gotoView, tid } from "./_helpers";
 
 interface Backend {
@@ -59,6 +60,7 @@ test.describe("Agent backends", () => {
     await page.getByTestId("new-task-button").click();
 
     const dialog = page.getByRole("dialog");
+    await revealFormField(page, dialog.getByTestId("new-task-backend"));
     await dialog.getByTestId("new-task-backend").click();
 
     // One option per probed backend, plus the "Default (…)" entry.
@@ -85,9 +87,12 @@ test.describe("Agent backends", () => {
     await page.getByTestId("new-task-button").click();
 
     const dialog = page.getByRole("dialog");
+    await revealFormField(page, dialog.getByTestId("task-title-input"));
     await dialog.getByTestId("task-title-input").fill(title);
+    await revealFormField(page, dialog.getByTestId("new-task-backend"));
     await dialog.getByTestId("new-task-backend").click();
     await page.getByRole("option", { name: /^acpx / }).click();
+    await openFinalFormStep(page);
     await dialog.getByTestId("task-submit").click();
 
     let created: Task | undefined;

@@ -1,5 +1,6 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
+import { chooseChatAgent, openChatActions, openChatSettings } from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
 
 const headers = { Authorization: `Bearer ${API_SECRET}` };
@@ -22,29 +23,31 @@ test("a run keeps going in its own tab while another conversation runs, and the 
 }) => {
   const background = `BG-${Date.now()}`;
   const foreground = `FG-${Date.now()}`;
-  await page.goto("/tasks?chat=open");
+  await page.goto("/tasks?chat=full");
   const panel = page.getByTestId("chat-panel");
   await panel
     .getByTestId("chat-input")
     .fill(`Respond after 2500ms. Reply with exactly: ${background}.`);
   await panel.getByTestId("chat-send-button").click();
-  const tabs = panel.getByTestId("chat-tab");
-  await expect(tabs.first()).toHaveAttribute("data-state", "running");
+  const tabs = panel.getByTestId("chat-session-list").getByTestId("chat-tab");
+  const backgroundTab = tabs.filter({ hasText: background });
+  await expect(backgroundTab).toHaveAttribute("data-state", "running");
 
   await panel.getByTestId("chat-clear-button").click();
-  await expect(tabs).toHaveCount(2);
+  await expect(tabs).toHaveCount(1);
   await expect(panel).toHaveAttribute("data-streaming", "false");
   await panel.getByTestId("chat-input").fill(`Reply with exactly: ${foreground}.`);
+  await expect(tabs).toHaveCount(2);
   await panel.getByTestId("chat-send-button").click();
   await expect(panel.getByTestId("chat-message-content").last()).toContainText(foreground);
   await expect(panel.getByTestId("chat-messages")).not.toContainText(background);
 
   // The first run finished unseen, so its tab asks for attention instead of being dropped.
-  await expect(tabs.first()).toHaveAttribute("data-state", "attention", { timeout: 10000 });
-  await tabs.first().getByRole("tab").click();
-  await expect(tabs.first()).toHaveAttribute("data-active", "true");
+  await expect(backgroundTab).toHaveAttribute("data-state", "attention", { timeout: 10000 });
+  await backgroundTab.getByTestId("chat-session-select").click();
+  await expect(backgroundTab).toHaveAttribute("data-active", "true");
   await expect(panel.getByTestId("chat-message-content").last()).toContainText(background);
-  await expect(tabs.first()).toHaveAttribute("data-state", "idle");
+  await expect(backgroundTab).toHaveAttribute("data-state", "open");
 
   await expect(page).toHaveURL(/[?&]chatThread=[0-9a-f-]{36}/);
   const shared = page.url();
@@ -62,17 +65,16 @@ test("a run keeps going in its own tab while another conversation runs, and the 
 });
 
 test("chat preferences picked in the browser survive a reload", async ({ page }) => {
-  await page.goto("/tasks?chat=open");
-  const panel = page.getByTestId("chat-panel");
-  await panel.getByTestId("chat-agent-select").selectOption("claude");
-  await panel.getByTestId("chat-config-button").click();
+  await page.goto("/tasks?chat=full");
+  await chooseChatAgent(page, "claude");
+  await openChatSettings(page);
   await page.getByTestId("chat-permission-mode").selectOption("bypassPermissions");
   await page.keyboard.press("Escape");
   await page.reload();
-  await expect(page.getByTestId("chat-panel").getByTestId("chat-agent-select")).toHaveValue(
+  await expect(page.getByTestId("chat-panel").getByTestId("chat-agent-button")).toHaveText(
     "claude",
   );
-  await page.getByTestId("chat-panel").getByTestId("chat-config-button").click();
+  await openChatSettings(page);
   await expect(page.getByTestId("chat-permission-mode")).toHaveValue("bypassPermissions");
 });
 
@@ -83,13 +85,14 @@ test("refresh and page reload follow a real server-owned turn without starting i
   page.on("request", (request) => {
     if (request.method() === "POST" && request.url().endsWith("/api/chat/stream")) posts++;
   });
-  await page.goto("/tasks?chat=open");
+  await page.goto("/tasks?chat=full");
   const panel = page.getByTestId("chat-panel");
   const reply = `REFRESH-${Date.now()}`;
   await panel.getByTestId("chat-input").fill(`Respond after 3500ms. Reply with exactly: ${reply}.`);
   await panel.getByTestId("chat-send-button").click();
   await expect(page).toHaveURL(/[?&]chatThread=[0-9a-f-]{36}/);
-  await panel.getByTestId("chat-refresh-button").click();
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").click();
   await expect(panel).toHaveAttribute("data-streaming", "true");
   await page.reload();
   await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
@@ -101,7 +104,7 @@ test("refresh and page reload follow a real server-owned turn without starting i
 test("stopping a reply before its run is named and closing the tab still stops the run", async ({
   page,
 }) => {
-  await page.goto("/tasks?chat=open");
+  await page.goto("/tasks?chat=full");
   const panel = page.getByTestId("chat-panel");
   const first = `FIRST-${Date.now()}`;
   await panel.getByTestId("chat-input").fill(`Reply with exactly: ${first}.`);
@@ -117,13 +120,17 @@ test("stopping a reply before its run is named and closing the tab still stops t
     await route.continue();
   });
   await panel.getByTestId("chat-clear-button").click();
-  const tabs = panel.getByTestId("chat-tab");
-  await expect(tabs).toHaveCount(2);
+  const tabs = panel.getByTestId("chat-session-list").getByTestId("chat-tab");
+  await expect(tabs).toHaveCount(1);
   await panel.getByTestId("chat-input").fill("Respond after 5000ms. Reply with exactly: LATE.");
+  await expect(tabs).toHaveCount(2);
   await panel.getByTestId("chat-send-button").click();
   await panel.getByTestId("chat-cancel-button").click();
-  await tabs.nth(1).getByTestId("chat-tab-close").click();
-  await expect(tabs).toHaveCount(1);
+  await tabs
+    .filter({ has: page.locator('[data-testid="chat-session-select"][aria-current="true"]') })
+    .getByTestId("chat-tab-close")
+    .click();
+  await expect(panel.getByTestId("chat-tab-close")).toHaveCount(1);
   const cancelled = page.waitForRequest(
     (request) =>
       request.method() === "POST" && /\/api\/chat\/runs\/[^/]+\/cancel$/.test(request.url()),
@@ -136,7 +143,7 @@ test("a reopened tab shows a reply that finished between loading it and attachin
   page,
 }) => {
   const reply = `DONE-${Date.now()}`;
-  await page.goto("/tasks?chat=open");
+  await page.goto("/tasks?chat=full");
   const panel = page.getByTestId("chat-panel");
   await panel.getByTestId("chat-input").fill(`Reply with exactly: ${reply}.`);
   await panel.getByTestId("chat-send-button").click();

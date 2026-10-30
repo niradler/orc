@@ -145,6 +145,7 @@ function FlowRunBody({
         </div>
         {run.status === "running" && (
           <Button
+            variant="ghost"
             data-testid="flow-halt-button"
             size="sm"
             onClick={() => setHalting(true)}

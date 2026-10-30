@@ -92,7 +92,7 @@ export function WebhookCreate({
         <select
           id={`${id}-provider`}
           data-testid="webhook-provider"
-          className="w-full min-h-11 rounded-md border border-control-border bg-background px-3 text-sm"
+          className="w-full min-h-8 rounded-md border border-control-border bg-background px-3 text-sm"
           value={provider}
           onChange={(event) => setProvider(event.target.value as typeof provider)}
         >
@@ -162,7 +162,7 @@ export function WebhookPicker({
           <select
             id="job-webhook-source"
             data-testid="job-webhook-select"
-            className="w-full min-h-11 rounded-md border border-control-border bg-background px-3 text-sm"
+            className="w-full min-h-8 rounded-md border border-control-border bg-background px-3 text-sm"
             value=""
             disabled={isLoading}
             onChange={(event) => {
@@ -346,9 +346,13 @@ function CopyValue({
 export function WebhookSetup({
   hook,
   secret,
+  showInstructions = true,
+  instructionsId,
 }: {
   hook: ManagedWebhook;
   secret?: string;
+  showInstructions?: boolean;
+  instructionsId?: string;
 }): ReactElement {
   const url = webhookUrl(hook.token, getApiUrl(), window.location.origin);
   return (
@@ -360,32 +364,38 @@ export function WebhookSetup({
           with the same /webhooks/ path.
         </p>
       )}
-      {secret ? (
-        <>
-          <CopyValue label="Signing secret" value={secret} secret />
-          <p className="text-xs text-outline">
-            Copy the signing secret before leaving. It is shown once.
-          </p>
-        </>
-      ) : (
-        <p className="text-xs text-outline">
-          The signing secret is hidden. Generate a replacement only if you need to reconnect the
-          sender.
-        </p>
-      )}
-      {hook.provider === "github" ? (
-        <ol className="list-decimal space-y-1 pl-5 text-sm text-outline">
-          <li>In your repository, open GitHub Settings - Webhooks - Add webhook.</li>
-          <li>Paste the Payload URL, select application/json, and enter the signing secret.</li>
-          <li>Select the events needed by your connected jobs. Each job has its own filters.</li>
-          <li>Send an event and inspect Recent deliveries below.</li>
-        </ol>
-      ) : (
-        <p className="text-sm text-outline">
-          Send JSON, signed with HMAC-SHA256 of the raw body. Set X-Orc-Signature-256 to
-          sha256=&lt;hex signature&gt;, X-Orc-Event to the event name and X-Orc-Delivery to a unique
-          delivery ID.
-        </p>
+      {showInstructions && (
+        <div id={instructionsId} data-testid="webhook-setup-instructions" className="space-y-3">
+          {secret ? (
+            <>
+              <CopyValue label="Signing secret" value={secret} secret />
+              <p className="text-xs text-outline">
+                Copy the signing secret before leaving. It is shown once.
+              </p>
+            </>
+          ) : (
+            <p className="text-xs text-outline">
+              The signing secret is hidden. Generate a replacement only if you need to reconnect the
+              sender.
+            </p>
+          )}
+          {hook.provider === "github" ? (
+            <ol className="list-decimal space-y-1 pl-5 text-sm text-outline">
+              <li>In your repository, open GitHub Settings - Webhooks - Add webhook.</li>
+              <li>Paste the Payload URL, select application/json, and enter the signing secret.</li>
+              <li>
+                Select the events needed by your connected jobs. Each job has its own filters.
+              </li>
+              <li>Send a test event, then open Recent deliveries for this webhook.</li>
+            </ol>
+          ) : (
+            <p className="text-sm text-outline">
+              Send JSON, signed with HMAC-SHA256 of the raw body. Set X-Orc-Signature-256 to
+              sha256=&lt;hex signature&gt;, X-Orc-Event to the event name and X-Orc-Delivery to a
+              unique delivery ID.
+            </p>
+          )}
+        </div>
       )}
     </div>
   );
@@ -395,8 +405,10 @@ export function WebhookEndpoint({ hook }: { hook: ManagedWebhook }): ReactElemen
   const update = useUpdateWebhook();
   const rotate = useRotateWebhook();
   const [showDeliveries, setShowDeliveries] = useState(false);
+  const [showSetup, setShowSetup] = useState(false);
   const [rotating, setRotating] = useState(false);
   const [secret, setSecret] = useState<string | undefined>();
+  const setupId = useId();
   return (
     <article
       className="space-y-3 border-b border-border pb-5"
@@ -420,30 +432,32 @@ export function WebhookEndpoint({ hook }: { hook: ManagedWebhook }): ReactElemen
       </div>
       <div className="space-y-1" data-testid="webhook-connected-jobs">
         <p className="text-xs text-outline">Connected jobs ({hook.subscriptions.length})</p>
-        {hook.subscriptions.length ? (
-          hook.subscriptions.map((binding) => (
-            <div key={binding.job_id} className="text-sm">
-              <Link
-                className="underline"
-                data-testid="webhook-job-link"
-                to={`/jobs/${binding.job_id}?project=all`}
-              >
-                {binding.name}
-              </Link>
-              <span className="text-xs text-outline">
-                {" "}
-                - {binding.enabled ? "Enabled" : "Disabled"}; events:{" "}
-                {binding.events.join(", ") || "all"}; actions: {binding.actions.join(", ") || "all"}
-              </span>
-            </div>
-          ))
-        ) : (
-          <p className="text-sm text-outline">
-            No connected jobs. Select this webhook when creating or editing a job.
-          </p>
-        )}
+        {hook.subscriptions.length
+          ? hook.subscriptions.map((binding) => (
+              <div key={binding.job_id} className="text-sm">
+                <Link
+                  className="underline"
+                  data-testid="webhook-job-link"
+                  to={`/jobs/${binding.job_id}?project=all`}
+                >
+                  {binding.name}
+                </Link>
+                <span className="text-xs text-outline">
+                  {" "}
+                  - {binding.enabled ? "Enabled" : "Disabled"}; events:{" "}
+                  {binding.events.join(", ") || "all"}; actions:{" "}
+                  {binding.actions.join(", ") || "all"}
+                </span>
+              </div>
+            ))
+          : null}
       </div>
-      <WebhookSetup hook={hook} secret={secret} />
+      <WebhookSetup
+        hook={hook}
+        secret={secret}
+        showInstructions={showSetup}
+        instructionsId={setupId}
+      />
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"
@@ -454,11 +468,39 @@ export function WebhookEndpoint({ hook }: { hook: ManagedWebhook }): ReactElemen
         >
           {showDeliveries ? "Hide deliveries" : "Recent deliveries"}
         </Button>
-        <Button type="button" variant="ghost" size="sm" onClick={() => setRotating(!rotating)}>
-          New signing secret
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          data-testid="webhook-setup-toggle"
+          aria-expanded={showSetup}
+          aria-controls={showSetup ? setupId : undefined}
+          disabled={rotate.isPending}
+          onClick={() => {
+            if (showSetup) setSecret(undefined);
+            setShowSetup(!showSetup);
+            setRotating(false);
+          }}
+        >
+          {showSetup
+            ? secret
+              ? "I've copied the setup details"
+              : "Hide setup"
+            : "Setup instructions"}
         </Button>
       </div>
-      {rotating && (
+      {showSetup && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={rotate.isPending}
+          onClick={() => setRotating(!rotating)}
+        >
+          New signing secret
+        </Button>
+      )}
+      {showSetup && rotating && (
         <div className="space-y-2 text-sm">
           <p>
             The sender's existing secret will stop working. Update it after generating the
@@ -473,6 +515,7 @@ export function WebhookEndpoint({ hook }: { hook: ManagedWebhook }): ReactElemen
               rotate.mutate(hook.id, {
                 onSuccess: (result) => {
                   setSecret(result.secret);
+                  setShowSetup(true);
                   setRotating(false);
                 },
               })

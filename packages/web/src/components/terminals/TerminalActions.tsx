@@ -27,7 +27,7 @@ export function TerminalActions({
   const [localOpen, setLocalOpen] = useState(false);
   const setOpen = onOpenChange ?? setLocalOpen;
   const itemClass =
-    "flex w-full items-center gap-2 rounded px-3 min-h-11 text-sm text-left hover:bg-surface-highest focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-40";
+    "flex w-full items-center gap-2 rounded px-3 min-h-8 text-[13px] text-left hover:bg-surface-highest focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-40";
   return (
     <Popover.Root open={open ?? localOpen} onOpenChange={setOpen}>
       <Popover.Trigger asChild>

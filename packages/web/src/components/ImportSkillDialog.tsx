@@ -1,7 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Info, LoaderCircle, Search } from "lucide-react";
 import { useState } from "react";
 import { api } from "@/api/client";
 import { BulkActionBar } from "@/components/BulkActionBar";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useListSelection } from "@/hooks/useListSelection";
 
 export function ImportSkillDialog({ onClose }: { onClose: () => void }) {
@@ -63,117 +66,169 @@ export function ImportSkillDialog({ onClose }: { onClose: () => void }) {
   const busy = discover.isPending || importing.isPending;
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
-      <DialogContent className="max-w-xl">
-        <DialogHeader>
+      <DialogContent
+        closeDisabled={busy}
+        className="flex min-w-0 w-[min(800px,calc(100vw-2rem))] max-w-none max-h-[calc(var(--app-height,100dvh)-2rem)] flex-col gap-0 overflow-hidden p-0"
+      >
+        <DialogHeader className="shrink-0 flex-row items-center gap-1 border-b px-4 py-3 pr-12 sm:px-6">
           <DialogTitle>Import from GitHub</DialogTitle>
+          <HelpPopover label="skill imports">
+            GitHub repositories, owner/repo, skill-folder URLs and skills.sh links are supported.
+            Private repositories use gh login on the execution host or ORC_GITHUB_TOKEN on the ORC
+            server. Supporting files are included.
+          </HelpPopover>
         </DialogHeader>
-        <form
-          className="space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            discover.mutate(source.trim());
-          }}
+        <div
+          className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6"
+          data-testid="skill-import-body"
         >
-          <Label htmlFor="skill-repository">Repository or skills.sh link</Label>
-          <Input
-            id="skill-repository"
-            data-testid="skill-repository-input"
-            value={source}
-            disabled={busy}
-            onChange={(event) => {
-              setSource(event.target.value);
-              discover.reset();
-              importing.reset();
-              selection.clear();
-              setImportedPaths([]);
+          <form
+            className="relative"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (busy || !source.trim()) return;
+              discover.mutate(source.trim());
             }}
-            placeholder="https://github.com/vercel-labs/agent-skills"
-            autoFocus
-          />
-          <p className="text-xs text-outline">
-            GitHub repositories, owner/repo, skill-folder URLs and skills.sh links. Private
-            repositories use gh login on the execution host (local or SSH), or ORC_GITHUB_TOKEN on
-            the ORC server. Supporting files are included.
-          </p>
-          <Button type="submit" data-testid="skill-discover" disabled={busy || !source.trim()}>
-            {discover.isPending ? "Discovering…" : "Discover skills"}
-          </Button>
-        </form>
-        {discover.data && (
-          <div className="space-y-2">
-            <p className="text-xs text-outline">
-              {discover.data.skills.length} skills found · {discover.data.commit.slice(0, 8)}
-            </p>
-            {!discover.data.skills.length && (
-              <p role="status">No valid skills found in this source.</p>
-            )}
-            <BulkActionBar
-              resourceLabel="new skills"
-              count={selected.length}
-              allSelected={selection.allSelected}
-              someSelected={selection.someSelected}
-              onSelectAll={selection.selectAll}
-              onClear={selection.clear}
+          >
+            <Label htmlFor="skill-repository" className="sr-only">
+              Repository or skills.sh link
+            </Label>
+            <Input
+              id="skill-repository"
+              data-testid="skill-repository-input"
+              value={source}
               disabled={busy}
+              onChange={(event) => {
+                setSource(event.target.value);
+                discover.reset();
+                importing.reset();
+                selection.clear();
+                setImportedPaths([]);
+              }}
+              placeholder="Repository or skills.sh link"
+              className="pr-12"
+              autoFocus
+            />
+            <Button
+              type="submit"
+              data-testid="skill-discover"
+              aria-label="Discover skills"
+              title="Find skills in this repository"
+              aria-busy={discover.isPending}
+              variant="ghost"
+              size="icon"
+              className="absolute right-0 top-0 h-full w-11 rounded-l-none"
+              disabled={busy || !source.trim()}
             >
-              <span className="text-xs text-muted-foreground">
-                Imports run in batches of up to 16.
-              </span>
-            </BulkActionBar>
-            <div className="max-h-[45vh] overflow-y-auto space-y-2">
-              {discover.data.skills.map((skill) => (
-                <label
-                  key={skill.path}
-                  className="flex items-start gap-3 border border-surface-highest rounded p-3"
-                  data-testid="remote-skill"
-                  data-skill-name={skill.name}
-                >
-                  <input
-                    type="checkbox"
-                    data-testid="remote-skill-select"
-                    checked={selected.includes(skill.path)}
-                    disabled={busy || skill.installed || importedPaths.includes(skill.path)}
-                    onChange={() => selection.toggle(skill.path)}
-                  />
-                  <span className="text-sm">
-                    <span className="font-medium">{skill.name}</span>
-                    {(skill.installed || importedPaths.includes(skill.path)) && (
-                      <span className="ml-2 text-xs text-outline">Already installed</span>
-                    )}
-                    <span className="block text-xs text-outline">{skill.description}</span>
-                    <span className="block text-xs text-outline">
-                      {skill.path || "Repository root"}
-                    </span>
-                  </span>
-                </label>
+              {discover.isPending ? (
+                <LoaderCircle aria-hidden className="animate-spin" />
+              ) : (
+                <Search aria-hidden />
+              )}
+            </Button>
+          </form>
+          {discover.data && (
+            <div className="space-y-2">
+              <p className="text-xs text-outline">
+                {discover.data.skills.length} skills found · {discover.data.commit.slice(0, 8)}
+              </p>
+              {!discover.data.skills.length && (
+                <p role="status">No valid skills found in this source.</p>
+              )}
+              <BulkActionBar
+                resourceLabel="new skills"
+                count={selected.length}
+                allSelected={selection.allSelected}
+                someSelected={selection.someSelected}
+                onSelectAll={selection.selectAll}
+                onClear={selection.clear}
+                disabled={busy}
+              >
+                {null}
+              </BulkActionBar>
+              <div className="divide-y divide-border">
+                {discover.data.skills.map((skill) => (
+                  <div
+                    key={skill.path}
+                    className="flex min-w-0 items-center gap-2 py-2"
+                    data-testid="remote-skill"
+                    data-skill-name={skill.name}
+                  >
+                    <label className="flex min-h-11 min-w-0 flex-1 items-start gap-3 text-sm">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${skill.name}`}
+                        className="mt-1 shrink-0"
+                        data-testid="remote-skill-select"
+                        checked={selected.includes(skill.path)}
+                        disabled={busy || skill.installed || importedPaths.includes(skill.path)}
+                        onChange={() => selection.toggle(skill.path)}
+                      />
+                      <span className="min-w-0 text-sm wrap-break-word">
+                        <span className="block truncate font-medium">{skill.name}</span>
+                        {(skill.installed || importedPaths.includes(skill.path)) && (
+                          <span className="ml-2 text-xs text-outline">Already installed</span>
+                        )}
+                        <span className="mt-0.5 line-clamp-2 text-xs leading-4 text-outline">
+                          {skill.description}
+                        </span>
+                      </span>
+                    </label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          actionHelp={false}
+                          data-testid="remote-skill-details"
+                          aria-label={`Details for ${skill.name}`}
+                          className="shrink-0"
+                        >
+                          <Info aria-hidden />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        data-testid="remote-skill-details-content"
+                        aria-label={`Details for ${skill.name}`}
+                        align="end"
+                        className="max-h-[60dvh] w-96 max-w-[calc(100vw-2rem)] overflow-y-auto space-y-2 text-sm wrap-break-word"
+                      >
+                        <p className="font-medium">{skill.name}</p>
+                        <p>{skill.description}</p>
+                        <p className="text-xs text-outline">{skill.path || "Repository root"}</p>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                ))}
+              </div>
+              {discover.data.issues.map((issue) => (
+                <p key={issue.path} role="alert" className="text-xs text-destructive">
+                  {issue.path}: {issue.error}
+                </p>
               ))}
             </div>
-            {discover.data.issues.map((issue) => (
-              <p key={issue.path} role="alert" className="text-xs text-destructive">
-                {issue.path}: {issue.error}
-              </p>
-            ))}
-          </div>
-        )}
-        {(discover.error || importing.error) && (
-          <p role="alert" className="text-sm text-destructive">
-            {(discover.error || importing.error)?.message}
-          </p>
-        )}
-        {!!importing.data?.failed.length && (
-          <div role="alert" className="text-sm text-destructive">
-            <p>
-              {importing.data.imported.length} imported; {importing.data.failed.length} failed.
-              Failed selections retained for retry.
+          )}
+          {(discover.error || importing.error) && (
+            <p role="alert" className="text-sm text-destructive">
+              {(discover.error || importing.error)?.message}
             </p>
-            {importing.data.failed.map((item) => (
-              <p key={item.path}>
-                {item.path || "Repository root"}: {item.error}
+          )}
+          {!!importing.data?.failed.length && (
+            <div role="alert" className="text-sm text-destructive">
+              <p>
+                {importing.data.imported.length} imported; {importing.data.failed.length} failed.
+                Failed selections retained for retry.
               </p>
-            ))}
-          </div>
-        )}
-        <DialogFooter>
+              {importing.data.failed.map((item) => (
+                <p key={item.path}>
+                  {item.path || "Repository root"}: {item.error}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
+        <DialogFooter className="shrink-0 border-t px-4 py-3 sm:px-6">
           <Button variant="ghost" disabled={busy} onClick={onClose}>
             Cancel
           </Button>

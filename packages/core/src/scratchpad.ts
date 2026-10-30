@@ -132,6 +132,8 @@ export type ScratchpadListQuery = {
   kind?: ScratchpadKind | undefined;
   /** A project id, or null for pads without a project; omitted lists every pad. */
   project_id?: string | null | undefined;
+  /** Include shared pads alongside a named project; other filters still apply. */
+  include_global?: boolean | undefined;
   session_id?: string | undefined;
   tag?: string | undefined;
   /** Case-insensitive match on title and content. */

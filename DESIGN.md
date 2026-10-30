@@ -185,6 +185,69 @@ components:
 
 # ORC design guide
 
+## Platform patterns approved 2026-10-28
+
+These rules apply across the product, including populated, empty, error and phone
+states. Retain Tailwind, shadcn/Radix, IBM Plex and the existing neutral palette.
+Use the shared components instead of inventing a different toolbar or control
+style in each feature. An assessment or mock does not complete adoption: validate
+the actual application with realistic data and preserve its working behavior.
+
+- **Controls:**32px desktop controls with13px labels;44px touch hit areas, including
+  tablets. Primary phone controls can have a34px painted face within that target.
+  Use one neutral filled action per working area. Secondary actions are ghost or
+  a restrained outline; use a contextual menu for infrequent row actions. Give
+  icon actions an accessible name. Do not hide touch actions behind hover.
+- **Headers and lists:** use `ViewHeader` for a compact title, concise count,
+  optional title-adjacent help and main action. Dense list titles use16px; the
+  standalone page-title token remains22px. Search/filter/view controls share one
+  aligned region; `ResponsiveFilters` retains phone filter state and active count.
+  Explain selection scope and preserve displayed-record bulk semantics. Use slim
+  records; do not stack44px controls vertically just to fit desktop columns on a
+  phone. Put related edits in a row action menu while keeping essential status
+  visible. Preserve full accessible names when visual titles truncate.
+- **Copy and disclosure:** remove redundant explanations. Optional format/setup
+  information belongs in focus/hover/tap help beside its subject. Keep required
+  instructions, failures, permission decisions and recovery visible. Secondary
+  history/setup starts collapsed; counts/status identify relevant work without
+  forcing it open for new arrivals. Documents and current work precede setup.
+- **Forms:** short confirmations stay small. Use `FormDialog` for long project,
+  task and job configuration: up to960px, related desktop columns, one ordered
+  phone column, scrollable body and stable actions. Keep errors in the body above
+  the footer. Protect dirty Cancel/Escape/backdrop, browser Back and reload; Keep
+  editing preserves values, explicit Discard leaves safely, and focus returns to
+  the opener. Pending operations cannot be dismissed. Successful writes use the
+  committed close callback so navigation is not mistaken for discarded work.
+  Long configuration forms use named tabbed steps to reduce scrolling. Keep
+  values while moving between tabs, allow direct tab navigation, and validate
+  every step before saving; reveal and focus an invalid field's step. Short forms
+  stay on one page. Phone footers reach the dialog bottom without stretching
+  gaps between fields.
+- **Chat:** show one selected conversation. Session history is **one flat list,
+  newest activity first**. Open, selected, working and needs-input states use icons
+  and selection styling; they never create sections or override date order. Do not
+  add Open/Earlier, source or date groups without explicit new direction. This is
+  an intentional exception to the general secondary-list disclosure guidance. Use a
+  collapsible sidebar in desktop fullscreen and a named phone drawer. Keep agent
+  and model controls in the composer and infrequent conversation actions in one
+  named menu. Changing agents after a session starts creates a separate session;
+  changing models applies to the next turn. Align assistant and composer columns,
+  including16px phone insets. Closing an open session leaves it in this same list with its drafts/history
+  and background activity, but pauses pending-message dispatch. Stop, requests,
+  errors and paused queues remain discoverable. Provider catalogs and model
+  validation use the existing contracts; never hardcode a preview model list.
+- **Settings:** named sections have clear save ownership. Appearance saves
+  immediately; browser connection and server terminal font each have their own
+  actions. Embedded server/host/chat/notification/knowledge forms own their saves.
+  Keep sections mounted so switching categories does not erase drafts. URLs
+  restore the current section on Back/reload.
+- **Verification:** review populated desktop and phone states, both themes,
+  keyboard focus, touch targets, long content and recoverable failures. Exercise
+  real save/reopen, selection/filter scope, native session resume, stream/queue
+  controls and terminal continuity when affected. Screenshots and automated
+  accessibility scans support this evidence; they do not certify every browser
+  or assistive technology.
+
 ## Overview
 
 **Status: Activity direction approved for application-wide adoption, 2026-10-15.**
@@ -226,7 +289,7 @@ Use a pure black canvas with neutral charcoal interaction surfaces in dark mode 
 Dark chrome uses equal RGB channels. Sidebar, header and main canvas share the
 same #000000 background: one continuous workspace, not contrasting panels. Avoid
 even a subtle blue cast. This reflects Nir’s preference after
-the Activity comparison. No typography or sizing change is requested. Dark is the
+the Activity comparison. Fonts remain; control sizing follows the compact platform rules above. Dark is the
 initial default; an explicit choice persists. Avoid blue casts across the entire
 canvas, sidebar, cards and text. Dark mode should remain comfortable, rather than
 using maximum black/white contrast everywhere.
@@ -334,9 +397,9 @@ Keep provider thinking and tool input/results collapsed by default, with native
 details/summary keyboard and touch interaction. Show real provider events only;
 use the responding indicator while a provider is quiet. Preserve activity with
 the conversation and show permission decisions separately from tool results.
-Settings owns new-chat defaults; the chat model dialog shows the conversation's
+Settings owns new-chat defaults; the chat model dialog shows the session's
 actual instructions, tools connection, permissions and execution folder. Changing
-agents starts a new conversation; changing models affects the next turn.
+agents starts a new session; changing models affects the next turn.
 
 On narrow screens, Knowledge Browse is a modal with trapped focus and a visible
 close action. Restore focus to its trigger when dismissed; selecting a document
@@ -379,6 +442,12 @@ necessary. Hover uses a small surface change; pressed/selected remains stable.
 Focus is a visible 2px outline, independent of hover and color perception.
 Destructive actions remain explicit and separated from the default action.
 
+Icon-only actions need an accessible name and explanatory hover/focus help.
+Shared icon Buttons provide `ActionHelp`; raw icon actions use the same wrapper.
+On touch, a hold explains an action without executing it, while a short tap keeps
+its normal behavior. Actions with an existing explanation/confirmation popover
+opt out of duplicate help. Keep destructive and installation confirmation explicit.
+
 Navigation uses readable text with a quiet selected fill. Avoid simultaneously
 emphasizing the same selection through several decorative treatments. Keep URL,
 header and selected destination aligned. Every tab/view remains shareable and
@@ -402,6 +471,13 @@ canonical control for each filter; do not add duplicate bulk toolbar actions.
 Persistent agent-discovery visibility and a local source filter are distinct
 behaviors, and their labels must explain that distinction.
 
+Single-value selects share a 14px chevron, 12px edge inset and centered alignment.
+Native selects reserve space for that glyph through the global rule; Radix uses
+the shared `SelectTrigger`. Do not add another arrow overlay to native selects.
+Long selected values truncate before the arrow. Keep native popup and keyboard
+behavior, omit chevrons from multi-row listboxes, mirror placement for RTL and
+allow the platform arrow in forced-colors mode.
+
 ### Knowledge base
 
 The document is the focal point. The file tree, links, comments, save state
@@ -418,6 +494,18 @@ filtered to it. Maintenance warnings appear only when a document needs action.
 Nir approved the compact chat queue in PR124 as the reference for professional
 workspace controls. Design for the available screen space and the user's main
 task; supporting controls must not consume the reading or editing area by default.
+
+The workspace cleanup approved on 2026-10-28 extends this to Webhooks, Sessions,
+Scratchpads and Jobs. Use the shared compact `ViewHeader`, `HelpPopover` and
+`ResponsiveFilters` patterns: title, useful count and one primary action, followed
+by search and filters. Remove obvious introductions and repeated empty-state
+instructions. Put useful one-time explanations beside the title in help that
+works with hover, keyboard focus and tap. Keep errors, recovery instructions,
+permission decisions and unsaved state visible. On phones, keep search available
+and disclose secondary filters with their active count; preserve their values
+through hide/reopen, viewport changes and reload. Section tabs scroll locally
+rather than wrapping into several rows. Use compact lists when table columns
+would squeeze the actual work, retaining task links, status and contextual actions.
 
 - Prefer one quiet summary with a count and progressive disclosure for secondary
   lists. Start nonessential details collapsed; new entries update the summary
@@ -443,6 +531,14 @@ Nir to approve the result. The approved queue uses a 32px desktop / 44px phone
 summary; those are examples, not mandatory heights for every component.
 
 ### Chat and terminal continuity
+
+Use **Sessions** consistently in chat navigation. Keep history flat, ordered by
+latest activity descending; do not pin open sessions above newer history. Place
+the new-session plus beside the Sessions title. Each row uses its actual provider
+icon, with a state color and accessible explanation; do not infer stale or running
+state from age. Keep useful session actions in the header when space permits and
+move them into More at narrower panel widths. Keep agent/model controls in the
+composer, and preserve settings drafts across responsive transitions.
 
 Keep messages on a calm reading surface with light role/agent attribution.
 Avoid a border around every assistant paragraph or a new card for each chunk.
@@ -548,6 +644,20 @@ scrollback and key input. Syntax colors may remain domain-specific where needed 
 legibility; no blanket grayscale filters or broad descendant color overrides.
 
 ### Selection and bulk actions
+
+Skills selection is opt-in: default rows hide checkboxes, Multiselect reveals
+them and becomes Select displayed, and Done exits selection. Preserve retry and
+scope-reset behavior. Show Global or project scope as a desktop column and phone
+metadata. Shared resources (Skills, Knowledge and Scratchpads) show global plus
+the selected project; All projects shows all, and Unassigned shows global-only
+resources. Project-owned work and session history use exact project filtering.
+Unknown session ownership belongs in All projects only. Unassigned requires a
+session known to have no project; never invent ownership for older saved chats.
+
+Markdown content fields provide compact Edit/Preview controls using the existing
+safe renderer. Content-only panels should fill their available height and scroll
+within the reading/editing region. Keep native validation, unsaved work and the
+established document editor's Read/Edit/Split workflow intact.
 
 Resource lists should support selecting specific entries and applying common actions
 without opening an editor for each item. Jobs and Projects are the first adopters.

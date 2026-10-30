@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { settingsSection } from "./_chat-ui";
 import { gotoView } from "./_helpers";
 
 test("SSH uses automatic port by default and permits a persistent override", async ({ page }) => {
@@ -19,6 +20,7 @@ test("SSH uses automatic port by default and permits a persistent override", asy
     await route.fulfill({ json: state });
   });
   await gotoView(page, "settings");
+  await settingsSection(page, "execution");
   const port = page.getByTestId("ssh-remote-port");
   await expect(port).toHaveValue("");
   await expect(port).toHaveAttribute("placeholder", "Automatic");

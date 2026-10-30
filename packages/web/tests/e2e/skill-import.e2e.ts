@@ -1,6 +1,170 @@
 import { expect, test } from "@playwright/test";
 import { apiPost, gotoView, tid } from "./_helpers";
 
+for (const viewport of [
+  { width: 390, height: 700 },
+  { width: 1440, height: 800 },
+]) {
+  for (const source of ["remote", "local"] as const) {
+    test(`populated ${source} skill discovery keeps selection and actions reachable at ${viewport.width}px`, async ({
+      page,
+    }, testInfo) => {
+      const description =
+        "A detailed reusable workflow with validation, configuration, review and delivery instructions. ".repeat(
+          6,
+        );
+      const skills = Array.from({ length: 40 }, (_, index) => ({
+        name: `discovered-workflow-${index}`,
+        description,
+        path: `skills/${"nested-directory/".repeat(8)}workflow-${index}`,
+        installed: false,
+        agent: "codex",
+        content_hash: "a".repeat(64),
+        status: "new",
+        also_in: [],
+        extra_fields: [],
+      }));
+      let discoveries = 0;
+      await page.route("**/api/skills/discover", (route) => {
+        discoveries++;
+        return route.fulfill({
+          json: {
+            repository: "acme/skills",
+            ref: "HEAD",
+            path: "",
+            commit: "a".repeat(40),
+            skills,
+            issues: [],
+          },
+        });
+      });
+      await page.route("**/api/skills/local-agents", (route) =>
+        route.fulfill({
+          json: {
+            agents: [
+              {
+                id: "codex",
+                label: "Codex",
+                dir: `/home/user/${"long-agent-folder/".repeat(8)}skills`,
+                skills,
+              },
+            ],
+          },
+        }),
+      );
+      let imports = 0;
+      await page.route("**/api/skills/import", (route) => {
+        imports++;
+        return route.fulfill({ json: { skills: [] } });
+      });
+      await page.route("**/api/skills/local-agents/import", (route) => {
+        imports++;
+        return route.fulfill({ json: { imported: [], skipped: [] } });
+      });
+      await page.setViewportSize(viewport);
+      await gotoView(page, "skills");
+      await page.getByTestId("skill-import-menu").click();
+      await page
+        .getByTestId(source === "remote" ? "import-skill-button" : "import-local-skills-button")
+        .click();
+      const help = page.getByRole("dialog").getByTestId("view-help");
+      await help.click();
+      await expect(page.getByTestId("view-help-content")).toContainText(
+        source === "remote" ? "Private repositories" : "The originals are not changed.",
+      );
+      await help.click();
+      await expect(page.getByTestId("view-help-content")).toBeHidden();
+      if (source === "remote") {
+        const input = page.getByTestId("skill-repository-input");
+        const search = page.getByTestId("skill-discover");
+        await input.press("Enter");
+        await expect(search).toBeDisabled();
+        expect(discoveries).toBe(0);
+        await input.fill("acme/skills");
+        const inputBox = await input.boundingBox();
+        const searchBox = await search.boundingBox();
+        if (!inputBox || !searchBox) throw new Error("Missing inline repository search");
+        expect(searchBox.x).toBeGreaterThanOrEqual(inputBox.x);
+        expect(searchBox.y).toBeGreaterThanOrEqual(inputBox.y - 1);
+        expect(searchBox.x + searchBox.width).toBeLessThanOrEqual(inputBox.x + inputBox.width + 1);
+        expect(searchBox.y + searchBox.height).toBeLessThanOrEqual(
+          inputBox.y + inputBox.height + 1,
+        );
+        if (viewport.width === 390) await input.press("Enter");
+        else {
+          await search.hover();
+          await expect(page.getByTestId("action-help-content")).toHaveText(
+            "Find skills in this repository",
+          );
+          await search.focus();
+          await expect(page.getByTestId("action-help-content")).toBeVisible();
+          await search.click();
+        }
+      }
+      const dialog = page.getByRole("dialog");
+      const rows = dialog.getByTestId(source === "remote" ? "remote-skill" : "local-skill");
+      await expect(rows).toHaveCount(40);
+      expect(discoveries).toBe(source === "remote" ? 1 : 0);
+      expect((await rows.first().boundingBox())?.height).toBeLessThanOrEqual(84);
+      await rows.first().getByRole("checkbox").check();
+      const details = rows
+        .first()
+        .getByTestId(source === "remote" ? "remote-skill-details" : "local-skill-details");
+      await details.click();
+      const detailsContent = page.getByTestId(
+        source === "remote" ? "remote-skill-details-content" : "local-skill-details-content",
+      );
+      await expect(detailsContent).toBeVisible();
+      await expect(detailsContent).toContainText(description.trim());
+      if (source === "remote") {
+        await expect(detailsContent).toContainText(skills[0].path);
+      }
+      await expect(rows.first().getByRole("checkbox")).toBeChecked();
+      await page.screenshot({
+        path: testInfo.outputPath(`${source}-discovery-details-${viewport.width}.png`),
+        animations: "disabled",
+      });
+      await page.keyboard.press("Escape");
+      await expect(detailsContent).toHaveCount(0);
+      const submit = page.getByTestId(
+        source === "remote" ? "skill-import-submit" : "local-skill-import-submit",
+      );
+      await expect(submit).toBeEnabled();
+      const before = await submit.boundingBox();
+      console.log(
+        JSON.stringify({
+          source,
+          viewport,
+          dialog: await dialog.boundingBox(),
+          submit: before,
+          rowHeight: (await rows.first().boundingBox())?.height,
+          widths: await dialog.evaluate((el) => ({
+            client: el.clientWidth,
+            scroll: el.scrollWidth,
+          })),
+        }),
+      );
+      await page.screenshot({
+        path: testInfo.outputPath(`${source}-discovery-${viewport.width}.png`),
+        animations: "disabled",
+      });
+      expect(before).not.toBeNull();
+      if (!before) throw new Error("Missing import action");
+      expect(before.y).toBeGreaterThanOrEqual(0);
+      expect(before.y + before.height).toBeLessThanOrEqual(viewport.height);
+      expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+      await rows.last().getByRole("checkbox").check();
+      await expect(rows.first().getByRole("checkbox")).toBeChecked();
+      await expect(submit).toContainText("2");
+      const after = await submit.boundingBox();
+      if (!after) throw new Error("Missing import action after selection");
+      expect(after.y + after.height).toBeLessThanOrEqual(viewport.height);
+      expect(after.y).toBeCloseTo(before.y, 0);
+      expect(imports).toBe(0);
+    });
+  }
+}
+
 test.beforeEach(({ page }) => {
   page.on("pageerror", (error) => console.error(`Browser error: ${error.message}`));
   page.on("requestfailed", (request) =>
@@ -19,6 +183,7 @@ test("imports a real GitHub skill, edits it, reopens it and preserves edits on s
 }) => {
   test.setTimeout(120000);
   await gotoView(page, "skills");
+  await page.getByTestId("skill-import-menu").click();
   await page.getByTestId("import-skill-button").click();
   await page
     .getByTestId("skill-repository-input")
@@ -63,6 +228,7 @@ test("imports a real GitHub skill, edits it, reopens it and preserves edits on s
   await page.getByTestId("markdown-mode-read").click();
   await expect(page.getByTestId("markdown-preview")).toContainText("Local customization:");
   await gotoView(page, "skills");
+  await page.getByTestId("skills-multiselect").click();
   await expect(row.getByTestId("skill-select")).toBeVisible();
   await row.getByTestId("skill-select").check();
   await page.getByTestId("skills-bulk-sync").click();
@@ -105,6 +271,7 @@ test("selects all new skills, imports in bounded batches and retains failed sele
     return route.fulfill({ json: { skills: [] } });
   });
   await gotoView(page, "skills");
+  await page.getByTestId("skill-import-menu").click();
   await page.getByTestId("import-skill-button").click();
   await page.getByTestId("skill-repository-input").fill("acme/skills");
   await page.getByTestId("skill-discover").click();
@@ -168,11 +335,14 @@ test("bulk actions sync only GitHub skills, retain conflicts and delete selected
     });
   await gotoView(page, "skills");
   await page.getByTestId("skill-search-input").fill(prefix);
-  await page.getByTestId("skill-search-submit").click();
+
   await expect(page.getByTestId("skill-row")).toHaveCount(3);
+  await expect(page.getByTestId("skill-select")).toHaveCount(0);
+  await expect(page.getByTestId("bulk-actions")).toHaveCount(0);
+  await page.getByTestId("skills-multiselect").click();
   await expect(page.getByTestId("skill-select")).toHaveCount(3);
-  await expect(page.getByTestId("select-all-rows")).toBeEnabled();
-  await page.getByTestId("select-all-rows").check();
+  await expect(page.getByTestId("skills-select-displayed")).toBeEnabled();
+  await page.getByTestId("skills-select-displayed").click();
   await expect(page.getByTestId("skills-bulk-sync")).toHaveText("Sync from GitHub (2)");
   await expect(page.getByTestId("skills-bulk-delete")).toHaveText("Delete (3)");
   await page.getByTestId("skills-bulk-sync").click();
@@ -193,7 +363,7 @@ test("bulk actions sync only GitHub skills, retain conflicts and delete selected
   await expect(page.getByTestId("skills-bulk-result")).toHaveCount(0);
   await page.getByTestId("skill-source-all").click();
   await expect(page.getByTestId("skill-select").first()).not.toBeChecked();
-  await page.getByTestId("select-all-rows").check();
+  await page.getByTestId("skills-select-displayed").click();
   await page.getByTestId("skills-bulk-delete").click();
   await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
   await expect(page.getByTestId("skills-bulk-result")).toContainText("3 deleted.");
@@ -239,6 +409,7 @@ test("shows GitHub repositories and sorts groups without losing skill selection"
     "href",
     "https://github.com/zulu/skills",
   );
+  await page.getByTestId("skills-multiselect").click();
   await zulu.getByTestId("skill-select").check();
   const original = await rows.evaluateAll((elements) =>
     elements.map((element) => element.getAttribute("data-skill-name")),

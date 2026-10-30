@@ -1,6 +1,7 @@
 import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import * as React from "react";
+import { ActionHelp } from "@/components/ActionHelp";
 
 import { cn } from "@/lib/utils";
 
@@ -18,10 +19,10 @@ const buttonVariants = cva(
         link: "text-foreground underline-offset-4 hover:underline ",
       },
       size: {
-        default: "h-11 sm:h-10 px-4 py-2",
-        sm: "h-11 sm:h-9 rounded-md px-3",
-        lg: "h-11 rounded-md px-8",
-        icon: "h-11 w-11 sm:h-10 sm:w-10",
+        default: "h-8 px-3 text-[13px]",
+        sm: "h-8 rounded-md px-2.5 text-[13px]",
+        lg: "h-10 rounded-md px-5",
+        icon: "h-8 w-8",
       },
     },
     defaultVariants: {
@@ -35,13 +36,56 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  /** Disable when an existing explanation popover already owns this icon. */
+  actionHelp?: boolean;
+}
+
+function hasVisibleText(children: React.ReactNode): boolean {
+  return React.Children.toArray(children).some((child) => {
+    if (typeof child === "string") return Boolean(child.trim());
+    if (typeof child === "number") return true;
+    if (
+      !React.isValidElement<{
+        children?: React.ReactNode;
+        className?: string;
+        "aria-hidden"?: boolean | "true" | "false";
+      }>(child)
+    )
+      return false;
+    if (
+      child.type === "svg" ||
+      child.props["aria-hidden"] === true ||
+      child.props["aria-hidden"] === "true" ||
+      /\bsr-only\b/.test(child.props.className ?? "")
+    )
+      return false;
+    return hasVisibleText(child.props.children);
+  });
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, actionHelp = true, ...props }, ref) => {
     const Comp = asChild ? Slot : "button";
-    return (
-      <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />
+    const label = props.title || props["aria-label"];
+    const explained =
+      actionHelp && Boolean(label) && (size === "icon" || !hasVisibleText(props.children));
+    const button = (
+      <Comp
+        data-ui="button"
+        data-variant={variant ?? "default"}
+        className={cn(buttonVariants({ variant, size, className }))}
+        ref={ref}
+        {...props}
+        aria-label={props["aria-label"] || (explained ? label : undefined)}
+        title={explained ? undefined : props.title}
+      />
+    );
+    return explained && label ? (
+      <ActionHelp label={label} touchHelp={!props["aria-haspopup"]}>
+        {button}
+      </ActionHelp>
+    ) : (
+      button
     );
   },
 );

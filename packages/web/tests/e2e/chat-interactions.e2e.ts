@@ -1,5 +1,6 @@
 import { ChatSettingsSchema, type ChatThread } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
+import { chooseChatAgent, openChatActions, openChatSettings, settingsSection } from "./_chat-ui";
 import { API_SECRET, gotoView } from "./_helpers";
 
 for (const width of [390, 1440]) {
@@ -153,7 +154,7 @@ for (const width of [390, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     await gotoView(page, "dashboard");
     await page.goto("/?chat=open");
-    await page.getByTestId("chat-config-button").filter({ visible: true }).click();
+    await openChatSettings(page);
     await page.getByTestId("chat-permission-mode").selectOption("bypassPermissions");
     await page.keyboard.press("Escape");
     await page.getByTestId("chat-input").filter({ visible: true }).fill("Approval and question");
@@ -177,8 +178,11 @@ for (const width of [390, 1440]) {
     expect(state.body).toMatchObject({ permissionMode: "bypassPermissions" });
     expect(state.permission).toEqual({ requestId: "approval-1", decision: "approved" });
     expect(state.answer).toEqual({ requestId: "question-1", answers: { color: ["Blue"] } });
+    await openChatActions(page);
     const toTerminal = page.getByTestId("chat-continue-terminal").filter({ visible: true });
-    await expect(toTerminal).toHaveAttribute("title", "Continue in terminal");
+    await expect(toTerminal).toHaveAttribute("aria-label", "Continue in terminal");
+    await toTerminal.focus();
+    await expect(page.getByTestId("action-help-content")).toContainText("Continue in terminal");
     await expect(toTerminal).toBeEnabled();
     await expect(toTerminal).toHaveText("");
     await page.screenshot({ path: testInfo.outputPath(`chat-interactions-${width}.png`) });
@@ -198,6 +202,7 @@ for (const width of [390, 1440]) {
 
 test("permission defaults persist through Settings reload", async ({ page }) => {
   await gotoView(page, "settings");
+  await settingsSection(page, "chat");
   const selector = page.getByTestId("chat-permission-mode");
   await selector.selectOption("bypassPermissions");
   await page.getByTestId("chat-settings-save").click();
@@ -226,7 +231,7 @@ test("switching to an ACPX agent keeps its native permission policy", async ({ p
   });
   await gotoView(page, "dashboard");
   await page.goto("/?chat=open");
-  await page.getByTestId("chat-agent-select").filter({ visible: true }).selectOption("gemini");
+  await chooseChatAgent(page, "gemini");
   await page.getByTestId("chat-input").filter({ visible: true }).fill("Use native policy");
   await page.getByTestId("chat-send-button").filter({ visible: true }).click();
   await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeEnabled();

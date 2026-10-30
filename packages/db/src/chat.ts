@@ -1,6 +1,13 @@
 import type { Database } from "bun:sqlite";
 import { type ChatThread, ChatThreadSchema } from "@orc/core/chat";
 
+type ChatSummary = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
+  agent: string | null;
+  runtimeId: string | null;
+  sourceId: string | null;
+  host: string | null;
+};
+
 export function installChat(sqlite: Database): void {
   sqlite.exec(
     "CREATE TABLE IF NOT EXISTS chat_threads (id TEXT PRIMARY KEY, title TEXT NOT NULL, updated_at INTEGER NOT NULL, data TEXT NOT NULL)",
@@ -15,10 +22,27 @@ export class ChatStore {
       .get(id);
     return row ? ChatThreadSchema.parse(JSON.parse(row.data)) : null;
   }
-  list(): { id: string; title: string; updatedAt: number }[] {
+  list(): ChatSummary[] {
     return this.db
-      .query<{ id: string; title: string; updatedAt: number }, []>(
-        "SELECT id, title, updated_at AS updatedAt FROM chat_threads ORDER BY updated_at DESC LIMIT 100",
+      .query<ChatSummary, []>(
+        `SELECT id, title, updated_at AS updatedAt,
+          CASE WHEN json_valid(data) THEN
+            CASE WHEN json_type(data, '$.config.agent') = 'text'
+              THEN json_extract(data, '$.config.agent') END
+          END AS agent,
+          CASE WHEN json_valid(data) THEN
+            CASE WHEN json_type(data, '$.runtimeId') = 'text'
+              THEN json_extract(data, '$.runtimeId') END
+          END AS runtimeId,
+          CASE WHEN json_valid(data) THEN
+            CASE WHEN json_type(data, '$.sourceId') = 'text'
+              THEN json_extract(data, '$.sourceId') END
+          END AS sourceId,
+          CASE WHEN json_valid(data) THEN
+            CASE WHEN json_type(data, '$.host') = 'text'
+              THEN json_extract(data, '$.host') END
+          END AS host
+        FROM chat_threads ORDER BY updated_at DESC LIMIT 100`,
       )
       .all();
   }

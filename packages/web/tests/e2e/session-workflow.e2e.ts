@@ -117,6 +117,7 @@ for (const width of [1440, 390]) {
     await apiPost(request, "/sessions/live/sync", {});
     await expect(page.getByTestId("show-ended")).toBeChecked();
     await expect(row).toBeVisible();
+    if (width < 1024) await page.getByTestId("view-filters-toggle").click();
     await page.getByTestId("show-ended").click();
     await expect(row).toHaveCount(0);
     await page.getByTestId("show-ended").click();

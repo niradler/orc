@@ -11,6 +11,7 @@ test("restarts the actual ORC process, reconnects and preserves workspace settin
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await gotoView(page, "settings");
+  await page.goto("/settings?settingsSection=server");
   await expect(page.getByTestId("workspace-connection-status")).toHaveText("Connected (local)");
   const restart = page.getByTestId("settings-restart");
   await expect(restart).toBeEnabled();
@@ -64,6 +65,7 @@ test("shows saved SSH host changes immediately and never restarts automatically"
     }),
   );
   await gotoView(page, "settings");
+  await page.goto("/settings?settingsSection=execution");
   await expect(page.getByTestId("workspace-connection-status")).toHaveText("Connected (local)");
   await page.getByTestId("ssh-host-picker").click();
   await page.getByTestId("ssh-host-option-lab").click();

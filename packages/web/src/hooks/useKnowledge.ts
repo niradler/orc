@@ -18,11 +18,15 @@ export function useInvalidateKb() {
 }
 
 /** A project shows its own KBs plus global ones; "all projects" is a read-only cross-project view. */
-export function useKnowledgeBases(projectId: string | undefined) {
+export function useKnowledgeBases(projectId: string | undefined, globalOnly = false) {
   return useQuery({
-    queryKey: [KB_KEY, "bases", projectId ?? "all"],
+    queryKey: [KB_KEY, "bases", projectId ?? (globalOnly ? "global" : "all")],
     queryFn: () =>
-      api.kb.list(projectId ? { scope: "default", project_id: projectId } : { scope: "all" }),
+      api.kb.list(
+        projectId
+          ? { scope: "default", project_id: projectId }
+          : { scope: globalOnly ? "global" : "all" },
+      ),
     select: (data) => data.knowledge_bases,
   });
 }

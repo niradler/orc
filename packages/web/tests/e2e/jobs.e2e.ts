@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { apiDelete, apiGet, apiPost, gotoView, tid } from "./_helpers";
 
 interface Job {
@@ -14,8 +15,11 @@ test.describe("Jobs CRUD", () => {
     await expect(page.getByTestId("view-title")).toHaveText(/jobs/i);
 
     await page.getByTestId("new-job-button").click();
+    await revealFormField(page, page.getByTestId("job-name-input"));
     await page.getByTestId("job-name-input").fill(name);
+    await revealFormField(page, page.getByTestId("job-command-input"));
     await page.getByTestId("job-command-input").fill("echo hello from pw");
+    await openFinalFormStep(page);
     await page.getByTestId("job-submit").click();
 
     const row = page.locator(`[data-testid="job-row"][data-job-name="${name}"]`);

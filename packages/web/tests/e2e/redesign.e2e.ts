@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { API_SECRET, apiDelete, apiPatch, apiPost, gotoView, selectProject, tid } from "./_helpers";
 
 test("themes persist, grouped navigation works, and the mobile project shortcut opens one dialog", async ({
@@ -119,7 +120,7 @@ test("Codex chat streams and keeps history while switching between desktop and m
   );
   await page.goto("/tasks");
   await page.getByTestId("chat-open-button").click();
-  await expect(page.getByTestId("chat-agent-select")).toHaveValue("codex");
+  await expect(page.getByTestId("chat-agent-button")).toHaveText("codex");
   const marker = tid("chat-continuity");
   await page.getByTestId("chat-input").fill(`Reply with exactly: ${marker}.`);
   await page.getByTestId("chat-send-button").click();
@@ -145,9 +146,13 @@ test("mobile project creation opens its first task without a covering navigation
   await page.getByTestId("mobile-nav-open").click();
   await page.getByTestId("mobile-nav-drawer").getByTestId("sidebar-project-select").click();
   await page.getByTestId("project-picker-create").click();
+  await revealFormField(page, page.getByTestId("project-name-input"));
   await page.getByTestId("project-name-input").fill(tid("mobile-project"));
+  await openFinalFormStep(page);
   await page.getByTestId("project-submit").click();
+  await revealFormField(page, page.getByTestId("task-title-input"));
   await page.getByTestId("task-title-input").fill("First task in a mobile project");
+  await openFinalFormStep(page);
   await page.getByTestId("task-submit").click();
   await expect(page.getByTestId("mobile-nav-drawer")).not.toBeVisible();
   await expect(page.getByTestId("task-detail-sheet")).toContainText(

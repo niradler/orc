@@ -1,5 +1,6 @@
 import type { JobAction } from "@orc/core/job-actions";
 import { type ReactElement, useId } from "react";
+import { MarkdownField } from "@/components/MarkdownField";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,7 +28,7 @@ export function JobActionFields({
         <select
           id={`${id}-type`}
           data-testid="job-action-type"
-          className="w-full min-h-11 rounded-md border border-control-border bg-background px-3 text-sm"
+          className="w-full min-h-8 rounded-md border border-control-border bg-background px-3 text-sm"
           value={value.type}
           onChange={(event) => {
             if (event.target.value === "command") onChange({ type: "command", command: "" });
@@ -124,16 +125,14 @@ export function JobActionFields({
               maxLength={200}
             />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor={`${id}-body`}>Task instructions</Label>
-            <Textarea
-              id={`${id}-body`}
-              data-testid="job-task-body"
-              value={value.body}
-              onChange={(event) => onChange({ ...value, body: event.target.value })}
-              rows={4}
-            />
-          </div>
+          <MarkdownField
+            label="Task instructions"
+            id={`${id}-body`}
+            data-testid="job-task-body"
+            value={value.body}
+            onChange={(body) => onChange({ ...value, body })}
+            rows={4}
+          />
           <label className="flex min-h-11 items-center gap-2 text-sm">
             <input
               type="checkbox"

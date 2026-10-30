@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
+import { chooseChatModel, openChatSettings } from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
 
 const headers = { Authorization: `Bearer ${API_SECRET}` };
@@ -45,7 +46,7 @@ for (const width of [320, 820, 1440]) {
       },
     });
     await openChat(page);
-    await page.getByTestId("chat-config-button").click();
+    await openChatSettings(page);
     await expect(page.getByTestId("chat-config-dialog")).toContainText(prompt);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
@@ -54,7 +55,7 @@ for (const width of [320, 820, 1440]) {
       path: resolve(artifacts, `${testInfo.project.name}-model-${width}.png`),
     });
     await page.keyboard.press("Escape");
-    await page.getByTestId("chat-model-select").selectOption("fixture-selected");
+    await chooseChatModel(page, "fixture-selected");
     const marker = `chat-history-${width}-${Date.now()}`;
     const sent = page.waitForRequest((req) => req.url().endsWith("/api/chat/stream"));
     await page.getByTestId("chat-input").fill(`Reply with exactly: ${marker}.`);
@@ -72,7 +73,7 @@ for (const width of [320, 820, 1440]) {
     await expect(page.getByTestId("chat-input")).toBeEnabled();
     await page.getByTestId("chat-sessions-button").click();
     await page.getByTestId("chat-session-search").fill(marker);
-    await page.getByTestId("chat-resume-thread").filter({ hasText: marker }).click();
+    await page.getByTestId("chat-session-select").filter({ hasText: marker }).click();
     await expect(page.getByTestId("chat-message-content").last()).toContainText(marker);
     const continued = page.waitForRequest((req) => req.url().endsWith("/api/chat/stream"));
     await page.getByTestId("chat-input").fill("Follow up");
@@ -144,7 +145,7 @@ test("provider activity is collapsed, readable, safe and retained after completi
 
 test("chat defaults save and reload through Settings", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/settings");
+  await page.goto("/settings?settingsSection=chat");
   await page.getByTestId("chat-system-prompt").fill("Saved from the mobile settings form");
   await page.getByTestId("chat-default-model").fill("fixture-settings-model");
   await page
@@ -158,7 +159,7 @@ test("chat defaults save and reload through Settings", async ({ page }) => {
     "Saved from the mobile settings form",
   );
   await openChat(page);
-  await expect(page.getByTestId("chat-model-select")).toHaveValue("fixture-settings-model");
+  await expect(page.getByTestId("chat-model-button")).toHaveText("fixture-settings-model");
 });
 
 test("coding-session selection opens native history before sending a continuation", async ({
@@ -210,10 +211,11 @@ test("coding-session selection opens native history before sending a continuatio
   });
   await openChat(page);
   await page.getByTestId("chat-sessions-button").click();
+  await page.getByTestId("chat-session-search").fill("Imported coding work");
   await page.getByTestId("chat-resume-live").filter({ hasText: "Imported coding work" }).click();
   await expect(page.getByTestId("chat-message-content")).toContainText("Earlier native answer");
-  await expect(page.getByTestId("chat-agent-select")).toBeDisabled();
-  await page.getByTestId("chat-config-button").click();
+  await expect(page.getByTestId("chat-agent-button")).toHaveText("codex");
+  await openChatSettings(page);
   await expect(page.getByTestId("chat-config-dialog")).toContainText("/fixture/repository");
 });
 
@@ -265,6 +267,7 @@ test("synced sessions can supply missing checkout details before chat resume", a
   );
   await openChat(page);
   await page.getByTestId("chat-sessions-button").click();
+  await page.getByTestId("chat-session-search").fill(source.title);
   await page.getByTestId("chat-resume-archive").filter({ hasText: source.title }).click();
   await expect(page.getByTestId("chat-archive-prepare")).toBeDisabled();
   await page.getByTestId("chat-archive-repository").fill("https://example.test/fixture.git");

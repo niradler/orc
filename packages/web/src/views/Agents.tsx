@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { MoreHorizontal } from "lucide-react";
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { type AgentFull, type AgentSetup, api } from "@/api/client";
@@ -10,6 +11,7 @@ import { PackageRunDialog } from "@/components/PackageRunDialog";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ViewHeader } from "@/components/ViewHeader";
 import { useDetailRoute } from "@/hooks/useDetailRoute";
@@ -82,64 +84,60 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
       .includes(query.toLowerCase()),
   );
   return (
-    <div className="space-y-5">
-      {embedded ? (
-        <div className="flex flex-wrap justify-between gap-3">
-          <div>
-            <h2 className="font-medium">Agent definitions</h2>
-            <p className="text-sm text-muted-foreground">
-              Manage specialist instructions, models and tools. Add them to APM packages for reuse.
-            </p>
-          </div>
-          <Button
-            data-testid="new-agent-button"
-            onClick={() => {
-              create.reset();
-              setCreating(true);
-            }}
-          >
-            New agent
-          </Button>
-        </div>
-      ) : (
-        <ViewHeader
-          title="Agents"
-          meta={`${agents.data?.agents.length ?? 0} shared profiles`}
-          action={
-            <div className="flex flex-wrap gap-2">
-              <Button
-                data-testid="new-agent-button"
-                onClick={() => {
-                  create.reset();
-                  setCreating(true);
-                }}
+    <div className="space-y-4">
+      <ViewHeader
+        title={embedded ? "Agent definitions" : "Agents"}
+        level={embedded ? 2 : 1}
+        meta={agents.data?.agents.length ?? 0}
+        help="Shared specialist instructions, models and tools for connected coding agents. Add definitions to packages for reuse."
+        action={
+          <div className="flex flex-wrap gap-2">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  data-testid="agent-actions-menu"
+                  aria-label="Agent resources"
+                >
+                  <MoreHorizontal size={16} />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                aria-label="Agent resources"
+                align="end"
+                className="w-60 space-y-1 p-1"
               >
-                New agent
-              </Button>
-            </div>
-          }
-        />
-      )}
-      <p className="text-sm text-muted-foreground">
-        Shared specialist definitions for every connected coding agent.{" "}
-        <a
-          className="text-primary underline"
-          href="https://microsoft.github.io/apm/producer/author-primitives/instructions-and-agents/"
-          target="_blank"
-          rel="noreferrer"
-        >
-          APM agent format
-        </a>
-      </p>
-      {!embedded && (
-        <Link
-          to={workspaceDestination("/packages", projectId, location.search)}
-          data-testid="agents-packages-link"
-          className="text-primary underline"
-        >
-          Manage packages and reusable launch setups
-        </Link>
-      )}
+                <Button asChild variant="ghost" className="w-full justify-start">
+                  <Link
+                    to={workspaceDestination("/packages", projectId, location.search)}
+                    data-testid="agents-packages-link"
+                  >
+                    Manage packages
+                  </Link>
+                </Button>
+                <a
+                  className="block rounded-md px-3 py-2 text-xs text-muted-foreground hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                  href="https://microsoft.github.io/apm/producer/author-primitives/instructions-and-agents/"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  APM agent format
+                </a>
+              </PopoverContent>
+            </Popover>
+            <Button
+              data-testid="new-agent-button"
+              onClick={() => {
+                create.reset();
+                setCreating(true);
+              }}
+            >
+              New agent
+            </Button>
+          </div>
+        }
+      />
       {(agents.data?.broken ?? []).map((issue) => (
         <p key={issue.path} role="alert" className="text-destructive">
           {issue.path}: {issue.error}
@@ -172,13 +170,16 @@ export default function Agents({ embedded = false }: { embedded?: boolean }) {
             data-testid="agent-row"
             data-agent-id={profile.id}
             onClick={() => openDetail(profile.id)}
-            className="w-full text-left border-b border-outline-variant p-4 hover:bg-surface-low"
+            className="grid w-full gap-x-6 gap-y-1 border-b border-outline-variant px-2 py-3 text-left hover:bg-surface-low sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]"
           >
-            <span className="block wrap-break-word text-base font-medium">{profile.name}</span>
-            <span className="mt-1 block break-all text-xs text-muted-foreground">
+            <span className="block wrap-break-word text-sm font-medium">{profile.name}</span>
+            <span
+              className="block truncate text-xs text-muted-foreground sm:col-start-1 sm:row-start-2"
+              title={`${profile.id} · ${profile.source}`}
+            >
               {profile.id} · {profile.source}
             </span>
-            <p className="mt-2 wrap-break-word text-sm leading-relaxed text-muted-foreground">
+            <p className="line-clamp-2 wrap-break-word text-sm leading-relaxed text-muted-foreground sm:col-start-2 sm:row-start-1 sm:row-span-2">
               {profile.description}
             </p>
           </button>

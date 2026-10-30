@@ -285,7 +285,12 @@ export function RulesPanel() {
               </span>
             )}
           </div>
-          <div className="overflow-x-auto">
+          <section
+            aria-label="Applied rules table"
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users must be able to scroll the wide rules table.
+            tabIndex={0}
+            className="overflow-x-auto rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus focus-visible:outline-offset-2"
+          >
             <table
               data-testid="applied-rules-table"
               className="w-full min-w-[860px] table-fixed text-left text-sm"
@@ -406,7 +411,7 @@ export function RulesPanel() {
                   </span>
                 </div>
               )}
-          </div>
+          </section>
         </TabsContent>
         <TabsContent value="settings" className="space-y-6 pt-4">
           {!editorOpen && (

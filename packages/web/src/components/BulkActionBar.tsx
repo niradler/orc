@@ -26,11 +26,11 @@ export function BulkActionBar({
   }, [someSelected]);
   return (
     <fieldset
-      className="flex flex-wrap items-center gap-3 border-y border-border py-3 mb-3"
+      className="mb-3 flex flex-wrap items-center gap-2 border-y border-border py-1"
       data-testid="bulk-actions"
       aria-label="List selection and actions"
     >
-      <label className="flex min-h-11 items-center gap-2 text-sm">
+      <label className="flex min-h-11 items-center gap-2 text-[13px] sm:min-h-8">
         <input
           ref={checkbox}
           type="checkbox"

@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Request, test } from "@playwright/test";
+import { openFinalFormStep, revealFormField } from "./_form-ui";
 import { apiGet, apiPost, gotoView, tid } from "./_helpers";
 
 test("fresh project hands off to workflow task and reopens persisted choices", async ({
@@ -9,18 +10,45 @@ test("fresh project hands off to workflow task and reopens persisted choices", a
   const title = tid("first-task");
   await gotoView(page, "projects");
   await page.getByTestId("new-project-button").click();
+  await revealFormField(page, page.getByTestId("project-name-input"));
   await page.getByTestId("project-name-input").fill(name);
+  await revealFormField(page, page.getByTestId("project-folder-input"));
   await page.getByTestId("project-folder-input").fill("/fixture/project");
+  await openFinalFormStep(page);
   await page.getByTestId("project-submit").click();
+  await expect(page.getByTestId("task-onboarding-hint")).toHaveCount(0);
+  await page.getByRole("button", { name: "About task creation", exact: true }).click();
   await expect(page.getByTestId("task-onboarding-hint")).toBeVisible();
+  await expect(page.getByTestId("task-onboarding-hint")).toHaveText(
+    "Choose a project folder, describe the result and acceptance checks, then preview a workflow. Built-in workflows include implementation and review skills automatically.",
+  );
+  await page.keyboard.press("Escape");
   await expect(page.getByTestId("new-task-project")).toContainText(name);
+  await revealFormField(page, page.getByTestId("task-title-input"));
   await page.getByTestId("task-title-input").fill(title);
+  await revealFormField(page, page.getByTestId("task-body-input"));
   await page.getByTestId("task-body-input").fill("Acceptance: verify expected artifact behavior.");
+  const helpRequests: string[] = [];
+  const observeRequest = (req: Request) => {
+    if (["POST", "PATCH", "DELETE"].includes(req.method())) helpRequests.push(req.url());
+  };
+  page.on("request", observeRequest);
+  await page.getByRole("button", { name: "About task creation", exact: true }).click();
+  await expect(page.getByTestId("task-onboarding-hint")).toBeVisible();
+  await page.keyboard.press("Escape");
+  expect(helpRequests).toEqual([]);
+  page.off("request", observeRequest);
+  await expect(page.getByTestId("task-title-input")).toHaveValue(title);
+  await expect(page.getByTestId("task-body-input")).toHaveValue(
+    "Acceptance: verify expected artifact behavior.",
+  );
+  await revealFormField(page, page.getByTestId("new-task-flow"));
   await page.getByTestId("new-task-flow").click();
   await page.getByTestId("flow-option-orc-human-review").click();
   await page.getByTestId("flow-picker-view").click();
   await expect(page.getByTestId("flow-detail")).toBeVisible();
   await page.keyboard.press("Escape");
+  await openFinalFormStep(page);
   await page.getByTestId("task-submit").click();
   const tasks = await apiGet<{
     tasks: Array<{
@@ -44,7 +72,9 @@ test("fresh project hands off to workflow task and reopens persisted choices", a
 test("missing project folder blocks launch but permits saving", async ({ page }) => {
   await gotoView(page, "tasks");
   await page.getByTestId("new-task-button").click();
+  await revealFormField(page, page.getByTestId("task-title-input"));
   await page.getByTestId("task-title-input").fill(tid("unassigned"));
+  await openFinalFormStep(page);
   await expect(page.getByTestId("task-create-start")).toBeDisabled();
   await expect(page.getByTestId("task-submit")).toBeEnabled();
   await expect(page.getByTestId("task-start-readiness")).toContainText("select a project");
@@ -97,15 +127,22 @@ test("create and start retries the saved task and persists human approval", asyn
   });
   await gotoView(page, "projects");
   await page.getByTestId("new-project-button").click();
+  await revealFormField(page, page.getByTestId("project-name-input"));
   await page.getByTestId("project-name-input").fill(name);
+  await revealFormField(page, page.getByTestId("project-folder-input"));
   await page.getByTestId("project-folder-input").fill("/fixture/project");
+  await openFinalFormStep(page);
   await page.getByTestId("project-submit").click();
+  await revealFormField(page, page.getByTestId("task-title-input"));
   await page.getByTestId("task-title-input").fill(title);
+  await revealFormField(page, page.getByTestId("new-task-flow"));
   await page.getByTestId("new-task-flow").click();
   await page.getByTestId(`flow-option-${flow}`).click();
+  await openFinalFormStep(page);
   await page.getByTestId("task-create-start").click();
   await expect(page.getByTestId("task-create-error")).toBeVisible();
   await expect(page.getByTestId("task-title-input")).toBeDisabled();
+  await openFinalFormStep(page);
   await page.getByTestId("task-create-start").click();
   await expect(page.getByTestId("flow-gate-form")).toBeVisible();
   const list = await apiGet<{ tasks: Array<{ id: string; title: string; status: string }> }>(

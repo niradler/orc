@@ -1,5 +1,6 @@
 import { ChatSettingsSchema, type ChatThread } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
+import { closeChatHistory, openChatActions, openChatHistory } from "./_chat-ui";
 import { API_SECRET } from "./_helpers";
 
 declare global {
@@ -147,10 +148,12 @@ test("refresh follows the same live turn and reloads a completed conversation at
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const refresh = page.getByTestId("chat-refresh-button");
+  await openChatActions(page);
   await refresh.click();
   await expect.poll(() => page.evaluate(() => window.reconnectTest.state.attaches)).toBe(1);
   await page.evaluate(() => window.reconnectTest.finish());
   await expect(page.getByTestId("chat-panel")).toHaveAttribute("data-streaming", "false");
+  await openChatActions(page);
   await refresh.click();
   await expect.poll(() => page.evaluate(() => window.reconnectTest.state.attaches)).toBe(2);
   await expect(page.getByTestId("chat-message-content").last()).toHaveText("First Second");
@@ -178,12 +181,23 @@ test("a silent stream reconnects after missed heartbeats", async ({ page }) => {
   await expect(page.getByTestId("chat-message-content").last()).toHaveText("First Second");
 });
 
-test("closing a tab cancels a pending reconnect without cancelling its agent", async ({ page }) => {
+test("closing a session keeps background reconnect and history without cancelling its agent", async ({
+  page,
+}) => {
   await page.evaluate(() => window.reconnectTest.drop(false));
   await expect(page.getByTestId("chat-reconnecting")).toBeVisible();
-  await page.getByTestId("chat-tab-close").click();
+  await openChatHistory(page);
+  await page.getByTestId("chat-session-list").getByTestId("chat-tab-close").click();
+  await closeChatHistory(page);
   await page.clock.fastForward(10_000);
-  expect(await page.evaluate(() => window.reconnectTest.state.attaches)).toBe(0);
+  expect(await page.evaluate(() => window.reconnectTest.state.attaches)).toBe(1);
+  await openChatHistory(page);
+  await page
+    .getByTestId("chat-session-list")
+    .getByTestId("chat-session-select")
+    .filter({ hasText: "Reconnect fixture" })
+    .click();
+  await expect(page.getByTestId("chat-panel")).toHaveAttribute("data-streaming", "true");
   expect(await page.evaluate(() => window.reconnectTest.state.cancels)).toBe(0);
 });
 
@@ -209,6 +223,7 @@ test("bounded retries leave Refresh available for recovery", async ({ page }) =>
   await page.evaluate(() => {
     window.reconnectTest.state.unavailable = false;
   });
+  await openChatActions(page);
   await page.getByTestId("chat-refresh-button").click();
   await expect.poll(() => page.evaluate(() => window.reconnectTest.state.attaches)).toBe(4);
   await page.evaluate(() => window.reconnectTest.finish());

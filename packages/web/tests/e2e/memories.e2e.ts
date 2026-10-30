@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { openFinalFormStep, revealFormField } from "./_form-ui";
 import {
   API_BASE,
   AUTH_HEADERS,
@@ -43,6 +44,10 @@ function row(page: Page, name: string) {
 
 test.describe("Memories", () => {
   test("create, edit, revert and delete a memory from the UI", async ({ page, request }) => {
+    let creates = 0;
+    page.on("request", (event) => {
+      if (event.method() === "POST" && new URL(event.url()).pathname === "/api/memories") creates++;
+    });
     const project = await createProject(request);
     const name = memoryName("pw-mem");
     try {
@@ -54,12 +59,18 @@ test.describe("Memories", () => {
       await expect(dialog.getByTestId("memory-description-count")).toHaveText("22/300");
 
       // Content over the configured cap cannot be saved (the server also rejects it).
+      await revealFormField(page, dialog.getByTestId("memory-content-input"));
       await dialog.getByTestId("memory-content-input").fill("x".repeat(801));
       await expect(dialog.getByTestId("memory-content-count")).toHaveText("801/800");
-      await expect(dialog.getByTestId("memory-submit")).toBeDisabled();
+      await dialog.getByTestId("memory-submit").click();
+      await expect(dialog.getByTestId("memory-step-error")).toContainText("displayed limit");
+      await expect(page.getByTestId("form-step-content")).toHaveAttribute("aria-selected", "true");
+      expect(creates).toBe(0);
 
       await dialog.getByTestId("memory-content-input").fill("The API listens on 7711.");
+      await revealFormField(page, dialog.getByTestId("memory-priority-input"));
       await dialog.getByTestId("memory-priority-input").fill("70");
+      await openFinalFormStep(page);
       await dialog.getByTestId("memory-submit").click();
       await expect(dialog).toHaveCount(0);
 
@@ -77,9 +88,13 @@ test.describe("Memories", () => {
 
       await detail.getByTestId("memory-edit").click();
       await expect(dialog.getByTestId("memory-name-input")).toHaveCount(0);
+      await revealFormField(page, dialog.getByTestId("memory-content-input"));
       await dialog.getByTestId("memory-content-input").fill("The API listens on 7700.");
+      await revealFormField(page, dialog.getByTestId("memory-priority-input"));
       await dialog.getByTestId("memory-priority-input").fill("");
+      await revealFormField(page, dialog.getByTestId("memory-reason-input"));
       await dialog.getByTestId("memory-reason-input").fill("Port moved");
+      await openFinalFormStep(page);
       await dialog.getByTestId("memory-submit").click();
       await expect(dialog).toHaveCount(0);
       await expect(detail.getByTestId("memory-detail-content")).toHaveText(
@@ -146,7 +161,7 @@ test.describe("Memories", () => {
         expect(res.ok()).toBe(true);
       }
       await openMemories(page, project.id);
-      await expect(page.getByTestId("view-meta")).toHaveText("3 memories");
+      await expect(page.getByTestId("view-meta")).toHaveText("· 3 memories");
       await expect(page.getByTestId("memory-sort-reads")).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByTestId("memory-row").first()).toHaveAttribute(
         "data-memory-name",
@@ -198,6 +213,10 @@ test.describe("Memories", () => {
     page,
     request,
   }) => {
+    let creates = 0;
+    page.on("request", (event) => {
+      if (event.method() === "POST" && new URL(event.url()).pathname === "/api/memories") creates++;
+    });
     const first = await createProject(request);
     const second = await createProject(request);
     const shared = memoryName("pw-shared");
@@ -234,10 +253,16 @@ test.describe("Memories", () => {
       const dialog = page.getByTestId("memory-form-dialog");
       await dialog.getByTestId("memory-name-input").fill(memoryName("pw-needs-project"));
       await dialog.getByTestId("memory-description-input").fill("Needs a project");
+      await revealFormField(page, dialog.getByTestId("memory-content-input"));
       await dialog.getByTestId("memory-content-input").fill("Chosen in the dialog");
-      await expect(dialog.getByTestId("memory-submit")).toBeDisabled();
+      await dialog.getByTestId("memory-submit").click();
+      await expect(dialog.getByTestId("memory-step-error")).toHaveText("Choose a project.");
+      await expect(page.getByTestId("form-step-details")).toHaveAttribute("aria-selected", "true");
+      expect(creates).toBe(0);
+      await revealFormField(page, dialog.getByTestId("memory-project-select"));
       await dialog.getByTestId("memory-project-select").click();
       await page.getByRole("option", { name: first.name }).click();
+      await openFinalFormStep(page);
       await expect(dialog.getByTestId("memory-submit")).toBeEnabled();
     } finally {
       await apiDelete(request, `/projects/${first.id}`);

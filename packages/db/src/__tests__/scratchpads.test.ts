@@ -133,6 +133,16 @@ describe("ScratchpadStore", () => {
 
     expect(store.list({ kind: "diagram" }).map((pad) => pad.id)).toEqual([b.id]);
     expect(store.list({ project_id: "p1" }).map((pad) => pad.id)).toEqual([a.id]);
+    expect(store.list({ project_id: "p1", include_global: true }).map((pad) => pad.id)).toEqual([
+      a.id,
+      c.id,
+    ]);
+    expect(
+      store.list({ project_id: "p1", include_global: true, kind: "html" }).map((pad) => pad.id),
+    ).toEqual([c.id]);
+    expect(
+      store.list({ project_id: "p1", include_global: true, q: "beta" }).map((pad) => pad.id),
+    ).toEqual([a.id]);
     expect(store.list({ project_id: null }).map((pad) => pad.id)).toEqual([c.id]);
     expect(store.list({ session_id: "s9" }).map((pad) => pad.id)).toEqual([b.id]);
     expect(store.list({ tag: "X" }).map((pad) => pad.id)).toEqual([a.id]);

@@ -1,5 +1,18 @@
 # Agent questions and approvals
 
+Attention needed shows each request's creation date and, when answered, its answer
+date in your browser's local time. “Agent unavailable” means the originating
+runtime can no longer receive the response; the question heading is the agent's
+original prompt, not its status.
+
+Requests automatically leave Attention needed after 72 hours from creation.
+Change this server-wide limit in **Settings → Notifications → Questions and
+approvals** (1–8760 hours). A shorter request-specific timeout still applies.
+History and saved responses are retained. Supported native hooks also clear
+obsolete requests on a matching tool result, session stop/end or new user turn.
+Without those hooks ORC cannot infer continuation in an external agent; retention
+still applies. Dismissal never grants approval or claims an answer was delivered.
+
 When an interactive managed agent exposes a structured question or approval, ORC automatically
 creates a durable request in **Activity → Attention needed**. Rules can also create
 requests. Answer the question or review
