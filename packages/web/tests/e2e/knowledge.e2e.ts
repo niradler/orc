@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
+import { settingsSection } from "./_chat-ui";
 import { API_BASE, AUTH_HEADERS, apiDelete, apiGet, apiPost, gotoView, tid } from "./_helpers";
 
 type Kb = { id: string; name: string };
@@ -518,6 +519,7 @@ test("Settings shows the knowledge parsers, optional Docling and embedding provi
   request,
 }) => {
   await gotoView(page, "settings");
+  await settingsSection(page, "knowledge");
   const section = page.getByTestId("settings-knowledge");
   await expect(section).toBeVisible();
   await expect(section.getByTestId("settings-parser-basic")).toContainText("Formats");

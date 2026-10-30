@@ -10,7 +10,7 @@ import { applyBulkAction } from "@/lib/bulk-actions";
 export function useProjects(params?: { status?: string }) {
   return useQuery({
     queryKey: ["projects", params],
-    queryFn: () => api.projects.list(params),
+    queryFn: () => api.projects.listAll(params),
     select: (data) => data.projects,
   });
 }

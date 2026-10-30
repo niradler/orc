@@ -380,7 +380,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -522,7 +522,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -714,7 +714,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -977,7 +977,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -1602,6 +1602,13 @@ export interface paths {
                                     native_session_id?: string;
                                     native_request_key?: string;
                                     execution_host?: string | null;
+                                    channel?: {
+                                        connection: string;
+                                        target: string;
+                                        chat_id: string;
+                                        thread_id?: string;
+                                        sender_id: string;
+                                    };
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -1685,6 +1692,13 @@ export interface paths {
                             native_session_id?: string;
                             native_request_key?: string;
                             execution_host?: string | null;
+                            channel?: {
+                                connection: string;
+                                target: string;
+                                chat_id: string;
+                                thread_id?: string;
+                                sender_id: string;
+                            };
                         };
                         /** @default null */
                         project_id?: string | null;
@@ -1745,6 +1759,13 @@ export interface paths {
                                     native_session_id?: string;
                                     native_request_key?: string;
                                     execution_host?: string | null;
+                                    channel?: {
+                                        connection: string;
+                                        target: string;
+                                        chat_id: string;
+                                        thread_id?: string;
+                                        sender_id: string;
+                                    };
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -1850,6 +1871,13 @@ export interface paths {
                                     native_session_id?: string;
                                     native_request_key?: string;
                                     execution_host?: string | null;
+                                    channel?: {
+                                        connection: string;
+                                        target: string;
+                                        chat_id: string;
+                                        thread_id?: string;
+                                        sender_id: string;
+                                    };
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -1975,6 +2003,13 @@ export interface paths {
                                     native_session_id?: string;
                                     native_request_key?: string;
                                     execution_host?: string | null;
+                                    channel?: {
+                                        connection: string;
+                                        target: string;
+                                        chat_id: string;
+                                        thread_id?: string;
+                                        sender_id: string;
+                                    };
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -2088,6 +2123,13 @@ export interface paths {
                                     native_session_id?: string;
                                     native_request_key?: string;
                                     execution_host?: string | null;
+                                    channel?: {
+                                        connection: string;
+                                        target: string;
+                                        chat_id: string;
+                                        thread_id?: string;
+                                        sender_id: string;
+                                    };
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -2201,6 +2243,13 @@ export interface paths {
                                     native_session_id?: string;
                                     native_request_key?: string;
                                     execution_host?: string | null;
+                                    channel?: {
+                                        connection: string;
+                                        target: string;
+                                        chat_id: string;
+                                        thread_id?: string;
+                                        sender_id: string;
+                                    };
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -2309,7 +2358,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -2401,7 +2450,7 @@ export interface paths {
                             /**
                              * @default You are the ORC platform chat assistant.
                              *
-                             *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                             *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                              *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                              *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                              *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -2483,7 +2532,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -2542,6 +2591,820 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/api/channels/providers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            name: string;
+                            credentials: {
+                                key: string;
+                                label: string;
+                                env: string;
+                            }[];
+                            documentation: string;
+                            capabilities: {
+                                [key: string]: boolean;
+                            };
+                            setup: string[];
+                        }[];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/slack-manifest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    project_id?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            provider: "telegram" | "slack";
+                            enabled: boolean;
+                            revision: number;
+                            config: {
+                                [key: string]: unknown;
+                            };
+                            targets: {
+                                id: string;
+                                name: string;
+                                chat_id: string;
+                                thread_id?: string;
+                                /** @default [] */
+                                user_ids: string[];
+                                /** @default [] */
+                                project_ids: string[];
+                                /** @default false */
+                                inbound: boolean;
+                                /** @default true */
+                                outbound: boolean;
+                                /** @default false */
+                                attention: boolean;
+                            }[];
+                            routes: {
+                                id: string;
+                                name: string;
+                                /** @default true */
+                                enabled: boolean;
+                                condition: unknown;
+                                action: {
+                                    /** @enum {string} */
+                                    type: "ignore";
+                                } | {
+                                    /** @enum {string} */
+                                    type: "agent";
+                                    agent: string;
+                                    profile?: string;
+                                    model?: string;
+                                    project_id: string;
+                                };
+                            }[];
+                            credentials: {
+                                [key: string]: {
+                                    configured: boolean;
+                                    /** @enum {string} */
+                                    source: "environment" | "stored" | "missing";
+                                };
+                            };
+                            identity: {
+                                id: string;
+                                name: string;
+                            } | null;
+                            /** @enum {string} */
+                            status: "disabled" | "setup" | "ready" | "error";
+                            error: string | null;
+                        }[];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        id: string;
+                        name: string;
+                        /** @enum {string} */
+                        provider: "telegram" | "slack";
+                        /** @default false */
+                        enabled?: boolean;
+                        /** @default 0 */
+                        revision?: number;
+                        /** @default {} */
+                        config?: {
+                            [key: string]: unknown;
+                        };
+                        /** @default {} */
+                        credentials?: {
+                            [key: string]: string;
+                        };
+                        /** @default [] */
+                        targets?: {
+                            id: string;
+                            name: string;
+                            chat_id: string;
+                            thread_id?: string;
+                            /** @default [] */
+                            user_ids?: string[];
+                            /** @default [] */
+                            project_ids?: string[];
+                            /** @default false */
+                            inbound?: boolean;
+                            /** @default true */
+                            outbound?: boolean;
+                            /** @default false */
+                            attention?: boolean;
+                        }[];
+                        /** @default [] */
+                        routes?: {
+                            id: string;
+                            name: string;
+                            /** @default true */
+                            enabled?: boolean;
+                            condition: unknown;
+                            action: {
+                                /** @enum {string} */
+                                type: "ignore";
+                            } | {
+                                /** @enum {string} */
+                                type: "agent";
+                                agent: string;
+                                profile?: string;
+                                model?: string;
+                                project_id: string;
+                            };
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            name: string;
+                            /** @enum {string} */
+                            provider: "telegram" | "slack";
+                            enabled: boolean;
+                            revision: number;
+                            config: {
+                                [key: string]: unknown;
+                            };
+                            targets: {
+                                id: string;
+                                name: string;
+                                chat_id: string;
+                                thread_id?: string;
+                                /** @default [] */
+                                user_ids: string[];
+                                /** @default [] */
+                                project_ids: string[];
+                                /** @default false */
+                                inbound: boolean;
+                                /** @default true */
+                                outbound: boolean;
+                                /** @default false */
+                                attention: boolean;
+                            }[];
+                            routes: {
+                                id: string;
+                                name: string;
+                                /** @default true */
+                                enabled: boolean;
+                                condition: unknown;
+                                action: {
+                                    /** @enum {string} */
+                                    type: "ignore";
+                                } | {
+                                    /** @enum {string} */
+                                    type: "agent";
+                                    agent: string;
+                                    profile?: string;
+                                    model?: string;
+                                    project_id: string;
+                                };
+                            }[];
+                            credentials: {
+                                [key: string]: {
+                                    configured: boolean;
+                                    /** @enum {string} */
+                                    source: "environment" | "stored" | "missing";
+                                };
+                            };
+                            identity: {
+                                id: string;
+                                name: string;
+                            } | null;
+                            /** @enum {string} */
+                            status: "disabled" | "setup" | "ready" | "error";
+                            error: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/{id}/targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    project_id?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            name: string;
+                            chat_id: string;
+                            thread_id?: string;
+                            /** @default [] */
+                            user_ids: string[];
+                            /** @default [] */
+                            project_ids: string[];
+                            /** @default false */
+                            inbound: boolean;
+                            /** @default true */
+                            outbound: boolean;
+                            /** @default false */
+                            attention: boolean;
+                        }[];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/{id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            name: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/{id}/pairings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            url: string;
+                            message: string;
+                            expires_at: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/pairings/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            connection: string;
+                            expires_at: number;
+                            candidate: {
+                                chat_id: string;
+                                user_id: string;
+                                name: string;
+                            } | null;
+                            confirmed: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/pairings/{id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            name: string;
+                            chat_id: string;
+                            thread_id?: string;
+                            /** @default [] */
+                            user_ids: string[];
+                            /** @default [] */
+                            project_ids: string[];
+                            /** @default false */
+                            inbound: boolean;
+                            /** @default true */
+                            outbound: boolean;
+                            /** @default false */
+                            attention: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        connection: string;
+                        target: string;
+                        message: {
+                            text: string;
+                            /**
+                             * @default markdown
+                             * @enum {string}
+                             */
+                            format?: "markdown" | "plain";
+                            /** @default [] */
+                            links?: {
+                                label: string;
+                                url: string;
+                            }[];
+                        };
+                        /** @description Native provider message payload. All message fields pass through; explicit fields replace generated fields. Credentials and destination are controlled by ORC. */
+                        overrides?: {
+                            [key: string]: unknown;
+                        };
+                        project_id?: string | null;
+                        idempotency_key?: string;
+                        thread_id?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            connection: string;
+                            target: string;
+                            project_id: string | null;
+                            /** @enum {string} */
+                            status: "sending" | "accepted" | "failed" | "unknown" | "partial";
+                            provider_ids: string[];
+                            destination?: {
+                                chat_id: string;
+                                thread_id?: string;
+                            };
+                            error: string | null;
+                            created_at: number;
+                            warnings: string[];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/channels/messages/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    project_id?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            connection: string;
+                            target: string;
+                            project_id: string | null;
+                            /** @enum {string} */
+                            status: "sending" | "accepted" | "failed" | "unknown" | "partial";
+                            provider_ids: string[];
+                            destination?: {
+                                chat_id: string;
+                                thread_id?: string;
+                            };
+                            error: string | null;
+                            created_at: number;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        message: {
+                            text: string;
+                            /**
+                             * @default markdown
+                             * @enum {string}
+                             */
+                            format?: "markdown" | "plain";
+                            /** @default [] */
+                            links?: {
+                                label: string;
+                                url: string;
+                            }[];
+                        };
+                        /** @description Native provider message payload. All message fields pass through; explicit fields replace generated fields. Credentials and destination are controlled by ORC. */
+                        overrides?: {
+                            [key: string]: unknown;
+                        };
+                        project_id?: string | null;
+                        thread_id?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            connection: string;
+                            target: string;
+                            project_id: string | null;
+                            /** @enum {string} */
+                            status: "sending" | "accepted" | "failed" | "unknown" | "partial";
+                            provider_ids: string[];
+                            destination?: {
+                                chat_id: string;
+                                thread_id?: string;
+                            };
+                            error: string | null;
+                            created_at: number;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/api/channels/{id}/route-test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview first matching rule without invoking an agent */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        sender: string;
+                        chat: string;
+                        thread?: string;
+                        text: string;
+                        is_direct: boolean;
+                        is_mention: boolean;
+                        /**
+                         * @default message
+                         * @enum {string}
+                         */
+                        kind?: "message" | "action";
+                    };
+                };
+            };
+            responses: {
+                /** @description Channel result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            authorized: boolean;
+                            route_id: string | null;
+                            action?: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/system/restart": {
@@ -2638,6 +3501,7 @@ export interface paths {
                     status?: "active" | "archived" | "paused";
                     tag?: string;
                     limit?: number;
+                    offset?: number | null;
                 };
                 header?: never;
                 path?: never;
@@ -2651,9 +3515,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            projects: components["schemas"]["Project"][];
-                        };
+                        "application/json": components["schemas"]["ProjectPage"];
                     };
                 };
             };
@@ -4065,6 +4927,13 @@ export interface paths {
                                     native_session_id?: string;
                                     native_request_key?: string;
                                     execution_host?: string | null;
+                                    channel?: {
+                                        connection: string;
+                                        target: string;
+                                        chat_id: string;
+                                        thread_id?: string;
+                                        sender_id: string;
+                                    };
                                 };
                                 /** @default null */
                                 project_id: string | null;
@@ -10575,6 +11444,7 @@ export interface paths {
                     /** @description Project id, or unassigned for jobs without a project; filtered before limit */
                     project_id?: string;
                     limit?: number;
+                    offset?: number | null;
                 };
                 header?: never;
                 path?: never;
@@ -10588,9 +11458,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            jobs: components["schemas"]["Job"][];
-                        };
+                        "application/json": components["schemas"]["JobPage"];
                     };
                 };
             };
@@ -12514,6 +13382,12 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        ProjectPage: {
+            projects: components["schemas"]["Project"][];
+            offset: number;
+            limit: number;
+            next_offset: number | null;
+        };
         Project: {
             id: string;
             name: string;
@@ -13087,6 +13961,12 @@ export interface components {
                 created_at: string;
             }[];
             snapshot: string | null;
+        };
+        JobPage: {
+            jobs: components["schemas"]["Job"][];
+            offset: number;
+            limit: number;
+            next_offset: number | null;
         };
         Job: {
             id: string;

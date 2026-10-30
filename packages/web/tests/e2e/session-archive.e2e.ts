@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import type { ArchiveSearchResult } from "@orc/core/session-archive";
 import { expect, test } from "@playwright/test";
+import { settingsSection } from "./_chat-ui";
 import {
   API_BASE,
   API_SECRET,
@@ -249,6 +250,7 @@ test("browser upload requires a project and Settings persists the independent se
   await page.goto(`/sessions?project=${project.id}`);
   await expect(page.getByTestId("archive-session-row")).toHaveCount(1);
   await gotoView(page, "settings");
+  await settingsSection(page, "knowledge");
   const toggle = page.getByTestId("settings-session-embeddings");
   await toggle.check();
   await page.getByTestId("settings-knowledge-save").click();

@@ -2,6 +2,7 @@ import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
 import { RESTART_EXIT_CODE } from "@orc/core/process-supervisor";
 import { closeDb } from "@orc/db/client";
+import { startChannelRuntime } from "@orc/gateway/channel-runtime";
 import {
   closeKnowledgeService,
   getKnowledgeService,
@@ -46,6 +47,10 @@ const server = Bun.serve<TerminalSocketData>({
 
 const stopSessionWatcher = startSessionWatcher();
 const stopAttentionPush = startAttentionPush();
+const channels = startChannelRuntime().catch(() => {
+  logger.error("Channels failed to start; inspect Channels in Settings");
+  return async () => {};
+});
 // Recover interrupted knowledge jobs and start folder rescans; failures must not stop the API.
 startKnowledgeMaintenance()
   .then(async () => withKbJobHooks(await getKnowledgeService()).ensureLearningsKbs())
@@ -67,6 +72,7 @@ async function shutdown(signal: string, exitCode = 0) {
   forceExit.unref();
   stopSessionWatcher();
   stopAttentionPush();
+  await (await channels)();
   shutdownTerminals();
   await runShutdownHooks();
   try {

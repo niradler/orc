@@ -97,6 +97,40 @@
   padding-left: env(safe-area-inset-left);
 }
 
+@utility chat-messages {
+  html[data-compact-viewport="true"] & {
+    padding-top: 4px;
+    padding-bottom: 4px;
+  }
+}
+
+@utility chat-scroll-latest {
+  html[data-compact-viewport="true"] & {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+}
+
+@utility chat-compact-activity {
+  display: none;
+  html[data-compact-viewport="true"] & {
+    display: block;
+  }
+}
+
+@utility chat-activity-status {
+  html[data-compact-viewport="true"] & {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+}
+
 @utility terminal-workspace-page {
   html[data-compact-viewport="true"]:has(&) .workspace-header {
     display: none;

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { createAgent, discoverAgents, readAgent } from "@orc/core/agent-service";
+import { ChannelSendSchema, ChannelUpdateSchema } from "@orc/core/channels";
 import { loadConfig, resolveApiBase } from "@orc/core/config";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { HumanRequestInputSchema, HumanRequestSchema } from "@orc/core/human-requests";
@@ -87,6 +88,17 @@ const scopedProjectParams = z.object({
 });
 
 const scopeParams = z.object({ project: projectParam, scope: z.literal("global").optional() });
+const channelScopeParams = z.object({
+  project: projectParam,
+  project_id: z.string().min(1).max(100).optional(),
+});
+const channelTargetsParams = channelScopeParams.extend({ connection: z.string().min(1).max(100) });
+const channelSendParams = ChannelSendSchema.extend({ project: projectParam });
+const channelReadParams = channelScopeParams.extend({ id: z.string().min(1).max(100) });
+const channelEditParams = ChannelUpdateSchema.extend({
+  id: z.string().min(1).max(100),
+  project: projectParam,
+});
 const auditParams = scopeParams.extend({
   entity_type: z.enum(["memory", "skill", "kb"]).optional(),
   session_id: z.string().min(1).max(200).optional(),
@@ -121,6 +133,36 @@ const digestCompleteParams = z
   })
   .strict();
 export const toolDefinitions = [
+  {
+    name: "channel_list",
+    description:
+      "Discover configured communication channels, readiness, provider capabilities and native message documentation. Configure connections in Settings > Channels; credentials are never returned.",
+    inputSchema: channelScopeParams,
+  },
+  {
+    name: "channel_targets",
+    description:
+      "List approved channel destinations and aliases such as me, subject to project restrictions.",
+    inputSchema: channelTargetsParams,
+  },
+  {
+    name: "channel_send",
+    description:
+      "Send a message through a configured channel. Common Markdown renders automatically. Optional overrides are the provider's native JSON payload: all message options pass through unchanged and explicit fields replace generated fields. ORC owns credentials and destination. Return a delivery receipt; accepted is provider acceptance, not human read. Use an idempotency key for retries. Read orc-platform references/channels.md for examples.",
+    inputSchema: channelSendParams,
+  },
+  {
+    name: "channel_message_get",
+    description:
+      "Inspect a channel delivery receipt. Unknown or partial delivery requires inspection before retrying; never assume exactly-once delivery.",
+    inputSchema: channelReadParams,
+  },
+  {
+    name: "channel_message_update",
+    description:
+      "Edit an accepted channel message using Markdown or native overrides. Keep the same number of provider message chunks.",
+    inputSchema: channelEditParams,
+  },
   {
     name: "human_request",
     description:
@@ -993,6 +1035,53 @@ export async function executeTool(
   args: unknown,
   options: ToolOptions = {},
 ): Promise<string> {
+  if (name.startsWith("channel_")) {
+    const schema =
+      name === "channel_list"
+        ? channelScopeParams
+        : name === "channel_targets"
+          ? channelTargetsParams
+          : name === "channel_send"
+            ? channelSendParams
+            : name === "channel_message_get"
+              ? channelReadParams
+              : channelEditParams;
+    const parsed = schema.parse(args);
+    const scope = parsed.project
+      ? resolveProjectId(parsed.project)?.id
+      : (parsed.project_id ?? options.projectScopes?.[0]?.id ?? resolveProjectId()?.id ?? null);
+    if (options.projectScopes && (!scope || !options.projectScopes.some((p) => p.id === scope)))
+      throw new ValidationError("Channel access is outside the selected MCP projects");
+    const query = scope ? `?project_id=${encodeURIComponent(scope)}` : "";
+    if (name === "channel_list") {
+      const [connections, providers] = await Promise.all([
+        orcApi("GET", `/channels${query}`),
+        orcApi("GET", "/channels/providers"),
+      ]);
+      return JSON.stringify({ connections, providers });
+    }
+    if (name === "channel_targets") {
+      const input = channelTargetsParams.parse(args);
+      return JSON.stringify(
+        await orcApi("GET", `/channels/${encodeURIComponent(input.connection)}/targets${query}`),
+      );
+    }
+    if (name === "channel_send") {
+      const { project: _project, ...input } = channelSendParams.parse(args);
+      return JSON.stringify(
+        await orcApi("POST", "/channels/messages", { body: { ...input, project_id: scope } }),
+      );
+    }
+    const input =
+      name === "channel_message_get"
+        ? channelReadParams.parse(args)
+        : channelEditParams.parse(args);
+    const path = `/channels/messages/${encodeURIComponent(input.id)}`;
+    if (name === "channel_message_get")
+      return JSON.stringify(await orcApi("GET", `${path}${query}`));
+    const { id: _id, project: _project, ...body } = channelEditParams.parse(args);
+    return JSON.stringify(await orcApi("PATCH", path, { body: { ...body, project_id: scope } }));
+  }
   if (name === "human_request") {
     const { project, ...input } = humanCreateParams.parse(args);
     const scope = project

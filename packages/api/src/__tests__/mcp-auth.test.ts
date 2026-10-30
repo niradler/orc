@@ -132,8 +132,13 @@ describe("MCP HTTP endpoint mode", () => {
     expect(await listNames("?mode=meta")).toEqual(["tool_search", "tool_describe", "tool_invoke"]);
   });
 
-  test("bare /mcp lists the real tools", async () => {
+  test("bare /mcp defaults to meta discovery", async () => {
     const names = await listNames("");
+    expect(names).toEqual(["tool_search", "tool_describe", "tool_invoke"]);
+  });
+
+  test("explicit full mode lists the real tools", async () => {
+    const names = await listNames("?mode=full");
     expect(names).toContain("memory_list");
     expect(names).not.toContain("tool_search");
   });

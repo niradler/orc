@@ -108,6 +108,7 @@ const listRoute = createRoute({
       status: z.enum(["active", "archived", "paused"]).optional(),
       tag: z.string().optional(),
       limit: z.coerce.number().int().min(1).max(100).optional().default(50),
+      offset: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),
     }),
   },
   responses: {
@@ -115,7 +116,14 @@ const listRoute = createRoute({
       description: "Projects",
       content: {
         "application/json": {
-          schema: z.object({ projects: z.array(ProjectSchema) }),
+          schema: z
+            .object({
+              projects: z.array(ProjectSchema),
+              offset: z.number().int(),
+              limit: z.number().int(),
+              next_offset: z.number().int().nullable(),
+            })
+            .openapi("ProjectPage"),
         },
       },
     },
@@ -242,7 +250,7 @@ function rawToDto(row: Record<string, unknown>) {
 
 app.openapi(listRoute, async (c) => {
   const db = getDb();
-  const { status, tag, limit } = c.req.valid("query");
+  const { status, tag, limit, offset } = c.req.valid("query");
 
   if (tag) {
     const sqlite = (db as unknown as { $client: Database }).$client;
@@ -252,20 +260,31 @@ app.openapi(listRoute, async (c) => {
       sql += " AND p.status = ?";
       params.push(status);
     }
-    sql += " ORDER BY p.name ASC LIMIT ?";
-    params.push(limit);
+    sql += " ORDER BY p.name ASC, p.id ASC LIMIT ? OFFSET ?";
+    params.push(limit + 1, offset);
     const rows = sqlite.query(sql).all(...params) as Record<string, unknown>[];
     const mapped = rows.map(rawToDto) as ReturnType<typeof toDto>[];
-    return c.json({ projects: mapped });
+    return c.json({
+      projects: mapped.slice(0, limit),
+      offset,
+      limit,
+      next_offset: mapped.length > limit ? offset + limit : null,
+    });
   }
 
   const conditions = status ? [eq(projects.status, status)] : [];
   const rows = await db.query.projects.findMany({
     where: conditions.length > 0 ? and(...conditions) : undefined,
-    limit,
-    orderBy: (p, { asc }) => [asc(p.name)],
+    limit: limit + 1,
+    offset,
+    orderBy: (p, { asc }) => [asc(p.name), asc(p.id)],
   });
-  return c.json({ projects: rows.map(toDto) });
+  return c.json({
+    projects: rows.slice(0, limit).map(toDto),
+    offset,
+    limit,
+    next_offset: rows.length > limit ? offset + limit : null,
+  });
 });
 
 app.openapi(getByNameRoute, async (c) => {

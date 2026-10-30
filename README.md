@@ -187,7 +187,7 @@ The web dashboard ships inside the `orc` binary and is served by the API process
 | `GET /mcp`                         | MCP server (streamable HTTP)                                                                                                   |
 | `GET /tasks/<id>`, `/knowledge`, … | `index.html` again - a navigation request matching no static file falls back to the SPA shell, so dashboard links are shareable |
 
-`/mcp?mode=meta` serves three meta-tools (`tool_search`, `tool_describe`, `tool_invoke`) instead of the full tool list, which keeps client context small; the model finds a tool, reads its schema, then calls it through `tool_invoke` with the same validation as a direct call. Stdio `orc mcp` serves meta mode by default; pass `--mode full` for the whole tool list. Any other `mode` value returns HTTP 400.
+`/mcp` serves three meta-tools by default (`tool_search`, `tool_describe`, `tool_invoke`) instead of the full tool list, which keeps client context small; the model finds a tool, reads its schema, then calls it through `tool_invoke` with the same validation as a direct call. Stdio `orc mcp` also defaults to meta mode. Use HTTP `/mcp?mode=full` or stdio `--mode full` for the whole tool list. Any other `mode` value returns HTTP 400.
 
 Use `/mcp?project=orc` to set connection-wide defaults for project-aware tools,
 including context, tasks, jobs, memories, knowledge and archived-session search.
@@ -644,7 +644,24 @@ rotated. The receiver is intentionally outside normal ORC bearer authentication;
 the per-endpoint HMAC is its authentication boundary. Management remains under the
 authenticated API.
 
-### Gateway (Telegram / Slack)
+### Channels (Telegram / Slack)
+
+Use **Settings → Channels** to configure connections, verify bot/workspace identity,
+pair approved recipients, and define ordered inbound rules that invoke agents.
+Rules support simple predicates and nested AND/OR/NOT groups; authorization runs
+before routing, and the first matching rule wins. Agent replies return to the
+original conversation. Agents can also send independently through `channel_send`
+over MCP or `POST /api/channels/messages`.
+
+Common Markdown renders automatically. Optional `overrides` accepts the provider's
+native JSON message options, including Slack Block Kit and Telegram HTML/keyboards.
+Connections, recipients and routes live in SQLite; credentials are encrypted or
+referenced through server environment variables. Pairing grants messaging access
+only; inbound invocation and Attention notifications are separate opt-ins.
+
+See the [channel setup, routing, API/MCP and native payload reference](skills/orc-platform/references/channels.md).
+
+### Legacy gateway (Telegram / Slack)
 
 Approve agent work from your phone, search memory, or start a live AI session.
 
@@ -866,6 +883,12 @@ Runs on port 7700 with auto-generated OpenAPI spec.
 - **Swagger UI:** `GET /docs`
 - **OpenAPI spec:** `GET /openapi.json`
 
+`GET /api/projects` and `GET /api/jobs` return bounded pages (`limit` defaults to 50, maximum 100;
+`offset` defaults to 0), ordered by name and ID. Follow `next_offset` until it is
+`null`. Project `status`/`tag` and job `enabled`/`project_id` filters apply to every
+page. Dashboard lists and pickers load all pages, so later records remain searchable
+and selectable.
+
 <details>
 <summary>Full endpoint list</summary>
 
@@ -1024,6 +1047,7 @@ packages/
   mcp/            MCP server (stdio + Streamable HTTP at /mcp)
   runner/         Job executor + cron/watch scheduler + task loop
   gateway/        Telegram + Slack bridge + agent sessions
+  channels/       Provider transport, rendering, pairing and channel delivery
   agent-runtime/  Agent backend registry (claude, acpx, a2a)
   task-service/   Task status transitions + side-effects
   web/            React dashboard (Vite + Tailwind + shadcn + React Query)

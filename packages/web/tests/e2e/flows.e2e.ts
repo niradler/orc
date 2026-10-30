@@ -47,7 +47,9 @@ function writeProjectFlow(definition: { name: string }): void {
 async function openNewTaskDialog(page: Page) {
   await gotoView(page, "tasks");
   await page.getByTestId("new-task-button").click();
-  return page.getByRole("dialog");
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("tab", { name: "Execution", exact: true }).click();
+  return dialog;
 }
 
 test.describe("Flow picker", () => {

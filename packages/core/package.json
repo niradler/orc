@@ -4,6 +4,7 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./channels": "./src/channels.ts",
     "./human-requests": "./src/human-requests.ts",
     "./push": "./src/push.ts",
     "./human-request-client": "./src/human-request-client.ts",

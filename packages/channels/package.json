@@ -1,0 +1,21 @@
+{
+  "name": "@orc/channels",
+  "version": "0.1.53",
+  "type": "module",
+  "exports": {
+    ".": "./src/service.ts",
+    "./providers": "./src/providers.ts",
+    "./routing": "./src/routing.ts",
+    "./render": "./src/render.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@orc/core": "workspace:*",
+    "@orc/db": "workspace:*",
+    "marked": "^18.0.11"
+  }
+}

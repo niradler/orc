@@ -116,6 +116,7 @@ for (const width of [1440, 390]) {
       route.fulfill({ json: transcript }),
     );
     await gotoView(page, "sessions");
+    await page.getByTestId("archive-disclosure").locator("summary").click();
     await page.getByTestId("archive-session-row").click();
     const archive = page.getByTestId("archive-detail");
     const archivedContext = archive.locator(

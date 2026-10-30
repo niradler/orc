@@ -304,6 +304,39 @@ test("Android chat keeps a long draft and send control above the software keyboa
     expect((await messages.boundingBox())?.height).toBeGreaterThan(20);
     await expect(input).toHaveValue("A long draft\n".repeat(30));
   }
+  await page.evaluate(() =>
+    (window as unknown as { setKeyboardHeight: (height: number) => void }).setKeyboardHeight(844),
+  );
+  await input.fill("A keyboard layout conversation\n".repeat(30));
+  await send.tap();
+  await expect(
+    sheet.locator('[data-testid="chat-message"][data-role="assistant"]').last(),
+  ).toBeVisible();
+  await input.fill("A long draft\n".repeat(30));
+  for (const height of [240, 200]) {
+    await page.evaluate(
+      (height) =>
+        (window as unknown as { setKeyboardHeight: (height: number) => void }).setKeyboardHeight(
+          height,
+        ),
+      height,
+    );
+    await messages.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+    await expect(
+      sheet.getByRole("button", { name: "Scroll to latest response", exact: true }),
+    ).toBeVisible();
+    await expect
+      .poll(async () => {
+        const box = await send.boundingBox();
+        return box ? box.y + box.height : 10000;
+      })
+      .toBeLessThanOrEqual(height);
+    expect((await messages.boundingBox())?.height).toBeGreaterThan(20);
+    await expect(input).toHaveValue("A long draft\n".repeat(30));
+  }
+  await sheet.screenshot({ path: "../../.claude/docs/channels-short-keyboard-chat.png" });
 });
 
 test("phone keyboard input reaches the shell once, as it is typed", async ({ page, request }) => {

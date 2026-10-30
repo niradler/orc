@@ -210,6 +210,13 @@ export function ChatPanel({
           >
             {thread?.title || "Sessions"}
           </h2>
+          {streaming && (
+            <LoaderCircle
+              size={14}
+              aria-hidden="true"
+              className="chat-compact-activity shrink-0 animate-spin"
+            />
+          )}
           {headerWide ? (
             <div data-testid="chat-header-actions" className="flex shrink-0 items-center gap-1">
               <ActionHelp label="Refresh session">
@@ -327,7 +334,7 @@ export function ChatPanel({
         <ThreadPrimitive.Viewport
           ref={viewport}
           data-testid="chat-messages"
-          className="relative flex-1 min-h-0 overflow-y-auto px-4 py-5 sm:px-6"
+          className="chat-messages relative flex-1 min-h-0 overflow-y-auto px-4 py-5 sm:px-6"
         >
           {historyBefore !== null && (
             <button
@@ -399,7 +406,7 @@ export function ChatPanel({
           <p
             role="status"
             data-testid="chat-activity-status"
-            className="flex shrink-0 items-center gap-2 px-4 py-2 text-xs text-on-surface-variant"
+            className="chat-activity-status flex shrink-0 items-center gap-2 px-4 py-2 text-xs text-on-surface-variant"
           >
             <LoaderCircle size={14} aria-hidden="true" className="animate-spin" />
             {streamingAgent} is responding…
@@ -510,14 +517,16 @@ export function ChatPanel({
             </ol>
           </details>
         )}
-        <div className="chat-composer-footer w-full shrink-0 px-4 pt-2 pb-3 sm:px-6">
-          <ThreadPrimitive.ScrollToBottom
-            aria-label="Scroll to latest response"
-            className="mx-auto mb-2 flex min-h-9 items-center gap-1 rounded-md border border-control-border bg-background px-3 text-xs text-on-surface-variant disabled:hidden"
-          >
-            <ArrowDown size={14} />
-            Latest response
-          </ThreadPrimitive.ScrollToBottom>
+        <div className="chat-composer-footer relative w-full shrink-0 px-4 pt-2 pb-3 sm:px-6">
+          {messages.length > 0 && (
+            <ThreadPrimitive.ScrollToBottom
+              aria-label="Scroll to latest response"
+              className="chat-scroll-latest mx-auto mb-2 flex min-h-9 items-center gap-1 rounded-md border border-control-border bg-background px-3 text-xs text-on-surface-variant disabled:hidden"
+            >
+              <ArrowDown size={14} />
+              Latest response
+            </ThreadPrimitive.ScrollToBottom>
+          )}
           <form
             onSubmit={(event) => {
               event.preventDefault();

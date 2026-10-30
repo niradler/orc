@@ -55,6 +55,15 @@ describe("portable shared profiles", () => {
     expect(prompts[0]).toContain("Review changes and cite evidence.");
     expect(prompts[0]).toContain("Inspect this task");
   });
+  test("should reject an unsupported explicit session allowlist even without a profile", () => {
+    expect(() =>
+      validateProfileCapabilities(
+        createBackend("codex-cli"),
+        { cwd: process.cwd(), toolAllowlist: ["Read"] },
+        null,
+      ),
+    ).toThrow("cannot enforce");
+  });
   test("should retain pinned model and enforce tools or refuse an incapable backend", async () => {
     const profile = createAgent(
       restrictedId,

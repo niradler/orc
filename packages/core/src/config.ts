@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
+import { ChannelConnectionSchema } from "./channels.js";
 import { ChatSettingsSchema } from "./chat.js";
 import { userHome } from "./home.js";
 import { decryptSecret } from "./secrets.js";
@@ -126,6 +127,7 @@ export const OrcConfigSchema = z.object({
     })
     .default({ transport: "stdio", port: 7701 }),
 
+  channels: z.array(ChannelConnectionSchema).default([]),
   gateway: z
     .object({
       telegram: GatewayPlatformConfigSchema.default(DEFAULT_GATEWAY_PLATFORM),

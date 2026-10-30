@@ -147,13 +147,23 @@ const listRoute = createRoute({
         description: "Project id, or unassigned for jobs without a project; filtered before limit",
       }),
       limit: z.coerce.number().int().min(1).max(100).optional().default(50),
+      offset: z.coerce.number().int().min(0).max(Number.MAX_SAFE_INTEGER).default(0),
     }),
   },
   responses: {
     200: {
       description: "Jobs",
       content: {
-        "application/json": { schema: z.object({ jobs: z.array(JobSchema) }) },
+        "application/json": {
+          schema: z
+            .object({
+              jobs: z.array(JobSchema),
+              offset: z.number().int(),
+              limit: z.number().int(),
+              next_offset: z.number().int().nullable(),
+            })
+            .openapi("JobPage"),
+        },
       },
     },
   },
@@ -325,17 +335,23 @@ function runToDto(r: typeof job_runs.$inferSelect) {
 
 app.openapi(listRoute, async (c) => {
   const db = getDb();
-  const { limit, project_id, enabled } = c.req.valid("query");
+  const { limit, offset, project_id, enabled } = c.req.valid("query");
   const conditions: ReturnType<typeof eq>[] = [];
   if (project_id === "unassigned") conditions.push(isNull(jobs.project_id));
   else if (project_id) conditions.push(eq(jobs.project_id, project_id));
   if (enabled !== undefined) conditions.push(eq(jobs.enabled, enabled));
   const rows = await db.query.jobs.findMany({
     where: conditions.length ? and(...conditions) : undefined,
-    limit,
-    orderBy: (j, { asc }) => [asc(j.name)],
+    limit: limit + 1,
+    offset,
+    orderBy: (j, { asc }) => [asc(j.name), asc(j.id)],
   });
-  return c.json({ jobs: rows.map(toDto) });
+  return c.json({
+    jobs: rows.slice(0, limit).map(toDto),
+    offset,
+    limit,
+    next_offset: rows.length > limit ? offset + limit : null,
+  });
 });
 
 app.openapi(getRoute, async (c) => {

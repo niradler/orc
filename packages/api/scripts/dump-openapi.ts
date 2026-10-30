@@ -17,7 +17,9 @@ try {
     headers: { Authorization: "Bearer dump-openapi" },
   });
   if (!res.ok) throw new Error(`openapi.json answered ${res.status}`);
-  writeFileSync(out, `${JSON.stringify(await res.json(), null, 2)}\n`);
+  const document = `${JSON.stringify(await res.json(), null, 2)}\n`;
+  if (out === "-") process.stdout.write(document);
+  else writeFileSync(out, document);
 } finally {
   closeDb();
 }

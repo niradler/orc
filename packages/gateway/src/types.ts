@@ -18,6 +18,7 @@ export type Attachment =
     };
 
 export type IncomingMessage = {
+  connectionId?: string | undefined;
   platform: GatewayPlatform;
   chatId: string;
   userId: string;
@@ -33,6 +34,7 @@ export type IncomingMessage = {
 export type Button = { label: string; value: string };
 
 export type SendOpts = {
+  projectId?: string | null | undefined;
   threadId?: string | undefined;
   buttons?: Button[][] | undefined;
   parseMode?: "html" | "markdown" | undefined;

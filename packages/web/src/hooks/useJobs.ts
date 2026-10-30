@@ -5,7 +5,7 @@ import { applyBulkAction } from "@/lib/bulk-actions";
 export function useJobs(params?: { project_id?: string; enabled?: boolean; limit?: number }) {
   return useQuery({
     queryKey: ["jobs", params],
-    queryFn: () => api.jobs.list(params),
+    queryFn: () => api.jobs.listAll(params),
     select: (data) => data.jobs,
   });
 }

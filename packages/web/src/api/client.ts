@@ -1,3 +1,11 @@
+import type {
+  ChannelConnection,
+  ChannelPairingView,
+  ChannelProviderInfo,
+  ChannelReceipt,
+  ChannelSend,
+  ChannelView,
+} from "@orc/core/channels";
 import type { ChatHistoryPage, ChatModels, ChatThread } from "@orc/core/chat";
 import type { HumanRequest, HumanResponse } from "@orc/core/human-requests";
 import type {
@@ -109,6 +117,7 @@ export type {
   PackageFull,
   PackageMeta,
   Project,
+  ProjectPage,
   ProjectStatus,
   ProjectSummary,
   ResumeFlowInput,
@@ -153,12 +162,14 @@ import type {
   FlowSource,
   HealthResponse,
   Job,
+  JobPage,
   JobRun,
   JobRunLog,
   LiveSession,
   PackageFull,
   PackageMeta,
   Project,
+  ProjectPage,
   ProjectSummary,
   ResumeFlowInput,
   Session,
@@ -568,6 +579,29 @@ export type UpdateScratchpadInput = {
 // ---- API client ----
 
 export const api = {
+  channels: {
+    list: () => req<ChannelView[]>("GET", "/channels"),
+    providers: () => req<ChannelProviderInfo[]>("GET", "/channels/providers"),
+    save: (input: ChannelConnection) =>
+      req<ChannelView>("PUT", `/channels/${enc(input.id)}`, input),
+    verify: (id: string) =>
+      req<{ id: string; name: string }>("POST", `/channels/${enc(id)}/verify`),
+    send: (input: ChannelSend) => req<ChannelReceipt>("POST", "/channels/messages", input),
+    pair: (id: string) =>
+      req<{ id: string; url: string; message: string; expires_at: number }>(
+        "POST",
+        `/channels/${enc(id)}/pairings`,
+      ),
+    pairing: (id: string) => req<ChannelPairingView>("GET", `/channels/pairings/${enc(id)}`),
+    confirmPairing: (id: string) => req<unknown>("POST", `/channels/pairings/${enc(id)}/confirm`),
+    manifest: () => req<Record<string, unknown>>("GET", "/channels/slack-manifest"),
+    routeTest: (id: string, input: Record<string, unknown>) =>
+      req<{ authorized: boolean; route_id: string | null; action: unknown }>(
+        "POST",
+        `/channels/${enc(id)}/route-test`,
+        input,
+      ),
+  },
   push: {
     config: () => req<PushConfig>("GET", "/push/config"),
     devices: () => req<PushDevice[]>("GET", "/push/subscriptions"),
@@ -791,13 +825,29 @@ export const api = {
   },
 
   jobs: {
-    list: (params?: { enabled?: boolean; project_id?: string; limit?: number }) =>
-      req<{ jobs: Job[] }>(
+    list: (params?: { enabled?: boolean; project_id?: string; limit?: number; offset?: number }) =>
+      req<JobPage>(
         "GET",
         "/jobs",
         undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
+    listAll: async (params?: {
+      enabled?: boolean;
+      project_id?: string;
+      limit?: number;
+    }): Promise<{ jobs: Job[] }> => {
+      const jobs: Job[] = [];
+      let offset = 0;
+      while (true) {
+        const page = await api.jobs.list({ ...params, limit: params?.limit ?? 100, offset });
+        jobs.push(...page.jobs);
+        if (page.next_offset == null) return { jobs };
+        if (!Number.isSafeInteger(page.next_offset) || page.next_offset <= offset)
+          throw new Error("Invalid job pagination response");
+        offset = page.next_offset;
+      }
+    },
     get: (id: string) => req<Job>("GET", `/jobs/${id}`),
     create: (data: CreateJobInput) => req<Job>("POST", "/jobs", data),
     update: (id: string, data: UpdateJobInput) => req<Job>("PATCH", `/jobs/${id}`, data),
@@ -832,13 +882,28 @@ export const api = {
   },
 
   projects: {
-    list: (params?: { status?: string; tag?: string; limit?: number }) =>
-      req<{ projects: Project[] }>(
+    list: (params?: { status?: string; tag?: string; limit?: number; offset?: number }) =>
+      req<ProjectPage>(
         "GET",
         "/projects",
         undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
+    listAll: async (params?: {
+      status?: string;
+      tag?: string;
+    }): Promise<{ projects: Project[] }> => {
+      const projects: Project[] = [];
+      let offset = 0;
+      while (true) {
+        const page = await api.projects.list({ ...params, limit: 100, offset });
+        projects.push(...page.projects);
+        if (page.next_offset == null) return { projects };
+        if (!Number.isSafeInteger(page.next_offset) || page.next_offset <= offset)
+          throw new Error("Invalid project pagination response");
+        offset = page.next_offset;
+      }
+    },
     get: (id: string) => req<Project>("GET", `/projects/${id}`),
     getByName: (name: string) =>
       req<Project>("GET", `/projects/by-name/${encodeURIComponent(name)}`),

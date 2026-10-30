@@ -278,7 +278,7 @@ describe("native chat runtime", () => {
     expect(calls[0]?.opts).toMatchObject({
       model: "fixture-selected",
       autoApprove: false,
-      systemPromptAppend: "Operator instructions",
+      systemPromptAppend: expect.stringContaining("Operator instructions"),
       orcMcp: true,
       executionHost: null,
     });

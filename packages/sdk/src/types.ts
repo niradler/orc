@@ -1,5 +1,19 @@
 import type { JobAction, WebhookSubscription } from "@orc/core/job-actions";
 
+export type {
+  ChannelCondition,
+  ChannelConnection,
+  ChannelInbound,
+  ChannelMessage,
+  ChannelPairingView,
+  ChannelProviderInfo,
+  ChannelReceipt,
+  ChannelRoute,
+  ChannelSend,
+  ChannelTarget,
+  ChannelView,
+} from "@orc/core/channels";
+
 export type { JobAction, WebhookSubscription } from "@orc/core/job-actions";
 export type {
   ArchiveSearchResult,
@@ -9,6 +23,9 @@ export type {
 } from "@orc/core/session-archive";
 
 import type { components } from "./openapi.gen.js";
+
+export type ProjectPage = components["schemas"]["ProjectPage"];
+export type JobPage = components["schemas"]["JobPage"];
 
 export type PullReview = components["schemas"]["PullReview"];
 export type PullCommentInput = components["schemas"]["PullCommentInput"];

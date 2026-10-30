@@ -19,9 +19,10 @@ export async function getOrCreateChat(input: {
   authorized: boolean;
   mode: GatewayMode;
   threadId?: string | undefined;
+  scopeKey?: string | undefined;
 }): Promise<typeof bridge_chats.$inferSelect> {
   const db = getDb();
-  const id = `${input.platform}:${input.chatId}`;
+  const id = input.scopeKey ?? `${input.platform}:${input.chatId}`;
   const existing = await db.query.bridge_chats.findFirst({
     where: eq(bridge_chats.id, id),
   });
@@ -46,7 +47,7 @@ export async function getOrCreateChat(input: {
   await db.insert(bridge_chats).values({
     id,
     platform: input.platform,
-    chat_id: input.chatId,
+    chat_id: input.scopeKey ?? input.chatId,
     username: input.username,
     display_name: input.displayName,
     authorized: input.authorized,
@@ -166,10 +167,12 @@ export async function getActiveGatewaySession(chatKey: string) {
   });
 }
 
-export async function listGatewaySessions(chatKey: string) {
+export async function listGatewaySessions(chatKey: string, projectId?: string) {
   const db = getDb();
   return db.query.gateway_sessions.findMany({
-    where: eq(gateway_sessions.chat_id, chatKey),
+    where: projectId
+      ? and(eq(gateway_sessions.chat_id, chatKey), eq(gateway_sessions.project_id, projectId))
+      : eq(gateway_sessions.chat_id, chatKey),
     orderBy: [desc(gateway_sessions.updated_at)],
     limit: 20,
   });

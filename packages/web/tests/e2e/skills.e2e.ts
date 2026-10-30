@@ -102,6 +102,7 @@ test.describe("Skills", () => {
     expect(skills.map((skill) => skill.name).sort()).toEqual(["orc-platform", "orc-sdlc"]);
     await gotoView(page, "skills");
     await expect(page.getByTestId("view-title")).toHaveText(/skills/i);
+    await page.getByTestId("skill-search-input").fill("orc-platform");
     await page.locator('[data-testid="skill-row"][data-skill-name="orc-platform"]').click();
     await page
       .locator('[data-testid="skill-file"][data-file-name="references/knowledge.md"]')

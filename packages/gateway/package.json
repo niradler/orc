@@ -4,6 +4,7 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
+    "./channel-runtime": "./src/channel-runtime.ts",
     ".": "./src/index.ts"
   },
   "scripts": {
@@ -13,6 +14,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@orc/channels": "workspace:*",
     "@orc/agent-runtime": "workspace:*",
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",

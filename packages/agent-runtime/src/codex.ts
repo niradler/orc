@@ -138,7 +138,10 @@ export class CodexSession implements AgentSession {
 
   async start(opts: SessionOpts, prompt: string): Promise<void> {
     if (this.host.kind === "ssh") await ensureSshMaster(this.host);
-    const mcp = opts.orcMcp === false ? null : buildOrcMcpServer(this.host);
+    const mcp =
+      opts.orcMcp === false
+        ? null
+        : buildOrcMcpServer(this.host, false, opts.orcMcpMode, opts.orcMcpProject);
     const env = buildCodexEnv();
     if (mcp?.headers?.Authorization) env.ORC_CODEX_MCP_TOKEN = mcp.headers.Authorization.slice(7);
     const command = await this.launcher(this.host);

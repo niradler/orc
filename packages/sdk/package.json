@@ -9,7 +9,7 @@
     "./types": "./src/types.ts"
   },
   "scripts": {
-    "generate": "bun ../api/scripts/dump-openapi.ts openapi.json && openapi-typescript openapi.json -o src/openapi.gen.ts && rm openapi.json",
+    "generate": "bun scripts/generate.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "test": "bun test",
@@ -19,6 +19,7 @@
     "@orc/core": "workspace:*"
   },
   "devDependencies": {
-    "openapi-typescript": "^7.13.0"
+    "openapi-typescript": "^7.13.0",
+    "typescript": "5.9.3"
   }
 }

@@ -30,7 +30,8 @@ export type OrcHttpMcpServer = {
 export function buildOrcMcpServer(
   host: ExecHost = resolveExecHost(),
   alwaysLoad = false,
-  mode: OrcMcpMode = "full",
+  mode: OrcMcpMode = "meta",
+  project?: string,
 ): OrcHttpMcpServer {
   let config: OrcConfig;
   try {
@@ -42,10 +43,13 @@ export function buildOrcMcpServer(
   }
   const secret = configuredApiSecret(config.api.secret);
   const base = `${host.kind === "ssh" ? orcUrlOnHost(host) : resolveApiBase(config)}/mcp`;
+  const query = new URLSearchParams();
+  query.set("mode", mode);
+  if (project) query.set("project", project);
   return {
     type: "http",
     ...(alwaysLoad ? { alwaysLoad: true } : {}),
-    url: mode === "meta" ? `${base}?mode=meta` : base,
+    url: query.size ? `${base}?${query}` : base,
     ...(secret ? { headers: { Authorization: `Bearer ${secret}` } } : {}),
   };
 }
@@ -53,9 +57,10 @@ export function buildOrcMcpServer(
 export function buildOrcMcpServers(
   host: ExecHost = resolveExecHost(),
   alwaysLoad = false,
-  mode: OrcMcpMode = "full",
+  mode: OrcMcpMode = "meta",
+  project?: string,
 ): Record<string, OrcHttpMcpServer> {
-  return { [ORC_MCP_SERVER_NAME]: buildOrcMcpServer(host, alwaysLoad, mode) };
+  return { [ORC_MCP_SERVER_NAME]: buildOrcMcpServer(host, alwaysLoad, mode, project) };
 }
 
 export type OrcMcpConfigFile = { path: string; cleanup: () => void };
@@ -64,9 +69,11 @@ export type OrcMcpConfigFile = { path: string; cleanup: () => void };
 // CLI backend receives the MCP config as a private temp file instead of inline JSON.
 export async function writeOrcMcpConfigFile(
   host: ExecHost = resolveExecHost(),
+  project?: string,
+  mode: OrcMcpMode = "meta",
 ): Promise<OrcMcpConfigFile> {
   if (host.kind === "ssh") await ensureSshMaster(host);
-  const content = JSON.stringify({ mcpServers: buildOrcMcpServers(host) });
+  const content = JSON.stringify({ mcpServers: buildOrcMcpServers(host, false, mode, project) });
   if (host.kind === "ssh") {
     const path = remoteTempPath(".mcp.json");
     await writeHostFile(host, path, content);

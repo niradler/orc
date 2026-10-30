@@ -9,6 +9,64 @@ import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof createApp>;
 
+test("should paginate all jobs with enabled/project filters and reject invalid page bounds", async () => {
+  const project = await (
+    await req(app, "POST", "/projects", { name: "job-pagination-scope" })
+  ).json();
+  const expected: { id: string; enabled: boolean; project_id: string | null }[] = [];
+  for (let index = 0; index < 105; index++) {
+    const response = await req(app, "POST", "/jobs", {
+      name: `pagination-${String(index).padStart(3, "0")}`,
+      command: "echo pagination-fixture",
+      trigger_type: "manual",
+      enabled: index % 2 === 0,
+      ...(index % 3 === 0 ? { project_id: project.id } : {}),
+    });
+    expect(response.status).toBe(201);
+    expected.push(await response.json());
+  }
+  type Page = { jobs: { id: string }[]; offset: number; limit: number; next_offset: number | null };
+  const read = async (query: string): Promise<Page> => {
+    const response = await req(app, "GET", `/jobs?${query}`);
+    expect(response.status).toBe(200);
+    return response.json();
+  };
+  const collect = async (filter: string): Promise<string[]> => {
+    const ids: string[] = [];
+    let offset: number | null = 0;
+    while (offset !== null) {
+      const page = await read(`${filter}&limit=17&offset=${offset}`);
+      expect(page.offset).toBe(offset);
+      expect(page.limit).toBe(17);
+      ids.push(...page.jobs.map((job) => job.id));
+      offset = page.next_offset;
+    }
+    expect(new Set(ids).size).toBe(ids.length);
+    return ids.filter((id) => expected.some((job) => job.id === id));
+  };
+  expect((await read("")).jobs).toHaveLength(50);
+  expect(await collect("")).toEqual(expected.map((job) => job.id));
+  expect(await collect("enabled=true")).toEqual(
+    expected.filter((job) => job.enabled).map((job) => job.id),
+  );
+  expect(await collect(`project_id=${project.id}&enabled=false`)).toEqual(
+    expected.filter((job) => job.project_id === project.id && !job.enabled).map((job) => job.id),
+  );
+  expect(await collect("project_id=unassigned")).toEqual(
+    expected.filter((job) => !job.project_id).map((job) => job.id),
+  );
+  expect((await read("offset=10000")).next_offset).toBeNull();
+  for (const query of [
+    "offset=-1",
+    "offset=0.5",
+    "offset=invalid",
+    "offset=9007199254740992",
+    "limit=101",
+  ])
+    expect((await req(app, "GET", `/jobs?${query}`)).status).toBe(400);
+  expect((await app.request("/api/jobs?offset=50")).status).toBe(401);
+});
+
 beforeAll(() => {
   app = setupTestApp();
 });

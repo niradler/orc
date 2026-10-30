@@ -141,12 +141,11 @@ export function validateProfileCapabilities(
   opts: SessionOpts,
   profile: AgentFull | null,
 ): void {
-  if (!profile) return;
-  if (profile.fields.model && !backend.profileCapabilities?.model)
+  if (profile?.fields.model && !backend.profileCapabilities?.model)
     throw new Error(`Backend ${backend.name} cannot honor profile model ${profile.fields.model}`);
   if (opts.toolAllowlist !== undefined && !backend.profileCapabilities?.toolAllowlist)
     throw new Error(
-      `Backend ${backend.name} cannot enforce the tool whitelist for agent ${profile.id}; the profile will not run unrestricted`,
+      `Backend ${backend.name} cannot enforce this session's tool whitelist; refusing to run unrestricted`,
     );
 }
 

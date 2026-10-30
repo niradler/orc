@@ -175,15 +175,17 @@ test("standalone source connects multiple typed jobs, filters deliveries and reo
   await revealFormField(page, page.getByTestId("job-create-enabled"));
   await page.getByTestId("job-create-enabled").check();
   await openFinalFormStep(page);
+  const taskCreated = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === "/api/jobs" && response.request().method() === "POST",
+  );
   await page.getByTestId("job-submit").click();
   await expect(page.getByTestId("job-name-input")).toHaveCount(0);
 
-  const { jobs } = await apiGet<{ jobs: { id: string; name: string; action: { type: string } }[] }>(
-    request,
-    "/jobs",
-  );
-  const taskJob = jobs.find((job) => job.name === taskName);
-  if (!taskJob) throw new Error("Task job missing");
+  const created = await taskCreated;
+  expect(created.status()).toBe(201);
+  const taskJob = (await created.json()) as { id: string; name: string; action: { type: string } };
+  expect(taskJob.name).toBe(taskName);
   expect(taskJob.action.type).toBe("task");
   const body = JSON.stringify({ action: "completed", repository: { full_name: "example/repo" } });
   const headers = {

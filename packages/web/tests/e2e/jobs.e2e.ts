@@ -25,15 +25,14 @@ test.describe("Jobs CRUD", () => {
     const row = page.locator(`[data-testid="job-row"][data-job-name="${name}"]`);
     await expect(row).toBeVisible();
 
-    const { jobs } = await apiGet<{ jobs: Job[] }>(request, "/jobs");
-    expect(jobs.find((j) => j.name === name)).toBeTruthy();
+    const id = await row.getAttribute("data-job-id");
+    expect((await apiGet<Job>(request, `/jobs/${id}`)).name).toBe(name);
 
     await row.getByTestId("job-delete").click();
     await page.getByTestId("confirm-dialog-confirm").click();
     await expect(row).toHaveCount(0);
 
-    const { jobs: after } = await apiGet<{ jobs: Job[] }>(request, "/jobs");
-    expect(after.find((j) => j.name === name)).toBeUndefined();
+    await expect(apiGet<Job>(request, `/jobs/${id}`)).rejects.toThrow("404");
   });
 
   test("trigger via UI increments run count in API", async ({ page, request }) => {
@@ -49,10 +48,15 @@ test.describe("Jobs CRUD", () => {
       await expect(row).toBeVisible();
       await row.getByTestId("job-trigger").click();
 
-      // API-confirm: job exists and is reachable post-trigger. The actual
-      // run is async; we only assert the button works without errors.
-      const { jobs } = await apiGet<{ jobs: Job[] }>(request, "/jobs");
-      expect(jobs.find((j) => j.id === created.id)).toBeTruthy();
+      await expect
+        .poll(async () => {
+          const result = await apiGet<{ runs: { status: string }[] }>(
+            request,
+            `/jobs/${created.id}/runs`,
+          );
+          return result.runs.some((run) => run.status === "success");
+        })
+        .toBe(true);
     } finally {
       await apiDelete(request, `/jobs/${created.id}`);
     }

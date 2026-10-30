@@ -4,6 +4,116 @@ import { HumanRequestStore } from "@orc/db/human-requests";
 import { HumanRequestChannels } from "../human-requests.js";
 import type { GatewayAdapter, IncomingMessage } from "../types.js";
 
+test("Codex MCP approval previews deduplicate arguments without bypassing secret or size checks", async () => {
+  const db = new Database(":memory:");
+  try {
+    const store = new HumanRequestStore(db);
+    const sent: string[] = [];
+    const adapter: GatewayAdapter = {
+      platform: "telegram",
+      start: async () => {},
+      stop: async () => {},
+      send: async (_id, text) => {
+        sent.push(text);
+        return "sent";
+      },
+    };
+    const make = (id: string, args: Record<string, unknown>, extra = {}) =>
+      store.create({
+        origin: { session_id: "s", backend: "codex", request_id: id },
+        kind: "approval",
+        prompt: "Allow QA question?",
+        notify: ["telegram"],
+        action: {
+          tool: "mcp__orc__tool_invoke",
+          cwd: "/tmp",
+          host: "local",
+          input: {
+            _meta: {
+              codex_approval_kind: "mcp_tool_call",
+              tool_params: args,
+              tool_description: "metadata ".repeat(500),
+            },
+            item: { type: "mcpToolCall", server: "orc", tool: "tool_invoke", arguments: args },
+            ...extra,
+          },
+        },
+      });
+    const request = make("small", {
+      name: "human_request",
+      arguments: { prompt: "Blue or Green?" },
+    });
+    const secret = make("secret", { name: "human_request" }, { password: "private-value" });
+    const large = make("large", { text: "x".repeat(4000) });
+    const channels = new HumanRequestChannels(store);
+    await channels.notify(new Map([["telegram", adapter]]), [
+      { platform: "telegram", chat_id: "nir", project_id: null, thread_id: null },
+    ]);
+    expect(sent.some((text) => text.includes("Blue or Green?"))).toBe(true);
+    expect(sent.every((text) => !text.includes("metadata"))).toBe(true);
+    const reply = (id: string) =>
+      channels.reply({
+        platform: "telegram",
+        chatId: "nir",
+        userId: "nir",
+        text: `/attention ${id} 1 approve`,
+      });
+    expect(reply(request.id)).toContain("Response saved");
+    expect(reply(secret.id)).toContain("not offered");
+    expect(sent.every((text) => !text.includes("private-value"))).toBe(true);
+    expect(reply(large.id)).toContain("not offered");
+  } finally {
+    db.close();
+  }
+});
+
+test("sensitive approvals send only an ORC review notice and cannot be approved in-channel", async () => {
+  const db = new Database(":memory:");
+  try {
+    const store = new HumanRequestStore(db);
+    const request = store.create({
+      origin: { session_id: "s", backend: "codex", request_id: "secret" },
+      kind: "approval",
+      prompt: "Connect account?",
+      notify: ["telegram"],
+      action: {
+        tool: "connect",
+        input: { password: "short", headers: { Authorization: "Bearer private-value" } },
+        cwd: "/tmp",
+        host: "local",
+      },
+    });
+    const sent: string[] = [];
+    const adapter: GatewayAdapter = {
+      platform: "telegram",
+      start: async () => {},
+      stop: async () => {},
+      send: async (_id, text) => {
+        sent.push(text);
+        return "sent";
+      },
+    };
+    const channels = new HumanRequestChannels(store);
+    await channels.notify(new Map([["telegram", adapter]]), [
+      { platform: "telegram", chat_id: "nir", project_id: null, thread_id: null },
+    ]);
+    expect(sent[0]).toContain("sensitive input");
+    expect(sent[0]).not.toContain("short");
+    expect(sent[0]).not.toContain("private-value");
+    expect(
+      channels.reply({
+        platform: "telegram",
+        chatId: "nir",
+        userId: "nir",
+        text: `/attention ${request.id} 1 approve`,
+      }),
+    ).toContain("not offered");
+    expect(store.get(request.id).status).toBe("pending");
+  } finally {
+    db.close();
+  }
+});
+
 test("should persist channel bindings, route only matching projects, and reject cross-chat or duplicate decisions", async () => {
   const db = new Database(":memory:");
   try {
@@ -42,6 +152,19 @@ test("should persist channel bindings, route only matching projects, and reject 
     };
     const channels = new HumanRequestChannels(store);
     expect(channels.reply(message)).toContain("not offered");
+    expect(store.get(request.id).status).toBe("pending");
+    expect(
+      channels.reply(
+        { ...message, chatId: "nir" },
+        { attention: false, project_ids: ["project-a"] },
+      ),
+    ).toContain("disabled");
+    expect(
+      channels.reply(
+        { ...message, chatId: "nir" },
+        { attention: true, project_ids: ["project-b"] },
+      ),
+    ).toContain("no longer has access");
     expect(store.get(request.id).status).toBe("pending");
     expect(channels.reply({ ...message, chatId: "nir" })).toContain("Response saved");
     expect(channels.reply({ ...message, chatId: "nir" })).toContain("stale");
