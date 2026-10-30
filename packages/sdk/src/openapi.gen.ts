@@ -11444,6 +11444,7 @@ export interface paths {
                     /** @description Project id, or unassigned for jobs without a project; filtered before limit */
                     project_id?: string;
                     limit?: number;
+                    offset?: number | null;
                 };
                 header?: never;
                 path?: never;
@@ -11457,9 +11458,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            jobs: components["schemas"]["Job"][];
-                        };
+                        "application/json": components["schemas"]["JobPage"];
                     };
                 };
             };
@@ -13962,6 +13961,12 @@ export interface components {
                 created_at: string;
             }[];
             snapshot: string | null;
+        };
+        JobPage: {
+            jobs: components["schemas"]["Job"][];
+            offset: number;
+            limit: number;
+            next_offset: number | null;
         };
         Job: {
             id: string;

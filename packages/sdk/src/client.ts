@@ -91,6 +91,7 @@ import type {
   FlowSource,
   HealthResponse,
   Job,
+  JobPage,
   JobRun,
   JobRunLog,
   LiveSession,
@@ -501,8 +502,13 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     jobs: {
-      list: (params?: { enabled?: boolean; project_id?: string; limit?: number }) =>
-        c<{ jobs: Job[] }>(
+      list: (params?: {
+        enabled?: boolean;
+        project_id?: string;
+        limit?: number;
+        offset?: number;
+      }) =>
+        c<JobPage>(
           "GET",
           "/jobs",
           undefined,

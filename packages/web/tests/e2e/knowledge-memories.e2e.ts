@@ -29,6 +29,9 @@ for (const width of [1440, 390]) {
       await expect(page).toHaveURL(new RegExp(`/knowledge/memories/${project.id}/${name}`));
       await page.reload();
       await expect(page.getByTestId("memory-detail-content")).toHaveText(`${name} content`);
+      // Test the panel's Escape behavior, rather than dismissing its Close tooltip.
+      await page.getByTestId("memory-edit").focus();
+      await expect(page.getByTestId("action-help-content")).toBeHidden();
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("memory-detail")).toHaveCount(0);
 

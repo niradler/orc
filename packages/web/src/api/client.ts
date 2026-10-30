@@ -162,6 +162,7 @@ import type {
   FlowSource,
   HealthResponse,
   Job,
+  JobPage,
   JobRun,
   JobRunLog,
   LiveSession,
@@ -824,13 +825,29 @@ export const api = {
   },
 
   jobs: {
-    list: (params?: { enabled?: boolean; project_id?: string; limit?: number }) =>
-      req<{ jobs: Job[] }>(
+    list: (params?: { enabled?: boolean; project_id?: string; limit?: number; offset?: number }) =>
+      req<JobPage>(
         "GET",
         "/jobs",
         undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
+    listAll: async (params?: {
+      enabled?: boolean;
+      project_id?: string;
+      limit?: number;
+    }): Promise<{ jobs: Job[] }> => {
+      const jobs: Job[] = [];
+      let offset = 0;
+      while (true) {
+        const page = await api.jobs.list({ ...params, limit: params?.limit ?? 100, offset });
+        jobs.push(...page.jobs);
+        if (page.next_offset == null) return { jobs };
+        if (!Number.isSafeInteger(page.next_offset) || page.next_offset <= offset)
+          throw new Error("Invalid job pagination response");
+        offset = page.next_offset;
+      }
+    },
     get: (id: string) => req<Job>("GET", `/jobs/${id}`),
     create: (data: CreateJobInput) => req<Job>("POST", "/jobs", data),
     update: (id: string, data: UpdateJobInput) => req<Job>("PATCH", `/jobs/${id}`, data),
