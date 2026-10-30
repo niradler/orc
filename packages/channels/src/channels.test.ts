@@ -118,6 +118,15 @@ test("Slack common rendering preserves quotation marks and task-list state", () 
     (plain.payloads[0]?.blocks as { text: { text: string; type: string } }[] | undefined)?.[0]
       ?.text,
   ).toEqual({ type: "plain_text", text: "*literal* <tag>" });
+  const labels = renderMessage(
+    "slack",
+    ChannelMessageSchema.parse({
+      text: "Task",
+      links: [{ label: "a".repeat(100), url: "https://example.com/task" }],
+    }),
+  );
+  expect(labels.warnings.join(" ")).toContain("75 characters");
+  expect(JSON.stringify(labels.payloads)).toContain(`"text":"${"a".repeat(75)}"`);
 });
 
 test("queued messages recheck authorization before invoking an agent", async () => {

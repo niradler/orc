@@ -82,6 +82,10 @@ export function renderMessage(
       ? escapeText(message.text)
       : tokens(Lexer.lex(message.text, { gfm: true }), provider).trim();
   const warnings: string[] = [];
+  if (provider === "slack" && message.links.some((link) => Array.from(link.label).length > 75))
+    warnings.push(
+      "Slack button labels shortened to 75 characters; link destinations are unchanged.",
+    );
   let chunks = [text];
   if (text.length > limit) {
     plain = true;
@@ -123,7 +127,7 @@ export function renderMessage(
           elements: message.links.map((link, i) => ({
             type: "button",
             action_id: `link-${i}`,
-            text: { type: "plain_text", text: link.label },
+            text: { type: "plain_text", text: Array.from(link.label).slice(0, 75).join("") },
             url: link.url,
           })),
         },

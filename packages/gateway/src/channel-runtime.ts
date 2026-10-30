@@ -117,7 +117,7 @@ function channelAdapter(
                   elements: row.map((b) => ({
                     type: "button",
                     action_id: b.value,
-                    text: { type: "plain_text", text: b.label },
+                    text: { type: "plain_text", text: Array.from(b.label).slice(0, 75).join("") },
                     value: b.value,
                   })),
                 })),
