@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { settingsSection } from "./_chat-ui";
 import { gotoView } from "./_helpers";
 
 test("serves an installable manifest and public PWA files without auth", async ({ request }) => {
@@ -80,6 +81,7 @@ test("push messages notify only when ORC is not focused", async ({ page, context
 
 test("settings explains and offers device notifications", async ({ page }) => {
   await gotoView(page, "settings");
+  await settingsSection(page, "notifications");
   await expect(page.getByRole("heading", { name: "Notifications" })).toBeVisible();
   await expect(page.getByTestId("push-enable")).toBeVisible();
 });
