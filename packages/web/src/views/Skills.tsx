@@ -20,6 +20,7 @@ import { DocumentTabs } from "@/components/DocumentTabs";
 import { confirmDocumentClose, DocumentWorkspace } from "@/components/DocumentWorkspace";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { HelpPopover } from "@/components/HelpPopover";
 import { ImportLocalSkillsDialog } from "@/components/ImportLocalSkillsDialog";
 import { ImportSkillDialog } from "@/components/ImportSkillDialog";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
@@ -152,6 +153,7 @@ export default function Skills({ projectId }: { projectId: string }) {
     offset,
   });
   const skills = library?.skills;
+  const searchPending = searchInput !== query;
   const skillScope = (skill: NonNullable<typeof skills>[number]) =>
     skill.project_ids?.length
       ? skill.project_ids
@@ -186,7 +188,7 @@ export default function Skills({ projectId }: { projectId: string }) {
       return left.name.localeCompare(right.name);
     });
   }
-  const selectionScope = JSON.stringify([project, query, sourceFilter, offset]);
+  const selectionScope = JSON.stringify([project, query, searchInput, sourceFilter, offset]);
   const currentScope = useRef(selectionScope);
   currentScope.current = selectionScope;
   const selection = useListSelection(
@@ -445,10 +447,19 @@ export default function Skills({ projectId }: { projectId: string }) {
               variant="ghost"
               size="sm"
               data-testid={multiselect ? "skills-select-displayed" : "skills-multiselect"}
-              disabled={bulk.isPending || (multiselect && !skills?.length)}
-              onClick={() => (multiselect ? selection.selectAll() : setMultiselect(true))}
+              disabled={bulk.isPending || (multiselect && (!skills?.length || searchPending))}
+              aria-pressed={multiselect ? selection.allSelected : undefined}
+              onClick={() => {
+                if (!multiselect) setMultiselect(true);
+                else if (selection.allSelected) selection.clear();
+                else selection.selectAll();
+              }}
             >
-              {multiselect ? "Select displayed" : "Multiselect"}
+              {multiselect
+                ? selection.allSelected
+                  ? "Deselect displayed"
+                  : "Select displayed"
+                : "Multiselect"}
             </Button>
             {multiselect && (
               <>
@@ -488,24 +499,35 @@ export default function Skills({ projectId }: { projectId: string }) {
           aria-label="Selected skills and actions"
         >
           <span className="text-[13px]">{selection.selectedIds.length} selected</span>
-          <Button
-            data-testid="skills-bulk-hide"
-            variant="outline"
-            size="sm"
-            disabled={bulk.isPending || !visibility.data}
-            onClick={() => void runBulk("hide", selection.selectedIds)}
-          >
-            Hide
-          </Button>
-          <Button
-            data-testid="skills-bulk-show"
-            variant="outline"
-            size="sm"
-            disabled={bulk.isPending || !visibility.data}
-            onClick={() => void runBulk("show", selection.selectedIds)}
-          >
-            Show
-          </Button>
+          <fieldset className="flex min-w-0 flex-wrap items-center gap-1">
+            <legend className="sr-only">Agent discovery</legend>
+            <span aria-hidden="true" className="text-xs text-muted-foreground">
+              Agent discovery
+            </span>
+            <HelpPopover label="Agent discovery">
+              Hide excludes selected skills from agent discovery on this ORC installation. Hidden
+              skills stay in Skills and can still be loaded by name or used in flows. Show restores
+              discovery. This setting applies across projects.
+            </HelpPopover>
+            <Button
+              data-testid="skills-bulk-hide"
+              variant="outline"
+              size="sm"
+              disabled={bulk.isPending || !visibility.data}
+              onClick={() => void runBulk("hide", selection.selectedIds)}
+            >
+              Hide
+            </Button>
+            <Button
+              data-testid="skills-bulk-show"
+              variant="outline"
+              size="sm"
+              disabled={bulk.isPending || !visibility.data}
+              onClick={() => void runBulk("show", selection.selectedIds)}
+            >
+              Show
+            </Button>
+          </fieldset>
           <Button
             data-testid="skills-bulk-sync"
             variant="outline"
@@ -602,7 +624,7 @@ export default function Skills({ projectId }: { projectId: string }) {
                     data-testid="skill-select"
                     aria-label={`Select ${skill.name}`}
                     checked={selection.selectedIds.includes(skill.name)}
-                    disabled={bulk.isPending}
+                    disabled={bulk.isPending || searchPending}
                     onChange={() => selection.toggle(skill.name)}
                     className="size-4 accent-primary"
                   />
@@ -712,7 +734,7 @@ export default function Skills({ projectId }: { projectId: string }) {
                           data-testid="skill-select"
                           aria-label={`Select ${skill.name}`}
                           checked={selection.selectedIds.includes(skill.name)}
-                          disabled={bulk.isPending}
+                          disabled={bulk.isPending || searchPending}
                           onChange={() => selection.toggle(skill.name)}
                           className="size-4 accent-primary"
                         />

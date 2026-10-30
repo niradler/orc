@@ -25,9 +25,16 @@ test("skills paginate and searching resets the page while preserving relevance",
 
   await expect(page.getByTestId("skill-row")).toHaveCount(30);
   await expect(page.getByTestId("skills-page-summary")).toHaveText("1–30 of 35");
+  await page.getByTestId("skills-multiselect").click();
+  await page.getByTestId("skills-select-displayed").click();
+  await expect(page.getByTestId("bulk-actions")).toContainText("30 selected");
+  await expect(page.getByTestId("skills-select-displayed")).toHaveText("Deselect displayed");
   await page.getByTestId("skills-next").click();
   await expect(page.getByTestId("skill-row")).toHaveCount(5);
   await expect(page.getByTestId("skills-page-summary")).toHaveText("31–35 of 35");
+  await expect(page.getByTestId("bulk-actions")).toHaveCount(0);
+  await expect(page.locator('[data-testid="skill-select"]:checked')).toHaveCount(0);
+  await expect(page.getByTestId("skills-select-displayed")).toHaveText("Select displayed");
   await expect(page.getByTestId("skills-next")).toBeDisabled();
   await page.getByTestId("skills-previous").click();
   await expect(page.getByTestId("skill-row")).toHaveCount(30);

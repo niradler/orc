@@ -83,10 +83,25 @@ for (const width of [1440, 390, 320]) {
     }
     await page.getByTestId("skills-select-displayed").click();
     await expect(page.getByTestId("bulk-actions")).toContainText("2 selected");
+    await expect(page.getByTestId("skills-select-displayed")).toHaveText("Deselect displayed");
+    await expect(page.getByTestId("skills-select-displayed")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await global.getByTestId("skill-select").uncheck();
+    await expect(page.getByTestId("skills-select-displayed")).toHaveText("Select displayed");
+    await page.getByTestId("skills-select-displayed").click();
+    await expect(page.locator('[data-testid="skill-select"]:checked')).toHaveCount(2);
+    await page.getByTestId("skills-select-displayed").click();
+    await expect(page.getByTestId("bulk-actions")).toHaveCount(0);
+    await expect(page.getByTestId("skill-select")).toHaveCount(2);
+    await expect(page.getByTestId("skills-select-displayed")).toHaveText("Select displayed");
+    await page.getByTestId("skills-select-displayed").click();
     await page.getByTestId("clear-selection").click();
     await expect(page.getByTestId("bulk-actions")).toHaveCount(0);
     await global.getByTestId("skill-select").check();
     await page.getByTestId("skill-search-input").fill("scoped");
+    await expect(page.getByTestId("bulk-actions")).toHaveCount(0);
     await expect(page.getByTestId("skill-row")).toHaveCount(1);
     await expect(page.getByTestId("bulk-actions")).toHaveCount(0);
     await expect(scoped.getByTestId("skill-select")).not.toBeChecked();
@@ -100,6 +115,13 @@ for (const width of [1440, 390, 320]) {
     await page.getByTestId("skills-multiselect").click();
     await expect(page.getByTestId("clear-selection")).toBeDisabled();
     expect(writes).toBe(0);
+    await page.getByTestId("skills-select-displayed").click();
+    if (!(await page.getByTestId("skill-source-builtin").isVisible()))
+      await page.getByRole("button", { name: /^Filters/ }).click();
+    await page.getByTestId("skill-source-builtin").click();
+    if (width < 640) await page.keyboard.press("Escape");
+    await expect(page.getByTestId("bulk-actions")).toHaveCount(0);
+    await expect(page.getByTestId("skill-select").first()).not.toBeChecked();
     await page.getByTestId("skills-select-displayed").click();
     await selectProject(page, project.id);
     await expect(page.getByTestId("bulk-actions")).toHaveCount(0);
