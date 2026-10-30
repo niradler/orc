@@ -6,7 +6,13 @@ import { api, type GithubItem } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { useTasks } from "@/hooks/useTasks";
 
-export function GithubBoard({ projectId }: { projectId?: string }) {
+export function GithubBoard({
+  projectId,
+  unassigned = false,
+}: {
+  projectId?: string;
+  unassigned?: boolean;
+}) {
   const [filter, setFilter] = useState("relevant");
   const [open, setOpen] = useState(false);
   const panelId = useId();
@@ -23,10 +29,11 @@ export function GithubBoard({ projectId }: { projectId?: string }) {
   const feed = useQuery({
     queryKey: ["github", projectId, filter],
     queryFn: () => api.git.githubItems(filter, projectId),
-    enabled: open,
+    enabled: open && !unassigned,
     staleTime: 30_000,
     retry: false,
   });
+  if (unassigned) return null;
   return (
     <>
       <Button

@@ -1,5 +1,5 @@
 import { Link2, MessageSquare, Plus, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Task, TaskLinkType, TaskPriority, TaskStatus } from "@/api/client";
 import {
   BackendPicker,
@@ -11,6 +11,8 @@ import { ErrorState } from "@/components/ErrorState";
 import { FormDialog } from "@/components/FormDialog";
 import { FlowPicker, USE_DEFAULT_FLOW, useEffectiveFlow } from "@/components/flow/FlowPicker";
 import { FlowRunPanel, FlowSectionHeading } from "@/components/flow/FlowRunPanel";
+import { Markdown } from "@/components/Markdown";
+import { MarkdownField } from "@/components/MarkdownField";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TaskGitLinks } from "@/components/TaskGitLinks";
@@ -65,12 +67,28 @@ interface TaskDetailSheetProps {
   taskId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  projectScope?: string;
 }
 
-export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetProps) {
-  const { data: task, isLoading, error, refetch } = useTask(taskId);
-  const { data: comments } = useTaskComments(taskId);
-  const { data: links } = useTaskLinks(taskId);
+export function TaskDetailSheet({
+  taskId,
+  open,
+  onOpenChange,
+  projectScope = "all",
+}: TaskDetailSheetProps) {
+  const { data: fetchedTask, isLoading, error, refetch } = useTask(taskId);
+  const inScope =
+    fetchedTask &&
+    (projectScope === "all" ||
+      (projectScope === "unassigned"
+        ? fetchedTask.project_id === null
+        : fetchedTask.project_id === projectScope));
+  const task = inScope ? fetchedTask : undefined;
+  useEffect(() => {
+    if (open && fetchedTask && !inScope) onOpenChange(false);
+  }, [open, fetchedTask, inScope, onOpenChange]);
+  const { data: comments } = useTaskComments(task?.id ?? null);
+  const { data: links } = useTaskLinks(task?.id ?? null);
   const { data: projects } = useProjects();
   const addComment = useAddTaskComment();
   const createLink = useCreateTaskLink();
@@ -185,8 +203,11 @@ export function TaskDetailSheet({ taskId, open, onOpenChange }: TaskDetailSheetP
                 {task.body && (
                   <div className="space-y-1">
                     <div className="font-label text-xs font-medium text-outline">Body</div>
-                    <div className="font-body text-sm text-on-surface whitespace-pre-wrap wrap-break-word bg-transparent p-3 rounded-lg border border-border">
-                      {task.body}
+                    <div
+                      data-testid="task-detail-body"
+                      className="font-body text-sm text-on-surface wrap-break-word"
+                    >
+                      <Markdown readable>{task.body}</Markdown>
                     </div>
                   </div>
                 )}
@@ -577,16 +598,14 @@ function EditTaskDialog({
                   className="bg-background border-control-border text-on-surface font-body text-sm"
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label className="font-label text-xs font-medium text-outline">Body</Label>
-                <Textarea
-                  aria-label="Body"
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  className="bg-background border-control-border text-on-surface font-body text-sm resize-none"
-                  rows={4}
-                />
-              </div>
+              <MarkdownField
+                label="Body"
+                aria-label="Body"
+                data-testid="edit-task-body"
+                value={body}
+                onChange={setBody}
+                rows={4}
+              />
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:col-span-2">
                 <div className="space-y-1.5">
                   <Label className="font-label text-xs font-medium text-outline">Status</Label>

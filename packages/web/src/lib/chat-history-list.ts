@@ -21,6 +21,8 @@ export type ChatHistoryEntry = HistorySource & {
   title: string;
   updatedAt: number;
   observedState?: ChatHistoryState;
+  provider?: string;
+  projectId?: string | null;
 };
 
 export function mergeHistoryState(a: ChatHistoryState, b: ChatHistoryState): ChatHistoryState {
@@ -47,6 +49,7 @@ export function chatHistoryList(
   native: readonly LiveSession[],
   archived: readonly ArchiveSession[],
   query = "",
+  projectScope = "all",
 ): ChatHistoryEntry[] {
   const matches = (text: string) => text.toLowerCase().includes(query.trim().toLowerCase());
   const entries: ChatHistoryEntry[] = [];
@@ -68,10 +71,11 @@ export function chatHistoryList(
       !tab.questions.length
     )
       continue;
-    const title = tab.thread?.title || "New conversation";
+    const title = tab.thread?.title || "New session";
     const entry: ChatHistoryEntry = {
       kind: "local",
       tab,
+      projectId: tab.projectId,
       id: tab.thread ? `chat:${tab.thread.id}` : `draft:${tab.key}`,
       title,
       updatedAt: Math.max(
@@ -146,6 +150,8 @@ export function chatHistoryList(
       updatedAt: date,
     };
     if (!existing) entries.push(entry);
+    entry.provider ??= session.agent;
+    entry.projectId = session.project_id;
     observe(
       entry,
       session.waiting_for_human
@@ -195,6 +201,8 @@ export function chatHistoryList(
       updatedAt: date,
     };
     if (!existing) entries.push(entry);
+    entry.provider ??= session.agent;
+    if (entry.projectId === undefined) entry.projectId = session.project_id;
     entry.updatedAt = Math.max(entry.updatedAt, date);
     // A full-text archive hit must still reveal its canonical conversation, even if the title differs.
     archiveMatches.add(entry.id);
@@ -204,6 +212,13 @@ export function chatHistoryList(
     );
   }
   return entries
+    .filter(
+      (entry) =>
+        projectScope === "all" ||
+        (projectScope === "unassigned"
+          ? entry.projectId === null
+          : entry.projectId === projectScope),
+    )
     .filter(
       (entry) => matches(keywords.get(entry.id) ?? entry.title) || archiveMatches.has(entry.id),
     )

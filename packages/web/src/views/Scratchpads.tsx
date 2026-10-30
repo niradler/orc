@@ -105,8 +105,16 @@ function ScratchpadList({ defaultProjectId }: { defaultProjectId: string }) {
   const desktop = useBreakpoint("lg");
   const navigate = useNavigate();
   const location = useLocation();
-  // Pads are often project-less, so the list starts across every project, not the sidebar's.
-  const [project, setProject] = useViewParam<string>("padProject", ALL);
+  const [project, setProject] = useViewParam<string>("project", defaultProjectId);
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const legacyProject = params.get("padProject");
+    if (!legacyProject) return;
+    // Older pad links used a separate filter; migrate them to the shared project selection.
+    if (!params.has("project")) params.set("project", legacyProject);
+    params.delete("padProject");
+    navigate({ search: params.toString() }, { replace: true });
+  }, [location.search, navigate]);
   const [kind, setKind] = useViewParam<ScratchpadKind | typeof ALL>("padKind", ALL, [
     ALL,
     ...SCRATCHPAD_KINDS,
@@ -133,13 +141,14 @@ function ScratchpadList({ defaultProjectId }: { defaultProjectId: string }) {
   const list = useScratchpads({
     kind: kind === ALL ? undefined : kind,
     project_id: project === ALL || project === UNASSIGNED ? undefined : project,
+    include_global: project !== ALL && project !== UNASSIGNED ? "true" : undefined,
     unassigned: project === UNASSIGNED ? "true" : undefined,
     q: query || undefined,
     limit: LIST_LIMIT,
   });
   const pads = list.data?.scratchpads ?? [];
   const projectName = (id: string | null) =>
-    id ? (projects?.find((p) => p.id === id)?.name ?? id) : "—";
+    id ? (projects?.find((p) => p.id === id)?.name ?? id) : "Global";
   const filtered = Boolean(query) || kind !== ALL || project !== ALL;
 
   return (
@@ -198,7 +207,7 @@ function ScratchpadList({ defaultProjectId }: { defaultProjectId: string }) {
                 All projects
               </SelectItem>
               <SelectItem value={UNASSIGNED} className="font-body text-sm">
-                No project
+                Global
               </SelectItem>
               {projects?.map((p) => (
                 <SelectItem

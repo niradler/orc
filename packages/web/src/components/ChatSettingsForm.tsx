@@ -46,7 +46,7 @@ export function ChatSettingsForm() {
       await api.settings.save({ chat });
       setConfig(chat);
       window.dispatchEvent(new Event("orc-chat-settings-changed"));
-      setFeedback("Chat defaults saved. They apply to new conversations on every device.");
+      setFeedback("Chat defaults saved. They apply to new sessions on every device.");
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "Chat settings could not be saved.");
     } finally {
@@ -64,8 +64,8 @@ export function ChatSettingsForm() {
           Chat
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Defaults for new conversations. Existing chats keep their configuration. Credentials stay
-          on the execution host.
+          Defaults for new sessions. Existing chats keep their configuration. Credentials stay on
+          the execution host.
         </p>
       </div>
       {config && (

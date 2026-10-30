@@ -61,7 +61,7 @@ export class ScratchpadStore {
     }
     if (query.project_id === null) where.push("project_id IS NULL");
     else if (query.project_id) {
-      where.push("project_id=?");
+      where.push(query.include_global ? "(project_id=? OR project_id IS NULL)" : "project_id=?");
       params.push(query.project_id);
     }
     if (query.session_id) {

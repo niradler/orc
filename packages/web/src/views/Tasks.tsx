@@ -145,7 +145,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
     isLoading,
     error,
     refetch,
-  } = useTasks(apiProjectId ? { project_id: apiProjectId } : undefined);
+  } = useTasks(projectId === "all" ? undefined : { project_id: projectId });
   const updateTask = useUpdateTask();
   const deleteTask = useDeleteTask();
 
@@ -295,7 +295,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
             </SelectContent>
           </Select>
         </ResponsiveFilters>
-        <GithubBoard projectId={apiProjectId} />
+        <GithubBoard projectId={apiProjectId} unassigned={projectId === "unassigned"} />
       </div>
 
       {viewMode === "board" ? (
@@ -586,6 +586,7 @@ export default function Tasks({ projectId: savedProjectId }: TasksProps) {
       />
 
       <TaskDetailSheet
+        projectScope={projectId}
         taskId={selectedTaskId}
         open={selectedTaskId !== null}
         onOpenChange={(open) => {

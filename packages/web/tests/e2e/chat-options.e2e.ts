@@ -32,7 +32,7 @@ for (const width of [390, 1440]) {
     await editor.fill('["--approve-all", "--timeout", "120"]');
     await apply.click();
     await expect(page.getByTestId("chat-agent-options-feedback")).toContainText(
-      "start this conversation",
+      "start this session",
     );
     await page.keyboard.press("Escape");
     await chooseChatAgent(page, "claude");

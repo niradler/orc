@@ -75,6 +75,8 @@ export type SkillListSort = ListSort;
 export type SkillListOptions = ListSkillsOpts & {
   sort?: SkillListSort | undefined;
   projectIds?: readonly string[];
+  /** Library browsing across projects; agent discovery keeps its scoped default. */
+  allProjects?: boolean;
 };
 /** Where a skill read came from; `ui` is a person browsing the web app, the rest are agents. */
 export type SkillReadSource = ReadSource;
@@ -188,7 +190,7 @@ export class SkillHistory {
     let skills = listSkills({ ...opts, q: undefined, include_hidden: true })
       .filter((skill) => {
         const ids = assignments.get(skill.name) ?? [];
-        return ids.length === 0 || projectIds.some((id) => ids.includes(id));
+        return opts?.allProjects || ids.length === 0 || projectIds.some((id) => ids.includes(id));
       })
       .map((skill) => ({
         ...this.withUsage(

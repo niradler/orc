@@ -51,9 +51,7 @@ export function ChatAgentOptionsEditor() {
     try {
       if (!(await applyAgentOptions(agent, parsed.data))) return;
       setFeedback(
-        threadId
-          ? "Saved. Applies to your next message."
-          : "Applies when you start this conversation.",
+        threadId ? "Saved. Applies to your next message." : "Applies when you start this session.",
       );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Launch options could not be saved.");

@@ -397,9 +397,9 @@ Keep provider thinking and tool input/results collapsed by default, with native
 details/summary keyboard and touch interaction. Show real provider events only;
 use the responding indicator while a provider is quiet. Preserve activity with
 the conversation and show permission decisions separately from tool results.
-Settings owns new-chat defaults; the chat model dialog shows the conversation's
+Settings owns new-chat defaults; the chat model dialog shows the session's
 actual instructions, tools connection, permissions and execution folder. Changing
-agents starts a new conversation; changing models affects the next turn.
+agents starts a new session; changing models affects the next turn.
 
 On narrow screens, Knowledge Browse is a modal with trapped focus and a visible
 close action. Restore focus to its trigger when dismissed; selecting a document
@@ -532,6 +532,14 @@ summary; those are examples, not mandatory heights for every component.
 
 ### Chat and terminal continuity
 
+Use **Sessions** consistently in chat navigation. Keep history flat, ordered by
+latest activity descending; do not pin open sessions above newer history. Place
+the new-session plus beside the Sessions title. Each row uses its actual provider
+icon, with a state color and accessible explanation; do not infer stale or running
+state from age. Keep useful session actions in the header when space permits and
+move them into More at narrower panel widths. Keep agent/model controls in the
+composer, and preserve settings drafts across responsive transitions.
+
 Keep messages on a calm reading surface with light role/agent attribution.
 Avoid a border around every assistant paragraph or a new card for each chunk.
 The composer is a recognizable working area with clear send/cancel states.
@@ -636,6 +644,20 @@ scrollback and key input. Syntax colors may remain domain-specific where needed 
 legibility; no blanket grayscale filters or broad descendant color overrides.
 
 ### Selection and bulk actions
+
+Skills selection is opt-in: default rows hide checkboxes, Multiselect reveals
+them and becomes Select displayed, and Done exits selection. Preserve retry and
+scope-reset behavior. Show Global or project scope as a desktop column and phone
+metadata. Shared resources (Skills, Knowledge and Scratchpads) show global plus
+the selected project; All projects shows all, and Unassigned shows global-only
+resources. Project-owned work and session history use exact project filtering.
+Unknown session ownership belongs in All projects only. Unassigned requires a
+session known to have no project; never invent ownership for older saved chats.
+
+Markdown content fields provide compact Edit/Preview controls using the existing
+safe renderer. Content-only panels should fill their available height and scroll
+within the reading/editing region. Keep native validation, unsaved work and the
+established document editor's Read/Edit/Split workflow intact.
 
 Resource lists should support selecting specific entries and applying common actions
 without opening an editor for each item. Jobs and Projects are the first adopters.

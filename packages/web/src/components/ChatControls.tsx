@@ -1,19 +1,13 @@
 import { ChatModelSchema } from "@orc/core/chat";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import { useQuery } from "@tanstack/react-query";
-import {
-  ChevronDown,
-  CircleAlert,
-  CircleDot,
-  History,
-  LoaderCircle,
-  MessageSquare,
-  PanelLeftClose,
-  Settings2,
-  X,
-} from "lucide-react";
+import { ChevronDown, History, PanelLeftClose, Plus, X } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
 import { api } from "@/api/client";
+import claudeIcon from "@/assets/providers/claude.svg?no-inline";
+import codexIcon from "@/assets/providers/codex.svg?no-inline";
+import copilotIcon from "@/assets/providers/copilot.svg?no-inline";
+import cursorIcon from "@/assets/providers/cursor.svg?no-inline";
 import { ActionHelp } from "@/components/ActionHelp";
 import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
 import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
@@ -31,6 +25,13 @@ import { useChat } from "@/hooks/useChat";
 import { useSsh } from "@/hooks/useSsh";
 import { type ChatHistoryEntry, chatHistoryList, mergeHistoryState } from "@/lib/chat-history-list";
 
+const providerIcons: Record<string, string> = {
+  claude: claudeIcon,
+  codex: codexIcon,
+  copilot: copilotIcon,
+  cursor: cursorIcon,
+};
+
 export function ChatSessionPicker({
   docked = false,
   onCollapse,
@@ -41,6 +42,7 @@ export function ChatSessionPicker({
   onExpand?: () => void;
 }) {
   const chat = useChat();
+  const projectScope = chat.projectScope;
   const [dialogOpen, setOpen] = useState(false);
   const open = docked || dialogOpen;
   const [search, setSearch] = useState("");
@@ -60,21 +62,31 @@ export function ChatSessionPicker({
     staleTime: 0,
   });
   const live = useQuery({
-    queryKey: ["chat-resume-sessions", open],
-    queryFn: () => api.sessions.live({ active: false, limit: 5000 }),
+    queryKey: ["chat-resume-sessions", open, projectScope],
+    queryFn: () =>
+      api.sessions.live({
+        active: false,
+        limit: 5000,
+        ...(projectScope === "all" ? {} : { project_id: projectScope }),
+      }),
     enabled: open,
     staleTime: 0,
   });
   const archive = useQuery({
-    queryKey: ["chat-resume-archive", search],
-    queryFn: () => api.sessions.archive({ q: search, limit: 30 }),
+    queryKey: ["chat-resume-archive", search, projectScope],
+    queryFn: () =>
+      api.sessions.archive({
+        q: search,
+        limit: 30,
+        ...(projectScope === "all" ? {} : { project_id: projectScope }),
+      }),
     enabled: open,
   });
-  async function select(load: () => ReturnType<typeof api.chat.get>) {
+  async function select(load: () => ReturnType<typeof api.chat.get>, projectId?: string | null) {
     setPending(true);
     setError("");
     try {
-      chat.openThread(await load());
+      chat.openThread(await load(), { projectId });
       setOpen(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Session could not be opened.");
@@ -88,6 +100,7 @@ export function ChatSessionPicker({
     live.data?.sessions ?? [],
     archive.data?.sessions ?? [],
     search,
+    projectScope,
   );
   const loading = threads.isLoading || live.isLoading || archive.isLoading;
   return (
@@ -97,11 +110,12 @@ export function ChatSessionPicker({
       onOpenChange={setOpen}
       onCollapse={onCollapse}
       onExpand={onExpand}
+      newDisabled={pending}
     >
       {selectedArchive ? (
         <section className="min-w-0 space-y-3">
           <Button variant="ghost" disabled={pending} onClick={() => setSelectedArchive(null)}>
-            Back to conversations
+            Back to sessions
           </Button>
           <h3 className="font-medium wrap-break-word">{selectedArchive.title}</h3>
           <p className="text-sm text-muted-foreground">
@@ -142,7 +156,7 @@ export function ChatSessionPicker({
                 if (handoff.status !== "ready" || !handoff.live_session_id)
                   throw new Error(handoff.error || "The imported session is not ready to resume.");
                 return api.chat.resume(handoff.live_session_id);
-              })
+              }, selectedArchive.project_id)
             }
           >
             {pending ? "Preparing…" : "Prepare and resume in chat"}
@@ -150,22 +164,10 @@ export function ChatSessionPicker({
         </section>
       ) : (
         <>
-          <Button
-            variant="ghost"
-            className="w-full justify-start"
-            data-testid="chat-history-new"
-            disabled={pending}
-            onClick={() => {
-              chat.newTab();
-              setOpen(false);
-            }}
-          >
-            New conversation
-          </Button>
           <Input
             data-testid="chat-session-search"
-            aria-label="Search conversations"
-            placeholder="Search conversations…"
+            aria-label="Search sessions"
+            placeholder="Search sessions…"
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
@@ -179,8 +181,10 @@ export function ChatSessionPicker({
                 entry={entry}
                 pending={pending}
                 onLocalSelect={() => setOpen(false)}
-                onSavedSelect={(id) => void select(() => api.chat.get(id))}
-                onNativeSelect={(id) => void select(() => api.chat.resume(id))}
+                onSavedSelect={(id, projectId) => void select(() => api.chat.get(id), projectId)}
+                onNativeSelect={(id, projectId) =>
+                  void select(() => api.chat.resume(id), projectId)
+                }
                 onArchiveSelect={(session) => {
                   setSelectedArchive(session);
                   setRepository(session.metadata.repository ?? "");
@@ -199,7 +203,7 @@ export function ChatSessionPicker({
           )}
           {!loading && !entries.length && (
             <p className="px-2 text-sm text-muted-foreground">
-              {search ? "No sessions match." : "No conversations yet."}
+              {search ? "No sessions match." : "No sessions yet."}
             </p>
           )}
           {entries.length > visibleCount && (
@@ -229,7 +233,9 @@ function SessionHistoryFrame({
   onCollapse,
   onExpand,
   children,
+  newDisabled,
 }: {
+  newDisabled: boolean;
   docked: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -244,15 +250,30 @@ function SessionHistoryFrame({
       (tab.permissions.length || tab.questions.length || tab.attention || tab.error),
   ).length;
   const content = useRef<HTMLDivElement>(null);
+  const newSession = (
+    <Button
+      variant="ghost"
+      size="icon"
+      data-testid="chat-history-new"
+      aria-label="New session"
+      disabled={newDisabled}
+      onClick={() => {
+        chat.newTab();
+        onOpenChange(false);
+      }}
+    >
+      <span data-testid={docked ? "chat-clear-button" : undefined} className="inline-flex">
+        <Plus size={16} />
+      </span>
+    </Button>
+  );
   const trigger = (
     <button
       type="button"
       data-testid="chat-sessions-button"
-      aria-label={
-        pending ? `Sessions, ${pending} need attention` : "Sessions, conversation history"
-      }
+      aria-label={pending ? `Sessions, ${pending} need attention` : "Sessions, session history"}
       title="Session history"
-      className="absolute left-2 top-1 z-10 inline-flex min-h-8 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-surface"
+      className="inline-flex min-h-8 items-center gap-1.5 rounded-md px-2 text-xs text-muted-foreground hover:bg-surface"
       onClick={onExpand}
     >
       <History size={16} />
@@ -267,7 +288,8 @@ function SessionHistoryFrame({
         className="flex w-64 shrink-0 flex-col border-r border-border px-3 py-3"
       >
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="px-2 text-sm font-medium">Sessions</h2>
+          <h2 className="px-2 text-sm font-medium flex-1">Sessions</h2>
+          {newSession}
           <Button
             variant="ghost"
             size="icon"
@@ -282,7 +304,19 @@ function SessionHistoryFrame({
     );
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {onExpand ? trigger : <DialogTrigger asChild>{trigger}</DialogTrigger>}
+      <div className="absolute left-2 top-1 z-10 flex items-center gap-1">
+        {onExpand ? trigger : <DialogTrigger asChild>{trigger}</DialogTrigger>}
+        <Button
+          variant="ghost"
+          size="icon"
+          data-testid="chat-clear-button"
+          aria-label="New session"
+          disabled={newDisabled}
+          onClick={() => chat.newTab()}
+        >
+          <Plus size={16} />
+        </Button>
+      </div>
       <DialogContent
         ref={content}
         data-testid="chat-sessions-dialog"
@@ -292,7 +326,10 @@ function SessionHistoryFrame({
           content.current?.focus();
         }}
       >
-        <DialogTitle>Session history</DialogTitle>
+        <div className="flex items-center gap-2 pr-8">
+          <DialogTitle className="flex-1">Sessions</DialogTitle>
+          {newSession}
+        </div>
         {children}
       </DialogContent>
     </Dialog>
@@ -311,8 +348,8 @@ function HistoryRow({
   entry: ChatHistoryEntry;
   pending: boolean;
   onLocalSelect: () => void;
-  onSavedSelect: (id: string) => void;
-  onNativeSelect: (id: string) => void;
+  onSavedSelect: (id: string, projectId?: string | null) => void;
+  onNativeSelect: (id: string, projectId?: string | null) => void;
   onArchiveSelect: (session: ArchiveSession) => void;
 }) {
   const chat = useChat();
@@ -349,9 +386,13 @@ function HistoryRow({
   const state = mergeHistoryState(localState, entry.observedState ?? "idle");
   const agent =
     tab?.config.agent ||
-    (entry.kind === "native" || entry.kind === "archive" ? entry.session.agent : "");
+    (entry.kind === "saved"
+      ? entry.thread.agent || entry.provider
+      : entry.kind === "native" || entry.kind === "archive"
+        ? entry.session.agent
+        : "");
   const status = {
-    idle: "Saved conversation",
+    idle: "Saved session",
     open: "Open session",
     running: "Working",
     waiting: "Needs your input",
@@ -363,18 +404,10 @@ function HistoryRow({
     if (entry.kind === "local") {
       chat.selectTab(entry.tab.key);
       onLocalSelect();
-    } else if (entry.kind === "saved") onSavedSelect(entry.thread.id);
-    else if (entry.kind === "native") onNativeSelect(entry.session.id);
+    } else if (entry.kind === "saved") onSavedSelect(entry.thread.id, entry.projectId);
+    else if (entry.kind === "native") onNativeSelect(entry.session.id, entry.projectId);
     else onArchiveSelect(entry.session);
   };
-  const Glyph =
-    state === "running"
-      ? LoaderCircle
-      : state === "waiting" || state === "error"
-        ? CircleAlert
-        : state === "open" || state === "attention"
-          ? CircleDot
-          : MessageSquare;
   const testId =
     entry.kind === "local"
       ? "chat-session-select"
@@ -394,50 +427,64 @@ function HistoryRow({
       data-state={state}
       className={`group flex min-w-0 items-center rounded-md ${selected ? "bg-surface-highest" : "hover:bg-surface"}`}
     >
-      <button
-        type="button"
-        data-testid={testId}
-        aria-current={selected ? "true" : undefined}
-        disabled={pending || liveBusy}
-        title={
-          entry.title +
-          "\n" +
-          [
-            agent,
-            status,
-            entry.updatedAt ? new Date(entry.updatedAt).toLocaleString() : "",
-            liveBusy ? "End the original agent before resuming here." : "",
-          ]
-            .filter(Boolean)
-            .join(" · ")
-        }
-        onClick={selectRow}
-        className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left disabled:opacity-60"
+      <ActionHelp
+        label={`${agent || "Unknown provider"} · ${status}`}
+        description={`${entry.title}${liveBusy ? ". End the original agent before resuming here." : ""}`}
       >
-        <Glyph
-          data-testid="chat-session-status"
-          data-state={state}
-          role="img"
-          aria-label={status}
-          size={15}
-          className={`shrink-0 ${state === "waiting" ? "text-warning" : state === "error" ? "text-error" : state === "running" ? "animate-spin text-progress" : state === "open" || state === "attention" ? "text-progress" : "text-muted-foreground"}`}
-        />
-        <span className="min-w-0 flex-1 truncate text-[13px]">{entry.title}</span>
-        <span className="sr-only">
-          {agent ? ` · ${agent}` : ""}
-          {tab?.draft ? " · Draft" : ""}
-          {liveBusy
-            ? " · End the original agent before resuming here."
-            : entry.kind === "archive"
-              ? " · Import and resume"
-              : ""}
-        </span>
-        {entry.kind === "saved" && entry.thread.running && (
-          <span data-testid="chat-thread-running" className="sr-only">
-            Running
+        <button
+          type="button"
+          data-testid={testId}
+          aria-current={selected ? "true" : undefined}
+          disabled={pending || liveBusy}
+          onClick={selectRow}
+          className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left disabled:opacity-60"
+        >
+          <span
+            data-testid="chat-session-status"
+            data-state={state}
+            role="img"
+            aria-label={`${agent || "Unknown provider"} · ${status}`}
+            title={`${agent || "Unknown provider"} · ${status}`}
+            className={`inline-flex size-5 shrink-0 items-center justify-center text-[10px] font-semibold ${state === "waiting" || state === "attention" ? "text-warning" : state === "error" ? "text-error" : state === "running" || state === "open" ? "text-progress" : "text-muted-foreground"}`}
+          >
+            {agent && providerIcons[agent] ? (
+              <span
+                aria-hidden="true"
+                data-testid="chat-session-provider"
+                data-provider={agent}
+                className="size-4 bg-current"
+                style={{
+                  mask: `url(${providerIcons[agent]}) center / contain no-repeat`,
+                  WebkitMask: `url(${providerIcons[agent]}) center / contain no-repeat`,
+                }}
+              />
+            ) : (
+              <span
+                aria-hidden="true"
+                data-testid="chat-session-provider"
+                data-provider={agent || "unknown"}
+              >
+                {agent ? agent.slice(0, 2).toUpperCase() : "?"}
+              </span>
+            )}
           </span>
-        )}
-      </button>
+          <span className="min-w-0 flex-1 truncate text-[13px]">{entry.title}</span>
+          <span className="sr-only">
+            {agent ? ` · ${agent}` : ""}
+            {tab?.draft ? " · Draft" : ""}
+            {liveBusy
+              ? " · End the original agent before resuming here."
+              : entry.kind === "archive"
+                ? " · Import and resume"
+                : ""}
+          </span>
+          {entry.kind === "saved" && entry.thread.running && (
+            <span data-testid="chat-thread-running" className="sr-only">
+              Running
+            </span>
+          )}
+        </button>
+      </ActionHelp>
       {open && tab && (
         <ActionHelp
           label={`Close ${entry.title} from open sessions`}
@@ -485,7 +532,7 @@ export function ChatAgentPicker() {
         <h2 className="text-sm font-medium">Choose agent</h2>
         {chat.thread && (
           <p className="text-xs text-muted-foreground">
-            Changing agents starts a new conversation. This session is kept in history.
+            Changing agents starts a new session. This session is kept in history.
           </p>
         )}
         <label className="block text-xs text-muted-foreground">
@@ -633,23 +680,18 @@ export function ChatModelPicker() {
   );
 }
 
-export function ChatConversationInfo() {
+export function ChatConversationInfo({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   const { config, changePermissions, thread } = useChat();
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <button
-          type="button"
-          data-testid="chat-config-button"
-          aria-label="Conversation settings"
-          title="Conversation settings"
-          className="inline-flex min-h-8 min-w-8 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface"
-        >
-          <Settings2 size={17} />
-        </button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent data-testid="chat-config-dialog" className="w-[calc(100%-1rem)]">
-        <DialogTitle>Conversation settings</DialogTitle>
+        <DialogTitle>Session settings</DialogTitle>
         <DialogDescription>
           Loosening permissions applies right away, including to a pending approval. Stricter
           permissions apply to your next message. Change new-chat defaults in Settings.
@@ -681,7 +723,7 @@ export function ChatConversationInfo() {
         </dl>
         <ChatAgentOptionsEditor key={`${config.agent}:${thread?.id ?? "new"}`} />
         <details className="text-sm">
-          <summary className="min-h-11 cursor-pointer py-3">Conversation instructions</summary>
+          <summary className="min-h-11 cursor-pointer py-3">Session instructions</summary>
           <pre className="max-h-48 overflow-auto whitespace-pre-wrap wrap-break-word text-xs">
             {config.system || "No additional instructions"}
           </pre>

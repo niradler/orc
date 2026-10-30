@@ -180,7 +180,9 @@ for (const width of [390, 1440]) {
     expect(state.answer).toEqual({ requestId: "question-1", answers: { color: ["Blue"] } });
     await openChatActions(page);
     const toTerminal = page.getByTestId("chat-continue-terminal").filter({ visible: true });
-    await expect(toTerminal).toHaveAttribute("title", "Continue in terminal");
+    await expect(toTerminal).toHaveAttribute("aria-label", "Continue in terminal");
+    await toTerminal.focus();
+    await expect(page.getByTestId("action-help-content")).toContainText("Continue in terminal");
     await expect(toTerminal).toBeEnabled();
     await expect(toTerminal).toHaveText("");
     await page.screenshot({ path: testInfo.outputPath(`chat-interactions-${width}.png`) });

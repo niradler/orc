@@ -45,6 +45,23 @@ describe("chat preferences", () => {
     expect(parseChatTabs(JSON.stringify({ threads: [id], active: "other" })).active).toBeNull();
     expect(parseChatTabs("broken")).toEqual({ threads: [], active: null });
   });
+
+  test("workspace project hints survive reload without trusting unrelated or malformed storage", () => {
+    const id = "3f0c831c-500d-4ae5-9c83-0d2bc6c431fa";
+    expect(
+      parseChatTabs(
+        JSON.stringify({ threads: [id], projectIds: { [id]: "project-a", other: "project-b" } }),
+      ).projectIds,
+    ).toEqual({ [id]: "project-a" });
+    expect(
+      parseChatTabs(JSON.stringify({ threads: [id], projectIds: { [id]: null } })).projectIds,
+    ).toEqual({ [id]: null });
+    for (const value of [42, "all", "unassigned", "", "x".repeat(101), {}]) {
+      expect(
+        parseChatTabs(JSON.stringify({ threads: [id], projectIds: { [id]: value } })).projectIds,
+      ).toBeUndefined();
+    }
+  });
 });
 
 describe("chat SSE contract", () => {

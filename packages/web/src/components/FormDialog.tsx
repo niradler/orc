@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
 
 /** Long configuration forms keep their actions visible and protect an unfinished draft. */
 export function FormDialog(props: Parameters<typeof ActiveFormDialog>[0]) {
@@ -22,6 +23,7 @@ function ActiveFormDialog({
   onClose,
   onDiscard,
   testId = "form-dialog",
+  className,
   children,
 }: {
   open: boolean;
@@ -30,6 +32,7 @@ function ActiveFormDialog({
   onClose: () => void;
   onDiscard?: () => void;
   testId?: string;
+  className?: string;
   children: (requestClose: () => void, closeAfterSave: () => void) => ReactNode;
 }) {
   const [confirming, setConfirming] = useState(false);
@@ -89,7 +92,10 @@ function ActiveFormDialog({
           data-testid={testId}
           closeDisabled={busy}
           aria-busy={busy}
-          className="work-form-dialog flex w-[min(960px,calc(100vw-3rem))] max-w-none flex-col gap-0 overflow-hidden p-0 max-sm:h-[var(--app-height,100dvh)] max-sm:max-h-[var(--app-height,100dvh)] max-sm:w-full max-sm:rounded-none max-sm:border-0"
+          className={cn(
+            "work-form-dialog flex w-[min(960px,calc(100vw-3rem))] max-w-none flex-col gap-0 overflow-hidden p-0 max-sm:h-[var(--app-height,100dvh)] max-sm:max-h-[var(--app-height,100dvh)] max-sm:w-full max-sm:rounded-none max-sm:border-0",
+            className,
+          )}
           onCloseAutoFocus={(event) => {
             if (!opener.current?.isConnected) return;
             event.preventDefault();

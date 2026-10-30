@@ -228,6 +228,7 @@ test("imports a real GitHub skill, edits it, reopens it and preserves edits on s
   await page.getByTestId("markdown-mode-read").click();
   await expect(page.getByTestId("markdown-preview")).toContainText("Local customization:");
   await gotoView(page, "skills");
+  await page.getByTestId("skills-multiselect").click();
   await expect(row.getByTestId("skill-select")).toBeVisible();
   await row.getByTestId("skill-select").check();
   await page.getByTestId("skills-bulk-sync").click();
@@ -336,9 +337,12 @@ test("bulk actions sync only GitHub skills, retain conflicts and delete selected
   await page.getByTestId("skill-search-input").fill(prefix);
 
   await expect(page.getByTestId("skill-row")).toHaveCount(3);
+  await expect(page.getByTestId("skill-select")).toHaveCount(0);
+  await expect(page.getByTestId("bulk-actions")).toHaveCount(0);
+  await page.getByTestId("skills-multiselect").click();
   await expect(page.getByTestId("skill-select")).toHaveCount(3);
-  await expect(page.getByTestId("select-all-rows")).toBeEnabled();
-  await page.getByTestId("select-all-rows").check();
+  await expect(page.getByTestId("skills-select-displayed")).toBeEnabled();
+  await page.getByTestId("skills-select-displayed").click();
   await expect(page.getByTestId("skills-bulk-sync")).toHaveText("Sync from GitHub (2)");
   await expect(page.getByTestId("skills-bulk-delete")).toHaveText("Delete (3)");
   await page.getByTestId("skills-bulk-sync").click();
@@ -359,7 +363,7 @@ test("bulk actions sync only GitHub skills, retain conflicts and delete selected
   await expect(page.getByTestId("skills-bulk-result")).toHaveCount(0);
   await page.getByTestId("skill-source-all").click();
   await expect(page.getByTestId("skill-select").first()).not.toBeChecked();
-  await page.getByTestId("select-all-rows").check();
+  await page.getByTestId("skills-select-displayed").click();
   await page.getByTestId("skills-bulk-delete").click();
   await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
   await expect(page.getByTestId("skills-bulk-result")).toContainText("3 deleted.");
@@ -405,6 +409,7 @@ test("shows GitHub repositories and sorts groups without losing skill selection"
     "href",
     "https://github.com/zulu/skills",
   );
+  await page.getByTestId("skills-multiselect").click();
   await zulu.getByTestId("skill-select").check();
   const original = await rows.evaluateAll((elements) =>
     elements.map((element) => element.getAttribute("data-skill-name")),

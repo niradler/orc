@@ -68,8 +68,9 @@ export function LiveSessions({ projectId }: { projectId: string }) {
   }, [draft, query, setParam]);
 
   const searching = query.trim().length >= 2;
-  const list = useLiveSessions(!showEnded);
-  const search = useSessionSearch(searching ? query.trim() : "", agent);
+  const scopedProject = projectId === "all" ? undefined : projectId;
+  const list = useLiveSessions(!showEnded, scopedProject);
+  const search = useSessionSearch(searching ? query.trim() : "", agent, scopedProject);
   const { data: projects } = useProjects();
   const sync = useSyncSessions();
 

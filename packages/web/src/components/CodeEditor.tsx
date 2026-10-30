@@ -22,6 +22,7 @@ export type CodeEditorProps = {
   layout?: MarkdownEditorProps["layout"];
   hideFrontmatter?: boolean;
   pageTitle?: string;
+  compact?: boolean;
 };
 
 export function CodeEditor(props: CodeEditorProps) {

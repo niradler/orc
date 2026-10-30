@@ -79,7 +79,7 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
     isLoading,
     error,
     refetch,
-  } = useJobs({ project_id: scopedProjectId, limit: 100 });
+  } = useJobs({ project_id: projectId === "all" ? undefined : projectId, limit: 100 });
   const scopedJobs =
     projectId === "unassigned" ? allJobs?.filter((job) => job.project_id === null) : allJobs;
   const jobs = scopedJobs?.filter(
@@ -502,6 +502,7 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
       )}
 
       <JobDetailSheet
+        projectScope={projectId}
         jobId={selectedJobId}
         open={Boolean(selectedJobId)}
         onClose={closeJobDetail}

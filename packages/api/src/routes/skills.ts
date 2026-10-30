@@ -381,6 +381,7 @@ const listRoute = createRoute({
   request: {
     query: z.object({
       ...ScopeQuerySchema.shape,
+      scope: z.enum(["global", "all"]).optional(),
       q: z
         .string()
         .max(500)
@@ -815,13 +816,27 @@ app.openapi(
 );
 
 app.openapi(listRoute, (c) => {
-  const { q, source, sort, limit = 30, offset = 0, reload, include_hidden } = c.req.valid("query");
-  const skills = new SkillHistory(getSqlite()).list(resolveScopeProject(c.req.valid("query")), {
+  const {
+    q,
+    source,
+    sort,
+    limit = 30,
+    offset = 0,
+    reload,
+    include_hidden,
+    scope,
+    project_id,
+  } = c.req.valid("query");
+  if (scope === "all" && project_id)
+    throw new ValidationError("Choose all projects or one project");
+  const projectId = scope === "all" ? null : resolveScopeProject({ project_id, scope });
+  const skills = new SkillHistory(getSqlite()).list(projectId, {
     q,
     source: source as SkillSource | undefined,
     sort,
     reload,
     include_hidden,
+    allProjects: scope === "all",
   });
   return c.json({
     skills: skills.slice(offset, offset + limit),

@@ -9,6 +9,7 @@ import {
   MoreHorizontal,
   Pencil,
   RefreshCw,
+  Settings2,
   Square,
   Trash2,
   X,
@@ -17,7 +18,10 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentMessageText } from "@/components/AgentMessageText";
 import { ChatActivityList } from "@/components/ChatActivityList";
-import { ChatContinueInTerminal } from "@/components/ChatContinueInTerminal";
+import {
+  ChatContinueInTerminal,
+  useChatContinueInTerminal,
+} from "@/components/ChatContinueInTerminal";
 import {
   ChatAgentPicker,
   ChatConversationInfo,
@@ -66,7 +70,6 @@ export function ChatPanel({
     streamingAgent,
     error,
     config,
-    newTab,
     ready,
     thread,
     historyBefore,
@@ -92,6 +95,7 @@ export function ChatPanel({
     send,
     cancel,
   } = useChat();
+  const terminalControl = useChatContinueInTerminal();
   const desktop = useBreakpoint("xl");
   const [historyVisible, setHistoryVisible] = useState(true);
   const docked = fullscreen && desktop && historyVisible;
@@ -100,6 +104,17 @@ export function ChatPanel({
     void send(draft);
     setDraft("");
   };
+  const header = useRef<HTMLElement>(null);
+  const [headerWide, setHeaderWide] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  useLayoutEffect(() => {
+    if (!open || !header.current) return;
+    const observer = new ResizeObserver(([entry]) =>
+      setHeaderWide((entry?.contentRect.width ?? 0) >= 620),
+    );
+    observer.observe(header.current);
+    return () => observer.disconnect();
+  }, [open]);
   const input = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
     if (!open) return;
@@ -183,54 +198,28 @@ export function ChatPanel({
       />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header
+          ref={header}
           className={cn(
             "chat-header flex min-h-12 shrink-0 items-center gap-1 px-3 py-1",
-            !docked && "pl-32",
+            !docked && "pl-40",
           )}
         >
           <h2
             className="min-w-0 flex-1 truncate text-sm font-medium"
-            title={thread?.title || "New conversation"}
+            title={thread?.title || "Sessions"}
           >
-            {thread?.title || "New conversation"}
+            {thread?.title || "Sessions"}
           </h2>
-          <ActionHelp label="New conversation">
-            <button
-              type="button"
-              data-testid="chat-clear-button"
-              onClick={newTab}
-              aria-label="New conversation"
-              className={iconButton}
-            >
-              <Pencil size={16} />
-            </button>
-          </ActionHelp>
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                aria-label="Conversation actions"
-                data-testid="chat-options-button"
-                className={iconButton}
-              >
-                <MoreHorizontal size={17} />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent
-              aria-label="Conversation actions"
-              align="end"
-              className="flex w-auto items-center gap-1"
-              onInteractOutside={keepConversationDialog}
-              onFocusOutside={keepConversationDialog}
-            >
-              <ActionHelp label="Refresh conversation">
+          {headerWide ? (
+            <div data-testid="chat-header-actions" className="flex shrink-0 items-center gap-1">
+              <ActionHelp label="Refresh session">
                 <button
                   type="button"
                   data-testid="chat-refresh-button"
                   onClick={() => void refresh()}
                   disabled={!thread || refreshing}
                   className={iconButton}
-                  aria-label="Refresh conversation"
+                  aria-label="Refresh session"
                 >
                   <RefreshCw
                     size={17}
@@ -238,10 +227,68 @@ export function ChatPanel({
                   />
                 </button>
               </ActionHelp>
-              <ChatContinueInTerminal key={thread?.id ?? "new"} />
-              <ChatConversationInfo />
-            </PopoverContent>
-          </Popover>
+              <ChatContinueInTerminal control={terminalControl} />
+              <ActionHelp label="Session settings">
+                <button
+                  type="button"
+                  data-testid="chat-config-button"
+                  aria-label="Session settings"
+                  className={iconButton}
+                  onClick={() => setSettingsOpen(true)}
+                >
+                  <Settings2 size={17} />
+                </button>
+              </ActionHelp>
+            </div>
+          ) : (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Session actions"
+                  data-testid="chat-options-button"
+                  className={iconButton}
+                >
+                  <MoreHorizontal size={17} />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                aria-label="Session actions"
+                align="end"
+                className="flex w-auto items-center gap-1"
+                onInteractOutside={keepConversationDialog}
+                onFocusOutside={keepConversationDialog}
+              >
+                <ActionHelp label="Refresh session">
+                  <button
+                    type="button"
+                    data-testid="chat-refresh-button"
+                    onClick={() => void refresh()}
+                    disabled={!thread || refreshing}
+                    className={iconButton}
+                    aria-label="Refresh session"
+                  >
+                    <RefreshCw
+                      size={17}
+                      className={refreshing || reconnecting ? "animate-spin" : undefined}
+                    />
+                  </button>
+                </ActionHelp>
+                <ChatContinueInTerminal control={terminalControl} />
+                <ActionHelp label="Session settings">
+                  <button
+                    type="button"
+                    data-testid="chat-config-button"
+                    aria-label="Session settings"
+                    className={iconButton}
+                    onClick={() => setSettingsOpen(true)}
+                  >
+                    <Settings2 size={17} />
+                  </button>
+                </ActionHelp>
+              </PopoverContent>
+            </Popover>
+          )}
           {onToggleFullscreen && (
             <ActionHelp label={fullscreen ? "Exit full screen chat" : "Full screen chat"}>
               <button
@@ -267,6 +314,7 @@ export function ChatPanel({
             </button>
           </ActionHelp>
         </header>
+        <ChatConversationInfo open={settingsOpen} onOpenChange={setSettingsOpen} />
         {reconnecting && (
           <p
             role="status"
@@ -401,7 +449,7 @@ export function ChatPanel({
                       type="button"
                       data-testid="chat-permission-allow-all"
                       disabled={responding}
-                      title="Switch this conversation to full access / bypass permissions"
+                      title="Switch this session to full access / bypass permissions"
                       className="min-h-8 rounded-md border border-control-border px-3"
                       onClick={() =>
                         void changePermissions({ ...config, permissionMode: "bypassPermissions" })

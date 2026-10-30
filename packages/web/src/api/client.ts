@@ -538,6 +538,7 @@ async function req<T>(
 export type ScratchpadListParams = {
   kind?: ScratchpadKind;
   project_id?: string;
+  include_global?: "true";
   /** "true" lists only pads without a project. */
   unassigned?: "true";
   session_id?: string;
@@ -895,7 +896,7 @@ export const api = {
       ),
     get: (id: string) => req<SessionDetail>("GET", `/sessions/${id}`),
     sync: () => req<{ results: SessionSyncResult[] }>("POST", "/sessions/live/sync"),
-    search: (params: { q: string; agent?: string; limit?: number }) =>
+    search: (params: { q: string; agent?: string; project_id?: string; limit?: number }) =>
       req<SessionSearchResult>(
         "GET",
         "/sessions/live/search",
@@ -909,7 +910,13 @@ export const api = {
         undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
-    live: (params?: { agent?: string; task_id?: string; active?: boolean; limit?: number }) =>
+    live: (params?: {
+      agent?: string;
+      task_id?: string;
+      project_id?: string;
+      active?: boolean;
+      limit?: number;
+    }) =>
       req<{ sessions: LiveSession[] }>(
         "GET",
         "/sessions/live",
@@ -962,7 +969,7 @@ export const api = {
       include_hidden?: boolean;
       reload?: boolean;
       project_id?: string;
-      scope?: "global";
+      scope?: "global" | "all";
       limit?: number;
       offset?: number;
     }) =>
@@ -984,6 +991,8 @@ export const api = {
         ...scope,
         ref,
       }),
+    projects: (name: string) =>
+      req<{ project_ids: string[] }>("GET", `/skills/${encodeURIComponent(name)}/projects`),
     create: (data: CreateSkillInput) => req<SkillFull>("POST", "/skills", data),
   },
   agents: {

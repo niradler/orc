@@ -4,7 +4,7 @@ import { delimiter, join } from "node:path";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { getDb } from "@orc/db/client";
 import { gateway_sessions } from "@orc/db/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { LIVE_CHAT_ID, oneLine } from "./common.js";
 
 export type SearchHit = {
@@ -110,6 +110,7 @@ export async function searchSessions(opts: {
   q: string;
   agent?: string | undefined;
   limit?: number;
+  projectId?: string | undefined;
   runtime?: HostRuntime;
 }): Promise<SearchResult> {
   const started = Date.now();
@@ -120,6 +121,11 @@ export async function searchSessions(opts: {
     db.query.gateway_sessions.findMany({
       where: and(
         eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
+        opts.projectId === "unassigned"
+          ? isNull(gateway_sessions.project_id)
+          : opts.projectId
+            ? eq(gateway_sessions.project_id, opts.projectId)
+            : undefined,
         opts.agent ? eq(gateway_sessions.backend, opts.agent) : undefined,
       ),
       orderBy: [desc(gateway_sessions.last_activity_at)],

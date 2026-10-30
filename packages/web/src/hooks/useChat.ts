@@ -54,6 +54,7 @@ interface PendingPermission {
 /** One open conversation. Each tab streams on its own, so turns keep running in the background. */
 export interface ChatTab {
   createdAt?: number;
+  projectId?: string | null;
   /** Closed from the open list; retained in history so drafts and background work survive. */
   hidden?: boolean;
   key: string;
@@ -82,10 +83,11 @@ export interface ChatTab {
   attention: boolean;
 }
 
-function blankTab(config: ChatConfig): ChatTab {
+function blankTab(config: ChatConfig, projectId?: string | null): ChatTab {
   return {
     key: crypto.randomUUID(),
     createdAt: Date.now(),
+    projectId,
     thread: null,
     config,
     messages: [],
@@ -145,9 +147,19 @@ const message = (cause: unknown, fallback: string) =>
   cause instanceof Error ? cause.message : fallback;
 
 function useChatController() {
+  const [params] = useSearchParams();
+  const selectedProject = params.get("project") ?? readStorage("orc_selected_project");
+  const creationProject = useRef<string | null | undefined>(undefined);
+  creationProject.current =
+    selectedProject === "unassigned"
+      ? null
+      : selectedProject && selectedProject !== "all"
+        ? selectedProject
+        : undefined;
   const [initial] = useState(() =>
     blankTab(
       withPreferences(DEFAULT_CONFIG, parseChatPreferences(readStorage(CHAT_PREFERENCES_KEY))),
+      creationProject.current,
     ),
   );
   const [tabs, setTabs] = useState<ChatTab[]>([initial]);
@@ -485,9 +497,13 @@ function useChatController() {
   }, [attach, find, update]);
 
   const openThread = useCallback(
-    (next: ChatThread, options: { activate?: boolean; follow?: boolean } = {}) => {
+    (
+      next: ChatThread,
+      options: { activate?: boolean; follow?: boolean; projectId?: string | null } = {},
+    ) => {
       const existing = tabsRef.current.find((tab) => tab.thread?.id === next.id);
       const loaded = {
+        projectId: options.projectId !== undefined ? options.projectId : existing?.projectId,
         thread: next,
         messages: next.messages,
         config: next.config,
@@ -499,6 +515,8 @@ function useChatController() {
       if (existing) {
         key = existing.key;
         if (!existing.streaming) update(key, () => loaded);
+        else if (options.projectId !== undefined)
+          update(key, () => ({ projectId: options.projectId }));
       } else {
         const active = find(activeRef.current);
         if (active && isBlank(active) && options.activate !== false) {
@@ -527,16 +545,20 @@ function useChatController() {
   const newTab = useCallback(() => {
     const blank = tabsRef.current.find(isBlank);
     if (blank) {
-      update(blank.key, () => ({ config: defaults.current, error: null }));
+      update(blank.key, () => ({
+        config: defaults.current,
+        projectId: creationProject.current,
+        error: null,
+      }));
       return activate(blank.key);
     }
-    const tab = blankTab(defaults.current);
+    const tab = blankTab(defaults.current, creationProject.current);
     mutate((current) => [...current, tab]);
     activate(tab.key);
   }, [activate, mutate, update]);
   const startAgentConversation = useCallback(
     (agent: string) => {
-      const next = blankTab({ ...defaults.current, agent, model: "" });
+      const next = blankTab({ ...defaults.current, agent, model: "" }, creationProject.current);
       mutate((current) => [...current, next]);
       activate(next.key);
     },
@@ -549,7 +571,7 @@ function useChatController() {
       const next = tabsRef.current.find((tab) => !tab.hidden);
       if (next) activate(next.key);
       else {
-        const blank = blankTab(defaults.current);
+        const blank = blankTab(defaults.current, creationProject.current);
         mutate((current) => [...current, blank]);
         activate(blank.key);
       }
@@ -558,7 +580,6 @@ function useChatController() {
   );
 
   // Reopen this browser's tabs; a shared link's conversation takes focus over the stored one.
-  const [params] = useSearchParams();
   const linked = useRef(params.get(CHAT_THREAD_PARAM));
   useEffect(() => {
     const stored = parseChatTabs(readStorage(CHAT_TABS_KEY));
@@ -567,13 +588,28 @@ function useChatController() {
         if (result.status === "fulfilled")
           openThread(result.value, {
             activate: !linked.current && result.value.id === stored.active,
+            projectId: stored.projectIds?.[result.value.id],
           });
     });
   }, [openThread]);
   useEffect(() => {
     const threads = tabs.flatMap((tab) => (tab.thread && !tab.hidden ? [tab.thread.id] : []));
     const active = tabs.find((tab) => tab.key === activeKey)?.thread?.id ?? null;
-    writeStorage(CHAT_TABS_KEY, JSON.stringify({ threads, active }));
+    const projectIds = Object.fromEntries(
+      tabs.flatMap((tab) =>
+        tab.thread && !tab.hidden && tab.projectId !== undefined
+          ? [[tab.thread.id, tab.projectId]]
+          : [],
+      ),
+    );
+    writeStorage(
+      CHAT_TABS_KEY,
+      JSON.stringify({
+        threads,
+        active,
+        ...(Object.keys(projectIds).length ? { projectIds } : {}),
+      }),
+    );
   }, [tabs, activeKey]);
 
   const tab = tabs.find((candidate) => candidate.key === activeKey) ?? tabs[0] ?? initial;
@@ -869,6 +905,7 @@ function useChatController() {
     [update, find],
   );
   return {
+    projectScope: selectedProject ?? "all",
     tabs,
     activeKey,
     selectTab: activate,

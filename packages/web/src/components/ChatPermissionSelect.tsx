@@ -55,7 +55,7 @@ export function ChatPermissionSelect({
       </select>
       <span className="block text-xs text-muted-foreground">
         {!supported
-          ? "Set ACPX permission flags under Advanced launch options in Conversation settings."
+          ? "Set ACPX permission flags under Advanced launch options in Session settings."
           : (sdkMode ?? config.permissionMode) === "bypassPermissions" ||
               (!config.permissionMode && config.autoApprove && config.agent === "claude")
             ? "Allows actions without permission prompts. Codex also runs without a sandbox. Workspace rules still apply."

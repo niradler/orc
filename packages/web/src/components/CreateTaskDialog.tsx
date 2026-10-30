@@ -5,6 +5,7 @@ import { BackendPicker, USE_DEFAULT_BACKEND } from "@/components/BackendPicker";
 import { FormDialog } from "@/components/FormDialog";
 import { FlowPicker, USE_DEFAULT_FLOW } from "@/components/flow/FlowPicker";
 import { HelpPopover } from "@/components/HelpPopover";
+import { MarkdownField } from "@/components/MarkdownField";
 import { Button } from "@/components/ui/button";
 import { DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -16,7 +17,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { FormStepActions, FormStepPanel, FormSteps, useFormSteps } from "@/components/useFormSteps";
 import { useBackends } from "@/hooks/useBackends";
 import { useFlows } from "@/hooks/useFlows";
@@ -210,18 +210,15 @@ export function CreateTaskDialog({
                         autoFocus
                       />
                     </div>
-                    <div className="space-y-1.5">
-                      <Label className="font-label text-xs font-medium text-outline">Body</Label>
-                      <Textarea
-                        aria-label="Body"
-                        value={body}
-                        onChange={(e) => setBody(e.target.value)}
-                        data-testid="task-body-input"
-                        placeholder="Expected result, acceptance checks and constraints..."
-                        className="bg-background border-control-border text-on-surface font-body text-sm resize-none"
-                        rows={3}
-                      />
-                    </div>
+                    <MarkdownField
+                      label="Body"
+                      aria-label="Body"
+                      value={body}
+                      onChange={setBody}
+                      data-testid="task-body-input"
+                      placeholder="Expected result, acceptance checks and constraints..."
+                      rows={3}
+                    />
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label className="font-label text-xs font-medium text-outline">

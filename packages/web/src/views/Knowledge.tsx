@@ -44,6 +44,7 @@ export default function Knowledge({ projectId: savedProjectId }: { projectId: st
       <KnowledgeBases
         key={projectId}
         projectId={projectId === "all" || projectId === "unassigned" ? undefined : projectId}
+        globalOnly={projectId === "unassigned"}
       />
     </div>
   );
@@ -89,7 +90,13 @@ function Snippet({ text }: { text: string }) {
   );
 }
 
-function KnowledgeBases({ projectId }: { projectId: string | undefined }) {
+function KnowledgeBases({
+  projectId,
+  globalOnly = false,
+}: {
+  projectId: string | undefined;
+  globalOnly?: boolean;
+}) {
   const [params, setParams] = useSearchParams();
   const kbId = params.get("kb");
   const documentId = params.get("document");
@@ -114,10 +121,10 @@ function KnowledgeBases({ projectId }: { projectId: string | undefined }) {
   }
 
   const projects = useProjects();
-  const bases = useKnowledgeBases(projectId);
+  const bases = useKnowledgeBases(projectId, globalOnly);
   const kb = bases.data?.find((b) => b.id === kbId) ?? null;
   const listing = useKbDocuments(kb?.id ?? null);
-  const doc = useKbDocument(documentId);
+  const doc = useKbDocument(bases.data === undefined ? null : documentId);
   // The URL's KB resolves once the bases load (or defaults to the first one); searching before
   // then would send the query unscoped and again scoped.
   const scopeSettled = bases.data !== undefined && (kb !== null || bases.data.length === 0);
@@ -126,7 +133,7 @@ function KnowledgeBases({ projectId }: { projectId: string | undefined }) {
       ? {
           query,
           ...(kb && !searchAll ? { kb_ids: [kb.id] } : {}),
-          scope: projectId ? "default" : "all",
+          scope: projectId ? "default" : globalOnly ? "global" : "all",
           limit: 20,
         }
       : null,
@@ -184,7 +191,10 @@ function KnowledgeBases({ projectId }: { projectId: string | undefined }) {
   // Default to the first visible KB; drop a KB that no longer exists (deleted elsewhere).
   useEffect(() => {
     if (!bases.data) return;
-    if (kbId && !bases.data.some((b) => b.id === kbId) && !documentId) update({ kb: null }, true);
+    if (documentId && doc.data && !bases.data.some((b) => b.id === doc.data.kb_id)) {
+      update({ kb: bases.data[0]?.id ?? null, document: null, label: null, q: null }, true);
+    } else if (kbId && !bases.data.some((b) => b.id === kbId) && (!documentId || doc.error))
+      update({ kb: null, document: null }, true);
     else if (!kbId && bases.data[0]) update({ kb: bases.data[0].id }, true);
   });
   // Links and search results can open a document in another KB; follow it.
@@ -224,7 +234,7 @@ function KnowledgeBases({ projectId }: { projectId: string | undefined }) {
     return <ErrorState message={(bases.error as Error).message} onRetry={() => bases.refetch()} />;
 
   const content = documentId ? (
-    doc.data && kb ? (
+    doc.data && kb && doc.data.kb_id === kb.id ? (
       <KbDocumentPane
         key={doc.data.id}
         kb={kb}

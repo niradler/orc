@@ -12,7 +12,7 @@ import { deleteJob, withTx } from "@orc/db/tx";
 import { executeJob } from "@orc/runner/executor";
 import { syncJob, unscheduleJob } from "@orc/runner/scheduler";
 import { Cron } from "croner";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { readJobWebhooks, saveJobWebhooks, validateJobWebhooks } from "../lib/job-webhooks.js";
 import { createRouter } from "../lib/router.js";
 
@@ -143,7 +143,9 @@ const listRoute = createRoute({
         .enum(["true", "false"])
         .transform((value) => value === "true")
         .optional(),
-      project_id: z.string().optional(),
+      project_id: z.string().optional().openapi({
+        description: "Project id, or unassigned for jobs without a project; filtered before limit",
+      }),
       limit: z.coerce.number().int().min(1).max(100).optional().default(50),
     }),
   },
@@ -325,7 +327,8 @@ app.openapi(listRoute, async (c) => {
   const db = getDb();
   const { limit, project_id, enabled } = c.req.valid("query");
   const conditions: ReturnType<typeof eq>[] = [];
-  if (project_id) conditions.push(eq(jobs.project_id, project_id));
+  if (project_id === "unassigned") conditions.push(isNull(jobs.project_id));
+  else if (project_id) conditions.push(eq(jobs.project_id, project_id));
   if (enabled !== undefined) conditions.push(eq(jobs.enabled, enabled));
   const rows = await db.query.jobs.findMany({
     where: conditions.length ? and(...conditions) : undefined,

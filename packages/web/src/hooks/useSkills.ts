@@ -9,7 +9,8 @@ export function useSkills(
     include_hidden?: boolean;
     limit?: number;
     offset?: number;
-  } & ScopeQuery,
+    scope?: "global" | "all";
+  } & Omit<ScopeQuery, "scope">,
 ) {
   return useQuery({
     queryKey: ["skills", params],

@@ -14,6 +14,8 @@ import { DetailField } from "@/components/DetailField";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { FormDialog } from "@/components/FormDialog";
+import { Markdown } from "@/components/Markdown";
+import { MarkdownField } from "@/components/MarkdownField";
 import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { Button } from "@/components/ui/button";
 import { DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -122,6 +124,11 @@ export default function Memories({
   const openDetail = (item: { project_id: string; name: string }) =>
     navigate(`${memoryPath(item.project_id, item.name)}${location.search}`);
   const closeDetail = () => navigate(`${MEMORIES_PATH}${location.search}`);
+  const detailInScope = allProjects || (!unassigned && memoryProject === project);
+  useEffect(() => {
+    if (memoryProject && memoryName && !detailInScope)
+      navigate(`${MEMORIES_PATH}${location.search}`, { replace: true });
+  }, [memoryProject, memoryName, detailInScope, navigate, location.search]);
 
   return (
     <div>
@@ -329,7 +336,7 @@ export default function Memories({
         </div>
       )}
 
-      {memoryProject && memoryName && (
+      {memoryProject && memoryName && detailInScope && (
         <MemoryDetailSheet
           key={`${memoryProject}/${memoryName}`}
           projectId={memoryProject}
@@ -482,9 +489,9 @@ function MemoryDetailSheet({
                 <div className="font-label text-sm text-muted-foreground mb-2">Content</div>
                 <div
                   data-testid="memory-detail-content"
-                  className="whitespace-pre-wrap wrap-break-word font-body text-sm text-on-surface border border-outline-variant p-3"
+                  className="wrap-break-word font-body text-sm text-on-surface"
                 >
-                  {memory.content}
+                  <Markdown readable>{memory.content}</Markdown>
                 </div>
               </div>
               <MemoryHistoryPanel projectId={projectId} name={name} onDeleted={onClose} />
@@ -739,6 +746,9 @@ function MemoryFormDialog({
         initialFields.current
       }
       testId="memory-form-dialog"
+      className={
+        steps.step === "content" ? "h-[min(85dvh,calc(var(--app-height,100dvh)-2rem))]" : undefined
+      }
     >
       {(requestClose, closeAfterSave) => (
         <>
@@ -751,10 +761,16 @@ function MemoryFormDialog({
             noValidate
             ref={steps.form}
             onSubmit={(event) => steps.submit(event, () => submit(closeAfterSave))}
-            className="min-h-0"
+            className={steps.step === "content" ? "min-h-0 flex-1" : "min-h-0"}
           >
             <FormSteps steps={steps}>
-              <div className="work-form-body space-y-4">
+              <div
+                className={
+                  steps.step === "content"
+                    ? "work-form-body flex min-h-0 flex-1 flex-col gap-4"
+                    : "work-form-body space-y-4"
+                }
+              >
                 <FormStepPanel steps={steps} id="details">
                   {!memory && (
                     <>
@@ -855,19 +871,19 @@ function MemoryFormDialog({
                     </div>
                   )}
                 </FormStepPanel>
-                <FormStepPanel steps={steps} id="content" className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label className="font-label text-sm text-muted-foreground">Content *</Label>
-                    <CharCount value={content} max={contentMax} testId="memory-content-count" />
-                  </div>
-                  <Textarea
+                <FormStepPanel steps={steps} id="content" className="flex min-h-0 flex-1 flex-col">
+                  <MarkdownField
+                    label="Content"
                     aria-label="Content"
                     data-testid="memory-content-input"
                     value={content}
-                    onChange={(e) => setContent(e.target.value)}
+                    onChange={setContent}
                     placeholder="The fact itself. Longer guidance belongs in a skill."
-                    className="bg-background text-on-surface font-body text-sm"
-                    rows={8}
+                    accessory={
+                      <CharCount value={content} max={contentMax} testId="memory-content-count" />
+                    }
+                    fill
+                    disabled={mutation.isPending}
                     required
                   />
                 </FormStepPanel>

@@ -1,5 +1,5 @@
 import type { ScopeQuery } from "@orc/sdk/types";
-import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowUp,
@@ -11,9 +11,8 @@ import {
   ToggleLeft,
   ToggleRight,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { api, type SkillFull, type SkillRefContent, type SkillSource } from "@/api/client";
-import { BulkActionBar } from "@/components/BulkActionBar";
 import { CodeEditor } from "@/components/CodeEditor";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DetailField } from "@/components/DetailField";
@@ -53,6 +52,7 @@ import { useDetailRoute } from "@/hooks/useDetailRoute";
 import { useListSelection } from "@/hooks/useListSelection";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjectScope } from "@/hooks/useProjectScope";
+import { useProjects } from "@/hooks/useProjects";
 import {
   useCreateSkill,
   useSetSkillVisibility,
@@ -97,8 +97,11 @@ const SOURCE_COLORS: Record<SkillSource, string> = {
 export default function Skills({ projectId }: { projectId: string }) {
   const desktop = useBreakpoint("xl");
   const project = useProjectScope(projectId);
+  const { data: projects } = useProjects();
+  const [multiselect, setMultiselect] = useState(false);
   const scope: ScopeQuery =
     project === "all" || project === "unassigned" ? { scope: "global" } : { project_id: project };
+  const listScope = project === "all" ? { scope: "all" as const } : scope;
   const [query, setQuery] = useViewParam<string>("skillQuery", "");
   const [searchInput, setSearchInput] = useState(query);
   const [sourceFilter, setSourceFilter] = useViewParam<SourceFilter>("source", "all", [
@@ -141,7 +144,7 @@ export default function Skills({ projectId }: { projectId: string }) {
     error,
     refetch,
   } = useSkills({
-    ...scope,
+    ...listScope,
     q: query || undefined,
     source: sourceFilter === "all" ? undefined : sourceFilter,
     include_hidden: true,
@@ -149,6 +152,12 @@ export default function Skills({ projectId }: { projectId: string }) {
     offset,
   });
   const skills = library?.skills;
+  const skillScope = (skill: NonNullable<typeof skills>[number]) =>
+    skill.project_ids?.length
+      ? skill.project_ids
+          .map((id) => projects?.find((item) => item.id === id)?.name ?? id)
+          .join(", ")
+      : "Global";
   const queryClient = useQueryClient();
   const userSkills = (skills ?? []).filter((skill) => skill.source === "user");
   const origins = useQueries({
@@ -412,7 +421,7 @@ export default function Skills({ projectId }: { projectId: string }) {
         </ResponsiveFilters>
 
         {/* Search */}
-        <div className="relative order-first min-w-0 flex-1 lg:max-w-md">
+        <div className="relative order-first min-w-40 flex-1 lg:max-w-md">
           <Search
             size={12}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
@@ -427,18 +436,58 @@ export default function Skills({ projectId }: { projectId: string }) {
             className="pl-8 bg-background text-on-surface font-body text-sm placeholder:text-muted-foreground"
           />
         </div>
+        {(!!skills?.length || multiselect) && (
+          <div
+            className={`flex flex-wrap items-center gap-1 ${multiselect ? "basis-full md:basis-auto" : ""}`}
+          >
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid={multiselect ? "skills-select-displayed" : "skills-multiselect"}
+              disabled={bulk.isPending || (multiselect && !skills?.length)}
+              onClick={() => (multiselect ? selection.selectAll() : setMultiselect(true))}
+            >
+              {multiselect ? "Select displayed" : "Multiselect"}
+            </Button>
+            {multiselect && (
+              <>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  data-testid="clear-selection"
+                  disabled={bulk.isPending || !selection.selectedIds.length}
+                  onClick={selection.clear}
+                >
+                  Clear
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  data-testid="skills-multiselect-exit"
+                  disabled={bulk.isPending}
+                  onClick={() => {
+                    selection.clear();
+                    setMultiselect(false);
+                  }}
+                >
+                  Done
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
-      {!!skills?.length && (
-        <BulkActionBar
-          resourceLabel="skills"
-          count={selection.selectedIds.length}
-          allSelected={selection.allSelected}
-          someSelected={selection.someSelected}
-          onSelectAll={selection.selectAll}
-          onClear={selection.clear}
-          disabled={bulk.isPending}
+      {multiselect && selection.selectedIds.length > 0 && (
+        <fieldset
+          className="mb-3 flex flex-wrap items-center gap-2 border-y border-border py-1"
+          data-testid="bulk-actions"
+          aria-label="Selected skills and actions"
         >
+          <span className="text-[13px]">{selection.selectedIds.length} selected</span>
           <Button
             data-testid="skills-bulk-hide"
             variant="outline"
@@ -489,7 +538,7 @@ export default function Skills({ projectId }: { projectId: string }) {
           >
             {`Delete${selectedUser.length ? ` (${selectedUser.length})` : ""}`}
           </Button>
-        </BulkActionBar>
+        </fieldset>
       )}
       <ConfirmDialog
         open={confirmingDelete}
@@ -546,17 +595,19 @@ export default function Skills({ projectId }: { projectId: string }) {
               data-skill-name={skill.name}
               className="flex min-w-0 items-center gap-1 py-2"
             >
-              <label className="flex size-11 shrink-0 items-center justify-center">
-                <input
-                  type="checkbox"
-                  data-testid="skill-select"
-                  aria-label={`Select ${skill.name}`}
-                  checked={selection.selectedIds.includes(skill.name)}
-                  disabled={bulk.isPending}
-                  onChange={() => selection.toggle(skill.name)}
-                  className="size-4 accent-primary"
-                />
-              </label>
+              {multiselect && (
+                <label className="flex size-11 shrink-0 items-center justify-center">
+                  <input
+                    type="checkbox"
+                    data-testid="skill-select"
+                    aria-label={`Select ${skill.name}`}
+                    checked={selection.selectedIds.includes(skill.name)}
+                    disabled={bulk.isPending}
+                    onChange={() => selection.toggle(skill.name)}
+                    className="size-4 accent-primary"
+                  />
+                </label>
+              )}
               <div className="min-w-0 flex-1">
                 <button
                   type="button"
@@ -575,6 +626,14 @@ export default function Skills({ projectId }: { projectId: string }) {
                 <div className="flex min-w-0 items-center gap-x-2 text-xs text-muted-foreground">
                   <span data-testid="skill-source-cell" className="shrink-0">
                     {skill.source}
+                  </span>
+                  <span
+                    data-testid="skill-scope-cell"
+                    title={skillScope(skill)}
+                    className="min-w-0 truncate"
+                  >
+                    <span className="sr-only">Scope: </span>
+                    {skillScope(skill)}
                   </span>
                   {skill.mutation && <span className="shrink-0 text-primary">Modified</span>}
                   <span data-testid="skill-repository-cell" className="min-w-0 flex-1 truncate">
@@ -602,9 +661,11 @@ export default function Skills({ projectId }: { projectId: string }) {
           <Table>
             <TableHeader>
               <TableRow className="border-b border-outline-variant hover:bg-transparent">
-                <TableHead className="w-12">
-                  <span className="sr-only">Select skills</span>
-                </TableHead>
+                {multiselect && (
+                  <TableHead className="w-12">
+                    <span className="sr-only">Select skills</span>
+                  </TableHead>
+                )}
                 <TableHead className="font-label text-sm  text-muted-foreground">Name</TableHead>
                 <TableHead className="font-label text-sm  text-muted-foreground">
                   Description
@@ -612,6 +673,7 @@ export default function Skills({ projectId }: { projectId: string }) {
                 <TableHead className="font-label text-sm  text-muted-foreground w-24">
                   Source
                 </TableHead>
+                <TableHead className="text-sm text-muted-foreground">Scope</TableHead>
                 <TableHead
                   data-testid="skill-repository-header"
                   aria-sort={REPOSITORY_SORT_ORDER[repositorySort]}
@@ -642,17 +704,21 @@ export default function Skills({ projectId }: { projectId: string }) {
                   className="border-b border-outline-variant/50 hover:bg-surface-low cursor-pointer"
                   onClick={() => openSkillDetail(skill.name)}
                 >
-                  <TableCell onClick={(event) => event.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      data-testid="skill-select"
-                      aria-label={`Select ${skill.name}`}
-                      checked={selection.selectedIds.includes(skill.name)}
-                      disabled={bulk.isPending}
-                      onChange={() => selection.toggle(skill.name)}
-                      className="size-4 accent-primary"
-                    />
-                  </TableCell>
+                  {multiselect && (
+                    <TableCell onClick={(event) => event.stopPropagation()}>
+                      <label className="flex size-11 items-center justify-center">
+                        <input
+                          type="checkbox"
+                          data-testid="skill-select"
+                          aria-label={`Select ${skill.name}`}
+                          checked={selection.selectedIds.includes(skill.name)}
+                          disabled={bulk.isPending}
+                          onChange={() => selection.toggle(skill.name)}
+                          className="size-4 accent-primary"
+                        />
+                      </label>
+                    </TableCell>
+                  )}
                   <TableCell className="font-body text-sm font-medium text-on-surface">
                     <button
                       type="button"
@@ -680,6 +746,13 @@ export default function Skills({ projectId }: { projectId: string }) {
                     >
                       {skill.source}
                     </span>
+                  </TableCell>
+                  <TableCell
+                    data-testid="skill-scope-cell"
+                    title={skillScope(skill)}
+                    className="max-w-48 truncate text-sm text-muted-foreground"
+                  >
+                    {skillScope(skill)}
                   </TableCell>
                   <TableCell
                     data-testid="skill-repository-cell"
@@ -741,6 +814,8 @@ export default function Skills({ projectId }: { projectId: string }) {
       <SkillDetailSheet
         key={selectedSkill}
         scope={scope}
+        allProjects={project === "all"}
+        projects={projects ?? []}
         skillName={selectedSkill}
         open={Boolean(selectedSkill)}
         onClose={closeSkillDetail}
@@ -756,22 +831,50 @@ export default function Skills({ projectId }: { projectId: string }) {
 function SkillDetailSheet({
   skillName,
   scope,
+  allProjects,
+  projects,
   open,
   onClose,
 }: {
   skillName: string | null;
   scope: ScopeQuery;
+  allProjects: boolean;
+  projects: { id: string; name: string }[];
   open: boolean;
   onClose: () => void;
 }) {
-  const { data, isLoading, error, refetch } = useSkill(skillName, undefined, scope);
+  const [instructionProject, setInstructionProject] = useViewParam<string>("skillProject", "");
+  const contextId = useId();
+  const assignments = useQuery({
+    queryKey: ["skill-projects", skillName],
+    queryFn: () => api.skills.projects(skillName as string),
+    enabled: allProjects && open && Boolean(skillName),
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnMount: "always",
+    retry: false,
+  });
+  const assignedProjects = [...new Set(assignments.data?.project_ids ?? [])].sort();
+  const selectedProject = assignedProjects.includes(instructionProject)
+    ? instructionProject
+    : assignedProjects[0];
+  const detailScope: ScopeQuery = allProjects
+    ? selectedProject
+      ? { project_id: selectedProject }
+      : { scope: "global" }
+    : scope;
+  const scopeReady = !allProjects || (assignments.isSuccess && !assignments.isFetching);
+  const readableName = scopeReady ? skillName : null;
+  const { data, isLoading, error, refetch } = useSkill(readableName, undefined, detailScope);
   const skill = data as SkillFull | undefined;
   const [selectedFile, setSelectedFile] = useViewParam<string>("skillFile", "SKILL.md");
-  const fileQuery = useSkill(skillName, selectedFile ?? "SKILL.md", scope);
+  const fileQuery = useSkill(readableName, selectedFile ?? "SKILL.md", detailScope);
   const file = fileQuery.data as SkillRefContent | undefined;
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
-  const documentId = `skill:${scope.project_id ?? "global"}:${skillName}:${selectedFile ?? "SKILL.md"}`;
+  const documentId = `skill:${detailScope.project_id ?? "global"}:${skillName}:${selectedFile ?? "SKILL.md"}`;
+  const projectName = (id?: string) =>
+    id ? (projects.find((item) => item.id === id)?.name ?? id) : "Global";
+  const detailError = (allProjects && assignments.error) || error;
   function selectFile(path?: string): boolean {
     if ((path ?? "SKILL.md") === (selectedFile ?? "SKILL.md")) return true;
     if (!confirmDocumentClose(documentId)) return false;
@@ -796,17 +899,56 @@ function SkillDetailSheet({
           {skill?.description && (
             <p className="font-body text-sm text-muted-foreground mt-1">{skill.description}</p>
           )}
+          {scopeReady && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {allProjects && assignedProjects.length > 0 ? (
+                <>
+                  <Label htmlFor={contextId}>Instructions for</Label>
+                  <select
+                    id={contextId}
+                    aria-label="Instructions for"
+                    data-testid="skill-instruction-project"
+                    className="form-control form-control-single w-auto max-w-full"
+                    value={selectedProject}
+                    onChange={(event) => {
+                      const next = event.target.value;
+                      if (next === selectedProject || !assignedProjects.includes(next)) return;
+                      if (confirmDocumentClose(documentId)) setInstructionProject(next);
+                    }}
+                  >
+                    {assignedProjects.map((id) => (
+                      <option key={id} value={id}>
+                        {projectName(id)}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              ) : (
+                <span data-testid="skill-instruction-context">
+                  Instructions for {projectName(detailScope.project_id)}
+                </span>
+              )}
+            </div>
+          )}
         </SheetHeader>
         <SheetBody>
           {
             <>
-              {skillName && skill && (
-                <SkillHistoryPanel name={skillName} scope={scope} mutation={skill.mutation} />
+              {scopeReady && skillName && skill && (
+                <SkillHistoryPanel
+                  key={detailScope.project_id ?? "global"}
+                  name={skillName}
+                  scope={detailScope}
+                  mutation={skill.mutation}
+                />
               )}
-              {skillName && skill && <SkillSync name={skillName} />}
-              {error ? (
-                <ErrorState message={(error as Error).message} onRetry={() => void refetch()} />
-              ) : isLoading || !skill ? (
+              {scopeReady && skillName && skill && <SkillSync name={skillName} />}
+              {detailError ? (
+                <ErrorState
+                  message={(detailError as Error).message}
+                  onRetry={() => void (assignments.error ? assignments.refetch() : refetch())}
+                />
+              ) : !scopeReady || isLoading || !skill ? (
                 <div className="space-y-3">
                   {[...Array(4)].map((_, i) => (
                     // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders
@@ -851,6 +993,7 @@ function SkillDetailSheet({
                         />
                       ) : (
                         <DocumentWorkspace
+                          compact
                           key={documentId}
                           documentId={documentId}
                           expanded={expanded}
@@ -865,7 +1008,7 @@ function SkillDetailSheet({
                                   const path = selectedFile ?? "SKILL.md";
                                   if (skill.mutation && path === "SKILL.md") {
                                     await api.skills.updateInstructions(skill.name, {
-                                      project_id: scope.project_id ?? null,
+                                      project_id: detailScope.project_id ?? null,
                                       content,
                                       expected_content: expectedContent,
                                       reason: "Manual instruction edit",
@@ -1019,6 +1162,7 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
           <div className="space-y-1.5">
             <Label className="font-label text-sm  text-muted-foreground">SKILL.md *</Label>
             <MarkdownEditor
+              compact
               testId="skill-content-input"
               path="SKILL.md"
               value={content}
@@ -1065,6 +1209,7 @@ function CreateSkillDialog({ open, onClose }: { open: boolean; onClose: () => vo
                   }
                 />
                 <CodeEditor
+                  compact
                   testId="skill-file-content-input"
                   path={file.path || "supporting.txt"}
                   readOnly={file.encoding === "base64"}

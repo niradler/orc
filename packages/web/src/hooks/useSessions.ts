@@ -30,10 +30,11 @@ export function useSession(id: string) {
   });
 }
 
-export function useLiveSessions(active: boolean) {
+export function useLiveSessions(active: boolean, projectId?: string) {
   return useQuery({
-    queryKey: ["sessions", "live", active],
-    queryFn: () => api.sessions.live({ active, limit: 5000 }),
+    queryKey: ["sessions", "live", active, projectId],
+    queryFn: () =>
+      api.sessions.live({ active, limit: 5000, ...(projectId ? { project_id: projectId } : {}) }),
     select: (data) => data.sessions,
   });
 }
@@ -55,10 +56,16 @@ export function useLinkSessionTask() {
   });
 }
 
-export function useSessionSearch(q: string, agent: string) {
+export function useSessionSearch(q: string, agent: string, projectId?: string) {
   return useQuery({
-    queryKey: ["sessions", "search", q, agent],
-    queryFn: () => api.sessions.search({ q, ...(agent ? { agent } : {}), limit: 200 }),
+    queryKey: ["sessions", "search", q, agent, projectId],
+    queryFn: () =>
+      api.sessions.search({
+        q,
+        ...(agent ? { agent } : {}),
+        ...(projectId ? { project_id: projectId } : {}),
+        limit: 200,
+      }),
     enabled: q.trim().length >= 2,
     staleTime: 30_000,
   });
