@@ -179,4 +179,5 @@ test("Slack setup shows its own credentials and native onboarding", async ({ pag
   await expect(page.getByTestId("channel-credential-app_token")).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy Slack app manifest" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Pair my Telegram" })).toHaveCount(0);
+  await page.screenshot({ path: "../../.claude/docs/channels-slack-setup.png" });
 });

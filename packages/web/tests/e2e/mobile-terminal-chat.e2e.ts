@@ -336,7 +336,7 @@ test("Android chat keeps a long draft and send control above the software keyboa
     expect((await messages.boundingBox())?.height).toBeGreaterThan(20);
     await expect(input).toHaveValue("A long draft\n".repeat(30));
   }
-  await page.screenshot({ path: "../../.claude/docs/channels-short-keyboard-chat.png" });
+  await sheet.screenshot({ path: "../../.claude/docs/channels-short-keyboard-chat.png" });
 });
 
 test("phone keyboard input reaches the shell once, as it is typed", async ({ page, request }) => {
