@@ -98,11 +98,22 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
       await session.close();
     }
   });
+  test("should scope the injected connection to the selected channel project", () => {
+    const server = buildOrcMcpServers(undefined, false, "meta", "Channel Project").orc;
+    if (!server) throw new Error("ORC MCP server missing");
+    const url = new URL(server.url);
+    expect(url.searchParams.get("project")).toBe("Channel Project");
+    expect(url.searchParams.get("mode")).toBe("meta");
+    expect(buildOrcMcpServers(undefined, false, "full").orc?.url).toBe(
+      "http://127.0.0.1:7755/mcp?mode=full",
+    );
+  });
+
   test("should build an http mcp server keyed orc with bearer auth", () => {
     expect(buildOrcMcpServers()).toEqual({
       orc: {
         type: "http",
-        url: "http://127.0.0.1:7755/mcp",
+        url: "http://127.0.0.1:7755/mcp?mode=meta",
         headers: { Authorization: "Bearer s3cret" },
       },
     });
@@ -260,7 +271,7 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
       expect(Object.keys(parsed.mcpServers)).toEqual(["orc"]);
       expect(parsed.mcpServers.orc).toEqual({
         type: "http",
-        url: "http://127.0.0.1:7755/mcp",
+        url: "http://127.0.0.1:7755/mcp?mode=meta",
         headers: { Authorization: "Bearer s3cret" },
       });
       expect(existsSync(at("--mcp-config") as string)).toBe(false);
@@ -270,7 +281,7 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
     }
   });
 
-  test("should serve meta tools to open sessions but full tools to allowlisted ones", async () => {
+  test("should keep meta discovery for both open and allowlisted sessions", async () => {
     const open = await createBackend("claude").startSession({
       cwd: process.cwd(),
       orcMcp: true,
@@ -287,7 +298,7 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
       await restricted.send("go");
       await Bun.sleep(20);
       expect(queries[0]?.options.mcpServers?.orc?.url).toBe("http://127.0.0.1:7755/mcp?mode=meta");
-      expect(queries[1]?.options.mcpServers?.orc?.url).toBe("http://127.0.0.1:7755/mcp");
+      expect(queries[1]?.options.mcpServers?.orc?.url).toBe("http://127.0.0.1:7755/mcp?mode=meta");
     } finally {
       await open.close();
       await restricted.close();

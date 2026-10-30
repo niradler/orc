@@ -1,19 +1,22 @@
 import { type AgentSession, openAgentSession } from "@orc/agent-runtime";
 import { type ChannelService, getChannelService } from "@orc/channels";
-import type { ChannelInbound, ChannelTarget } from "@orc/core/channels";
+import { renderMessage } from "@orc/channels/render";
+import { type ChannelInbound, type ChannelTarget, channelCommand } from "@orc/core/channels";
+import { ChatSettingsSchema, chatSystemPrompt } from "@orc/core/chat";
+import { loadConfig } from "@orc/core/config";
 import { ConflictError, ValidationError } from "@orc/core/errors";
 import { hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
 import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
+import {
+  channelDirectCommand,
+  channelHelp,
+  channelPrompt,
+  ensureChannelSession,
+} from "./channel-commands.js";
 import { HumanRequestChannels } from "./human-requests.js";
 import { getGatewayManager } from "./manager.js";
-import {
-  appendMessage,
-  createGatewaySession,
-  getActiveGatewaySession,
-  getOrCreateChat,
-  updateGatewaySession,
-} from "./store.js";
+import { appendMessage, getOrCreateChat, updateGatewaySession } from "./store.js";
 import type { GatewayAdapter, IncomingMessage, SendOpts, SupportsInlineButtons } from "./types.js";
 
 function incoming(service: ChannelService, message: ChannelInbound): IncomingMessage {
@@ -34,7 +37,13 @@ function channelAdapter(
 ): GatewayAdapter & SupportsInlineButtons {
   const bindDestination = (chatId: string) => {
     const current = service.connection(connection).targets.find((t) => t.id === target.id);
-    if (!current || current.chat_id !== chatId || chatId !== target.chat_id)
+    if (
+      !current ||
+      current.chat_id !== chatId ||
+      chatId !== target.chat_id ||
+      current.thread_id !== target.thread_id ||
+      !target.user_ids.every((user) => current.user_ids.includes(user))
+    )
       throw new ConflictError("Notification destination changed");
   };
   return {
@@ -89,7 +98,19 @@ function channelAdapter(
             }
           : {
               blocks: [
-                { type: "section", text: { type: "plain_text", text } },
+                {
+                  type: "section",
+                  text: {
+                    type: opts?.parseMode === "markdown" ? "mrkdwn" : "plain_text",
+                    text: String(
+                      renderMessage("slack", {
+                        text,
+                        format: opts?.parseMode === "markdown" ? "markdown" : "plain",
+                        links: [],
+                      }).payloads[0]?.text ?? text,
+                    ),
+                  },
+                },
                 ...mapped.map((row, i) => ({
                   type: "actions",
                   block_id: `attention-${i}`,
@@ -106,7 +127,7 @@ function channelAdapter(
         connection,
         target: target.id,
         project_id: opts?.projectId,
-        message: { text, format: "plain" },
+        message: { text, format: opts?.parseMode === "markdown" ? "markdown" : "plain" },
         overrides,
         ...(opts?.threadId ? { thread_id: opts.threadId } : {}),
       });
@@ -122,6 +143,12 @@ export async function startChannelRuntime(
 ): Promise<() => Promise<void>> {
   const human = new HumanRequestChannels(new HumanRequestStore(getSqlite()));
   const sessions = new Set<AgentSession>();
+  const activeTurns = new Map<
+    string,
+    { session: AgentSession; recordId: string; cancelled: boolean }
+  >();
+  const conversationKey = (message: ChannelInbound) =>
+    JSON.stringify([message.connection, message.chat, message.thread ?? null, message.sender]);
   let stopping = false;
   let notifying = false;
   const reply = async (
@@ -156,18 +183,13 @@ export async function startChannelRuntime(
     if (result.status !== "accepted")
       throw new ConflictError(result.error ?? "Channel delivery not confirmed");
   };
-  service.handler = async (route, message, target) => {
+  const dispatch: NonNullable<ChannelService["handler"]> = async (route, message, target) => {
     if (stopping || route.action.type !== "agent") return;
     const action = route.action;
-    const project = getSqlite()
-      .query<{ scope: string | null; status: string }, [string]>(
-        "SELECT scope,status FROM projects WHERE id=?",
-      )
-      .get(action.project_id);
-    if (!project?.scope || project.status !== "active")
-      throw new ValidationError("Route requires an active project with a working directory");
-    if (!(await hostIsDirectory(resolveExecHost(), project.scope)))
-      throw new ValidationError("Route project directory is unavailable on the execution host");
+    const defaults = ChatSettingsSchema.parse(loadConfig().preferences.chat ?? {});
+    const defaultAgent = action.agent === "default" ? defaults.agent : action.agent;
+    const defaultModel =
+      action.model ?? (action.agent === "default" ? defaults.model || undefined : undefined);
     const provider = service.connection(message.connection).provider;
     const chatKey = JSON.stringify([
       "channel",
@@ -181,24 +203,72 @@ export async function startChannelRuntime(
     const chat = await getOrCreateChat({
       platform: provider,
       chatId: message.chat,
-      // Channel targets own authorization; this is not a legacy command-enabled chat.
+      // Channel targets own authorization; bridge records only persist conversation state.
       authorized: false,
-      mode: `agent:${action.agent}`,
+      mode: `agent:${defaultAgent}`,
       threadId: message.thread,
       scopeKey: chatKey,
     });
-    let record = await getActiveGatewaySession(chat.id);
-    if (!record || record.status === "stopped")
-      record = await createGatewaySession({
+    const projectId = chat.project_id ?? action.project_id;
+    const permittedProject = !target.project_ids.length || target.project_ids.includes(projectId);
+    const project = permittedProject
+      ? getSqlite()
+          .query<{ name: string; scope: string | null; status: string }, [string]>(
+            "SELECT name,scope,status FROM projects WHERE id=?",
+          )
+          .get(projectId)
+      : null;
+    const conversation = {
+      chatKey: chat.id,
+      projectId,
+      cwd: project?.scope ?? "",
+      mode: chat.mode,
+      defaultProject: action.project_id,
+      defaultAgent,
+      defaultModel,
+      allowedProjects: target.project_ids,
+    };
+    if (!chat.project_id && project)
+      getSqlite()
+        .query("UPDATE bridge_chats SET project_id=?,working_dir=? WHERE id=?")
+        .run(projectId, project.scope, chat.id);
+    const command = await channelDirectCommand({ ...conversation, text: message.text });
+    if (command) {
+      const text = command.text ?? "";
+      const replyProject = command.projectId ?? (permittedProject ? projectId : undefined);
+      if (command.buttons?.length) {
+        await channelAdapter(service, message.connection, {
+          ...target,
+          user_ids: [message.sender],
+        }).sendWithButtons(message.chat, text, command.buttons, {
+          projectId: replyProject,
+          threadId: message.thread,
+        });
+      } else await reply(message, target, text, "plain", replyProject);
+      await appendMessage({
         chatKey: chat.id,
-        backend: action.agent,
-        cwd: project.scope,
-        mode: `agent:${action.agent}`,
-        title: `${service.connection(message.connection).name} · ${route.name}`,
+        direction: "in",
+        role: "user",
+        text: message.text,
+        platformMessageId: message.message_id,
+        threadId: message.thread,
       });
-    getSqlite()
-      .query("UPDATE gateway_sessions SET project_id=? WHERE id=?")
-      .run(action.project_id, record.id);
+      await appendMessage({
+        chatKey: chat.id,
+        direction: "out",
+        role: "system",
+        text,
+        threadId: message.thread,
+      });
+      return;
+    }
+    if (!permittedProject || !project?.scope || project.status !== "active")
+      throw new ValidationError(
+        "Select an allowed active project with a working folder using /project.",
+      );
+    if (!(await hostIsDirectory(resolveExecHost(), project.scope)))
+      throw new ValidationError("Project folder is unavailable on the execution host");
+    const record = await ensureChannelSession(conversation);
     await appendMessage({
       chatKey: chat.id,
       direction: "in",
@@ -213,13 +283,18 @@ export async function startChannelRuntime(
     try {
       await updateGatewaySession(record.id, { status: "running", last_activity_at: new Date() });
       session = await openAgentSession(
-        action.agent,
+        record.backend,
         {
           cwd: project.scope,
+          model: record.model ?? undefined,
           interactive: true,
           autoApprove: false,
+          permissionMode:
+            record.permission_mode === "plan" || record.permission_mode === "acceptEdits"
+              ? record.permission_mode
+              : "default",
           humanRequestContext: {
-            projectId: action.project_id,
+            projectId,
             notify: [provider],
             channel: {
               connection: message.connection,
@@ -229,12 +304,19 @@ export async function startChannelRuntime(
               ...(message.thread ? { thread_id: message.thread } : {}),
             },
           },
-          ...(action.profile ? { agentProfile: action.profile } : {}),
+          ...(action.profile && record.backend === defaultAgent
+            ? { agentProfile: action.profile }
+            : {}),
+          systemPromptAppend: chatSystemPrompt(defaults.system),
           orcMcp: true,
+          orcMcpMode: "meta",
+          orcMcpProject: project.name,
         },
         record.runtime_session_id ?? undefined,
       );
       sessions.add(session);
+      const turn = { session, recordId: record.id, cancelled: false };
+      activeTurns.set(conversationKey(message), turn);
       const active = session;
       timer = setTimeout(
         () => {
@@ -243,10 +325,11 @@ export async function startChannelRuntime(
         60 * 60 * 1000,
       );
       timer.unref();
-      await session.send(message.text);
+      await session.send(channelPrompt(service.connection(message.connection), message.text));
       let output = "";
       let runtimeId: string | undefined;
       for await (const event of session.events()) {
+        if (turn.cancelled) break;
         if (event.type === "text") output += event.data;
         if (output.length > 100000)
           throw new ValidationError(
@@ -261,9 +344,10 @@ export async function startChannelRuntime(
           break;
         }
       }
+      if (turn.cancelled) return;
       runtimeId ??= session.getRuntimeSessionId?.();
       if (output) {
-        await reply(message, target, output, "markdown", action.project_id);
+        await reply(message, target, output, "markdown", projectId);
         await appendMessage({
           chatKey: chat.id,
           direction: "out",
@@ -280,6 +364,7 @@ export async function startChannelRuntime(
         last_error: null,
       });
     } catch {
+      if (activeTurns.get(conversationKey(message))?.cancelled) return;
       await updateGatewaySession(record.id, {
         status: "error",
         last_error: "Channel agent turn failed; inspect this session",
@@ -294,9 +379,23 @@ export async function startChannelRuntime(
     } finally {
       if (timer) clearTimeout(timer);
       if (session) {
+        if (activeTurns.get(conversationKey(message))?.session === session)
+          activeTurns.delete(conversationKey(message));
         sessions.delete(session);
         await session.close();
       }
+    }
+  };
+  service.handler = async (route, message, target) => {
+    try {
+      await dispatch(route, message, target);
+    } catch {
+      await reply(
+        message,
+        target,
+        "This channel could not handle the message. Check the selected project's working directory, agent configuration and channel status in ORC.",
+        "plain",
+      );
     }
   };
   const notify = async () => {
@@ -384,14 +483,69 @@ export async function startChannelRuntime(
       }
       text = value;
     }
-    const answer = human.reply({
+    const command = channelCommand(text);
+    if (command?.name === "help" || command?.name === "start") {
+      await reply(message, target, channelHelp(service.connection(message.connection)), "markdown");
+      return true;
+    }
+    if (
+      command?.name === "stop" ||
+      (command?.name === "session" &&
+        command.args === "stop" &&
+        activeTurns.has(conversationKey(message)))
+    ) {
+      service.cancelPending(message);
+      const turn = activeTurns.get(conversationKey(message));
+      if (turn) {
+        turn.cancelled = true;
+        await updateGatewaySession(turn.recordId, { status: "stopped" });
+        await turn.session.close();
+      }
+      await reply(
+        message,
+        target,
+        turn
+          ? "Stopped the current turn and cleared queued messages. Use /session new for a new conversation."
+          : "No agent turn is running. Use /session new for a new conversation.",
+        "plain",
+      );
+      return true;
+    }
+    if (message.kind === "action" && text !== message.text) {
+      const answer = human.reply(
+        {
+          ...incoming(service, message),
+          text,
+          connectionId: `${message.connection}:${target.id}`,
+        },
+        target,
+      );
+      if (answer) await reply(message, target, answer, "plain");
+      else {
+        message.text = text;
+        message.kind = "message";
+      }
+      return !!answer;
+    }
+    const inbound = {
       ...incoming(service, message),
       text,
       connectionId: `${message.connection}:${target.id}`,
-    });
+    };
+    const answer =
+      human.reply(inbound, target) ??
+      (target.attention ? human.replyToPendingQuestion(inbound, target) : null);
     if (!answer) return false;
     await reply(message, target, answer, "plain");
     return true;
+  };
+  service.unmatched = async (message, target) => {
+    await reply(
+      message,
+      target,
+      "No inbound route matches this message. Choose a project and agent in Settings → Channels → Inbound routing. Use /help for channel commands.",
+      "plain",
+    );
   };
   service.beforeConnect = async () => {
     await getGatewayManager()?.releaseManagedAccounts();
@@ -406,6 +560,7 @@ export async function startChannelRuntime(
     clearInterval(timer);
     service.handler = undefined;
     service.control = undefined;
+    service.unmatched = undefined;
     service.beforeConnect = undefined;
     await Promise.allSettled([...sessions].map((s) => s.close()));
     await service.stop();

@@ -44,10 +44,10 @@ describe("meta mode", () => {
     expect(tools.map((t) => t.name)).toEqual(["tool_search", "tool_describe", "tool_invoke"]);
   });
 
-  test("bare mode lists every tool", async () => {
+  test("default mode lists only discovery tools", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
-    expect(tools.length).toBe(toolDefinitions.length);
+    expect(tools.map((t) => t.name)).toEqual(["tool_search", "tool_describe", "tool_invoke"]);
   });
 
   test("tool_search finds memory_list with a one-line description", async () => {
@@ -122,7 +122,7 @@ describe("meta mode", () => {
 
   test("tool_invoke with invalid args matches the direct-call error", async () => {
     const meta = await connect("meta");
-    const full = await connect();
+    const full = await connect("full");
     const bad = { limit: "not-a-number" };
     const direct = await full.callTool({ name: "memory_list", arguments: bad });
     const viaMeta = await meta.callTool({
@@ -155,15 +155,16 @@ describe("meta mode", () => {
   });
 
   test("meta tool names are not callable in full mode", async () => {
-    const client = await connect();
+    const client = await connect("full");
     const res = await client.callTool({ name: "tool_search", arguments: {} });
     expect(res.isError).toBe(true);
   });
 });
 
 describe("parseMcpMode", () => {
-  test("defaults to full, accepts meta, rejects others", () => {
-    expect(parseMcpMode(undefined)).toBe("full");
+  test("defaults to meta, accepts full, rejects others", () => {
+    expect(parseMcpMode(undefined)).toBe("meta");
+    expect(parseMcpMode("full")).toBe("full");
     expect(parseMcpMode("meta")).toBe("meta");
     expect(() => parseMcpMode("bogus")).toThrow("Valid modes: full, meta");
   });

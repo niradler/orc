@@ -51,7 +51,7 @@ describe("MCP kb management, edits, comments and digests", () => {
   });
 
   test("should expose Markdown paths and accept document_id through the MCP protocol", async () => {
-    const server = createMcpServer();
+    const server = createMcpServer({ mode: "full" });
     const client = new Client({ name: "kb-contract-test", version: "1" });
     const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);

@@ -47,6 +47,22 @@ function privateInput(value: unknown, depth = 0): boolean {
   );
 }
 
+function approvalInput(action: NonNullable<HumanRequest["input"]["action"]>): unknown {
+  const input = action.input as Record<string, unknown>;
+  const meta = input?._meta as Record<string, unknown> | undefined;
+  const item = input?.item as Record<string, unknown> | undefined;
+  if (
+    meta?.codex_approval_kind === "mcp_tool_call" &&
+    item?.type === "mcpToolCall" &&
+    typeof item.server === "string" &&
+    typeof item.tool === "string" &&
+    action.tool === `mcp__${item.server}__${item.tool}` &&
+    JSON.stringify(meta.tool_params) === JSON.stringify(item.arguments)
+  )
+    return { arguments: item.arguments };
+  return action.input;
+}
+
 /** Uses the existing gateway's authorized targets and event dispatch. No agent listener. */
 export class HumanRequestChannels {
   constructor(private readonly store: HumanRequestStore) {}
@@ -80,7 +96,7 @@ export class HumanRequestChannels {
           : [
               request.input.prompt,
               action
-                ? `Host: ${action.host}\nFolder: ${action.cwd}\n${action.tool}\n${JSON.stringify(action.input, null, 2)}`
+                ? `Host: ${action.host}\nFolder: ${action.cwd}\n${action.tool}\n${JSON.stringify(approvalInput(action), null, 2)}`
                 : "",
               request.input.choices.length
                 ? `Choices:\n${request.input.choices.map((choice) => `${choice}${Object.hasOwn(request.input.choice_descriptions, choice) && request.input.choice_descriptions[choice] ? `: ${request.input.choice_descriptions[choice]}` : ""}`).join("\n")}`
@@ -132,8 +148,41 @@ export class HumanRequestChannels {
   }
 
   /** Must only be called after the gateway verifies the current authorized user. */
-  reply(message: IncomingMessage): string | null {
+  replyToPendingQuestion(
+    message: IncomingMessage,
+    policy?: { attention: boolean; project_ids: string[] },
+  ): string | null {
+    if (!message.text.trim() || message.text.trim().startsWith("/")) return null;
+    const pending = this.store.list().filter((request) => {
+      const source = request.input.origin.channel;
+      return (
+        request.status === "pending" &&
+        request.input.kind === "question" &&
+        source &&
+        `${source.connection}:${source.target}` === message.connectionId &&
+        source.chat_id === message.chatId &&
+        source.sender_id === message.userId &&
+        (source.thread_id ?? null) === (message.threadId ?? null)
+      );
+    });
+    if (!pending.length) return null;
+    if (pending.length !== 1)
+      return "More than one question is waiting. Use the response instructions on the question you want to answer, or open Attention needed in ORC.";
+    const request = pending[0];
+    if (!request) return null;
+    return this.reply(
+      { ...message, text: `/attention ${request.id} ${request.version} answer ${message.text}` },
+      policy,
+    );
+  }
+
+  reply(
+    message: IncomingMessage,
+    policy?: { attention: boolean; project_ids: string[] },
+  ): string | null {
     if (!/^\/attention(?:@\w+)?(?:\s|$)/.test(message.text.trim())) return null;
+    if (policy && !policy.attention)
+      return "Questions and approvals are disabled for this recipient. Review the request in ORC.";
     const match = message.text
       .trim()
       .match(/^\/attention(?:@\w+)?\s+(\S+)\s+(\d+)\s+(approve|deny|answer)(?:\s+([\s\S]+))?$/);
@@ -152,6 +201,11 @@ export class HumanRequestChannels {
       )
         return "This request was not offered for replies in this chat/thread. Open Attention needed in ORC.";
       const request: HumanRequest = currentHumanRequest(this.store, id);
+      if (
+        policy?.project_ids.length &&
+        (!request.input.project_id || !policy.project_ids.includes(request.input.project_id))
+      )
+        return "This recipient no longer has access to the request project. Review it in ORC.";
       if (request.input.origin.channel && request.input.origin.channel.sender_id !== message.userId)
         return "Only the originating sender may answer this request.";
       if (request.input.kind === "question") {

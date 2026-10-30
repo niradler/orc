@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -28,6 +28,8 @@ const calls: Array<{ resume: boolean; opts: SessionOpts; prompt: string }> = [];
 const sent: Record<string, unknown>[] = [];
 let requirePermission = false;
 let approved = false;
+let requireQuestion = false;
+let questionAnswer: Record<string, string[]> | undefined;
 function fixture(opts: SessionOpts, resume: boolean): AgentSession {
   let start: () => void = () => {};
   const started = new Promise<void>((resolve) => {
@@ -39,6 +41,7 @@ function fixture(opts: SessionOpts, resume: boolean): AgentSession {
   });
   let alive = true;
   const ask = requirePermission;
+  const question = requireQuestion;
   return {
     id: `fixture-${calls.length}`,
     alive: () => alive,
@@ -50,12 +53,36 @@ function fixture(opts: SessionOpts, resume: boolean): AgentSession {
       approved = result === "approved";
       decide();
     },
+    respondQuestion: (_id, answers) => {
+      questionAnswer = answers;
+      decide();
+    },
     async *events(): AsyncIterable<AgentEvent> {
       await started;
       if (ask) {
         yield {
           type: "permission_request",
           data: { requestId: "permission-1", tool: "fixture", command: "harmless fixture action" },
+        };
+        await decision;
+      }
+      if (question) {
+        yield {
+          type: "question_request",
+          data: {
+            requestId: "q1",
+            questions: [
+              {
+                id: "answer",
+                header: "Color",
+                question: "Which color?",
+                options: [
+                  { label: "Blue", description: "Blue option" },
+                  { label: "Green", description: "Green option" },
+                ],
+              },
+            ],
+          },
         };
         await decision;
       }
@@ -78,6 +105,10 @@ beforeAll(async () => {
   getSqlite()
     .query("INSERT INTO projects (id,name,scope) VALUES ('p1','channel-runtime',?)")
     .run(home);
+  mkdirSync(join(home, "second"));
+  getSqlite()
+    .query("INSERT INTO projects (id,name,scope) VALUES ('p2','channel-second',?)")
+    .run(join(home, "second"));
   registerBackend("channels-fixture", () => ({
     name: "channels-fixture",
     startSession: async (opts) => fixture(opts, false),
@@ -153,6 +184,8 @@ test("authorized channel invokes selected agent and replies; follow-up resumes o
     opts: {
       interactive: true,
       autoApprove: false,
+      orcMcpMode: "meta",
+      systemPromptAppend: expect.stringContaining("skill_read"),
       humanRequestContext: { projectId: "p1", notify: ["telegram"] },
     },
   });
@@ -258,6 +291,231 @@ test("custom native buttons invoke an agent only through an authorized matching 
     thread: "457",
   });
   expect(calls).toHaveLength(before + 1);
+});
+
+test("channel commands manage scoped sessions, custom shortcuts and native slash input", async () => {
+  requirePermission = false;
+  const before = calls.length;
+  await service.receive({ ...message, message_id: "command-help", text: "/help@mybot" });
+  expect(calls.length).toBe(before);
+  expect(String(sent.at(-1)?.text)).toContain("ORC chat controls");
+  await service.receive({
+    ...message,
+    message_id: "command-new",
+    text: "/session new",
+    thread: "commands",
+  });
+  expect(String(sent.at(-1)?.text)).toContain("Created and activated");
+  await service.receive({
+    ...message,
+    message_id: "command-first",
+    text: "first",
+    thread: "commands",
+  });
+  expect(calls.at(-1)?.resume).toBe(false);
+  await service.receive({
+    ...message,
+    message_id: "command-new2",
+    text: "/session new",
+    thread: "commands",
+  });
+  await service.receive({
+    ...message,
+    message_id: "command-second",
+    text: "second",
+    thread: "commands",
+  });
+  expect(calls.at(-1)?.resume).toBe(false);
+  const listBefore = calls.length;
+  await service.receive({
+    ...message,
+    message_id: "command-list",
+    text: "/sessions",
+    thread: "commands",
+  });
+  expect(String(sent.at(-1)?.text)).toContain("channels-fixture");
+  expect(calls.length).toBe(listBefore);
+  const rows = getSqlite()
+    .query<{ id: string }, []>(
+      "SELECT id FROM gateway_sessions WHERE chat_id LIKE '%commands%' ORDER BY created_at",
+    )
+    .all();
+  expect(rows.length).toBe(2);
+  await service.receive({
+    ...message,
+    message_id: "command-switch",
+    text: `/session switch ${rows[0]?.id}`,
+    thread: "commands",
+  });
+  await service.receive({
+    ...message,
+    message_id: "command-resume",
+    text: "third",
+    thread: "commands",
+  });
+  expect(calls.at(-1)?.resume).toBe(true);
+  const current = service.connection("test");
+  await service.save({
+    ...current,
+    credentials: {},
+    config: {
+      commands: [
+        { command: "summary", description: "Task summary", prompt: "Summarize $ARGUMENTS" },
+      ],
+    },
+  });
+  await service.receive({
+    ...message,
+    message_id: "command-custom",
+    text: "/orc summary task-123",
+    thread: "commands",
+  });
+  expect(calls.at(-1)?.prompt).toBe("Summarize task-123");
+  await service.receive({
+    ...message,
+    message_id: "command-native",
+    text: "/backend-native-command args",
+    thread: "commands",
+  });
+  expect(calls.at(-1)?.prompt).toBe("/backend-native-command args");
+  const count = calls.length;
+  await service.receive({
+    ...message,
+    message_id: "command-deny-cwd",
+    text: "/project unavailable-project",
+    thread: "commands",
+  });
+  expect(calls.length).toBe(count);
+  expect(String(sent.at(-1)?.text)).toContain("unavailable or not allowed");
+  await service.receive({
+    ...message,
+    message_id: "command-deny-bypass",
+    text: "/session mode bypass",
+    thread: "commands",
+  });
+  expect(String(sent.at(-1)?.text)).toContain("Use /session new");
+  await stop();
+  stop = await startChannelRuntime(service);
+  await service.receive({
+    ...message,
+    message_id: "command-after-restart",
+    text: "resume after restart",
+    thread: "commands",
+  });
+  expect(calls.at(-1)?.resume).toBe(true);
+});
+
+test("stop interrupts a pending agent turn and discards already queued messages", async () => {
+  requirePermission = true;
+  const count = calls.length;
+  const pending = service.receive({ ...message, message_id: "stop-running", thread: "stop" });
+  const deadline = Date.now() + 3000;
+  while (calls.length === count && Date.now() < deadline) await Bun.sleep(10);
+  expect(calls.length).toBe(count + 1);
+  const queued = service.receive({
+    ...message,
+    message_id: "stop-queued",
+    thread: "stop",
+    text: "must not execute",
+  });
+  await service.receive({ ...message, message_id: "stop-control", thread: "stop", text: "/stop" });
+  await Promise.all([pending, queued]);
+  expect(calls.length).toBe(count + 1);
+  expect(sent.some((p) => String(p.text).includes("Stopped the current turn"))).toBe(true);
+  expect(
+    getSqlite()
+      .query<{ status: string }, []>(
+        "SELECT status FROM gateway_sessions WHERE chat_id LIKE '%stop%' ORDER BY created_at DESC LIMIT 1",
+      )
+      .get()?.status,
+  ).toBe("stopped");
+  requirePermission = false;
+});
+
+test("an authorized unmatched message explains setup without invoking an agent", async () => {
+  const current = service.connection("test");
+  await service.save({ ...current, credentials: {}, routes: [] });
+  const count = calls.length;
+  await service.receive({ ...message, message_id: "no-route", text: "hello" });
+  expect(calls.length).toBe(count);
+  expect(String(sent.at(-1)?.text)).toContain("No inbound route matches");
+  await service.save({ ...service.connection("test"), credentials: {}, routes: current.routes });
+});
+
+test("a plain answer to the single bound question resumes the waiting agent", async () => {
+  requirePermission = false;
+  requireQuestion = true;
+  questionAnswer = undefined;
+  const count = calls.length;
+  const pending = service.receive({ ...message, message_id: "question-turn", thread: "question" });
+  const deadline = Date.now() + 6000;
+  while (Date.now() < deadline) {
+    const human = new HumanRequestStore(getSqlite());
+    const request = human
+      .list()
+      .find((r) => r.status === "pending" && r.input.origin.channel?.thread_id === "question");
+    if (
+      request &&
+      human.canReply(request.id, request.version, "test:me", JSON.stringify(["chat", "question"]))
+    )
+      break;
+    await Bun.sleep(20);
+  }
+  await service.receive({
+    ...message,
+    message_id: "question-answer",
+    thread: "question",
+    text: "Blue",
+  });
+  await pending;
+  expect(questionAnswer as Record<string, string[]> | undefined).toEqual({ answer: ["Blue"] });
+  expect(calls.length).toBe(count + 1);
+  requireQuestion = false;
+}, 10000);
+
+test("project and model controls isolate sessions and spawn in the selected project's folder", async () => {
+  requirePermission = false;
+  const current = service.connection("test");
+  await service.save({
+    ...current,
+    credentials: {},
+    targets: current.targets.map((t) => ({ ...t, project_ids: ["p1", "p2"] })),
+  });
+  const send = (id: string, text: string) =>
+    service.receive({ ...message, message_id: id, thread: "900", text });
+  await send("model-set", "/model fixture-model");
+  await send("model-run", "first project message");
+  expect(calls.at(-1)?.opts).toMatchObject({
+    cwd: home,
+    model: "fixture-model",
+    humanRequestContext: { projectId: "p1" },
+  });
+  await send("project-choose", "/project channel-second");
+  expect(String(sent.at(-1)?.text)).toContain(join(home, "second"));
+  await send("project-run", "second project message");
+  expect(calls.at(-1)?.opts).toMatchObject({
+    cwd: join(home, "second"),
+    humanRequestContext: { projectId: "p2" },
+  });
+  expect(calls.at(-1)?.resume).toBe(false);
+  const otherSession = getSqlite()
+    .query<{ id: string }, []>(
+      "SELECT id FROM gateway_sessions WHERE project_id='p2' ORDER BY created_at DESC LIMIT 1",
+    )
+    .get();
+  await send("project-default", "/project default");
+  await send("project-resume", "back to first project");
+  expect(calls.at(-1)?.opts.cwd).toBe(home);
+  expect(calls.at(-1)?.opts.model).toBe("fixture-model");
+  expect(calls.at(-1)?.resume).toBe(true);
+  const count = calls.length;
+  await send("project-session-deny", `/session switch ${otherSession?.id}`);
+  expect(String(sent.at(-1)?.text)).toContain("unavailable in this project");
+  expect(calls.length).toBe(count);
+  await send("model-default", "/model default");
+  await send("model-default-run", "use default model");
+  expect(calls.at(-1)?.opts.model).toBeUndefined();
+  await service.save({ ...service.connection("test"), credentials: {}, targets: current.targets });
 });
 
 test("editing a recipient during a running turn cannot redirect its reply", async () => {

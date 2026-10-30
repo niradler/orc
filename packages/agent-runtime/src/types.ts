@@ -40,6 +40,8 @@ export type SessionOpts = {
   mcpAlwaysLoad?: boolean | undefined;
   /** Explicit ORC connection for chat. Undefined preserves the backend default. */
   orcMcp?: boolean | undefined;
+  /** Readable project selected for this conversation's injected ORC connection. */
+  orcMcpProject?: string | undefined;
   /** Tool surface of that connection; `meta` serves three search/describe/invoke tools. */
   orcMcpMode?: OrcMcpMode | undefined;
 };

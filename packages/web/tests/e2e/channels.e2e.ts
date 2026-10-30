@@ -82,6 +82,61 @@ for (const width of [1440, 390]) {
     expect(stored?.revision).toBe(2);
     expect(stored?.targets).toHaveLength(1);
     expect(stored?.routes[0]?.condition).toEqual(condition);
+    await editor
+      .locator("summary")
+      .filter({ hasText: /^Custom commands/ })
+      .click();
+    await editor.getByRole("button", { name: "Add custom command", exact: true }).click();
+    await editor.getByTestId("channel-command-name").fill("summary");
+    await editor.getByTestId("channel-command-description").fill("Summarize a task");
+    await editor.getByTestId("channel-command-prompt").fill("Summarize task $ARGUMENTS");
+    await editor.getByTestId("channel-command-editor").scrollIntoViewIfNeeded();
+    const commandBounds = await editor.getByTestId("channel-command-prompt").boundingBox();
+    expect(
+      commandBounds && commandBounds.x >= 0 && commandBounds.x + commandBounds.width <= width,
+    ).toBe(true);
+    await page.screenshot({ path: `../../.claude/docs/channels-command-${width}.png` });
+    await editor.getByTestId("channel-command-apply").click();
+    await editor
+      .locator("summary")
+      .filter({ hasText: /^Recipients/ })
+      .click();
+    await editor.getByTestId("channel-enable-replies-me").click();
+    await editor.getByTestId("channel-replies-project").selectOption(project.id);
+    await editor.getByTestId("channel-replies-agent").fill("default");
+    await editor.getByTestId("channel-replies-model").fill("test-model");
+    await editor.getByTestId("channel-replies-setup").scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `../../.claude/docs/channels-replies-${width}.png` });
+    await editor.getByTestId("channel-replies-apply").click();
+    await editor.getByTestId("channel-save").click();
+    await expect(page.getByRole("status").filter({ hasText: "Connection saved" })).toBeVisible();
+    const twoWay = (
+      await apiGet<
+        Array<{
+          id: string;
+          config: { commands: unknown[] };
+          targets: Array<{ inbound: boolean; outbound: boolean; attention: boolean }>;
+          routes: unknown[];
+        }>
+      >(request, "/channels")
+    ).find((c) => c.id === id);
+    expect(twoWay?.config.commands).toEqual([
+      { command: "summary", description: "Summarize a task", prompt: "Summarize task $ARGUMENTS" },
+    ]);
+    expect(twoWay?.targets[0]).toMatchObject({ inbound: true, outbound: true, attention: true });
+    expect(twoWay?.routes).toHaveLength(2);
+    expect(twoWay?.routes[1]).toMatchObject({
+      action: { agent: "default", model: "test-model", project_id: project.id },
+    });
+    await page.reload();
+    await settingsSection(page, "channels");
+    await page.getByRole("button", { name: `Edit Telegram ${width}`, exact: true }).click();
+    await editor
+      .locator("summary")
+      .filter({ hasText: /^Custom commands/ })
+      .click();
+    await expect(editor.getByRole("button", { name: "Edit /summary", exact: true })).toBeVisible();
+
     await expect(editor.getByText("Recipients (1)", { exact: true })).toBeVisible();
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
@@ -91,7 +146,7 @@ for (const width of [1440, 390]) {
       .locator("summary")
       .filter({ hasText: /^Inbound routing/ })
       .click();
-    await editor.getByRole("button", { name: "Edit rule", exact: true }).click();
+    await editor.getByRole("button", { name: "Edit rule", exact: true }).first().click();
     await editor.getByTestId("channel-condition-json").scrollIntoViewIfNeeded();
     const ruleBounds = await editor.getByTestId("channel-condition-json").boundingBox();
     expect(ruleBounds && ruleBounds.x >= 0 && ruleBounds.x + ruleBounds.width <= width).toBe(true);

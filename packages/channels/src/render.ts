@@ -75,7 +75,8 @@ export function renderMessage(
   provider: "telegram" | "slack",
   message: ChannelMessage,
 ): { payloads: Record<string, unknown>[]; warnings: string[] } {
-  const limit = provider === "telegram" ? 4000 : 30000;
+  const limit = provider === "telegram" ? 4000 : message.links.length ? 3000 : 30000;
+  let plain = message.format === "plain";
   const text =
     message.format === "plain"
       ? escapeText(message.text)
@@ -83,6 +84,7 @@ export function renderMessage(
   const warnings: string[] = [];
   let chunks = [text];
   if (text.length > limit) {
+    plain = true;
     warnings.push("Long message delivered in plain-text chunks to preserve all content safely.");
     const chars = Array.from(message.text);
     chunks = [];
@@ -94,7 +96,7 @@ export function renderMessage(
       ? { text: chunk, parse_mode: "HTML" }
       : {
           text: chunk,
-          mrkdwn: message.format !== "plain",
+          mrkdwn: !plain,
           unfurl_links: false,
           unfurl_media: false,
         },
@@ -107,7 +109,15 @@ export function renderMessage(
       };
     else
       last.blocks = [
-        { type: "section", text: { type: "mrkdwn", text: String(last.text) } },
+        {
+          type: "section",
+          text: {
+            type: plain ? "plain_text" : "mrkdwn",
+            text: plain
+              ? String(last.text).replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
+              : String(last.text),
+          },
+        },
         {
           type: "actions",
           elements: message.links.map((link, i) => ({

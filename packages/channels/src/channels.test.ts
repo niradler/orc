@@ -100,6 +100,24 @@ test("Slack common rendering preserves quotation marks and task-list state", () 
   expect(result.payloads[0]?.text).toContain('A "quoted" summary');
   expect(result.payloads[0]?.text).toContain("☑ Done");
   expect(result.payloads[0]?.text).toContain("☐ Pending");
+  const links = [{ label: "Open task", url: "https://example.com/task" }];
+  const long = renderMessage(
+    "slack",
+    ChannelMessageSchema.parse({ text: "*<&>".repeat(1000), links }),
+  );
+  expect(long.payloads.length).toBeGreaterThan(1);
+  expect(long.payloads.every((p) => p.mrkdwn === false)).toBe(true);
+  const blocks = long.payloads.at(-1)?.blocks as { text?: { type: string; text: string } }[];
+  expect(blocks[0]?.text?.type).toBe("plain_text");
+  expect(blocks[0]?.text?.text.length).toBeLessThanOrEqual(3000);
+  const plain = renderMessage(
+    "slack",
+    ChannelMessageSchema.parse({ text: "*literal* <tag>", format: "plain", links }),
+  );
+  expect(
+    (plain.payloads[0]?.blocks as { text: { text: string; type: string } }[] | undefined)?.[0]
+      ?.text,
+  ).toEqual({ type: "plain_text", text: "*literal* <tag>" });
 });
 
 test("queued messages recheck authorization before invoking an agent", async () => {
@@ -282,5 +300,172 @@ test("an unreadable channel credential does not break legacy account selection",
     }),
   ];
   expect(service.managesAccount("telegram", "legacy-token")).toBe(false);
+  db.close();
+});
+
+test("delivery options retain long-message chunking and edits stay bound to the original destination", async () => {
+  const db = new Database(":memory:");
+  const sent: Record<string, unknown>[] = [];
+  const edits: Record<string, unknown>[] = [];
+  let current = ChannelConnectionSchema.parse({
+    id: "test",
+    name: "Test",
+    provider: "telegram",
+    enabled: true,
+    targets: [{ id: "me", name: "Me", chat_id: "original" }],
+  });
+  const transport: ChannelTransport = {
+    identity: async () => ({ id: "bot", name: "bot" }),
+    start: async () => {},
+    stop: async () => {},
+    send: async (payload) => {
+      sent.push(payload);
+      return String(sent.length);
+    },
+    edit: async (_id, payload) => {
+      edits.push(payload);
+    },
+  };
+  const service = new ChannelService(new ChannelStore(db), () => transport);
+  service.connections = () => [current];
+  const long = await service.send({
+    connection: "test",
+    target: "me",
+    message: { text: "hello ".repeat(1500) },
+    overrides: { disable_notification: true },
+  });
+  expect(long.status).toBe("accepted");
+  expect(sent.length).toBeGreaterThan(1);
+  expect(
+    sent.every(
+      (p) =>
+        p.disable_notification === true && p.parse_mode === "HTML" && String(p.text).length < 4096,
+    ),
+  ).toBe(true);
+  expect(long.warnings.length).toBe(1);
+  const original = await service.send({
+    connection: "test",
+    target: "me",
+    message: { text: "Original" },
+    thread_id: "123",
+  });
+  await service.edit(original.id, { message: ChannelMessageSchema.parse({ text: "Updated" }) });
+  expect(edits[0]?.message_thread_id).toBe(123);
+  await expect(
+    service.edit(original.id, {
+      message: ChannelMessageSchema.parse({ text: "Wrong thread" }),
+      thread_id: "124",
+    }),
+  ).rejects.toThrow("destination");
+  current = { ...current, targets: current.targets.map((t) => ({ ...t, chat_id: "replacement" })) };
+  await expect(
+    service.edit(original.id, { message: ChannelMessageSchema.parse({ text: "Wrong chat" }) }),
+  ).rejects.toThrow("destination");
+  expect(edits).toHaveLength(1);
+  db.close();
+});
+
+test("revoking outbound permissions stops remaining message chunks", async () => {
+  const db = new Database(":memory:");
+  let sends = 0;
+  let current = ChannelConnectionSchema.parse({
+    id: "test",
+    name: "Test",
+    provider: "telegram",
+    enabled: true,
+    targets: [{ id: "me", name: "Me", chat_id: "original" }],
+  });
+  const transport: ChannelTransport = {
+    identity: async () => ({ id: "bot", name: "bot" }),
+    start: async () => {},
+    stop: async () => {},
+    edit: async () => {},
+    send: async () => {
+      sends++;
+      current = { ...current, targets: current.targets.map((t) => ({ ...t, outbound: false })) };
+      return String(sends);
+    },
+  };
+  const service = new ChannelService(new ChannelStore(db), () => transport);
+  service.connections = () => [current];
+  const result = await service.send({
+    connection: "test",
+    target: "me",
+    message: { text: "long ".repeat(2000) },
+  });
+  expect(result.status).toBe("partial");
+  expect(sends).toBe(1);
+  expect(service.get(result.id).status).toBe("partial");
+  db.close();
+});
+
+test("rotating an environment credential replaces only its owned transport", async () => {
+  const db = new Database(":memory:");
+  const previous = process.env.ORC_TELEGRAM_TOKEN;
+  const tokens: string[] = [];
+  let stops = 0;
+  const service = new ChannelService(new ChannelStore(db), (_connection, credentials) => {
+    tokens.push(credentials.token ?? "");
+    return {
+      identity: async () => ({ id: "bot", name: "bot" }),
+      send: async () => "1",
+      edit: async () => {},
+      start: async () => {},
+      stop: async () => {
+        stops++;
+      },
+    };
+  });
+  try {
+    process.env.ORC_TELEGRAM_TOKEN = "first-fixture";
+    await service.save({
+      id: "rotation",
+      name: "Rotation",
+      provider: "telegram",
+      enabled: true,
+      credentials: { token: "env:ORC_TELEGRAM_TOKEN" },
+    });
+    process.env.ORC_TELEGRAM_TOKEN = "second-fixture";
+    await service.reconcile();
+    expect(tokens).toEqual(["first-fixture", "second-fixture"]);
+    expect(stops).toBe(1);
+    expect(service.list().find((c) => c.id === "rotation")?.status).toBe("ready");
+  } finally {
+    await service.stop();
+    db.close();
+    if (previous === undefined) delete process.env.ORC_TELEGRAM_TOKEN;
+    else process.env.ORC_TELEGRAM_TOKEN = previous;
+  }
+});
+
+test("shutdown during identity verification cannot start a new listener afterward", async () => {
+  const db = new Database(":memory:");
+  let resolveIdentity: (value: { id: string; name: string }) => void = () => {};
+  let starts = 0;
+  const identity = new Promise<{ id: string; name: string }>((resolve) => {
+    resolveIdentity = resolve;
+  });
+  const service = new ChannelService(new ChannelStore(db), () => ({
+    identity: () => identity,
+    send: async () => "1",
+    edit: async () => {},
+    start: async () => {
+      starts++;
+    },
+    stop: async () => {},
+  }));
+  const connecting = service.save({
+    id: "shutdown",
+    name: "Shutdown",
+    provider: "telegram",
+    enabled: true,
+    credentials: { token: "fixture" },
+  });
+  await Bun.sleep(0);
+  const stopping = service.stop();
+  resolveIdentity({ id: "bot", name: "bot" });
+  await Promise.all([connecting, stopping]);
+  expect(starts).toBe(0);
+  expect(service.list().find((c) => c.id === "shutdown")?.status).not.toBe("ready");
   db.close();
 });

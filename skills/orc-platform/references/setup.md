@@ -98,7 +98,7 @@ HTTP MCP use `<origin>/mcp` and the configured auth header; do not append `/api`
 to that MCP endpoint. Preserve other MCP servers when editing client config.
 
 Stdio `orc mcp` defaults to meta mode; pass `--mode full` to list every domain
-tool directly. HTTP `/mcp` defaults to full; `/mcp?mode=meta` matches stdio. Meta mode exposes `tool_search`, `tool_describe`, `tool_invoke`:
+tool directly. HTTP `/mcp` also defaults to meta; `/mcp?mode=full` explicitly lists all domain tools. Meta mode exposes `tool_search`, `tool_describe`, `tool_invoke`:
 search by intent, describe unknown arguments, then invoke the selected tool.
 Reach `context` and other named tools through `tool_invoke` in meta mode.
 Connectors, loaded skills and installed hooks do not establish equal enforcement
@@ -118,9 +118,9 @@ mode. Keep API authentication in the configured Authorization header.
 Examples, relative to the selected ORC origin:
 
 ```text
-/mcp                                  # full tools, existing tool/config defaults
+/mcp                                  # meta tools, existing tool/config defaults
 /mcp?mode=meta                        # meta tools, existing tool/config defaults
-/mcp?project=orc                      # full tools, ORC project defaults
+/mcp?project=orc                      # meta tools, ORC project defaults
 /mcp?projects=orc,project2             # full tools, both projects
 /mcp?projects=orc,project2&mode=meta   # both projects through meta tools
 ```

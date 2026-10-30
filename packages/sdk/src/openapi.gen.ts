@@ -380,7 +380,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -522,7 +522,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -714,7 +714,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -977,7 +977,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -2358,7 +2358,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -2450,7 +2450,7 @@ export interface paths {
                             /**
                              * @default You are the ORC platform chat assistant.
                              *
-                             *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                             *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                              *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                              *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                              *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -2532,7 +2532,7 @@ export interface paths {
                                 /**
                                  * @default You are the ORC platform chat assistant.
                                  *
-                                 *     Use ORC context and search to find relevant skills, knowledge, and tools; read their guidance as needed.
+                                 *     When real task work is needed, discover and read relevant built-in ORC skills using skill_list and skill_read: orc-sdlc for engineering work and orc-platform for ORC operations. For nontrivial work, get the selected project's context first and follow the current skill guidance. Discover relevant tools as needed. Answer simple conversation directly.
                                  *     Share relevant ORC links: session pages for reading, supported chat or terminal actions for resuming. Follow the session guidance.
                                  *     Use scratchpads to collaborate on plans, diagrams, and HTML artifacts; share their links and preserve human edits.
                                  *     Manage longer work through ORC tasks, progress updates, and handoffs.
@@ -2742,6 +2742,7 @@ export interface paths {
                                     type: "agent";
                                     agent: string;
                                     profile?: string;
+                                    model?: string;
                                     project_id: string;
                                 };
                             }[];
@@ -2840,6 +2841,7 @@ export interface paths {
                                 type: "agent";
                                 agent: string;
                                 profile?: string;
+                                model?: string;
                                 project_id: string;
                             };
                         }[];
@@ -2893,6 +2895,7 @@ export interface paths {
                                     type: "agent";
                                     agent: string;
                                     profile?: string;
+                                    model?: string;
                                     project_id: string;
                                 };
                             }[];
@@ -3216,6 +3219,10 @@ export interface paths {
                             /** @enum {string} */
                             status: "sending" | "accepted" | "failed" | "unknown" | "partial";
                             provider_ids: string[];
+                            destination?: {
+                                chat_id: string;
+                                thread_id?: string;
+                            };
                             error: string | null;
                             created_at: number;
                             warnings: string[];
@@ -3264,6 +3271,10 @@ export interface paths {
                             /** @enum {string} */
                             status: "sending" | "accepted" | "failed" | "unknown" | "partial";
                             provider_ids: string[];
+                            destination?: {
+                                chat_id: string;
+                                thread_id?: string;
+                            };
                             error: string | null;
                             created_at: number;
                         };
@@ -3325,6 +3336,10 @@ export interface paths {
                             /** @enum {string} */
                             status: "sending" | "accepted" | "failed" | "unknown" | "partial";
                             provider_ids: string[];
+                            destination?: {
+                                chat_id: string;
+                                thread_id?: string;
+                            };
                             error: string | null;
                             created_at: number;
                         };

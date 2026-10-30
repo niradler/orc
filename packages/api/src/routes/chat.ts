@@ -24,6 +24,7 @@ import {
   ChatSettingsSchema,
   type ChatThread,
   ChatThreadSchema,
+  chatSystemPrompt,
 } from "@orc/core/chat";
 import { ChatAgentOptionsMapSchema } from "@orc/core/chat-options";
 import { loadConfig } from "@orc/core/config";
@@ -848,7 +849,7 @@ app.openapi(
               ? thread.config.permissionMode
               : undefined,
             model: thread.config.model || undefined,
-            systemPromptAppend: thread.config.system,
+            systemPromptAppend: chatSystemPrompt(thread.config.system),
             orcMcp: thread.config.mcp === "orc",
             orcMcpMode: "meta",
             mcpAlwaysLoad: true,

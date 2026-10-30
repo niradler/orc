@@ -1,4 +1,5 @@
 import {
+  ChannelCommandsSchema,
   type ChannelCondition,
   type ChannelConnection,
   ChannelConnectionSchema,
@@ -10,6 +11,7 @@ import {
   type ChannelTarget,
   ChannelTargetSchema,
   type ChannelView,
+  channelCommands,
   validChannelCondition,
 } from "@orc/core/channels";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -421,7 +423,7 @@ function RouteEditor({
                 action:
                   e.target.value === "ignore"
                     ? { type: "ignore" }
-                    : { type: "agent", agent: "codex", project_id: projects[0]?.id ?? "" },
+                    : { type: "agent", agent: "default", project_id: projects[0]?.id ?? "" },
               })
             }
           >
@@ -434,7 +436,7 @@ function RouteEditor({
             <Field label="Agent backend">
               <Input
                 data-testid="channel-route-agent"
-                placeholder="codex, claude, …"
+                placeholder="default, codex-cli, claude, …"
                 value={route.action.agent}
                 onChange={(e) => {
                   if (route.action.type === "agent")
@@ -459,6 +461,22 @@ function RouteEditor({
                   </option>
                 ))}
               </select>
+            </Field>
+            <Field label="Default model (optional)">
+              <Input
+                data-testid="channel-route-model"
+                placeholder="Use the agent default"
+                value={route.action.model ?? ""}
+                onChange={(e) => {
+                  if (route.action.type === "agent") {
+                    const { model: _model, ...action } = route.action;
+                    setRoute({
+                      ...route,
+                      action: e.target.value ? { ...action, model: e.target.value } : action,
+                    });
+                  }
+                }}
+              />
             </Field>
             <Field label="Agent profile (optional)">
               <Input
@@ -525,6 +543,22 @@ function ConnectionEditor({
     null,
   );
   const [rule, setRule] = useState<ChannelRoute | null>(null);
+  const [replyTarget, setReplyTarget] = useState<string | null>(null);
+  const [replyProject, setReplyProject] = useState(projects[0]?.id ?? "");
+  const [replyAgent, setReplyAgent] = useState("default");
+  const [replyModel, setReplyModel] = useState("");
+  const [shortcut, setShortcut] = useState<{
+    original: string | null;
+    command: string;
+    description: string;
+    prompt: string;
+  } | null>(null);
+  const shortcuts = channelCommands(draft.config);
+  const setShortcuts = (commands: typeof shortcuts) => {
+    const next = { ...draft.config, commands };
+    update({ ...draft, config: next });
+    setConfigText(JSON.stringify(next, null, 2));
+  };
   const [pair, setPair] = useState<{ id: string; url: string; message: string } | null>(null);
   const [configText, setConfigText] = useState(JSON.stringify(draft.config, null, 2));
   const [configError, setConfigError] = useState("");
@@ -660,7 +694,7 @@ function ConnectionEditor({
       <div className="flex flex-wrap gap-2">
         <Button
           data-testid="channel-save"
-          disabled={!!target || !!rule || !!configError}
+          disabled={!!target || !!rule || !!shortcut || !!replyTarget || !!configError}
           onClick={() =>
             void run(async () => {
               const result = await api.channels.save(draft);
@@ -765,10 +799,25 @@ function ConnectionEditor({
               <div className="min-w-0 text-sm">
                 <span className="font-medium">{t.name}</span>
                 <span className="ml-2 text-muted-foreground">
-                  {t.id} · {t.inbound ? "two-way" : "outbound"}
+                  {t.id} ·{" "}
+                  {t.inbound && t.outbound
+                    ? "send + receive"
+                    : t.inbound
+                      ? "receive only"
+                      : "send only"}
                 </span>
               </div>
               <div className="flex gap-1">
+                <Button
+                  variant="ghost"
+                  data-testid={`channel-enable-replies-${t.id}`}
+                  onClick={() => {
+                    setReplyTarget(t.id);
+                    setReplyProject(t.project_ids[0] ?? projects[0]?.id ?? "");
+                  }}
+                >
+                  Set up agent replies
+                </Button>
                 <Button variant="ghost" onClick={() => setTarget({ original: t.id, value: t })}>
                   Edit {t.id}
                 </Button>
@@ -817,6 +866,111 @@ function ConnectionEditor({
         >
           Add recipient
         </Button>
+        {replyTarget && (
+          <div
+            className="space-y-2 border-t border-border py-3"
+            data-testid="channel-replies-setup"
+          >
+            <p className="text-sm">
+              Allow approved senders for {replyTarget} to talk to an agent and answer its questions.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Field label="Reply project">
+                <select
+                  className={control}
+                  value={replyProject}
+                  onChange={(e) => setReplyProject(e.target.value)}
+                  data-testid="channel-replies-project"
+                >
+                  <option value="">Choose project</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Reply agent">
+                <Input
+                  value={replyAgent}
+                  onChange={(e) => setReplyAgent(e.target.value)}
+                  data-testid="channel-replies-agent"
+                />
+              </Field>
+            </div>
+            <Field label="Reply model (optional)">
+              <Input
+                data-testid="channel-replies-model"
+                value={replyModel}
+                onChange={(e) => setReplyModel(e.target.value)}
+                placeholder="Use the agent default"
+              />
+            </Field>
+            <p className="text-xs text-muted-foreground">
+              Use “default” for the agent to follow Chat Settings. /project, /agent and /model can
+              change this conversation's choices within recipient permissions. The project needs a
+              working directory. Existing earlier routing rules retain priority. Apply, then save
+              the connection.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                data-testid="channel-replies-apply"
+                disabled={!replyProject || !replyAgent.trim()}
+                onClick={() =>
+                  void run(async () => {
+                    const recipient = draft.targets.find((t) => t.id === replyTarget);
+                    if (!recipient?.user_ids.length)
+                      throw new Error("Pair this recipient or add approved sender IDs first.");
+                    const rule = ChannelRouteSchema.parse({
+                      id: `replies-${recipient.id}`,
+                      name: `Replies to ${recipient.name}`,
+                      enabled: true,
+                      condition: {
+                        all: [
+                          { field: "kind", op: "is", value: "message" },
+                          { field: "chat", op: "is", value: recipient.chat_id },
+                          ...(recipient.thread_id
+                            ? [{ field: "thread", op: "is", value: recipient.thread_id }]
+                            : []),
+                        ],
+                      },
+                      action: {
+                        type: "agent",
+                        agent: replyAgent.trim(),
+                        project_id: replyProject,
+                        ...(replyModel.trim() ? { model: replyModel.trim() } : {}),
+                      },
+                    });
+                    update({
+                      ...draft,
+                      targets: draft.targets.map((t) =>
+                        t.id === recipient.id
+                          ? {
+                              ...t,
+                              inbound: true,
+                              outbound: true,
+                              attention: true,
+                              project_ids: t.project_ids.length
+                                ? [...new Set([...t.project_ids, replyProject])]
+                                : [],
+                            }
+                          : t,
+                      ),
+                      routes: [...draft.routes.filter((r) => r.id !== rule.id), rule],
+                    });
+                    setReplyTarget(null);
+                    return "Agent replies configured. Save the connection to activate them.";
+                  })
+                }
+              >
+                Apply agent replies
+              </Button>
+              <Button variant="ghost" onClick={() => setReplyTarget(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
         {target && (
           <TargetEditor
             key={target.original ?? "new"}
@@ -833,6 +987,98 @@ function ConnectionEditor({
               setTarget(null);
             }}
           />
+        )}
+      </details>
+      <details>
+        <summary className="min-h-11 cursor-pointer py-3 text-sm">
+          Custom commands ({shortcuts.length})
+        </summary>
+        <p className="mb-2 text-xs text-muted-foreground">
+          Shortcuts send a configured prompt to the routed agent. Use $ARGUMENTS for command
+          arguments. Telegram: /summary. Slack: /orc summary. ORC controls cannot be replaced.
+        </p>
+        {shortcuts.map((c) => (
+          <div
+            key={c.command}
+            className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-border py-1"
+          >
+            <span className="min-w-0 text-sm">
+              /{c.command} · {c.description}
+            </span>
+            <Button variant="ghost" onClick={() => setShortcut({ ...c, original: c.command })}>
+              Edit /{c.command}
+            </Button>
+          </div>
+        ))}
+        {!shortcut && (
+          <Button
+            variant="outline"
+            onClick={() =>
+              setShortcut({ original: null, command: "", description: "", prompt: "" })
+            }
+          >
+            Add custom command
+          </Button>
+        )}
+        {shortcut && (
+          <div className="space-y-2 py-3" data-testid="channel-command-editor">
+            <Field label="Command name">
+              <Input
+                data-testid="channel-command-name"
+                value={shortcut.command}
+                onChange={(e) => setShortcut({ ...shortcut, command: e.target.value })}
+                placeholder="summary"
+              />
+            </Field>
+            <Field label="Command description">
+              <Input
+                data-testid="channel-command-description"
+                value={shortcut.description}
+                onChange={(e) => setShortcut({ ...shortcut, description: e.target.value })}
+              />
+            </Field>
+            <Field label="Agent prompt">
+              <textarea
+                className="form-control min-h-24 w-full"
+                data-testid="channel-command-prompt"
+                value={shortcut.prompt}
+                onChange={(e) => setShortcut({ ...shortcut, prompt: e.target.value })}
+              />
+            </Field>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                data-testid="channel-command-apply"
+                onClick={() =>
+                  void run(async () => {
+                    const { original, ...value } = shortcut;
+                    const parsed = ChannelCommandsSchema.parse([
+                      ...shortcuts.filter((c) => c.command !== original),
+                      value,
+                    ]);
+                    setShortcuts(parsed);
+                    setShortcut(null);
+                    return "Command applied. Save the connection to activate it.";
+                  })
+                }
+              >
+                Apply command
+              </Button>
+              {shortcut.original && (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setShortcuts(shortcuts.filter((c) => c.command !== shortcut.original));
+                    setShortcut(null);
+                  }}
+                >
+                  Remove command
+                </Button>
+              )}
+              <Button variant="ghost" onClick={() => setShortcut(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
         )}
       </details>
       <details>
@@ -899,7 +1145,7 @@ function ConnectionEditor({
               name: "New rule",
               enabled: true,
               condition: defaultRouteCondition,
-              action: { type: "agent", agent: "codex", project_id: projects[0]?.id ?? "" },
+              action: { type: "agent", agent: "default", project_id: projects[0]?.id ?? "" },
             })
           }
         >

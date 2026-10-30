@@ -2,6 +2,7 @@ import {
   type ChannelCondition,
   type ChannelInbound,
   type ChannelRoute,
+  channelCommand,
   validChannelCondition,
 } from "@orc/core/channels";
 
@@ -11,7 +12,7 @@ export function matchesCondition(condition: ChannelCondition, message: ChannelIn
   if ("not" in condition) return !matchesCondition(condition.not, message);
   const actual =
     condition.field === "command"
-      ? (message.text.match(/^\/(\w+)/)?.[1] ?? "")
+      ? (channelCommand(message.text)?.name ?? "")
       : (message[condition.field] ?? "");
   if (condition.op === "is") return actual === condition.value;
   if (condition.op === "in")

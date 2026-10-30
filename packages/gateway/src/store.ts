@@ -167,10 +167,12 @@ export async function getActiveGatewaySession(chatKey: string) {
   });
 }
 
-export async function listGatewaySessions(chatKey: string) {
+export async function listGatewaySessions(chatKey: string, projectId?: string) {
   const db = getDb();
   return db.query.gateway_sessions.findMany({
-    where: eq(gateway_sessions.chat_id, chatKey),
+    where: projectId
+      ? and(eq(gateway_sessions.chat_id, chatKey), eq(gateway_sessions.project_id, projectId))
+      : eq(gateway_sessions.chat_id, chatKey),
     orderBy: [desc(gateway_sessions.updated_at)],
     limit: 20,
   });

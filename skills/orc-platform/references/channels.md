@@ -120,3 +120,46 @@ Receipt/idempotency metadata and inbound duplicate records are retained for 30 d
 HTTP API: provider discovery and `/channels`; `PUT /channels/{id}` for revision-checked configuration; `/channels/{id}/verify`, `/targets`, `/pairings`, `/route-test`; `/channels/pairings/{id}` and `/confirm`; `POST /channels/messages`; `GET`/`PATCH /channels/messages/{id}`. Prefix paths with `/api`. API and MCP use the same service and validation. The SDK exposes `channels` methods. Routine agent MCP does not expose credential/setup writes.
 
 Definitions live in SQLite (`channels`, `channel_targets`, `channel_routes`). Provider configuration and encrypted credential references are JSON fields; rule order is explicit. Preserve the returned `revision` when saving configuration; reload on a conflict rather than overwriting someone else's changes.
+
+## Two-way conversations and chat controls
+
+In Settings → Channels, pair a recipient, then choose **Set up agent replies**. Select its default project, agent and optional model, apply, then save. Agent `default` follows Chat Settings. The flow enables inbound/outbound/questions and retains recipient project restrictions. Earlier routing rules retain priority. Every selected project needs an active working folder available on the execution host.
+
+The first matching rule supplies defaults. Ordinary messages reach the selected agent; follow-ups resume its native session. Conversations are separated by connection, chat, thread, sender and route. Sessions and model choices are additionally separated by project. Unmatched messages explain setup; explicit ignore rules remain silent. Unapproved senders invoke neither controls nor agents.
+
+The intentionally small control menu manages chat:
+
+- `/help`: chat controls and custom shortcuts.
+- `/status`: active project/folder, agent, model and session.
+- `/project [name-or-id|default]`: choose an allowed project with buttons or by name. The project's configured working folder is the agent spawn directory. Returning to a project resumes its selected conversation. Recipient project restrictions are enforced on selection and every subsequent turn.
+- `/agent [name|default]`: choose an agent with buttons or restore the routing default. Conversations for different agents remain separate and can be selected again.
+- `/model [id|default]`: choose from the available model catalog or supply an explicit ID. Restore the route/backend default with `default`; the choice takes effect on the next turn and persists with that session.
+- `/session new|list|switch <id-or-number>|stop`: create, select or stop sessions in the active project. Switch controls restore that session's agent/model. `/stop` immediately cancels the active turn and already queued input.
+
+Tasks, jobs and other ORC operations belong to the agent's tools. Unknown slash input goes to the backend's native command vocabulary. Sensitive operations still use existing human approvals.
+
+Slack uses the app's `/orc` entry point: `/orc help`, `/orc project my-project`, `/orc session new`, `/orc summary task-123`. The Slack manifest registers `/orc` with the `commands` scope. Plain messages and mentions use the same routing pipeline. Telegram registers the chat controls and configured shortcuts in its command menu.
+
+Configure shortcuts in Settings → Custom commands, or connection config JSON:
+
+```json
+{"commands":[{"command":"summary","description":"Summarize a task","prompt":"Summarize task $ARGUMENTS and return its ORC link."}]}
+```
+
+`/summary task-123` expands the prompt after authorization/routing. `$ARGUMENTS` is literal string substitution, never shell evaluation. Without the placeholder, arguments are appended. Shortcuts cannot replace chat controls or expand project permissions. Native message overrides remain independent of shortcuts.
+
+Questions and approvals reuse durable Attention requests. Buttons are bound to the originating sender, connection, recipient and thread. Plain text answers the single pending question offered to that conversation; multiple questions require explicit response instructions. Plain “yes” never grants approval. Sensitive requests remain in ORC; revoking project access or disabling approvals immediately blocks old controls.
+
+## Delivery and recovery
+
+- A provider-accepted receipt proves API acceptance, not that a human read it. Native IDs and immutable original destination are retained; moving a recipient alias cannot redirect message edits.
+- Safe provider rate-limit responses may retry with bounded provider-specified delay. Ambiguous network outcomes never retry automatically. Multi-chunk partial send/edit outcomes are persisted for inspection.
+- Native content fields such as `text`, `blocks` and `attachments` stay intact. Delivery-only overrides retain common Markdown rendering and long-message chunking. Explicit arrays replace generated arrays.
+- Telegram polling cursors are persisted per connection/account. New setup ignores old backlog; reconnects resume new messages received during downtime. Already claimed/interrupted agent turns are not automatically replayed, preventing duplicate tool effects. Inspect the session before intentionally resending.
+- Provider ownership leases prevent competing listeners within shared ORC storage. An external Telegram conflict stops until explicit configuration retry. Credential rotation refreshes the affected transport; Slack is ready only after its socket opens.
+
+## Shared chat guidance and tool discovery
+
+Channel conversations reuse the dashboard's configured chat system prompt. The shared baseline suggests reading relevant built-in ORC skills when real task work is needed: orc-sdlc for engineering and orc-platform for platform operations. Custom chat instructions are preserved. Meta mode is the default, so agents discover tools without receiving the full domain catalog up front. Full mode remains an explicit integration option.
+
+Tool allowlists are a separate backend capability. Claude adapters enforce native tool restrictions; their existing ORC MCP namespace exception still allows ORC operations. Codex does not advertise allowlist enforcement, and unsupported explicit/profile allowlists are rejected rather than silently ignored. These allowlists are not an OS sandbox or an ORC operation permission policy. Channel recipient/project authorization and native human approval checks still apply independently.

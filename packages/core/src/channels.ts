@@ -1,6 +1,52 @@
 import { z } from "zod";
 
 export const ChannelProviderSchema = z.enum(["telegram", "slack"]);
+export const ChannelBuiltinCommands = [
+  { command: "help", description: "Chat controls and custom shortcuts" },
+  { command: "status", description: "Current project, agent, model and session" },
+  { command: "project", description: "Select a project and its working folder" },
+  { command: "agent", description: "Select an agent or restore the default" },
+  { command: "model", description: "Select a model or restore the default" },
+  { command: "session", description: "New, list, switch or stop a conversation" },
+  { command: "stop", description: "Stop the current turn and queued messages" },
+] as const;
+export const ChannelCommandsSchema = z
+  .array(
+    z
+      .object({
+        command: z.string().regex(/^[a-z][a-z0-9_]{0,31}$/),
+        description: z.string().trim().min(1).max(100),
+        prompt: z.string().trim().min(1).max(10000),
+      })
+      .strict(),
+  )
+  .max(50)
+  .superRefine((commands, ctx) => {
+    const names = commands.map((c) => c.command);
+    if (
+      new Set(names).size !== names.length ||
+      names.some(
+        (name) =>
+          ["start", "orc", "projects", "sessions"].includes(name) ||
+          ChannelBuiltinCommands.some((c) => c.command === name),
+      )
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Command names must be unique and cannot replace ORC controls",
+      });
+  });
+export function channelCommands(config: Record<string, unknown>) {
+  return ChannelCommandsSchema.parse(config.commands ?? []);
+}
+export function channelCommand(text: string): { name: string; args: string } | null {
+  let source = text.trim();
+  const slack = source.match(/^\/orc(?:@\w+)?(?:\s+([\s\S]*))?$/i);
+  if (slack) source = `/${(slack[1]?.trim() || "help").replace(/^\//, "")}`;
+  const match = source.match(/^\/([a-z][a-z0-9_]*)(?:@\w+)?(?:\s+([\s\S]*))?$/i);
+  if (!match || match[1]?.toLowerCase() === "orc") return null;
+  return { name: (match[1] ?? "").toLowerCase(), args: match[2]?.trim() ?? "" };
+}
 export type ChannelProviderInfo = {
   id: "telegram" | "slack";
   name: string;
@@ -131,6 +177,13 @@ export const ChannelRouteSchema = z
             .max(100)
             .regex(/^[a-z][a-z0-9_-]*$/),
           profile: z.string().min(1).max(100).optional(),
+          model: z
+            .string()
+            .trim()
+            .min(1)
+            .max(200)
+            .regex(/^[a-z0-9][a-z0-9._:/@+-]*$/i)
+            .optional(),
           project_id: z.string().min(1).max(100),
         })
         .strict(),
@@ -166,6 +219,13 @@ export const ChannelConnectionSchema = z
   })
   .strict()
   .superRefine((v, ctx) => {
+    const commands = ChannelCommandsSchema.safeParse(v.config.commands ?? []);
+    if (!commands.success)
+      ctx.addIssue({
+        code: "custom",
+        message: commands.error.message,
+        path: ["config", "commands"],
+      });
     for (const field of ["targets", "routes"] as const) {
       if (new Set(v[field].map((x) => x.id)).size !== v[field].length)
         ctx.addIssue({ code: "custom", message: `Duplicate ${field} IDs`, path: [field] });
@@ -232,6 +292,7 @@ export const ChannelReceiptSchema = z.object({
   project_id: z.string().nullable(),
   status: z.enum(["sending", "accepted", "failed", "unknown", "partial"]),
   provider_ids: z.array(z.string()),
+  destination: z.object({ chat_id: z.string(), thread_id: z.string().optional() }).optional(),
   error: z.string().nullable(),
   created_at: z.number(),
 });

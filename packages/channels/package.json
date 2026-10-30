@@ -5,7 +5,8 @@
   "exports": {
     ".": "./src/service.ts",
     "./providers": "./src/providers.ts",
-    "./routing": "./src/routing.ts"
+    "./routing": "./src/routing.ts",
+    "./render": "./src/render.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

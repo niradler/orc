@@ -30,6 +30,9 @@ export class ChannelStore {
       CREATE TABLE IF NOT EXISTS channel_pairings (id TEXT PRIMARY KEY, connection TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL, expires_at INTEGER NOT NULL, candidate TEXT, confirmed INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE IF NOT EXISTS channel_leases (resource TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS channel_inbound (connection TEXT NOT NULL, event_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(connection,event_id));`);
+    db.exec(
+      `CREATE TABLE IF NOT EXISTS channel_cursors (connection TEXT NOT NULL, account TEXT NOT NULL, cursor TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(connection,account))`,
+    );
     db.exec(`CREATE TABLE IF NOT EXISTS channel_actions (
       id TEXT PRIMARY KEY, connection TEXT NOT NULL, target TEXT NOT NULL, chat TEXT NOT NULL, thread TEXT NOT NULL,
       users TEXT NOT NULL, value TEXT NOT NULL, expires_at INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0)`);
@@ -114,57 +117,59 @@ export class ChannelStore {
     );
   }
   saveConnection(c: ChannelConnection): void {
-    this.db.transaction(() => {
-      const row = this.db
-        .query<{ revision: number }, [string]>("SELECT revision FROM channels WHERE id=?")
-        .get(c.id);
-      if ((row?.revision ?? 0) !== c.revision)
-        throw new ConflictError("Connection changed elsewhere. Reload before saving.");
-      this.db
-        .query(
-          `INSERT INTO channels VALUES (?,?,?,?,?,?,1,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,provider=excluded.provider,enabled=excluded.enabled,config=excluded.config,credentials=excluded.credentials,revision=channels.revision+1,updated_at=excluded.updated_at`,
-        )
-        .run(
-          c.id,
-          c.name,
-          c.provider,
-          c.enabled ? 1 : 0,
-          JSON.stringify(c.config),
-          JSON.stringify(c.credentials),
-          this.now(),
-          this.now(),
-        );
-      this.db.query("DELETE FROM channel_targets WHERE channel_id=?").run(c.id);
-      this.db.query("DELETE FROM channel_routes WHERE channel_id=?").run(c.id);
-      for (const [position, t] of c.targets.entries())
+    this.db
+      .transaction(() => {
+        const row = this.db
+          .query<{ revision: number }, [string]>("SELECT revision FROM channels WHERE id=?")
+          .get(c.id);
+        if ((row?.revision ?? 0) !== c.revision)
+          throw new ConflictError("Connection changed elsewhere. Reload before saving.");
         this.db
-          .query("INSERT INTO channel_targets VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+          .query(
+            `INSERT INTO channels VALUES (?,?,?,?,?,?,1,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,provider=excluded.provider,enabled=excluded.enabled,config=excluded.config,credentials=excluded.credentials,revision=channels.revision+1,updated_at=excluded.updated_at`,
+          )
           .run(
             c.id,
-            t.id,
-            t.name,
-            t.chat_id,
-            t.thread_id ?? null,
-            +t.inbound,
-            +t.outbound,
-            +t.attention,
-            JSON.stringify(t.user_ids),
-            JSON.stringify(t.project_ids),
-            position,
+            c.name,
+            c.provider,
+            c.enabled ? 1 : 0,
+            JSON.stringify(c.config),
+            JSON.stringify(c.credentials),
+            this.now(),
+            this.now(),
           );
-      for (const [position, r] of c.routes.entries())
-        this.db
-          .query("INSERT INTO channel_routes VALUES (?,?,?,?,?,?,?)")
-          .run(
-            c.id,
-            r.id,
-            r.name,
-            +r.enabled,
-            position,
-            JSON.stringify(r.condition),
-            JSON.stringify(r.action),
-          );
-    })();
+        this.db.query("DELETE FROM channel_targets WHERE channel_id=?").run(c.id);
+        this.db.query("DELETE FROM channel_routes WHERE channel_id=?").run(c.id);
+        for (const [position, t] of c.targets.entries())
+          this.db
+            .query("INSERT INTO channel_targets VALUES (?,?,?,?,?,?,?,?,?,?,?)")
+            .run(
+              c.id,
+              t.id,
+              t.name,
+              t.chat_id,
+              t.thread_id ?? null,
+              +t.inbound,
+              +t.outbound,
+              +t.attention,
+              JSON.stringify(t.user_ids),
+              JSON.stringify(t.project_ids),
+              position,
+            );
+        for (const [position, r] of c.routes.entries())
+          this.db
+            .query("INSERT INTO channel_routes VALUES (?,?,?,?,?,?,?)")
+            .run(
+              c.id,
+              r.id,
+              r.name,
+              +r.enabled,
+              position,
+              JSON.stringify(r.condition),
+              JSON.stringify(r.action),
+            );
+      })
+      .immediate();
   }
   reserve(
     connection: string,
@@ -172,41 +177,54 @@ export class ChannelStore {
     project: string | null,
     request: unknown,
     idem?: string,
+    destination?: NonNullable<ChannelReceipt["destination"]>,
   ): { receipt: ChannelReceipt; fresh: boolean } {
-    const requestHash = hash(JSON.stringify(request));
-    const existing = idem
-      ? this.db
-          .query<ReceiptRow, [string, string]>(
-            "SELECT payload,request_hash,updated_at FROM channel_receipts WHERE connection=? AND idem=?",
-          )
-          .get(connection, idem)
-      : null;
-    if (existing) {
-      if (existing.request_hash !== requestHash)
-        throw new ConflictError("Idempotency key already used with another message");
-      const receipt: ChannelReceipt = JSON.parse(existing.payload);
-      if (receipt.status === "sending" && existing.updated_at < this.now() - 120000) {
-        receipt.status = "unknown";
-        receipt.error =
-          "Delivery interrupted; provider acceptance is unknown. Inspect before retrying.";
-        this.save(receipt);
-      }
-      return { receipt, fresh: false };
-    }
-    const receipt: ChannelReceipt = {
-      id: ulid(),
-      connection,
-      target,
-      project_id: project,
-      status: "sending",
-      provider_ids: [],
-      error: null,
-      created_at: this.now(),
-    };
-    this.db
-      .query("INSERT INTO channel_receipts VALUES (?,?,?,?,?,?)")
-      .run(receipt.id, connection, idem ?? null, requestHash, JSON.stringify(receipt), this.now());
-    return { receipt, fresh: true };
+    return this.db
+      .transaction(() => {
+        const requestHash = hash(JSON.stringify(request));
+        const existing = idem
+          ? this.db
+              .query<ReceiptRow, [string, string]>(
+                "SELECT payload,request_hash,updated_at FROM channel_receipts WHERE connection=? AND idem=?",
+              )
+              .get(connection, idem)
+          : null;
+        if (existing) {
+          if (existing.request_hash !== requestHash)
+            throw new ConflictError("Idempotency key already used with another message");
+          const receipt: ChannelReceipt = JSON.parse(existing.payload);
+          if (receipt.status === "sending" && existing.updated_at < this.now() - 120000) {
+            receipt.status = "unknown";
+            receipt.error =
+              "Delivery interrupted; provider acceptance is unknown. Inspect before retrying.";
+            this.save(receipt);
+          }
+          return { receipt, fresh: false };
+        }
+        const receipt: ChannelReceipt = {
+          id: ulid(),
+          connection,
+          target,
+          project_id: project,
+          status: "sending",
+          provider_ids: [],
+          ...(destination ? { destination } : {}),
+          error: null,
+          created_at: this.now(),
+        };
+        this.db
+          .query("INSERT INTO channel_receipts VALUES (?,?,?,?,?,?)")
+          .run(
+            receipt.id,
+            connection,
+            idem ?? null,
+            requestHash,
+            JSON.stringify(receipt),
+            this.now(),
+          );
+        return { receipt, fresh: true };
+      })
+      .immediate();
   }
   save(receipt: ChannelReceipt) {
     this.db
@@ -241,6 +259,20 @@ export class ChannelStore {
     this.db
       .query("UPDATE channel_leases SET expires_at=0 WHERE resource=? AND owner=?")
       .run(resource, owner);
+  }
+  cursor(connection: string, account: string): string | undefined {
+    return this.db
+      .query<{ cursor: string }, [string, string]>(
+        "SELECT cursor FROM channel_cursors WHERE connection=? AND account=?",
+      )
+      .get(connection, account)?.cursor;
+  }
+  saveCursor(connection: string, account: string, cursor: string): void {
+    this.db
+      .query(
+        "INSERT INTO channel_cursors VALUES (?,?,?,?) ON CONFLICT(connection,account) DO UPDATE SET cursor=excluded.cursor,updated_at=excluded.updated_at",
+      )
+      .run(connection, account, cursor, this.now());
   }
   claim(connection: string, id: string): boolean {
     return (
@@ -343,16 +375,21 @@ export class ChannelStore {
     thread: string | undefined,
     user: string,
   ): string | null {
-    return this.db.transaction(() => {
-      const row = this.db
-        .query<{ users: string; value: string }, [string, string, string, string, string, number]>(
-          "SELECT users,value FROM channel_actions WHERE id=? AND connection=? AND target=? AND chat=? AND thread=? AND expires_at>? AND used=0",
-        )
-        .get(id, connection, target, chat, thread ?? "", this.now());
-      if (!row || !(JSON.parse(row.users) as string[]).includes(user)) return null;
-      this.db.query("UPDATE channel_actions SET used=1 WHERE id=?").run(id);
-      return row.value;
-    })();
+    return this.db
+      .transaction(() => {
+        const row = this.db
+          .query<
+            { users: string; value: string },
+            [string, string, string, string, string, number]
+          >(
+            "SELECT users,value FROM channel_actions WHERE id=? AND connection=? AND target=? AND chat=? AND thread=? AND expires_at>? AND used=0",
+          )
+          .get(id, connection, target, chat, thread ?? "", this.now());
+        if (!row || !(JSON.parse(row.users) as string[]).includes(user)) return null;
+        this.db.query("UPDATE channel_actions SET used=1 WHERE id=?").run(id);
+        return row.value;
+      })
+      .immediate();
   }
   prune() {
     const cutoff = this.now() - 30 * 86400000;

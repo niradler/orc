@@ -5,7 +5,7 @@ export const MCP_MODES = ["full", "meta"] as const;
 export type McpMode = (typeof MCP_MODES)[number];
 
 export function parseMcpMode(value: string | null | undefined): McpMode {
-  if (value === null || value === undefined) return "full";
+  if (value === null || value === undefined) return "meta";
   if ((MCP_MODES as readonly string[]).includes(value)) return value as McpMode;
   throw new Error(`Invalid mcp mode "${value}". Valid modes: ${MCP_MODES.join(", ")}`);
 }

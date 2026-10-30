@@ -48,7 +48,7 @@ export interface McpServerOptions extends ToolOptions {
 }
 
 export function createMcpServer({
-  mode = "full",
+  mode = "meta",
   project,
   projects,
   ...options
@@ -66,7 +66,10 @@ export function createMcpServer({
   async function callTool(name: string, args: unknown): Promise<ToolResult> {
     logger.debug(
       `Tool call: ${name}`,
-      name === "session_handoff" || name === "tool_invoke" || name.startsWith("channel_")
+      name === "session_handoff" ||
+        name === "tool_invoke" ||
+        name === "human_request" ||
+        name.startsWith("channel_")
         ? undefined
         : args,
     );

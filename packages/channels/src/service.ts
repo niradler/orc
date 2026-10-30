@@ -55,6 +55,7 @@ export class ChannelService {
   private readonly errors = new Map<string, string>();
   private readonly conflicts = new Set<string>();
   private readonly turns = new Map<string, Promise<void>>();
+  private readonly turnEpoch = new Map<string, number>();
   private readonly pending = new Map<string, number>();
   private readonly quotas = new Map<string, { until: number; count: number }>();
   private pendingTotal = 0;
@@ -64,6 +65,7 @@ export class ChannelService {
   handler: ChannelHandler | undefined;
   beforeConnect: ((connection: ChannelConnection) => Promise<void>) | undefined;
   control: ((message: ChannelInbound, target: ChannelTarget) => Promise<boolean>) | undefined;
+  unmatched: ((message: ChannelInbound, target: ChannelTarget) => Promise<void>) | undefined;
 
   constructor(
     readonly store: ChannelStore,
@@ -247,16 +249,28 @@ export class ChannelService {
   }
   async start() {
     this.stopped = false;
-    await this.reconcile();
-    this.timer ??= setInterval(() => void this.reconcile().catch(() => {}), 15000);
+    this.timer ??= setInterval(() => {
+      for (const [id, live] of this.live) {
+        if (!this.store.lease(live.resource, this.owner)) {
+          this.conflicts.add(id);
+          this.errors.set(
+            id,
+            "Provider ownership changed. Save the connection after resolving the other owner.",
+          );
+          void this.stopConnection(id).catch(() => {});
+        }
+      }
+      void this.reconcile().catch(() => {});
+    }, 15000);
     this.timer.unref();
+    await this.reconcile();
   }
   async stop() {
     this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
+    await Promise.allSettled([...this.live.keys()].map((id) => this.stopConnection(id)));
     await this.reconciling;
-    for (const [id] of this.live) await this.stopConnection(id);
   }
   private async stopConnection(id: string) {
     const live = this.live.get(id);
@@ -284,11 +298,24 @@ export class ChannelService {
     const connections = this.connections();
     for (const [id, live] of this.live) {
       const current = connections.find((c) => c.id === id);
+      let unchanged = false;
+      if (current) {
+        try {
+          unchanged =
+            fingerprint([
+              current.id,
+              current.provider,
+              this.credentials(current),
+              current.config,
+            ]) === live.fingerprint;
+        } catch {
+          unchanged = false;
+        }
+      }
       if (
         !current?.enabled ||
         this.conflicts.has(id) ||
-        fingerprint([current.id, current.provider, current.credentials, current.config]) !==
-          live.fingerprint ||
+        !unchanged ||
         !this.store.lease(live.resource, this.owner)
       )
         await this.stopConnection(id);
@@ -308,11 +335,19 @@ export class ChannelService {
         if (!this.store.lease(resource, this.owner))
           throw new ConflictError("Another ORC process owns this provider account");
         try {
-          const transport = this.factory(c, credentials);
+          const transport = this.factory(c, credentials, {
+            loadCursor: () => this.store.cursor(c.id, resource),
+            saveCursor: (cursor) => this.store.saveCursor(c.id, resource, cursor),
+          });
           const identity = await transport.identity();
+          if (this.stopped) {
+            await transport.stop();
+            this.store.release(resource, this.owner);
+            continue;
+          }
           this.live.set(c.id, {
             transport,
-            fingerprint: fingerprint([c.id, c.provider, c.credentials, c.config]),
+            fingerprint: fingerprint([c.id, c.provider, credentials, c.config]),
             resource,
             identity,
             error: null,
@@ -394,13 +429,16 @@ export class ChannelService {
         ["chat_id", "channel", "message_thread_id", "thread_ts", "message_id", "ts"].includes(k)
       )
         throw new ValidationError(`ORC owns credential/routing field: ${k}`);
-    // Explicit native content is one intact provider payload, never rewritten/split.
+    // Native content stays intact; delivery options alone preserve common rendering/chunking.
+    const nativeContent = ["text", "blocks", "attachments"].some((key) =>
+      Object.hasOwn(overrides, key),
+    );
     return {
-      payloads: (input.overrides || defaults
+      payloads: (nativeContent
         ? [rendered.payloads.length === 1 ? rendered.payloads[0] : { text: input.message.text }]
         : rendered.payloads
       ).map((p) => ({ ...p, ...overrides, ...routing })),
-      warnings: input.overrides || defaults ? [] : rendered.warnings,
+      warnings: nativeContent ? [] : rendered.warnings,
     };
   }
   async send(raw: unknown): Promise<ChannelReceipt & { warnings: string[] }> {
@@ -416,11 +454,27 @@ export class ChannelService {
       input.project_id ?? null,
       input,
       input.idempotency_key,
+      {
+        chat_id: target.chat_id,
+        ...((input.thread_id ?? target.thread_id)
+          ? { thread_id: input.thread_id ?? target.thread_id }
+          : {}),
+      },
     );
     if (!fresh) return { ...receipt, warnings };
     try {
       const transport = this.live.get(c.id)?.transport ?? this.factory(c, this.credentials(c));
       for (const payload of payloads) {
+        if (this.stopped) throw new ConflictError("Channel runtime is stopping");
+        const current = this.connection(c.id);
+        const permitted = this.authorizedTarget(current, target.id, input.project_id);
+        if (
+          !current.enabled ||
+          !permitted.outbound ||
+          permitted.chat_id !== target.chat_id ||
+          permitted.thread_id !== target.thread_id
+        )
+          throw new ForbiddenError("Channel destination or permissions changed during delivery");
         receipt.provider_ids.push(await transport.send(payload));
         this.store.save(receipt);
       }
@@ -455,12 +509,51 @@ export class ChannelService {
     const target = this.authorizedTarget(c, receipt.target, input.project_id);
     if (!c.enabled || !target.outbound || receipt.status !== "accepted")
       throw new ConflictError("Message cannot be edited in its current state");
-    const { payloads } = this.payloads(c, target, input);
+    const destination = receipt.destination;
+    if (
+      !destination ||
+      destination.chat_id !== target.chat_id ||
+      (target.thread_id && target.thread_id !== destination.thread_id) ||
+      (input.thread_id && input.thread_id !== destination.thread_id)
+    )
+      throw new ConflictError(
+        "Message destination changed; this receipt cannot edit another destination",
+      );
+    const { payloads } = this.payloads(c, target, {
+      ...input,
+      ...(destination.thread_id ? { thread_id: destination.thread_id } : {}),
+    });
     if (payloads.length !== receipt.provider_ids.length)
       throw new ValidationError("Editing must preserve the number of provider message chunks");
     const transport = this.live.get(c.id)?.transport ?? this.factory(c, this.credentials(c));
-    for (const [index, payload] of payloads.entries())
-      await transport.edit(receipt.provider_ids[index] as string, payload);
+    let edited = 0;
+    try {
+      for (const [index, payload] of payloads.entries()) {
+        if (this.stopped) throw new ConflictError("Channel runtime is stopping");
+        const current = this.connection(c.id);
+        const permitted = this.authorizedTarget(current, target.id, input.project_id);
+        if (
+          !current.enabled ||
+          !permitted.outbound ||
+          permitted.chat_id !== target.chat_id ||
+          permitted.thread_id !== target.thread_id
+        )
+          throw new ForbiddenError("Channel destination or permissions changed during editing");
+        await transport.edit(receipt.provider_ids[index] as string, payload);
+        edited++;
+      }
+    } catch (error) {
+      receipt.status = edited
+        ? "partial"
+        : error instanceof ProviderFailure && !error.ambiguous
+          ? "failed"
+          : "unknown";
+      receipt.error =
+        error instanceof ProviderFailure
+          ? error.message
+          : "Editing interrupted; inspect the provider message before retrying.";
+      this.store.save(receipt);
+    }
     return receipt;
   }
   async beginPairing(id: string) {
@@ -529,14 +622,21 @@ export class ChannelService {
         t.user_ids.includes(message.sender),
     );
     if (!target || !message.message_id || !this.store.claim(c.id, message.message_id)) return;
+    const conversation = JSON.stringify([c.id, message.chat, message.thread, message.sender]);
+    const epoch = this.turnEpoch.get(conversation) ?? 0;
     if (await this.control?.(message, target)) return;
+    if (epoch !== (this.turnEpoch.get(conversation) ?? 0)) return;
     const route = routeMessage(c.routes, message);
+    if (!route) {
+      if (message.kind === "message") await this.unmatched?.(message, target);
+      return;
+    }
     if (
-      route?.action.type !== "agent" ||
+      route.action.type !== "agent" ||
       (target.project_ids.length && !target.project_ids.includes(route.action.project_id))
     )
       return;
-    const key = JSON.stringify([c.id, message.chat, message.thread, message.sender, route.id]);
+    const key = JSON.stringify([c.id, message.chat, message.thread, message.sender]);
     const quotaKey = JSON.stringify([c.id, message.chat, message.sender]);
     let quota = this.quotas.get(quotaKey);
     if (!quota || quota.until <= Date.now()) {
@@ -573,6 +673,7 @@ export class ChannelService {
         const selected = routeMessage(current.routes, message);
         if (
           this.stopped ||
+          epoch !== (this.turnEpoch.get(conversation) ?? 0) ||
           !current.enabled ||
           !recipient ||
           selected?.id !== route.id ||
@@ -594,6 +695,10 @@ export class ChannelService {
       else this.pending.delete(key);
       if (this.turns.get(key) === next) this.turns.delete(key);
     }
+  }
+  cancelPending(message: ChannelInbound): void {
+    const key = JSON.stringify([message.connection, message.chat, message.thread, message.sender]);
+    this.turnEpoch.set(key, (this.turnEpoch.get(key) ?? 0) + 1);
   }
 }
 

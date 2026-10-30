@@ -131,6 +131,9 @@ export class ClaudeSession implements AgentSession {
   private readonly autoApprove: boolean;
   private readonly model: string | undefined;
   private readonly toolAllowlist: string[] | undefined;
+  private readonly useOrcMcp: boolean;
+  private readonly orcMcpProject: string | undefined;
+  private readonly orcMcpMode: SessionOpts["orcMcpMode"];
   private readonly host: ExecHost;
 
   constructor(opts: SessionOpts, claudePath: string, host: ExecHost) {
@@ -141,6 +144,9 @@ export class ClaudeSession implements AgentSession {
     this.autoApprove = opts.autoApprove ?? false;
     this.model = opts.model;
     this.toolAllowlist = opts.toolAllowlist;
+    this.useOrcMcp = opts.orcMcp ?? false;
+    this.orcMcpProject = opts.orcMcpProject;
+    this.orcMcpMode = opts.orcMcpMode;
   }
 
   private mcpConfig: OrcMcpConfigFile | null = null;
@@ -152,7 +158,8 @@ export class ClaudeSession implements AgentSession {
 
   private async spawn(extraArgs: string[] = [], printPrompt?: string | undefined): Promise<void> {
     this.releaseMcpConfig();
-    if (this.toolAllowlist !== undefined) this.mcpConfig = await writeOrcMcpConfigFile(this.host);
+    if (this.toolAllowlist !== undefined || this.useOrcMcp)
+      this.mcpConfig = await writeOrcMcpConfigFile(this.host, this.orcMcpProject, this.orcMcpMode);
     const args = [
       this.claudePath,
       "-p",
@@ -174,7 +181,9 @@ export class ClaudeSession implements AgentSession {
             "--allowedTools",
             [...(this.autoApprove ? this.toolAllowlist : []), ORC_TOOLS_RULE].join(","),
           ]
-        : []),
+        : this.mcpConfig
+          ? ["--mcp-config", this.mcpConfig.path]
+          : []),
       ...extraArgs,
     ];
 
