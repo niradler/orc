@@ -234,14 +234,13 @@ export function createChannelsRouter(service: () => ChannelService = getChannelS
           (!t.thread_id || t.thread_id === input.thread) &&
           t.user_ids.includes(input.sender),
       );
-      const route =
-        target && input.kind === "message"
-          ? routeMessage(connection.routes, {
-              ...input,
-              connection: connection.id,
-              message_id: "preview",
-            })
-          : undefined;
+      const route = target
+        ? routeMessage(connection.routes, {
+            ...input,
+            connection: connection.id,
+            message_id: "preview",
+          })
+        : undefined;
       const allowed =
         route?.action.type !== "agent" ||
         !target?.project_ids.length ||

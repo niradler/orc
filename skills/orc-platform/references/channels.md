@@ -105,7 +105,7 @@ Simple rules can use the Settings editor; advanced JSON supports `all`, `any` an
 }
 ```
 
-An agent action names its backend and project; optional `profile` selects an existing agent profile. The project needs an active scope directory available on the configured execution host. Sessions are separated by connection, chat/thread, sender and route/action. Agent replies return through the original destination. Pairing and Attention commands are handled before ordinary routing. Native callback payloads do not independently grant permission to execute commands or start agents.
+An agent action names its backend and project; optional `profile` selects an existing agent profile. The project needs an active scope directory available on the configured execution host. Sessions are separated by connection, chat/thread, sender and route/action. Agent replies return through the original destination. Pairing and Attention commands are handled before ordinary routing. Native button callbacks have `kind: "action"`; their value (or Slack action ID when no value exists) is untrusted input that can reach an agent only through an authorized matching route. New rules default to `kind: "message"`; use an action rule to handle custom buttons. A rule without a kind condition can match either kind. A callback never directly executes a command or bypasses native permissions.
 
 Use the saved-rule preview in Settings, or `POST /api/channels/{id}/route-test`, to test authorization and rule matching without invoking an agent.
 

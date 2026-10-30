@@ -530,7 +530,6 @@ export class ChannelService {
     );
     if (!target || !message.message_id || !this.store.claim(c.id, message.message_id)) return;
     if (await this.control?.(message, target)) return;
-    if (message.kind !== "message") return;
     const route = routeMessage(c.routes, message);
     if (
       route?.action.type !== "agent" ||

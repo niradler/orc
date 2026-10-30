@@ -205,6 +205,61 @@ test("native permission request uses durable Attention and a bound button respon
   expect(approved).toBe(true);
 }, 15000);
 
+test("custom native buttons invoke an agent only through an authorized matching action route", async () => {
+  requirePermission = false;
+  const current = service.connection("test");
+  await service.save({
+    ...current,
+    credentials: {},
+    routes: [
+      {
+        id: "buttons",
+        name: "Custom buttons",
+        enabled: true,
+        condition: {
+          all: [
+            { field: "kind", op: "is", value: "action" },
+            { field: "text", op: "is", value: "summarize-task" },
+          ],
+        },
+        action: { type: "agent", agent: "channels-fixture", project_id: "p1" },
+      },
+      ...current.routes.map((r) => ({
+        ...r,
+        condition: { all: [{ field: "kind", op: "is", value: "message" }, r.condition] },
+      })),
+    ],
+  });
+  const before = calls.length;
+  await service.receive({
+    ...message,
+    message_id: "native-button-outside",
+    sender: "outsider",
+    kind: "action",
+    text: "summarize-task",
+    thread: "457",
+  });
+  expect(calls).toHaveLength(before);
+  await service.receive({
+    ...message,
+    message_id: "native-button",
+    kind: "action",
+    text: "summarize-task",
+    thread: "457",
+  });
+  expect(calls).toHaveLength(before + 1);
+  expect(calls.at(-1)?.prompt).toBe("summarize-task");
+  expect(sent.at(-1)).toMatchObject({ chat_id: "chat", message_thread_id: 457 });
+  await service.receive({
+    ...message,
+    message_id: "unmatched-button",
+    kind: "action",
+    text: "unknown-button",
+    thread: "457",
+  });
+  expect(calls).toHaveLength(before + 1);
+});
+
 test("editing a recipient during a running turn cannot redirect its reply", async () => {
   requirePermission = true;
   const repliesBefore = sent.filter((p) => String(p.text).includes("Reply received")).length;

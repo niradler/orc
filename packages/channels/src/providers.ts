@@ -251,19 +251,20 @@ export const createChannelTransport: TransportFactory = (connection, credentials
               const chat = String(payload.channel?.id ?? e.channel ?? "");
               if (!sender || !chat) return;
               if (!action && Number(e.ts) * 1000 < startedAt - 1000) return;
+              const direct = e.channel_type === "im" || chat.startsWith("D");
               const thread =
                 e.thread_ts ??
                 payload.message?.thread_ts ??
-                (e.channel_type === "im" ? undefined : e.ts);
+                (direct ? undefined : (e.ts ?? payload.message?.ts));
               receive({
                 connection: connection.id,
                 sender,
                 chat,
                 ...(thread ? { thread: String(thread) } : {}),
-                text: String(action?.value ?? e.text ?? ""),
+                text: String(action?.value ?? action?.action_id ?? e.text ?? ""),
                 message_id: action ? String(envelope.envelope_id ?? "") : `${chat}:${e.ts}`,
                 kind: action ? "action" : "message",
-                is_direct: e.channel_type === "im",
+                is_direct: direct,
                 is_mention: e.type === "app_mention" || String(e.text).includes(`<@${botId}>`),
               });
             } catch {

@@ -235,7 +235,7 @@ test("pairing is expiring and single-use; leases isolate transport owners", () =
   db.close();
 });
 
-test("unauthorized inbound never reaches routing and actions never launch agents", async () => {
+test("unauthorized inbound and nonmatching event kinds never launch agents", async () => {
   const db = new Database(":memory:");
   const service = new ChannelService(new ChannelStore(db));
   let calls = 0;
@@ -250,7 +250,14 @@ test("unauthorized inbound never reaches routing and actions never launch agents
       provider: "telegram",
       enabled: true,
       targets: [{ id: "me", name: "me", chat_id: "private", user_ids: ["nir"], inbound: true }],
-      routes: [route("route", { field: "is_direct", op: "is", value: true })],
+      routes: [
+        route("route", {
+          all: [
+            { field: "kind", op: "is", value: "message" },
+            { field: "is_direct", op: "is", value: true },
+          ],
+        }),
+      ],
     }),
   ];
   await service.receive({ ...inbound, sender: "attacker" });

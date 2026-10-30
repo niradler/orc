@@ -25,6 +25,9 @@ const split = (text: string) =>
     .map((s) => s.trim())
     .filter(Boolean);
 const conditionDefault: ChannelCondition = { field: "is_direct", op: "is", value: true };
+const defaultRouteCondition: ChannelCondition = {
+  all: [{ field: "kind", op: "is", value: "message" }, conditionDefault],
+};
 const control = "form-control form-control-single w-full";
 type Project = { id: string; name: string };
 function connectionDraft(view: ChannelView): ChannelConnection {
@@ -895,7 +898,7 @@ function ConnectionEditor({
               id: crypto.randomUUID(),
               name: "New rule",
               enabled: true,
-              condition: conditionDefault,
+              condition: defaultRouteCondition,
               action: { type: "agent", agent: "codex", project_id: projects[0]?.id ?? "" },
             })
           }
