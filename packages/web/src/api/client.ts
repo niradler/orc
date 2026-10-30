@@ -117,6 +117,7 @@ export type {
   PackageFull,
   PackageMeta,
   Project,
+  ProjectPage,
   ProjectStatus,
   ProjectSummary,
   ResumeFlowInput,
@@ -167,6 +168,7 @@ import type {
   PackageFull,
   PackageMeta,
   Project,
+  ProjectPage,
   ProjectSummary,
   ResumeFlowInput,
   Session,
@@ -863,13 +865,28 @@ export const api = {
   },
 
   projects: {
-    list: (params?: { status?: string; tag?: string; limit?: number }) =>
-      req<{ projects: Project[] }>(
+    list: (params?: { status?: string; tag?: string; limit?: number; offset?: number }) =>
+      req<ProjectPage>(
         "GET",
         "/projects",
         undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
+    listAll: async (params?: {
+      status?: string;
+      tag?: string;
+    }): Promise<{ projects: Project[] }> => {
+      const projects: Project[] = [];
+      let offset = 0;
+      while (true) {
+        const page = await api.projects.list({ ...params, limit: 100, offset });
+        projects.push(...page.projects);
+        if (page.next_offset == null) return { projects };
+        if (!Number.isSafeInteger(page.next_offset) || page.next_offset <= offset)
+          throw new Error("Invalid project pagination response");
+        offset = page.next_offset;
+      }
+    },
     get: (id: string) => req<Project>("GET", `/projects/${id}`),
     getByName: (name: string) =>
       req<Project>("GET", `/projects/by-name/${encodeURIComponent(name)}`),

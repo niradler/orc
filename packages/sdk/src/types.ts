@@ -24,6 +24,8 @@ export type {
 
 import type { components } from "./openapi.gen.js";
 
+export type ProjectPage = components["schemas"]["ProjectPage"];
+
 export type PullReview = components["schemas"]["PullReview"];
 export type PullCommentInput = components["schemas"]["PullCommentInput"];
 

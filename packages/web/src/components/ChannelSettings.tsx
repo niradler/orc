@@ -1240,7 +1240,7 @@ export function ChannelSettings({ active }: { active: boolean }) {
   });
   const projects = useQuery({
     queryKey: ["channel-projects"],
-    queryFn: () => api.projects.list(),
+    queryFn: () => api.projects.listAll(),
     enabled: active,
   });
   const [selected, setSelected] = useState<string | null>(null);

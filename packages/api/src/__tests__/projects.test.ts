@@ -297,3 +297,64 @@ describe("Projects CRUD", () => {
     });
   });
 });
+
+test("should paginate beyond 100 projects with stable ordering, filters and validated page bounds", async () => {
+  const expected: string[] = [];
+  for (let index = 0; index < 105; index++) {
+    const response = await req(app, "POST", "/projects", {
+      name: `pagination-${String(index).padStart(3, "0")}`,
+      tags: ["pagination-regression"],
+      status: index % 2 === 0 ? "active" : "archived",
+    });
+    expect(response.status).toBe(201);
+    expected.push((await response.json()).id);
+  }
+  type Page = {
+    projects: { id: string }[];
+    offset: number;
+    limit: number;
+    next_offset: number | null;
+  };
+  const read = async (query: string): Promise<Page> => {
+    const response = await req(app, "GET", `/projects?${query}`);
+    expect(response.status).toBe(200);
+    return response.json();
+  };
+  const first = await read("tag=pagination-regression");
+  expect(first.projects).toHaveLength(50);
+  expect(first.next_offset).toBe(50);
+  const ids: string[] = [];
+  let offset: number | null = 0;
+  while (offset !== null) {
+    const page = await read(`tag=pagination-regression&limit=25&offset=${offset}`);
+    expect(page.offset).toBe(offset);
+    expect(page.limit).toBe(25);
+    ids.push(...page.projects.map((project) => project.id));
+    offset = page.next_offset;
+  }
+  expect(ids).toEqual(expected);
+  const active = await read("tag=pagination-regression&status=active&limit=100");
+  expect(active.projects.map((project) => project.id)).toEqual(
+    expected.filter((_, i) => i % 2 === 0),
+  );
+  expect(active.next_offset).toBeNull();
+  const all: string[] = [];
+  offset = 0;
+  while (offset !== null) {
+    const page = await read(`limit=17&offset=${offset}`);
+    all.push(...page.projects.map((project) => project.id));
+    offset = page.next_offset;
+  }
+  expect(all.filter((id) => expected.includes(id))).toEqual(expected);
+  expect(new Set(all).size).toBe(all.length);
+  expect((await read("tag=pagination-regression&offset=105")).projects).toEqual([]);
+  for (const query of [
+    "offset=-1",
+    "offset=1.5",
+    "offset=invalid",
+    "offset=9007199254740992",
+    "limit=101",
+  ])
+    expect((await req(app, "GET", `/projects?${query}`)).status).toBe(400);
+  expect((await app.request("/api/projects?offset=50")).status).toBe(401);
+});

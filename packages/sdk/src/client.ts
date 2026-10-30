@@ -101,6 +101,7 @@ import type {
   PackageFull,
   PackageMeta,
   Project,
+  ProjectPage,
   ProjectSummary,
   RestartResponse,
   ResumeFlowInput,
@@ -696,8 +697,8 @@ export function createOrcClient(options?: OrcClientOptions) {
     },
 
     projects: {
-      list: (params?: { status?: string; tag?: string; limit?: number }) =>
-        c<{ projects: Project[] }>(
+      list: (params?: { status?: string; tag?: string; limit?: number; offset?: number }) =>
+        c<ProjectPage>(
           "GET",
           "/projects",
           undefined,

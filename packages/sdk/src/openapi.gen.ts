@@ -3501,6 +3501,7 @@ export interface paths {
                     status?: "active" | "archived" | "paused";
                     tag?: string;
                     limit?: number;
+                    offset?: number | null;
                 };
                 header?: never;
                 path?: never;
@@ -3514,9 +3515,7 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "application/json": {
-                            projects: components["schemas"]["Project"][];
-                        };
+                        "application/json": components["schemas"]["ProjectPage"];
                     };
                 };
             };
@@ -13383,6 +13382,12 @@ export interface components {
             args: {
                 [key: string]: unknown;
             };
+        };
+        ProjectPage: {
+            projects: components["schemas"]["Project"][];
+            offset: number;
+            limit: number;
+            next_offset: number | null;
         };
         Project: {
             id: string;

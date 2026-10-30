@@ -883,6 +883,11 @@ Runs on port 7700 with auto-generated OpenAPI spec.
 - **Swagger UI:** `GET /docs`
 - **OpenAPI spec:** `GET /openapi.json`
 
+`GET /api/projects` returns bounded pages (`limit` defaults to 50, maximum 100;
+`offset` defaults to 0), ordered by name and ID. Follow `next_offset` until it is
+`null`; `status` and `tag` filters apply to every page. Dashboard lists and project
+pickers load all pages, so later projects remain searchable and selectable.
+
 <details>
 <summary>Full endpoint list</summary>
 
