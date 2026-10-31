@@ -4,7 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HumanRequest } from "@orc/core/human-requests";
 import { expect, test } from "@playwright/test";
-import { API_BASE, AUTH_HEADERS, apiGet, apiPost, gotoView, repoRoot, tid } from "./_helpers";
+import {
+  API_BASE,
+  AUTH_HEADERS,
+  apiGet,
+  apiPost,
+  gotoView,
+  repoRoot,
+  reviewAttentionRequest,
+  tid,
+} from "./_helpers";
 
 test("should show dated unavailable questions and contextual help on desktop and phone", async ({
   page,
@@ -38,6 +47,8 @@ test("should show dated unavailable questions and contextual help on desktop and
   ).toBe(0);
   await gotoView(page, "attention");
   const card = page.getByTestId(`attention-request-${entry.id}`);
+  await reviewAttentionRequest(card);
+  await card.getByTestId("attention-details-toggle").click();
   for (const [width, theme] of [
     [1440, "dark"],
     [390, "light"],
@@ -156,6 +167,7 @@ test("should continue a waiting CLI after answering through the reloaded inbox",
     if (!pending) throw new Error("CLI did not create request");
     await page.reload();
     const card = page.getByTestId(`attention-request-${pending.id}`);
+    await reviewAttentionRequest(card);
     await expect(card.getByTestId("attention-choice-Blue")).toContainText(
       "Use the blue theme for the demo",
     );
@@ -190,6 +202,8 @@ test("should show exact approval action, retain denial after reload and allow fr
   });
   await gotoView(page, "attention");
   const card = page.getByTestId(`attention-request-${approval.id}`);
+  await expect(card.getByTestId("attention-review")).toContainText("demo-host");
+  await reviewAttentionRequest(card);
   await expect(card.getByTestId("attention-action")).toContainText("pwd");
   await page.screenshot({
     path: join(repoRoot(), ".claude/docs/human-requests-inbox.png"),
@@ -197,6 +211,7 @@ test("should show exact approval action, retain denial after reload and allow fr
   });
   await card.getByTestId("attention-deny").click();
   await page.reload();
+  await reviewAttentionRequest(card);
   await expect(card.getByTestId("attention-response")).toHaveText("Denied");
   const question = await apiPost<HumanRequest>(request, "/human-requests", {
     kind: "question",
@@ -204,6 +219,7 @@ test("should show exact approval action, retain denial after reload and allow fr
     origin: { backend: "codex", session_id: tid("free-text"), request_id: "name" },
   });
   const questionCard = page.getByTestId(`attention-request-${question.id}`);
+  await reviewAttentionRequest(questionCard);
   await questionCard.getByTestId("attention-answer").fill("Ocean blue");
   await questionCard.getByTestId("attention-send").click();
   await expect(questionCard.getByTestId("attention-response")).toHaveText("Ocean blue");
@@ -222,6 +238,7 @@ test("should preserve multiple selections and cancel a pending request", async (
   });
   await gotoView(page, "attention");
   const card = page.getByTestId(`attention-request-${question.id}`);
+  await reviewAttentionRequest(card);
   await card.getByTestId("attention-choice-Unit").click();
   await card.getByTestId("attention-choice-Browser").click();
   await card.getByTestId("attention-send").click();
@@ -238,6 +255,7 @@ test("should preserve multiple selections and cancel a pending request", async (
     origin: { backend: "codex", session_id: tid("cancel"), request_id: "cancel" },
   });
   const cancelledCard = page.getByTestId(`attention-request-${pending.id}`);
+  await reviewAttentionRequest(cancelledCard);
   await cancelledCard.getByTestId("attention-cancel").click();
   await expect(cancelledCard).toHaveCount(0);
   expect((await apiGet<HumanRequest>(request, `/human-requests/${pending.id}`)).status).toBe(

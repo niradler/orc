@@ -1,6 +1,45 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import type { APIRequestContext, Page } from "@playwright/test";
+import type { APIRequestContext, Locator, Page } from "@playwright/test";
+
+export async function reviewAttentionRequest(card: Locator): Promise<void> {
+  const review = card.getByTestId("attention-review");
+  await review.waitFor({ state: "visible" });
+  if ((await review.getAttribute("aria-expanded")) !== "true") await review.click();
+}
+
+export async function openTerminalOptions(page: Page, touch = false): Promise<void> {
+  const button = page.locator('[data-testid="terminal-options"]:visible').first();
+  if (!(await button.isVisible())) {
+    const menu = page.locator('[data-testid="pane-actions"]:visible').first();
+    if (touch) await menu.tap();
+    else await menu.click();
+  }
+  if (touch) await button.tap();
+  else await button.click();
+}
+
+export async function splitTerminalPane(
+  pane: Locator,
+  direction: "horizontal" | "vertical",
+): Promise<void> {
+  await pane.waitFor({ state: "visible" });
+  const direct = pane.getByTestId(`pane-split-${direction}`);
+  if (await direct.isVisible()) await direct.click();
+  else {
+    await pane.getByTestId("pane-actions").click();
+    await pane.getByTestId(`pane-action-split-${direction}`).click();
+  }
+}
+
+export async function terminalPaneAction(pane: Locator, action: "focus" | "close"): Promise<void> {
+  const direct = pane.getByTestId(`pane-${action}`);
+  if (await direct.isVisible()) await direct.click();
+  else {
+    await pane.getByTestId("pane-actions").click();
+    await pane.getByTestId(`pane-action-${action}`).click();
+  }
+}
 
 export const API_PORT = process.env.ORC_API_PORT ?? "9871";
 export const API_BASE = `http://127.0.0.1:${API_PORT}/api`;

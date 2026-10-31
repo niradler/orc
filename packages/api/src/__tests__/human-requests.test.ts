@@ -145,16 +145,25 @@ test("should invalidate an unanswered request when its reviewed rule revision ch
 test("should run once with the host shell, redact values and retain only the result", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orc-command-"));
   const secret = "p@ss'\"$()do-not-expand";
+  const account = "private-account@example.invalid";
   const entry = await (
     await req(app, "POST", "/human-requests", {
       kind: "command",
+      title: "Check the service connection",
       prompt: "Run a credential check",
       origin: { backend: "external", session_id: "command-origin", request_id: "command-once" },
       command: {
         host: null,
         cwd,
         script: "printf original",
-        arguments: [{ name: "PASSWORD", label: "Password" }],
+        arguments: [
+          {
+            name: "PASSWORD",
+            label: "Password",
+            description: "Used only for this connection check",
+          },
+          { name: "ACCOUNT", label: "Account" },
+        ],
       },
     })
   ).json<HumanRequest>();
@@ -180,9 +189,9 @@ test("should run once with the host shell, redact values and retain only the res
     version: 1,
     script:
       process.platform === "win32"
-        ? '[Console]::Out.Write("edited:" + $env:ORC_INPUT_PASSWORD); [Console]::Error.Write($env:ORC_INPUT_PASSWORD); (Get-Location).Path'
-        : 'printf "edited:"; printf "%s" "$ORC_INPUT_PASSWORD"; printf "%s" "$ORC_INPUT_PASSWORD" >&2; pwd',
-    values: { PASSWORD: secret },
+        ? '[Console]::Out.Write("edited:" + $env:ORC_INPUT_PASSWORD + "|" + $env:ORC_INPUT_ACCOUNT); [Console]::Error.Write($env:ORC_INPUT_PASSWORD); (Get-Location).Path'
+        : 'printf "edited:"; printf "%s|%s" "$ORC_INPUT_PASSWORD" "$ORC_INPUT_ACCOUNT"; printf "%s" "$ORC_INPUT_PASSWORD" >&2; pwd',
+    values: { PASSWORD: secret, ACCOUNT: account },
   };
   const responses = await Promise.all([
     req(app, "POST", `/human-requests/${entry.id}/run`, input),
@@ -191,13 +200,15 @@ test("should run once with the host shell, redact values and retain only the res
   expect(responses.map((r) => r.status).sort()).toEqual([200, 409]);
   const result = await responses.find((r) => r.status === 200)?.json<HumanRequest>();
   expect(result?.status).toBe("answered");
+  expect(result?.input.title).toBe("Check the service connection");
   expect(result?.response).toMatchObject({ kind: "command", exit_code: 0, stderr: "[REDACTED]" });
   if (result?.response?.kind === "command") {
-    expect(result.response.stdout).toContain("edited:[REDACTED]");
+    expect(result.response.stdout).toContain("edited:[REDACTED]|[REDACTED]");
     expect(result.response.stdout).toContain(cwd);
   }
   const stored = getSqlite().query("SELECT * FROM human_requests WHERE id=?").get(entry.id);
   expect(JSON.stringify(stored)).not.toContain(secret);
+  expect(JSON.stringify(stored)).not.toContain(account);
   expect((await req(app, "POST", `/human-requests/${entry.id}/run`, input)).status).toBe(409);
   expect(
     (

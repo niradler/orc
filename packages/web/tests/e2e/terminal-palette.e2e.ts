@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect } from "@playwright/test";
-import { API_SECRET, apiGet, apiPost } from "./_helpers";
+import { API_SECRET, apiGet, apiPost, splitTerminalPane } from "./_helpers";
 import { test } from "./_terminal-fixture";
 
 for (const width of [1440, 390]) {
@@ -98,7 +98,7 @@ for (const width of [1440, 390]) {
     await expect(page).toHaveURL(new RegExp(`/terminals/${first.id}\\?`));
     await expect(picker).toHaveAttribute("data-terminal-id", first.id);
     if (width === 1440) {
-      await page.getByTestId("pane-split-horizontal").click();
+      await splitTerminalPane(page.getByTestId("workspace-pane").first(), "horizontal");
       const other = page.getByTestId("workspace-pane").last();
       await other.getByTestId("pane-view-terminal").click();
       await expect(page.getByTestId("terminal-viewport")).toHaveCount(2);

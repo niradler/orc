@@ -1638,12 +1638,14 @@ export interface paths {
                                     arguments: {
                                         name: string;
                                         label: string;
+                                        description?: string;
                                         /** @default true */
                                         required: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
                                 };
+                                title?: string;
                                 prompt: string;
                                 /** @default [] */
                                 choices: string[];
@@ -1750,12 +1752,14 @@ export interface paths {
                             arguments?: {
                                 name: string;
                                 label: string;
+                                description?: string;
                                 /** @default true */
                                 required?: boolean;
                             }[];
                             /** @default 60 */
                             timeout_seconds?: number;
                         };
+                        title?: string;
                         prompt: string;
                         /** @default [] */
                         choices?: string[];
@@ -1831,12 +1835,14 @@ export interface paths {
                                     arguments: {
                                         name: string;
                                         label: string;
+                                        description?: string;
                                         /** @default true */
                                         required: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
                                 };
+                                title?: string;
                                 prompt: string;
                                 /** @default [] */
                                 choices: string[];
@@ -1965,12 +1971,14 @@ export interface paths {
                                     arguments: {
                                         name: string;
                                         label: string;
+                                        description?: string;
                                         /** @default true */
                                         required: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
                                 };
+                                title?: string;
                                 prompt: string;
                                 /** @default [] */
                                 choices: string[];
@@ -2127,12 +2135,14 @@ export interface paths {
                                     arguments: {
                                         name: string;
                                         label: string;
+                                        description?: string;
                                         /** @default true */
                                         required: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
                                 };
+                                title?: string;
                                 prompt: string;
                                 /** @default [] */
                                 choices: string[];
@@ -2273,12 +2283,14 @@ export interface paths {
                                     arguments: {
                                         name: string;
                                         label: string;
+                                        description?: string;
                                         /** @default true */
                                         required: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
                                 };
+                                title?: string;
                                 prompt: string;
                                 /** @default [] */
                                 choices: string[];
@@ -2415,12 +2427,14 @@ export interface paths {
                                     arguments: {
                                         name: string;
                                         label: string;
+                                        description?: string;
                                         /** @default true */
                                         required: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
                                 };
+                                title?: string;
                                 prompt: string;
                                 /** @default [] */
                                 choices: string[];
@@ -2557,12 +2571,14 @@ export interface paths {
                                     arguments: {
                                         name: string;
                                         label: string;
+                                        description?: string;
                                         /** @default true */
                                         required: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
                                 };
+                                title?: string;
                                 prompt: string;
                                 /** @default [] */
                                 choices: string[];
@@ -5263,12 +5279,14 @@ export interface paths {
                                     arguments: {
                                         name: string;
                                         label: string;
+                                        description?: string;
                                         /** @default true */
                                         required: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
                                 };
+                                title?: string;
                                 prompt: string;
                                 /** @default [] */
                                 choices: string[];

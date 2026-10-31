@@ -95,16 +95,22 @@ test("should deliver command results only to the requesting MCP workflow", async
     projectScopes: [{ id: "project-a", name: "human-a" }],
   };
   const input = {
+    title: "Connect to the service",
     prompt: "Run a user supplied command",
     origin: { backend: "external", session_id: "command-session", request_id: "mcp-command" },
     command: {
       host: null,
       cwd: "/tmp",
       script: 'printf "%s" "$ORC_INPUT_TOKEN"',
-      arguments: [{ name: "TOKEN", label: "Token" }],
+      arguments: [{ name: "TOKEN", label: "Token", description: "Used only by the login command" }],
     },
   };
   const request = JSON.parse(await executeTool("command_request", input, options));
+  expect(
+    JSON.parse(await executeTool("human_request", { ...input, kind: "command" }, options)).id,
+  ).toBe(request.id);
+  expect(request.input.title).toBe(input.title);
+  expect(request.input.command.arguments[0].description).toContain("login command");
   expect(request.input.kind).toBe("command");
   expect(request.input.project_id).toBe("project-a");
   await expect(

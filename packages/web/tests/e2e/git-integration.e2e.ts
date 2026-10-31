@@ -3,7 +3,14 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect } from "@playwright/test";
-import { API_SECRET, apiGet, apiPost, tid } from "./_helpers";
+import {
+  API_SECRET,
+  apiGet,
+  apiPost,
+  openTerminalOptions,
+  splitTerminalPane,
+  tid,
+} from "./_helpers";
 import { test } from "./_terminal-fixture";
 
 const folder = mkdtempSync(join(tmpdir(), "orc-pw-git-"));
@@ -162,7 +169,7 @@ test("checkouts and the worktree manager stay readable on a phone", async ({ pag
   await page.screenshot({ path: testInfo.outputPath("checkouts-phone.png") });
 
   await page.keyboard.press("Escape");
-  await page.getByTestId("terminal-options").click();
+  await openTerminalOptions(page);
   await page.getByTestId("worktree-manager-open").click();
   const manager = page.getByTestId("worktree-manager");
   await expect(manager.getByTestId("registry-worktree").first()).toBeVisible();
@@ -195,7 +202,7 @@ test("slice 3 git panel status, diff, selected staging, commit, branches and tas
     API_SECRET,
   );
   await page.goto(`/terminals/${terminal.id}`);
-  await page.getByTestId("pane-split-horizontal").click();
+  await splitTerminalPane(page.getByTestId("workspace-pane").first(), "horizontal");
   await expect(page.getByTestId("terminal-git-toggle")).toHaveCount(0);
   await expect(page.getByTestId("git-status-file")).toHaveCount(2);
   await expect(page.getByTestId("git-branch-select")).toHaveValue("main");
@@ -318,7 +325,7 @@ test("Git pane selects all, switches branches and worktrees, and shows the curre
     API_SECRET,
   );
   await page.goto(`/terminals/${terminal.id}`);
-  await page.getByTestId("pane-split-horizontal").click();
+  await splitTerminalPane(page.getByTestId("workspace-pane").first(), "horizontal");
   await expect(page.getByTestId("terminal-git-toggle")).toHaveCount(0);
   const panel = page.getByTestId("terminal-git-panel");
   await expect(page.getByTestId("git-branch").filter({ hasText: "main" })).toHaveAttribute(

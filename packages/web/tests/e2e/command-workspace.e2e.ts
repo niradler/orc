@@ -5,7 +5,15 @@ import { join } from "node:path";
 import { ChatSettingsSchema } from "@orc/core/chat";
 import type { HumanRequest } from "@orc/core/human-requests";
 import { expect, test } from "@playwright/test";
-import { API_SECRET, apiGet, apiPost, gotoView, repoRoot, tid } from "./_helpers";
+import {
+  API_SECRET,
+  apiGet,
+  apiPost,
+  gotoView,
+  repoRoot,
+  reviewAttentionRequest,
+  tid,
+} from "./_helpers";
 
 test("should edit and run a masked command from Attention after reload", async ({
   page,
@@ -26,9 +34,11 @@ test("should edit and run a masked command from Attention after reload", async (
   await gotoView(page, "attention");
   await page.reload();
   const card = page.getByTestId(`attention-request-${entry.id}`);
+  await reviewAttentionRequest(card);
   const secret = "pw-secret-123";
   await card.getByTestId("attention-argument-PASSWORD").fill(secret);
   await expect(card.getByTestId("attention-argument-PASSWORD")).toHaveAttribute("type", "password");
+  await card.getByTestId("attention-edit-command").click();
   await card
     .getByTestId("attention-command")
     .fill(
@@ -47,6 +57,7 @@ test("should edit and run a masked command from Attention after reload", async (
   expect(completed.status).toBe("answered");
   expect(JSON.stringify(completed)).not.toContain(secret);
   await page.reload();
+  await reviewAttentionRequest(card);
   await expect(card.getByTestId("attention-command-result")).toContainText("edited:[REDACTED]");
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
@@ -63,7 +74,8 @@ test("should edit and run a masked command from Attention after reload", async (
   });
   await page.reload();
   const remoteCard = page.getByTestId(`attention-request-${remote.id}`);
-  await expect(remoteCard.getByTestId("attention-command")).toHaveValue("printf original");
+  await reviewAttentionRequest(remoteCard);
+  await expect(remoteCard.getByTestId("attention-command-preview")).toHaveText("printf original");
   await apiPost(request, `/human-requests/${remote.id}/run`, {
     version: 1,
     script:
@@ -75,7 +87,7 @@ test("should edit and run a masked command from Attention after reload", async (
   await expect(remoteCard.getByTestId("attention-command-result")).toContainText(
     "edited-elsewhere",
   );
-  await expect(remoteCard.getByTestId("attention-command")).toHaveValue(
+  await expect(remoteCard.getByTestId("attention-command-preview")).toHaveText(
     process.platform === "win32"
       ? '[Console]::Out.Write("edited-elsewhere")'
       : "printf edited-elsewhere",
@@ -118,7 +130,7 @@ test("should share recent folders and last selection between chat and terminal, 
   await page.screenshot({ path: "/tmp/orc-chat-folder-browser.png", fullPage: true });
   await page.getByTestId("remote-folder-pick").click();
   await expect(workspace.getByTestId("recent-folders").locator("option")).toContainText([
-    "Choose a recent folder…",
+    "Recent folders (1)",
     cwd,
   ]);
   await page.reload();

@@ -15,6 +15,7 @@ export const CommandSpecSchema = z
           .object({
             name: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/),
             label: z.string().trim().min(1).max(200),
+            description: z.string().trim().min(1).max(1000).optional(),
             required: z.boolean().default(true),
           })
           .strict(),
@@ -80,6 +81,7 @@ export const HumanRequestInputSchema = z
     rule_bindings: z.array(HumanRuleBindingSchema).min(1).max(100).optional(),
     kind: z.enum(["question", "approval", "command"]),
     command: CommandSpecSchema.optional(),
+    title: z.string().trim().min(1).max(200).optional(),
     prompt: z.string().trim().min(1).max(16000),
     choices: z.array(z.string().trim().min(1).max(1000)).max(20).default([]),
     choice_descriptions: z

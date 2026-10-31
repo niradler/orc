@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
-import { API_SECRET, apiPost, gotoView, tid } from "./_helpers";
+import { API_SECRET, apiPost, gotoView, openTerminalOptions, tid } from "./_helpers";
 
 import { test } from "./_terminal-fixture";
 
@@ -209,11 +209,11 @@ for (const theme of ["dark", "light"] as const) {
           100,
         );
         await page.screenshot({ path: testInfo.outputPath("terminal-touch.png") });
-        await page.getByTestId("terminal-options").tap();
+        await openTerminalOptions(page, true);
         await expect(page.getByTestId("terminal-close-selected")).toBeVisible();
         await fitsViewport(page, page.getByRole("dialog"));
         await page.getByTestId("sheet-close").tap();
-        await expect(page.getByTestId("terminal-options")).toBeFocused();
+        await expect(page.locator('[data-testid="pane-actions"]:visible').first()).toBeFocused();
         await page.getByTestId("terminal-new").tap();
         const launcher = page.getByTestId("terminal-launch-menu");
         await expect(launcher.getByTestId("terminal-cwd")).toBeFocused();
@@ -241,17 +241,19 @@ test.describe("active terminal on a phone", () => {
     });
     await gotoView(page, "terminals");
     await page.goto(`/terminals/${first.id}?view=terminal&paneTerminal=${second.id}`);
-    const picker = page.getByRole("combobox", { name: "Terminal", exact: true });
-    await expect(picker).toHaveValue(second.id);
-    await page.getByTestId("terminal-options").tap();
+    const picker = page.getByTestId("pane-terminal");
+    await expect(picker).toHaveAttribute("data-terminal-id", second.id);
+    await openTerminalOptions(page, true);
     await expect(page.getByTestId("terminal-close-selected")).toHaveAttribute(
       "aria-label",
       "Close Second mobile shell",
     );
     await page.getByTestId("sheet-close").tap();
-    await picker.selectOption(first.id);
+    await picker.tap();
+    await page.getByTestId("command-palette-input").fill("First mobile shell");
+    await page.locator(`[data-command-id="terminal-${first.id}"]`).tap();
     await expect(page).toHaveURL(new RegExp(`paneTerminal=${first.id}`));
-    await page.getByTestId("terminal-options").tap();
+    await openTerminalOptions(page, true);
     await expect(page.getByTestId("terminal-close-selected")).toHaveAttribute(
       "aria-label",
       "Close First mobile shell",

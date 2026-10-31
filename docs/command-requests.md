@@ -1,18 +1,28 @@
 # Commands that need user input
 
-Agents call the MCP tool `command_request` to create an item in **Attention needed**.
+Agents call the MCP tool `human_request` with `kind:"command"` to create an item
+in **Attention needed**. The same tool supports ordinary questions and approvals;
+`command_request` remains a compatible shortcut for commands.
 Provide `origin` (the requesting session/backend and an idempotent request ID),
-`prompt`, and `command` with an exact `host` (`null` means the API machine),
+an optional short `title`, a `prompt` explaining why help is needed, and `command`
+with an exact `host` (`null` means the API machine),
 `cwd`, `script`, optional `arguments`, and `timeout_seconds` (1–300, default 60).
 
-Declare arguments as `{name:"PASSWORD",label:"Service password",required:true}`.
+Declare as many inputs as needed (up to 20), for example
+`{name:"PASSWORD",label:"Service password",description:"Used only for this login",required:true}`.
+Every input is masked and redacted, including usernames, URLs and other values
+that do not look like passwords. Inputs are never returned raw to the agent.
 Use the execution host's shell syntax for environment variables, for example
 `my-cli login --password "$ORC_INPUT_PASSWORD"` in bash/zsh or
 `my-cli login --password "$env:ORC_INPUT_PASSWORD"` in PowerShell.
 Do not include secrets in the tool call, script, prompt or argument labels.
 
-The request does not execute anything. The user reviews the host/folder, edits
-the script, fills password-style fields, and clicks **Run command**. Values are
+The request does not execute anything. Attention shows compact rows; opening a
+request reveals its purpose, host/folder, exact command and input descriptions.
+The command is read-only until **Edit command** is selected. The user fills the
+masked fields and clicks **Run command**, or cancels without running.
+Only one request is open at a time; drafts survive collapsing/switching requests
+and resizing without being saved in browser storage. Values are
 cleared after submission and never stored in ORC's request, result or transcript.
 The selected host needs Bun. Commands use the same default shell as terminals:
 the host's configured shell (such as zsh or bash), or PowerShell on Windows.

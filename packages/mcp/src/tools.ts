@@ -121,11 +121,11 @@ const skillRevertParams = skillHistoryParams.extend({
 });
 const humanCreateParams = HumanRequestInputSchema.safeExtend({
   project: projectParam,
-  kind: z.enum(["question", "approval"]),
 });
 const commandCreateParams = z
   .object({
     origin: HumanRequestInputSchema.shape.origin,
+    title: HumanRequestInputSchema.shape.title,
     prompt: HumanRequestInputSchema.shape.prompt,
     command: CommandSpecSchema,
     project: projectParam,
@@ -189,7 +189,7 @@ export const toolDefinitions = [
   {
     name: "human_request",
     description:
-      "Create a durable question or ordinary approval in Attention needed. This never executes a command or grants OS privileges. Retain the returned id and poll human_request_get; deliver the response only to the requesting workflow.",
+      "Ask the user for help in Attention needed: a question, approval or reviewed command with multiple secure inputs. Use title for a short action name and prompt to explain why it is needed. For kind:command supply the exact host, cwd, native-shell script and command.arguments with name, label, optional description and required. All input fields are masked; values travel only to the reviewed command and are redacted from its output, never returned raw to the agent. Reference values as quoted $ORC_INPUT_NAME in bash/zsh or $env:ORC_INPUT_NAME in PowerShell. Creation never executes anything or grants OS privileges; the user reviews and explicitly runs it. Retain the id and poll human_request_get while pending/running, consume only in the requesting workflow, then acknowledge the returned version. Cancelled/expired/unavailable never authorize retries.",
     inputSchema: humanCreateParams,
   },
   {

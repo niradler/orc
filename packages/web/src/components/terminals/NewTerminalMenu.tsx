@@ -37,6 +37,7 @@ interface NewTerminalMenuProps {
   onCreate: (input: CreateTerminalInput) => Promise<boolean>;
   className?: string;
   compact?: boolean;
+  iconOnly?: boolean;
 }
 
 type Removal = { worktree: Worktree; step: "confirm" | "dirty" };
@@ -68,6 +69,7 @@ export function NewTerminalMenu({
   onCreate,
   className,
   compact = false,
+  iconOnly = false,
 }: NewTerminalMenuProps) {
   const hostSelectId = useId();
   const [prefs] = useState(() => readLaunchPrefs(storage));
@@ -234,10 +236,16 @@ export function NewTerminalMenu({
           aria-haspopup="dialog"
           aria-expanded={open}
           onClick={() => onOpenChange(!open)}
-          className="w-full min-w-11 inline-flex items-center justify-center gap-2 min-h-11 px-3 py-2 rounded-md bg-primary border border-primary text-primary-foreground font-label text-xs hover:bg-primary/90 transition-colors"
+          title="New terminal"
+          className={cn(
+            "min-w-11 inline-flex items-center justify-center gap-2 min-h-11 rounded-md font-label text-xs transition-colors",
+            iconOnly
+              ? "w-11 shrink-0 sm:w-8 sm:min-w-8 sm:min-h-8 text-on-surface-variant hover:bg-surface"
+              : "w-full px-3 py-2 bg-primary border border-primary text-primary-foreground hover:bg-primary/90",
+          )}
         >
           <Plus size={14} />
-          <span className={compact ? "sr-only" : undefined}>New terminal</span>
+          <span className={compact || iconOnly ? "sr-only" : undefined}>New terminal</span>
         </button>
         {compact && open && <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/70" />}
         {open && (

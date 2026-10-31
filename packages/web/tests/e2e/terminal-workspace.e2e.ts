@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect } from "@playwright/test";
-import { API_SECRET, apiGet, apiPost } from "./_helpers";
+import { API_SECRET, apiGet, apiPost, splitTerminalPane, terminalPaneAction } from "./_helpers";
 import { test } from "./_terminal-fixture";
 
 test("renderer startup preserves actions opened immediately after terminal focus", async ({
@@ -254,7 +254,7 @@ test("should keep the terminal picker compact and reveal checkout links only wit
   const info = await apiGet<{ pid: number; status: string }>(request, `/terminals/${terminal.id}`);
   expect(info.pid).toBe(terminal.pid);
   expect(info.status).toBe("running");
-  await page.getByTestId("pane-split-horizontal").click();
+  await splitTerminalPane(page.getByTestId("workspace-pane").first(), "horizontal");
   await expect(page.getByTestId("pane-linked-task").first()).toBeHidden();
   await expect(page.getByTestId("pane-linked-pr").first()).toBeHidden();
   await expect(page.getByTestId("pane-ci-status").first()).toBeHidden();
@@ -300,15 +300,15 @@ test("should retain file tabs through view and split changes, focus panes and fi
   await page.getByTestId("pane-view-git").click();
   await page.getByTestId("pane-view-files").click();
   await expect(page.getByTestId("file-tab")).toHaveCount(2);
-  await page.getByTestId("pane-split-horizontal").click();
+  await splitTerminalPane(page.getByTestId("workspace-pane").first(), "horizontal");
   const files = page.getByTestId("workspace-pane").filter({ has: page.getByTestId("file-panel") });
   const changes = page
     .getByTestId("workspace-pane")
     .filter({ has: page.getByTestId("terminal-git-panel") });
   await expect(files.getByTestId("file-tab")).toHaveCount(2);
-  await files.getByTestId("pane-focus").click();
+  await terminalPaneAction(files, "focus");
   await expect(page.getByTestId("workspace-pane").filter({ visible: true })).toHaveCount(1);
-  await files.getByTestId("pane-focus").click();
+  await terminalPaneAction(files, "focus");
   await expect(page.getByTestId("workspace-pane").filter({ visible: true })).toHaveCount(2);
   await changes.getByTestId("git-file-filter").fill("a.ts");
   await expect(changes.getByTestId("git-diff-file")).toHaveCount(1);
@@ -321,7 +321,7 @@ test("should retain file tabs through view and split changes, focus panes and fi
   await expect(files.getByTestId("file-editor-input")).toContainText("b = 2");
   await changes.getByTestId("git-layout-unified").click();
   await page.screenshot({ path: "../../output/playwright/terminal-workspace-review.png" });
-  await changes.getByTestId("pane-focus").click();
+  await terminalPaneAction(changes, "focus");
   await changes.getByTestId("git-layout-split").click();
   await changes.getByTestId("git-checkout-toggle").click();
   const branchBox = await changes.getByTestId("git-branch-select").boundingBox();
@@ -337,7 +337,7 @@ test("should retain file tabs through view and split changes, focus panes and fi
   await expect(changes.getByTestId("git-add-worktree")).toHaveText("New worktree");
   await page.screenshot({ path: "../../output/playwright/terminal-git-desktop.png" });
   await changes.getByTestId("git-checkout-toggle").click();
-  await changes.getByTestId("pane-focus").click();
+  await terminalPaneAction(changes, "focus");
   await changes.getByTestId("git-open-file").click();
   await expect(page.getByTestId("file-panel")).toHaveCount(2);
   const updated = await apiGet<{ pid: number; status: string }>(
@@ -387,7 +387,7 @@ test("multiplexer splits terminal, Git and file panes, resizes and restores them
   );
   await page.goto(`/terminals/${first.id}`);
   await expect(page.getByTestId("terminal-viewport")).toHaveCount(1);
-  await page.getByTestId("pane-split-horizontal").click();
+  await splitTerminalPane(page.getByTestId("workspace-pane").first(), "horizontal");
   await expect(page.getByTestId("workspace-pane")).toHaveCount(2);
   const git = page
     .getByTestId("workspace-pane")
@@ -404,7 +404,7 @@ test("multiplexer splits terminal, Git and file panes, resizes and restores them
   expect((await page.getByTestId("workspace-pane").first().boundingBox())?.width).toBeGreaterThan(
     before.width + 50,
   );
-  await git.getByTestId("pane-split-vertical").click();
+  await splitTerminalPane(git, "vertical");
   await expect(page.getByTestId("workspace-pane")).toHaveCount(3);
   const files = page.getByTestId("workspace-pane").filter({ has: page.getByTestId("file-panel") });
   const rootFolder = files.getByTestId("files-root");
@@ -489,11 +489,10 @@ test("multiplexer splits terminal, Git and file panes, resizes and restores them
     "aria-valuenow",
     String(saved - 5),
   );
-  await page
-    .getByTestId("workspace-pane")
-    .filter({ has: page.getByTestId("file-panel") })
-    .getByTestId("pane-close")
-    .click();
+  await terminalPaneAction(
+    page.getByTestId("workspace-pane").filter({ has: page.getByTestId("file-panel") }),
+    "close",
+  );
   await expect(page.getByTestId("workspace-pane")).toHaveCount(2);
   const info = await apiGet<{ terminals: { id: string; status: string }[] }>(request, "/terminals");
   expect(info.terminals.find((terminal) => terminal.id === second.id)?.status).toBe("running");
