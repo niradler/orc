@@ -34,6 +34,13 @@ for (const width of [390, 1440]) {
     await page.keyboard.press("Escape");
     await expect(modal).toHaveCount(0);
     await expect(input).toBeVisible();
+    for (let attempt = 0; attempt < 5; attempt++) {
+      await link.click();
+      await expect(modal.getByRole("button", { name: "Copy link", exact: true })).toBeFocused();
+      await page.keyboard.press("Escape");
+      await expect(modal).toHaveCount(0);
+      await expect(input).toBeVisible();
+    }
     await link.click();
     const popup = page.waitForEvent("popup");
     await modal.getByRole("button", { name: "Open link", exact: true }).click();
