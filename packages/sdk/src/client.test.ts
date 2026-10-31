@@ -31,6 +31,7 @@ describe("memories", () => {
   type Seen = { method: string; path: string; query: string; source: string | null; body: unknown };
   const seen: Seen[] = [];
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     async fetch(req) {
       const url = new URL(req.url);

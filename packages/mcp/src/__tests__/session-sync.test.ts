@@ -5,6 +5,7 @@ test("HTTP MCP returns sync capabilities on its client-facing origin", async () 
   const token = "a".repeat(43);
   const previous = process.env.ORC_API_BASE;
   const server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
       expect(new URL(request.url).pathname).toBe("/api/sessions/archive/sync");

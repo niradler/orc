@@ -31,6 +31,12 @@ extra agents, production changes, publication, or imply hook enforcement.
   worktree you created once merged, subject to the user's deletion rules.
 - Use source dev servers, not the global daemon, for development. Canonical dev
   ports are API 7701 and web 3077; inspect existing listeners before starting.
+  Bind every local development, test, fixture and preview server explicitly to
+  `127.0.0.1` (including `Bun.serve({ hostname: "127.0.0.1", ... })` and Vite's
+  `host`). Never rely on a server's default bind address or use `0.0.0.0`, `::`
+  or `--host` without an address. Verify actual listener addresses after launch.
+  Do not request Windows Firewall/public-network approval or change firewall
+  rules for local validation. Public/LAN binding requires Nir's explicit request.
   For port recovery, dev commands and Windows process details, see
   [docs/development.md](docs/development.md).
 - Read [DESIGN.md](DESIGN.md) before web UI work. Follow its compact,

@@ -289,6 +289,7 @@ describe("MCP kb management, edits, comments and digests", () => {
     svc.jobHooks = null;
     const seen: { call: string; source: string | null; session: string | null }[] = [];
     const server = Bun.serve({
+      hostname: "127.0.0.1",
       port: 0,
       fetch(request) {
         const url = new URL(request.url);

@@ -51,6 +51,7 @@ beforeAll(async () => {
   });
   const router = createChannelsRouter(() => service);
   server = Bun.serve({
+    hostname: "127.0.0.1",
     port: 0,
     fetch: (r) => {
       const url = new URL(r.url);
